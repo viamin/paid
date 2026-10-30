@@ -956,12 +956,7 @@ components:
               type: array
               minItems: 2
               items:
-                type: object
-                required: [project, number, url]
-                properties:
-                  project: {type: string}
-                  number: {type: integer}
-                  url: {type: string, format: uri}
+                $ref: '#/components/schemas/DependencyCycleIssue'
             cycle_edges:
               type: array
               minItems: 1
@@ -976,11 +971,27 @@ components:
             downstream_issues_held: {type: integer, minimum: 0}
     DependencyCycleIssue:
       type: object
-      required: [project, number, url]
+      required: [project, number, url, title, labels, parent]
       properties:
         project: {type: string}
         number: {type: integer}
         url: {type: string, format: uri}
+        title: {type: string}
+        labels:
+          type: array
+          items: {type: string}
+        parent:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/DependencyCycleParent'
+    DependencyCycleParent:
+      type: object
+      required: [project, number, url, title]
+      properties:
+        project: {type: string}
+        number: {type: integer}
+        url: {type: string, format: uri}
+        title: {type: string}
     DesignArtifactFinding:
       type: object
       required: [id, artifact_path, revision, state, evidence, covered_at, status]

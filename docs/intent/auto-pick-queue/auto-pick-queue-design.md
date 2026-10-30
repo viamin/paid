@@ -81,6 +81,16 @@ The occurrence remains until a subsequent
 synchronization observes an acyclic persisted graph. A failed reconciliation is
 logged as unavailable; it is not treated as proof that no cycles exist.
 
+Each path node also carries its own title, current labels, and (when a parent
+issue is linked and its project is within the viewer's authorized project set)
+the linked umbrella issue's number and title — all read from already-synced
+local issue data, so judging which declaration is wrong never requires opening
+every linked issue on GitHub first. An unlinked or not-yet-authorized parent
+simply omits umbrella context rather than failing the detail. The Mobile API
+cycle payload (`Api::V1::InboxEntrySerializer`) exposes the identical path,
+edge, and umbrella context so API and agent clients can inspect the same
+cycle the web Inbox renders.
+
 ## Tier-infeasibility gating
 
 Issues whose most recent model selection pins a tier no enabled runner can
