@@ -26,7 +26,7 @@ module Issues
       return failure(:generic_reason, "Enter a specific completion rationale that references the recorded evidence " \
         "(for example which merged PRs or no-code declaration cover each acceptance criterion).") if canned_reason?
 
-      result = issue.with_lock { validate_closeout }
+      result = issue.with_lock { begin_closeout }
       return result unless result.success?
 
       result = close_on_github
@@ -38,6 +38,8 @@ module Issues
       issue.project.account.account_activity_events.create!(action: "issue.closeout_resolved", actor:, subject: issue,
         metadata: { "reason" => reason, "evidence_digest" => issue.closeout_resolution_digest })
       Result.new(issue:)
+    ensure
+      clear_closing_marker
     end
 
     private
@@ -60,6 +62,17 @@ module Issues
       return failure(:audit_pending, "A current acceptance audit is required before GitHub can be closed.") unless accepted_assessment?
       return failure(:open_prerequisites, "Current prerequisites or required verification still block GitHub closure.") if closure_blocked?
 
+      Result.new(issue:)
+    end
+
+    def begin_closeout
+      return failure(:closeout_closing, "GitHub closure is already in progress.") if issue.closeout_closing_at.present?
+
+      validation = validate_closeout
+      return validation unless validation.success?
+
+      issue.update!(closeout_closing_at: Time.current)
+      @closing_started = true
       Result.new(issue:)
     end
 
@@ -88,7 +101,15 @@ module Issues
       evidence = CloseoutEvidence.call(issue)
       supersede_open_continuation
       issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
+      @closing_started = false
       Result.new(issue:)
+    end
+
+    def clear_closing_marker
+      return unless @closing_started
+
+      issue.with_lock { issue.update!(closeout_closing_at: nil) }
+      @closing_started = false
     end
 
     def accepted_assessment?

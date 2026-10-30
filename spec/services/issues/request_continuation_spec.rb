@@ -107,6 +107,17 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
   end
 
   describe "refusals" do
+    it "refuses continuation admission while GitHub closure is in flight" do # @spec PARTIAL-CLOSEOUT-006
+      merged_partial_pr(number: 12)
+      issue.update!(closeout_closing_at: Time.current)
+
+      result = request_continuation
+
+      expect(result.code).to eq(:closeout_closing)
+      expect(result.message).to include("closure is in progress")
+      expect(issue.agent_runs).to be_empty
+    end
+
     it "refuses an issue without closeout evidence" do
       result = request_continuation
 

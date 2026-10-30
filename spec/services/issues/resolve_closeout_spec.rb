@@ -72,6 +72,21 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(result).to be_success
   end
 
+  it "revokes continuation admission before releasing the lock for GitHub closure" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    allow(github_client).to receive(:update_issue) do
+      continuation = Issues::RequestContinuation.call(issue: issue.reload, actor: user, reason: "Continue remaining work.")
+      expect(continuation.code).to eq(:closeout_closing)
+      Struct.new(:state).new("closed")
+    end
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result).to be_success
+    expect(issue.reload.closeout_closing_at).to be_nil
+  end
+
   it "revalidates prerequisites after GitHub confirms closure" do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit
@@ -239,6 +254,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(result.code).to eq(:github_failed)
     expect(result.message).to include("retry Close on GitHub")
     expect(issue.reload.github_state).to eq("open")
+    expect(issue.closeout_closing_at).to be_nil
   end
 
   it "preserves an open continuation when GitHub rejects closure" do # @spec PARTIAL-CLOSEOUT-006

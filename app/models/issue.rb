@@ -1567,7 +1567,8 @@ class Issue < ApplicationRecord
       closed_at: Time.current,
       closeout_resolved_at: Time.current,
       closeout_resolution_digest: evidence_digest,
-      closeout_resolved_by: actor
+      closeout_resolved_by: actor,
+      closeout_closing_at: nil
     )
 
     Rails.logger.info(

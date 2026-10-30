@@ -16,7 +16,7 @@ module Issues
   # skip labels, and active-run uniqueness all still apply, with the blocker
   # explained to the user.
   # @spec PARTIAL-CLOSEOUT-003 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
-  # @spec PARTIAL-CLOSEOUT-027
+  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027
   class RequestContinuation
     Result = Struct.new(:request, :agent_run, :code, :message, keyword_init: true) do
       def success? = code.nil?
@@ -43,6 +43,10 @@ module Issues
       return failure(:automation_disabled, "Automatic continuation is disabled for this project.") if automatic? && !auto_pick_project_open?
 
       issue.with_lock do
+        if issue.closeout_closing_at.present?
+          return failure(:closeout_closing, "GitHub closure is in progress; retry continuation only if the close action fails.")
+        end
+
         existing = IssueContinuationRequest.open_for_issue(issue)
         return dedupe_or_refuse(existing) if existing
 

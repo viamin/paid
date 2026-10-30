@@ -334,8 +334,11 @@
   Resolution and continuation creation
   SHALL serialize on the issue: resolving SHALL supersede an open continuation
   authorization and cancel its unclaimed queued run before recording the
-  resolution, so no continuation can dispatch after the issue is declared
-  complete.
+  resolution. Before releasing the issue lock for the remote close, the system
+  SHALL persist a closing-in-progress marker that refuses new continuation
+  authorization and cancels continuation runs at dequeue; a failed remote close
+  SHALL clear that marker for retry. No continuation can dispatch while closure
+  is in flight or after the issue is declared complete.
 
 - [x] **PARTIAL-CLOSEOUT-037** — When an open issue has a current acceptance
   audit, the partial-closeout Inbox SHALL distinguish `audit pending`,
