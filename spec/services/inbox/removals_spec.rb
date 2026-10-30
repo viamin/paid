@@ -68,9 +68,9 @@ RSpec.describe Inbox::Removals do
 
     # @spec OPERATOR-INBOX-023
     it "does not record a replayed removal for the same request occurrence" do
-      target = entry
       removal = remove!
       removed_at = removal.removed_at
+      target = entry(scope: Inbox::Queue::REMOVED_SCOPE)
 
       travel 1.minute do
         expect { remove!(target:) }.not_to change(InboxHistoryEvent, :count)
