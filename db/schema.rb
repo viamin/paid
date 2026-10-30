@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_29_231830) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_034605) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2630,6 +2630,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_29_231830) do
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"
     t.datetime "closed_at", comment: "When github_state first transitioned to 'closed'. Distinct from updated_at and github_updated_at so unrelated sync metadata (label edits, comments) cannot move the resolution timestamp used by epic re-audit eligibility."
+    t.datetime "closeout_closing_at", comment: "When a remote GitHub close is in flight and continuation admission is revoked"
     t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
     t.datetime "closeout_resolved_at", comment: "When an operator resolved this issue as complete against the recorded closeout evidence."
     t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."

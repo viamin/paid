@@ -47,7 +47,7 @@ module PartialCloseouts
     end
 
     def current_revisions?
-      assessment["source_revision"] == Issues::CloseoutEvidence.call(issue).digest &&
+      assessment["source_revision"] == Assessment.source_revision_for(issue) &&
         assessment["intent_revision"] == Assessment.intent_revision_for(issue)
     end
 

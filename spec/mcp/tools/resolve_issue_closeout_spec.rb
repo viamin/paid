@@ -13,8 +13,23 @@ RSpec.describe Tools::ResolveIssueCloseout do # @spec PARTIAL-CLOSEOUT-007
     create(:issue, :pull_request, project: project, github_number: 81, github_state: "closed",
       pr_review_phase: "merged", parent_issue_id: issue.id, created_at: 2.days.ago)
   end
+  let(:github_client) { instance_double(GithubClient) }
 
-  before { merged_pr }
+  before do
+    merged_pr
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive_messages(
+      issue: Struct.new(:state).new("open"),
+      update_issue: Struct.new(:state).new("closed")
+    )
+  end
+
+  def accepted_audit
+    run = create(:agent_run, :completed, project:, issue:)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+      "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => []
+    }) })
+  end
 
   describe ".write_operation?" do
     it "is a write operation" do
@@ -24,6 +39,7 @@ RSpec.describe Tools::ResolveIssueCloseout do # @spec PARTIAL-CLOSEOUT-007
 
   describe "#call" do
     it "resolves the issue complete against the recorded evidence with the same audit as the inbox action" do
+      accepted_audit
       result = tool.call(project_id: project.id, issue_id: issue.id, reason: "Merged PR #81 covers it.", confirmed: true)
 
       issue.reload
@@ -45,6 +61,18 @@ RSpec.describe Tools::ResolveIssueCloseout do # @spec PARTIAL-CLOSEOUT-007
       expect {
         tool.call(project_id: project.id, issue_id: plain.id, reason: "Done.", confirmed: true)
       }.to raise_error(ArgumentError, /no terminal closeout evidence/)
+    end
+
+    it "refuses upstream issue closure without contacting the project fork" do # @spec PARTIAL-CLOSEOUT-007 UPSTREAM-ISSUE-008
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+      accepted_audit
+
+      expect {
+        tool.call(project_id: project.id, issue_id: issue.id, reason: "Merged PR #81 covers it.", confirmed: true)
+      }.to raise_error(ArgumentError, /directly on the upstream repository/)
+
+      expect(github_client).not_to have_received(:issue)
+      expect(github_client).not_to have_received(:update_issue)
     end
   end
 end

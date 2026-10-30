@@ -12,7 +12,7 @@ RSpec.describe "Partial closeout operator guide" do # @spec PARTIAL-CLOSEOUT-022
     expect(response).to redirect_to(new_user_session_path)
   end
 
-  it "explains run completion, internal resolution, and GitHub closure separately" do
+  it "explains run completion and evidence-gated GitHub closure separately" do # @spec PARTIAL-CLOSEOUT-037
     sign_in user
 
     get partial_closeout_guide_path
@@ -20,10 +20,9 @@ RSpec.describe "Partial closeout operator guide" do # @spec PARTIAL-CLOSEOUT-022
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Partial closeout operator guide")
     expect(response.body).to include("completes a run")
-    expect(response.body).to include("resolves an Inbox item internally")
-    expect(response.body).to include("closes the GitHub issue")
-    expect(response.body).to include("The GitHub issue stays open")
-    expect(response.body).to include("new terminal evidence can resurface")
+    expect(response.body).to include("What clears an Inbox item")
+    expect(response.body).to include("Close on GitHub")
+    expect(response.body).to include("never hidden merely")
   end
 
   it "distinguishes audit completion, gap transfer, and epic acceptance" do

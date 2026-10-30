@@ -25,9 +25,9 @@
         dependency wording.</li>
       <li><strong>Supply human evidence</strong> when the gap needs hardware, credentials, pilot results, or human
         adjudication an agent cannot produce. Follow the requested steps, then link the result.</li>
-      <li><strong>Attest completion when justified.</strong> Resolve the item as complete only when the recorded
-        evidence genuinely covers every acceptance criterion, and write a rationale that references that
-        evidence.</li>
+      <li><strong>Close on GitHub when accepted.</strong> Use the close action only after a current audit shows every
+        criterion satisfied. Paid rechecks the evidence, intent, prerequisites, scanner verification, and GitHub
+        state immediately before closing; if GitHub fails, retry the same action from the Inbox item.</li>
     </ol>
   </section>
 
@@ -41,18 +41,15 @@
           says nothing about the issue's whole scope.</dd>
       </div>
       <div>
-        <dt class="font-medium text-gray-900">What resolves an Inbox item internally</dt>
-        <dd>your attestation that the recorded evidence completes the issue. Paid records your identity, your rationale,
-          and the evidence generation you resolved against, marks the issue <code>completed</code> internally, and
-          suppresses this Inbox item. The GitHub issue stays open for a human to close, and new terminal evidence can resurface the item here
-          (a newly merged pull request or a new no-code declaration starts a new generation). Resolving also supersedes any open continuation authorization and cancels its queued run, so
-          nothing dispatches after your attestation.</dd>
+        <dt class="font-medium text-gray-900">What clears an Inbox item</dt>
+        <dd>GitHub recording the issue as closed. The authorized <strong>Close on GitHub</strong> action records your
+          rationale and current evidence generation, then requests closure. An open issue is never hidden merely
+          because Paid recorded an internal attestation.</dd>
       </div>
       <div>
-        <dt class="font-medium text-gray-900">A final pull request closes the GitHub issue or epic</dt>
-        <dd>only when a human merges it (or a human closes the issue directly). Paid never closes
-          the upstream issue for you; an epic additionally stays open until every child scope is genuinely
-          accepted.</dd>
+        <dt class="font-medium text-gray-900">Epic acceptance remains separate</dt>
+        <dd>An epic stays open until every child scope is genuinely accepted. A merged PR or closed child alone is
+          never sufficient evidence.</dd>
       </div>
     </dl>
   </section>
