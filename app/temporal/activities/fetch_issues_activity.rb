@@ -1098,18 +1098,19 @@ module Activities
         .order(:relationships_parsed_at, :github_updated_at, :id)
     end
 
-    # @spec GITHUB-SYNC-016
+    # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-037
     def repair_completed_open_issues(project, client)
       return false if upstream_issue_write_skipped?(project, "add_recommend_close_label")
 
-      completed_issues = project.issues
-        .where(github_state: "open", is_pull_request: false, paid_state: "completed")
-        .to_a
-      return false if completed_issues.empty?
+      candidates = completed_open_issue_repair_candidates(project)
+      return false if candidates.empty?
 
       issue_pr_pairs = AgentRun.where(
-        project: project, status: "completed", goal: "create_pr", issue_id: completed_issues.map(&:id)
-      ).where.not(pull_request_number: nil).distinct.pluck(:issue_id, :pull_request_number)
+        project: project, status: "completed", goal: "create_pr", issue_id: candidates.map(&:id)
+      ).where.not(pull_request_number: nil)
+        .select("DISTINCT ON (issue_id) issue_id, pull_request_number")
+        .order(:issue_id, completed_at: :desc, id: :desc)
+        .pluck(:issue_id, :pull_request_number)
       return false if issue_pr_pairs.empty?
 
       issue_pr_numbers = issue_pr_pairs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(issue_id, pr_number), memo|
@@ -1117,114 +1118,86 @@ module Activities
       end
       issue_ids = issue_pr_numbers.keys
       pr_numbers = issue_pr_numbers.values.flatten.uniq
-      completed_issues.select! { |issue| issue_ids.include?(issue.id) }
-      return false if completed_issues.empty?
+      candidates.select! { |issue| issue_ids.include?(issue.id) }
+      return false if candidates.empty?
 
-      closing_numbers_by_pr = project.issues
+      source_pull_requests = project.issues
         .pull_requests_only
-        .where(github_state: "open")
         .where(github_number: pr_numbers)
-        .each_with_object({}) do |pull_request, memo|
-          memo[pull_request.github_number] = pull_request.closing_referenced_issue_numbers.to_set
-        end
+        .index_by(&:github_number)
 
-      repaired = completed_issues.reject do |issue|
+      repaired = candidates.reject do |issue|
         issue_pr_numbers.fetch(issue.id, []).any? do |pr_number|
-          closing_numbers_by_pr.fetch(pr_number, Set.new).include?(issue.github_number)
+          source_pull_requests.fetch(pr_number, nil)&.closing_referenced_issue_numbers&.include?(issue.github_number)
         end
       end
       return false if repaired.empty?
 
-      blocked, closeable = repaired.partition { |issue| !issue.ready_to_work? }
-
-      park_dependency_blocked_issues(blocked) | recommend_close_issues(client, project, closeable)
+      repaired.map do |issue|
+        repair_non_closing_source_issue(
+          client,
+          project,
+          issue,
+          source_pull_requests.values_at(*issue_pr_numbers.fetch(issue.id)).compact,
+          issue_pr_numbers.fetch(issue.id)
+        )
+      end.any?
     end
 
-    # A partial implementation still blocked by an unresolved dependency is
-    # never recommended for closure: the agent run's completion does not
-    # establish that this remaining, intentionally deferred work is done.
-    #
-    # The poll activity persists only the generic parking state here so its
-    # 60s +sync budget is not consumed by a per-issue LLM round trip. The
-    # semantic partial/complete verdict is produced out-of-band by
-    # Issues::AssessPartialCompletionJob, which records the outcome
-    # asynchronously and is the only writer of the partial_completion_*
-    # columns (AUTO-PICK-QUEUE-012).
-    # @spec GITHUB-SYNC-016
-    def park_dependency_blocked_issues(issues)
-      return false if issues.empty?
+    def completed_open_issue_repair_candidates(project)
+      open_issues = project.issues.where(github_state: "open", is_pull_request: false)
+      stale_states = open_issues.where(paid_state: %w[completed recommend_close])
+      review_holds = open_issues.where(paid_state: "manual_review")
+        .where("manual_review_reason LIKE ?", "#{non_closing_pr_review_reason_prefix}%")
+      stale_states.or(review_holds).to_a
+    end
 
-      issues.each do |issue|
-        reason = dependency_blocked_reason(issue)
-        parked_at = Time.current
-        issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+    def repair_non_closing_source_issue(client, project, issue, source_pull_requests, source_pr_numbers)
+      return false unless remove_stale_recommend_close_label(client, project, issue)
 
-        merged_pr_number = merged_source_pull_request_number(issue)
-        next unless merged_pr_number
-
-        Issues::AssessPartialCompletionJob.perform_later(issue.id, merged_pr_number, parked_at)
+      merged = source_pull_requests.any? { |pull_request| pull_request.pr_review_phase == "merged" }
+      attributes = if merged
+        { paid_state: "analyzed", manual_review_reason: nil }
+      else
+        { paid_state: "manual_review", manual_review_reason: non_closing_pr_review_reason(source_pull_requests, source_pr_numbers) }
       end
+      return false if issue.paid_state == attributes[:paid_state] && issue.manual_review_reason == attributes[:manual_review_reason]
+
+      issue.update!(attributes)
+
       logger.info(
-        message: "github_sync.completed_open_issues_blocked_on_dependency",
-        project_id: issues.first.project_id,
-        issue_numbers: issues.map(&:github_number)
-      )
-      true
-    end
-
-    def merged_source_pull_request_number(issue)
-      project = issue.project
-      AgentRun.where(project: project, issue: issue, goal: "create_pr")
-        .where.not(pull_request_number: nil)
-        .joins(<<~SQL.squish)
-          INNER JOIN issues merged_prs
-            ON merged_prs.project_id = agent_runs.project_id
-           AND merged_prs.github_number = agent_runs.pull_request_number
-           AND merged_prs.is_pull_request = TRUE
-           AND merged_prs.pr_review_phase = 'merged'
-        SQL
-        .order(completed_at: :desc)
-        .pick(:pull_request_number)
-    end
-
-    def dependency_blocked_reason(issue)
-      local_numbers = (issue.blocking_issues.pluck(:github_number) +
-        issue.blocking_deployment_dependencies.map { |dep| dep.depends_on_issue.github_number }).uniq.sort
-      external_refs = issue.blocking_external_dependencies.map do |dep|
-        "#{dep.depends_on_owner}/#{dep.depends_on_repo}##{dep.depends_on_number}"
-      end
-      blockers = local_numbers.map { |number| "##{number}" } + external_refs
-
-      "Paid's agent run completed and opened a pull request, but this issue remains open and is " \
-        "blocked on an unresolved dependency: #{blockers.join(', ')}. This issue stays pending until " \
-        "the dependency resolves or a human intervenes."
-    end
-
-    def recommend_close_issues(client, project, issues)
-      return false if issues.empty?
-
-      visible = issues.select { |issue| add_recommend_close_label(client, project, issue) }
-      return false if visible.empty?
-
-      project.issues.where(id: visible.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)
-      logger.info(
-        message: "github_sync.completed_open_issues_repaired",
+        message: "github_sync.non_closing_source_pr_repaired",
         project_id: project.id,
-        issue_numbers: visible.map(&:github_number)
+        issue_number: issue.github_number,
+        pull_request_numbers: source_pull_requests.map(&:github_number),
+        next_action: merged ? "acceptance_audit" : "review_or_merge"
       )
       true
     end
 
-    def add_recommend_close_label(client, project, issue)
+    def non_closing_pr_review_reason_prefix = "Paid closeout is waiting on its source pull request:"
+
+    def non_closing_pr_review_reason(source_pull_requests, source_pr_numbers)
+      pull_requests = source_pull_requests.map do |pull_request|
+        "##{pull_request.github_number} is #{pull_request.pr_review_phase || pull_request.github_state}"
+      end
+      if pull_requests.empty?
+        pull_requests = source_pr_numbers.map { |number| "##{number} has not synchronized yet" }
+      end
+
+      "#{non_closing_pr_review_reason_prefix} #{pull_requests.join(', ')}. Review and merge the PR before final acceptance can be audited."
+    end
+
+    def remove_stale_recommend_close_label(client, project, issue)
       label = project.label_for_stage("recommend_close") ||
         Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
-      return true if issue.has_label?(label)
+      return true unless issue.has_label?(label)
 
-      client.add_labels_to_issue(project.full_name, issue.github_number, [ label ])
+      client.remove_label_from_issue(project.full_name, issue.github_number, label)
       true
     rescue GithubClient::Error => e
       logger.warn(
-        message: "github_sync.completed_open_issue_label_failed",
+        message: "github_sync.completed_open_issue_stale_label_remove_failed",
         project_id: project.id,
         issue_id: issue.id,
         issue_number: issue.github_number,
