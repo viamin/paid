@@ -372,16 +372,17 @@
   </div>
 
   <% if policy(entry.project).run_agent? %>
-    <% if entry.project.upstream_pr_target? %>
-      <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <h3 class="text-sm font-semibold text-gray-900">Close on upstream GitHub</h3>
-        <p class="text-sm text-gray-600">
-          Paid does not mutate upstream issues. Use <strong>View on GitHub</strong> above to close this issue directly
-          in the upstream repository after confirming its acceptance evidence.
-        </p>
-      </div>
-    <% else %>
-      <div class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+    <% if closeout_state == "accepted_awaiting_github_closure" %>
+      <% if entry.project.upstream_pr_target? %>
+        <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Close on upstream GitHub</h3>
+          <p class="text-sm text-gray-600">
+            Paid does not mutate upstream issues. Use <strong>View on GitHub</strong> above to close this issue directly
+            in the upstream repository after confirming its acceptance evidence.
+          </p>
+        </div>
+      <% else %>
+        <div class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
         <h3 class="text-sm font-semibold text-gray-900">Close on GitHub</h3>
         <details class="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600">
           <summary class="cursor-pointer font-medium text-gray-700">What this does — and does not — do</summary>
@@ -415,7 +416,8 @@
               data: { turbo_confirm: "Close ##{issue.github_number} on GitHub against the current acceptance audit? " \
                 "Paid will refuse if criteria, revisions, prerequisites, scanner verification, or GitHub state changed.", turbo_frame: "_top" } %>
         <% end %>
-      </div>
+        </div>
+      <% end %>
     <% end %>
 
     <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
