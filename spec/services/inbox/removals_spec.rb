@@ -167,7 +167,9 @@ RSpec.describe Inbox::Removals do
       expect(entry(scope: Inbox::Queue::REMOVED_SCOPE)).to be_nil
       expect(Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE))
         .to be > previous_version
-      expect(InboxHistoryEvent.find_by!(metadata: { "action" => "Restored to Inbox" })).to have_attributes(
+      history_event = InboxHistoryEvent.find_by!(metadata: { "action" => "Restored to Inbox" })
+      expect(history_event).to have_attributes(
+        subject_key: "issue:#{project.id}:#{issue.github_number}",
         actor_label: "Paid", source: "paid", result: "completed"
       )
     end
