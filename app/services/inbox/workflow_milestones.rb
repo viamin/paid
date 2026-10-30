@@ -11,6 +11,8 @@ module Inbox
       Queue::ESCALATED_PR_KIND,
       Queue::TEST_REVIEW_PENDING_KIND
     ].freeze
+    UNBLOCK_ACTION = "Unblock this pull request."
+    REAPPROVE_ACTION = "Re-approve this pull request on GitHub."
 
     def self.call(entry)
       new(entry).call
@@ -69,12 +71,15 @@ module Inbox
 
     def code_review_milestone
       return milestone("Code review", "waiting", "Waiting", "Code review follows implementation.") if entry.test_review_pending?
+      return blocked_code_review_milestone if blocked_escalation?
 
       milestone("Code review", "completed", "Complete", "The pull request is at its owner-review/merge decision.", revision: entry.issue.last_scanned_head_sha, url: entry.issue.github_url)
     end
 
     def owner_milestone
       return milestone("Owner approval", "waiting", "Waiting", "Owner approval follows code review.") if entry.test_review_pending?
+      return milestone("Owner approval", "waiting", "Waiting", "Owner approval follows recovery of the escalated pull request.") if blocked_escalation?
+      return reapproval_milestone if awaiting_approval_escalation?
 
       if stale_approval?
         milestone("Owner approval", "stale", "Stale", "A commit was added after the recorded approval.",
@@ -89,6 +94,7 @@ module Inbox
 
     def merge_milestone
       return milestone("Merge", "waiting", "Waiting", "Merge follows the remaining review gates.") if entry.test_review_pending?
+      return milestone("Merge", "waiting", "Waiting", "Merge follows recovery and the remaining review gates.") if entry.escalated_pr?
 
       state = manual_merge? ? "current" : "waiting"
       label = manual_merge? ? "Your next step" : "Automatic evaluation"
@@ -97,8 +103,18 @@ module Inbox
         action:, revision: current_revision, url: entry.issue.github_url)
     end
 
-    def milestone(name, state, label, reason, action: nil, revision: nil, actor: nil, url: nil)
-      { name:, state:, label:, reason:, action:, revision:, actor:, url:, current: state == "current" }.compact
+    def blocked_code_review_milestone
+      milestone("Code review", "blocked", "Blocked", "Paid stopped working this pull request after escalation.",
+        action: UNBLOCK_ACTION, revision: current_revision, url: entry.issue.github_url, current: true)
+    end
+
+    def reapproval_milestone
+      milestone("Owner approval", "current", "Re-approval required", "This escalated pull request is waiting on owner approval.",
+        action: REAPPROVE_ACTION, revision: current_revision, url: entry.issue.github_url)
+    end
+
+    def milestone(name, state, label, reason, action: nil, revision: nil, actor: nil, url: nil, current: state == "current")
+      { name:, state:, label:, reason:, action:, revision:, actor:, url:, current: }.compact
     end
 
     def guidance
@@ -123,6 +139,14 @@ module Inbox
 
     def manual_merge?
       !(guidance[:automatic_merge_active] || guidance["automatic_merge_active"])
+    end
+
+    def blocked_escalation?
+      entry.escalated_pr? && !awaiting_approval_escalation?
+    end
+
+    def awaiting_approval_escalation?
+      entry.escalated_pr? && entry.record&.reason == Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL
     end
 
     def current_revision

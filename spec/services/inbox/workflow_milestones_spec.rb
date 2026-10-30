@@ -6,8 +6,19 @@ RSpec.describe Inbox::WorkflowMilestones do
   let(:project) { create(:project, tdd_mode: "strict", auto_merge_mode: "off") }
   let(:issue) { create(:issue, :pull_request, project:, github_number: 21, pr_review_phase: "ready", last_scanned_head_sha: "head-sha") }
 
-  def entry(kind:, guidance: nil)
-    Inbox::Queue::Entry.new(id: "#{kind}:#{issue.id}", kind:, project:, issue:, guidance:)
+  def entry(kind:, guidance: nil, record: nil)
+    Inbox::Queue::Entry.new(id: "#{kind}:#{issue.id}", kind:, project:, issue:, guidance:, record:)
+  end
+
+  def escalation(reason)
+    Inbox::EscalatedPullRequests::Entry.new(
+      pull_request: issue,
+      reason:,
+      blocked_since: 1.day.ago,
+      counters: [],
+      last_progress_at: nil,
+      operator_paused: false
+    )
   end
 
   it "separates approved code review from the manual merge action" do # @spec OPERATOR-INBOX-022
@@ -37,6 +48,33 @@ RSpec.describe Inbox::WorkflowMilestones do
 
     expect(projection[:milestones]).to include(a_hash_including(name: "Owner approval", state: "stale", revision: "new-sha"))
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "current"))
+  end
+
+  it "shows Unblock as the current action for a failure-streak escalation" do # @spec OPERATOR-INBOX-022
+    projection = described_class.call(entry(
+      kind: Inbox::Queue::ESCALATED_PR_KIND,
+      record: escalation(Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    ))
+
+    expect(projection[:current_action]).to eq("Unblock this pull request.")
+    expect(projection[:milestones]).to include(
+      a_hash_including(name: "Code review", state: "blocked", current: true, action: "Unblock this pull request.")
+    )
+    expect(projection[:milestones]).to include(a_hash_including(name: "Owner approval", state: "waiting"))
+    expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
+  end
+
+  it "shows re-approval as the current action for an awaiting-approval escalation" do # @spec OPERATOR-INBOX-022
+    projection = described_class.call(entry(
+      kind: Inbox::Queue::ESCALATED_PR_KIND,
+      record: escalation(Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL)
+    ))
+
+    expect(projection[:current_action]).to eq("Re-approve this pull request on GitHub.")
+    expect(projection[:milestones]).to include(
+      a_hash_including(name: "Owner approval", state: "current", action: "Re-approve this pull request on GitHub.")
+    )
+    expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
   end
 
   it "omits the pull-request workflow for a non-PR issue-backed lane" do # @spec OPERATOR-INBOX-022
