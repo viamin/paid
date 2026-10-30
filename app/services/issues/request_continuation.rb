@@ -50,7 +50,7 @@ module Issues
         existing = IssueContinuationRequest.open_for_issue(issue)
         return dedupe_or_refuse(existing) if existing
 
-        clear_legacy_resolution_with_unmet_work!
+        clear_legacy_resolution_with_unaccepted_work!
         status = CloseoutStatus.call(issue)
         refusal = refusal_for(status)
         return refusal if refusal
@@ -133,15 +133,15 @@ module Issues
       nil
     end
 
-    # A fresh unmet assessment disproves the legacy internal completion
+    # A fresh assessment that is not fully accepted disproves the legacy internal completion
     # attestation. Clear it before canonical admission is calculated so the
     # request-time decision and the later dequeue recheck see the same state.
-    def clear_legacy_resolution_with_unmet_work!
+    def clear_legacy_resolution_with_unaccepted_work!
       return unless issue.closeout_resolved?
 
       assessment = PartialCloseouts::Assessment.call(issue)
       return if assessment.stale?
-      return unless assessment.criteria.any? { |criterion| criterion["state"] == "unmet" }
+      return unless assessment.criteria.any? { |criterion| criterion["state"] != "satisfied" }
 
       issue.update!(closeout_resolved_at: nil, closeout_resolution_digest: nil, closeout_resolved_by: nil)
     end

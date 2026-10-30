@@ -93,6 +93,23 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.agent_run).to be_queued
       expect(issue.reload).not_to be_closeout_resolved
     end
+
+    it "allows legacy resolved evidence to continue after a fresh audit is unknown" do # @spec PARTIAL-CLOSEOUT-037
+      merged_partial_pr(number: 12)
+      evidence = Issues::CloseoutEvidence.call(issue)
+      issue.update!(
+        closeout_resolved_at: 1.day.ago,
+        closeout_resolution_digest: evidence.digest,
+        closeout_resolved_by: user
+      )
+      record_acceptance_audit(criteria: [ { "criterion" => "the remaining work", "state" => "unknown" } ])
+
+      result = request_continuation
+
+      expect(result).to be_success
+      expect(result.agent_run).to be_queued
+      expect(issue.reload).not_to be_closeout_resolved
+    end
   end
 
   describe "idempotency across double-clicks, replay, and concurrent requests" do
