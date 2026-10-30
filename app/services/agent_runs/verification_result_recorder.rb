@@ -90,6 +90,7 @@ module AgentRuns
     # @spec APPLE-ATTEMPT-011 LIVE-PREVIEW-011
     def apple_only_result?(payload)
       return false unless payload.is_a?(Hash) && payload["apple_verification"].present?
+      return false if payload.dig("apple_verification", "interactive_status").present?
 
       payload.dig("evidence", "coverage").blank? && payload["reported_acceptance_criteria"].blank?
     end
