@@ -147,6 +147,23 @@ RSpec.describe Inbox::ProgressProjection do
     expect(milestone(projection, "code_review")).to include(label: "Code review", state: "blocked")
   end
 
+  it "keeps unevaluated current-head merge evidence unknown" do # @spec INBOX-PROGRESS-002
+    project = create(:project, auto_merge_mode: "off")
+    pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "a" * 40,
+      auto_merge_head_sha: "a" * 40,
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: {
+        "failed" => [],
+        "not_evaluated" => [ { "signal" => "dependencies_resolved", "reason" => "Dependency state unavailable" } ]
+      })
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "code_review")).to include(state: "unknown")
+    expect(milestone(projection, "owner_approval")).to include(state: "unknown")
+    expect(milestone(projection, "merge")).to include(state: "blocked")
+  end
+
   it "does not carry a merge assessment across a changed head" do # @spec INBOX-PROGRESS-002
     project = create(:project)
     pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "b" * 40,

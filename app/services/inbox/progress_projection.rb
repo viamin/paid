@@ -98,6 +98,8 @@ module Inbox
       return milestone("code_review", "Code review", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase?
       return milestone("code_review", "Code review", "waiting", next_action: "Finish implementation before code review.") unless issue.ready_phase?
       return milestone("code_review", "Code review", "unknown", next_action: "Wait for a current-head merge assessment.") unless current_assessment?
+      return milestone("code_review", "Code review", "unknown", evidence: assessment_evidence,
+        next_action: "Wait for the current merge assessment to evaluate all signals.") if unevaluated_blockers.present?
       return milestone("code_review", "Code review", "blocked", evidence: assessment_evidence,
         next_action: "Resolve the current merge assessment blockers.") if non_approval_blockers.present?
 
@@ -108,6 +110,8 @@ module Inbox
       return milestone("owner_approval", "Owner approval", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase?
       return milestone("owner_approval", "Owner approval", "waiting", next_action: "Finish implementation and code review first.") unless issue.ready_phase?
       return milestone("owner_approval", "Owner approval", "unknown", next_action: "Wait for a current-head merge assessment.") unless current_assessment?
+      return milestone("owner_approval", "Owner approval", "unknown", evidence: assessment_evidence,
+        next_action: "Wait for the current merge assessment to evaluate all signals.") if unevaluated_blockers.present?
       return milestone("owner_approval", "Owner approval", "stale", evidence: assessment_evidence,
         next_action: "Review and approve the current pull request revision.") if stale_owner_approval?
       return milestone("owner_approval", "Owner approval", "current", evidence: assessment_evidence,
@@ -173,6 +177,8 @@ module Inbox
     def blockers = (issue.auto_merge_blockers || {}).deep_stringify_keys
 
     def failed_blockers = blockers.fetch("failed", [])
+
+    def unevaluated_blockers = blockers.fetch("not_evaluated", [])
 
     def non_approval_blockers
       failed_blockers.reject { |blocker| blocker["signal"].in?(Inbox::MergeApproval::APPROVAL_SIGNALS) }
