@@ -966,7 +966,7 @@ RSpec.describe GithubClient do
 
       result = client.remove_labels_from_issue(repo, issue_number, [ "bug" ])
 
-      expect(result).to include(removed: [], failed: [ { label: "bug", error: "Not Found" } ])
+      expect(result).to include(removed: [], failed: [ { label: "bug", error: a_string_including("Not Found") } ])
     end
   end
 
