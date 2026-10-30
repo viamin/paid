@@ -1037,6 +1037,7 @@ module Inbox
           cycle = cycle.with(downstream_issues: cycle.downstream_issues.select do |issue|
             authorized_project_ids.include?(issue.project_id)
           end)
+          cycle.path.each { |issue| redact_unauthorized_parent!(issue, authorized_project_ids) }
 
           Entry.new(
             id: cycle.id,
@@ -1053,6 +1054,18 @@ module Inbox
           )
         end
       end
+    end
+
+    # @spec AUTO-PICK-QUEUE-016
+    # Defense in depth: `parent_issue` is validated to share its child's
+    # project, so this should never fire against current writes. It guards
+    # legacy rows written before that validation existed, mirroring the
+    # downstream_issues filter above.
+    def redact_unauthorized_parent!(issue, authorized_project_ids)
+      parent = issue.parent_issue
+      return unless parent && !authorized_project_ids.include?(parent.project_id)
+
+      issue.association(:parent_issue).target = nil
     end
 
     def traceability_title(finding)

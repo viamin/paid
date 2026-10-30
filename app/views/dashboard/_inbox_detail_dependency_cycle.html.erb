@@ -1,9 +1,44 @@
-<%# @spec AUTO-PICK-QUEUE-015 %>
+<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 %>
 <% cycle = entry.record %>
 <div class="space-y-6">
   <div class="rounded-xl border border-red-200 bg-red-50 p-4">
     <h3 class="text-sm font-semibold text-red-900">Dependency cycle blocks automatic work</h3>
     <p class="mt-1 text-sm text-red-800">Paid will keep this work held. Review the declared dependencies on GitHub and remove or correct the specific declaration that is wrong; Paid does not choose an edge to delete.</p>
+  </div>
+
+  <div>
+    <h3 class="text-sm font-semibold text-gray-900">Cycle path</h3>
+    <ol class="mt-2 space-y-2 text-sm text-gray-700">
+      <% cycle.path.each_with_index do |issue, index| %>
+        <li class="flex items-start gap-2">
+          <% if index.positive? %>
+            <span class="pt-3 text-gray-400" aria-hidden="true">&rarr;</span>
+          <% end %>
+          <div class="min-w-0 flex-1 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <%= link_to "#{issue.project.full_name}##{issue.github_number}", issue.github_url,
+                  target: "_blank", rel: "noopener noreferrer",
+                  class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+            <p class="max-w-full truncate font-medium text-gray-900" title="<%= issue.title %>" tabindex="0"><%= issue.title %></p>
+            <% if issue.labels.any? %>
+              <div class="mt-1.5 flex flex-wrap gap-1">
+                <% issue.labels.each do |label| %>
+                  <span class="<%= issue_label_badge_classes(issue.project, label) %>"><%= label %></span>
+                <% end %>
+              </div>
+            <% end %>
+            <% if issue.parent_issue %>
+              <p class="mt-1.5 max-w-full truncate text-xs text-gray-500">
+                Part of umbrella
+                <%= link_to "#{issue.parent_issue.project.full_name}##{issue.parent_issue.github_number}",
+                      issue.parent_issue.github_url, target: "_blank", rel: "noopener noreferrer",
+                      class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                &mdash; <span title="<%= issue.parent_issue.title %>" tabindex="0"><%= issue.parent_issue.title %></span>
+              </p>
+            <% end %>
+          </div>
+        </li>
+      <% end %>
+    </ol>
   </div>
 
   <div>
@@ -22,16 +57,6 @@
         </li>
       <% end %>
     </ul>
-  </div>
-
-  <div>
-    <h3 class="text-sm font-semibold text-gray-900">Cycle path</h3>
-    <p class="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-      <% cycle.path.each_with_index do |issue, index| %>
-        <%= " → " if index.positive? %>
-        <%= link_to "#{issue.project.full_name}##{issue.github_number}", issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
-      <% end %>
-    </p>
   </div>
 
   <div>

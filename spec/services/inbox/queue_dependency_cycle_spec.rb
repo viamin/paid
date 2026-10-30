@@ -60,6 +60,43 @@ RSpec.describe Inbox::Queue do
     expect(payload.fetch(:downstream_issues_held)).to eq(1)
   end
 
+  # @spec AUTO-PICK-QUEUE-016
+  it "carries each path issue's title, labels, and umbrella parent context" do
+    user = create(:user)
+    project = create(:project, account: user.account, created_by: user)
+    parent = create(:issue, project:, title: "Ship the widget umbrella", github_number: 100)
+    first = create(:issue, project:, github_state: "open", title: "First declares second",
+      labels: [ "bug" ], parent_issue: parent)
+    second = create(:issue, project:, github_state: "open", title: "Second declares first")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+    first_in_path = entry.record.path.find { |issue| issue.id == first.id }
+    second_in_path = entry.record.path.find { |issue| issue.id == second.id }
+
+    expect(first_in_path).to have_attributes(title: "First declares second", labels: [ "bug" ], parent_issue: parent)
+    expect(second_in_path.parent_issue).to be_nil
+  end
+
+  # @spec AUTO-PICK-QUEUE-016
+  it "redacts a path issue's umbrella context when the legacy parent's project is outside the viewer's authorized projects" do
+    user = create(:user)
+    other_user = create(:user, account: user.account)
+    visible_project = create(:project, account: user.account, created_by: user)
+    hidden_project = create(:project, account: user.account, created_by: other_user)
+    hidden_parent = create(:issue, project: hidden_project, title: "Hidden umbrella")
+    first = create(:issue, project: visible_project, github_state: "open")
+    first.update_column(:parent_issue_id, hidden_parent.id)
+    second = create(:issue, project: visible_project, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+
+    expect(entry.record.path.find { |issue| issue.id == first.id }.parent_issue).to be_nil
+  end
+
   # @spec AUTO-PICK-QUEUE-015
   it "surfaces a recreated cycle after the prior occurrence was personally removed" do
     user = create(:user)

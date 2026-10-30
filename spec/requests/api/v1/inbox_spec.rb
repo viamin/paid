@@ -87,6 +87,27 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("entry", "id")).to eq(entry.fetch("id"))
   end
 
+  # @spec AUTO-PICK-QUEUE-016 MOBILE-API-006
+  it "carries each cycle path issue's title, labels, and umbrella parent context" do
+    parent = create(:issue, project:, title: "Ship the widget umbrella", github_number: 100)
+    first = create(:issue, project:, github_state: "open", title: "First declares second",
+      labels: [ "bug" ], parent_issue: parent)
+    second = create(:issue, project:, github_state: "open", title: "Second declares first")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
+
+    cycle_path = response.parsed_body.fetch("entries").sole.fetch("cycle_path")
+    first_node = cycle_path.find { |node| node.fetch("number") == first.github_number }
+    second_node = cycle_path.find { |node| node.fetch("number") == second.github_number }
+    expect(first_node).to include(
+      "title" => "First declares second", "labels" => [ "bug" ],
+      "parent" => a_hash_including("number" => parent.github_number, "title" => "Ship the widget umbrella")
+    )
+    expect(second_node).to include("title" => "Second declares first", "labels" => [], "parent" => nil)
+  end
+
   # @spec MOBILE-API-006 MOBILE-API-010
   it "paginates the inbox before serializing entries" do
     issues = create_list(:issue, 3, :needs_input, project:, needs_input_questions: [ "What should happen?" ])

@@ -275,6 +275,30 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload[:summary]).not_to include("Traceability gap")
     end
 
+    # @spec AUTO-PICK-QUEUE-016
+    it "serializes dependency_cycle path issues with title, labels, and umbrella parent context" do
+      parent = create(:issue, project: project, title: "Ship the widget umbrella", github_number: 100)
+      first = create(:issue, project: project, github_state: "open", title: "First declares second",
+        labels: [ "bug" ], parent_issue: parent)
+      second = create(:issue, project: project, github_state: "open", title: "Second declares first")
+      create(:issue_dependency, issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      cycle = Issues::DependencyCycles.call(account: account).sole
+      entry = build_entry(Inbox::Queue::DEPENDENCY_CYCLE_KIND, record: cycle)
+
+      payload = described_class.render(entry)
+
+      first_payload = payload.fetch(:cycle_path).find { |node| node.fetch(:number) == first.github_number }
+      second_payload = payload.fetch(:cycle_path).find { |node| node.fetch(:number) == second.github_number }
+
+      expect(first_payload).to include(
+        title: "First declares second", labels: [ "bug" ],
+        parent: { project: project.full_name, number: parent.github_number, url: parent.github_url, title: "Ship the widget umbrella" }
+      )
+      expect(second_payload).to include(title: "Second declares first", labels: [], parent: nil)
+      expect(payload.fetch(:cycle_edges)).to all(include(from: include(:title, :labels, :parent), to: include(:title, :labels, :parent)))
+    end
+
     it "raises for an unrecognized kind rather than silently returning an empty payload" do
       entry = build_entry("unknown_kind")
 

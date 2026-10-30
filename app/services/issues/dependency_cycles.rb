@@ -50,9 +50,12 @@ module Issues
 
     attr_reader :account
 
+    # @spec AUTO-PICK-QUEUE-016 — preloads each node's parent issue so the
+    # Inbox detail and API payload can show umbrella context without an N+1.
     def nodes
       @nodes ||= Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
-        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).includes(:project).index_by(&:id)
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .includes(:project, parent_issue: :project).index_by(&:id)
     end
 
     def edges

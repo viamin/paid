@@ -56,6 +56,26 @@ RSpec.describe Issues::DependencyCycles do
     expect(cycle.path_edges.map(&:declaration_url)).to contain_exactly(first_url, second_url)
   end
 
+  # @spec AUTO-PICK-QUEUE-016
+  it "preloads each path issue's parent for umbrella context without N+1 queries" do
+    parent = create(:issue, project:, github_number: 100)
+    issues = graph([ 1, 2 ])
+    issues[0].update!(parent_issue: parent)
+    connect(issues, [ [ 0, 1 ], [ 1, 0 ] ])
+
+    cycle = nil
+    query_count = count_queries { cycle = described_class.call(account:).sole }
+
+    first = cycle.path.find { |issue| issue.id == issues[0].id }
+    expect(first.association(:parent_issue)).to be_loaded
+    expect(first.parent_issue).to eq(parent)
+    expect(cycle.path.find { |issue| issue.id == issues[1].id }.parent_issue).to be_nil
+
+    extra_queries = count_queries { cycle.path.each(&:parent_issue) }
+    expect(extra_queries).to eq(0)
+    expect(query_count).to be_positive
+  end
+
   it "keeps accounts isolated and ignores nonblocking targets" do
     other_project = create(:project)
     local = graph([ 1, 2 ])

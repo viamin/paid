@@ -118,6 +118,25 @@
   *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
 
+- [x] **AUTO-PICK-QUEUE-016** — Each path issue in a dependency-cycle Inbox
+  occurrence SHALL carry its title and labels, and, when it has a parent
+  issue, that parent's linked umbrella number and title. Long titles and
+  label lists SHALL remain readable on narrow screens by truncating with the
+  full value available on hover and on keyboard focus. The Inbox API cycle
+  payload SHALL carry the same title, labels, and umbrella-parent context on
+  each path issue as the web detail pane, so an API or agent client can
+  inspect the identical cycle. Umbrella-parent context SHALL be omitted for a
+  path issue whose parent issue's project falls outside the viewer's
+  authorized projects.
+  *Tests:* `spec/services/issues/dependency_cycles_spec.rb`,
+  `spec/services/inbox/queue_dependency_cycle_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/requests/api/v1/inbox_spec.rb`,
+  `spec/views/dashboard/inbox_detail_dependency_cycle_partial_spec.rb`.
+  *Code:* `Issues::DependencyCycles`, `Inbox::Queue`,
+  `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`,
+  `Api::V1::InboxEntrySerializer`, `docs/api/openapi.yaml`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label
