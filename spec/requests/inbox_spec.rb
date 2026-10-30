@@ -2360,11 +2360,7 @@ RSpec.describe "Inbox" do
 
   # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
   it "renders finding evidence and records a decision without plan-review actions" do
-    finding = create_layered_verification_finding
-    check_result = create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
-      execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
-      input_revision: { "code" => "abc123", "intent" => finding.obligation.external_revision })
-    finding.update!(observations: [ { "check_result_ids" => [ check_result.id ] } ])
+    finding = create_finding_with_observation
     key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
 
     get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
@@ -2447,5 +2443,14 @@ RSpec.describe "Inbox" do
       decision: { "question" => "How should this discrepancy be handled?",
                   "options" => %w[request_repair approve_clarification defer],
                   "consequences" => [ "Repair requires separate authorization." ] })
+  end
+
+  def create_finding_with_observation
+    finding = create_layered_verification_finding
+    check_result = create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
+      execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
+      input_revision: { "code" => "abc123", "intent" => finding.obligation.external_revision })
+    finding.update!(observations: [ { "check_result_ids" => [ check_result.id ] } ])
+    finding
   end
 end
