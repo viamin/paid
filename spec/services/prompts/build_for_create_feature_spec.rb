@@ -328,11 +328,10 @@ RSpec.describe Prompts::BuildForCreateFeature do
 
   describe "DB-prompt routing" do
     it "uses the DB prompt when one is seeded for coding.create_feature_prompt" do
-      prompt = create(
-        :prompt,
-        slug: Prompts::BuildForCreateFeature::PROMPT_SLUG,
-        category: "coding"
-      )
+      prompt = Prompt.find_or_create_by!(slug: Prompts::BuildForCreateFeature::PROMPT_SLUG) do |record|
+        record.name = "Create feature prompt"
+        record.category = "coding"
+      end
       version = prompt.create_version!(
         template: "DB prompt for {{project_name}}: {{feature_brief}}"
       )

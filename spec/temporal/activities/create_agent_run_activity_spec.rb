@@ -1263,7 +1263,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
         agent_run = AgentRun.find(result[:agent_run_id])
         agent_run.update!(service_container_ids: [ database_container.id ])
-        expect(agent_run.prompt_for_issue).to include("Work on #{issue.title}\n\n# Available Services")
+        expect(agent_run.prompt_for_issue).to include("Work on #{issue.title}\n\n# Criterion-Level Verification")
+        expect(agent_run.prompt_for_issue).to include("# Available Services")
       end
     end
 

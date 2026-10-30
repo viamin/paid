@@ -61,6 +61,19 @@ explicit states. Evidence becomes stale when its commit differs from the run's
 reviewed commit. This supplements RDR-076's shared evidence contract; it does
 not create merge authority or a separate acceptance model.
 
+### Criterion verification references
+
+Every issue implementation run receives the criterion-result schema and may
+report a criterion's selected verification kind and structured references to a
+test result or other inspectable evidence, even when the project has not
+enabled interactive verification. The recorder preserves these as reported
+references only: it never promotes them, their names, browser steps, or prose
+into verified coverage. Failed, skipped, and not-run criteria remain visibly
+contradicted, skipped, or unverified so a skipped ephemeral job or unavailable
+browser flow cannot disappear behind a green broad suite. Runtime
+configuration, browser claims, and app-log evidence remain conditional on the
+project's interactive-verification setting.
+
 ## Trace Artifact Contract
 
 Real agent-run trace viewing is tied to the same durable storage contract used

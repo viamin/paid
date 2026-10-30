@@ -93,6 +93,13 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Do not push")
     end
 
+    it "includes criterion-level verification planning on the legacy builder entry point" do # @spec PROMPT-ASSEMBLY-024
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).to include("# Criterion-Level Verification")
+      expect(prompt).to include(".ephemeral-tests/")
+    end
+
     it "enforces lint and tests before committing" do
       prompt = described_class.call(issue: issue, project: project)
 

@@ -4,7 +4,7 @@ require "json"
 require "shellwords"
 
 module AgentRuns
-  # @spec LIVE-PREVIEW-005
+  # @spec LIVE-PREVIEW-005 LIVE-PREVIEW-011
   class VerificationPrompt
     RESULT_PATH = "tmp/paid-agent-verification.json".freeze
     APP_LOG_PATH = "tmp/paid-agent-verification-app.log".freeze
@@ -22,7 +22,8 @@ module AgentRuns
     end
 
     def call
-      return Section.new(content: "", fallback_result: nil) unless verification_applicable?
+      return Section.new(content: "", fallback_result: nil) unless evidence_applicable?
+      return Section.new(content: render_criterion_section, fallback_result: nil) unless interactive_verification?
 
       runtime_plan = Screenshots::RuntimePlan.call(project: @agent_run.project, repo_path: @repo_path)
       fallback_result = runtime_plan.start_command_available? ? nil : missing_start_command_result(runtime_plan)
@@ -33,7 +34,7 @@ module AgentRuns
       )
     rescue Screenshots::ConfigError => e
       Section.new(
-        content: render_config_error_section(e),
+        content: render_config_error_section(e) + render_criterion_section,
         fallback_result: {
           "status" => "skipped",
           "reason" => "verification_configuration_invalid",
@@ -45,8 +46,42 @@ module AgentRuns
 
     private
 
-    def verification_applicable?
-      @agent_run.verification_applicable? && @repo_path.present?
+    def evidence_applicable?
+      @repo_path.present? && (interactive_verification? || issue_implementation?)
+    end
+
+    def interactive_verification?
+      @agent_run.verification_applicable?
+    end
+
+    def issue_implementation?
+      @agent_run.create_pr_goal? && @agent_run.issue_id.present?
+    end
+
+    def render_criterion_section
+      <<~SECTION
+
+        # Acceptance Criterion Evidence
+
+        Before you finish, record criterion-level verification evidence by writing JSON to `#{RESULT_PATH}`:
+
+        ```json
+        {
+          "status": "passed",
+          "summary": "Short verification summary",
+          "acceptance_criteria": [{
+            "id": "AC-1",
+            "status": "passed",
+            "verification": {
+              "kind": "permanent_system_test",
+              "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
+            }
+          }]
+        }
+        ```
+
+        #{criterion_evidence_instructions}
+      SECTION
     end
 
     def render_section(runtime_plan, fallback_result:)
@@ -101,9 +136,19 @@ module AgentRuns
           "used_browser_tools": true,
           "browser_steps": ["Opened the changed page", "Exercised the updated flow"],
           "changed_surfaces": ["List the user-visible area you checked"],
+          "acceptance_criteria": [{
+            "id": "AC-1",
+            "status": "passed",
+            "verification": {
+              "kind": "permanent_system_test",
+              "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
+            }
+          }],
           "artifacts": [{"kind": "app_log", "path": "#{APP_LOG_PATH}"}]
         }
         ```
+
+        #{criterion_evidence_instructions}
 
         Allowed `status` values:
         - `passed` when the app started and the interactive check succeeded
@@ -112,6 +157,19 @@ module AgentRuns
 
         If the normal start command is unavailable, you may determine an equivalent command yourself. If verification still cannot run, write a `skipped` result explaining why.#{fallback_reason_sentence(fallback_result)}
       SECTION
+    end
+
+    def criterion_evidence_instructions
+      <<~INSTRUCTIONS.squish
+        For every relevant acceptance criterion, include its `id`, `status`, and `verification` kind plus concrete
+        inspectable references at this PR head. Use `permanent_system_test` for important user flows,
+        `unit_or_service_test` for focused rules, `ephemeral_system_test` for PR-only one-off coverage, and
+        `human_or_external_evidence` where automation cannot settle the criterion. Reference each test result,
+        artifact, or external evidence explicitly. Do not infer a pass from a test name, agent prose, a broad suite,
+        or browser steps. Criterion `status` must be `passed`, `failed`, `skipped`, or `not_run`. Record blocked,
+        skipped, missing browser coverage, and human or external criteria without attached evidence as `skipped` or
+        `not_run` with a reason.
+      INSTRUCTIONS
     end
 
     def render_config_error_section(error)

@@ -193,3 +193,17 @@
   `PromptAssembly::Sections::SafetyRules`.
   *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/services/prompt_assembly/build_custom_prompt_spec.rb`.
+
+- [x] **PROMPT-ASSEMBLY-024** — When an issue-implementation prompt is built
+  through either the fallback/legacy task template or
+  `PromptAssembly::BuildIssuePrompt`, it SHALL require a pre-implementation,
+  criterion-to-verification plan: permanent system tests for important
+  recurring user flows, focused unit/service tests for rules or recurring
+  defects, PR-only ephemeral system/integration tests for complex one-off or
+  non-essential flows, and actual inspectable evidence for human/external
+  criteria. It SHALL state that a broad suite, test name, agent prose, or
+  skipped job does not establish criterion coverage.
+  *Code:* `PromptAssembly::Sections::IssueTask`,
+  `Prompts::BuildForIssue`.
+  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/services/prompts/build_for_issue_spec.rb`.
