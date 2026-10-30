@@ -376,7 +376,7 @@ class Project < ApplicationRecord
   # @spec LABEL-INTEGRATION-001
   before_validation :apply_tenant_label_integration_default, on: :create
   after_update_commit :invalidate_relationship_parsing_on_trust_change
-  after_update_commit :bump_inbox_cache_for_merge_policy_change, if: :merge_policy_changed?
+  after_update_commit :bump_inbox_cache_for_membership_change, if: :inbox_cache_membership_changed?
 
   validates :name, presence: true
   validates :owner, presence: true
@@ -1930,12 +1930,18 @@ class Project < ApplicationRecord
   private
 
   # @spec INBOX-FOUNDATION-011
-  def bump_inbox_cache_for_merge_policy_change
+  # Phase settings decide whether a phase-owned entry is actionable. Merge
+  # policy decides whether a PR belongs to the manual-approval lane. Both
+  # therefore change Inbox membership, counts, and filter availability.
+  # @spec INBOX-PHASE-RELEVANCE-005
+  def bump_inbox_cache_for_membership_change
     Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
   end
 
-  def merge_policy_changed?
-    saved_change_to_auto_merge_mode? || saved_change_to_owner_reviewer_login?
+  def inbox_cache_membership_changed?
+    saved_change_to_auto_merge_mode? ||
+      saved_change_to_owner_reviewer_login? ||
+      saved_change_to_automation_phase_settings?
   end
 
   def reset_issue_sync_state # @spec UPSTREAM-ISSUE-006

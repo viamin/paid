@@ -33,11 +33,10 @@ module Inbox
 
     # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
     # When any visible project runs the phase model, the count comes from the
-    # same scope-filtered queue the list renders, so the badge can never
-    # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent, but only requires resolving each removed request;
-    # rebuilding every Inbox entry on a cache miss is unnecessary. Otherwise
-    # the cheap SQL approximation is unchanged.
+    # same scope-filtered availability matrix the list renders, so the badge
+    # preserves grants, manual actions, and record-specific phase ownership.
+    # Personal removal is rollout-independent, but only requires resolving each
+    # removed request. Otherwise the cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
 
@@ -52,7 +51,10 @@ module Inbox
     end
 
     def governed_count
-      [ Inbox::Queue.call(user: user).size, DISPLAY_CAP ].min
+      # Availability owns the shared, versioned per-user matrix for filters.
+      # Reusing it prevents a badge cache miss from independently rebuilding
+      # the queue when the list or filters have already warmed that matrix.
+      [ Inbox::Availability.call(user: user).total_count, DISPLAY_CAP ].min
     end
 
     def phase_model_governed?
