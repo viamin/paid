@@ -7,6 +7,15 @@ class PromptAssembly::Sections::IssueTask
   include PromptAssembly::Sections::Base
 
   PROMPT_SLUG = "coding.issue_implementation"
+  CRITERION_VERIFICATION_REQUIREMENTS = [
+    /Before implementation, map every acceptance criterion to the smallest\s+credible verification/,
+    /permanent system test for an important recurring user flow/,
+    /focused\s+unit\/service test for a recurring rule or defect/,
+    /PR-only ephemeral\s+`\.ephemeral-tests\/` system\/integration test for a complex one-off or\s+non-essential flow/,
+    /Human or external criteria require their actual inspectable evidence/,
+    /A broad green suite is not criterion coverage\./,
+    /Do not infer a pass from a test name, agent prose, or a skipped job\./
+  ].freeze
 
   # The instruction block rendered into the issue-implementation prompt when
   # the project has quiet mode enabled. Kept identical to the PR follow-up
@@ -145,20 +154,27 @@ class PromptAssembly::Sections::IssueTask
     )
   end
 
+  # @spec PROMPT-ASSEMBLY-024
   def task_template
     template = PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
-    return template if template.include?("# Criterion-Level Verification")
+    return template if criterion_verification_requirements_present?(template)
 
-    [ template, criterion_verification_guidance ].join("\n\n")
+    [ template, criterion_verification_guidance(include_heading: !criterion_verification_heading?(template)) ].join("\n\n")
+  end
+
+  def criterion_verification_requirements_present?(template)
+    CRITERION_VERIFICATION_REQUIREMENTS.all? { |requirement| template.match?(requirement) }
+  end
+
+  def criterion_verification_heading?(template)
+    template.include?("# Criterion-Level Verification")
   end
 
   # Kept outside the persisted template so existing prompt versions gain the
   # contract immediately; the seed keeps it durable for new prompt records.
-  # @spec PROMPT-ASSEMBLY-024
-  def criterion_verification_guidance
+  def criterion_verification_guidance(include_heading:)
     <<~GUIDANCE
-      # Criterion-Level Verification
-
+      #{"# Criterion-Level Verification\n" if include_heading}
       Before implementation, map every acceptance criterion to the smallest
       credible verification and record the plan in the PR/run evidence. Use a
       permanent system test for an important recurring user flow (for example

@@ -154,6 +154,28 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).to include("focused unit/service test")
       expect(result.text).to include(".ephemeral-tests/")
       expect(result.text).to include("Human or external criteria require their actual inspectable evidence")
+      expect(result.text.scan("# Criterion-Level Verification").length).to eq(1)
+    end
+
+    it "adds the full verification contract to a pinned template with only its heading" do # @spec PROMPT-ASSEMBLY-024
+      prompt = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |record|
+        record.name = "Issue implementation"
+        record.category = "coding"
+        record.active = true
+      end
+      prompt.create_version!(
+        template: "# Task\n\nImplement {{title}}.\n\n# Criterion-Level Verification\n\nRun tests.",
+        variables: []
+      )
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt.current_version)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("permanent system test for an important recurring user flow")
+      expect(result.text).to match(/focused\s+unit\/service test for a recurring rule or defect/)
+      expect(result.text).to include(".ephemeral-tests/")
+      expect(result.text).to include("A broad green suite is not criterion coverage.")
+      expect(result.text.scan("# Criterion-Level Verification").length).to eq(1)
     end
 
     it "omits RDR rollout guard guidance when the issue does not reference an RDR" do
