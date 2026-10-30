@@ -101,9 +101,19 @@ module AgentRuns
           "used_browser_tools": true,
           "browser_steps": ["Opened the changed page", "Exercised the updated flow"],
           "changed_surfaces": ["List the user-visible area you checked"],
+          "acceptance_criteria": [{
+            "id": "AC-1",
+            "status": "passed",
+            "verification": {
+              "kind": "permanent_system_test",
+              "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
+            }
+          }],
           "artifacts": [{"kind": "app_log", "path": "#{APP_LOG_PATH}"}]
         }
         ```
+
+        For every relevant acceptance criterion, include its `id`, `status`, and `verification` kind plus concrete inspectable references at this PR head. Use `permanent_system_test` for important user flows, `unit_or_service_test` for focused rules, `ephemeral_system_test` for PR-only one-off coverage, and `human_or_external_evidence` where automation cannot settle the criterion. Reference each test result, artifact, or external evidence explicitly. Do not infer a pass from a test name, agent prose, a broad suite, or browser steps. Record blocked, skipped, and missing browser coverage as `skipped` or `not_run` with a reason.
 
         Allowed `status` values:
         - `passed` when the app started and the interactive check succeeded

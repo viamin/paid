@@ -246,6 +246,7 @@ module AgentRuns
           "reported_status" => reported_status,
           "reported_assertions" => normalize_string_array(criterion["assertions"]),
           "reported_steps" => normalize_string_array(criterion["steps"]),
+          "reported_verification" => normalize_criterion_verification(criterion["verification"]),
           "state" => coverage_state(reported_status),
           "reason" => coverage_reason(reported_status)
         }.compact
@@ -256,8 +257,26 @@ module AgentRuns
       Array(value).filter_map do |criterion|
         next unless criterion.is_a?(Hash)
 
-        criterion.deep_stringify_keys.slice("id", "status", "assertions", "steps").presence
+        criterion.deep_stringify_keys.slice("id", "status", "assertions", "steps", "verification").then do |normalized|
+          normalized["verification"] = normalize_criterion_verification(normalized["verification"])
+          normalized.presence
+        end
       end.first(50)
+    end
+
+    # Criterion references are agent-reported claims. Preserve their structured
+    # locator/result form for review without deriving coverage from their text.
+    # @spec LIVE-PREVIEW-011
+    def normalize_criterion_verification(value)
+      return unless value.is_a?(Hash)
+
+      verification = value.deep_stringify_keys.slice("kind", "reason")
+      verification["references"] = Array(value["references"] || value[:references]).filter_map do |reference|
+        next unless reference.is_a?(Hash)
+
+        reference.deep_stringify_keys.slice("locator", "result", "reason", "url").presence
+      end.first(20).presence
+      verification.compact.presence
     end
 
     def coverage_state(status)

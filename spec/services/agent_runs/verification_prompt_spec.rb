@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::VerificationPrompt do
-  # @spec LIVE-PREVIEW-005
+  # @spec LIVE-PREVIEW-005 LIVE-PREVIEW-011
   let(:project) { create(:project, screenshot_settings: { "verification_enabled" => true }) }
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) { create(:agent_run, :with_git_context, project: project, issue: issue) }
@@ -36,6 +36,14 @@ RSpec.describe AgentRuns::VerificationPrompt do
     expect(section.content).to include("--data-binary @-")
     expect(section.content).to include("application-diagnostics")
     expect(section.fallback_result).to be_nil
+  end
+
+  it "requires criterion evidence references in the recorded result" do
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include('"acceptance_criteria"')
+    expect(section.content).to include('"verification"')
+    expect(section.content).to include("Do not infer a pass from a test name")
   end
 
   it "produces a skip fallback when no start command can be auto-detected" do

@@ -226,6 +226,17 @@ extracted from the DB-stored template into
 `PromptAssembly::Sections::SafetyRules`; a migration syncs the seeded template
 so the rules are no longer embedded (and therefore never duplicated).
 
+## Criterion-Level Verification Instructions (#4786)
+
+Both the fallback/legacy issue-task template and the PromptAssembly issue-task
+section require implementation runs to choose verification per acceptance
+criterion before code changes. Important recurring user flows use permanent
+system coverage; focused rules use unit or service coverage; complex one-off or
+non-essential flows may use a PR-only `.ephemeral-tests/` system/integration
+test that is removed before merge. Human and external criteria retain their
+actual inspectable evidence requirement. A broad green suite, test name, or
+agent prose is not criterion coverage.
+
 ## Remaining Direct Prompt Builders
 
 The full RDR-054 migration is phased. The runner-time goal wrappers (#3379)

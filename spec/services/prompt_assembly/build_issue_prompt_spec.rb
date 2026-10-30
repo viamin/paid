@@ -3,7 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
-# @spec PROMPT-ASSEMBLY-014, PROMPT-ASSEMBLY-015
+# @spec PROMPT-ASSEMBLY-014, PROMPT-ASSEMBLY-015, PROMPT-ASSEMBLY-024
 RSpec.describe PromptAssembly::BuildIssuePrompt do
   let(:configured_containers) { [] }
 
@@ -144,6 +144,16 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).to include("MUST pass before every commit")
       expect(result.text).to include("Never use `--no-verify`")
       expect(result.text).to include("Fix forward")
+    end
+
+    it "requires a criterion-level, right-sized verification plan" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to include("# Criterion-Level Verification")
+      expect(result.text).to include("permanent system test")
+      expect(result.text).to include("focused unit/service test")
+      expect(result.text).to include(".ephemeral-tests/")
+      expect(result.text).to include("Human or external criteria require their actual inspectable evidence")
     end
 
     it "omits RDR rollout guard guidance when the issue does not reference an RDR" do
