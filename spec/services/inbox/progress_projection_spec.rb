@@ -73,15 +73,18 @@ RSpec.describe Inbox::ProgressProjection do
     expect(milestone(projection, "owner_approval")).to include(state: "unknown")
   end
 
-  it "marks an approved test verdict stale when it belongs to an earlier head" do # @spec INBOX-PROGRESS-002
+  it "blocks merge when an approved test verdict belongs to an earlier head" do # @spec INBOX-PROGRESS-002
     project = create(:project, tdd_mode: "strict")
     pull_request = create(:issue, :pull_request, project:, labels: [ "paid-tests-approved" ],
-      last_scanned_head_sha: "b" * 40, tdd_review_head_sha: "a" * 40)
+      pr_review_phase: "ready", last_scanned_head_sha: "b" * 40, tdd_review_head_sha: "a" * 40,
+      auto_merge_head_sha: "b" * 40, auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
 
     projection = described_class.call(issue: pull_request).to_h
 
     expect(milestone(projection, "test_review")).to include(state: "stale")
     expect(milestone(projection, "implementation")).to include(state: "waiting")
+    expect(milestone(projection, "merge")).to include(state: "blocked")
   end
 
   it "marks implementation and proposed-test review inapplicable for a linked design PR" do # @spec INBOX-PROGRESS-001

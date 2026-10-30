@@ -120,7 +120,7 @@ module Inbox
       return milestone("merge", "Merge", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase?
       return milestone("merge", "Merge", "unknown", evidence: head_evidence("github_state"),
         next_action: "Confirm why the pull request closed without merge evidence.") if issue.github_state == "closed"
-      return milestone("merge", "Merge", "blocked", next_action: "Complete the earlier delivery gates.") unless code_review.state == "complete" && owner_approval.state == "complete"
+      return milestone("merge", "Merge", "blocked", next_action: "Complete the earlier delivery gates.") unless delivery_gates_complete?
       return milestone("merge", "Merge", "current", evidence: assessment_evidence,
         next_action: "Review the current changes and make the manual merge decision on GitHub.") if project.auto_merge_mode == "off"
 
@@ -175,6 +175,10 @@ module Inbox
 
     def stale_owner_approval?
       failed_blockers.any? { |blocker| blocker["signal"] == "reviews_fresh" }
+    end
+
+    def delivery_gates_complete?
+      implementation.state.in?(%w[complete not_applicable]) && code_review.state == "complete" && owner_approval.state == "complete"
     end
 
     def current_test_review? = issue.effective_tdd_review_state.present? && issue.tdd_review_head_sha == current_head
