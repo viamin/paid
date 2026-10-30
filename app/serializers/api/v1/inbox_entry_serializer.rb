@@ -126,12 +126,12 @@ module Api
 
       def cycle_analysis_run_payload(cycle)
         run = cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).detect do |candidate|
-          candidate.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") == cycle.occurrence
+          candidate.external_metadata.dig(CycleAnalyses::METADATA_KEY, "fingerprint") == cycle.fingerprint
         end
         return unless run
 
         { id: run.id, status: run.status, graph_revision: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "graph_revision"),
-          stale: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "graph_revision") != cycle.graph_revision,
+          stale: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") != cycle.occurrence,
           recommendation: run.verification_result.dig(CycleAnalyses::RESULT_KEY, "recommendation") }
       end
 

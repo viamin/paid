@@ -49,6 +49,7 @@ module CycleAnalyses
 
     def snapshot
       {
+        "fingerprint" => cycle.fingerprint,
         "occurrence" => cycle.occurrence,
         "graph_revision" => cycle.graph_revision,
         "project_ids" => cycle.project_ids,

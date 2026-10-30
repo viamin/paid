@@ -87,6 +87,28 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("entry", "id")).to eq(entry.fetch("id"))
   end
 
+  # @spec AUTO-PICK-QUEUE-019 MOBILE-API-006
+  it "keeps a prior analysis visible and marks it stale after the cycle edges change" do
+    issues = Array.new(3) { create(:issue, project:, github_state: "open") }
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1])
+    create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
+    create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
+    cycle = Issues::DependencyCycles.call(account:).sole
+    run = create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
+        "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
+      verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => "Review all declarations." } })
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[2])
+    current_cycle = Issues::DependencyCycles.call(account:).sole
+
+    get "/api/v1/inbox/entries/#{current_cycle.id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "analysis_run")).to include(
+      "id" => run.id, "stale" => true, "recommendation" => "Review all declarations."
+    )
+  end
+
   # @spec MOBILE-API-006 MOBILE-API-010
   it "paginates the inbox before serializing entries" do
     issues = create_list(:issue, 3, :needs_input, project:, needs_input_questions: [ "What should happen?" ])

@@ -45,7 +45,7 @@ module CycleAnalyses
 
     def issue_payload(issue)
       { id: issue.id, project: issue.project.full_name, number: issue.github_number, title: issue.title,
-        labels: issue.labels, parent: parent_payload(issue), url: issue.github_url, body: issue.body,
+        labels: issue.labels, parent: parent_payload(issue), url: issue.github_url, body: capped(issue.body),
         trusted_comments: trusted_comments(issue) }
     end
 
@@ -63,7 +63,9 @@ module CycleAnalyses
 
     def trusted_comments(issue)
       Prompts::BuildForIssue.fetch_trusted_comments(github_client: issue.project.client, repo: issue.project.full_name,
-        number: issue.github_number, project: issue.project).map { |comment| { author: comment.user.login, body: comment.body, url: comment.html_url } }
+        number: issue.github_number, project: issue.project).map do |comment|
+          { author: comment.user.login, body: capped(comment.body), url: comment.html_url }
+        end
     rescue GithubClient::Error
       []
     end
@@ -71,6 +73,10 @@ module CycleAnalyses
     def coverage
       { "unavailable_provenance_edge_ids" => cycle.effective_edges.filter_map { |edge| edge.id if edge.declaration_url.blank? },
         "unavailable_content_issue_ids" => cycle.issues.filter_map { |issue| issue.id if issue.body.blank? } }
+    end
+
+    def capped(content)
+      content.to_s[0, Prompts::BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH]
     end
 
     def response_text(response)
