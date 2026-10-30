@@ -74,21 +74,15 @@
           </div>
         </div>
 
-        <%= render "sidebar_list",
-                   sessions: sessions,
-                   sidebar_has_more: local_assigns.fetch(:sidebar_has_more, false),
-                   sidebar_next_frame_id: sidebar_next_frame_id,
-                   sidebar_next_params: sidebar_next_params,
-                   archived_view: local_assigns.fetch(:archived_view, false) %>
+        <%# @spec CHAT-API-027 — Keep transcript and composer response work
+            independent from history and new-session setup. %>
+        <%= turbo_frame_tag "chat_sessions_sidebar_content",
+                            src: sidebar_page_chat_sessions_path(content: "true", active_session_id: active_session&.id),
+                            loading: :lazy do %>
+          <p class="p-4 text-sm text-gray-500">Loading chat history...</p>
+        <% end %>
       </aside>
     </div>
   </div>
 
-  <% if can_create_chat_session %>
-    <%= render "new_session_modal",
-               chat_session: chat_session,
-               available_runners: available_runners,
-               available_projects: available_projects,
-               available_models: available_models %>
-  <% end %>
 </div>

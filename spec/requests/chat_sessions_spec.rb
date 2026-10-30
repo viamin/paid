@@ -483,6 +483,22 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      # @spec CHAT-API-027
+      it "defers sidebar history and new-chat setup until after the usable chat response" do
+        create(:chat_session, account: account, created_by: user, title: "Deferred sidebar session")
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        document = Nokogiri::HTML(response.body)
+        sidebar_frame = document.at_css("turbo-frame#chat_sessions_sidebar_content")
+
+        expect(document.at_css("textarea[name=content]")).to be_present
+        expect(response.body).not_to include("Deferred sidebar session")
+        expect(sidebar_frame["src"]).to include(sidebar_page_chat_sessions_path)
+        expect(sidebar_frame["loading"]).to eq("lazy")
+      end
+
       # @spec QUESTION-EXPLORATION-015
       it "renders only the chat panel in a requesting Inbox frame" do
         create(:chat_message, :assistant, chat_session: chat_session, content: "Inbox conversation")
@@ -1004,7 +1020,7 @@ RSpec.describe "ChatSessions" do
       it "defaults the new-session modal auto-approve checkbox from user settings" do
         user.settings.update!(default_auto_approve: true)
 
-        get chat_session_path(chat_session)
+        get sidebar_page_chat_sessions_path, params: { content: "true" }
 
         expect(response).to have_http_status(:ok)
         doc = Nokogiri::HTML(response.body)
@@ -1019,7 +1035,7 @@ RSpec.describe "ChatSessions" do
       it "leaves the new-session modal auto-approve checkbox unchecked when the user disables the default" do
         user.settings.update!(default_auto_approve: false)
 
-        get chat_session_path(chat_session)
+        get sidebar_page_chat_sessions_path, params: { content: "true" }
 
         expect(response).to have_http_status(:ok)
         doc = Nokogiri::HTML(response.body)
@@ -1095,7 +1111,7 @@ RSpec.describe "ChatSessions" do
       it "wires the new-chat dialog to refresh runner and model choices for the selected project" do
         create_openai_chat_runner
 
-        get chat_session_path(chat_session)
+        get sidebar_page_chat_sessions_path, params: { content: "true" }
 
         doc = Nokogiri::HTML(response.body)
         dialog_form = doc.at_css("dialog form[data-controller='chat-runner-model-options']")
@@ -1176,7 +1192,7 @@ RSpec.describe "ChatSessions" do
           create(:chat_session, account: account, created_by: user, title: "Recent #{index}", updated_at: index.minutes.ago)
         end
 
-        get chat_session_path(chat_session)
+        get sidebar_page_chat_sessions_path, params: { content: "true", active_session_id: chat_session.id }
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(data-session-id="#{chat_session.id}"))
@@ -1353,6 +1369,21 @@ RSpec.describe "ChatSessions" do
       expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list"/)
       expect(response.body).to match(/<div[^>]*id="chat_sessions_list_active"/)
       expect(response.body).to include("Active")
+    end
+
+    # @spec CHAT-API-027
+    it "loads history and new-chat setup in the deferred sidebar frame" do
+      create(:chat_session, account: account, created_by: user, title: "Deferred sidebar session")
+
+      get sidebar_page_chat_sessions_path,
+        params: { content: "true" },
+        headers: { "Turbo-Frame" => "chat_sessions_sidebar_content" }
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      expect(document.at_css("turbo-frame#chat_sessions_sidebar_content")).to be_present
+      expect(response.body).to include("Deferred sidebar session")
+      expect(document.at_css("dialog[data-chat-session-list-target='modal']")).to be_present
     end
 
     it "renders the stable sidebar frame for archived sessions" do

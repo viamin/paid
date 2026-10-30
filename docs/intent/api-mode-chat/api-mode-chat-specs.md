@@ -588,3 +588,20 @@
   `app/views/chat_messages/_tool_call_group.html.erb`,
   `app/javascript/controllers/chat_controller.js#appendToolCard`,
   `#mergeResolvedCardIntoAdjacentRun`.
+
+- [x] **CHAT-API-027** — When rendering the full HTML chat page, the system
+  SHALL return the selected session's bounded transcript and composer without
+  synchronously loading sidebar history or new-session setup. It SHALL load
+  those sidebar concerns in a lazy, independently authorized frame while
+  preserving active-session pinning, active/archived pagination, and the
+  existing mobile and desktop sidebar controls. Sidebar preview lookup SHALL
+  project at most the display-sized prefix of the first non-system message,
+  ordered by creation time, and SHALL not cache a mutable transcript or an
+  authorization decision; a created or changed message SHALL therefore be
+  reflected by the next sidebar response.
+  *Tests:* `spec/requests/chat_sessions_spec.rb`,
+  `spec/helpers/chat_sessions_helper_spec.rb`.
+  *Code:* `ChatSessionsController#show`, `#sidebar_page`,
+  `#load_sidebar_data`, `ChatSession.with_preview_content`,
+  `app/views/chat_sessions/_sidebar.html.erb`,
+  `app/views/chat_sessions/_sidebar_content.html.erb`.

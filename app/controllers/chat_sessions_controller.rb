@@ -30,7 +30,7 @@ class ChatSessionsController < ApplicationController
           skip_policy_scope
           redirect_to chat_session_path(session)
         else
-          load_sidebar_data
+          @chat_session = nil
           @chat_messages = []
         end
       end
@@ -95,7 +95,14 @@ class ChatSessionsController < ApplicationController
     render json: { options: options.map { |option| { label: option.label, value: option.value } } }
   end
 
+  # @spec CHAT-API-027
   def sidebar_page
+    if params[:content] == "true"
+      active_session = policy_scope(ChatSession).find_by(id: params[:active_session_id])
+      load_sidebar_data(active_session:)
+      return render partial: "chat_sessions/sidebar_content", locals: sidebar_content_locals
+    end
+
     archived = archived_param?
     sidebar = sidebar_batch(
       archived: archived,
@@ -144,12 +151,14 @@ class ChatSessionsController < ApplicationController
     end
   end
 
+  # @spec CHAT-API-027
   def show
     authorize @chat_session
 
     respond_to do |format|
       format.html do
         load_chat_messages
+        load_chat_panel_data
 
         if popup_request?
           render partial: "chat_sessions/popup", locals: {
@@ -160,8 +169,6 @@ class ChatSessionsController < ApplicationController
         elsif requested_frame.present?
           load_chat_panel_data
           render partial: "chat_sessions/frame", locals: chat_panel_locals.merge(frame_id: requested_frame)
-        else
-          load_sidebar_data(active_session: @chat_session)
         end
       end
 
@@ -602,8 +609,21 @@ class ChatSessionsController < ApplicationController
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
     @new_chat_session = ChatSession.new(container_capability: "none", auto_approve: current_user.settings.default_auto_approve)
-    load_chat_panel_data
+    @available_runners = available_chat_runners
     @available_projects = current_account.projects.order(:name)
+  end
+
+  def sidebar_content_locals
+    {
+      sessions: @sessions,
+      sidebar_has_more: @sidebar_has_more,
+      sidebar_next_frame_id: @sidebar_next_frame_id,
+      sidebar_next_params: @sidebar_next_params,
+      archived_view: @archived_view,
+      chat_session: @new_chat_session,
+      available_runners: @available_runners,
+      available_projects: @available_projects
+    }
   end
 
   def load_chat_panel_data
