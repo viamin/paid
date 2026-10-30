@@ -1,11 +1,11 @@
 # EARS: Optimization Recipes
 
-> **Draft — pending design acceptance.** These active-gap claims trace to
+> **Accepted intent; implementation gaps.** These active-gap claims trace to
 > [`optimization-recipes-design.md`](optimization-recipes-design.md) and draft
-> RDR-075. They authorize no implementation until accepted and merged. #4492
-> is tracking only and owns none of the claims. #4495 records the owner policy
-> decisions reconciled here; #4636 remains the required acceptance decision
-> for this exact canonical revision.
+> RDR-075. Owner acceptance is recorded in
+> [#4636](https://github.com/viamin/paid/issues/4636#issuecomment-6534710003).
+> Base maintenance acceptance and normal delivery gates still apply. #4492
+> is tracking only and owns none of the claims.
 
 ## Catalog and Type Menu — [#4493](https://github.com/viamin/paid/issues/4493)
 

@@ -795,7 +795,7 @@ arrows:
     taxonomy: runtime
     status: MAPPED
     sampled: 2026-10-28
-    next: "Draft LLD/EARS only; #4636 owner acceptance of the catalog, standing-based assessment, and bounded-repair policy gates #4493-#4496. #4492 is tracking only. Do not release the children before that acceptance, base maintenance acceptance (#4635), M01-M04 contracts, and #4604 live tool-handoff evidence."
+    next: "Owner accepted the optimization catalog, standing-based assessment, and bounded-repair policy in #4636. #4492 is tracking only. Base maintenance acceptance (#4635), M01-M04 contracts, and #4604 live tool-handoff evidence still gate the executable children #4493-#4496. This acceptance does not enable rollout."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

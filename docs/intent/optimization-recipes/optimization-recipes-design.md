@@ -5,10 +5,10 @@ prefix: MAINT-OPT
 
 # Low-Level Design: Optimization Recipes
 
-> **Draft — pending design acceptance.** This reviewable contract extends the
-> draft [RDR-075](../../rdrs/RDR-075-general-maintenance-runs.md) and the
-> [`maintenance-runs`](../maintenance-runs/maintenance-runs-design.md) LLD. It
-> authorizes no implementation, rollout, or automatic repair.
+> **Accepted intent; implementation gated.** This contract extends the draft
+> [RDR-075](../../rdrs/RDR-075-general-maintenance-runs.md) and the
+> [`maintenance-runs`](../maintenance-runs/maintenance-runs-design.md) LLD.
+> Acceptance does not enable rollout or automatic repair.
 
 ## Purpose
 
@@ -37,11 +37,13 @@ approved-finding scope, idempotency, and security default-deny. This LLD
 expresses those decisions without changing their meaning: its ordered standing
 is an uncalibrated semantic assessment, not a numeric confidence claim.
 
-[#4636](https://github.com/viamin/paid/issues/4636) is the pending owner
-decision on this precise HLD/LLD/EARS revision. Until an owner accepts that
-revision and the canonical artifacts merge, this is preparation only: none of
-the work under #4493–#4496 may treat the recorded #4495 agreement as authorization to
-implement, enable `maintenance_runs`, or auto-queue a repair.
+The owner
+[accepted this HLD/LLD/EARS revision](https://github.com/viamin/paid/issues/4636#issuecomment-6534710003)
+on 2026-10-30, with exact source identities recorded in #4636. Acceptance
+resolves the optimization policy decision. Work under #4493–#4496 remains
+subject to base RDR-075 acceptance, live tool-handoff evidence, and normal
+implementation controls; it cannot enable `maintenance_runs` or auto-queue
+a repair from this decision alone.
 
 ## Catalog and Scope
 
@@ -96,7 +98,8 @@ avoiding false claims that model probability is calibrated.
 
 ## Bounded Automatic Repair Policy
 
-This policy is inert until accepted. Automatic repair is off by default and
+This accepted policy remains inert until its implementation and rollout are
+separately authorized. Automatic repair is off by default and
 is a per-run election captured at run start; it is never tenant-, project-, or
 recipe-wide. A non-election is report-only. Schedules cannot elect it.
 
@@ -118,7 +121,7 @@ admissions/queues while retaining reports and in-flight repairs.
 
 `security_hardening` is `manual_only` pending a dedicated accuracy and safety
 review. Newly staged types are `default_deny` until separate owner
-authorization. This is a preparation-only policy, not a rollout decision.
+authorization. This is accepted intent, not a rollout decision.
 
 ## Issue Mapping
 
@@ -139,7 +142,7 @@ authorization. This is a preparation-only policy, not a rollout decision.
 | Type widening | Separate owner authorization | Per-run election cannot make a manual-only type automatic. |
 | Default minimum | `supported` | Requires affirmative evidence without inventing a stronger evidence guarantee. |
 | Dispatch timing | `completed` report only | Partial coverage must not silently support a repair. |
-| Acceptance boundary | Explicit owner acceptance of this canonical revision | #4495 supplies policy provenance; #4636 decides whether this revision becomes implementation intent. |
+| Acceptance boundary | Explicit owner acceptance of this canonical revision | #4495 supplies policy provenance; #4636 records the owner decision independently of rollout. |
 
 ## What This Is Not
 

@@ -355,11 +355,11 @@ non-functional audits selected from a code-defined catalog and scoped by a
 free-form natural-language target as readily as paths or symbols. Semantic
 repair eligibility belongs to an `agent_harness` assessment; authorization,
 budgets, idempotency, and revalidation remain deterministic code gates.
-Automatic repair is a draft, per-run, off-by-default election, bounded to the
+Automatic repair has an accepted, per-run, off-by-default policy, bounded to the
 approved finding and unavailable to security hardening. See
-`docs/intent/optimization-recipes/`; its #4495 owner-decision provenance is
-recorded there, while #4636 remains the explicit acceptance decision. The
-family remains unaccepted and does not enable implementation or rollout.
+`docs/intent/optimization-recipes/`; #4636 records the explicit owner
+acceptance. This scoped policy decision does not enable implementation or
+rollout while the base maintenance contract remains unaccepted.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
