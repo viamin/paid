@@ -46,9 +46,10 @@ export default class extends Controller {
     this.observer.observe(this.listTarget, { childList: true, subtree: true })
   }
 
+  // @spec CHAT-API-027
   handleFrameRender(event) {
     const targetId = event.target?.id
-    if (targetId !== "chat_sessions_list") return
+    if (!["chat_sessions_list", "chat_sessions_sidebar_content"].includes(targetId)) return
 
     this.setupObserver()
     this.filter()

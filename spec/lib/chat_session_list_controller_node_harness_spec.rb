@@ -345,10 +345,64 @@ class ChatSessionListControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-027
+    // The lazy outer frame arrives after this controller connects, so the
+    // arriving cards must receive the existing search and active-row state.
+    function runLazySidebarFrameRenderCase() {
+      const activeClasses = "bg-indigo-50 ring-1 ring-inset ring-indigo-200";
+      const buildCard = (sessionId, searchText) => ({
+        classList: buildClassList(["hover:bg-gray-50"]),
+        dataset: { activeClasses, searchText, sessionId: String(sessionId) }
+      });
+      const selectedCard = buildCard(42, "selected conversation");
+      const matchingCard = buildCard(7, "matching conversation");
+
+      global.window = {
+        MutationObserver: class {
+          constructor(callback) {
+            this.callback = callback;
+          }
+
+          disconnect() {}
+
+          observe() {}
+        },
+        location: { pathname: "/chat/42" }
+      };
+
+      const controller = Object.create(ChatSessionListController.prototype);
+      controller.cardTargets = [selectedCard, matchingCard];
+      controller.hasActiveSessionIdValue = true;
+      controller.activeSessionIdValue = 42;
+      controller.hasListTarget = true;
+      controller.listTarget = {};
+      controller.hasSearchInputTarget = true;
+      controller.searchInputTarget = { value: "matching" };
+
+      controller.handleFrameRender({ target: { id: "chat_sessions_sidebar_content" } });
+
+      if (!controller.observer) {
+        throw new Error("Expected the lazy sidebar frame to initialize its list observer");
+      }
+
+      if (!selectedCard.classList.contains("bg-indigo-50")) {
+        throw new Error("Expected the selected lazy-loaded card to receive the active-row class");
+      }
+
+      if (!selectedCard.classList.contains("hidden")) {
+        throw new Error("Expected the existing search to filter a nonmatching lazy-loaded card");
+      }
+
+      if (matchingCard.classList.contains("hidden")) {
+        throw new Error("Expected the existing search to keep a matching lazy-loaded card visible");
+      }
+    }
+
     runModernListenerCase();
     runLegacyListenerCase();
     runMissingMatchMediaCase();
     runUpdateActiveCardCase();
+    runLazySidebarFrameRenderCase();
   JAVASCRIPT
 
   def self.run
@@ -357,8 +411,8 @@ class ChatSessionListControllerNodeHarness
 end
 
 RSpec.describe ChatSessionListControllerNodeHarness, :no_db do
-  # @spec LIST-DETAIL-003
-  it "toggles the mobile sidebar, supports legacy media query listeners, and keeps hover exclusive with the active card" do
+  # @spec LIST-DETAIL-003, CHAT-API-027
+  it "preserves sidebar controls when the lazy history frame arrives" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE
