@@ -5,7 +5,7 @@
 # later remove it.
 class AgentPlanningHold < ApplicationRecord
   STATUSES = %w[needs_review held released reconciliation_failed].freeze
-  SUPPORTED_RELEASE_CONDITION_KINDS = %w[dependencies_resolved issue_closed].freeze
+  SUPPORTED_RELEASE_CONDITION_KINDS = %w[agent_run_finished dependencies_resolved issue_closed].freeze
 
   belongs_to :account
   belongs_to :project

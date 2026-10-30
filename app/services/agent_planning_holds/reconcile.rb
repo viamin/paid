@@ -38,6 +38,10 @@ module AgentPlanningHolds
 
     def condition_satisfied?
       case hold.release_condition["kind"]
+      when "agent_run_finished"
+        return false unless hold.agent_run_id.to_s == hold.release_condition["agent_run_id"].to_s
+
+        hold.agent_run&.finished?
       when "dependencies_resolved" then hold.issue.ready_to_work?
       when "issue_closed"
         project.issues.find_by(github_number: hold.release_condition["issue_number"])&.github_state == "closed"

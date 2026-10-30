@@ -75,6 +75,21 @@ RSpec.describe AgentPlanningHolds::Capture do
     expect(hold).to have_attributes(status: "needs_review", release_condition: {})
   end
 
+  it "does not let a supplied run-completion condition point at another run" do
+    other_run = create(:agent_run, project:)
+    contract = {
+      task_kind: "implementation",
+      reason: "Wait for the originating run.",
+      release_condition: { kind: "agent_run_finished", agent_run_id: other_run.id },
+      evidence: { scope_revision: "issue@v1" }
+    }
+
+    hold = described_class.call(project:, agent_run: run, issue_number: issue.github_number, contract:,
+      label_preexisting: false)
+
+    expect(hold).to have_attributes(status: "needs_review", release_condition: { "kind" => "agent_run_finished", "agent_run_id" => other_run.id })
+  end
+
   it "routes an unsupported release condition to operator review" do
     contract = {
       task_kind: "implementation",

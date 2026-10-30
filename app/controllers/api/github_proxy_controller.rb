@@ -349,8 +349,8 @@ module Api
 
     # The GitHub label is an eligibility control but has no ownership metadata.
     # Capture the authenticated run's direct write at the proxy boundary; an
-    # optional structured header supplies the release contract.  Without it we
-    # intentionally create review work instead of treating the bot as owner.
+    # optional structured header supplies the release contract. Without it, the
+    # authenticated run and issue supply a durable run-completion contract.
     # @spec CONFIDENCE-DELIVERY-018
     def track_agent_planning_hold(path, label_preexisting:)
       return unless @agent_run
@@ -365,6 +365,7 @@ module Api
         agent_run: @agent_run,
         issue_number: match[:number].to_i,
         contract: planning_hold_contract,
+        contract_supplied: planning_hold_contract_supplied?,
         label_preexisting:
       )
     rescue ActiveRecord::ActiveRecordError, ActiveModel::RangeError => e
@@ -414,6 +415,10 @@ module Api
       parsed.is_a?(Hash) ? parsed.deep_stringify_keys : {}
     rescue JSON::ParserError
       {}
+    end
+
+    def planning_hold_contract_supplied?
+      request.headers["X-Paid-Planning-Hold"].present?
     end
 
     def track_review_creation(path, response)

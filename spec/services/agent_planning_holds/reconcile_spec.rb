@@ -47,6 +47,21 @@ RSpec.describe AgentPlanningHolds::Reconcile do
     expect(issue.reload.labels).to be_empty
   end
 
+  it "releases an ordinary agent hold after its originating run finishes" do
+    run.update!(status: "failed", completed_at: Time.current)
+    ordinary_hold = create_agent_hold(
+      release_condition: { "kind" => "agent_run_finished", "agent_run_id" => run.id },
+      status: "held"
+    )
+    allow(project.client).to receive(:remove_label_from_issue)
+    allow(project.client).to receive(:issue).and_return(remote_issue(labels: []))
+
+    result = described_class.call(hold: ordinary_hold)
+
+    expect(result).to be_released
+    expect(ordinary_hold.reload.status).to eq("released")
+  end
+
   it "routes a previously captured unsupported condition to operator review" do
     unsupported_hold = create_agent_hold(
       release_condition: { "kind" => "design_revision_accepted", "issue_number" => issue.github_number },

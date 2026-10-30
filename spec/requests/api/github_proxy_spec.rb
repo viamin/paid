@@ -253,8 +253,8 @@ RSpec.describe "Api::GithubProxy" do
       expect(response).to have_http_status(:ok)
     end
 
-    it "records an agent-authored planning label without claiming ownership" do # @spec CONFIDENCE-DELIVERY-018
-      create(:issue, project:, github_number: 42, labels: [ "planning" ])
+    it "records an ordinary agent-authored planning label with a run-completion contract" do # @spec CONFIDENCE-DELIVERY-018
+      create(:issue, project:, github_number: 42, labels: [])
 
       expect {
         post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
@@ -263,8 +263,9 @@ RSpec.describe "Api::GithubProxy" do
       }.to change(AgentPlanningHold, :count).by(1)
 
       hold = AgentPlanningHold.last
-      expect(hold).to have_attributes(agent_run:, status: "needs_review", task_kind: nil)
-      expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: hold.issue).blocking).to exist
+      expect(hold).to have_attributes(agent_run:, status: "held", task_kind: "agent_run")
+      expect(hold.release_condition).to eq("kind" => "agent_run_finished", "agent_run_id" => agent_run.id)
+      expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: hold.issue)).not_to exist
     end
 
     it "does not claim a pre-existing planning label with a complete contract" do # @spec CONFIDENCE-DELIVERY-018
