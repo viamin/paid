@@ -72,3 +72,10 @@ each ships.
   transient or genuine condition as a successful setup.
   *Code:* `Models::CatalogSnapshot`, `ChatSessions::CuratedModelOptions`,
   `ChatSessions::ModelUnavailableError`, `Onboarding::ConfigureChatRunner`.
+
+- [x] **ONBOARD-CHAT-015** — When a new API-key onboarding runner resolves
+  its initial Low-tier chat model, Paid SHALL apply only fresh unavailable
+  availability evidence scoped to that runner's account. Global evidence and
+  evidence for another authentication mode SHALL remain diagnostic; the
+  runner/auth compatibility contract continues to reject globally incompatible
+  models before availability filtering.
