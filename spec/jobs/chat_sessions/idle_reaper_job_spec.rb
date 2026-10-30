@@ -8,6 +8,21 @@ RSpec.describe ChatSessions::IdleReaperJob do
   let(:expired_at) { 1.minute.ago }
 
   describe "#perform" do
+    # @spec CHAT-API-028
+    it "preserves an untouched inline chat as a resumable closed session" do
+      session = create(:chat_session, account: account, created_by: user, idle_timeout_at: 1.minute.ago)
+      create(:chat_message, :system, chat_session: session)
+
+      described_class.new.perform
+
+      expect(session.reload.status).to eq("closed")
+      expect(session.idle_timeout_at).to be_nil
+      expect(session.messages.count).to eq(1)
+
+      ChatSessions::Resume.call(chat_session: session)
+      expect(session.reload.status).to eq("active")
+    end
+
     it "closes inline-only sessions past their idle timeout" do
       session = create(:chat_session,
         account: account,

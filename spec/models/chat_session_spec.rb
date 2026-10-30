@@ -517,6 +517,38 @@ RSpec.describe ChatSession do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
 
+    # @spec CHAT-API-029
+    it "refreshes an updated chat card in one sidebar event" do
+      session = create(:chat_session, :active, account: account, created_by: user)
+      expect(Turbo::StreamsChannel).to receive(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/session_card",
+        locals: { chat_session: session }
+      ).once
+      expect(Turbo::StreamsChannel).not_to receive(:broadcast_remove_to).with(
+        [ account, :chat_sessions ], target: ActionView::RecordIdentifier.dom_id(session)
+      )
+
+      session.update!(title: "Updated chat")
+    end
+
+    # @spec CHAT-API-029
+    it "keeps a chat card in the active list when its runtime status becomes idle" do
+      session = create(:chat_session, :active, account: account, created_by: user)
+      expect(Turbo::StreamsChannel).not_to receive(:broadcast_remove_to).with(
+        [ account, :chat_sessions ], target: ActionView::RecordIdentifier.dom_id(session)
+      )
+      expect(Turbo::StreamsChannel).to receive(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/session_card",
+        locals: { chat_session: session }
+      ).once
+
+      session.update!(status: "idle")
+    end
+
     it "prepends new sessions into the active card list container" do
       create(:chat_session, :active, account: account, created_by: user)
 
@@ -533,6 +565,9 @@ RSpec.describe ChatSession do
 
       session.update!(status: "archived")
 
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_remove_to).with(
+        [ account, :chat_sessions ], target: ActionView::RecordIdentifier.dom_id(session)
+      )
       expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
         [ account, :chat_sessions ],
         target: "chat_sessions_list_archived",

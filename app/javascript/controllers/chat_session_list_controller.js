@@ -22,6 +22,7 @@ export default class extends Controller {
     this.element.addEventListener("turbo:frame-render", this.boundOnFrameRender)
 
     this.setupObserver()
+    this.deduplicateCards()
     this.filter()
     this.updateActiveCard()
     this.enableNewChatButtons()
@@ -42,6 +43,7 @@ export default class extends Controller {
     if (!this.hasListTarget) return
 
     this.observer = new window.MutationObserver(() => {
+      this.deduplicateCards()
       this.filter()
       this.updateActiveCard()
     })
@@ -51,9 +53,11 @@ export default class extends Controller {
   // @spec CHAT-API-027
   handleFrameRender(event) {
     const targetId = event.target?.id
-    if (!["chat_sessions_list", "chat_sessions_sidebar_content"].includes(targetId)) return
+    const isSidebarFrame = ["chat_sessions_list", "chat_sessions_sidebar_content"].includes(targetId)
+    if (!isSidebarFrame && !targetId?.startsWith("sidebar_page_")) return
 
-    this.setupObserver()
+    if (isSidebarFrame) this.setupObserver()
+    this.deduplicateCards()
     this.filter()
     this.updateActiveCard()
     this.enableNewChatButtons()
@@ -78,6 +82,17 @@ export default class extends Controller {
     if (this.mediaQuery?.matches || !this.hasSidebarContentFrameTarget) return
 
     this.sidebarContentFrameTarget.reload()
+  }
+
+  // @spec CHAT-API-029
+  deduplicateCards() {
+    const seen = new Set()
+
+    this.cardTargets.forEach((card) => {
+      const id = card.dataset.sessionId
+      if (seen.has(id)) card.remove()
+      else seen.add(id)
+    })
   }
 
   filter() {
