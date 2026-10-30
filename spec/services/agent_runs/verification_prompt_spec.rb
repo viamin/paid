@@ -46,6 +46,28 @@ RSpec.describe AgentRuns::VerificationPrompt do
     expect(section.content).to include("Do not infer a pass from a test name")
   end
 
+  # @spec LIVE-PREVIEW-011
+  it "requires criterion evidence for issue runs when interactive verification is disabled" do
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include("# Acceptance Criterion Evidence")
+    expect(section.content).to include('"acceptance_criteria"')
+    expect(section.content).not_to include("# Interactive Verification")
+    expect(section.fallback_result).to be_nil
+  end
+
+  it "does not add criterion evidence to an issue-less run when interactive verification is disabled" do
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+    agent_run.update!(issue: nil)
+
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to be_empty
+    expect(section.fallback_result).to be_nil
+  end
+
   it "produces a skip fallback when no start command can be auto-detected" do
     File.delete(File.join(repo_path, "bin/rails"))
 

@@ -165,6 +165,39 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(result.dig("evidence", "limitations")).to include("agent_reported_browser_steps_are_not_observed_evidence")
   end
 
+  # @spec LIVE-PREVIEW-011
+  it "persists criterion evidence without browser evidence when interactive verification is disabled" do
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+    File.write(result_path, JSON.generate(
+      status: "passed",
+      app_url: "http://localhost:3000/settings",
+      used_browser_tools: true,
+      browser_steps: [ "Clicked save" ],
+      acceptance_criteria: criterion_report
+    ))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    result = agent_run.reload.verification_result
+    expect(result).to include("status" => "passed", "reported_status" => "passed")
+    expect_criterion_coverage(result)
+    expect(result).not_to include("app_url", "used_browser_tools", "browser_steps")
+    expect(result.dig("evidence", "runtime_configuration")).to be_nil
+    expect(result.dig("evidence", "observed_artifacts")).to be_nil
+  end
+
+  # @spec LIVE-PREVIEW-011
+  it "records missing criterion evidence when interactive verification is disabled" do
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include(
+      "status" => "not_run",
+      "reason" => "verification_result_missing"
+    )
+  end
+
   # @spec LIVE-PREVIEW-010
   it "retains reported criterion coverage when rebinding the result to the shipped commit" do
     File.write(result_path, JSON.generate(

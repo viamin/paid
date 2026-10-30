@@ -62,13 +62,15 @@
   *Code:* `app/services/agent_runs/verification_result_recorder.rb`.
   *Test:* `spec/services/agent_runs/verification_result_recorder_spec.rb`.
 
-- [x] **LIVE-PREVIEW-011** — When an interactive verification result reports
-  acceptance criteria, the agent SHALL be instructed to provide each
+- [x] **LIVE-PREVIEW-011** — For every issue implementation run, regardless of
+  whether interactive verification is enabled, the agent SHALL be instructed
+  to provide each
   criterion's selected verification kind and concrete test-result or other
   inspectable-evidence references. The recorder SHALL preserve those
   references as reported data and SHALL expose failed, skipped, and not-run
   criteria without deriving passed coverage from a test name, agent prose,
-  browser steps, or a skipped ephemeral job.
+  browser steps, or a skipped ephemeral job. Runtime configuration, browser
+  claims, and app-log evidence SHALL remain gated by interactive verification.
   *Code:* `app/services/agent_runs/verification_prompt.rb`,
   `app/services/agent_runs/verification_result_recorder.rb`.
   *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,

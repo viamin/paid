@@ -5,7 +5,7 @@ require "open3"
 require "pathname"
 
 module AgentRuns
-  # @spec LIVE-PREVIEW-005
+  # @spec LIVE-PREVIEW-005 LIVE-PREVIEW-011
   class VerificationResultRecorder
     VALID_STATUSES = %w[passed failed skipped not_run].freeze
     MAX_RETAINED_ARTIFACT_BYTES = 512.kilobytes
@@ -32,12 +32,11 @@ module AgentRuns
         gate: "pull_request_verification",
         result_commit: @result_commit
       )
-      # The rollout flag and project mode guard the apple paths; interactive
-      # verification only guards the interactive result. Record whenever
-      # interactive verification is enabled OR a binding apple decision must
-      # be reflected in the PR verification result.
+      # The rollout flag and project mode guard the apple paths. Criterion
+      # evidence is always recorded for issue implementation runs; interactive
+      # verification only guards browser-specific evidence.
       # @spec APPLE-ATTEMPT-011
-      if !@agent_run.project.verification_enabled? && !apple_decision.enforcing?
+      unless evidence_recording_applicable?(apple_decision)
         clear_apple_only_result
         return
       end
@@ -57,6 +56,18 @@ module AgentRuns
     end
 
     private
+
+    def evidence_recording_applicable?(apple_decision)
+      interactive_verification? || issue_implementation? || apple_decision.enforcing?
+    end
+
+    def interactive_verification?
+      @agent_run.verification_applicable?
+    end
+
+    def issue_implementation?
+      @agent_run.create_pr_goal? && @agent_run.issue_id.present?
+    end
 
     def build_result(apple_decision)
       payload = interactive_payload(recorded_result || @fallback_result.presence)
@@ -86,6 +97,8 @@ module AgentRuns
     end
 
     def merge_captured_log(hash)
+      return hash unless interactive_verification?
+
       tail = captured_log_tail
       return hash if tail.blank?
 
@@ -132,10 +145,6 @@ module AgentRuns
       hash = payload.is_a?(Hash) ? payload.deep_stringify_keys : {}
       status = hash["status"].to_s
       status = "failed" unless status.in?(VALID_STATUSES)
-      recorder_log = app_log_tail
-      recorder_log_tail = recorder_log[:content]
-      log_tail = recorder_log_tail.presence
-      truncated_flag = log_truncated(recorder_log[:truncated])
 
       result = {
         "status" => status,
@@ -143,24 +152,31 @@ module AgentRuns
         "summary" => hash["summary"].presence || default_summary_for(status),
         "reason" => hash["reason"].presence,
         "details" => hash["details"].presence,
-        "app_url" => hash["app_url"].presence,
-        "start_command" => hash["start_command"].presence,
-        "used_browser_tools" => hash["used_browser_tools"] == true,
-        "browser_steps" => normalize_string_array(hash["browser_steps"]),
-        "changed_surfaces" => normalize_string_array(hash["changed_surfaces"]),
         "reported_acceptance_criteria" => normalize_criteria(hash["acceptance_criteria"] || hash["reported_acceptance_criteria"]),
         "artifacts" => normalize_artifacts(hash["artifacts"]),
         "evidence" => evidence_for(hash),
         "recorded_at" => Time.current.iso8601
       }.compact
-      if log_tail.present?
-        result.merge!(
-          "app_log_tail" => log_tail,
-          "app_log_recorded_at" => Time.current.iso8601,
-          "app_log_truncated" => truncated_flag
-        )
-      end
+      result.merge!(interactive_result_fields(hash)) if interactive_verification?
       add_readiness_observation(result)
+    end
+
+    def interactive_result_fields(hash)
+      recorder_log = app_log_tail
+      fields = {
+        "app_url" => hash["app_url"].presence,
+        "start_command" => hash["start_command"].presence,
+        "used_browser_tools" => hash["used_browser_tools"] == true,
+        "browser_steps" => normalize_string_array(hash["browser_steps"]),
+        "changed_surfaces" => normalize_string_array(hash["changed_surfaces"])
+      }.compact
+      return fields if recorder_log[:content].blank?
+
+      fields.merge(
+        "app_log_tail" => recorder_log[:content],
+        "app_log_recorded_at" => Time.current.iso8601,
+        "app_log_truncated" => log_truncated(recorder_log[:truncated])
+      )
     end
 
     def captured_log_tail
@@ -184,15 +200,19 @@ module AgentRuns
     # accidentally treat a reported pass as accepted evidence.
     # @spec LIVE-PREVIEW-010
     def evidence_for(payload)
-      {
+      evidence = {
         "tested_commit" => tested_commit,
         "freshness" => freshness,
-        "runtime_configuration" => runtime_configuration,
         "reported_artifact_assessments" => reported_artifact_assessments(payload["artifacts"]),
-        "observed_artifacts" => observed_artifacts,
         "coverage" => coverage_for(payload["acceptance_criteria"] || payload["reported_acceptance_criteria"]),
         "limitations" => evidence_limitations
       }.compact
+      return evidence unless interactive_verification?
+
+      evidence.merge(
+        "runtime_configuration" => runtime_configuration,
+        "observed_artifacts" => observed_artifacts
+      )
     end
 
     def tested_commit
@@ -378,10 +398,13 @@ module AgentRuns
     end
 
     def evidence_limitations
-      [
+      limitations = [ "agent_reported_references_are_not_recorder_owned_evidence" ]
+      return limitations unless interactive_verification?
+
+      limitations.concat([
         "agent_reported_browser_steps_are_not_observed_evidence",
         "screenshots_and_app_logs_do_not_prove_arbitrary_acceptance_criteria"
-      ]
+      ])
     end
 
     def normalize_string_array(value)
@@ -437,16 +460,16 @@ module AgentRuns
       {
         "status" => "not_run",
         "reason" => "verification_result_missing",
-        "summary" => "Verification was enabled, but no verification result was recorded."
+        "summary" => "No verification result was recorded."
       }
     end
 
     def default_summary_for(status)
       {
-        "passed" => "Interactive verification passed.",
-        "failed" => "Interactive verification failed.",
-        "skipped" => "Interactive verification was skipped.",
-        "not_run" => "Interactive verification did not run."
+        "passed" => "Verification passed.",
+        "failed" => "Verification failed.",
+        "skipped" => "Verification was skipped.",
+        "not_run" => "Verification did not run."
       }.fetch(status)
     end
 
