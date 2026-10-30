@@ -15,6 +15,8 @@ RSpec.describe LayeredVerification::Audits::SynthesizeCoverage do
     coverage = described_class.call(agent_run: audit, obligations: [ obligation ])
 
     expect(coverage.dig(obligation, :obligation_coverage)).to eq("unresolved")
+    # @spec LAYERED-VERIFY-015: a clean or unresolved-only audit creates no Inbox finding.
+    expect(LayeredVerificationFinding.count).to eq(0)
   end
 
   # @spec LAYERED-VERIFY-024

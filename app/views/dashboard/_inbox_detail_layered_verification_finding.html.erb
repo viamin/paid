@@ -8,6 +8,14 @@
   <div><dt class="font-medium text-gray-900">Obligation</dt><dd class="mt-1"><%= finding.obligation.external_identity %> — <%= finding.obligation.scope_description %></dd></div>
   <div><dt class="font-medium text-gray-900">Source revision</dt><dd class="mt-1 font-mono text-xs"><%= finding.obligation.external_revision.presence || "Unresolved" %></dd></div>
   <div><dt class="font-medium text-gray-900">Audit revision</dt><dd class="mt-1 font-mono text-xs"><%= audit_revision.presence || "Unresolved" %></dd></div>
+  <div><dt class="font-medium text-gray-900">Linked records</dt><dd class="mt-1 space-x-4 text-sm">
+    <%= link_to "Audit run ##{finding.agent_run_id}", project_agent_run_path(finding.project, finding.agent_run), class: "text-indigo-600 hover:text-indigo-900", data: { turbo_frame: "_top" } %>
+    <% if finding.obligation.canonical_source_path.present? %>
+      <%# A content digest is not a git ref; link the branch when the recorded revision cannot address one. %>
+      <% source_ref = finding.obligation.external_revision.to_s.match?(/\A[0-9a-f]{7,40}\z/i) ? finding.obligation.external_revision : finding.project.default_branch %>
+      <%= link_to "Canonical intent source", "#{finding.project.github_url}/blob/#{source_ref}/#{finding.obligation.canonical_source_path}", class: "text-indigo-600 hover:text-indigo-900", target: "_blank", rel: "noopener noreferrer" %>
+    <% end %>
+  </dd></div>
   <div><dt class="font-medium text-gray-900">Conflicting source passages or claims</dt><dd class="mt-1"><%= safe_join(Array(finding.source_passages).map { |passage| tag.p(passage.is_a?(String) ? passage : passage.to_json) }, tag.br) %></dd></div>
   <div><dt class="font-medium text-gray-900">Observed behavior</dt><dd class="mt-1"><%= finding.observed_behavior.is_a?(String) ? finding.observed_behavior : finding.observed_behavior.to_json %></dd></div>
   <div><dt class="font-medium text-gray-900">Check limitations</dt><dd class="mt-1"><ul class="list-disc pl-5"><% Array(finding.check_limitations).each do |limitation| %><li><%= limitation %></li><% end %></ul></dd></div>

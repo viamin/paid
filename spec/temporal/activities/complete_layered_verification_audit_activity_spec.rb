@@ -116,4 +116,24 @@ RSpec.describe Activities::CompleteLayeredVerificationAuditActivity do
       limitations: "The selected check did not produce a recorded outcome."
     )
   end
+
+  # @spec LAYERED-VERIFY-023 LAYERED-VERIFY-024
+  it "binds the completed audit to a review package without starting repair" do
+    audit = create(:agent_run, goal: "layered_verification_audit", status: "running")
+    obligation = create(:layered_verification_obligation, project: audit.project)
+    audit.update!(external_metadata: {
+      "layered_verification" => {
+        "obligation_ids" => [ obligation.id ],
+        "target_revision" => "abc123",
+        "plan" => { obligation.id.to_s => { "selected_checks" => [ "semantic_audit" ] } }
+      }
+    })
+
+    described_class.new.execute(agent_run_id: audit.id)
+
+    package = LayeredVerificationReviewPackage.sole
+    expect(package).to have_attributes(agent_run: audit, revision: 1)
+    expect(package.bound_inputs.dig("scope", "target_revision")).to eq("abc123")
+    expect(AgentRun.where(goal: "layered_verification_repair", project: audit.project)).to be_empty
+  end
 end

@@ -2317,6 +2317,21 @@ RSpec.describe "Inbox" do
     expect(AgentRun.where(goal: "layered_verification_repair", project:)).to be_empty
   end
 
+  # @spec LAYERED-VERIFY-015
+  it "links the finding to its audit run and canonical intent source" do
+    finding = create_layered_verification_finding
+    key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
+
+    get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response.body).to include(
+      "Audit run ##{finding.agent_run_id}",
+      project_agent_run_path(project, finding.agent_run),
+      "Canonical intent source",
+      "#{project.github_url}/blob/#{project.default_branch}/docs/intent/payments-specs.md"
+    )
+  end
+
   # @spec LAYERED-VERIFY-018
   it "accepts a finding decision when the branch advances without changing the canonical source" do
     finding = create_layered_verification_finding

@@ -744,6 +744,42 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Check result ##{result.id}", "Completed")
       end
 
+      # @spec LAYERED-VERIFY-006 LAYERED-VERIFY-023 LAYERED-VERIFY-024
+      it "shows a business-intent validation view separate from verification coverage" do
+        intent_view = intent_validation_view_for_completed_audit
+
+        expect(intent_view).to include("Business intent validation")
+        expect(intent_view).to include("PAYMENTS-017", "Approved", "Capture exactly one charge per checkout.",
+          "docs/intent/payments-specs.md", "merge#101")
+        expect(intent_view).to include("PAYMENTS-018", "Unresolved", "Which handoff ordering is authorized?")
+        expect(intent_view).to include("Authority absent")
+      end
+
+      def intent_validation_view_for_completed_audit
+        approved = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017",
+          external_revision: "a" * 40, canonical_source_path: "docs/intent/payments-specs.md",
+          scope_description: "Capture exactly one charge per checkout.")
+        approved.record_approval!(revision: "a" * 40, approval_reference: "merge#101", persisted: true)
+        unresolved = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-018",
+          approval_state: "unresolved", external_revision: nil, canonical_source_path: "docs/intent/payments-specs.md",
+          scope_description: "Hand off the captured charge to settlement.")
+        agent_run = create(:agent_run, :completed, project:, goal: "layered_verification_audit")
+        result = create(:layered_verification_check_result, obligation: unresolved, agent_run:,
+          execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "duplicate-settlement")
+        agent_run.update!(external_metadata: { "layered_verification" => {
+            "coverage" => {
+              approved.id.to_s => { "obligation_coverage" => "supported", "check_result_ids" => [] },
+              unresolved.id.to_s => { "obligation_coverage" => "contradicted", "check_result_ids" => [ result.id ] }
+            }
+          } })
+        create(:layered_verification_finding, project:, obligation: unresolved, agent_run:,
+          correspondence_claim_type: "spec_to_code", cause_signature: "duplicate-settlement",
+          decision: { "question" => "Which handoff ordering is authorized?" })
+
+        get project_agent_run_path(project, agent_run)
+        response.body.split("Verification coverage").first
+      end
+
       it "masks the auth refresh token input when a browser auth URL is available" do
         agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: "claude")
         without_partial_double_verification do

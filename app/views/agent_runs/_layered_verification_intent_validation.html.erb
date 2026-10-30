@@ -1,0 +1,38 @@
+<%# @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-023 %>
+<% coverage = agent_run.external_metadata.dig("layered_verification", "coverage") %>
+<% obligations = agent_run.project.layered_verification_obligations.where(id: coverage.keys).order(:id) %>
+<% findings_by_obligation = LayeredVerificationFinding.where(obligation: obligations, status: "open").group_by(&:obligation_id) %>
+<% package = agent_run.project.layered_verification_review_packages.where(agent_run:).order(:revision).last %>
+
+<section class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800" aria-labelledby="intent-validation-heading">
+  <h2 id="intent-validation-heading" class="text-sm font-semibold text-gray-900 dark:text-gray-100">Business intent validation</h2>
+  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+    Approving an interpretation here validates business intent only; it never certifies implementation conformance or authorizes repair.
+  </p>
+  <% if package.present? %>
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+      Review package #<%= package.revision %> · digest <%= package.package_digest.first(12) %> · approvals: <%= package.approvals.size %>
+    </p>
+  <% end %>
+  <div class="mt-3 space-y-3">
+    <% obligations.each do |obligation| %>
+      <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+          <p class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= obligation.external_identity %> — <%= obligation.scope_description %></p>
+          <span class="text-sm text-gray-600 dark:text-gray-300"><%= obligation.approval_state.humanize %></span>
+        </div>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Source: <%= obligation.canonical_source_path.presence || "canonical source not yet synchronized" %>
+          <% if obligation.external_revision.present? %> · revision <%= obligation.external_revision %> <% end %>
+          <% if obligation.approved_revision_reference.present? %> · approved by <%= obligation.approved_revision_reference %> <% end %>
+        </p>
+        <% if obligation.approval_state == "unresolved" %>
+          <p class="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">Authority absent: no approved interpretation is recorded for this obligation.</p>
+        <% end %>
+        <% findings_by_obligation[obligation.id]&.each do |finding| %>
+          <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">Open question: <%= finding.decision["question"] %></p>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</section>

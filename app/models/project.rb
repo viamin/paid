@@ -304,6 +304,8 @@ class Project < ApplicationRecord
   # @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
   has_many :layered_verification_obligations, dependent: :delete_all
   has_many :layered_verification_findings, dependent: :delete_all
+  # @spec LAYERED-VERIFY-023
+  has_many :layered_verification_review_packages, dependent: :delete_all
   has_many :agent_runs, dependent: :destroy
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe LayeredVerification::Audits::Request do
   include ActiveJob::TestHelper
@@ -25,6 +26,7 @@ RSpec.describe LayeredVerification::Audits::Request do
 
     expect(run).to have_attributes(goal: "layered_verification_audit", issue: nil, status: "queued")
     expect(run).to have_attributes(base_commit_sha: "resolved-sha")
+    expect(run).to have_attributes(initiating_user: user, trigger_type: "manual")
     expect(run.effective_prompt).to include("Layered-verification audit", "resolved-sha", "spec_to_code")
     expect(run.external_metadata.dig("layered_verification", "budget", "max_minutes")).to eq(15)
   end
