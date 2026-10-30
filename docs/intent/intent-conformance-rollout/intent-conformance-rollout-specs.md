@@ -113,7 +113,10 @@
   duplicating it, SHALL return to the same Inbox context without accepting
   an arbitrary external return URL, and finishing labels or a passing
   evaluation SHALL attach evidence without automatically attesting issue
-  completion, closing GitHub work, or enabling enforcement.
+  completion, closing GitHub work, or enabling enforcement. Its operator-facing
+  Inbox, form, detail, and rendered-report copy SHALL explain the conformance
+  review action without exposing internal design-record identifiers or purpose
+  keys.
   *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
   *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
   `app/controllers/projects/shadow_evaluations_controller.rb`.
