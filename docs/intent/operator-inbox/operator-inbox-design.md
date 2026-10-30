@@ -74,6 +74,24 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+## Detail progress projection
+
+For an issue-backed selected detail only, `Inbox::ProgressProjection` returns
+an ordered, typed lifecycle contract. The contract names design approval,
+proposed-test review, implementation, code review, owner approval, and merge
+as distinct milestones and gives each a state, source evidence, and exact next
+action where known. A project mode makes a milestone applicable; it does not
+turn any other approval into proof of completion. In particular, an approved
+open PR in a manual-merge project remains at the merge milestone.
+
+The projection reads persisted feature-intent approval revisions and linked
+design PR heads, current PR phase/head and TDD verdict state, and the current
+head merge assessment. Missing assessment/head evidence is `unknown`; a head
+or design-head mismatch is `stale`; historical approvals never become current
+by inference. API detail and Inbox contextual chat use this same service. List
+serialization, queue construction, and the badge deliberately do not invoke
+it, avoiding per-item GitHub calls or evidence queries.
+
 Issue-backed lanes retain their project joins when project predicates or
 ordering require them, but preload projects separately. This keeps one shared
 project object per project while preventing a project audit-history payload

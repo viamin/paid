@@ -21,7 +21,7 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload)
+        common_fields.merge(kind_payload).merge(progress_payload)
       end
 
       def render_list
@@ -48,6 +48,15 @@ module Api
         return unless entry.project
 
         { id: entry.project.id, owner: entry.project.owner, repo: entry.project.repo, name: entry.project.full_name }
+      end
+
+      # Deliberately absent from render_list: resolving a lifecycle projection
+      # may load feature and run evidence, which belongs only to the selected
+      # detail item.
+      def progress_payload
+        return {} unless entry.issue
+
+        { progress: Inbox::ProgressProjection.call(issue: entry.issue).to_h }
       end
 
       # One branch per Inbox::Queue::KINDS kind, keyed on each entry's actual

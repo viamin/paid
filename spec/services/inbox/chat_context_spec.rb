@@ -29,6 +29,16 @@ RSpec.describe Inbox::ChatContext do
     expect(chat_session.messages).to be_empty
   end
 
+  it "retrieves the same current progress contract on demand" do
+    # @spec INBOX-PROGRESS-003
+    issue.update!(is_pull_request: true, pr_review_phase: "ready", last_scanned_head_sha: "a" * 40)
+
+    context = described_class.call(chat_session:, user:, sections: [ :progress ])
+
+    expect(context.fetch("progress")).to include(current_head: "a" * 40)
+    expect(context.fetch("progress").fetch(:milestones)).to include(hash_including(id: "merge"))
+  end
+
   it "rejects context access after comment permission is removed" do
     # @spec QUESTION-EXPLORATION-014
     chat_session
