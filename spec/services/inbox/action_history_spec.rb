@@ -26,6 +26,46 @@ RSpec.describe Inbox::ActionHistory do
   end
 
   # @spec OPERATOR-INBOX-022
+  it "preserves the terminal outcome of cancelled and no-output runs" do
+    cancelled = create(:agent_run, project:, issue:, status: "cancelled", completed_at: 2.hours.ago)
+    no_output = create(:agent_run, project:, issue:, status: "no_output", completed_at: 1.hour.ago)
+
+    events = described_class.call(entry:).events.index_by(&:id)
+
+    expect(events.fetch("run-finish:#{cancelled.id}")).to have_attributes(
+      action: "Agent run cancelled", result: "cancelled"
+    )
+    expect(events.fetch("run-finish:#{no_output.id}")).to have_attributes(
+      action: "Agent run completed with no output", result: "no_output"
+    )
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "projects approval revisions and releases for a feature entry" do
+    feature = create(:feature_intent, project:)
+    approver = create(:user)
+    approval = create(:feature_intent_approval_revision, feature_intent: feature, approved_by: approver,
+      approved_at: 2.hours.ago, source: "inbox", pr_heads: { "12" => "a" * 40 })
+    release = project.account.account_activity_events.create!(action: "feature_intent.released", actor: approver,
+      subject: feature, created_at: 1.hour.ago,
+      metadata: { source: "github_reconciliation", merged_revision: "b" * 40 })
+    feature_entry = Inbox::Queue::Entry.new(id: "feature_decision:#{feature.id}", kind: "feature_decision", project:,
+      issue: nil, record: feature, waiting_since: feature.created_at, questions: [], tasks: [],
+      summary_text: "Review feature", title_text: feature.title, action_url: nil)
+
+    events = described_class.call(entry: feature_entry).events.index_by(&:id)
+
+    expect(events.fetch("feature-approval:#{approval.id}")).to have_attributes(
+      action: "Feature approved", actor: approver.email, source: "inbox", result: "completed",
+      revision: "#12@#{"a" * 40}"
+    )
+    expect(events.fetch("feature-release:#{release.id}")).to have_attributes(
+      action: "Feature released", actor: approver.email, source: "github_reconciliation", result: "completed",
+      revision: "b" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-022
   it "exposes only safe GitHub evidence URLs" do
     run = create(:agent_run, :completed, project:, issue:, pull_request_url: "javascript:alert(1)",
       review_url: "https://attacker.example/review")
