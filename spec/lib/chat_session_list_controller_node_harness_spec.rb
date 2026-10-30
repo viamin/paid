@@ -378,6 +378,18 @@ class ChatSessionListControllerNodeHarness
       controller.listTarget = {};
       controller.hasSearchInputTarget = true;
       controller.searchInputTarget = { value: "matching" };
+      const newChatButton = {
+        attributes: {},
+        classList: buildClassList(["cursor-wait", "opacity-50"]),
+        disabled: true,
+        setAttribute(name, value) {
+          this.attributes[name] = value;
+        }
+      };
+      const loadingIndicator = { classList: buildClassList() };
+      controller.hasModalTarget = true;
+      controller.newChatButtonTargets = [newChatButton];
+      controller.newChatLoadingIndicatorTargets = [loadingIndicator];
 
       controller.handleFrameRender({ target: { id: "chat_sessions_sidebar_content" } });
 
@@ -395,6 +407,14 @@ class ChatSessionListControllerNodeHarness
 
       if (matchingCard.classList.contains("hidden")) {
         throw new Error("Expected the existing search to keep a matching lazy-loaded card visible");
+      }
+
+      if (newChatButton.disabled || newChatButton.attributes["aria-disabled"] !== "false") {
+        throw new Error("Expected the lazy frame to enable New Chat after its modal arrives");
+      }
+
+      if (!loadingIndicator.classList.contains("hidden")) {
+        throw new Error("Expected the New Chat loading indicator to hide after its modal arrives");
       }
     }
 

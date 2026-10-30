@@ -76,6 +76,11 @@ choices independently. The selected session ID is an input to the sidebar
 request only; the request resolves it through the normal policy scope and
 does not cache authorization decisions.
 
+New-chat controls remain visible before the lazy frame finishes, but are
+disabled with a loading indicator until that frame supplies their dialog. This
+keeps the chat-first response bounded without presenting an enabled control
+whose action has no modal target.
+
 Sidebar cards receive the first non-system message through a correlated lookup
 that projects only the display-sized prefix. The lookup remains live rather
 than caching transcript data, so message creates and updates are immediately

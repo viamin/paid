@@ -497,6 +497,8 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include("Deferred sidebar session")
         expect(sidebar_frame["src"]).to include(sidebar_page_chat_sessions_path)
         expect(sidebar_frame["loading"]).to eq("lazy")
+        expect(document.css("button[data-chat-session-list-target='newChatButton'][disabled]").size).to eq(2)
+        expect(document.css("[data-chat-session-list-target='newChatLoadingIndicator']").size).to eq(2)
       end
 
       # @spec QUESTION-EXPLORATION-015

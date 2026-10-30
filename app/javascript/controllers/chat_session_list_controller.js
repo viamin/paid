@@ -8,7 +8,7 @@ import { Controller } from "@hotwired/stimulus"
 // change to the active-row treatment lives in
 // `MasterDetailLayoutHelper#master_detail_active_row_classes`, not here.
 export default class extends Controller {
-  static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel"]
+  static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel", "newChatButton", "newChatLoadingIndicator"]
   static values = { activeSessionId: Number }
 
   connect() {
@@ -24,6 +24,7 @@ export default class extends Controller {
     this.setupObserver()
     this.filter()
     this.updateActiveCard()
+    this.enableNewChatButtons()
     this.updateMobileSidebarState()
   }
 
@@ -54,6 +55,19 @@ export default class extends Controller {
     this.setupObserver()
     this.filter()
     this.updateActiveCard()
+    this.enableNewChatButtons()
+  }
+
+  enableNewChatButtons() {
+    if (!this.hasModalTarget) return
+
+    this.newChatButtonTargets.forEach((button) => {
+      button.disabled = false
+      button.setAttribute("aria-disabled", "false")
+      button.classList.remove("cursor-wait", "opacity-50")
+      button.classList.add("hover:bg-indigo-500")
+    })
+    this.newChatLoadingIndicatorTargets.forEach((indicator) => indicator.classList.add("hidden"))
   }
 
   filter() {
