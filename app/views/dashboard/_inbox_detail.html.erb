@@ -40,6 +40,7 @@
     <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
   <% end %>
 
+  <%= render "dashboard/inbox_workflow_milestones", entry: entry if entry.workflow_milestones? %>
   <% if entry.clarifying_questions? %>
     <%= render "dashboard/inbox_detail_clarifying_questions",
           entry: entry,
@@ -97,6 +98,8 @@
     <%= render "dashboard/inbox_detail_traceability_gap", entry: entry %>
   <% elsif entry.layered_verification_finding? %>
     <%= render "dashboard/inbox_detail_layered_verification_finding", entry: entry %>
+  <% elsif entry.dependency_cycle? %>
+    <%= render "dashboard/inbox_detail_dependency_cycle", entry: entry %>
   <% else %>
     <%= render "dashboard/inbox_detail_plan_review",
           entry: entry,

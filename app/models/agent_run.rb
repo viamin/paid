@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  has_many :agent_planning_holds, dependent: :nullify
   attr_readonly :confidence_delivery_snapshot
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"

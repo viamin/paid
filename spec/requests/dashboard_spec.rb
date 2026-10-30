@@ -356,6 +356,16 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      it "renders an actionable dequeue cancellation reason without an internal design ID" do # @spec EAGER-QUEUE-005
+        reason = "This issue is no longer eligible for automatic work. It will be queued again when it becomes eligible."
+        create(:agent_run, :cancelled, project: project, completed_at: 1.minute.ago, error_message: reason)
+
+        get dashboard_recent_activity_path
+
+        expect(response.body).to include(reason)
+        expect(response.body).not_to match(/RDR-\d{3}/)
+      end
+
       it "wires the deferred github credential health turbo frame" do
         get dashboard_path
 
@@ -999,6 +1009,21 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("dashboard-eligibility-breakdown")
       expect(response.body).to include("Auto-Pick Eligibility")
       expect(response.body).to include(project.full_name)
+    end
+
+    # @spec AUTO-PICK-QUEUE-015
+    it "analyzes dependency cycles once for all visible projects" do
+      second_project = create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true)
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:issue, project: second_project, github_state: "open", paid_state: "new")
+
+      queries = capture_queries { get dashboard_eligibility_breakdown_path }
+
+      cycle_edge_queries = queries.count do |sql|
+        sql.include?('SELECT "issue_dependencies"."id", "issue_dependencies"."issue_id", ' \
+          '"issue_dependencies"."depends_on_issue_id"')
+      end
+      expect(cycle_edge_queries).to eq(1)
     end
 
     it "links the needs-input count to the dashboard queue" do

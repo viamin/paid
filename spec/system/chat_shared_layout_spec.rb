@@ -147,7 +147,10 @@ RSpec.describe "Chat shared list-and-detail layout", system_driver: :rack_test, 
     active = create(:chat_session, account: account, created_by: show_user, container_capability: "none", title: "Active chat")
     other = create(:chat_session, account: account, created_by: show_user, container_capability: "none", title: "Other chat")
 
-    visit chat_session_path(active, format: :html)
+    # History is deliberately outside the initial transcript response. Load
+    # the lazy frame explicitly because the rack-test driver does not execute
+    # Turbo's deferred frame request.
+    visit sidebar_page_chat_sessions_path(content: "true", active_session_id: active.id)
 
     document = Nokogiri::HTML(page.body)
     active_link = document.at_css(%(a#chat_session_#{active.id}))

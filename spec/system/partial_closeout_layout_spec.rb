@@ -45,6 +45,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
     issue = create(:issue, project:, github_number: 211, paid_state: "in_progress")
     create(:issue, :pull_request, project:, github_number: 212, github_state: "closed",
       pr_review_phase: "merged", parent_issue_id: issue.id)
+    accepted_audit(issue)
 
     [ 320, 375, 640 ].each do |width|
       page.current_window.resize_to(width, 800)
@@ -59,6 +60,21 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
       expect(textarea[:"aria-describedby"]).to be_present
       expect(element_geometry(textarea).fetch("bottom")).to be <= element_geometry(submit).fetch("top")
     end
+  end
+
+  it "routes upstream issues to GitHub without rendering the fork-close action" do # @spec PARTIAL-CLOSEOUT-006 UPSTREAM-ISSUE-008
+    project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+    issue = create(:issue, project:, github_number: 216, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, github_number: 217, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+    accepted_audit(issue)
+
+    visit inbox_entry_path("partial_closeout:#{issue.id}", project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+
+    expect(page).to have_text("Close on upstream GitHub")
+    expect(page).to have_text("Paid does not mutate upstream issues")
+    expect(page).not_to have_css("form[action='#{resolve_closeout_project_agent_runs_path(project)}']")
   end
 
   it "keeps the link-prerequisite input labeled and usable at mobile widths" do # @spec PARTIAL-CLOSEOUT-016
@@ -101,6 +117,12 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
         };
       })()
     JS
+  end
+
+  def accepted_audit(issue)
+    run = create(:agent_run, :completed, project:, issue:)
+    assessment = { "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => [] }
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, assessment) })
   end
 
   def element_geometry(element)

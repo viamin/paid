@@ -4,6 +4,7 @@ class Project < ApplicationRecord
   include PreferredDockerHostIdentifierValidation
 
   has_many :chat_investigations, dependent: :destroy
+  has_many :agent_planning_holds, dependent: :destroy
 
   self.ignored_columns += [ "pr_aggregation_enabled" ]
 

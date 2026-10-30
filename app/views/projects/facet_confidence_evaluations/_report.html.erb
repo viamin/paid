@@ -98,7 +98,7 @@
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">
     <summary class="cursor-pointer text-sm font-semibold text-gray-900">Reproducible report (markdown)</summary>
-    <pre class="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-gray-700"><%= evaluation.report_markdown %></pre>
+    <pre class="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-gray-700"><%= operator_report_markdown(evaluation.report_markdown) %></pre>
   </details>
 <% end %>
 

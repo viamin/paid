@@ -1,5 +1,30 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-028** — When an untouched inline chat reaches its idle timeout,
+  Paid SHALL retain it as a closed, resumable conversation in the sidebar.
+  Explicitly closing an untouched chat SHALL still remove it. When a full-page
+  HTML chat link names a missing or inaccessible session, Paid SHALL redirect
+  to the chat index with the same generic notice in either case; JSON and
+  embedded requests SHALL retain a not-found response.
+  *Tests:* `spec/services/chat_sessions/expire_idle_inline_spec.rb`,
+  `spec/jobs/chat_sessions/idle_reaper_job_spec.rb`,
+  `spec/requests/chat_sessions_spec.rb`, `spec/services/chat_sessions/close_spec.rb`.
+  *Code:* `ChatSessions::ExpireIdleInline`, `ChatSessions::IdleReaperJob`,
+  `ChatSessionsController#set_chat_session`.
+
+- [x] **CHAT-API-029** — When a chat session is updated without moving between
+  the active and archived sidebar lists, Paid SHALL refresh its card with one
+  prepend stream event and SHALL NOT broadcast a separate removal. Selecting
+  another chat SHALL leave the previously selected session in its sidebar list.
+  When a live update prepends a card also present in a lazy pagination frame,
+  Paid SHALL keep the refreshed card and remove the older duplicate.
+  Moving a session between the two lists SHALL remove its card from the old
+  list and prepend it to the new one.
+  *Tests:* `spec/models/chat_session_spec.rb`,
+  `spec/lib/chat_session_list_controller_node_harness_spec.rb`.
+  *Code:* `ChatSession#broadcast_sidebar_refresh`,
+  `app/javascript/controllers/chat_session_list_controller.js`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and
@@ -588,3 +613,26 @@
   `app/views/chat_messages/_tool_call_group.html.erb`,
   `app/javascript/controllers/chat_controller.js#appendToolCard`,
   `#mergeResolvedCardIntoAdjacentRun`.
+
+- [x] **CHAT-API-027** — When rendering the full HTML chat page, the system
+  SHALL return the selected session's bounded transcript and composer without
+  synchronously loading sidebar history or new-session setup. It SHALL load
+  those sidebar concerns in a lazy, independently authorized frame while
+  preserving active-session pinning, active/archived pagination, and the
+  existing mobile and desktop sidebar controls. Until the lazy frame has
+  supplied the new-session dialog, each visible New Chat control SHALL be
+  disabled with a loading affordance; it SHALL become actionable after that
+  dialog arrives. When the mobile drawer begins hidden, the client SHALL
+  request the sidebar frame without waiting for that drawer to open; a visible
+  desktop sidebar SHALL retain visibility-based lazy loading. Sidebar preview lookup SHALL
+  project at most the display-sized prefix of the first non-system message,
+  ordered by creation time, and SHALL not cache a mutable transcript or an
+  authorization decision; a created or changed message SHALL therefore be
+  reflected by the next sidebar response.
+  *Tests:* `spec/requests/chat_sessions_spec.rb`,
+  `spec/helpers/chat_sessions_helper_spec.rb`,
+  `spec/lib/chat_session_list_controller_node_harness_spec.rb`.
+  *Code:* `ChatSessionsController#show`, `#sidebar_page`,
+  `#load_sidebar_data`, `ChatSession.with_preview_content`,
+  `app/views/chat_sessions/_sidebar.html.erb`,
+  `app/views/chat_sessions/_sidebar_content.html.erb`.

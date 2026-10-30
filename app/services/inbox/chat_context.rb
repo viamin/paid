@@ -135,7 +135,7 @@ module Inbox
       when Queue::FEATURE_DECISION_KIND then feature_intent_context
       when Queue::CHANGE_INTENT_DRAFT_KIND then change_intent_context
       when Queue::PARTIAL_CLOSEOUT_KIND then partial_closeout
-      when Queue::MERGE_APPROVAL_KIND, Queue::ESCALATED_PR_KIND then pull_request_context
+      when Queue::MERGE_APPROVAL_KIND, Queue::ESCALATED_PR_KIND, Queue::TEST_REVIEW_PENDING_KIND then pull_request_context
       else work_item
       end
     end
@@ -234,8 +234,22 @@ module Inbox
         progress: ProgressProjection.call(issue:).to_h,
         blockers: merge_approval ? merge_approval.guidance.fetch(:blockers) : issue.auto_merge_blockers,
         merge_approval_guidance: merge_approval&.guidance,
+        workflow: Inbox::WorkflowMilestones.call(workflow_entry(merge_approval)),
         agent_runs: agent_run_output
       }
+    end
+
+    def workflow_entry(merge_approval)
+      Inbox::Queue::Entry.new(
+        id: "#{inbox_kind}:#{issue.id}", kind: inbox_kind, project: chat_session.project,
+        issue:, record: escalated_pr_record, guidance: merge_approval&.guidance
+      )
+    end
+
+    def escalated_pr_record
+      return unless inbox_kind == Queue::ESCALATED_PR_KIND
+
+      Inbox::EscalatedPullRequests.call(account: chat_session.account, pull_request_id: issue.id).first
     end
 
     def record_attributes(record, *fields)

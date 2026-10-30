@@ -94,6 +94,22 @@ and implementation as not applicable. API detail and Inbox contextual chat use t
 serialization, queue construction, and the badge deliberately do not invoke
 it, avoiding per-item GitHub calls or evidence queries.
 
+## Workflow milestones
+
+Selected `merge_approval`, `escalated_pr`, and `test_review_pending` pull-request
+entries project persisted workflow evidence into a typed milestone contract
+shared by the detail pane, API, and contextual chat. Other issue-backed lanes
+omit that projection because they do not represent this review-and-merge
+workflow. The compact strip names each stage and its textual state; expandable
+milestones carry reason, revision, actor, exact action, and the relevant GitHub
+surface. The projection is selected-entry work only, so Inbox rows and counts
+retain their bounded local queries and make no remote calls. It explicitly
+represents manual merge as a current human action after approval rather than
+treating an approval as a merge. A pending test-review lane shows its gate before
+implementation in either TDD mode; otherwise projects outside strict mode show
+the stage as not applicable. Linked approval-gated feature designs appear only
+when applicable.
+
 ## Durable subject history
 
 Inbox entries remain derived views, but their detail panes expose a bounded

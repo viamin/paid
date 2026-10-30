@@ -435,6 +435,7 @@ RSpec.describe Inbox::Queue do
       expect(entry).to have_attributes(
         summary_text: "Automation stopped before review readiness"
       )
+      expect(entry.guidance).to include(stalled_execution: true)
       expect(entry.guidance.fetch(:instruction)).to include("has not confirmed this pull request is merge-ready")
       expect(stalled_pr.reload.pr_review_phase).to eq("draft")
     end
@@ -1262,25 +1263,16 @@ RSpec.describe Inbox::Queue do
       expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND).map(&:issue)).to eq([ issue ])
     end
 
-    # @spec PARTIAL-CLOSEOUT-006 — resolution suppresses the item; only new evidence recreates it
-    it "keeps a resolved issue out of the lane until new terminal evidence arrives" do
+    # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-037
+    it "keeps an accepted issue in the lane until GitHub closure is observed" do
       issue = create_partial_closeout_issue(github_number: 211)
-      Issues::ResolveCloseout.call(issue: issue, actor: user, reason: "Merged PR #14 covers it.")
-
-      expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)).to be_empty
-
-      create(
-        :issue,
-        :pull_request,
-        project: project,
-        github_number: 15,
-        github_state: "closed",
-        pr_review_phase: "merged",
-        parent_issue_id: issue.id,
-        created_at: Time.current
-      )
+      accept_closeout(issue)
 
       expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND).map(&:issue)).to eq([ issue ])
+
+      issue.update!(github_state: "closed", closed_at: Time.current)
+
+      expect(described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)).to be_empty
     end
 
     # @spec PARTIAL-CLOSEOUT-002 — closed issues stay out
@@ -1852,6 +1844,13 @@ RSpec.describe Inbox::Queue do
       created_at: 2.days.ago
     )
     issue
+  end
+
+  def accept_closeout(issue)
+    run = create(:agent_run, :completed, project: issue.project, issue: issue)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+      "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => []
+    }) })
   end
 
   # A feature intent exercising every deterministic readiness blocker (open

@@ -62,9 +62,18 @@
       execution SHALL stop cooperatively before the next provisioning or
       command boundary and SHALL clean up any environment already provisioned.
       When the partial-closeout Inbox pane has a validation record, it SHALL
-      render the latest outcome and its exact setup action alongside the
-      reviewed-recipe retry control.
+      render the latest outcome and its exact setup action. For each unmet or
+      unknown criterion that the current closeout assessment classifies as
+      requiring technical validation, the
+      Inbox SHALL present one named, reviewed-recipe action when its selected
+      requirement, pinned source run, and exact required tool attachment are ready;
+      otherwise it SHALL state the specific setup action. It SHALL not show a
+      generic recipe picker or present unrelated project checks as acceptance
+      validation. A stale assessment SHALL require a fresh audit before any
+      criterion-specific validation action is offered.
       *Code:* `app/services/technical_prerequisites/capability_inspection.rb`,
+      `app/services/technical_prerequisites/inbox_actions.rb`,
+      `app/services/llm/analyze_partial_closeout.rb`,
       `app/services/technical_prerequisites/start_validation.rb`,
       `app/services/technical_prerequisites/validate_execution.rb`,
       `app/jobs/technical_prerequisite_validation_job.rb`,
@@ -75,6 +84,7 @@
       `spec/services/technical_prerequisites/start_validation_spec.rb`,
       `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
       `spec/requests/projects/technical_prerequisite_validations_spec.rb`,
+      `spec/services/llm/analyze_partial_closeout_spec.rb`,
       `spec/requests/inbox_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
@@ -314,22 +324,54 @@
   `app/jobs/process_run_queue_job.rb`.
   *Test:* `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-006** — When an authorized user resolves a stalled
+- [x] **PARTIAL-CLOSEOUT-006** — When an authorized user closes a stalled
   issue as complete, the system SHALL require closeout evidence, SHALL record
   the actor, a required reason, and the evidence digest it resolves against
   (`closeout_resolved_at`, `closeout_resolution_digest`,
   `closeout_resolved_by_id`), SHALL set `paid_state` to `completed`, and SHALL
-  NOT write to GitHub. The resolution SHALL suppress the inbox entry only
-  while the digest matches the current evidence generation; repeated GitHub
-  sync SHALL NOT recreate the suppressed item without new evidence, and new
-  terminal evidence SHALL recreate it. Resolution and continuation creation
+  recheck a current fully-satisfied criterion assessment, source and intent
+  revisions, open prerequisites, scanner verification, and GitHub state before
+  closing on GitHub. An open issue SHALL remain actionable until GitHub confirms
+  closure; stale, unmet, unknown, blocked, and API-failed closure requests SHALL
+  retain an actionable item with the exact fresh-audit, prerequisite, work, or
+  retry route. When GitHub confirms closure but evidence or a prerequisite
+  changes during the remote write, the system SHALL reconcile the confirmed
+  source closure locally and SHALL preserve the actor, rationale, attempted
+  evidence digest, and newly observed blocker in an auditable follow-up event;
+  it SHALL NOT retain a retry route for an already-closed source. Synthetic
+  code-scanning records SHALL refuse the GitHub Issue
+  close action with guidance to wait for or repair authoritative scanner
+  reconciliation; source closure for those records SHALL be observed from an
+  authoritative code-scanning snapshot rather than the GitHub Issues API.
+  An upstream-target project SHALL refuse this action without contacting its
+  fork repository and SHALL retain the item with a direct upstream-GitHub
+  closure route.
+  Resolution and continuation creation
   SHALL serialize on the issue: resolving SHALL supersede an open continuation
   authorization and cancel its unclaimed queued run before recording the
-  resolution, so no continuation can dispatch after the issue is declared
-  complete.
-  *Code:* `app/services/issues/resolve_closeout.rb`, `app/models/issue.rb`.
+  resolution. Before releasing the issue lock for the remote close, the system
+  SHALL persist a closing-in-progress marker that refuses new continuation
+  authorization and cancels continuation runs at dequeue; a failed remote close
+  SHALL clear only its own marker for retry and SHALL preserve a newer marker
+  that replaced its expired lease. After a successful remote close, an attempt
+  SHALL record local resolution only if it still owns the persisted marker; an
+  attempt that lost its expired lease SHALL preserve the replacement marker and
+  leave local resolution to its owner. The marker SHALL expire after a bounded
+  interval so process termination cannot permanently revoke closeout retries
+  or continuation admission. No continuation can dispatch while closure is in
+  flight or after the issue is declared complete.
+
+- [x] **PARTIAL-CLOSEOUT-037** — When an open issue has a current acceptance
+  audit, the partial-closeout Inbox SHALL distinguish `audit pending`,
+  `accepted and awaiting GitHub closure`, and `unmet criteria`. An internal
+  attestation SHALL NOT suppress an open issue; only observed GitHub closure
+  clears it. The Inbox, controller, and MCP close action SHALL use the same
+  current-assessment and retry semantics.
+  *Code:* `app/services/issues/resolve_closeout.rb`, `app/models/issue.rb`,
+  `app/services/issues/stalled_closeouts.rb`.
   *Test:* `spec/services/issues/resolve_closeout_spec.rb`,
-  `spec/services/inbox/queue_spec.rb`.
+  `spec/services/inbox/queue_spec.rb`, `spec/models/issue_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-007** — When an authorized agent acts through the
   MCP/API surface, the system SHALL offer `request_issue_continuation` and
@@ -524,12 +566,12 @@
   the system SHALL show task-oriented decision guidance covering the five
   operator paths (review the recorded criteria/evidence; continue
   agent-actionable work; create/link prerequisite work; supply human evidence;
-  attest completion only when justified) and SHALL link to an in-app operator
-  guide page that explains, separately, what completes a run, what resolves an
-  Inbox item internally, and what closes a GitHub issue or epic through a
-  final PR. Both the pane and the guide SHALL state that internal resolution
-  records an attestation and leaves the GitHub issue open, and that new
-  terminal evidence can resurface the item. The guide SHALL also explain that
+  close on GitHub only after a current audit accepts every criterion) and SHALL
+  link to an in-app operator guide page that explains, separately, what
+  completes a run, what clears an Inbox item, and how the evidence-gated GitHub
+  close action works. Both the pane and the guide SHALL state that an open issue
+  remains visible despite an internal attestation and that a failed close
+  retains the same retry path. The guide SHALL also explain that
   audit completion, gap transfer to a follow-up owner, and epic acceptance are
   distinct outcomes — a follow-up owner is not completed acceptance evidence —
   and that an explicit scope revision preserves ownership of the outstanding

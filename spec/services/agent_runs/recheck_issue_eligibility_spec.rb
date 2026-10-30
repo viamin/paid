@@ -40,7 +40,8 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
     run.reload
     expect(run.status).to eq("cancelled")
-    expect(run.error_message).to include("no longer eligible")
+    expect(run.error_message).to eq("This issue is no longer eligible for automatic work. It will be queued again when it becomes eligible.")
+    expect(run.error_message).not_to match(/RDR-\d{3}/)
   end
 
   # @spec FEATURE-APPROVAL-023
@@ -55,7 +56,28 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
     expect(described_class.call(run)).to be true
     expect(run.reload.status).to eq("cancelled")
-    expect(run.error_message).to include("Feature intent is held")
+    expect(run.error_message).to eq("This feature is awaiting approval and release. Approve and release the feature to start this run.")
+    expect(run.error_message).not_to match(/RDR-\d{3}/)
+  end
+
+  # @spec FEATURE-APPROVAL-023
+  it "cancels a queued implementation run with dependency recovery guidance" do
+    issue = create(:issue, project: project, github_state: "open")
+    feature = create(:feature_intent, project: project)
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    blocker = create(:issue, project: project, github_state: "open")
+    create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+    run = build(:agent_run, :queued, project: project, issue: issue,
+      goal: "create_pr", trigger_type: "manual", auto_pick: false,
+      base_commit_sha: nil)
+    run.save!(validate: false)
+
+    expect(described_class.call(run)).to be true
+
+    run.reload
+    expect(run.status).to eq("cancelled")
+    expect(run.error_message).to eq("This issue has unresolved dependencies. Complete or remove its dependencies to start this run.")
+    expect(run.error_message).not_to match(/RDR-\d{3}/)
   end
 
   it "keeps the run queued when only its internal Paid state changed" do # @spec AUTO-PICK-QUEUE-008
@@ -223,6 +245,31 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
       expect(described_class.call(run)).to be false
       expect(run.reload.status).to eq("queued")
+    end
+
+    it "cancels a continuation run while GitHub closure is in flight" do # @spec PARTIAL-CLOSEOUT-006
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 68)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+      issue.update!(closeout_closing_at: Time.current)
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+      expect(request.reload.status).to eq("superseded")
+      expect(request.closure_reason).to include("closure is in progress")
+    end
+
+    it "keeps a continuation queued after an abandoned closing marker expires" do # @spec PARTIAL-CLOSEOUT-006
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 69)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+      issue.update!(closeout_closing_at: Issue::CLOSEOUT_CLOSING_TTL.ago - 1.second)
+
+      expect(described_class.call(run)).to be false
+      expect(run.reload.status).to eq("queued")
+      expect(request.reload.status).to eq("queued")
     end
 
     it "cancels the run and supersedes the request when the evidence generation changed" do

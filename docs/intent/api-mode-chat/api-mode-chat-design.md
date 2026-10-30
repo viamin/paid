@@ -66,7 +66,62 @@ The implemented behavior builds on:
 - Paid MCP tool definitions in `Tools::Registry`
 - per-request token accounting in `TokenUsageTracker`
 
+## Chat-first page loading
+
+The full-page chat response renders the selected session's bounded transcript
+and composer before requesting sidebar history or the new-session form. The
+sidebar is a lazy Turbo frame whose scoped request loads the current filter,
+pagination cursor, active-session pinning, and new-session runner/project
+choices independently. The selected session ID is an input to the sidebar
+request only; the request resolves it through the normal policy scope and
+does not cache authorization decisions.
+
+New-chat controls remain visible before the lazy frame finishes, but are
+disabled with a loading indicator until that frame supplies their dialog. This
+keeps the chat-first response bounded without presenting an enabled control
+whose action has no modal target. Because the mobile drawer starts hidden, its
+controller requests the scoped sidebar frame when the page becomes usable;
+desktop retains Turbo's visibility-based lazy loading.
+
+Sidebar cards receive the first non-system message through a correlated lookup
+that projects only the display-sized prefix. The lookup remains live rather
+than caching transcript data, so message creates and updates are immediately
+visible on the next sidebar response without cache invalidation risk. The
+existing `(chat_session_id, created_at)` message index bounds each lookup's
+ordered first-row seek; no mutable transcript or authorization result is
+cached. The visible-sidebar partial index on `(account_id, updated_at DESC,
+id DESC)` matches the account-scoped, non-archived ordering and cursor scan;
+the archived path remains bounded by its page limit rather than adding an
+index for a less frequent filter.
+
+The transcript continues to use `latest_messages`: it loads a fixed recent
+slice and extends only across a leading groupable tool run, while older
+messages and reconnect recovery remain their existing demand-driven paths.
+
 ## Current State
+
+### Chat sidebar updates
+
+The chat sidebar paginates the non-archived sessions visible to the user,
+including sessions whose runtime status is idle or closed. Selecting a
+different conversation changes only the selected row; it does not remove the
+previous conversation. Session
+updates publish one prepend stream event to the active or archived list. Turbo
+uses the card ID to replace an existing direct child, so an update cannot leave
+the row absent between separate remove and prepend events during navigation.
+The sidebar controller removes older copies from nested lazy pagination frames
+after a prepend or frame render, since Turbo only deduplicates direct children
+of the prepend target. The newest card remains in the first page.
+Moving a session between the active and archived lists also removes its card
+from the old list and restores that list's empty state when appropriate.
+
+An expired inline chat with no user message remains in history as a closed,
+resumable session. Automatic expiry does not treat a blank conversation as an
+explicit request to discard it. The idle reaper checks the session again under
+a row lock before closing it. Explicit Close still removes a blank chat. If a
+browser follows a stale full-page chat link to a missing or inaccessible
+session, the page returns to chat with a generic notice; JSON and embedded
+requests retain their not-found response.
 
 ### Managed free-model chat pool
 

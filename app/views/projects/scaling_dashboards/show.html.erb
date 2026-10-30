@@ -42,7 +42,8 @@
         <p class="mt-2 text-xs text-gray-500"><%= summary[:actionable_recommendation_count] %> marked actionable</p>
       </div>
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
-        <dt class="truncate text-sm font-medium text-gray-500">RDR Sample Target</dt>
+        <!-- @spec SCALING-EXPERIMENTS-001 -->
+        <dt class="truncate text-sm font-medium text-gray-500">30-Sample Target</dt>
         <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900"><%= summary[:rdr_ready_experiment_count] %></dd>
         <p class="mt-2 text-xs text-gray-500">Experiments configured at or above the 30-sample target.</p>
       </div>
@@ -92,7 +93,7 @@
                   <td class="px-4 py-3 text-sm text-gray-500">
                     <div><%= row[:reason].to_s.humanize %></div>
                     <% unless row.dig(:sample_threshold_review, "meets_rdr_target") %>
-                      <div class="mt-1 text-xs text-yellow-700">Configured below the 30-sample RDR target.</div>
+                      <div class="mt-1 text-xs text-yellow-700">Configured below the 30-sample target.</div>
                     <% end %>
                   </td>
                 </tr>
@@ -109,7 +110,7 @@
 
     <div class="mt-8">
       <h2 class="text-lg font-semibold text-gray-900">Experiment Detail</h2>
-      <p class="mt-1 text-sm text-gray-500">Each experiment reports confidence intervals for the recorded outcomes, the configured sample threshold, and any intentional departures from the full RDR regression plan.</p>
+      <p class="mt-1 text-sm text-gray-500">Each experiment reports confidence intervals for recorded outcomes, its configured sample threshold, and limitations of the log-log linear analysis.</p>
       <div class="mt-4 space-y-6">
         <% @stats[:experiments].each do |row| %>
           <% summary_data = row[:summary] %>
@@ -131,7 +132,7 @@
                     <span class="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-700">Recommendation available</span>
                   <% end %>
                   <% unless threshold_review["meets_rdr_target"] %>
-                    <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">Below 30-sample RDR target</span>
+                    <span class="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">Below 30-sample target</span>
                   <% end %>
                 </div>
               </div>

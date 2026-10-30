@@ -284,7 +284,8 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("/inbox?kind=partial_closeout&amp;project_id=#{project.id}&amp;sort=newest")
   end
 
-  it "surfaces the Start/Resume entry point on the partial-closeout Inbox item" do
+  # @spec FACET-CONFIDENCE-020
+  it "uses action-oriented copy for the partial-closeout evaluation entry point" do
     start_link = new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
       inbox_entry_id: entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue), inbox_kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
 
@@ -293,8 +294,56 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include(start_link.gsub("&", "&amp;"))
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
     expect(response.body).not_to include("operator-runbook.md")
 
+    get start_link
+
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
+  end
+
+  # @spec FACET-CONFIDENCE-020
+  it "uses action-oriented copy on the evaluation detail screen" do
+    evaluation = start_evaluation!
+    get project_facet_confidence_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
+    expect(response.body).not_to include("Facet-confidence closeout evaluation")
+  end
+
+  # @spec FACET-CONFIDENCE-020
+  it "hides internal design-record identifiers once the evaluation reaches report state" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+
+    get project_facet_confidence_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
+    expect(evaluation.reload.report_markdown).not_to include("RDR-070")
+    expect(evaluation.report_markdown).to include("Facet-Confidence Closeout Evaluation Report")
+  end
+
+  # @spec FACET-CONFIDENCE-020
+  it "hides the internal identifier in a persisted report from before the copy change" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+    evaluation.update!(report_markdown: "# RDR-070 Facet-Confidence Closeout Evaluation Report\n\nRecorded evidence.")
+
+    get project_facet_confidence_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Facet-Confidence Closeout Evaluation Report")
+    expect(response.body).not_to include("RDR-070")
+    expect(evaluation.reload.report_markdown).to include("RDR-070")
+  end
+
+  # @spec FACET-CONFIDENCE-020
+  it "resumes the persisted evaluation from the partial-closeout Inbox item" do
     evaluation = start_evaluation!
     get inbox_entry_path(entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
       project_id: project.id, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)

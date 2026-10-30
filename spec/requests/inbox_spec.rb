@@ -62,6 +62,24 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  # @spec AUTO-PICK-QUEUE-015
+  it "links each cycle edge to its persisted GitHub declaration provenance" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    declaration_url = "https://github.com/acme/alpha/issues/1#issuecomment-42"
+    create(:issue_dependency, issue: first, depends_on_issue: second,
+      declaration_source: "issue_comment", declaration_url:)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("a[href='#{declaration_url}']").text).to include("view declaring comment")
+    expect(response.body).to include("declaration source unavailable")
+  end
+
   # @spec OPERATOR-INBOX-017
   it "renders selected context in the detail response without a nested Turbo request" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)
@@ -443,6 +461,17 @@ RSpec.describe "Inbox" do
       expect(response).to have_http_status(:ok)
     end
 
+    def record_closeout_assessment(issue, criteria:)
+      run = create(:agent_run, :completed, project:, issue:)
+      assessment = PartialCloseouts::Assessment.snapshot(run, {
+        "classification" => "complete",
+        "criteria" => criteria,
+        "gaps" => [],
+        "next_action" => { "kind" => "close_on_github", "explanation" => "Close the accepted issue." }
+      })
+      run.update!(reconciliation: { "assessment" => assessment })
+    end
+
     it "lists the decision paths and links the operator guide" do
       render_guided_pane
 
@@ -451,19 +480,73 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("Continue agent-actionable work")
       expect(response.body).to include("Link prerequisite work")
       expect(response.body).to include("Supply human evidence")
-      expect(response.body).to include("attest completion")
+      expect(response.body).to include("Close on GitHub only when a current acceptance audit")
       expect(response.body).to include(partial_closeout_guide_path)
     end
 
-    it "collects an editable rationale and separates the three completions" do
+    it "hides the GitHub closure action while an acceptance audit is pending" do
       render_guided_pane
 
-      expect(response.body).to include("Completion rationale")
+      expect(response.body).to include("Audit pending")
+      expect(response.body).not_to include("Completion rationale", resolve_closeout_project_agent_runs_path(project))
+    end
+
+    it "hides the GitHub closure action when acceptance criteria remain unmet" do
+      record_closeout_assessment(guided_issue, criteria: [ { "criterion" => "Pilot p95", "state" => "unmet" } ])
+
+      render_guided_pane
+
+      expect(response.body).to include("Unmet criteria")
+      expect(response.body).not_to include("Completion rationale", resolve_closeout_project_agent_runs_path(project))
+    end
+
+    it "collects an editable rationale and explains the evidence-gated close action for an accepted issue" do
+      record_closeout_assessment(guided_issue, criteria: [ { "criterion" => "Pilot p95", "state" => "satisfied" } ])
+
+      render_guided_pane
+
+      expect(response.body).to include("Accepted awaiting github closure", "Completion rationale")
       expect(response.body).to include("Completing a run")
-      expect(response.body).to include("Resolving this Inbox item")
-      expect(response.body).to include("Closing the GitHub issue")
-      expect(response.body).to include("The GitHub issue stays open")
+      expect(response.body).to include("Closing this issue")
+      expect(response.body).to include("current criterion assessment")
+      expect(response.body).to include("this item remains visible with this exact retry path")
       expect(response.body).not_to match(/type="hidden"[^>]*name="reason"/)
+    end
+
+    it "routes upstream issues to GitHub without rendering the fork-close action" do # @spec PARTIAL-CLOSEOUT-006 UPSTREAM-ISSUE-008
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+      upstream_issue = create(:issue, project: project, github_number: 512, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 513, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: upstream_issue, created_at: 2.days.ago)
+      record_closeout_assessment(upstream_issue, criteria: [ { "criterion" => "Upstream acceptance", "state" => "satisfied" } ])
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, upstream_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+
+      expect(response.body).to include("Close on upstream GitHub", "Paid does not mutate upstream issues")
+      expect(response.body).not_to include(resolve_closeout_project_agent_runs_path(project))
+    end
+
+    it "hides upstream closure guidance until the issue is accepted" do
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+      upstream_issue = create(:issue, project: project, github_number: 514, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 515, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: upstream_issue, created_at: 2.days.ago)
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, upstream_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Audit pending")
+      expect(response.body).not_to include("Close on upstream GitHub")
     end
 
     it "explains the continuation authorization semantics with examples" do
@@ -593,8 +676,69 @@ RSpec.describe "Inbox" do
 
       expect(response.body).to include("Latest technical prerequisite validation", "Unavailable")
       expect(response.body).to include("Request scoped pilot authorization to enable marketplace_tool_sidecars for this project.")
-      expect(response.body).to include("Retry prerequisite validation")
-      expect(response.body).to include(validate_technical_prerequisite_project_agent_runs_path(project))
+      expect(response.body).to include("Run an acceptance audit to prepare a criterion-specific validation action")
+      expect(response.body).not_to include("Retry prerequisite validation")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "offers the reviewed validation for its unmet criterion without a recipe picker" do
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      relevant = create(:pre_commit_requirement, project:, account:, name: "Native analyzer smoke test", command: "bin/validate-analyzer")
+      create(:pre_commit_requirement, project:, account:, name: "Unrelated mutation suite", command: "bin/mutant")
+      guided_evidence
+      source_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(guided_issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(guided_issue),
+        "criteria" => [ { "criterion" => "Native analyzer runs on the pinned checkout", "state" => "unmet",
+          "validation_kind" => "native", "validation_requirement_id" => relevant.id } ]
+      } })
+
+      render_guided_pane
+
+      expect(response.body).to include("Run Native analyzer smoke test", "Native analyzer runs on the pinned checkout")
+      expect(response.body).not_to include("Unrelated mutation suite", "Select a recipe", "Run prerequisite validation")
+      form = Nokogiri::HTML(response.body).at_css("form[action='#{validate_technical_prerequisite_project_agent_runs_path(project)}']")
+      expect(form.at_css("input[name='requirement_id']")["value"]).to eq(relevant.id.to_s)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "shows the setup action when a sidecar criterion has no prepared attachment" do
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      AgentRun.where(id: source_run.id).update_all(tool_sidecar_snapshot: [ { "name" => "unrelated-tool" } ])
+      recipe = create(:pre_commit_requirement, project:, account:, name: "Sidecar endpoint check", command: "bin/check-sidecar")
+      guided_evidence
+      source_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(guided_issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(guided_issue),
+        "criteria" => [ { "criterion" => "Sidecar responds from the paired run", "state" => "unmet",
+          "validation_kind" => "tool_sidecar", "validation_tool_name" => "expected-tool",
+          "validation_requirement_id" => recipe.id } ]
+      } })
+
+      render_guided_pane
+
+      expect(Nokogiri::HTML(response.body).text).to include("Attach the criterion's allowlisted tool sidecar to a pinned run")
+      expect(response.body).to include("Request scoped pilot authorization")
+      expect(response.body).not_to include("Run Sidecar endpoint check")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "does not offer an unrelated project check for an unknown technical criterion" do
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      create(:pre_commit_requirement, project:, account:, name: "Mutation suite", command: "bin/mutant")
+      guided_evidence
+      source_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(guided_issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(guided_issue),
+        "criteria" => [ { "criterion" => "Native analyzer execution evidence", "state" => "unknown",
+          "validation_kind" => "native" } ]
+      } })
+
+      render_guided_pane
+
+      expect(response.body).to include("Prepare a reviewed validation recipe for this criterion")
+      expect(response.body).to include("Configure reviewed checks")
+      expect(response.body).not_to include("Run Mutation suite")
     end
   end
 

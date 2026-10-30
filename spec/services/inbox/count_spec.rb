@@ -185,18 +185,18 @@ RSpec.describe Inbox::Count do
       expect(after_verdict).to eq(0)
     end
 
-    # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009
-    it "counts stalled partial-closeout issues but not paused or resolved ones" do
+    # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009 @spec PARTIAL-CLOSEOUT-037
+    it "counts accepted open partial-closeout issues until GitHub closure is observed" do
       create_partial_closeout_issue(github_number: 300)
       create_partial_closeout_issue(github_number: 301) do |issue|
         issue.update_columns(paused: true)
       end
-      resolved = create_partial_closeout_issue(github_number: 302)
-      Issues::ResolveCloseout.call(
-        issue: resolved,
-        actor: user,
-        reason: "Merged PR #14 covers it."
-      )
+      accepted = create_partial_closeout_issue(github_number: 302)
+      accept_closeout(accepted)
+
+      expect(described_class.call(user: user)).to eq(2)
+
+      accepted.update!(github_state: "closed", closed_at: Time.current)
 
       expect(described_class.call(user: user)).to eq(1)
     end
@@ -727,6 +727,13 @@ RSpec.describe Inbox::Count do
     )
     block&.call(issue)
     issue
+  end
+
+  def accept_closeout(issue)
+    run = create(:agent_run, :completed, project: issue.project, issue: issue)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+      "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => []
+    }) })
   end
 
   def intent_conformance_snapshot

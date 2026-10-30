@@ -24,7 +24,7 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload).merge(progress_payload).merge(history_payload)
+        common_fields.merge(kind_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
       end
 
       def render_list
@@ -60,6 +60,13 @@ module Api
         return {} unless entry.issue
 
         { progress: Inbox::ProgressProjection.call(issue: entry.issue).to_h }
+      end
+
+      # @spec OPERATOR-INBOX-024
+      def workflow_payload
+        return {} unless entry.workflow_milestones?
+
+        { workflow: entry.workflow_milestones }
       end
 
       # @spec OPERATOR-INBOX-022
@@ -98,9 +105,30 @@ module Api
         when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
         when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
         when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then {}
+        when Inbox::Queue::DEPENDENCY_CYCLE_KIND then dependency_cycle_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end
+      end
+
+      def dependency_cycle_payload
+        cycle = entry.record
+        {
+          cycle_path: cycle.path.map { |issue| { project: issue.project.full_name, number: issue.github_number, url: issue.github_url } },
+          cycle_edges: cycle.path_edges.each_with_index.map do |edge, index|
+            dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1])
+          end,
+          downstream_issues_held: cycle.downstream_issues.size
+        }
+      end
+
+      def dependency_cycle_edge_payload(edge, from, to)
+        {
+          from: { project: from.project.full_name, number: from.github_number, url: from.github_url },
+          to: { project: to.project.full_name, number: to.github_number, url: to.github_url },
+          declaration_source: edge.declaration_source,
+          declaration_url: edge.declaration_url
+        }
       end
 
       def list_kind_payload

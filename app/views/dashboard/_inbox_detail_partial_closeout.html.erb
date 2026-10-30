@@ -1,4 +1,5 @@
 <%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 @spec PARTIAL-CLOSEOUT-010 %>
+<%# @spec PARTIAL-CLOSEOUT-032 %>
 <%# @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 @spec PARTIAL-CLOSEOUT-033 %>
 <% issue = entry.issue %>
 <% status = entry.closeout_status || Issues::CloseoutStatus.call(issue) %>
@@ -11,7 +12,8 @@
     ).order(created_at: :desc).first %>
 <% prerequisite_source_run = issue.agent_runs.where.not(base_commit_sha: [nil, ""])
      .where.not(goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL).order(created_at: :desc).first %>
-<% prerequisite_recipes = PreCommitRequirement.resolve(project: entry.project, user: current_user) %>
+<% validation_actions = TechnicalPrerequisites::InboxActions.call(
+     project: entry.project, actor: current_user, assessment: assessment, source_run: prerequisite_source_run) %>
 <% technical_validation = status.technical_evidence.select { |record| record.is_a?(Hash) }
      .max_by { |record| record["recorded_at"].to_s } %>
 <div class="space-y-6">
@@ -38,7 +40,7 @@
     <% shadow_evaluation = entry.project.intent_conformance_shadow_evaluations
           .where(purpose: "rdr-067-measured-rollout").latest_first.first %>
     <div class="space-y-2 rounded-xl border border-gray-200 bg-white p-4" data-shadow-evaluation-inbox>
-      <h3 class="text-sm font-semibold text-gray-900">Intent-conformance measured rollout (RDR-067)</h3>
+      <h3 class="text-sm font-semibold text-gray-900">Review conformance decisions</h3>
       <% if shadow_evaluation %>
         <p class="text-sm text-gray-600">
           Status: <span class="font-medium"><%= shadow_evaluation.status %></span> ·
@@ -60,11 +62,11 @@
         </div>
       <% else %>
         <p class="text-sm text-gray-600">
-          The rollout gate still needs blinded reference labels and a measured reviewer run before any
-          promotion decision. Start the solo-maintainer evaluation for this project's frozen corpus.
+          Compare the conformance reviewer with blinded reference labels before deciding whether the review process
+          is ready for broader use. Start the evaluation for this project's frozen corpus.
         </p>
         <%= link_to "Start evaluation",
-              new_project_shadow_evaluation_path(entry.project, purpose: "rdr-067-measured-rollout", **inbox_context),
+              new_project_shadow_evaluation_path(entry.project, **inbox_context),
               data: { turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
       <% end %>
@@ -85,7 +87,7 @@
         .where(corpus_digest: facet_evaluation.corpus_digest).latest_first.first %>
   <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-evaluation-inbox>
     <div>
-      <h3 class="text-sm font-semibold text-indigo-900">Facet-confidence closeout evaluation (RDR-070)</h3>
+      <h3 class="text-sm font-semibold text-indigo-900">Review readiness judgments</h3>
       <p class="mt-1 text-sm text-indigo-800">
         Frozen corpus <code><%= facet_evaluation.corpus_version %></code> · rubric <code><%= facet_evaluation.rubric_version %></code> ·
         model <code><%= facet_evaluation.model_version %></code>.
@@ -146,13 +148,13 @@
       <li>Continue agent-actionable work with a deliberate continuation below.</li>
       <li>Link prerequisite work (or have an agent file it with <code>create_issue</code>) so the remainder is owned.</li>
       <li>Supply human evidence yourself when the gap needs hardware, credentials, pilot results, or human adjudication.</li>
-      <li>Only attest completion when the recorded evidence justifies it — never just to clear the lane.</li>
+      <li>Close on GitHub only when a current acceptance audit shows every criterion is satisfied.</li>
     </ol>
     <p class="text-sm">
       <%= link_to "Read the operator guide", partial_closeout_guide_path,
             data: { turbo_frame: "_top" },
             class: "text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
-      for what completes a run, resolves an Inbox item internally, and closes the GitHub issue.
+      for what completes a run, what clears an Inbox item, and how the evidence-gated GitHub close action works.
     </p>
   </div>
 
@@ -206,6 +208,13 @@
       Source revision <code class="break-all text-xs"><%= assessment.source_revision || "not recorded" %></code> ·
       approved intent revision <code class="break-all text-xs"><%= assessment.intent_revision || "not recorded" %></code>.
     </p>
+    <% closeout_state = assessment.respond_to?(:closeout_state) ? assessment.closeout_state : "audit_pending" %>
+    <% closeout_state_copy = {
+         "audit_pending" => "Audit pending — criteria or revisions are stale; run a fresh acceptance audit.",
+         "accepted_awaiting_github_closure" => "Accepted and awaiting GitHub closure — all current criteria are satisfied, but the issue remains actionable until GitHub records closure.",
+         "unmet_criteria" => "Unmet criteria — continue focused work or satisfy the named human prerequisite."
+       }.fetch(closeout_state) %>
+    <p class="rounded-md bg-gray-50 p-3 text-sm text-gray-700"><span class="font-medium"><%= closeout_state.humanize %>:</span> <%= closeout_state_copy %></p>
     <% if assessment.criteria.any? %>
       <ul class="space-y-2">
         <% assessment.criteria.each do |criterion| %>
@@ -266,24 +275,31 @@
     <% end %>
 
     <% if policy(entry.project).run_agent? %>
-      <% if prerequisite_source_run && prerequisite_recipes.any? %>
-        <%= form_with url: validate_technical_prerequisite_project_agent_runs_path(entry.project),
-              data: { turbo_frame: "_top" }, class: "space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3" do |form| %>
-          <%= form.hidden_field :issue_id, value: issue.id %>
-          <%= form.hidden_field :source_run_id, value: prerequisite_source_run.id %>
-          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
-          <%= form.label :requirement_id, "Collect isolated prerequisite evidence", class: "text-sm font-medium text-indigo-900" %>
-          <%= form.select :requirement_id,
-                prerequisite_recipes.map { |recipe| [recipe.name, recipe.id] }, {},
-                class: "block w-full rounded-md border-gray-300 text-sm shadow-sm" %>
-          <p class="text-xs text-indigo-800">
-            Runs the selected reviewed recipe in a fresh isolated checkout pinned to
-            <code><%= prerequisite_source_run.base_commit_sha %></code>. The run page shows progress and allows cancellation;
-            submit again to retry with fresh evidence.
-          </p>
-          <%= form.submit technical_validation ? "Retry prerequisite validation" : "Run prerequisite validation",
-                class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% if validation_actions.any? %>
+        <% validation_actions.each do |action| %>
+          <div class="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+            <p class="text-sm font-medium text-indigo-900"><%= action.criterion["criterion"] %></p>
+            <% if action.ready? %>
+              <p class="text-xs text-indigo-800">Reviewed recipe prepared for this criterion. The run will use the pinned checkout and record execution evidence.</p>
+              <%= form_with url: validate_technical_prerequisite_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" } do |form| %>
+                <%= form.hidden_field :issue_id, value: issue.id %>
+                <%= form.hidden_field :source_run_id, value: prerequisite_source_run.id %>
+                <%= form.hidden_field :requirement_id, value: action.requirement.id %>
+                <%= form.hidden_field :criterion, value: action.criterion["criterion"] %>
+                <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+                <%= form.submit "Run #{action.requirement.name}", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+              <% end %>
+            <% else %>
+              <p class="text-sm text-indigo-900"><%= action.setup_action %></p>
+              <% unless action.requirement %>
+                <%= link_to "Configure reviewed checks", project_pre_commit_requirements_path(entry.project),
+                      data: { turbo_frame: "_top" }, class: "text-sm font-medium text-indigo-700 hover:text-indigo-900" %>
+              <% end %>
+            <% end %>
+          </div>
         <% end %>
+      <% elsif assessment.stale? %>
+        <p class="text-sm text-indigo-900">Run an acceptance audit to prepare a criterion-specific validation action.</p>
       <% end %>
 
         <%= form_with url: link_prerequisite_project_agent_runs_path(entry.project),
@@ -365,25 +381,34 @@
   </div>
 
   <% if policy(entry.project).run_agent? %>
-    <div class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-      <h3 class="text-sm font-semibold text-gray-900">Resolve as complete (internal attestation)</h3>
-      <details class="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600">
-        <summary class="cursor-pointer font-medium text-gray-700">What this does — and does not — do</summary>
-        <ul class="mt-2 list-disc space-y-1 pl-5">
-          <li><strong>Completing a run</strong> is evidence about one execution: a merged PR or no-code declaration.</li>
-          <li><strong>Resolving this Inbox item</strong> records your attestation, actor, and rationale against the
-            current evidence generation. The GitHub issue stays open for a human to close, and new terminal
-            evidence can resurface the item here. Any open continuation authorization is superseded.</li>
-          <li><strong>Closing the GitHub issue</strong> only happens through a final pull request a human merges.</li>
-        </ul>
-      </details>
-      <%= form_with url: resolve_closeout_project_agent_runs_path(entry.project),
+    <% if closeout_state == "accepted_awaiting_github_closure" %>
+      <% if entry.project.upstream_pr_target? %>
+        <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Close on upstream GitHub</h3>
+          <p class="text-sm text-gray-600">
+            Paid does not mutate upstream issues. Use <strong>View on GitHub</strong> above to close this issue directly
+            in the upstream repository after confirming its acceptance evidence.
+          </p>
+        </div>
+      <% else %>
+        <div class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <h3 class="text-sm font-semibold text-gray-900">Close on GitHub</h3>
+        <details class="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600">
+          <summary class="cursor-pointer font-medium text-gray-700">What this does — and does not — do</summary>
+          <ul class="mt-2 list-disc space-y-1 pl-5">
+            <li><strong>Completing a run</strong> is evidence about one execution: a merged PR or no-code declaration.</li>
+            <li><strong>Closing this issue</strong> rechecks the current criterion assessment, evidence and intent revisions,
+              prerequisites, scanner verification, and GitHub state before sending the authorized GitHub close action.</li>
+            <li>If GitHub rejects or cannot complete the action, this item remains visible with this exact retry path.</li>
+          </ul>
+        </details>
+        <%= form_with url: resolve_closeout_project_agent_runs_path(entry.project),
             data: { turbo_frame: "_top" },
             class: "flex flex-col gap-2" do |form| %>
-        <%= form.hidden_field :issue_id, value: issue.id %>
-        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
-        <%= form.label :reason, "Completion rationale", for: "closeout_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
-        <%= form.text_area :reason,
+          <%= form.hidden_field :issue_id, value: issue.id %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.label :reason, "Completion rationale", for: "closeout_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
+          <%= form.text_area :reason,
               id: "closeout_reason_#{issue.id}",
               required: true,
               maxlength: 2000,
@@ -391,17 +416,18 @@
               placeholder: "Which merged PRs or no-code declaration cover each acceptance criterion, and what evidence proves it?",
               aria: { describedby: "closeout_reason_help_#{issue.id}" },
               class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
-        <p id="closeout_reason_help_<%= issue.id %>" class="text-xs text-gray-500">
-          Write a specific rationale that references the recorded evidence. The canned sentence alone is refused.
-        </p>
-        <%= form.submit "Resolve as complete",
+          <p id="closeout_reason_help_<%= issue.id %>" class="text-xs text-gray-500">
+            Write a specific rationale that references the recorded evidence. The canned sentence alone is refused.
+          </p>
+          <%= form.submit "Close on GitHub",
               id: "closeout_submit_#{issue.id}",
               class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
-              data: { turbo_confirm: "Resolve ##{issue.github_number} as complete against the recorded evidence? " \
-                "This resolves the Inbox item internally; the GitHub issue stays open for a human to close, and " \
-                "newer terminal evidence would resurface it here.", turbo_frame: "_top" } %>
+              data: { turbo_confirm: "Close ##{issue.github_number} on GitHub against the current acceptance audit? " \
+                "Paid will refuse if criteria, revisions, prerequisites, scanner verification, or GitHub state changed.", turbo_frame: "_top" } %>
+        <% end %>
+        </div>
       <% end %>
-    </div>
+    <% end %>
 
     <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
       <h3 class="text-sm font-semibold text-gray-900">Request a deliberate continuation</h3>

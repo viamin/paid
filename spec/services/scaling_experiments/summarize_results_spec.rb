@@ -60,7 +60,7 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
     )
   end
 
-  it "adds scaling-law analysis and allocator guidance to the cached summary" do
+  it "adds scaling-law analysis and allocator guidance to the cached summary" do # @spec SCALING-EXPERIMENTS-002
     assignments = [
       build_assignment(1,
         observation: build_observation(1, success: false, duration: 300, cost: 100),
@@ -80,7 +80,19 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
     expect(summary.dig("allocator_decision", "requested_agent_count")).to eq(2)
     expect(summary.dig("scaling_law", "allocator_decision", "efficiency_gain_vs_control")).to be >= 0.10
     expect(summary.dig("sample_threshold_review", "rdr_target_min_samples_per_value")).to eq(30)
-    expect(summary.fetch("simplifications")).not_to be_empty
+    expect_user_facing_simplifications(summary)
+  end
+
+  def expect_user_facing_simplifications(summary)
+    expect(summary.fetch("simplifications")).to include(*user_facing_simplification_notes)
+    expect(summary.fetch("simplifications").join(" ")).not_to include("RDR")
+  end
+
+  def user_facing_simplification_notes
+    [
+      "Scaling exponent confidence uses a log-log linear fit instead of comparing power-law, logarithmic, and linear models.",
+      "The dashboard flags experiments configured below the 30-sample target instead of enforcing that threshold retroactively."
+    ]
   end
 
   def summarize(assignments)

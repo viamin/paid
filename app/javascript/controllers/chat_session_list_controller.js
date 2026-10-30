@@ -8,7 +8,7 @@ import { Controller } from "@hotwired/stimulus"
 // change to the active-row treatment lives in
 // `MasterDetailLayoutHelper#master_detail_active_row_classes`, not here.
 export default class extends Controller {
-  static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel"]
+  static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel", "newChatButton", "newChatLoadingIndicator", "sidebarContentFrame"]
   static values = { activeSessionId: Number }
 
   connect() {
@@ -22,9 +22,12 @@ export default class extends Controller {
     this.element.addEventListener("turbo:frame-render", this.boundOnFrameRender)
 
     this.setupObserver()
+    this.deduplicateCards()
     this.filter()
     this.updateActiveCard()
+    this.enableNewChatButtons()
     this.updateMobileSidebarState()
+    this.loadSidebarContentOnMobile()
   }
 
   disconnect() {
@@ -40,19 +43,56 @@ export default class extends Controller {
     if (!this.hasListTarget) return
 
     this.observer = new window.MutationObserver(() => {
+      this.deduplicateCards()
       this.filter()
       this.updateActiveCard()
     })
     this.observer.observe(this.listTarget, { childList: true, subtree: true })
   }
 
+  // @spec CHAT-API-027
   handleFrameRender(event) {
     const targetId = event.target?.id
-    if (targetId !== "chat_sessions_list") return
+    const isSidebarFrame = ["chat_sessions_list", "chat_sessions_sidebar_content"].includes(targetId)
+    if (!isSidebarFrame && !targetId?.startsWith("sidebar_page_")) return
 
-    this.setupObserver()
+    if (isSidebarFrame) this.setupObserver()
+    this.deduplicateCards()
     this.filter()
     this.updateActiveCard()
+    this.enableNewChatButtons()
+  }
+
+  enableNewChatButtons() {
+    if (!this.hasModalTarget) return
+
+    this.newChatButtonTargets.forEach((button) => {
+      button.disabled = false
+      button.setAttribute("aria-disabled", "false")
+      button.classList.remove("cursor-wait", "opacity-50")
+      button.classList.add("hover:bg-indigo-500")
+    })
+    this.newChatLoadingIndicatorTargets.forEach((indicator) => indicator.classList.add("hidden"))
+  }
+
+  // @spec CHAT-API-027
+  // The mobile drawer starts hidden, which prevents Turbo's lazy observer
+  // from requesting the frame that supplies the New Chat dialog.
+  loadSidebarContentOnMobile() {
+    if (this.mediaQuery?.matches || !this.hasSidebarContentFrameTarget) return
+
+    this.sidebarContentFrameTarget.reload()
+  }
+
+  // @spec CHAT-API-029
+  deduplicateCards() {
+    const seen = new Set()
+
+    this.cardTargets.forEach((card) => {
+      const id = card.dataset.sessionId
+      if (seen.has(id)) card.remove()
+      else seen.add(id)
+    })
   }
 
   filter() {

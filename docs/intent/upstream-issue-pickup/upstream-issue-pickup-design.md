@@ -53,3 +53,7 @@ remove labels skip the remote operation with an info log. The same centralized
 guard applies to feature clarification, enhancement, and no-output outcome
 comments and labels. Their durable local state and run output remain available
 for the dashboard and pull-request-based degraded path.
+
+The partial-closeout action follows the same boundary. It never reads or closes
+the same-numbered fork issue: the Inbox offers the persisted upstream issue's
+direct GitHub route, while the shared HTTP and MCP service refuses mutation.

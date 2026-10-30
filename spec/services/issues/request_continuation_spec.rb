@@ -26,6 +26,16 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
     described_class.call(issue: issue, actor: actor, reason: reason)
   end
 
+  # Assessment-only runs must not inherit the factory's fabricated PR: an
+  # unsynced PR independently and correctly blocks continuation admission.
+  def record_acceptance_audit(criteria:, gaps: [])
+    run = create(:agent_run, :completed, project:, issue:, goal: "analyze_issue",
+      pull_request_url: nil, pull_request_number: nil)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+      "criteria" => criteria, "gaps" => gaps
+    }) })
+  end
+
   describe "success" do
     it "persists the authorization and queues exactly one continuation run" do
       merged_partial_pr(number: 12)
@@ -62,6 +72,43 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(event).to be_present
       expect(event.actor).to eq(user)
       expect(event.subject).to eq(issue)
+    end
+
+    it "allows legacy resolved evidence to continue after a fresh audit finds unmet work" do # @spec PARTIAL-CLOSEOUT-037
+      merged_partial_pr(number: 12)
+      evidence = Issues::CloseoutEvidence.call(issue)
+      issue.update!(
+        closeout_resolved_at: 1.day.ago,
+        closeout_resolution_digest: evidence.digest,
+        closeout_resolved_by: user
+      )
+      record_acceptance_audit(
+        criteria: [ { "criterion" => "the remaining work", "state" => "unmet" } ],
+        gaps: [ { "criterion" => "the remaining work", "kind" => "agent", "title" => "Finish the work" } ]
+      )
+
+      result = request_continuation
+
+      expect(result).to be_success
+      expect(result.agent_run).to be_queued
+      expect(issue.reload).not_to be_closeout_resolved
+    end
+
+    it "allows legacy resolved evidence to continue after a fresh audit is unknown" do # @spec PARTIAL-CLOSEOUT-037
+      merged_partial_pr(number: 12)
+      evidence = Issues::CloseoutEvidence.call(issue)
+      issue.update!(
+        closeout_resolved_at: 1.day.ago,
+        closeout_resolution_digest: evidence.digest,
+        closeout_resolved_by: user
+      )
+      record_acceptance_audit(criteria: [ { "criterion" => "the remaining work", "state" => "unknown" } ])
+
+      result = request_continuation
+
+      expect(result).to be_success
+      expect(result.agent_run).to be_queued
+      expect(issue.reload).not_to be_closeout_resolved
     end
   end
 
@@ -107,6 +154,26 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
   end
 
   describe "refusals" do
+    it "refuses continuation admission while GitHub closure is in flight" do # @spec PARTIAL-CLOSEOUT-006
+      merged_partial_pr(number: 12)
+      issue.update!(closeout_closing_at: Time.current)
+
+      result = request_continuation
+
+      expect(result.code).to eq(:closeout_closing)
+      expect(result.message).to include("closure is in progress")
+      expect(issue.agent_runs).to be_empty
+    end
+
+    it "ignores an abandoned closing marker after its bounded lifetime" do # @spec PARTIAL-CLOSEOUT-006
+      merged_partial_pr(number: 12)
+      issue.update!(closeout_closing_at: Issue::CLOSEOUT_CLOSING_TTL.ago - 1.second)
+
+      result = request_continuation
+
+      expect(result).to be_success
+    end
+
     it "refuses an issue without closeout evidence" do
       result = request_continuation
 
@@ -115,6 +182,23 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.message).to include("no terminal closeout evidence")
       expect(issue.agent_runs).to be_empty
       expect(IssueContinuationRequest.count).to eq(0)
+    end
+
+    it "keeps a current accepted legacy resolution on the GitHub closure path" do # @spec PARTIAL-CLOSEOUT-037
+      merged_partial_pr(number: 12)
+      evidence = Issues::CloseoutEvidence.call(issue)
+      issue.update!(
+        closeout_resolved_at: 1.day.ago,
+        closeout_resolution_digest: evidence.digest,
+        closeout_resolved_by: user
+      )
+      record_acceptance_audit(criteria: [ { "criterion" => "the work", "state" => "satisfied" } ])
+
+      result = request_continuation
+
+      expect(result.code).to eq(:not_stalled)
+      expect(result.message).to include("already resolved complete")
+      expect(issue.agent_runs.where(status: "queued")).to be_empty
     end
 
     it "refuses a paused issue without bypassing the pause" do

@@ -64,6 +64,24 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
   end
 
   # @spec PARTIAL-CLOSEOUT-032
+  it "provisions only the tool named by a criterion-specific validation" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
+    AgentRun.where(id: source_run.id).update_all(
+      tool_sidecar_snapshot: [ { "name" => "expected-tool" }, { "name" => "unrelated-tool" } ],
+      mcp_server_snapshot: [ { "name" => "unrelated-mcp" } ]
+    )
+    source_run.reload
+    requirement = create(:pre_commit_requirement, project:, account: project.account)
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by,
+      criterion: "Check expected tool", tool_name: "expected-tool")
+
+    expect(result.agent_run.tool_sidecar_snapshot).to eq([ { "name" => "expected-tool" } ])
+    expect(result.agent_run.mcp_server_snapshot).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-032
   it "refuses a source run without a pinned checkout" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:)

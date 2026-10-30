@@ -57,3 +57,13 @@
   untrusted authors, matching their persist-without-body behavior.
   *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `FetchIssuesActivity#retire_untrusted_upstream_issues`.
+
+- [x] **UPSTREAM-ISSUE-008** - When a partial-closeout action targets a
+  synced upstream issue, Paid SHALL not read or mutate the same-numbered fork
+  issue. The Inbox SHALL replace the action with a direct upstream-GitHub
+  closure route, and the shared HTTP/MCP service SHALL refuse the action while
+  retaining the local issue as actionable.
+  *Tests:* `spec/services/issues/resolve_closeout_spec.rb`,
+  `spec/mcp/tools/resolve_issue_closeout_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ResolveCloseout`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.

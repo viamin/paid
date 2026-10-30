@@ -19,9 +19,16 @@
 
       <% if can_create_chat_session %>
         <button type="button"
-                class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-                data-action="chat-session-list#openModal">
+                class="inline-flex cursor-wait items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white opacity-50 shadow-sm"
+                data-chat-session-list-target="newChatButton"
+                data-action="chat-session-list#openModal"
+                disabled>
           New Chat
+          <svg class="ml-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" data-chat-session-list-target="newChatLoadingIndicator" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <span class="sr-only">Loading new chat setup</span>
         </button>
       <% end %>
     </div>
@@ -66,29 +73,31 @@
             </label>
             <% if can_create_chat_session %>
               <button type="button"
-                      class="hidden items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 lg:inline-flex"
-                      data-action="chat-session-list#openModal">
+                      class="hidden cursor-wait items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white opacity-50 shadow-sm lg:inline-flex"
+                      data-chat-session-list-target="newChatButton"
+                      data-action="chat-session-list#openModal"
+                      disabled>
                 New Chat
+                <svg class="ml-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" data-chat-session-list-target="newChatLoadingIndicator" aria-hidden="true">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+                <span class="sr-only">Loading new chat setup</span>
               </button>
             <% end %>
           </div>
         </div>
 
-        <%= render "sidebar_list",
-                   sessions: sessions,
-                   sidebar_has_more: local_assigns.fetch(:sidebar_has_more, false),
-                   sidebar_next_frame_id: sidebar_next_frame_id,
-                   sidebar_next_params: sidebar_next_params,
-                   archived_view: local_assigns.fetch(:archived_view, false) %>
+        <%# @spec CHAT-API-027 — Keep transcript and composer response work
+            independent from history and new-session setup. %>
+        <%= turbo_frame_tag "chat_sessions_sidebar_content",
+                            src: sidebar_page_chat_sessions_path(content: "true", active_session_id: active_session&.id),
+                            loading: :lazy,
+                            data: { chat_session_list_target: "sidebarContentFrame" } do %>
+          <p class="p-4 text-sm text-gray-500">Loading chat history...</p>
+        <% end %>
       </aside>
     </div>
   </div>
 
-  <% if can_create_chat_session %>
-    <%= render "new_session_modal",
-               chat_session: chat_session,
-               available_runners: available_runners,
-               available_projects: available_projects,
-               available_models: available_models %>
-  <% end %>
 </div>

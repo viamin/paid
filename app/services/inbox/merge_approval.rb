@@ -104,6 +104,7 @@ module Inbox
           instruction: guidance_instruction,
           automatic_merge_active: automatic_merge_active?,
           stale_approval: stale_approval?,
+          stalled_execution: stalled_execution?,
           approval_evidence: approval_evidence,
           blockers: display_blockers
         }

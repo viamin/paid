@@ -34,7 +34,8 @@ module ChatSessions
     def reap_session(session)
       TenantContext.with(session.account) do
         if session.inline_only?
-          ChatSessions::Close.call(chat_session: session)
+          # @spec CHAT-API-028
+          ChatSessions::ExpireIdleInline.call(chat_session: session)
         else
           ChatSessions::ReapIdleWorkspace.call(chat_session: session)
         end

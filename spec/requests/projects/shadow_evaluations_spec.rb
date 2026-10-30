@@ -92,7 +92,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
     post project_shadow_evaluations_path(project),
       params: { purpose: "rdr-067-measured-rollout", policy: "solo", manifest_path: "tmp/undersized.yml" }
 
-    expect(response).to redirect_to(new_project_shadow_evaluation_path(project, purpose: "rdr-067-measured-rollout"))
+    expect(response).to redirect_to(new_project_shadow_evaluation_path(project))
     expect(flash[:alert]).to include("was not found")
     expect(project.intent_conformance_shadow_evaluations).to be_empty
   end
@@ -305,10 +305,36 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("/inbox?kind=partial_closeout&amp;project_id=#{project.id}&amp;sort=newest")
   end
 
-  it "surfaces the Start/Resume entry point on the partial-closeout Inbox item" do
-    get new_project_shadow_evaluation_path(project, purpose: "rdr-067-measured-rollout")
+  # @spec INTENT-CONFORMANCE-ROLLOUT-009
+  it "uses action-oriented copy without exposing the internal purpose on evaluation screens" do
+    get new_project_shadow_evaluation_path(project)
 
     expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Review conformance decisions")
     expect(response.body).to include("Start evaluation")
+    expect(response.body).not_to include("RDR-067")
+    expect(response.body).not_to include("rdr-067-measured-rollout")
+    expect(response.body).not_to include('name="purpose"')
+
+    evaluation = start_evaluation!
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Review conformance decisions")
+    expect(response.body).not_to include(evaluation.purpose)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-009
+  it "hides the internal identifier in a persisted report from before the copy change" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(
+      report_markdown: "# RDR-067 Solo-Maintainer Shadow Evaluation Report\n\nRecorded evidence.")
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Conformance Review Evaluation Report")
+    expect(response.body).not_to include("RDR-067")
+    expect(evaluation.reload.report_markdown).to include("RDR-067")
   end
 end

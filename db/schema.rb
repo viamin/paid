@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_013007) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -153,6 +153,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_013007) do
     t.index ["account_id", "registry", "repository", "digest", "architecture"], name: "idx_agent_images_identity", unique: true, comment: "Uniqueness over the immutable content-addressed identity (account + registry + repository + digest + architecture)."
     t.index ["account_id"], name: "index_agent_images_on_account_id"
     t.index ["status"], name: "idx_agent_images_inactive", where: "((status)::text <> 'active'::text)", comment: "Partial index over non-active images so audit and rollback queries against deprecated/blocked rows stay fast as the active set grows."
+  end
+
+  create_table "agent_planning_holds", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id"
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.bigint "issue_id"
+    t.string "label", default: "planning", null: false
+    t.text "last_error"
+    t.boolean "operator_override", default: false, null: false
+    t.bigint "project_id", null: false
+    t.text "reason"
+    t.datetime "reconciled_at"
+    t.jsonb "release_condition", default: {}, null: false
+    t.integer "remote_issue_number", null: false
+    t.string "status", default: "needs_review", null: false
+    t.string "task_kind"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_agent_planning_holds_on_account_id"
+    t.index ["agent_run_id"], name: "index_agent_planning_holds_on_agent_run_id"
+    t.index ["issue_id", "label"], name: "index_agent_planning_holds_on_issue_id_and_label", unique: true
+    t.index ["issue_id"], name: "index_agent_planning_holds_on_issue_id"
+    t.index ["project_id", "remote_issue_number", "label"], name: "index_agent_planning_holds_on_remote_issue_and_label", unique: true
+    t.index ["project_id", "status"], name: "index_agent_planning_holds_on_project_id_and_status"
+    t.index ["project_id"], name: "index_agent_planning_holds_on_project_id"
   end
 
   create_table "agent_run_anomalies", comment: "Stores statistical outliers detected when an agent run metric deviates materially from the project's historical baseline.", force: :cascade do |t|
@@ -872,6 +898,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_013007) do
     t.string "title"
     t.datetime "updated_at", null: false
     t.string "workspace_volume"
+    t.index ["account_id", "updated_at", "id"], name: "index_chat_sessions_visible_sidebar", order: { updated_at: :desc, id: :desc }, where: "((status)::text <> 'archived'::text)"
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
@@ -2592,6 +2619,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_013007) do
 
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.string "declaration_source", comment: "GitHub surface containing the effective dependency declaration."
+    t.string "declaration_url", comment: "GitHub URL for the effective dependency declaration when available."
     t.bigint "depends_on_issue_id"
     t.integer "depends_on_number"
     t.string "depends_on_owner"
@@ -2629,6 +2658,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_013007) do
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"
     t.datetime "closed_at", comment: "When github_state first transitioned to 'closed'. Distinct from updated_at and github_updated_at so unrelated sync metadata (label edits, comments) cannot move the resolution timestamp used by epic re-audit eligibility."
+    t.datetime "closeout_closing_at", comment: "When a remote GitHub close is in flight and continuation admission is revoked"
     t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
     t.datetime "closeout_resolved_at", comment: "When an operator resolved this issue as complete against the recorded closeout evidence."
     t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."
@@ -4680,6 +4710,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_013007) do
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_images", "accounts"
+  add_foreign_key "agent_planning_holds", "accounts"
+  add_foreign_key "agent_planning_holds", "agent_runs"
+  add_foreign_key "agent_planning_holds", "issues"
+  add_foreign_key "agent_planning_holds", "projects"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade

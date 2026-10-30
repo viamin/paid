@@ -484,7 +484,11 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   follow a fixed precedence — approval-gated holds above confidence-driven
   holds — independent of link creation or load order, and list surfaces SHALL
   render per-issue holds from preloaded associations rather than per-issue
-  link queries.
+  link queries. A queued run cancelled because admission is denied SHALL
+  persist plain-language recovery guidance derived from the denial's stable
+  code: approval/release guidance for an unreleased feature and dependency
+  guidance for unresolved dependencies. It SHALL NOT expose an internal RDR
+  identifier.
   *Tests:* `spec/services/feature_intents/run_admission_spec.rb`,
   `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
   `spec/services/feature_intents/issue_hold_spec.rb`,

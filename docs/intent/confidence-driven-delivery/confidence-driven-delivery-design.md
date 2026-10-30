@@ -127,6 +127,21 @@ work only to canonical queue admission. Task kind is immutable for the
 marker-identified publication, so a retry with a conflicting kind is rejected
 rather than changing its admission semantics.
 
+Direct GitHub proxy writes by an authenticated agent use a separate
+`AgentPlanningHold` receipt because they are not feature publications. The
+proxy persists the issue, run, label and an optional structured task contract
+only after GitHub accepts the write. For a newly written label without a
+structured contract, it records a run-completion condition bound to the
+authenticated run and issue; this durable provenance, not bot identity, grants
+Paid authority to release that ordinary agent hold after its run finishes. A
+pre-existing label or incomplete supplied contract creates a blocking operator
+Inbox item. A complete contract includes task kind, reason, release condition
+and scope revision, and is idempotent by issue and label so failed runs and
+retries retain one receipt. The bounded eligibility sweep may release only
+explicit mechanical conditions, reads GitHub back after removal, and
+synchronizes local labels. Conditions that require design judgment remain held
+for an operator, even when a related issue closes.
+
 Confidence-driven PRs receive an independent conformance review against that
 issue link's immutable release snapshot: its merged baseline, mapped design
 documents, and admitted scope. Detected drift is recorded as tracked forward
@@ -149,6 +164,15 @@ auto-pick (the label is itself a default skip label). Missing assessment
 cannot be interpreted as a passing result, and projection failures must be
 visible in Inbox/GitHub context. Do not let a ready-looking issue remain
 silently blocked by a second, unexplained feature gate.
+
+Direct agent label writes use a stricter ownership boundary because GitHub's
+add-label endpoint is idempotent. The proxy reads the issue before adding
+`planning`; only an observed absence plus a complete durable contract grants
+Paid removal authority. A pre-existing label remains operator-owned or unknown
+even when the authenticated run supplies a complete contract. If persistence
+fails after GitHub accepts the write, the proxy surfaces a retryable failure;
+the retry observes the existing label and records review work rather than
+claiming it.
 
 ## Baseline and review dispatch
 

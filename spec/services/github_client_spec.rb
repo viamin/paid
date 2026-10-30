@@ -950,6 +950,24 @@ RSpec.describe GithubClient do
       expect(result.size).to eq(1)
       expect(result.first.name).to eq("urgent")
     end
+
+    it "normalizes an absent label to NotFoundError" do
+      stub_request(:delete, "#{api_base}/repos/#{repo}/issues/#{issue_number}/labels/bug")
+        .to_return(status: 404, body: { message: "Not Found" }.to_json)
+
+      expect {
+        client.remove_label_from_issue(repo, issue_number, "bug")
+      }.to raise_error(GithubClient::NotFoundError)
+    end
+
+    it "records an absent label when removing several labels" do
+      stub_request(:delete, "#{api_base}/repos/#{repo}/issues/#{issue_number}/labels/bug")
+        .to_return(status: 404, body: { message: "Not Found" }.to_json)
+
+      result = client.remove_labels_from_issue(repo, issue_number, [ "bug" ])
+
+      expect(result).to include(removed: [], failed: [ { label: "bug", error: a_string_including("Not Found") } ])
+    end
   end
 
   describe "#check_runs_for_ref" do
@@ -3162,7 +3180,8 @@ RSpec.describe GithubClient do
                     comments: {
                       pageInfo: { hasPreviousPage: false },
                       nodes: [
-                        { author: { login: "alice" }, body: "first", createdAt: "2024-01-01T00:00:00Z" },
+                        { author: { login: "alice" }, body: "first", createdAt: "2024-01-01T00:00:00Z",
+                          url: "https://github.com/acme/repo/issues/10#issuecomment-1" },
                         { author: { login: "bob" }, body: "second", createdAt: "2024-01-02T00:00:00Z" }
                       ]
                     }
@@ -3186,6 +3205,7 @@ RSpec.describe GithubClient do
         expect(result.keys).to contain_exactly(10, 20)
         expect(result[10].size).to eq(2)
         expect(result[10].first.body).to eq("first")
+        expect(result[10].first.html_url).to eq("https://github.com/acme/repo/issues/10#issuecomment-1")
         expect(result[10].last.body).to eq("second")
         expect(result[20]).to eq([])
       end

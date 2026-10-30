@@ -13,6 +13,7 @@ class ChatSession < ApplicationRecord
   # Fallback pause window when a provider rate-limit error does not report a
   # reset time (AgentHarness::RateLimitError#reset_time is nil).
   RATE_LIMIT_DEFAULT_RESET = 5.minutes
+  SIDEBAR_PREVIEW_LENGTH = 64
 
   CloneManifestEntry = Data.define(:project_id, :cloned_at, :path, :token_identity) do
     def self.coerce(entry)
@@ -109,13 +110,14 @@ class ChatSession < ApplicationRecord
   # due to have their last unanswered message automatically resent.
   # ChatSessions::AutoResumeRateLimitedSweepJob reactivates these.
   scope :rate_limited_due, ->(now = Time.current) { rate_limited.where(rate_limited_until: ..now) }
+  # @spec CHAT-API-027
   scope :with_preview_content, lambda {
     preview_subquery = ChatMessage.where("chat_messages.chat_session_id = chat_sessions.id")
       .where.not(role: "system")
       .where.not(content: [ nil, "" ])
       .order(:created_at)
       .limit(1)
-      .select(:content)
+      .select(Arel.sql("LEFT(content, #{SIDEBAR_PREVIEW_LENGTH})"))
       .to_sql
 
     select("chat_sessions.*", "(#{preview_subquery}) AS preview_content")
@@ -415,14 +417,16 @@ class ChatSession < ApplicationRecord
     )
   end
 
+  # @spec CHAT-API-029
   def broadcast_sidebar_refresh
-    previous_status = saved_change_to_status&.first || status
+    if saved_change_to_status? && (status_before_last_save == "archived") != archived?
+      Turbo::StreamsChannel.broadcast_remove_to(
+        sidebar_broadcast_stream,
+        target: ActionView::RecordIdentifier.dom_id(self)
+      )
+      broadcast_sidebar_append_empty_state(status: status_before_last_save)
+    end
 
-    Turbo::StreamsChannel.broadcast_remove_to(
-      sidebar_broadcast_stream,
-      target: ActionView::RecordIdentifier.dom_id(self)
-    )
-    broadcast_sidebar_append_empty_state(status: previous_status) if previous_status != status
     broadcast_sidebar_prepend
   end
 
