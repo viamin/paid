@@ -196,15 +196,16 @@ class Issue < ApplicationRecord
   # Invalidates the cached inbox nav badge count whenever an issue enters or
   # leaves the needs_input queue, enters or leaves manual_review, enters or
   # leaves the retry_limited queue (runner-retry-cap or push-permission
-  # abandonment, cleared by a successful manual run), when a waiting issue
-  # is closed/reopened on GitHub, or when a pull request's labels change
+  # abandonment, cleared by a successful manual run), when a waiting or
+  # partial-closeout issue is closed/reopened on GitHub, or when a pull
+  # request's labels change
   # (the test_review_pending lane is label-derived — see
   # test_review_label_state_changed?), so the async badge endpoint recomputes
   # instead of serving a stale number for the rest of its TTL. Also covers a
   # pull request entering or leaving the escalated_pr inbox lane, since
   # merge_approval_candidate_state_changed? already watches
   # saved_change_to_pr_review_phase? for every pull request.
-  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
+  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J @spec PARTIAL-CLOSEOUT-037
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   # RDR-077: the phase that owns a request is assigned when the request is
@@ -965,6 +966,7 @@ class Issue < ApplicationRecord
       saved_change_to_runner_retry_abandoned_at? ||
       saved_change_to_closeout_resolved_at? ||
       waiting_issue_github_state_changed? ||
+      partial_closeout_issue_github_state_changed? ||
       retry_limited_issue_github_state_changed? ||
       merge_approval_candidate_state_changed? ||
       test_review_label_state_changed?
@@ -1002,6 +1004,14 @@ class Issue < ApplicationRecord
 
   def waiting_issue_github_state_changed?
     saved_change_to_github_state? && paid_state.in?(%w[needs_input manual_review])
+  end
+
+  # A partial-closeout Inbox entry is derived from open GitHub state and can
+  # remain actionable after internal acceptance. Refresh the badge as soon as
+  # synchronization observes its source closure or reopening.
+  # @spec PARTIAL-CLOSEOUT-037
+  def partial_closeout_issue_github_state_changed?
+    saved_change_to_github_state? && !saved_change_to_id? && !is_pull_request?
   end
 
   # Mirror of waiting_issue_github_state_changed? for the retry_limited lane:
