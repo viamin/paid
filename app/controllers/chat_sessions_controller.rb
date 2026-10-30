@@ -158,7 +158,6 @@ class ChatSessionsController < ApplicationController
     respond_to do |format|
       format.html do
         load_chat_messages
-        load_chat_panel_data
 
         if popup_request?
           render partial: "chat_sessions/popup", locals: {
@@ -166,9 +165,11 @@ class ChatSessionsController < ApplicationController
             chat_messages: @chat_messages,
             has_older_messages: @has_older_messages
           }
-        elsif requested_frame.present?
+        else
           load_chat_panel_data
-          render partial: "chat_sessions/frame", locals: chat_panel_locals.merge(frame_id: requested_frame)
+          if requested_frame.present?
+            render partial: "chat_sessions/frame", locals: chat_panel_locals.merge(frame_id: requested_frame)
+          end
         end
       end
 

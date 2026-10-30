@@ -503,9 +503,12 @@ RSpec.describe "ChatSessions" do
       it "renders only the chat panel in a requesting Inbox frame" do
         create(:chat_message, :assistant, chat_session: chat_session, content: "Inbox conversation")
 
-        get chat_session_path(chat_session), headers: { "Turbo-Frame" => "inbox-detail" }
+        queries = capture_queries do
+          get chat_session_path(chat_session), headers: { "Turbo-Frame" => "inbox-detail" }
+        end
 
         expect(response).to have_http_status(:ok)
+        expect(queries.grep(/FROM "runners"/).size).to eq(1)
         document = Nokogiri::HTML(response.body)
         frame = document.at_css("turbo-frame#inbox-detail")
         panel = frame&.at_css("div[data-controller='chat']")
@@ -1058,9 +1061,12 @@ RSpec.describe "ChatSessions" do
           }
         )
 
-        get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+        queries = capture_queries do
+          get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+        end
 
         expect(response).to have_http_status(:ok)
+        expect(queries.grep(/FROM "runners"/)).to be_empty
         expect(response.body).to include("Untitled chat")
         expect(response.body).to include("Archive &amp; New Chat")
         expect(response.body).to include("Keep Chat Open")
