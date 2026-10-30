@@ -225,38 +225,31 @@ RSpec.describe Issues::BulkEnqueueEligible do
     # @spec CONFIDENCE-DELIVERY-018
     it "retries a failed Paid-owned planning-hold reconciliation without crossing projects" do
       issue = create(:issue, project: project, labels: [ "planning" ])
-      failed_hold = AgentPlanningHold.create!(
-        account: project.account,
-        project: project,
-        issue: issue,
-        remote_issue_number: issue.github_number,
-        label: "planning",
-        status: "reconciliation_failed",
-        task_kind: "implementation",
-        reason: "The prerequisite issue must close.",
-        release_condition: { "kind" => "issue_closed", "issue_number" => issue.github_number },
-        evidence: { "scope_revision" => "rdr-063@draft" }
-      )
+      failed_hold = create_agent_planning_hold(project:, issue:, status: "reconciliation_failed")
       other_project = create(:project)
       other_issue = create(:issue, project: other_project, labels: [ "planning" ])
-      other_hold = AgentPlanningHold.create!(
-        account: other_project.account,
-        project: other_project,
-        issue: other_issue,
-        remote_issue_number: other_issue.github_number,
-        label: "planning",
-        status: "held",
-        task_kind: "implementation",
-        reason: "The prerequisite issue must close.",
-        release_condition: { "kind" => "issue_closed", "issue_number" => other_issue.github_number },
-        evidence: { "scope_revision" => "rdr-063@draft" }
-      )
+      other_hold = create_agent_planning_hold(project: other_project, issue: other_issue, status: "held")
       allow(AgentPlanningHolds::Reconcile).to receive(:call)
 
       service.send(:reconcile_agent_planning_holds)
 
       expect(AgentPlanningHolds::Reconcile).to have_received(:call).with(hold: failed_hold)
       expect(AgentPlanningHolds::Reconcile).not_to have_received(:call).with(hold: other_hold)
+    end
+
+    def create_agent_planning_hold(project:, issue:, status:)
+      AgentPlanningHold.create!(
+        account: project.account,
+        project: project,
+        issue: issue,
+        remote_issue_number: issue.github_number,
+        label: "planning",
+        status: status,
+        task_kind: "implementation",
+        reason: "The prerequisite issue must close.",
+        release_condition: { "kind" => "issue_closed", "issue_number" => issue.github_number },
+        evidence: { "scope_revision" => "rdr-063@draft" }
+      )
     end
   end
 end
