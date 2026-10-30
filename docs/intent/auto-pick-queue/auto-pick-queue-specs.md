@@ -52,7 +52,7 @@
 - [x] **AUTO-PICK-QUEUE-008** — When a non-PR issue is open on GitHub,
   Auto-Pick candidate selection and lifecycle reporting SHALL NOT exclude it
   solely because of its internal `paid_state`, including `recommend_close`,
-  `manual_review`, `needs_input`, `completed`, and `in_progress`. Separate
+  `manual_review`, `needs_input`, `completed`, `analyzed`, and `in_progress`. Separate
   explicit safeguards, including active work, dependencies, and configured
   GitHub labels, remain authoritative and visible in the eligibility dashboard.
   The project issue list SHALL display each open issue's actual internal

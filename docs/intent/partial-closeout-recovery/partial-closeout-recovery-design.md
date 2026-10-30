@@ -361,6 +361,8 @@ guards permit it. It records at most one automatic audit attempt per issue and
 closeout-evidence digest, including terminal attempts, so a failed audit does
 not loop. A later merged PR or no-code outcome creates a new evidence digest
 and can earn one new audit. The existing auto-pick control governs this work;
+the GitHub-sync repair places merged non-closing source PRs in this lane rather
+than treating their premerge source-closure disposition as final acceptance.
 there is no separate audit setting. Operator-requested audits use the same
 durable request and count toward the one-attempt limit for that generation.
 
