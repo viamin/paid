@@ -305,6 +305,16 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
   end
 
   # @spec FACET-CONFIDENCE-020
+  it "uses action-oriented copy on the evaluation detail screen" do
+    evaluation = start_evaluation!
+    get project_facet_confidence_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
+    expect(response.body).not_to include("Facet-confidence closeout evaluation")
+  end
+
+  # @spec FACET-CONFIDENCE-020
   it "resumes the persisted evaluation from the partial-closeout Inbox item" do
     evaluation = start_evaluation!
     get inbox_entry_path(entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
