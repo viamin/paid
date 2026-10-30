@@ -315,6 +315,20 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
   end
 
   # @spec FACET-CONFIDENCE-020
+  it "hides internal design-record identifiers once the evaluation reaches report state" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+
+    get project_facet_confidence_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
+    expect(evaluation.reload.report_markdown).not_to include("RDR-070")
+    expect(evaluation.report_markdown).to include("Facet-Confidence Closeout Evaluation Report")
+  end
+
+  # @spec FACET-CONFIDENCE-020
   it "resumes the persisted evaluation from the partial-closeout Inbox item" do
     evaluation = start_evaluation!
     get inbox_entry_path(entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
