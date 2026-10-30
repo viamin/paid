@@ -63,6 +63,14 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       )
     end
 
+    it "includes the detail-only progress projection without adding it to list payloads" do
+      issue = create(:issue, :pull_request, project: project, last_scanned_head_sha: "a" * 40)
+      entry = build_entry(Inbox::Queue::MERGE_APPROVAL_KIND, issue: issue, record: issue)
+
+      expect(described_class.render(entry).fetch(:progress)).to include(current_head: "a" * 40)
+      expect(described_class.render_list(entry)).not_to have_key(:progress)
+    end
+
     it "serializes action_required with its remediation steps" do
       entry = build_entry(Inbox::Queue::ACTION_REQUIRED_KIND, tasks: [ "Grant the missing permission" ])
 

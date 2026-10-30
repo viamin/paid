@@ -864,6 +864,7 @@ module Activities
       return :not_applicable unless tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
+      record_strict_tdd_label_verdict_head!(project, issue, pr_head_sha(pr_data)) if tdd_mode == "strict"
       review_state = effective_tdd_review_state_for_current_revision(project, issue)
 
       if review_state == "approved" &&
@@ -880,6 +881,27 @@ module Activities
       return nil if tdd_mode == "strict"
 
       scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: pr_data)
+    end
+
+    # Strict TDD receives its verdict through the human-applied label workflow.
+    # Bind that observed label verdict to this scan's PR head so Inbox can
+    # distinguish it from historical verdict evidence.
+    # @spec INBOX-PROGRESS-002
+    def record_strict_tdd_label_verdict_head!(project, issue, head_sha)
+      return if issue.local_control_state? || head_sha.blank?
+      return unless issue.effective_tdd_review_state.in?(%w[approved changes_requested])
+
+      verdict_label = issue.effective_tdd_review_state == "approved" ? TDD_TESTS_APPROVED_LABEL : TDD_TEST_CHANGES_REQUESTED_LABEL
+      return unless strict_tdd_verdict_applied_to_head?(project, issue, verdict_label, head_sha)
+
+      issue.update!(tdd_review_head_sha: head_sha) unless issue.tdd_review_head_sha == head_sha
+    end
+
+    def strict_tdd_verdict_applied_to_head?(project, issue, verdict_label, head_sha)
+      revision = latest_completed_tdd_test_revision_run(project, issue)
+      applied_at = latest_label_applied_at(project, issue, verdict_label)
+
+      revision&.result_commit_sha == head_sha && applied_at.present? && applied_at >= revision.completed_at
     end
 
     def scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: nil) # @spec TDD-PR-006
@@ -899,13 +921,15 @@ module Activities
       end
 
       if tdd_review_rejected?(status_triggers)
-        sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL)
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL,
+          head_sha: pr_head_sha(pr_data))
         return tdd_rejection_trigger(project, client, issue, reviews:, unresolved_threads:, pr_data:)
       end
 
       latest_paid_agent_review = latest_allowed_bot_review(reviews, tdd_paid_agent_review_logins)
       if latest_paid_agent_review
-        sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL)
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL,
+          head_sha: pr_head_sha(pr_data))
         return tdd_followup_trigger(issue,
           type: "tdd_tests_approved",
           details: "Automated test review approved the proposed tests")
@@ -1147,11 +1171,11 @@ module Activities
       }
     end
 
-    def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
+    def sync_tdd_test_review_verdict!(client, project, issue, verdict_label, head_sha:)
       if issue.local_control_state?
-        return issue.approve_tdd_tests! if verdict_label == TDD_TESTS_APPROVED_LABEL
+        return issue.approve_tdd_tests!(head_sha:) if verdict_label == TDD_TESTS_APPROVED_LABEL
 
-        return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label))
+        return issue.request_tdd_test_changes!(head_sha:)
       end
 
       labels_to_remove = [
@@ -1165,13 +1189,7 @@ module Activities
       end
       client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
 
-      issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq)
-    end
-
-    def tdd_review_state_for(label)
-      return "approved" if label == TDD_TESTS_APPROVED_LABEL
-
-      "changes_requested"
+      issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq, tdd_review_head_sha: head_sha)
     end
 
     # Returns the paid_agent_review_pending trigger when present, or nil.
@@ -4043,6 +4061,7 @@ module Activities
       )
     end
 
+    # @spec INBOX-PROGRESS-002
     def persist_scan_metadata(issue, scanned_at)
       # `scan_merge_conflict_only` calls this for a PR that was eligible for a
       # rescan but never reached `stage_auto_merge_snapshot`. Without this
@@ -4052,21 +4071,27 @@ module Activities
       # approval) had just been recorded (#3653).
       staged_this_pass = auto_merge_snapshots.key?(issue.id)
       snapshot = auto_merge_snapshots.delete(issue.id)
-      head_sha = auto_merge_head_shas.delete(issue.id)
+      snapshot_head_sha = auto_merge_head_shas.delete(issue.id)
+      current_head_sha = live_pr_states.dig(issue.id, :head_sha)
       approval_evidence = auto_merge_approval_evidences.delete(issue.id) || {}
 
       attributes = { last_pr_scan_at: scanned_at }
       if staged_this_pass
         previous_snapshot = issue.auto_merge_blockers
+        assessment_head_sha = snapshot_head_sha || current_head_sha
         attributes[:auto_merge_blockers] = snapshot
         attributes[:auto_merge_evaluated_at] = snapshot.present? ? scanned_at : nil
-        attributes[:last_scanned_head_sha] = head_sha if head_sha.present?
+        attributes[:auto_merge_head_sha] = snapshot.present? ? assessment_head_sha : nil
+        current_head_sha ||= assessment_head_sha
       end
+      # Draft scans do not stage an auto-merge assessment, but their observed
+      # head is still the authoritative revision for a local TDD verdict.
+      attributes[:last_scanned_head_sha] = current_head_sha if current_head_sha.present?
       Issue.transaction do
         issue.update_columns(attributes)
         if staged_this_pass
           Inbox::MergeAssessmentHistoryRecorder.call(
-            issue:, previous_snapshot:, snapshot:, scanned_at:, head_sha:, approval_evidence:
+            issue:, previous_snapshot:, snapshot:, scanned_at:, head_sha: assessment_head_sha, approval_evidence:
           )
         end
       end

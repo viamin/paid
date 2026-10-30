@@ -2651,6 +2651,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_213000) do
     t.boolean "auto_continue_paused", default: false, null: false
     t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
     t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
+    t.string "auto_merge_head_sha", limit: 40, comment: "PR HEAD commit SHA for the persisted auto-merge blocker assessment."
     t.text "auto_pick_excluded_reason", comment: "Human-provided reason this issue is excluded from automatic selection in ignored label mode."
     t.datetime "awaiting_approval_since", comment: "When the scan first observed this PR green and blocked only on owner approval; cleared whenever a non-approval blocker appears. Drives the awaiting_approval escalation ceiling."
     t.text "body"
@@ -2731,6 +2732,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_213000) do
     t.string "source", default: "github", null: false
     t.integer "stuck_confirmation_count", default: 0, null: false, comment: "Number of consecutive scans that observed this PR in an escalation-eligible stuck state. Replaces the wall-clock no-progress window so Paid downtime (which produces no scans) cannot drive false escalations."
     t.datetime "tdd_review_approved_at", comment: "Time the local TDD test-review gate was most recently approved in ignored label mode."
+    t.string "tdd_review_head_sha", limit: 40, comment: "PR head SHA bound to the latest persisted TDD test-review verdict."
     t.string "tdd_review_state", comment: "Local TDD test-review gate state used in ignored label mode."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false

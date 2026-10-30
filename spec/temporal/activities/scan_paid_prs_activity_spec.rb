@@ -634,6 +634,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         activity.execute(project_id: project.id)
 
         expect(pr_issue.reload.auto_merge_blockers).to be_present
+        expect(pr_issue.auto_merge_head_sha).to eq("abc123")
         expect(pr_issue.last_scanned_head_sha).to eq("abc123")
       end
 
@@ -731,6 +732,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         activity.execute(project_id: project.id)
 
         expect(pr_issue.reload.last_scanned_head_sha).to eq("def456")
+      end
+
+      # @spec INBOX-PROGRESS-002
+      it "retains the assessed head when a later draft scan observes a new head" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals(head_sha: "assessed-head")
+
+        activity.execute(project_id: project.id)
+        assessed_at = pr_issue.reload.auto_merge_evaluated_at
+
+        pr_issue.update_columns(github_updated_at: Time.current)
+        stub_github_for_pr(draft: true, head_sha: "draft-head", reviews: [], review_threads: [], checks: [])
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload).to have_attributes(
+          auto_merge_head_sha: "assessed-head",
+          auto_merge_evaluated_at: assessed_at,
+          last_scanned_head_sha: "draft-head"
+        )
       end
 
       # @spec INTENT-CONFORMANCE-010
@@ -11964,6 +11985,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       )
     end
 
+    def stub_strict_tdd_label_verdict(head_sha:, applied_at:, completed_at:)
+      create(:agent_run, :completed,
+        project:,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        tdd_phase: "test_writing",
+        result_commit_sha: head_sha,
+        completed_at:)
+      allow(github_client).to receive(:issue_events)
+        .with(project.full_name, 42)
+        .and_return([
+          OpenStruct.new(
+            event: "labeled",
+            label: OpenStruct.new(name: "paid-tests-approved"),
+            created_at: applied_at
+          )
+        ])
+    end
+
     def expect_stale_tdd_review_to_request_fresh_review(result, blocked_label:)
       expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
         hash_including(type: "paid_agent_review_pending")
@@ -11988,18 +12028,52 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).to eq([])
     end
 
-    it "starts implementation in strict mode after paid-tests-approved is present" do
+    it "records the current draft head for a later local test approval" do # @spec INBOX-PROGRESS-002
+      project.update!(tdd_mode: "strict", label_integration_mode: "ignored")
+      pull_request.paid_activate!
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ], head_sha: "draft-sha")
+
+      activity.execute(project_id: project.id)
+
+      expect(pull_request.reload.last_scanned_head_sha).to eq("draft-sha")
+    end
+
+    it "records the observed head before starting implementation from a strict label approval" do # @spec INBOX-PROGRESS-002
       project.update!(tdd_mode: "strict")
       pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ])
-      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+      stub_strict_tdd_label_verdict(
+        head_sha: "approved-head",
+        completed_at: 1.hour.ago,
+        applied_at: 30.minutes.ago
+      )
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ], head_sha: "approved-head")
 
       result = activity.execute(project_id: project.id)
 
+      expect(pull_request.reload.tdd_review_head_sha).to eq("approved-head")
       expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
         hash_including(type: "tdd_tests_approved")
       )
       expect(decision_types_for(result)).to include("queue_create_pr_run")
       expect(decision_types_for(result)).not_to include("queue_review_run")
+    end
+
+    it "preserves a strict label verdict head until the label is applied for the new revision" do # @spec INBOX-PROGRESS-002
+      project.update!(tdd_mode: "strict")
+      pull_request.update!(
+        labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ],
+        tdd_review_head_sha: "approved-head"
+      )
+      stub_strict_tdd_label_verdict(
+        head_sha: "new-head",
+        completed_at: 30.minutes.ago,
+        applied_at: 1.hour.ago
+      )
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ], head_sha: "new-head")
+
+      activity.execute(project_id: project.id)
+
+      expect(pull_request.reload.tdd_review_head_sha).to eq("approved-head")
     end
 
     it "starts implementation after an approved test verdict even when draft rounds are exhausted" do # @spec TDD-PR-007

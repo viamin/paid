@@ -5,6 +5,34 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r OPERATOR-INBOX-001`).
 
+- [x] **INBOX-PROGRESS-001** — When an operator selects an issue-backed Inbox
+  item, the system SHALL expose an ordered progress projection whose
+  milestones have a label, one of `complete`, `current`, `waiting`, `blocked`,
+  `stale`, `not_applicable`, or `unknown`, source evidence, and a next action
+  when known. The projection SHALL keep design approval, test review, code
+  review, owner approval, and merge as independent gates.
+  *Code:* `app/services/inbox/progress_projection.rb`.
+  *Test:* `spec/services/inbox/progress_projection_spec.rb`.
+
+- [x] **INBOX-PROGRESS-002** — For a human-led feature, design approval SHALL
+  be current only when every feature intent linked to the work item's source
+  issue has an immutable approval revision matching every linked design PR
+  head; changed heads SHALL be `stale`. Strict-TDD test verdicts and
+  PR merge assessment evidence SHALL be bound to the current PR head, and
+  missing current evidence SHALL be `unknown`, never `complete`.
+  *Code:* `app/services/inbox/progress_projection.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
+  *Test:* `spec/services/inbox/progress_projection_spec.rb`.
+
+- [x] **INBOX-PROGRESS-003** — The selected web detail, API detail, and Inbox
+  contextual chat SHALL use the same progress projection. Inbox lists and
+  badge counts SHALL not construct it or fetch remote state per item.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/progress_projection_spec.rb`,
+  `spec/requests/api/v1/inbox_spec.rb`, `spec/services/inbox/chat_context_spec.rb`.
+
 - [x] **OPERATOR-INBOX-001** — When a signed-in user opens the inbox, the
   system SHALL list actionable clarifying-question entries drawn from the
   existing needs-input queue, preserving the user's project visibility and any

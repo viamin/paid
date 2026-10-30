@@ -74,22 +74,41 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+## Detail progress projection
+
+For an issue-backed selected detail only, `Inbox::ProgressProjection` returns
+an ordered, typed lifecycle contract. The contract names design approval,
+proposed-test review, implementation, code review, owner approval, and merge
+as distinct milestones and gives each a state, source evidence, and exact next
+action where known. A project mode makes a milestone applicable; it does not
+turn any other approval into proof of completion. In particular, an approved
+open PR in a manual-merge project remains at the merge milestone.
+
+The projection reads persisted feature-intent approval revisions and every
+linked feature intent's design PR heads, current PR phase/head and TDD verdict
+state, and the current head merge assessment. The scanner records the PR head
+beside each test-review verdict and persists the merge assessment with its scanned PR head; missing
+assessment/head evidence is `unknown`; a head or design-head mismatch is
+`stale`; historical approvals never become current by inference. Linked design PRs explicitly mark proposed-test review
+and implementation as not applicable. API detail and Inbox contextual chat use this same service. List
+serialization, queue construction, and the badge deliberately do not invoke
+it, avoiding per-item GitHub calls or evidence queries.
+
 ## Workflow milestones
 
 Selected `merge_approval`, `escalated_pr`, and `test_review_pending` pull-request
 entries project persisted workflow evidence into a typed milestone contract
 shared by the detail pane, API, and contextual chat. Other issue-backed lanes
 omit that projection because they do not represent this review-and-merge
-workflow.
-The compact strip names each stage and its textual state; expandable milestones
-carry reason, revision, actor, exact action, and the relevant GitHub surface.
-The projection is selected-entry work only, so Inbox rows and counts retain
-their bounded local queries and make no remote calls. It explicitly represents
-manual merge as a current human action after approval rather than treating an
-approval as a merge. A pending test-review lane shows its gate before
+workflow. The compact strip names each stage and its textual state; expandable
+milestones carry reason, revision, actor, exact action, and the relevant GitHub
+surface. The projection is selected-entry work only, so Inbox rows and counts
+retain their bounded local queries and make no remote calls. It explicitly
+represents manual merge as a current human action after approval rather than
+treating an approval as a merge. A pending test-review lane shows its gate before
 implementation in either TDD mode; otherwise projects outside strict mode show
-the stage as not applicable. Linked
-approval-gated feature designs appear only when applicable.
+the stage as not applicable. Linked approval-gated feature designs appear only
+when applicable.
 
 ## Durable subject history
 

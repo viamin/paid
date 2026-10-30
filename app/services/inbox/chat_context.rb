@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout action_history].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history].freeze
 
     def self.call(...)
       new(...).call
@@ -90,6 +90,13 @@ module Inbox
 
     def queue_metadata
       chat_session.inbox_item_metadata
+    end
+
+    # Uses the exact detail/API contract rather than asking an agent to infer
+    # lifecycle state from labels, historical approvals, or a prose summary.
+    # @spec INBOX-PROGRESS-003
+    def progress
+      issue ? ProgressProjection.call(issue:).to_h : {}
     end
 
     def agent_run_output
@@ -224,6 +231,7 @@ module Inbox
       {
         pull_request: work_item,
         review_phase: issue.pr_review_phase,
+        progress: ProgressProjection.call(issue:).to_h,
         blockers: merge_approval ? merge_approval.guidance.fetch(:blockers) : issue.auto_merge_blockers,
         merge_approval_guidance: merge_approval&.guidance,
         workflow: Inbox::WorkflowMilestones.call(workflow_entry(merge_approval)),

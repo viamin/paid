@@ -141,6 +141,13 @@ it fails closed until that latest snapshot remains current and every required
 design artifact has merged, then records the merged repository baseline and an
 audit event. See `docs/intent/feature-approval/`.
 
+Selected Inbox detail views expose a read-only progress projection from these
+authoritative records. It distinguishes design, strict-TDD test review, code
+review, owner approval, and merge gates; binds decisions to current revisions;
+and uses the same contract for web, API, and contextual chat. Queue listings
+and badges remain cheap local projections and do not construct this detail
+evidence. See `docs/intent/operator-inbox/`.
+
 For approval-gated features (RDR-066/RDR-067), the same authority applies at
 the design level: an agent PR that drifts
 from the human-approved design stops and asks a human. A one-PR exception can
