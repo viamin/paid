@@ -1812,6 +1812,28 @@ RSpec.describe Issue do
       expect(Dashboard::CacheVersion).not_to have_received(:bump)
     end
 
+    # @spec PARTIAL-CLOSEOUT-037
+    it "bumps the inbox cache when a partial-closeout candidate closes on GitHub" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, parent_issue: issue,
+        github_state: "closed", pr_review_phase: "merged")
+
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+      issue.update!(github_state: "closed")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-037
+    it "bumps the inbox cache when a partial-closeout candidate reopens on GitHub" do
+      issue = create(:issue, project: project, github_state: "closed", paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, parent_issue: issue,
+        github_state: "closed", pr_review_phase: "merged")
+
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+      issue.update!(github_state: "open")
+    end
+
     # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-012
     it "bumps the inbox cache when an issue transitions into manual_review" do
       issue = create(:issue, project: project, paid_state: "new")

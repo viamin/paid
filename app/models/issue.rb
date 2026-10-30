@@ -141,6 +141,7 @@ class Issue < ApplicationRecord
   before_create { self.action_history_started_at ||= Time.current }
   before_create :stamp_parent_issue_linked_at, if: :parent_issue_id?
   before_update :sync_parent_issue_linked_at, if: :will_save_change_to_parent_issue_id?
+  before_update :remember_partial_closeout_inbox_candidate, if: :will_save_change_to_github_state?
   before_save :sync_closed_at, if: :will_save_change_to_github_state?
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
@@ -1011,7 +1012,17 @@ class Issue < ApplicationRecord
   # synchronization observes its source closure or reopening.
   # @spec PARTIAL-CLOSEOUT-037
   def partial_closeout_issue_github_state_changed?
-    saved_change_to_github_state? && !saved_change_to_id? && !is_pull_request?
+    saved_change_to_github_state? && (
+      @partial_closeout_inbox_candidate_before_github_state_change || partial_closeout_inbox_candidate?
+    )
+  end
+
+  def remember_partial_closeout_inbox_candidate
+    @partial_closeout_inbox_candidate_before_github_state_change = partial_closeout_inbox_candidate?
+  end
+
+  def partial_closeout_inbox_candidate?
+    Issues::StalledCloseouts.call([ project ], issue_id: id).any?
   end
 
   # Mirror of waiting_issue_github_state_changed? for the retry_limited lane:
