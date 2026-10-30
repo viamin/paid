@@ -81,6 +81,7 @@ module Api
 
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
+        track_agent_planning_hold(path)
         track_review_creation(path, response)
         track_tdd_return_to_test_review(path, response)
       elsif response.status >= 400
@@ -339,6 +340,35 @@ module Api
         issue_url: body["html_url"])
     rescue => e
       log_error("github_proxy.track_issue_failed", e.message)
+    end
+
+    # The GitHub label is an eligibility control but has no ownership metadata.
+    # Capture the authenticated run's direct write at the proxy boundary; an
+    # optional structured header supplies the release contract.  Without it we
+    # intentionally create review work instead of treating the bot as owner.
+    # @spec CONFIDENCE-DELIVERY-018
+    def track_agent_planning_hold(path)
+      return unless @agent_run
+      return unless request.method == "POST"
+
+      match = %r{\Arepos/[^/]+/[^/]+/issues/(?<number>\d+)/labels\z}.match(path)
+      return unless match
+      return unless parse_request_body(request.raw_post).fetch("labels", []).map(&:to_s).include?("planning")
+
+      AgentPlanningHolds::Capture.call(
+        project: authenticated_project,
+        agent_run: @agent_run,
+        issue_number: match[:number].to_i,
+        contract: planning_hold_contract
+      )
+    rescue => e
+      log_error("github_proxy.track_agent_planning_hold_failed", e.message)
+    end
+
+    def planning_hold_contract
+      JSON.parse(request.headers["X-Paid-Planning-Hold"].to_s).deep_stringify_keys
+    rescue JSON::ParserError
+      {}
     end
 
     def track_review_creation(path, response)

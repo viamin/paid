@@ -15,6 +15,7 @@ RSpec.describe Issues::BulkEnqueueEligible do
 
   before do
     allow(service).to receive(:release_confidence_delivery_holds)
+    allow(service).to receive(:reconcile_agent_planning_holds)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
@@ -210,6 +211,52 @@ RSpec.describe Issues::BulkEnqueueEligible do
       expect(FeatureIntents::ReleaseIssue).to have_received(:call).twice
       expect(FeatureIntents::ReleaseIssue).to have_received(:call).with(issue: held_issue)
       expect(FeatureIntents::ReleaseIssue).to have_received(:call).with(issue: reheld_issue)
+    end
+  end
+
+  describe "#reconcile_agent_planning_holds" do
+    let(:project) { create(:project) }
+    let(:service) { described_class.new(project: project) }
+
+    before do
+      allow(service).to receive(:reconcile_agent_planning_holds).and_call_original
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "retries a failed Paid-owned planning-hold reconciliation without crossing projects" do
+      issue = create(:issue, project: project, labels: [ "planning" ])
+      failed_hold = AgentPlanningHold.create!(
+        account: project.account,
+        project: project,
+        issue: issue,
+        remote_issue_number: issue.github_number,
+        label: "planning",
+        status: "reconciliation_failed",
+        task_kind: "implementation",
+        reason: "The prerequisite issue must close.",
+        release_condition: { "kind" => "issue_closed", "issue_number" => issue.github_number },
+        evidence: { "scope_revision" => "rdr-063@draft" }
+      )
+      other_project = create(:project)
+      other_issue = create(:issue, project: other_project, labels: [ "planning" ])
+      other_hold = AgentPlanningHold.create!(
+        account: other_project.account,
+        project: other_project,
+        issue: other_issue,
+        remote_issue_number: other_issue.github_number,
+        label: "planning",
+        status: "held",
+        task_kind: "implementation",
+        reason: "The prerequisite issue must close.",
+        release_condition: { "kind" => "issue_closed", "issue_number" => other_issue.github_number },
+        evidence: { "scope_revision" => "rdr-063@draft" }
+      )
+      allow(AgentPlanningHolds::Reconcile).to receive(:call)
+
+      service.send(:reconcile_agent_planning_holds)
+
+      expect(AgentPlanningHolds::Reconcile).to have_received(:call).with(hold: failed_hold)
+      expect(AgentPlanningHolds::Reconcile).not_to have_received(:call).with(hold: other_hold)
     end
   end
 end

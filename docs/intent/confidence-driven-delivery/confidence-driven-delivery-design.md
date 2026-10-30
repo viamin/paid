@@ -127,6 +127,18 @@ work only to canonical queue admission. Task kind is immutable for the
 marker-identified publication, so a retry with a conflicting kind is rejected
 rather than changing its admission semantics.
 
+Direct GitHub proxy writes by an authenticated agent use a separate
+`AgentPlanningHold` receipt because they are not feature publications. The
+proxy persists the issue, run, label and an optional structured task contract
+only after GitHub accepts the write. A missing contract creates a blocking
+operator Inbox item; bot identity alone is never ownership evidence. A complete
+contract includes task kind, reason, release condition and scope revision, and
+is idempotent by issue and label so failed runs and retries retain one receipt.
+The bounded eligibility sweep may release only explicit mechanical conditions,
+reads GitHub back after removal, and synchronizes local labels. Conditions that
+require design judgment remain held for an operator, even when a related issue
+closes.
+
 Confidence-driven PRs receive an independent conformance review against that
 issue link's immutable release snapshot: its merged baseline, mapped design
 documents, and admitted scope. Detected drift is recorded as tracked forward

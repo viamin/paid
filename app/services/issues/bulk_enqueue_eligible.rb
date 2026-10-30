@@ -16,6 +16,7 @@ module Issues
       return [] unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
 
       release_confidence_delivery_holds
+      reconcile_agent_planning_holds
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
 
@@ -69,6 +70,16 @@ module Issues
     def release_confidence_delivery_holds
       issue_ids = unreleased_confidence_issue_ids | stale_planning_label_issue_ids
       Issue.where(id: issue_ids).find_each { |issue| FeatureIntents::ReleaseIssue.call(issue: issue) }
+    end
+
+    # Direct agent GitHub writes are not FeatureIntent publications. Sweep the
+    # bounded set of durable contracts separately so they cannot be skipped
+    # forever simply because they have no confidence-delivery link.
+    # @spec CONFIDENCE-DELIVERY-018
+    def reconcile_agent_planning_holds
+      AgentPlanningHold.where(project_id: project.id, status: %w[held reconciliation_failed]).find_each do |hold|
+        AgentPlanningHolds::Reconcile.call(hold:)
+      end
     end
 
     def unreleased_confidence_issue_ids

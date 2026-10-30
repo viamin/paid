@@ -237,6 +237,20 @@ RSpec.describe "Api::GithubProxy" do
 
       expect(response).to have_http_status(:ok)
     end
+
+    it "records an agent-authored planning label without claiming ownership" do # @spec CONFIDENCE-DELIVERY-018
+      create(:issue, project:, github_number: 42, labels: [ "planning" ])
+
+      expect {
+        post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
+          params: { labels: [ "planning" ] }.to_json,
+          headers: valid_headers
+      }.to change(AgentPlanningHold, :count).by(1)
+
+      hold = AgentPlanningHold.last
+      expect(hold).to have_attributes(agent_run:, status: "needs_review", task_kind: nil)
+      expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: hold.issue).blocking).to exist
+    end
   end
 
   describe "POST /api/proxy/github/repos/:owner/:repo/pulls/:number/reviews" do
