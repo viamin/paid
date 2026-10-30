@@ -16,7 +16,7 @@ module Issues
   # skip labels, and active-run uniqueness all still apply, with the blocker
   # explained to the user.
   # @spec PARTIAL-CLOSEOUT-003 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
-  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027
+  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037
   class RequestContinuation
     Result = Struct.new(:request, :agent_run, :code, :message, keyword_init: true) do
       def success? = code.nil?
@@ -119,7 +119,7 @@ module Issues
       if status.open_request.present?
         return nil # handled by the open-request fast path; defensive only
       end
-      if status.resolved_current_generation
+      if status.resolved_current_generation && !fresh_audit_has_unmet_criteria?
         return failure(:not_stalled, "This issue was already resolved complete against the current evidence.")
       end
 
@@ -130,6 +130,11 @@ module Issues
       end
 
       nil
+    end
+
+    def fresh_audit_has_unmet_criteria?
+      assessment = PartialCloseouts::Assessment.call(issue)
+      !assessment.stale? && assessment.criteria.any? { |criterion| criterion["state"] == "unmet" }
     end
 
     def create_request_and_run(status)

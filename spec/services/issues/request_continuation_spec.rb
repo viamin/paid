@@ -63,6 +63,26 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(event.actor).to eq(user)
       expect(event.subject).to eq(issue)
     end
+
+    it "allows legacy resolved evidence to continue after a fresh audit finds unmet work" do # @spec PARTIAL-CLOSEOUT-037
+      merged_partial_pr(number: 12)
+      evidence = Issues::CloseoutEvidence.call(issue)
+      issue.update!(
+        closeout_resolved_at: 1.day.ago,
+        closeout_resolution_digest: evidence.digest,
+        closeout_resolved_by: user
+      )
+      run = create(:agent_run, :completed, project:, issue:)
+      run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+        "criteria" => [ { "criterion" => "the remaining work", "state" => "unmet" } ],
+        "gaps" => [ { "criterion" => "the remaining work", "kind" => "agent", "title" => "Finish the work" } ]
+      }) })
+
+      result = request_continuation
+
+      expect(result).to be_success
+      expect(result.agent_run).to be_queued
+    end
   end
 
   describe "idempotency across double-clicks, replay, and concurrent requests" do
@@ -135,6 +155,26 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.message).to include("no terminal closeout evidence")
       expect(issue.agent_runs).to be_empty
       expect(IssueContinuationRequest.count).to eq(0)
+    end
+
+    it "keeps a current accepted legacy resolution on the GitHub closure path" do # @spec PARTIAL-CLOSEOUT-037
+      merged_partial_pr(number: 12)
+      evidence = Issues::CloseoutEvidence.call(issue)
+      issue.update!(
+        closeout_resolved_at: 1.day.ago,
+        closeout_resolution_digest: evidence.digest,
+        closeout_resolved_by: user
+      )
+      run = create(:agent_run, :completed, project:, issue:)
+      run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+        "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => []
+      }) })
+
+      result = request_continuation
+
+      expect(result.code).to eq(:not_stalled)
+      expect(result.message).to include("already resolved complete")
+      expect(issue.agent_runs.where(status: "queued")).to be_empty
     end
 
     it "refuses a paused issue without bypassing the pause" do
