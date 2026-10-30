@@ -11,10 +11,12 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(source_run:, requirement:, actor:)
+    def initialize(source_run:, requirement:, actor:, criterion: nil, tool_name: nil)
       @source_run = source_run
       @requirement = requirement
       @actor = actor
+      @criterion = criterion
+      @tool_name = tool_name
     end
 
     def call
@@ -32,7 +34,7 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :actor, :requirement, :source_run
+    attr_reader :actor, :requirement, :source_run, :criterion, :tool_name
 
     def allowed_requirement?
       PreCommitRequirement.resolve(project: source_run.project, user: actor).any? { |candidate| candidate.id == requirement.id }
@@ -68,6 +70,8 @@ module TechnicalPrerequisites
           "requirement_id" => requirement.id,
           "requirement_name" => requirement.name,
           "command" => reviewed_command,
+          "criterion" => criterion,
+          "tool_name" => tool_name,
           "source_run_id" => source_run.id
         }
       )
@@ -75,10 +79,17 @@ module TechnicalPrerequisites
 
     def copy_runtime_snapshots!(run)
       AgentRun.where(id: run.id).update_all(
-        tool_sidecar_snapshot: source_run.tool_sidecar_snapshot,
-        mcp_server_snapshot: source_run.mcp_server_snapshot
+        tool_sidecar_snapshot: selected_tool_sidecars,
+        mcp_server_snapshot: criterion.present? ? [] : source_run.mcp_server_snapshot
       )
       run.reload
+    end
+
+    def selected_tool_sidecars
+      return source_run.tool_sidecar_snapshot if criterion.blank?
+      return [] if tool_name.blank?
+
+      source_run.tool_sidecar_snapshot.select { |tool| tool["name"] == tool_name }
     end
 
     # Requirements are reviewed shell recipes. Preserve their text so this

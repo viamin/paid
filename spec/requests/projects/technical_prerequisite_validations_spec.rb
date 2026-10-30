@@ -26,6 +26,41 @@ RSpec.describe "Technical prerequisite validations" do
   end
 
   # @spec PARTIAL-CLOSEOUT-032
+  it "rejects a criterion-specific action after its assessment becomes stale" do
+    sign_in user
+    source_run
+
+    expect {
+      post validate_technical_prerequisite_project_agent_runs_path(project), params: {
+        issue_id: issue.id, source_run_id: source_run.id, requirement_id: requirement.id,
+        criterion: "Native analyzer runs on the pinned checkout"
+      }
+    }.not_to change(AgentRun, :count)
+
+    expect(flash[:alert]).to include("no longer prepared")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-032
+  it "records the criterion from a current prepared action on the validation run" do
+    sign_in user
+    criterion = "Native analyzer runs on the pinned checkout"
+    source_run.update!(reconciliation: { "assessment" => {
+      "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+      "criteria" => [ { "criterion" => criterion, "state" => "unmet", "validation_kind" => "native",
+        "validation_requirement_id" => requirement.id } ]
+    } })
+
+    post validate_technical_prerequisite_project_agent_runs_path(project), params: {
+      issue_id: issue.id, source_run_id: source_run.id, requirement_id: requirement.id, criterion: criterion
+    }
+
+    expect(response).to redirect_to(project_agent_run_path(project, AgentRun.where(synthetic: true).last))
+    expect(AgentRun.where(synthetic: true).last.external_metadata.dig("technical_prerequisite_validation", "criterion"))
+      .to eq(criterion)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-032
   it "queues a validation run that never enters the agent execution queue" do
     sign_in user
 

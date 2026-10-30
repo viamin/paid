@@ -484,10 +484,25 @@ without treating the result itself as acceptance. A changed checkout, image,
 tool snapshot, or scope requires a fresh validation.
 
 When a validation record is present, the partial-closeout Inbox pane shows its
-latest outcome and exact setup action alongside the reviewed-recipe retry
-control. The operator can therefore resolve an unavailable backend or rollout
-authorization before rerunning it, rather than inferring remediation from a
-stale acceptance assessment.
+latest outcome and exact setup action. The operator can therefore resolve an
+unavailable backend or rollout authorization before requesting a fresh
+assessment and retrying, rather than inferring remediation from stale evidence.
+
+The criterion-level closeout assessment identifies technical validation work
+separately from implementation and human evidence. For each unmet or unknown
+technical criterion, it may name one enabled, reviewed requirement whose
+command tests that criterion and the exact attached tool when a sidecar is
+needed. The Inbox presents that prepared command as a named action on
+the criterion; it never asks the operator to choose from unrelated project
+checks. If no matching recipe, pinned source run, or matching attached sidecar
+is available, the criterion states the exact preparation step instead of
+offering a misleading run action. A stale assessment requests a fresh audit
+before offering an execution action. The server resolves the named requirement
+against the actor's effective project configuration again at submission time.
+Criterion-specific runs copy only the named tool sidecar and omit unrelated MCP
+servers; native checks copy neither attachment type.
+Validation evidence remains evidence for a later assessment, not an automatic
+attestation that the criterion is satisfied.
 
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
@@ -552,6 +567,11 @@ issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
 ## Alternatives considered
+
+- *Generic picker over project checks*: rejected because a check being enabled
+  does not establish that it proves this issue's criterion. The semantic
+  assessment selects a matching reviewed recipe; execution validates that it
+  remains enabled and that the assessment is current.
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is
   deliberately state-independent (#3432/#3588 review follow-up).

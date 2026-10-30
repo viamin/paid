@@ -1,4 +1,5 @@
 <%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 @spec PARTIAL-CLOSEOUT-010 %>
+<%# @spec PARTIAL-CLOSEOUT-032 %>
 <%# @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 @spec PARTIAL-CLOSEOUT-033 %>
 <% issue = entry.issue %>
 <% status = entry.closeout_status || Issues::CloseoutStatus.call(issue) %>
@@ -11,7 +12,8 @@
     ).order(created_at: :desc).first %>
 <% prerequisite_source_run = issue.agent_runs.where.not(base_commit_sha: [nil, ""])
      .where.not(goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL).order(created_at: :desc).first %>
-<% prerequisite_recipes = PreCommitRequirement.resolve(project: entry.project, user: current_user) %>
+<% validation_actions = TechnicalPrerequisites::InboxActions.call(
+     project: entry.project, actor: current_user, assessment: assessment, source_run: prerequisite_source_run) %>
 <% technical_validation = status.technical_evidence.select { |record| record.is_a?(Hash) }
      .max_by { |record| record["recorded_at"].to_s } %>
 <div class="space-y-6">
@@ -273,24 +275,31 @@
     <% end %>
 
     <% if policy(entry.project).run_agent? %>
-      <% if prerequisite_source_run && prerequisite_recipes.any? %>
-        <%= form_with url: validate_technical_prerequisite_project_agent_runs_path(entry.project),
-              data: { turbo_frame: "_top" }, class: "space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3" do |form| %>
-          <%= form.hidden_field :issue_id, value: issue.id %>
-          <%= form.hidden_field :source_run_id, value: prerequisite_source_run.id %>
-          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
-          <%= form.label :requirement_id, "Collect isolated prerequisite evidence", class: "text-sm font-medium text-indigo-900" %>
-          <%= form.select :requirement_id,
-                prerequisite_recipes.map { |recipe| [recipe.name, recipe.id] }, {},
-                class: "block w-full rounded-md border-gray-300 text-sm shadow-sm" %>
-          <p class="text-xs text-indigo-800">
-            Runs the selected reviewed recipe in a fresh isolated checkout pinned to
-            <code><%= prerequisite_source_run.base_commit_sha %></code>. The run page shows progress and allows cancellation;
-            submit again to retry with fresh evidence.
-          </p>
-          <%= form.submit technical_validation ? "Retry prerequisite validation" : "Run prerequisite validation",
-                class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% if validation_actions.any? %>
+        <% validation_actions.each do |action| %>
+          <div class="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+            <p class="text-sm font-medium text-indigo-900"><%= action.criterion["criterion"] %></p>
+            <% if action.ready? %>
+              <p class="text-xs text-indigo-800">Reviewed recipe prepared for this criterion. The run will use the pinned checkout and record execution evidence.</p>
+              <%= form_with url: validate_technical_prerequisite_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" } do |form| %>
+                <%= form.hidden_field :issue_id, value: issue.id %>
+                <%= form.hidden_field :source_run_id, value: prerequisite_source_run.id %>
+                <%= form.hidden_field :requirement_id, value: action.requirement.id %>
+                <%= form.hidden_field :criterion, value: action.criterion["criterion"] %>
+                <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+                <%= form.submit "Run #{action.requirement.name}", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+              <% end %>
+            <% else %>
+              <p class="text-sm text-indigo-900"><%= action.setup_action %></p>
+              <% unless action.requirement %>
+                <%= link_to "Configure reviewed checks", project_pre_commit_requirements_path(entry.project),
+                      data: { turbo_frame: "_top" }, class: "text-sm font-medium text-indigo-700 hover:text-indigo-900" %>
+              <% end %>
+            <% end %>
+          </div>
         <% end %>
+      <% elsif assessment.stale? %>
+        <p class="text-sm text-indigo-900">Run an acceptance audit to prepare a criterion-specific validation action.</p>
       <% end %>
 
         <%= form_with url: link_prerequisite_project_agent_runs_path(entry.project),

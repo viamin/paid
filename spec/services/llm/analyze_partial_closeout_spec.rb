@@ -55,6 +55,26 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-032
+    it "grounds technical validation suggestions in enabled reviewed recipes" do
+      selected = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Native analyzer smoke test", command: "bin/validate-analyzer")
+      create(:pre_commit_requirement, project:, account: project.account,
+        name: "Disabled check", command: "bin/disabled", enabled: false)
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Native analyzer executes", state: "unmet", validation_kind: "native",
+        validation_requirement_id: selected.id
+      } ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("criteria", 0, "validation_requirement_id")).to eq(selected.id)
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        expect(prompt).to include("Native analyzer smoke test", selected.id.to_s)
+        expect(prompt).not_to include("Disabled check")
+      end
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,

@@ -69,7 +69,9 @@ module Llm
             properties: {
               criterion: { type: "string" }, state: { type: "string", enum: VALID_STATES },
               evidence: { type: "array", items: { type: "object", properties: { label: { type: "string" }, url: { type: "string" } }, required: %w[label], additionalProperties: false } },
-              owner_issue_number: { type: "integer" }, prerequisite_kind: { type: "string", enum: %w[human external] }, prerequisite: { type: "string" }
+              owner_issue_number: { type: "integer" }, prerequisite_kind: { type: "string", enum: %w[human external] }, prerequisite: { type: "string" },
+              validation_kind: { type: "string", enum: %w[native tool_sidecar] }, validation_requirement_id: { type: "integer" },
+              validation_tool_name: { type: "string" }
             }, required: %w[criterion state], additionalProperties: false
           }
         },
@@ -87,7 +89,7 @@ module Llm
       @agent_run = agent_run
     end
 
-    def call # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-034
+    def call # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-034
       @request_id = SecureRandom.uuid
       @attempt_id = SecureRandom.uuid
       parsed = parse_response
@@ -191,6 +193,11 @@ module Llm
         VALID_STATES.include?(criterion["state"]) &&
         optional_strings?(criterion, %w[prerequisite]) && valid_owner?(criterion) &&
         (criterion["prerequisite_kind"].nil? || %w[human external].include?(criterion["prerequisite_kind"])) &&
+        (criterion["validation_kind"].nil? || %w[native tool_sidecar].include?(criterion["validation_kind"])) &&
+        (criterion["validation_tool_name"].nil? ||
+          (criterion["validation_kind"] == "tool_sidecar" && criterion["validation_tool_name"].is_a?(String) && criterion["validation_tool_name"].present?)) &&
+        (criterion["validation_requirement_id"].nil? ||
+          (criterion["validation_kind"].present? && validation_recipe_ids.include?(criterion["validation_requirement_id"]))) &&
         valid_evidence?(criterion["evidence"])
     end
 
@@ -326,11 +333,30 @@ module Llm
         #{RESPONSE_SCHEMA.to_json}
         Return gaps only for unmet acceptance criteria, at most #{MAX_GAPS} gaps. Each gap must be agent work with a focused title/body or an owner_issue_number, human work with an exact next_step, or external work with an exact next_step and external_dependency owner/repo/number matching the blocking work. When a human gap is specifically the independent facet-confidence closeout evaluation, set workflow to facet_confidence_closeout_evaluation; otherwise omit workflow. When a human gap cites policy or evidence, include its stable key, revision, label, and optional URL in references. If stale policy requires an operator choice, set policy_selection.required and provide its exact next_step; never silently substitute solo review for team policy.
         Also return criterion-level assessments for every criterion you can identify: state is satisfied only with cited evidence, unmet for demonstrated missing work, and unknown whenever evidence is absent. Include evidence links only when supplied, current open owner issue numbers, and human or external prerequisites. Classify the closeout as awaiting_final_audit, blocked_implementation, missing_measured_results, or coordination_epic. State the supported next action and why it will not duplicate open work.
+        For an unmet or unknown criterion that needs an isolated technical check, set validation_kind to native or tool_sidecar. Set validation_requirement_id only when one enabled reviewed recipe below directly validates that criterion; leave it unset when none applies. Never select a recipe merely because it is available. For a tool_sidecar criterion, set validation_tool_name to the exact attached tool name when known. An unrelated tool does not satisfy the criterion. Tool sidecars additionally require an attached, allowlisted tool and scoped rollout authorization.
+        Enabled reviewed validation recipes: #{validation_recipe_lines}
+        Attached tool sidecars: #{agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") }.to_json}
         Reuse owner_issue_number only when one of the currently open issues listed below directly owns the still-unmet criterion; closed historical work is not an owner.
         Issue: #{agent_run.issue.title}\nEvidence: #{agent_run.agent_summary_with_stderr_fallback(limit: 200)}
         Technical prerequisite validation evidence: #{TechnicalPrerequisites::Evidence.records_for(agent_run.issue).to_json}
         Open issues eligible for ownership:\n#{open_issue_lines}
       PROMPT
+    end
+
+    def validation_recipes
+      @validation_recipes ||= PreCommitRequirement.resolve(project: agent_run.project, user: agent_run.project.effective_owner)
+    end
+
+    def validation_recipe_ids
+      @validation_recipe_ids ||= validation_recipes.map(&:id)
+    end
+
+    def validation_recipe_lines
+      return "None." if validation_recipes.empty?
+
+      validation_recipes.map do |recipe|
+        "#{recipe.id}: #{recipe.name.to_s.truncate(100)} (#{recipe.check_type}; #{recipe.command.to_s.truncate(180)})"
+      end.join("\n")
     end
 
     # Grounds owner_issue_number reuse in the real, current open-issue set
