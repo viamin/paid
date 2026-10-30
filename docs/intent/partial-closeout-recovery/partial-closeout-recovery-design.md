@@ -224,7 +224,8 @@ requests GitHub closure. Before releasing the issue lock for that request, Paid
 persists a closing-in-progress marker that revokes new continuation admission
 and cancels a queued continuation at its dequeue recheck. GitHub reads and
 mutations run without a database row lock or open transaction. A failed remote
-request clears the marker so the close action remains retryable. After GitHub
+request clears only the marker owned by that attempt so a newer replacement
+lease remains serialized and the close action remains retryable. After GitHub
 confirms closure, Paid reacquires the
 issue lock and revalidates the evidence and every local prerequisite before it
 records the actor, rationale, and evidence digest and marks the local issue

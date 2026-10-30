@@ -72,7 +72,7 @@ module Issues
       return validation unless validation.success?
 
       issue.update!(closeout_closing_at: Time.current)
-      @closing_started = true
+      @closing_marker = issue.reload.closeout_closing_at
       Result.new(issue:)
     end
 
@@ -101,15 +101,17 @@ module Issues
       evidence = CloseoutEvidence.call(issue)
       supersede_open_continuation
       issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
-      @closing_started = false
+      @closing_marker = nil
       Result.new(issue:)
     end
 
     def clear_closing_marker
-      return unless @closing_started
+      return unless @closing_marker
 
-      issue.with_lock { issue.update!(closeout_closing_at: nil) }
-      @closing_started = false
+      issue.with_lock do
+        issue.update!(closeout_closing_at: nil) if issue.closeout_closing_at == @closing_marker
+      end
+      @closing_marker = nil
     end
 
     def accepted_assessment?

@@ -98,6 +98,22 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(issue.reload.closeout_closing_at).to be_nil
   end
 
+  it "does not clear a replacement closing marker when an expired attempt finishes" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    replacement_marker = nil
+    allow(github_client).to receive(:issue) do
+      issue.update!(closeout_closing_at: Time.current)
+      replacement_marker = issue.reload.closeout_closing_at
+      raise GithubClient::Error, "timed out"
+    end
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:github_failed)
+    expect(issue.reload.closeout_closing_at).to eq(replacement_marker)
+  end
+
   it "refuses closure while an agent run is already active" do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit
