@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2680,6 +2680,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
     t.string "source", default: "github", null: false
     t.integer "stuck_confirmation_count", default: 0, null: false, comment: "Number of consecutive scans that observed this PR in an escalation-eligible stuck state. Replaces the wall-clock no-progress window so Paid downtime (which produces no scans) cannot drive false escalations."
     t.datetime "tdd_review_approved_at", comment: "Time the local TDD test-review gate was most recently approved in ignored label mode."
+    t.string "tdd_review_head_sha", limit: 40, comment: "PR head SHA bound to the latest persisted TDD test-review verdict."
     t.string "tdd_review_state", comment: "Local TDD test-review gate state used in ignored label mode."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false

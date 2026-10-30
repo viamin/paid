@@ -7,10 +7,14 @@ RSpec.describe Inbox::ProgressProjection do
     projection.to_h.fetch(:milestones).find { |entry| entry.fetch(:id) == id }
   end
 
-  it "keeps an owner-approved docs PR at the manual merge gate" do
+  it "keeps an owner-approved docs PR at the manual merge gate" do # @spec INBOX-PROGRESS-001 INBOX-PROGRESS-002
     project = create(:project, auto_merge_mode: "off", tdd_mode: "off")
     pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "a" * 40,
-      auto_merge_evaluated_at: Time.current, auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+    intent = create(:feature_intent, project:)
+    create(:feature_intent_design_pr, feature_intent: intent, pull_request_number: pull_request.github_number,
+      head_sha: pull_request.last_scanned_head_sha)
 
     projection = described_class.call(issue: pull_request).to_h
 
@@ -23,7 +27,7 @@ RSpec.describe Inbox::ProgressProjection do
     )
   end
 
-  it "keeps strict TDD test approval independent from code and owner approval" do
+  it "keeps strict TDD test approval independent from code and owner approval" do # @spec INBOX-PROGRESS-001
     project = create(:project, operating_mode: "human_led_feature_factory", tdd_mode: "strict", auto_merge_mode: "off")
     source_issue = create(:issue, project:)
     intent = create(:feature_intent, :approved_waiting_for_merge, project:)
@@ -32,7 +36,8 @@ RSpec.describe Inbox::ProgressProjection do
     intent.record_approval!(by: project.created_by, pr_heads: { design_pr.pull_request_number.to_s => design_pr.head_sha })
     pull_request = create(:issue, :pull_request, project:, parent_issue: source_issue,
       labels: [ "paid-tests-approved" ], last_scanned_head_sha: "a" * 40,
-      auto_merge_evaluated_at: Time.current, auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+      tdd_review_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
 
     projection = described_class.call(issue: pull_request).to_h
 
@@ -44,7 +49,7 @@ RSpec.describe Inbox::ProgressProjection do
     expect(milestone(projection, "merge").fetch(:state)).to eq("current")
   end
 
-  it "does not carry a design approval across a changed design head" do
+  it "does not carry a design approval across a changed design head" do # @spec INBOX-PROGRESS-002
     project = create(:project, operating_mode: "human_led_feature_factory")
     source_issue = create(:issue, project:)
     intent = create(:feature_intent, :approved_waiting_for_merge, project:)
@@ -56,13 +61,41 @@ RSpec.describe Inbox::ProgressProjection do
     expect(milestone(described_class.call(issue: pull_request).to_h, "design_approval")).to include(state: "stale")
   end
 
-  it "reports a requested strict-TDD test revision as blocked and missing current assessment as unknown" do
+  it "reports a requested strict-TDD test revision as blocked and missing current assessment as unknown" do # @spec INBOX-PROGRESS-002
     project = create(:project, tdd_mode: "strict")
-    pull_request = create(:issue, :pull_request, project:, labels: [ "paid-test-changes-requested" ], last_scanned_head_sha: "a" * 40)
+    pull_request = create(:issue, :pull_request, project:, labels: [ "paid-test-changes-requested" ],
+      last_scanned_head_sha: "a" * 40, tdd_review_head_sha: "a" * 40)
 
     projection = described_class.call(issue: pull_request).to_h
 
     expect(milestone(projection, "test_review")).to include(state: "blocked")
     expect(milestone(projection, "owner_approval")).to include(state: "unknown")
+  end
+
+  it "marks an approved test verdict stale when it belongs to an earlier head" do # @spec INBOX-PROGRESS-002
+    project = create(:project, tdd_mode: "strict")
+    pull_request = create(:issue, :pull_request, project:, labels: [ "paid-tests-approved" ],
+      last_scanned_head_sha: "b" * 40, tdd_review_head_sha: "a" * 40)
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "test_review")).to include(state: "stale")
+    expect(milestone(projection, "implementation")).to include(state: "waiting")
+  end
+
+  it "marks implementation and proposed-test review inapplicable for a linked design PR" do # @spec INBOX-PROGRESS-001
+    project = create(:project, operating_mode: "human_led_feature_factory", tdd_mode: "strict", auto_merge_mode: "off")
+    intent = create(:feature_intent, project:)
+    pull_request = create(:issue, :pull_request, project:, github_number: 20, pr_review_phase: "ready",
+      last_scanned_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+    create(:feature_intent_design_pr, feature_intent: intent, pull_request_number: pull_request.github_number,
+      head_sha: "a" * 40)
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "test_review")).to include(state: "not_applicable")
+    expect(milestone(projection, "implementation")).to include(state: "not_applicable")
+    expect(milestone(projection, "merge")).to include(state: "current")
   end
 end

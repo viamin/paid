@@ -899,13 +899,15 @@ module Activities
       end
 
       if tdd_review_rejected?(status_triggers)
-        sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL)
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL,
+          head_sha: pr_head_sha(pr_data))
         return tdd_rejection_trigger(project, client, issue, reviews:, unresolved_threads:, pr_data:)
       end
 
       latest_paid_agent_review = latest_allowed_bot_review(reviews, tdd_paid_agent_review_logins)
       if latest_paid_agent_review
-        sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL)
+        sync_tdd_test_review_verdict!(client, project, issue, TDD_TESTS_APPROVED_LABEL,
+          head_sha: pr_head_sha(pr_data))
         return tdd_followup_trigger(issue,
           type: "tdd_tests_approved",
           details: "Automated test review approved the proposed tests")
@@ -1147,11 +1149,11 @@ module Activities
       }
     end
 
-    def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
+    def sync_tdd_test_review_verdict!(client, project, issue, verdict_label, head_sha:)
       if issue.local_control_state?
-        return issue.approve_tdd_tests! if verdict_label == TDD_TESTS_APPROVED_LABEL
+        return issue.approve_tdd_tests!(head_sha:) if verdict_label == TDD_TESTS_APPROVED_LABEL
 
-        return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label))
+        return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label), tdd_review_head_sha: head_sha)
       end
 
       labels_to_remove = [
@@ -1165,7 +1167,7 @@ module Activities
       end
       client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
 
-      issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq)
+      issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq, tdd_review_head_sha: head_sha)
     end
 
     def tdd_review_state_for(label)

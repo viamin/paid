@@ -572,10 +572,10 @@ class Issue < ApplicationRecord
   end
 
   # @spec LABEL-CONTROL-005
-  def approve_tdd_tests!
-    return if tdd_review_state == "approved" && tdd_review_approved_at.present?
+  def approve_tdd_tests!(head_sha: last_scanned_head_sha)
+    return if tdd_review_state == "approved" && tdd_review_approved_at.present? && tdd_review_head_sha == head_sha
 
-    update!(tdd_review_state: "approved", tdd_review_approved_at: Time.current)
+    update!(tdd_review_state: "approved", tdd_review_approved_at: Time.current, tdd_review_head_sha: head_sha)
   end
 
   # Releases the escalation hold and returns the PR to an automation-managed

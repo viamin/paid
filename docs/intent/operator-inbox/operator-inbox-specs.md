@@ -19,7 +19,8 @@
   design PR head; changed heads SHALL be `stale`. Strict-TDD test verdicts and
   PR merge assessment evidence SHALL be bound to the current PR head, and
   missing current evidence SHALL be `unknown`, never `complete`.
-  *Code:* `app/services/inbox/progress_projection.rb`.
+  *Code:* `app/services/inbox/progress_projection.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/services/inbox/progress_projection_spec.rb`.
 
 - [x] **INBOX-PROGRESS-003** — The selected web detail, API detail, and Inbox

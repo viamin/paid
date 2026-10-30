@@ -86,9 +86,11 @@ open PR in a manual-merge project remains at the merge milestone.
 
 The projection reads persisted feature-intent approval revisions and linked
 design PR heads, current PR phase/head and TDD verdict state, and the current
-head merge assessment. Missing assessment/head evidence is `unknown`; a head
-or design-head mismatch is `stale`; historical approvals never become current
-by inference. API detail and Inbox contextual chat use this same service. List
+head merge assessment. The scanner records the PR head beside each test-review
+verdict and persists the merge assessment with its scanned PR head; missing
+assessment/head evidence is `unknown`; a head or design-head mismatch is
+`stale`; historical approvals never become current by inference. Linked design PRs explicitly mark proposed-test review
+and implementation as not applicable. API detail and Inbox contextual chat use this same service. List
 serialization, queue construction, and the badge deliberately do not invoke
 it, avoiding per-item GitHub calls or evidence queries.
 

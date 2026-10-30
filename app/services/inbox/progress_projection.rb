@@ -62,17 +62,21 @@ module Inbox
     end
 
     def test_review
-      return milestone("test_review", "Proposed-test review", "not_applicable") unless project.tdd_mode == "strict"
+      return milestone("test_review", "Proposed-test review", "not_applicable") unless project.tdd_mode == "strict" && !design_pull_request?
       return milestone("test_review", "Proposed-test review", "unknown", next_action: "Synchronize the current pull request head.") if current_head.blank?
+      return milestone("test_review", "Proposed-test review", "stale", evidence: test_review_evidence,
+        next_action: "Review the proposed tests for the current revision.") if stale_test_review?
+      return milestone("test_review", "Proposed-test review", "unknown",
+        next_action: "Synchronize the test-review verdict for the current revision.") unless current_test_review?
 
       case issue.effective_tdd_review_state
       when "approved"
-        milestone("test_review", "Proposed-test review", "complete", evidence: head_evidence("tdd_test_verdict"))
+        milestone("test_review", "Proposed-test review", "complete", evidence: test_review_evidence)
       when "changes_requested"
-        milestone("test_review", "Proposed-test review", "blocked", evidence: head_evidence("tdd_test_verdict"),
+        milestone("test_review", "Proposed-test review", "blocked", evidence: test_review_evidence,
           next_action: "Revise the proposed tests and submit the current revision for review.")
       when "ready_for_review"
-        milestone("test_review", "Proposed-test review", "current", evidence: head_evidence("tdd_test_verdict"),
+        milestone("test_review", "Proposed-test review", "current", evidence: test_review_evidence,
           next_action: "Review the proposed tests for the current revision.")
       else
         milestone("test_review", "Proposed-test review", "unknown", next_action: "Synchronize the test-review verdict for the current revision.")
@@ -80,10 +84,11 @@ module Inbox
     end
 
     def implementation
-      return milestone("implementation", "Implementation", "not_applicable") if documentation_only?
-      return milestone("implementation", "Implementation", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase? || issue.ready_phase?
+      return milestone("implementation", "Implementation", "not_applicable") if design_pull_request?
+      return milestone("implementation", "Implementation", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase?
       return milestone("implementation", "Implementation", "blocked", next_action: "Resolve the requested test changes before implementation.") if test_review.state == "blocked"
       return milestone("implementation", "Implementation", "waiting", next_action: "Approve the proposed tests before implementation begins.") if project.tdd_mode == "strict" && test_review.state != "complete"
+      return milestone("implementation", "Implementation", "complete", evidence: head_evidence("pr_phase")) if issue.ready_phase?
       return milestone("implementation", "Implementation", "blocked", next_action: "Resolve the pull request escalation.") if issue.escalated_phase?
 
       milestone("implementation", "Implementation", "current", next_action: "Complete implementation for the current pull request.")
@@ -140,17 +145,18 @@ module Inbox
       design_prs.any?(&:stale?) || (feature_intent.approved_at.present? && !approved_design?)
     end
 
-    def documentation_only?
-      !project.human_led_feature_factory? && feature_intent.nil? && project.tdd_mode == "off"
+    def design_pull_request?
+      return @design_pull_request if defined?(@design_pull_request)
+
+      @design_pull_request = FeatureIntentDesignPr.joins(:feature_intent)
+        .exists?(feature_intents: { project_id: project.id }, pull_request_number: issue.github_number)
     end
 
     def current_head = issue.last_scanned_head_sha
 
-    def current_assessment?
-      current_head.present? && issue.auto_merge_evaluated_at.present? && issue.auto_merge_blockers.is_a?(Hash)
-    end
+    def current_assessment? = current_head.present? && issue.auto_merge_evaluated_at.present? && issue.auto_merge_blockers.is_a?(Hash)
 
-    def blockers = issue.auto_merge_blockers.deep_stringify_keys
+    def blockers = (issue.auto_merge_blockers || {}).deep_stringify_keys
 
     def failed_blockers = blockers.fetch("failed", [])
 
@@ -166,6 +172,10 @@ module Inbox
       failed_blockers.any? { |blocker| blocker["signal"] == "reviews_fresh" }
     end
 
+    def current_test_review? = issue.effective_tdd_review_state.present? && issue.tdd_review_head_sha == current_head
+
+    def stale_test_review? = issue.effective_tdd_review_state.present? && issue.tdd_review_head_sha.present? && issue.tdd_review_head_sha != current_head
+
     def feature_evidence
       design_prs.map { |design_pr| { source: "design_pull_request", revision: design_pr.head_sha, url: design_pr.github_url } }
     end
@@ -174,8 +184,13 @@ module Inbox
       { source:, revision: current_head, url: issue.github_url }.compact
     end
 
+    def test_review_evidence
+      { source: "tdd_test_verdict", revision: issue.tdd_review_head_sha, url: issue.github_url }.compact
+    end
+
     def assessment_evidence
-      head_evidence("merge_assessment").merge(assessed_at: issue.auto_merge_evaluated_at&.iso8601)
+      { source: "merge_assessment", revision: current_head, url: issue.github_url,
+        assessed_at: issue.auto_merge_evaluated_at&.iso8601 }.compact
     end
 
     def milestone(id, label, state, evidence: [], next_action: nil)
