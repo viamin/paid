@@ -53,7 +53,7 @@ module Inbox
     def design_release
       return milestone("design_release", "Design release", "not_applicable") unless project.human_led_feature_factory?
       return milestone("design_release", "Design release", "unknown", next_action: "Link the feature intent and its design evidence.") unless feature_intent
-      return milestone("design_release", "complete", evidence: feature_evidence) if feature_intent.released?
+      return milestone("design_release", "Design release", "complete", evidence: feature_evidence) if feature_intent.released?
       return milestone("design_release", "Design release", "blocked", evidence: feature_evidence,
         next_action: "Approve the current design revision.") if stale_design? || !approved_design?
 
@@ -98,7 +98,7 @@ module Inbox
       return milestone("code_review", "Code review", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase?
       return milestone("code_review", "Code review", "waiting", next_action: "Finish implementation before code review.") unless issue.ready_phase?
       return milestone("code_review", "Code review", "unknown", next_action: "Wait for a current-head merge assessment.") unless current_assessment?
-      return milestone("code_review", "blocked", evidence: assessment_evidence,
+      return milestone("code_review", "Code review", "blocked", evidence: assessment_evidence,
         next_action: "Resolve the current merge assessment blockers.") if non_approval_blockers.present?
 
       milestone("code_review", "Code review", "complete", evidence: assessment_evidence)
@@ -117,7 +117,9 @@ module Inbox
     end
 
     def merge
-      return milestone("merge", "Merge", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase? || issue.github_state == "closed"
+      return milestone("merge", "Merge", "complete", evidence: head_evidence("pr_phase")) if issue.merged_phase?
+      return milestone("merge", "Merge", "unknown", evidence: head_evidence("github_state"),
+        next_action: "Confirm why the pull request closed without merge evidence.") if issue.github_state == "closed"
       return milestone("merge", "Merge", "blocked", next_action: "Complete the earlier delivery gates.") unless code_review.state == "complete" && owner_approval.state == "complete"
       return milestone("merge", "Merge", "current", evidence: assessment_evidence,
         next_action: "Review the current changes and make the manual merge decision on GitHub.") if project.auto_merge_mode == "off"

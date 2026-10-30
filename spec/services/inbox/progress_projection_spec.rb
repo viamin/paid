@@ -98,4 +98,41 @@ RSpec.describe Inbox::ProgressProjection do
     expect(milestone(projection, "implementation")).to include(state: "not_applicable")
     expect(milestone(projection, "merge")).to include(state: "current")
   end
+
+  it "projects a released human-led feature without losing the design release label" do # @spec INBOX-PROGRESS-001
+    project = create(:project, operating_mode: "human_led_feature_factory")
+    source_issue = create(:issue, project:)
+    intent = create(:feature_intent, project:)
+    create(:feature_intent_issue, feature_intent: intent, issue: source_issue)
+    pull_request = create(:issue, :pull_request, project:, parent_issue: source_issue)
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "design_release")).to include(label: "Design release", state: "complete")
+  end
+
+  it "blocks code review when the current merge assessment has a non-approval blocker" do # @spec INBOX-PROGRESS-001
+    project = create(:project)
+    pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "a" * 40,
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [ { "signal" => "ci", "reason" => "Checks failed" } ], "not_evaluated" => [] })
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "code_review")).to include(label: "Code review", state: "blocked")
+  end
+
+  it "does not report a closed unmerged pull request as merged" do # @spec INBOX-PROGRESS-002
+    project = create(:project)
+    pull_request = create(:issue, :pull_request, :closed, project:, last_scanned_head_sha: "a" * 40,
+      auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "merge")).to include(
+      state: "unknown",
+      next_action: "Confirm why the pull request closed without merge evidence."
+    )
+  end
 end
