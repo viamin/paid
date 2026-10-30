@@ -20,8 +20,8 @@
 </dl>
 
 <nav class="mt-6 flex flex-wrap gap-3 text-sm" aria-label="Verification finding evidence">
-  <%= link_to "View audit run", audit_path, class: "text-indigo-600 hover:text-indigo-500" %>
-  <%= link_to "View evidence", "#{audit_path}#layered-verification-coverage", class: "text-indigo-600 hover:text-indigo-500" %>
+  <%= link_to "View audit run", audit_path, class: "text-indigo-600 hover:text-indigo-500", data: { turbo_frame: "_top" } %>
+  <%= link_to "View evidence", "#{audit_path}#layered-verification-coverage", class: "text-indigo-600 hover:text-indigo-500", data: { turbo_frame: "_top" } %>
   <% if intent_url %>
     <%= link_to "View canonical intent", intent_url, class: "text-indigo-600 hover:text-indigo-500", target: "_blank", rel: "noopener noreferrer" %>
   <% end %>
