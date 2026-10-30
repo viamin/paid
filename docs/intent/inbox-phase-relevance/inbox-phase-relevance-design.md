@@ -64,12 +64,14 @@ platform requests (no phase) and follow the same visibility rule.
 Hiding never resolves, clears, comments, or changes readiness.
 
 `Inbox::Queue` accepts `scope:` (`actionable` default, `disabled_phases`,
-`removed`). When phase relevance governs visible projects, `Inbox::Count` /
-`Inbox::Availability` derive from the same call so lists, counts, badges, and
-indicators cannot disagree. With rollout disabled, the badge keeps its bounded
-SQL approximation and applies personal suppression by resolving only active
-removal keys through their targeted queue lanes; it never rebuilds all entry
-payloads merely because a user has a removal.
+`removed`). When phase relevance governs visible projects, `Inbox::Count`
+reuses `Inbox::Availability`'s versioned per-user matrix so lists, counts,
+badges, and indicators share grants, manual-action state, and record-specific
+ownership without independently rebuilding every queue lane when the matrix is
+already warm. With rollout disabled, the badge keeps its bounded SQL
+approximation and applies personal suppression by resolving only active removal
+keys through their targeted queue lanes; it never rebuilds all entry payloads
+merely because a user has a removal.
 
 ## Personal removal
 
