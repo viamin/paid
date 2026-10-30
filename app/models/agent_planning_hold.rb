@@ -5,6 +5,7 @@
 # later remove it.
 class AgentPlanningHold < ApplicationRecord
   STATUSES = %w[needs_review held released reconciliation_failed].freeze
+  SUPPORTED_RELEASE_CONDITION_KINDS = %w[dependencies_resolved issue_closed].freeze
 
   belongs_to :account
   belongs_to :project
@@ -25,6 +26,10 @@ class AgentPlanningHold < ApplicationRecord
 
   def releasable?
     paid_owned? && !operator_override? && status.in?(%w[held reconciliation_failed])
+  end
+
+  def supported_release_condition?
+    release_condition["kind"].in?(SUPPORTED_RELEASE_CONDITION_KINDS)
   end
 
   private

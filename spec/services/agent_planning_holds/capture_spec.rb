@@ -11,8 +11,8 @@ RSpec.describe AgentPlanningHolds::Capture do
   it "upserts a failed run's contracted hold without duplicating retries" do
     contract = {
       task_kind: "implementation",
-      reason: "Awaiting accepted design.",
-      release_condition: { kind: "design_revision_accepted", issue_number: issue.github_number },
+      reason: "Awaiting a prerequisite issue.",
+      release_condition: { kind: "issue_closed", issue_number: issue.github_number + 1 },
       evidence: { scope_revision: "rdr-063@draft", issue_number: issue.github_number }
     }
 
@@ -23,7 +23,7 @@ RSpec.describe AgentPlanningHolds::Capture do
     hold = AgentPlanningHold.find_by!(issue:, label: "planning")
     expect(AgentPlanningHold.where(issue:, label: "planning")).to contain_exactly(hold)
     expect(hold).to have_attributes(status: "held", task_kind: "implementation", agent_run: run)
-    expect(hold.release_condition).to include("kind" => "design_revision_accepted")
+    expect(hold.release_condition).to include("kind" => "issue_closed")
   end
 
   it "keeps an unknown same-number issue out of another tenant's hold" do
@@ -73,5 +73,20 @@ RSpec.describe AgentPlanningHolds::Capture do
       label_preexisting: false)
 
     expect(hold).to have_attributes(status: "needs_review", release_condition: {})
+  end
+
+  it "routes an unsupported release condition to operator review" do
+    contract = {
+      task_kind: "implementation",
+      reason: "Awaiting accepted design.",
+      release_condition: { kind: "design_revision_accepted", issue_number: issue.github_number },
+      evidence: { scope_revision: "rdr-063@draft" }
+    }
+
+    hold = described_class.call(project:, agent_run: run, issue_number: issue.github_number, contract:,
+      label_preexisting: false)
+
+    expect(hold).to have_attributes(status: "needs_review")
+    expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: issue).blocking).to exist
   end
 end

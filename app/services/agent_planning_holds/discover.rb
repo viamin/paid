@@ -37,26 +37,7 @@ module AgentPlanningHolds
         record.issue = issue
       end
       hold.update!(issue:) if hold.issue_id != issue.id
-      notify(hold) unless hold.paid_owned?
-    end
-
-    def notify(hold)
-      Notification.create_or_find_by!(
-        account: project.account,
-        source: "agent_planning_hold_reconciliation",
-        subject: hold.issue
-      ) do |notification|
-        notification.severity = :error
-        notification.blocking = true
-        notification.nav_section = "projects"
-        notification.title = "Planning hold needs reconciliation"
-        notification.description = "Paid ownership of planning on issue ##{hold.remote_issue_number} could not be established."
-        notification.metadata = {
-          "issue_number" => hold.remote_issue_number,
-          "hold_id" => hold.id,
-          "recommended_action" => "Review the hold owner and release condition before removing the label."
-        }
-      end
+      RequestReview.call(hold:) unless hold.paid_owned?
     end
   end
 end

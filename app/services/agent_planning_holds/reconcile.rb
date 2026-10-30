@@ -19,6 +19,7 @@ module AgentPlanningHolds
     def call
       attach_synced_issue!
       return Result.new(released: false, reason: "Planning hold issue has not synchronized yet.") unless hold.issue
+      return request_operator_review unless hold.supported_release_condition?
       return Result.new(released: false, reason: "Planning hold needs operator reconciliation.") unless hold.releasable?
       return Result.new(released: false, reason: "Planning hold release condition is not satisfied.") unless condition_satisfied?
 
@@ -52,12 +53,28 @@ module AgentPlanningHolds
     end
 
     def remove_and_read_back!
+      remove_label!
+      read_back!
+    end
+
+    def remove_label!
       client.remove_label_from_issue(project.full_name, hold.issue.github_number, hold.label)
+    rescue GithubClient::NotFoundError
+      # The remote label is already absent, so continue with authoritative read-back.
+    end
+
+    def read_back!
       remote = client.issue(project.full_name, hold.issue.github_number)
       labels = Array(remote.labels).map { |label| label.respond_to?(:name) ? label.name : label.to_s }
       raise GithubClient::Error, "planning hold remained after GitHub write" if labels.include?(hold.label)
 
       Issues::UpsertFromGithub.call(project:, github_issue: remote)
+    end
+
+    def request_operator_review
+      hold.update!(status: "needs_review", last_error: "Unsupported planning hold release condition.")
+      RequestReview.call(hold:)
+      Result.new(released: false, reason: "Planning hold release condition requires operator review.")
     end
 
     def resolve_notification

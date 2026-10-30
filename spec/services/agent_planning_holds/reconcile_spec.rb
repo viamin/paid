@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 # @spec CONFIDENCE-DELIVERY-018
 RSpec.describe AgentPlanningHolds::Reconcile do
@@ -31,6 +32,32 @@ RSpec.describe AgentPlanningHolds::Reconcile do
 
     expect(result).not_to be_released
     expect(hold.reload).to have_attributes(status: "reconciliation_failed", last_error: "unavailable")
+  end
+
+  it "finishes reconciliation when a retry finds the label already absent" do
+    create(:issue, :closed, project:, github_number: issue.github_number + 100)
+    allow(project.client).to receive(:remove_label_from_issue)
+      .and_raise(GithubClient::NotFoundError, "Label not found")
+    allow(project.client).to receive(:issue).and_return(remote_issue(labels: []))
+
+    result = described_class.call(hold:)
+
+    expect(result).to be_released
+    expect(hold.reload).to have_attributes(status: "released", last_error: nil)
+    expect(issue.reload.labels).to be_empty
+  end
+
+  it "routes a previously captured unsupported condition to operator review" do
+    unsupported_hold = create_agent_hold(
+      release_condition: { "kind" => "design_revision_accepted", "issue_number" => issue.github_number },
+      status: "held"
+    )
+
+    result = described_class.call(hold: unsupported_hold)
+
+    expect(result).not_to be_released
+    expect(unsupported_hold.reload.status).to eq("needs_review")
+    expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: issue).blocking).to exist
   end
 
   it "attaches a receipt to the issue after a later GitHub synchronization" do
@@ -66,6 +93,23 @@ RSpec.describe AgentPlanningHolds::Reconcile do
       reason: "Awaiting a documented release condition.",
       release_condition:,
       evidence: { "scope_revision" => "v1" }
+    )
+  end
+
+  def remote_issue(labels:)
+    OpenStruct.new(
+      id: issue.github_issue_id,
+      number: issue.github_number,
+      title: issue.title,
+      body: issue.body,
+      html_url: issue.github_html_url,
+      state: issue.github_state,
+      labels:,
+      pull_request: nil,
+      state_reason: nil,
+      user: OpenStruct.new(login: issue.github_creator_login),
+      created_at: issue.github_created_at,
+      updated_at: issue.github_updated_at
     )
   end
 end

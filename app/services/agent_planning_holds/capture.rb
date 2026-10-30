@@ -30,7 +30,7 @@ module AgentPlanningHolds
       end
       hold.update!(issue:) if issue && hold.issue_id != issue.id
       hold.with_lock { apply_contract(hold) }
-      notify(hold) unless hold.paid_owned?
+      RequestReview.call(hold:) if hold.status == "needs_review"
       hold
     end
 
@@ -55,25 +55,16 @@ module AgentPlanningHolds
     def complete_contract?
       contract["task_kind"].present? && contract["reason"].present? &&
         contract["release_condition"].is_a?(Hash) && contract["release_condition"].present? &&
-        contract.dig("evidence", "scope_revision").present?
+        contract.dig("evidence", "scope_revision").present? && supported_release_condition?
+    end
+
+    def supported_release_condition?
+      contract.dig("release_condition", "kind").in?(AgentPlanningHold::SUPPORTED_RELEASE_CONDITION_KINDS)
     end
 
     def contract_hash(key)
       contract[key].is_a?(Hash) ? contract[key] : {}
     end
 
-    def notify(hold)
-      Notification.create_or_find_by!(
-        account: project.account, source: "agent_planning_hold_reconciliation", subject: hold.issue || agent_run
-      ) do |notification|
-        notification.severity = :error
-        notification.blocking = true
-        notification.nav_section = "projects"
-        notification.title = "Planning hold needs reconciliation"
-        notification.description = "Paid ownership of planning on issue ##{hold.remote_issue_number} could not be established."
-        notification.metadata = { "issue_number" => hold.remote_issue_number, "agent_run_id" => agent_run.id, "hold_id" => hold.id,
-                                  "recommended_action" => "Review the hold owner and release condition before removing the label." }
-      end
-    end
   end
 end
