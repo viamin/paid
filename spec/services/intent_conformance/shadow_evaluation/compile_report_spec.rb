@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec INTENT-CONFORMANCE-ROLLOUT-008
+# @spec INTENT-CONFORMANCE-ROLLOUT-008 @spec INTENT-CONFORMANCE-ROLLOUT-009
 RSpec.describe IntentConformance::ShadowEvaluation::CompileReport do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
@@ -70,7 +70,8 @@ RSpec.describe IntentConformance::ShadowEvaluation::CompileReport do
     expect(report.dig("measures", "rework")).to include("not established")
     expect(report.dig("measures", "human_time")).to include("not established")
     expect(report.fetch("promotion_decision")).to include("not established")
-    expect(evaluation.reload.report_markdown).to include("Solo-Maintainer Shadow Evaluation Report")
+    expect(evaluation.reload.report_markdown).to include("Conformance Review Evaluation Report")
+    expect(evaluation.report_markdown).not_to include("RDR-067")
   end
 
   it "keeps review cost unestablished when an evaluated run lacks cost provenance" do

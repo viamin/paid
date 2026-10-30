@@ -284,7 +284,8 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("/inbox?kind=partial_closeout&amp;project_id=#{project.id}&amp;sort=newest")
   end
 
-  it "surfaces the Start/Resume entry point on the partial-closeout Inbox item" do
+  # @spec FACET-CONFIDENCE-020
+  it "uses action-oriented copy for the partial-closeout evaluation entry point" do
     start_link = new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
       inbox_entry_id: entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue), inbox_kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
 
@@ -293,8 +294,18 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include(start_link.gsub("&", "&amp;"))
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
     expect(response.body).not_to include("operator-runbook.md")
 
+    get start_link
+
+    expect(response.body).to include("Review readiness judgments")
+    expect(response.body).not_to include("RDR-070")
+  end
+
+  # @spec FACET-CONFIDENCE-020
+  it "resumes the persisted evaluation from the partial-closeout Inbox item" do
     evaluation = start_evaluation!
     get inbox_entry_path(entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
       project_id: project.id, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
