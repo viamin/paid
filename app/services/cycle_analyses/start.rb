@@ -31,7 +31,7 @@ module CycleAnalyses
 
     def lock_occurrence!
       AgentRun.connection.exec_query(AgentRun.sanitize_sql_array([
-        "SELECT pg_advisory_xact_lock(?, ?)", 4804, Zlib.crc32(cycle.occurrence)
+        "SELECT pg_advisory_xact_lock(?, ?)", 4804, Zlib.crc32(cycle.occurrence) % 2_147_483_647
       ]))
     end
 
@@ -44,18 +44,8 @@ module CycleAnalyses
       runner_id, agent_type = AgentRuns::RunnerResolver.call(project: cycle.project, goal: AgentRun::CYCLE_ANALYSIS_GOAL)
       AgentRun.create!(project: cycle.project, initiating_user: actor, runner_id:, agent_type:, synthetic: true,
         goal: AgentRun::CYCLE_ANALYSIS_GOAL, trigger_type: "manual", status: "queued",
-        custom_prompt: "Analyze dependency cycle #{cycle.occurrence}", external_metadata: { METADATA_KEY => snapshot })
-    end
-
-    def snapshot
-      {
-        "fingerprint" => cycle.fingerprint,
-        "occurrence" => cycle.occurrence,
-        "graph_revision" => cycle.graph_revision,
-        "project_ids" => cycle.project_ids,
-        "issue_ids" => cycle.issues.map(&:id),
-        "edge_ids" => cycle.effective_edges.map(&:id)
-      }
+        custom_prompt: "Analyze dependency cycle #{cycle.occurrence}",
+        external_metadata: { METADATA_KEY => Snapshot.call(cycle:) })
     end
   end
 end
