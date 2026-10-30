@@ -460,7 +460,7 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
     end
 
     # @spec APPLE-ATTEMPT-011
-    it "clears a pending apple-only result when the shipped commit succeeds" do
+    it "replaces a pending apple-only result with visible missing criterion evidence when the shipped commit succeeds" do
       project.update!(screenshot_settings: { "verification_enabled" => false })
       revision = approved_required_revision(gate: "pull_request_verification")
       shipped_sha = "0123456789abcdef0123456789abcdef01234567"
@@ -476,7 +476,11 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
 
       record_shipped_result(shipped_sha)
 
-      expect(agent_run.reload.verification_result).to eq({})
+      expect(agent_run.reload.verification_result).to include(
+        "status" => "not_run",
+        "reason" => "verification_result_missing"
+      )
+      expect(agent_run.reload.verification_result).not_to have_key("apple_verification")
     end
 
     it "records an apple-only result when interactive verification is disabled" do
@@ -490,20 +494,24 @@ RSpec.describe AppleVerificationAttempts::GateEnforcement do
       expect(result["reason"]).to eq("apple_verification_pending")
     end
 
-    it "records nothing when the gate is satisfied and interactive verification is disabled" do
+    it "records missing criterion evidence when the gate is satisfied and interactive verification is disabled" do
       project.update!(screenshot_settings: { "verification_enabled" => false })
       revision = approved_required_revision(gate: "pull_request_verification")
       attempt_for(revision, agent_run:, status: "succeeded")
 
-      expect(AgentRuns::VerificationResultRecorder.call(agent_run:, repo_path:)).to be_nil
-      expect(agent_run.reload.verification_result).to eq({})
+      expect(AgentRuns::VerificationResultRecorder.call(agent_run:, repo_path:)).to include(
+        "status" => "not_run",
+        "reason" => "verification_result_missing"
+      )
     end
 
-    it "records nothing when no required verification applies and interactive verification is disabled" do
+    it "records missing criterion evidence when no required verification applies and interactive verification is disabled" do
       project.update!(screenshot_settings: { "verification_enabled" => false })
 
-      expect(AgentRuns::VerificationResultRecorder.call(agent_run:, repo_path:)).to be_nil
-      expect(agent_run.reload.verification_result).to eq({})
+      expect(AgentRuns::VerificationResultRecorder.call(agent_run:, repo_path:)).to include(
+        "status" => "not_run",
+        "reason" => "verification_result_missing"
+      )
     end
   end
 end
