@@ -54,6 +54,40 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(github_client).to have_received(:update_issue).with("acme/alpha", issue.github_number, state: "closed", state_reason: "completed")
   end
 
+  it "performs GitHub reads and writes outside the database transaction" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    transaction_depth = ActiveRecord::Base.connection.open_transactions
+    allow(github_client).to receive(:issue) do
+      expect(ActiveRecord::Base.connection.open_transactions).to eq(transaction_depth)
+      Struct.new(:state).new("open")
+    end
+    allow(github_client).to receive(:update_issue) do
+      expect(ActiveRecord::Base.connection.open_transactions).to eq(transaction_depth)
+      Struct.new(:state).new("closed")
+    end
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result).to be_success
+  end
+
+  it "revalidates prerequisites after GitHub confirms closure" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    allow(github_client).to receive(:update_issue) do
+      create(:notification, :error, account:, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      Struct.new(:state).new("closed")
+    end
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:open_prerequisites)
+    expect(issue.reload.paid_state).to eq("in_progress")
+    expect(issue.closeout_resolved_at).to be_nil
+  end
+
   it "requires closeout evidence" do
     result = described_class.call(issue: issue, actor: user, reason: "done", client: github_client)
 

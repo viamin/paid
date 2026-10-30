@@ -26,7 +26,13 @@ module Issues
       return failure(:generic_reason, "Enter a specific completion rationale that references the recorded evidence " \
         "(for example which merged PRs or no-code declaration cover each acceptance criterion).") if canned_reason?
 
-      result = issue.with_lock { resolve }
+      result = issue.with_lock { validate_closeout }
+      return result unless result.success?
+
+      result = close_on_github
+      return result unless result.success?
+
+      result = issue.with_lock { resolve_locally }
       return result unless result.success?
 
       issue.project.account.account_activity_events.create!(action: "issue.closeout_resolved", actor:, subject: issue,
@@ -42,17 +48,26 @@ module Issues
       reason.match?(LEGACY_CANNED_REASON)
     end
 
-    def resolve
+    def validate_closeout(allow_observed_closure: false)
       return failure(:upstream_managed, "Paid does not mutate upstream issues; close this issue directly on the upstream repository.") if issue.project.upstream_pr_target?
 
       evidence = CloseoutEvidence.call(issue)
-      return failure(:not_stalled, "This issue has no terminal closeout evidence.") unless evidence.present? && issue.github_state == "open"
+      return failure(:not_stalled, "This issue has no terminal closeout evidence.") unless evidence.present? && actionable?(allow_observed_closure:)
       if issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
         return failure(:scanner_managed, "This record has no GitHub Issue to close. Wait for or repair the next " \
           "authoritative code-scanning snapshot so scanner reconciliation can observe source closure.")
       end
       return failure(:audit_pending, "A current acceptance audit is required before GitHub can be closed.") unless accepted_assessment?
       return failure(:open_prerequisites, "Current prerequisites or required verification still block GitHub closure.") if closure_blocked?
+
+      Result.new(issue:)
+    end
+
+    def actionable?(allow_observed_closure:)
+      issue.github_state == "open" || (allow_observed_closure && issue.github_state == "closed" && !issue.closeout_resolved?)
+    end
+
+    def close_on_github
       remote_state = remote_github_state
       return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless remote_state.in?(%w[open closed])
 
@@ -61,11 +76,19 @@ module Issues
         return failure(:github_unavailable, "GitHub did not confirm closure; retry Close on GitHub from this Inbox item.") unless github_closed?(updated)
       end
 
-      supersede_open_continuation
-      issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
       Result.new(issue:)
     rescue GithubClient::Error
       failure(:github_failed, "GitHub closure failed; retry Close on GitHub from this Inbox item.")
+    end
+
+    def resolve_locally
+      validation = validate_closeout(allow_observed_closure: true)
+      return validation unless validation.success?
+
+      evidence = CloseoutEvidence.call(issue)
+      supersede_open_continuation
+      issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
+      Result.new(issue:)
     end
 
     def accepted_assessment?

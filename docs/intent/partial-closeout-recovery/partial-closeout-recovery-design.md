@@ -220,10 +220,13 @@ awaiting GitHub closure`, and `unmet criteria`. An authorized operator may use
 the close action only for an accepted assessment. At the action boundary Paid
 rechecks source and intent revisions, criterion satisfaction, dependencies and
 human prerequisites, scanner verification, and GitHub's open state before it
-requests GitHub closure. A successful response records the actor, rationale,
-and evidence digest and marks the local issue closed, clearing the derived
-Inbox item. A stale or blocked request refuses without mutation; a GitHub API
-failure retains the item and its exact **Close on GitHub** retry route.
+requests GitHub closure. GitHub reads and mutations run without a database row
+lock or open transaction. After GitHub confirms closure, Paid reacquires the
+issue lock and revalidates the evidence and every local prerequisite before it
+records the actor, rationale, and evidence digest and marks the local issue
+closed, clearing the derived Inbox item. A stale or blocked request refuses
+local resolution; a GitHub API failure retains the item and its exact **Close
+on GitHub** retry route.
 Synthetic code-scanning records have no corresponding GitHub Issue, so this
 action refuses them with scanner-reconciliation guidance; their source closure
 is observed from an authoritative code-scanning snapshot by
