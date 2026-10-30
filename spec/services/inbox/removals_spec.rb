@@ -66,6 +66,37 @@ RSpec.describe Inbox::Removals do
       expect(InboxRemoval.where(user:, request_key: "clarifying_questions:#{issue.id}").count).to eq(1)
     end
 
+    # @spec OPERATOR-INBOX-023
+    it "does not record a replayed removal for the same request occurrence" do
+      removal = remove!
+      removed_at = removal.removed_at
+      target = entry(scope: Inbox::Queue::REMOVED_SCOPE)
+
+      travel 1.minute do
+        expect { remove!(target:) }.not_to change(InboxHistoryEvent, :count)
+      end
+
+      expect(removal.reload.removed_at).to eq(removed_at)
+    end
+
+    # @spec OPERATOR-INBOX-023
+    it "records remove, restore, and a fresh-occurrence return against the stable issue" do
+      remove!
+      removed_entry = entry(scope: Inbox::Queue::REMOVED_SCOPE)
+      Inbox::Removals::Restore.call(entry: removed_entry, user:)
+      remove!
+      issue.update!(needs_input_since: Time.current + 5.minutes)
+
+      Inbox::ActionHistory.call(entry: entry, user:)
+
+      expect(InboxHistoryEvent.where(subject_key: "issue:#{project.id}:#{issue.github_number}").pluck(:metadata)).to include(
+        include("action" => "Removed from Inbox"), include("action" => "Restored to Inbox"), include("action" => "Returned to Inbox")
+      )
+      expect(InboxHistoryEvent.find_by!(metadata: { "action" => "Returned to Inbox" })).to have_attributes(
+        actor_label: "Paid", source: "paid"
+      )
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-008
     it "persists removals for distinct requests sharing an occurrence" do
       occurrence = Time.current
@@ -123,7 +154,7 @@ RSpec.describe Inbox::Removals do
   end
 
   describe "return events" do
-    # @spec INBOX-PHASE-RELEVANCE-009
+    # @spec INBOX-PHASE-RELEVANCE-009 @spec OPERATOR-INBOX-023
     it "restores when the responsible phase transitions from disabled to enabled" do
       configure_phases({ "issue_preparation" => false })
       remove!(target: entry(scope: Inbox::Queue::DISABLED_PHASES_SCOPE))
@@ -136,6 +167,11 @@ RSpec.describe Inbox::Removals do
       expect(entry(scope: Inbox::Queue::REMOVED_SCOPE)).to be_nil
       expect(Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE))
         .to be > previous_version
+      history_event = InboxHistoryEvent.find_by!(metadata: { "action" => "Restored to Inbox" })
+      expect(history_event).to have_attributes(
+        subject_key: "issue:#{project.id}:#{issue.github_number}",
+        actor_label: "Paid", source: "paid", result: "completed"
+      )
     end
 
     it "does not restore when an already-enabled phase is saved unchanged" do

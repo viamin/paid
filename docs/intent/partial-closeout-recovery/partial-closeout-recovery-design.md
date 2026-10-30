@@ -136,6 +136,16 @@ step when operator selection is required. Reconciliation never resolves the
 prerequisite, discards valid human evidence, or substitutes solo review for a
 team policy; free-text notification content is not used to infer policy changes.
 
+External-work prerequisites are distinct persisted occurrences. Each names the
+dependency owner/repository/issue number and is evaluated only against the
+account-scoped, synced target state. Inbox renders the target reference, its
+current state and owner when known, a safe target link, and an explicit wait or
+recheck path. A target state change rechecks the dependent notification and
+releases it only when every external occurrence is resolved and every human
+occurrence has current sufficient evidence. Human decisions, evidence, and
+cycle holds are never inferred from an external transition; dependency cycles
+remain in their dedicated cycle Inbox occurrence.
+
 ### Submitted prerequisite evidence
 
 Each human prerequisite occurrence has a stable identity beneath the aggregate
@@ -351,6 +361,8 @@ guards permit it. It records at most one automatic audit attempt per issue and
 closeout-evidence digest, including terminal attempts, so a failed audit does
 not loop. A later merged PR or no-code outcome creates a new evidence digest
 and can earn one new audit. The existing auto-pick control governs this work;
+the GitHub-sync repair places merged non-closing source PRs in this lane rather
+than treating their premerge source-closure disposition as final acceptance.
 there is no separate audit setting. Operator-requested audits use the same
 durable request and count toward the one-attempt limit for that generation.
 

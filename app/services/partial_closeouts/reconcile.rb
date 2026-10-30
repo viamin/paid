@@ -42,6 +42,7 @@ module PartialCloseouts
         # operator next step reaches the Inbox notification; a generic
         # fallback would leave the prerequisite unactionable (#4119).
         raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
+        validate_external_dependency!(gap) if external_gap?(gap)
         validate_human_references!(gap) if human_gap?(gap)
         raise ArgumentError, "human gap workflow is invalid" if human_gap?(gap) && gap["workflow"].present? && !gap["workflow"].in?(VALID_WORKFLOWS)
       end
@@ -64,24 +65,45 @@ module PartialCloseouts
       raise ArgumentError, "replacement policy next_step is required"
     end
 
-    def human_gap?(gap)
-      gap["kind"] == "human"
+    def validate_external_dependency!(gap)
+      dependency = gap["external_dependency"]
+      valid = dependency.is_a?(Hash) && dependency["owner"].to_s.strip.present? &&
+        dependency["repo"].to_s.strip.present? && dependency["number"].is_a?(Integer) && dependency["number"].positive?
+      raise ArgumentError, "external dependency identity is invalid" unless valid
     end
 
-    # Returns the human gaps so every prerequisite is visible in one Inbox
+    def human_gap?(gap) = gap["kind"] == "human"
+
+    def external_gap?(gap) = gap["kind"] == "external"
+
+    # Returns the non-agent gaps so every prerequisite is visible in one Inbox
     # notification: per-gap publishes dedup onto the same row and would
     # overwrite all but the last prerequisite.
     def reconcile_gaps
-      human_gaps = []
+      prerequisites = []
       gaps.each_with_index do |gap, index|
         if human_gap?(gap)
           record_gap!(index, gap, status: "awaiting_operator")
-          human_gaps << gap
+          prerequisites << gap
+        elsif external_gap?(gap)
+          reconcile_external_gap(gap, index)
+          prerequisites << gap
         else
           reconcile_agent_gap(gap, index)
         end
       end
-      human_gaps
+      prerequisites
+    end
+
+    def reconcile_external_gap(gap, index)
+      dependency = external_dependency(gap)
+      # IssueDependency#normalize_external_ref downcases owner/repo on write, so a
+      # mixed-case lookup here (Llm::AnalyzePartialCloseout accepts either case) would
+      # miss the already-normalized row and collide with it on create.
+      IssueDependency.find_or_create_by!(issue: agent_run.issue,
+        depends_on_owner: dependency.fetch("owner").downcase, depends_on_repo: dependency.fetch("repo").downcase,
+        depends_on_number: dependency.fetch("number"))
+      record_gap!(index, gap, status: "awaiting_external")
     end
 
     def reconcile_agent_gap(gap, index)
@@ -192,41 +214,42 @@ module PartialCloseouts
     end
 
     # @spec PARTIAL-CLOSEOUT-033
-    def publish_operator_prerequisites!(human_gaps)
-      return if human_gaps.empty?
+    def publish_operator_prerequisites!(prerequisites)
+      return if prerequisites.empty?
 
       agent_run.issue.with_lock do
         previous = existing_prerequisite_notification
         if previous
-          previous.with_lock { publish_prerequisite_notification!(human_gaps, previous:) }
+          previous.with_lock { publish_prerequisite_notification!(prerequisites, previous:) }
         else
-          publish_prerequisite_notification!(human_gaps, previous: nil)
+          publish_prerequisite_notification!(prerequisites, previous: nil)
         end
       end
     end
 
-    def publish_prerequisite_notification!(human_gaps, previous:)
-      Notifications::Publish.call(
+    def publish_prerequisite_notification!(prerequisites, previous:)
+      notification = Notifications::Publish.call(
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
-        title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
-        metadata: prerequisite_metadata(human_gaps, previous:)
+        title: operator_prerequisite_title(prerequisites),
+        description: prerequisites.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
+        metadata: prerequisite_metadata(prerequisites, previous:)
       )
+      ExternalPrerequisites.recheck(notification) if prerequisites.any? { |gap| external_gap?(gap) }
     end
 
     # @spec PARTIAL-CLOSEOUT-031
-    def prerequisite_metadata(human_gaps, previous:)
-      references = human_gaps.flat_map { |gap| Array(gap["references"]) }
-      identities = human_gaps.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
+    def prerequisite_metadata(prerequisites, previous:)
+      references = prerequisites.flat_map { |gap| Array(gap["references"]) }
+      identities = prerequisites.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
-                   "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
-      workflow = workflow_for(human_gaps)
+                   "prerequisites" => prerequisites.map { |gap| prerequisite_occurrence(gap) } }
+      workflow = workflow_for(prerequisites)
       metadata["workflow"] = workflow if workflow
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
-      policy_selection = replacement_policy_action(human_gaps)
+      policy_selection = replacement_policy_action(prerequisites)
       metadata["policy_selection"] = policy_selection if policy_selection
 
       superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
@@ -259,7 +282,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection", "workflow"))
+      identity = canonicalize(gap.slice("criterion", "kind", "next_step", "policy_selection", "workflow", "external_dependency"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
@@ -267,9 +290,11 @@ module PartialCloseouts
     end
 
     def prerequisite_occurrence(gap)
-      { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
-        "criterion" => gap["criterion"], "references" => Array(gap["references"]),
+      occurrence = { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
+        "criterion" => gap["criterion"], "kind" => gap["kind"], "references" => Array(gap["references"]),
         "source_revision" => source_revision }
+      occurrence["external_dependency"] = external_dependency(gap) if external_gap?(gap)
+      occurrence
     end
 
     def source_revision
@@ -308,8 +333,10 @@ module PartialCloseouts
       )
     end
 
-    def operator_prerequisite_title(human_gaps)
-      criteria = human_gaps.map { |gap| gap["criterion"] }
+    def operator_prerequisite_title(prerequisites)
+      return "External prerequisite work is pending" if prerequisites.all? { |gap| external_gap?(gap) }
+
+      criteria = prerequisites.map { |gap| gap["criterion"] }
       if criteria.one?
         "#{criteria.first} needs operator action"
       else
@@ -321,6 +348,12 @@ module PartialCloseouts
     # Inbox item always tells the operator what to do — never a generic
     # "review the prerequisite" placeholder (#4119).
     def operator_prerequisite_step(gap)
+      if external_gap?(gap)
+        dependency = external_dependency(gap)
+        reference = [ dependency.fetch("owner"), dependency.fetch("repo") ].join("/") + "#" + dependency.fetch("number").to_s
+        return "#{gap["criterion"]}: #{gap["next_step"].to_s.strip} Track #{reference}; Paid rechecks after its next sync."
+      end
+
       "#{gap["criterion"]}: #{gap["next_step"].to_s.strip}"
     end
 
@@ -346,7 +379,7 @@ module PartialCloseouts
     end
 
     def finalize!
-      status = reconciliation.fetch("gaps", {}).values.any? { |gap| gap["status"] == "awaiting_operator" } ? "awaiting_operator" : "reconciled"
+      status = reconciliation.fetch("gaps", {}).values.any? { |gap| gap["status"].in?(%w[awaiting_operator awaiting_external]) } ? "awaiting_operator" : "reconciled"
       agent_run.update!(reconciliation: reconciliation.merge("status" => status, "reconciled_at" => Time.current.iso8601))
     end
 
@@ -360,5 +393,9 @@ module PartialCloseouts
     end
 
     def reconciliation = agent_run.reconciliation.to_h.deep_stringify_keys
+
+    def external_dependency(gap)
+      gap.fetch("external_dependency").deep_stringify_keys
+    end
   end
 end

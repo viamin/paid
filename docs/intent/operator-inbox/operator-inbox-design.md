@@ -74,6 +74,32 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+## Durable subject history
+
+Inbox entries remain derived views, but their detail panes expose a bounded
+timeline keyed to the stable project plus GitHub issue/PR number (or feature
+identity), never the transient Inbox entry ID. The timeline combines safe local
+run records with an append-only Paid transition ledger. Ledger writes dedupe a
+producer event key, record the actual actor/source, completion result and
+revision/evidence link when known. A failed run remains historical evidence and
+does not alter a newer successful run or current policy state. History is
+loaded only for a selected detail; list and badge queries do no history or live
+GitHub work. Each issue stores the earliest timestamp from which Paid observed
+its subject for this ledger. History remains incomplete when that boundary is
+later than the subject's GitHub creation, even after newer events arrive; a
+backfill can move the boundary only when it supplies the missing interval. API
+detail reads accept a history-specific limit and cursor so clients can advance
+the bounded timeline independently of Inbox-list pagination.
+
+The PR scanner carries an explicit latest owner-review record, including its
+reviewed revision, to the same persistence boundary as its merge assessment.
+It never derives an owner-approval event from a blocker-free assessment, so
+self-authored and bot-authored exemptions cannot masquerade as reviews. Owner
+approval, manual-merge pending state, and approval invalidation are separate
+events; reapproval of a newer revision therefore remains visible after the
+invalidated attempt. Scanner replay of the same assessed revision is
+idempotent.
+
 Issue-backed lanes retain their project joins when project predicates or
 ordering require them, but preload projects separately. This keeps one shared
 project object per project while preventing a project audit-history payload

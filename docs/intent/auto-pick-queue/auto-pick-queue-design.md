@@ -107,10 +107,13 @@ configuration.
 An issue that remains open on GitHub is never removed from Auto-Pick merely
 because Paid has reached an internal workflow state. Candidate selection and
 the project issue lifecycle use the same state-neutral scope, so
-`recommend_close`, `manual_review`, `needs_input`, `completed`, and stale
+`recommend_close`, `manual_review`, `needs_input`, `completed`, `analyzed`, and stale
 `in_progress` rows remain actionable when no other guard applies. Active runs,
 open dependencies, explicit label controls, pauses, and the durable
 no-code-required / merged-PR safeguards remain separate guards.
+`analyzed` is deliberately absent from the non-blocking dependency and
+subissue states: a closeout audit pending from a merged non-closing source PR
+cannot satisfy downstream work solely because sync repaired its bookkeeping.
 
 The project issue list displays each issue's Paid state beside its lifecycle
 badge. The dashboard's eligibility breakdown continues to report the actual

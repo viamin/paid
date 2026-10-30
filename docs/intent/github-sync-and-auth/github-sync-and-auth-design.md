@@ -199,34 +199,36 @@ than emitting the redirect.
 
 `repair_completed_open_issues` guards against reading a `create_pr` run's
 terminal `completed` status as proof the source issue's acceptance criteria
-are met. Each sync re-checks open issues still carrying Paid's
-`paid_state: "completed"` whose most recent `create_pr` run recorded a pull
-request: if an open PR produced by that run carries a GitHub closing
-reference to the issue, the completed state stands. Otherwise GitHub's own
-signal says the implementation is partial, and the stale `completed` state is
-repaired.
+are met. Each sync re-checks open issues carrying a stale completed or
+recommend-close state whose source `create_pr` run recorded a pull request. A
+GitHub closing reference on that source PR remains distinct closure evidence.
+Without one, the PR's lifecycle determines the next action rather than a
+completion verdict: an open or draft PR is parked in `manual_review` with its
+linked PR and review-or-merge action, while a merged PR enters the existing
+evidence-backed partial-closeout lane (`paid_state: "analyzed"`). The latter
+state remains blocking to dependencies and is eligible for the bounded,
+report-only acceptance-audit sweep; it is not a recommendation to close.
+
+Before changing either state, the repair removes a stale recommend-close label
+when it is present. A failed label write leaves the existing state intact, and
+the normal GitHub upsert continues to treat an operator's explicit label
+removal as a reset to new work. This makes repeated sync idempotent, respects
+project label integration, and does not overwrite that operator signal.
 
 A partial implementation still blocked by an unresolved dependency — an open
 local blocking issue, a deployment-pending dependency, or an unresolved
 external dependency, the same blocking rule `Issue#ready_to_work?` already
-applies to Auto-Pick eligibility — is never recommended for closure. A
-completed agent run does not establish that remaining, intentionally
-deferred work is done, and labeling the issue `paid-recommend-close` would
-ask a human to park legitimate work based on PR bookkeeping rather than
-evidence of completion. Instead the issue is parked in
-`paid_state: "manual_review"` with a `manual_review_reason` naming the
-unresolved dependency, reusing the same human-visible, non-looping parking
-lane the rest of the system uses for other automation stops (see
-`IssueEnhancements::StopForManualReview`). Dependency resolution already
-unblocks the issue for Auto-Pick through the existing dependency-state
-checks; nothing about this repair path re-polls on a timer.
+applies to Auto-Pick eligibility — is never recommended for closure. The
+review hold or evidence-backed closeout state remains blocking to downstream
+dependency and subissue checks; neither state makes remaining work satisfied.
+The acceptance-audit admission path retains the dependency guard and exposes
+the prerequisite rather than starting implementation or closing the issue.
 
-A partial implementation with no outstanding dependency keeps the existing
-behavior: it is recommended for closure (`paid_state: "recommend_close"`,
-mirrored to GitHub's `paid-recommend-close` label) because there is no
-further deterministic signal to wait on, so a human is asked to confirm. The
-repair reuses the sync's already-resolved `GithubClient` rather than opening
-a second credential for the cycle.
+A partial implementation with no outstanding dependency is not recommended
+for closure from source-PR bookkeeping. A merged PR instead awaits the
+current final acceptance audit; an open or draft PR remains visibly on its
+review/merge path. The repair reuses the sync's already-resolved `GithubClient`
+rather than opening a second credential for the cycle.
 
 ## Projects V2 abandonment
 

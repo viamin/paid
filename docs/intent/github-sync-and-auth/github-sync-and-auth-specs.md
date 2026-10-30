@@ -316,20 +316,19 @@
   *Test:* `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `app/services/issues/upsert_from_github.rb`, `app/models/issue.rb`.
 
-- [x] **GITHUB-SYNC-016** — When sync repairs an open issue whose
-  `paid_state` is stale `completed` because its most recent `create_pr` run's
-  pull request does not carry a GitHub closing reference to the issue, and
-  that issue still has an unresolved blocking dependency (a local blocking
-  issue, a deployment-pending dependency, or an unresolved external
-  dependency per `Issue#ready_to_work?`), the system SHALL NOT apply the
-  recommend-close label and SHALL NOT set `paid_state` to `recommend_close`.
-  It SHALL instead set `paid_state: "manual_review"` with a
-  `manual_review_reason` naming the unresolved dependency reference(s), so the
-  remaining work stays visible without being recommended for closure or
-  re-executed on the next sync. This repair SHALL apply identically whether
-  the non-closing pull request is still open or has since merged, and SHALL
-  be a no-op on a repeated sync once the issue is parked. An issue with no
-  unresolved dependency keeps the existing `recommend_close` repair behavior
-  unchanged.
+- [x] **GITHUB-SYNC-016** — When sync finds an open issue with a stale
+  `completed` or `recommend_close` state whose source `create_pr` run's pull
+  request lacks a GitHub closing reference to that issue, it SHALL NOT apply
+  or retain the recommend-close label solely from that bookkeeping. It SHALL
+  retain a genuine source-PR closing reference unchanged. For an open or draft
+  non-closing source PR, it SHALL remove any stale recommend-close label before
+  parking the issue in `manual_review` with the linked PR and its exact
+  review-or-merge action. For a merged non-closing source PR, it SHALL remove
+  any stale recommend-close label before moving the issue to `analyzed`, which
+  remains blocking to dependencies and exposes the existing bounded,
+  report-only acceptance-audit path. A failed label removal SHALL leave the
+  existing state intact; an operator's explicit label-removal reset remains
+  authoritative. Repeated sync SHALL be idempotent and SHALL not make a
+  synchronous semantic assessment or close the GitHub issue.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
