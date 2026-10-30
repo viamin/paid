@@ -70,15 +70,28 @@ module AgentRuns
     end
 
     def build_result(apple_decision)
-      payload = interactive_payload(recorded_result || @fallback_result.presence)
+      payload = recorded_result || @fallback_result.presence
+      apple_only_result = apple_only_result?(payload)
+      payload = nil if apple_only_result && !apple_decision.enforcing?
+      payload = interactive_payload(payload)
       # @spec APPLE-ATTEMPT-011
       # @spec APPLE-ATTEMPT-012
       return apply_apple_gate(payload, apple_decision) if apple_decision.pending? || apple_decision.blocked?
 
-      payload ||= missing_result if @record_missing
+      payload ||= missing_result if @record_missing || apple_only_result
       return if payload.nil?
 
       normalize(payload)
+    end
+
+    # A prior Apple gate result has no criterion evidence of its own. Once the
+    # gate no longer enforces, replace it with an explicit missing result rather
+    # than retaining its stale pending reason or silently clearing the run.
+    # @spec APPLE-ATTEMPT-011 LIVE-PREVIEW-011
+    def apple_only_result?(payload)
+      return false unless payload.is_a?(Hash) && payload["apple_verification"].present?
+
+      payload.dig("evidence", "coverage").blank? && payload["reported_acceptance_criteria"].blank?
     end
 
     def apply_apple_gate(payload, decision)
