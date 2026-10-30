@@ -616,7 +616,7 @@ class GithubClient
   end
 
   def remove_label_from_issue(repo, number, label)
-    client.remove_label(repo, number, label)
+    handle_errors { client.remove_label(repo, number, label) }
   end
 
   # Removes multiple labels from an issue in individual API calls,
@@ -632,7 +632,7 @@ class GithubClient
     failed = []
 
     labels.each do |label|
-      client.remove_label(repo, number, label)
+      remove_label_from_issue(repo, number, label)
       removed << label
     rescue Error => e
       failed << { label: label, error: e.message }

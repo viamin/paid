@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_052057) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_213000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -153,6 +153,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_052057) do
     t.index ["account_id", "registry", "repository", "digest", "architecture"], name: "idx_agent_images_identity", unique: true, comment: "Uniqueness over the immutable content-addressed identity (account + registry + repository + digest + architecture)."
     t.index ["account_id"], name: "index_agent_images_on_account_id"
     t.index ["status"], name: "idx_agent_images_inactive", where: "((status)::text <> 'active'::text)", comment: "Partial index over non-active images so audit and rollback queries against deprecated/blocked rows stay fast as the active set grows."
+  end
+
+  create_table "agent_planning_holds", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id"
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.bigint "issue_id"
+    t.string "label", default: "planning", null: false
+    t.text "last_error"
+    t.boolean "operator_override", default: false, null: false
+    t.bigint "project_id", null: false
+    t.text "reason"
+    t.datetime "reconciled_at"
+    t.jsonb "release_condition", default: {}, null: false
+    t.integer "remote_issue_number", null: false
+    t.string "status", default: "needs_review", null: false
+    t.string "task_kind"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_agent_planning_holds_on_account_id"
+    t.index ["agent_run_id"], name: "index_agent_planning_holds_on_agent_run_id"
+    t.index ["issue_id", "label"], name: "index_agent_planning_holds_on_issue_id_and_label", unique: true
+    t.index ["issue_id"], name: "index_agent_planning_holds_on_issue_id"
+    t.index ["project_id", "remote_issue_number", "label"], name: "index_agent_planning_holds_on_remote_issue_and_label", unique: true
+    t.index ["project_id", "status"], name: "index_agent_planning_holds_on_project_id_and_status"
+    t.index ["project_id"], name: "index_agent_planning_holds_on_project_id"
   end
 
   create_table "agent_run_anomalies", comment: "Stores statistical outliers detected when an agent run metric deviates materially from the project's historical baseline.", force: :cascade do |t|
@@ -4682,6 +4708,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_052057) do
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_images", "accounts"
+  add_foreign_key "agent_planning_holds", "accounts"
+  add_foreign_key "agent_planning_holds", "agent_runs"
+  add_foreign_key "agent_planning_holds", "issues"
+  add_foreign_key "agent_planning_holds", "projects"
   add_foreign_key "agent_run_anomalies", "agent_runs"
   add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade

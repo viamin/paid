@@ -15,6 +15,8 @@ RSpec.describe Issues::BulkEnqueueEligible do
 
   before do
     allow(service).to receive(:release_confidence_delivery_holds)
+    allow(AgentPlanningHolds::Discover).to receive(:call)
+    allow(service).to receive(:reconcile_agent_planning_holds)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
@@ -210,6 +212,79 @@ RSpec.describe Issues::BulkEnqueueEligible do
       expect(FeatureIntents::ReleaseIssue).to have_received(:call).twice
       expect(FeatureIntents::ReleaseIssue).to have_received(:call).with(issue: held_issue)
       expect(FeatureIntents::ReleaseIssue).to have_received(:call).with(issue: reheld_issue)
+    end
+  end
+
+  describe "#reconcile_agent_planning_holds" do
+    let(:project) { create(:project) }
+    let(:service) { described_class.new(project: project) }
+
+    before do
+      allow(service).to receive(:reconcile_agent_planning_holds).and_call_original
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "retries a failed Paid-owned planning-hold reconciliation without crossing projects" do
+      issue = create(:issue, project: project, labels: [ "planning" ])
+      failed_hold = create_agent_planning_hold(project:, issue:, status: "reconciliation_failed")
+      other_project = create(:project)
+      other_issue = create(:issue, project: other_project, labels: [ "planning" ])
+      other_hold = create_agent_planning_hold(project: other_project, issue: other_issue, status: "held")
+      allow(AgentPlanningHolds::Reconcile).to receive(:call)
+
+      service.send(:reconcile_agent_planning_holds)
+
+      expect(AgentPlanningHolds::Reconcile).to have_received(:call).with(hold: failed_hold)
+      expect(AgentPlanningHolds::Reconcile).not_to have_received(:call).with(hold: other_hold)
+    end
+
+    def create_agent_planning_hold(project:, issue:, status:)
+      AgentPlanningHold.create!(
+        account: project.account,
+        project: project,
+        issue: issue,
+        remote_issue_number: issue.github_number,
+        label: "planning",
+        status: status,
+        task_kind: "implementation",
+        reason: "The prerequisite issue must close.",
+        release_condition: { "kind" => "issue_closed", "issue_number" => issue.github_number },
+        evidence: { "scope_revision" => "rdr-063@draft" }
+      )
+    end
+  end
+
+  describe "#discover_agent_planning_holds" do
+    let(:project) { create(:project) }
+    let(:service) { described_class.new(project: project) }
+
+    before do
+      allow(AgentPlanningHolds::Discover).to receive(:call).and_call_original
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "creates one operator-review hold for each existing project planning label" do
+      legacy_issue = create(:issue, project: project, labels: [ "planning" ])
+      other_project = create(:project)
+      other_issue = create(:issue, project: other_project, labels: [ "planning" ])
+
+      expect {
+        service.send(:discover_agent_planning_holds)
+      }.to change(AgentPlanningHold, :count).by(1)
+        .and change(Notification, :count).by(1)
+
+      hold = AgentPlanningHold.find_by!(project: project, issue: legacy_issue, label: "planning")
+      expect(hold).to have_attributes(status: "needs_review", agent_run: nil, task_kind: nil)
+      expect(Notification.find_by!(account: project.account, source: "agent_planning_hold_reconciliation", subject: legacy_issue))
+        .to have_attributes(blocking: true, severity: "error")
+      expect(AgentPlanningHold.where(project: other_project, issue: other_issue)).to be_empty
+
+      expect {
+        service.send(:discover_agent_planning_holds)
+      }.not_to change(AgentPlanningHold, :count)
+      expect {
+        service.send(:discover_agent_planning_holds)
+      }.not_to change(Notification, :count)
     end
   end
 end
