@@ -47,7 +47,7 @@ module Issues
         client.update_issue(issue.project.full_name, issue.github_number, body: updated_body)
       end
       issue.update!(body: updated_body)
-      Issues::ParseDependencies.call(issue: issue, body: updated_body, comments: trusted_comment_bodies(client))
+      Issues::ParseDependencies.call(issue: issue, body: updated_body, comments: trusted_comments(client))
 
       Audit::RecordEvent.call(
         action: "issue.prerequisite_linked",
@@ -90,10 +90,9 @@ module Issues
     # the parser replaces the local set with what the body + comments imply,
     # so re-derive the same comment baseline the sync path uses (trusted
     # authors, oldest-first).
-    def trusted_comment_bodies(client)
+    def trusted_comments(client)
       client.recent_issue_comments(issue.project.full_name, issue.github_number)
         .select { |comment| issue.project.trusted_github_user?(comment.user&.login) }
-        .map { |comment| comment.body.to_s }
     end
 
     def failure(code, message) = Result.new(code: code, message: message)

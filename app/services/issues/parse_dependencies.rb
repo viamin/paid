@@ -125,13 +125,14 @@ module Issues
     # Indented non-blank content: a continuation of the preceding list item.
     CONTINUATION_LINE_PATTERN = /^[ \t]+\S/
 
-    attr_reader :issue, :adjacency, :comments, :body
+    attr_reader :issue, :adjacency, :comments, :body, :reconcile
 
-    def initialize(issue:, adjacency: nil, comments: [], body: nil)
+    def initialize(issue:, adjacency: nil, comments: [], body: nil, reconcile: true)
       @issue = issue
       @adjacency = adjacency
       @comments = comments || []
       @body = body || issue&.body
+      @reconcile = reconcile
     end
 
     def self.call(...)
@@ -157,7 +158,7 @@ module Issues
     private
 
     def synchronize_dependencies
-      local_deps, cross_deps = extract
+      local_deps, cross_deps, provenance = resolve_dependencies
 
       current_deps = issue.issue_dependencies.to_a
       current_local_by_id = current_deps.select(&:local?).index_by(&:depends_on_issue_id)
@@ -165,16 +166,37 @@ module Issues
         [ d.depends_on_owner.downcase, d.depends_on_repo.downcase, d.depends_on_number ]
       end
 
-      return if local_deps.empty? && cross_deps.empty? &&
+      return false if local_deps.empty? && cross_deps.empty? &&
                current_local_by_id.empty? && current_external_by_key.empty?
 
-      new_local_deps = sync_local_deps(local_deps, current_local_by_id)
+      before = dependency_signature(current_deps)
+      new_local_deps = sync_local_deps(local_deps, current_local_by_id, provenance[:local])
       current_state = { local_by_id: current_local_by_id, external_by_key: current_external_by_key }
-      new_cross_refs = sync_cross_project_deps(cross_deps, local_deps, current_state, new_local_deps)
+      new_cross_refs = sync_cross_project_deps(
+        cross_deps, local_deps, current_state, new_local_deps, provenance
+      )
 
       kept_local_ids = new_local_deps.keys.to_set | new_cross_refs[:resolved_ids]
       remove_stale_local_deps(current_local_by_id.keys.to_set, kept_local_ids)
       remove_stale_external_deps(current_external_by_key.keys.to_set, new_cross_refs[:external_keys])
+      changed = before != dependency_signature(issue.issue_dependencies.reload)
+      reconcile_dependency_cycles if changed && reconcile
+      changed
+    end
+
+    # Reconciliation reads the same persisted effective graph as admission.
+    # It never edits a declaration: repair remains an explicit GitHub action.
+    def reconcile_dependency_cycles
+      Issues::DependencyCycles.call(account: issue.project.account)
+      Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+    end
+
+    def dependency_signature(dependencies)
+      dependencies.map do |dependency|
+        [ dependency.id, dependency.depends_on_issue_id, dependency.depends_on_owner,
+          dependency.depends_on_repo, dependency.depends_on_number, dependency.requires_deployment,
+          dependency.declaration_source, dependency.declaration_url ]
+      end.sort_by(&:first)
     end
 
     # Processes body then comments in the order given. Within a single comment,
@@ -189,12 +211,15 @@ module Issues
     def resolve_dependencies
       local_deps = {}
       cross_deps = {}
+      provenance = { local: {}, cross: {} }
 
       if body.present?
         extract_body_refs(body, local_deps, cross_deps)
+        record_provenance(provenance, local_deps, cross_deps, "issue_body", issue_url)
       end
 
-      comments.each do |comment_body|
+      comments.each do |comment|
+        comment_body = comment_body(comment)
         next if comment_body.blank?
 
         added_local = {}
@@ -211,11 +236,31 @@ module Issues
 
         merge_refs(local_deps, added_local)
         merge_refs(cross_deps, added_cross)
+        record_provenance(provenance, added_local, added_cross, "issue_comment", comment_url(comment))
         removed_local.each { |num| local_deps.delete(num) }
         removed_cross.each { |key| cross_deps.delete(key) }
+        removed_local.each { |num| provenance[:local].delete(num) }
+        removed_cross.each { |key| provenance[:cross].delete(key) }
       end
 
-      [ local_deps, cross_deps ]
+      [ local_deps, cross_deps, provenance ]
+    end
+
+    def record_provenance(provenance, local_deps, cross_deps, source, url)
+      local_deps.each_key { |key| provenance[:local][key] = { source:, url: } }
+      cross_deps.each_key { |key| provenance[:cross][key] = { source:, url: } }
+    end
+
+    def comment_body(comment)
+      comment.respond_to?(:body) ? comment.body.to_s : comment.to_s
+    end
+
+    def comment_url(comment)
+      comment.html_url if comment.respond_to?(:html_url)
+    end
+
+    def issue_url
+      issue.github_url if issue.respond_to?(:github_url)
     end
 
     # Merges new ref additions into the running map. A deployment flag, once
@@ -366,7 +411,7 @@ module Issues
     # or freshly created). The record handle is needed by sync_cross_project_deps
     # so a later cross-repo ref for the same local issue can promote the dep's
     # requires_deployment flag without losing it.
-    def sync_local_deps(local_deps, current_local_by_id)
+    def sync_local_deps(local_deps, current_local_by_id, provenance)
       new_local_deps = {}
       return new_local_deps if local_deps.empty?
 
@@ -392,9 +437,10 @@ module Issues
         next if dep_issue.id == issue.id
 
         requires_deployment = local_deps[number]
+        declaration = provenance[number]
 
         if (existing = current_local_by_id[dep_issue.id])
-          update_deployment_flag(existing, requires_deployment)
+          update_dependency(existing, requires_deployment, declaration)
           new_local_deps[dep_issue.id] = existing
           next
         end
@@ -404,6 +450,7 @@ module Issues
         new_local_deps[dep_issue.id] = issue.issue_dependencies.create!(
           depends_on_issue: dep_issue,
           requires_deployment: requires_deployment,
+          **provenance_attributes(declaration),
           cycle_provenance: "github_sync"
         )
         (adj[issue.id] ||= []) << dep_issue.id
@@ -412,7 +459,7 @@ module Issues
       new_local_deps
     end
 
-    def sync_cross_project_deps(cross_deps, local_deps, current_state, new_local_deps)
+    def sync_cross_project_deps(cross_deps, local_deps, current_state, new_local_deps, provenance)
       current_local_by_id = current_state[:local_by_id]
       current_external_by_key = current_state[:external_by_key]
       resolved_ids = Set.new
@@ -428,6 +475,7 @@ module Issues
 
       cross_refs.each do |owner, repo, number|
         requires_deployment = cross_deps[[ owner, repo, number ]]
+        declaration = provenance[:cross][[ owner, repo, number ]]
         project_key = [ owner.downcase, repo.downcase ]
         project = project_lookup[project_key]
         # Preserve the deployment flag from a matching local ref so a plain
@@ -444,7 +492,7 @@ module Issues
           if dep_issue
             resolved_ids << dep_issue.id
             if (existing = current_local_by_id[dep_issue.id])
-              update_deployment_flag(existing, requires_deployment)
+              update_dependency(existing, requires_deployment, declaration)
               next
             end
             # A local ref (e.g. "#123") earlier in the body may have already
@@ -452,7 +500,7 @@ module Issues
             # instead of silently dropping the cross-repo ref's deployment
             # wording.
             if (just_created = new_local_deps[dep_issue.id])
-              update_deployment_flag(just_created, requires_deployment)
+              update_dependency(just_created, requires_deployment, declaration)
               next
             end
             next if would_create_cycle?(dep_issue)
@@ -460,6 +508,7 @@ module Issues
             issue.issue_dependencies.create!(
               depends_on_issue: dep_issue,
               requires_deployment: requires_deployment,
+              **provenance_attributes(declaration),
               cycle_provenance: "github_sync"
             )
             (adj[issue.id] ||= []) << dep_issue.id
@@ -471,7 +520,7 @@ module Issues
         key = [ owner.downcase, repo.downcase, number ]
         external_keys << key
         if (existing = current_external_by_key[key])
-          update_deployment_flag(existing, requires_deployment)
+          update_dependency(existing, requires_deployment, declaration)
           next
         end
 
@@ -479,17 +528,26 @@ module Issues
           depends_on_owner: owner.downcase,
           depends_on_repo: repo.downcase,
           depends_on_number: number,
-          requires_deployment: requires_deployment
+          requires_deployment: requires_deployment,
+          **provenance_attributes(declaration)
         )
       end
 
       { resolved_ids: resolved_ids, external_keys: external_keys }
     end
 
-    def update_deployment_flag(dependency, requires_deployment)
-      return if dependency.requires_deployment == requires_deployment
+    def update_dependency(dependency, requires_deployment, declaration)
+      attributes = provenance_attributes(declaration).merge(requires_deployment:)
+      return unless attributes.any? { |attribute, value| dependency.public_send(attribute) != value }
 
-      dependency.update!(requires_deployment: requires_deployment)
+      dependency.update!(attributes)
+    end
+
+    def provenance_attributes(declaration)
+      {
+        declaration_source: declaration&.fetch(:source),
+        declaration_url: declaration&.fetch(:url)
+      }
     end
 
     def markdown_sections(text, heading_pattern:)

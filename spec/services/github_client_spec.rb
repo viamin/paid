@@ -3162,7 +3162,8 @@ RSpec.describe GithubClient do
                     comments: {
                       pageInfo: { hasPreviousPage: false },
                       nodes: [
-                        { author: { login: "alice" }, body: "first", createdAt: "2024-01-01T00:00:00Z" },
+                        { author: { login: "alice" }, body: "first", createdAt: "2024-01-01T00:00:00Z",
+                          url: "https://github.com/acme/repo/issues/10#issuecomment-1" },
                         { author: { login: "bob" }, body: "second", createdAt: "2024-01-02T00:00:00Z" }
                       ]
                     }
@@ -3186,6 +3187,7 @@ RSpec.describe GithubClient do
         expect(result.keys).to contain_exactly(10, 20)
         expect(result[10].size).to eq(2)
         expect(result[10].first.body).to eq("first")
+        expect(result[10].first.html_url).to eq("https://github.com/acme/repo/issues/10#issuecomment-1")
         expect(result[10].last.body).to eq("second")
         expect(result[20]).to eq([])
       end

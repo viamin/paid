@@ -927,7 +927,7 @@ class GithubClient
   MAX_COMMENTS_PER_ISSUE = 100
 
   CommentAuthor = Struct.new(:login, keyword_init: true)
-  CommentNode = Struct.new(:created_at, :user, :body, keyword_init: true)
+  CommentNode = Struct.new(:created_at, :user, :body, :html_url, keyword_init: true)
 
   # Fetches the most recent comments for multiple issues in one or more GraphQL
   # requests. Replaces N×(2 × pages) REST calls with batched aliased queries.
@@ -1865,7 +1865,7 @@ class GithubClient
     nodes_subquery = issue_numbers.map do |number|
       "      issue_#{number}: issue(number: #{number}) {\n" \
       "        comments: comments(last: #{MAX_COMMENTS_PER_ISSUE}) {\n" \
-      "          nodes { author { login } body createdAt }\n" \
+      "          nodes { author { login } body createdAt url }\n" \
       "          pageInfo { hasPreviousPage }\n" \
       "        }\n" \
       "      }"
@@ -1918,7 +1918,8 @@ class GithubClient
     CommentNode.new(
       created_at: parse_timestamp(node["createdAt"]),
       user: CommentAuthor.new(login: node.dig("author", "login")),
-      body: node["body"]
+      body: node["body"],
+      html_url: node["url"]
     )
   end
 

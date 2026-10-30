@@ -2592,6 +2592,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_29_231830) do
 
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.string "declaration_source", comment: "GitHub surface containing the effective dependency declaration."
+    t.string "declaration_url", comment: "GitHub URL for the effective dependency declaration when available."
     t.bigint "depends_on_issue_id"
     t.integer "depends_on_number"
     t.string "depends_on_owner"

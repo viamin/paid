@@ -225,6 +225,36 @@ RSpec.describe Inbox::Availability do
       expect(availability.available_projects).to contain_exactly(project_b)
       expect(availability.project_counts[project_b.id]).to eq(1)
     end
+
+    # @spec AUTO-PICK-QUEUE-015 INBOX-FOUNDATION-010
+    it "attributes one cross-project dependency cycle to every participating project" do
+      first = create(:issue, project: project_a, github_state: "open")
+      second = create(:issue, project: project_b, github_state: "open")
+      create(:issue_dependency, issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+      availability = described_class.call(user: user, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
+
+      expect(availability.available_projects).to contain_exactly(project_a, project_b)
+      expect(availability.project_counts.slice(project_a.id, project_b.id)).to eq(project_a.id => 1, project_b.id => 1)
+      expect(described_class.call(user: user, project: project_b).available_kinds)
+        .to include(Inbox::Queue::DEPENDENCY_CYCLE_KIND)
+    end
+
+    # @spec AUTO-PICK-QUEUE-015 INBOX-FOUNDATION-010
+    it "attributes supplied cross-project cycle entries without duplicating the occurrence" do
+      first = create(:issue, project: project_a, github_state: "open")
+      second = create(:issue, project: project_b, github_state: "open")
+      create(:issue_dependency, issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
+
+      availability = described_class.call(user: user, entries: entries)
+
+      expect(entries.one?).to be(true)
+      expect(availability.available_projects).to contain_exactly(project_a, project_b)
+      expect(availability.project_counts.slice(project_a.id, project_b.id)).to eq(project_a.id => 1, project_b.id => 1)
+    end
   end
 
   describe "#total_count" do
