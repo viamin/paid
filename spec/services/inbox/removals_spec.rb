@@ -67,6 +67,19 @@ RSpec.describe Inbox::Removals do
     end
 
     # @spec OPERATOR-INBOX-023
+    it "does not record a replayed removal for the same request occurrence" do
+      target = entry
+      removal = remove!
+      removed_at = removal.removed_at
+
+      travel 1.minute do
+        expect { remove!(target:) }.not_to change(InboxHistoryEvent, :count)
+      end
+
+      expect(removal.reload.removed_at).to eq(removed_at)
+    end
+
+    # @spec OPERATOR-INBOX-023
     it "records remove, restore, and a fresh-occurrence return against the stable issue" do
       remove!
       removed_entry = entry(scope: Inbox::Queue::REMOVED_SCOPE)

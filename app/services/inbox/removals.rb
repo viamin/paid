@@ -6,7 +6,7 @@ module Inbox
     # one user only and never resolves it, cancels work, changes automation
     # authorization, or deletes questions and history.
     #
-    # @spec INBOX-PHASE-RELEVANCE-006
+    # @spec INBOX-PHASE-RELEVANCE-006 @spec OPERATOR-INBOX-023
     class Remove
       def self.call(...)
         new(...).call
@@ -22,10 +22,12 @@ module Inbox
           user: user,
           request_key: Inbox::RequestIdentity.key_for(entry)
         ).tap do |removal|
+          next if replay?(removal)
+
           removal.assign_attributes(
             project: entry.project,
             entry_kind: entry.kind,
-            request_occurrence: Inbox::RequestIdentity.occurrence_for(entry),
+            request_occurrence: request_occurrence,
             responsible_phase: Inbox::PhaseOwnership.for_entry(entry).responsible_phase,
             removed_at: Time.current,
             cleared_at: nil
@@ -40,6 +42,14 @@ module Inbox
       private
 
       attr_reader :entry, :user
+
+      def replay?(removal)
+        removal.active? && removal.request_occurrence == request_occurrence
+      end
+
+      def request_occurrence
+        @request_occurrence ||= Inbox::RequestIdentity.occurrence_for(entry)
+      end
     end
 
     # Clears a user's suppression so the request becomes eligible again.
