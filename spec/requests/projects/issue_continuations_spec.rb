@@ -135,9 +135,11 @@ RSpec.describe "Issue continuations" do # @spec PARTIAL-CLOSEOUT-007 @spec PARTI
 
       before do
         sign_in user
-        allow_any_instance_of(Project).to receive(:client).and_return(github_client)
-        allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("open"))
-        allow(github_client).to receive(:update_issue).and_return(Struct.new(:state).new("closed"))
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive_messages(
+          issue: Struct.new(:state).new("open"),
+          update_issue: Struct.new(:state).new("closed")
+        )
       end
 
       def accepted_audit

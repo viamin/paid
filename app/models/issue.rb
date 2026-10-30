@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
+  CLOSEOUT_CLOSING_TTL = 15.minutes
+
   belongs_to :reopened_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
@@ -1554,6 +1556,14 @@ class Issue < ApplicationRecord
 
   def closeout_resolved?
     closeout_resolved_at.present?
+  end
+
+  # A process can terminate after persisting the marker but before its ensure
+  # block clears it. Bound the lease so an abandoned remote request cannot
+  # permanently revoke closeout retries and continuation admission.
+  # @spec PARTIAL-CLOSEOUT-006
+  def closeout_closing?
+    closeout_closing_at.present? && closeout_closing_at >= CLOSEOUT_CLOSING_TTL.ago
   end
 
   # Records the authorized GitHub closeout after the close API confirms the

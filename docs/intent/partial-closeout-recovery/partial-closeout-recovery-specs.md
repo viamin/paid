@@ -337,8 +337,10 @@
   resolution. Before releasing the issue lock for the remote close, the system
   SHALL persist a closing-in-progress marker that refuses new continuation
   authorization and cancels continuation runs at dequeue; a failed remote close
-  SHALL clear that marker for retry. No continuation can dispatch while closure
-  is in flight or after the issue is declared complete.
+  SHALL clear that marker for retry. The marker SHALL expire after a bounded
+  interval so process termination cannot permanently revoke closeout retries or
+  continuation admission. No continuation can dispatch while closure is in
+  flight or after the issue is declared complete.
 
 - [x] **PARTIAL-CLOSEOUT-037** — When an open issue has a current acceptance
   audit, the partial-closeout Inbox SHALL distinguish `audit pending`,

@@ -66,7 +66,7 @@ module Issues
     end
 
     def begin_closeout
-      return failure(:closeout_closing, "GitHub closure is already in progress.") if issue.closeout_closing_at.present?
+      return failure(:closeout_closing, "GitHub closure is already in progress.") if issue.closeout_closing?
 
       validation = validate_closeout
       return validation unless validation.success?
@@ -120,7 +120,17 @@ module Issues
 
     def closure_blocked?
       status = CloseoutStatus.call(issue)
-      status.blockers.any? { |blocker| blocker.code.in?(%i[unmet_prerequisites scanner_verification_pending scanner_verification_retryable scanner_verification_failed open_native_children human_prerequisite_notification prerequisite_notification]) }
+      status.blockers.any? { |blocker| blocker.code.in?(closure_blocker_codes) } || uncancellable_run_in_flight?
+    end
+
+    def closure_blocker_codes
+      %i[unmet_prerequisites scanner_verification_pending scanner_verification_retryable scanner_verification_failed open_native_children human_prerequisite_notification prerequisite_notification]
+    end
+
+    def uncancellable_run_in_flight?
+      request = IssueContinuationRequest.open_for_issue(issue)
+      cancellable_ids = request&.agent_runs&.where(status: "queued", temporal_workflow_id: nil)&.ids || []
+      issue.agent_runs.where(status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).where.not(id: cancellable_ids).exists?
     end
 
     def remote_github_state

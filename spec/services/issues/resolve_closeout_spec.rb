@@ -87,6 +87,29 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(issue.reload.closeout_closing_at).to be_nil
   end
 
+  it "recovers an abandoned closing marker after its bounded lifetime" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    issue.update!(closeout_closing_at: Issue::CLOSEOUT_CLOSING_TTL.ago - 1.second)
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result).to be_success
+    expect(issue.reload.closeout_closing_at).to be_nil
+  end
+
+  it "refuses closure while an agent run is already active" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    create(:agent_run, project:, issue:, status: "running")
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:open_prerequisites)
+    expect(github_client).not_to have_received(:issue)
+    expect(github_client).not_to have_received(:update_issue)
+  end
+
   it "revalidates prerequisites after GitHub confirms closure" do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit

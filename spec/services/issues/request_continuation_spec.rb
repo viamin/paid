@@ -118,6 +118,15 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(issue.agent_runs).to be_empty
     end
 
+    it "ignores an abandoned closing marker after its bounded lifetime" do # @spec PARTIAL-CLOSEOUT-006
+      merged_partial_pr(number: 12)
+      issue.update!(closeout_closing_at: Issue::CLOSEOUT_CLOSING_TTL.ago - 1.second)
+
+      result = request_continuation
+
+      expect(result).to be_success
+    end
+
     it "refuses an issue without closeout evidence" do
       result = request_continuation
 

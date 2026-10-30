@@ -132,7 +132,7 @@ module AgentRuns
       issue.reload
       request = agent_run.continuation_request
       return cancel_continuation("Continuation authorization is no longer open.") unless request&.open?
-      if issue.closeout_closing_at.present?
+      if issue.closeout_closing?
         return cancel_continuation("Continuation superseded: GitHub closure is in progress.")
       end
       return cancel_continuation("Continuation evidence generation changed.") unless Issues::CloseoutEvidence.call(issue).digest == request.evidence_digest

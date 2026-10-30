@@ -238,6 +238,18 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(request.closure_reason).to include("closure is in progress")
     end
 
+    it "keeps a continuation queued after an abandoned closing marker expires" do # @spec PARTIAL-CLOSEOUT-006
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 69)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      run = continuation_run(issue: issue, request: request)
+      issue.update!(closeout_closing_at: Issue::CLOSEOUT_CLOSING_TTL.ago - 1.second)
+
+      expect(described_class.call(run)).to be false
+      expect(run.reload.status).to eq("queued")
+      expect(request.reload.status).to eq("queued")
+    end
+
     it "cancels the run and supersedes the request when the evidence generation changed" do
       issue = create(:issue, project: project, github_state: "open")
       merged_partial_pr(issue: issue, number: 62)

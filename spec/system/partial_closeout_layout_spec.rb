@@ -45,6 +45,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
     issue = create(:issue, project:, github_number: 211, paid_state: "in_progress")
     create(:issue, :pull_request, project:, github_number: 212, github_state: "closed",
       pr_review_phase: "merged", parent_issue_id: issue.id)
+    accepted_audit(issue)
 
     [ 320, 375, 640 ].each do |width|
       page.current_window.resize_to(width, 800)
@@ -66,6 +67,7 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
     issue = create(:issue, project:, github_number: 216, paid_state: "in_progress")
     create(:issue, :pull_request, project:, github_number: 217, github_state: "closed",
       pr_review_phase: "merged", parent_issue_id: issue.id)
+    accepted_audit(issue)
 
     visit inbox_entry_path("partial_closeout:#{issue.id}", project_id: project.id,
       kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
@@ -115,6 +117,12 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
         };
       })()
     JS
+  end
+
+  def accepted_audit(issue)
+    run = create(:agent_run, :completed, project:, issue:)
+    assessment = { "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => [] }
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, assessment) })
   end
 
   def element_geometry(element)

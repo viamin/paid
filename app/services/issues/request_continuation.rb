@@ -43,7 +43,7 @@ module Issues
       return failure(:automation_disabled, "Automatic continuation is disabled for this project.") if automatic? && !auto_pick_project_open?
 
       issue.with_lock do
-        if issue.closeout_closing_at.present?
+        if issue.closeout_closing?
           return failure(:closeout_closing, "GitHub closure is in progress; retry continuation only if the close action fails.")
         end
 
