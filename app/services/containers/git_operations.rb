@@ -63,9 +63,11 @@ module Containers
       # Yarn cache/offline mirror (created by yarn install)
       .yarn-cache/
       .yarn-cache-v2/
+      .yarn-cache-tmp/
       .yarn-local-cache/
       .yarn-tmp/
       .cache-yarn/
+      .cache-tmp/
       # NOTE: .yarn/cache/, .yarn/unplugged/, and .pnp.* are intentionally
       # omitted — Yarn zero-installs repos commit these by design.
       # Ruby bundler (all variants including per-PR worktree bundles)
@@ -184,6 +186,7 @@ module Containers
       .corepack/
       .yarn-cache/
       .yarn-cache-v2/
+      .yarn-cache-tmp/
       .yarn-local-cache/
       .yarn-tmp/
       .bundle/
@@ -200,6 +203,7 @@ module Containers
       .gem-cache/
       .gem_home/
       .cache-yarn/
+      .cache-tmp/
       .pg/
       .pg-bin/
       .pg-local/
