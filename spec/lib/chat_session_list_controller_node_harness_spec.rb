@@ -55,6 +55,7 @@ class ChatSessionListControllerNodeHarness
       const openLabelClassList = buildClassList();
       const closeLabelClassList = buildClassList(["hidden"]);
       const listeners = {};
+      let sidebarContentFrameReloads = 0;
       let observerDisconnected = false;
 
       global.window = {
@@ -113,12 +114,18 @@ class ChatSessionListControllerNodeHarness
       controller.hasMobileMenuTarget = true;
       controller.hasMobileOpenLabelTarget = true;
       controller.hasSearchInputTarget = false;
+      controller.hasSidebarContentFrameTarget = true;
       controller.listTarget = {};
       controller.hasListTarget = true;
       controller.mobileButtonTarget = button;
       controller.mobileCloseLabelTarget = { classList: closeLabelClassList };
       controller.mobileMenuTarget = menu;
       controller.mobileOpenLabelTarget = { classList: openLabelClassList };
+      controller.sidebarContentFrameTarget = {
+        reload() {
+          sidebarContentFrameReloads += 1;
+        }
+      };
 
       return {
         bodyClassList,
@@ -131,7 +138,8 @@ class ChatSessionListControllerNodeHarness
         listeners,
         menu,
         observerDisconnected: () => observerDisconnected,
-        openLabelClassList
+        openLabelClassList,
+        sidebarContentFrameReloads: () => sidebarContentFrameReloads
       };
     }
 
@@ -151,6 +159,10 @@ class ChatSessionListControllerNodeHarness
 
       const harness = buildController(mediaQuery);
       harness.connect();
+
+      if (harness.sidebarContentFrameReloads() !== 1) {
+        throw new Error("Expected the hidden mobile sidebar frame to load during connect()");
+      }
 
       if (harness.menu.attributes["aria-hidden"] !== "true") {
         throw new Error(`Expected closed menu aria-hidden=true, saw ${harness.menu.attributes["aria-hidden"]}`);
@@ -201,6 +213,24 @@ class ChatSessionListControllerNodeHarness
 
       if (!harness.observerDisconnected()) {
         throw new Error("Expected disconnect() to stop the mutation observer");
+      }
+    }
+
+    // @spec CHAT-API-027
+    // Desktop already exposes the lazy frame, so it must retain Turbo's
+    // visibility-based loading rather than making another request.
+    function runDesktopSidebarFrameCase() {
+      const mediaQuery = {
+        addEventListener() {},
+        matches: true,
+        removeEventListener() {}
+      };
+
+      const harness = buildController(mediaQuery);
+      harness.connect();
+
+      if (harness.sidebarContentFrameReloads() !== 0) {
+        throw new Error("Expected the visible desktop sidebar frame to retain lazy loading");
       }
     }
 
@@ -345,10 +375,85 @@ class ChatSessionListControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-027
+    // The lazy outer frame arrives after this controller connects, so the
+    // arriving cards must receive the existing search and active-row state.
+    function runLazySidebarFrameRenderCase() {
+      const activeClasses = "bg-indigo-50 ring-1 ring-inset ring-indigo-200";
+      const buildCard = (sessionId, searchText) => ({
+        classList: buildClassList(["hover:bg-gray-50"]),
+        dataset: { activeClasses, searchText, sessionId: String(sessionId) }
+      });
+      const selectedCard = buildCard(42, "selected conversation");
+      const matchingCard = buildCard(7, "matching conversation");
+
+      global.window = {
+        MutationObserver: class {
+          constructor(callback) {
+            this.callback = callback;
+          }
+
+          disconnect() {}
+
+          observe() {}
+        },
+        location: { pathname: "/chat/42" }
+      };
+
+      const controller = Object.create(ChatSessionListController.prototype);
+      controller.cardTargets = [selectedCard, matchingCard];
+      controller.hasActiveSessionIdValue = true;
+      controller.activeSessionIdValue = 42;
+      controller.hasListTarget = true;
+      controller.listTarget = {};
+      controller.hasSearchInputTarget = true;
+      controller.searchInputTarget = { value: "matching" };
+      const newChatButton = {
+        attributes: {},
+        classList: buildClassList(["cursor-wait", "opacity-50"]),
+        disabled: true,
+        setAttribute(name, value) {
+          this.attributes[name] = value;
+        }
+      };
+      const loadingIndicator = { classList: buildClassList() };
+      controller.hasModalTarget = true;
+      controller.newChatButtonTargets = [newChatButton];
+      controller.newChatLoadingIndicatorTargets = [loadingIndicator];
+
+      controller.handleFrameRender({ target: { id: "chat_sessions_sidebar_content" } });
+
+      if (!controller.observer) {
+        throw new Error("Expected the lazy sidebar frame to initialize its list observer");
+      }
+
+      if (!selectedCard.classList.contains("bg-indigo-50")) {
+        throw new Error("Expected the selected lazy-loaded card to receive the active-row class");
+      }
+
+      if (!selectedCard.classList.contains("hidden")) {
+        throw new Error("Expected the existing search to filter a nonmatching lazy-loaded card");
+      }
+
+      if (matchingCard.classList.contains("hidden")) {
+        throw new Error("Expected the existing search to keep a matching lazy-loaded card visible");
+      }
+
+      if (newChatButton.disabled || newChatButton.attributes["aria-disabled"] !== "false") {
+        throw new Error("Expected the lazy frame to enable New Chat after its modal arrives");
+      }
+
+      if (!loadingIndicator.classList.contains("hidden")) {
+        throw new Error("Expected the New Chat loading indicator to hide after its modal arrives");
+      }
+    }
+
     runModernListenerCase();
+    runDesktopSidebarFrameCase();
     runLegacyListenerCase();
     runMissingMatchMediaCase();
     runUpdateActiveCardCase();
+    runLazySidebarFrameRenderCase();
   JAVASCRIPT
 
   def self.run
@@ -357,8 +462,8 @@ class ChatSessionListControllerNodeHarness
 end
 
 RSpec.describe ChatSessionListControllerNodeHarness, :no_db do
-  # @spec LIST-DETAIL-003
-  it "toggles the mobile sidebar, supports legacy media query listeners, and keeps hover exclusive with the active card" do
+  # @spec LIST-DETAIL-003, CHAT-API-027
+  it "preserves sidebar controls when the lazy history frame arrives" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE

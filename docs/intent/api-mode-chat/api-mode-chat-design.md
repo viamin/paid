@@ -66,6 +66,38 @@ The implemented behavior builds on:
 - Paid MCP tool definitions in `Tools::Registry`
 - per-request token accounting in `TokenUsageTracker`
 
+## Chat-first page loading
+
+The full-page chat response renders the selected session's bounded transcript
+and composer before requesting sidebar history or the new-session form. The
+sidebar is a lazy Turbo frame whose scoped request loads the current filter,
+pagination cursor, active-session pinning, and new-session runner/project
+choices independently. The selected session ID is an input to the sidebar
+request only; the request resolves it through the normal policy scope and
+does not cache authorization decisions.
+
+New-chat controls remain visible before the lazy frame finishes, but are
+disabled with a loading indicator until that frame supplies their dialog. This
+keeps the chat-first response bounded without presenting an enabled control
+whose action has no modal target. Because the mobile drawer starts hidden, its
+controller requests the scoped sidebar frame when the page becomes usable;
+desktop retains Turbo's visibility-based lazy loading.
+
+Sidebar cards receive the first non-system message through a correlated lookup
+that projects only the display-sized prefix. The lookup remains live rather
+than caching transcript data, so message creates and updates are immediately
+visible on the next sidebar response without cache invalidation risk. The
+existing `(chat_session_id, created_at)` message index bounds each lookup's
+ordered first-row seek; no mutable transcript or authorization result is
+cached. The visible-sidebar partial index on `(account_id, updated_at DESC,
+id DESC)` matches the account-scoped, non-archived ordering and cursor scan;
+the archived path remains bounded by its page limit rather than adding an
+index for a less frequent filter.
+
+The transcript continues to use `latest_messages`: it loads a fixed recent
+slice and extends only across a leading groupable tool run, while older
+messages and reconnect recovery remain their existing demand-driven paths.
+
 ## Current State
 
 ### Managed free-model chat pool
