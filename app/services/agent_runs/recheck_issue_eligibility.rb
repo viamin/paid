@@ -30,6 +30,18 @@ module AgentRuns
       "create_issue" => "auto_pick"
     }.freeze
 
+    FEATURE_ADMISSION_CANCELLATION_REASONS = {
+      "issue_dependencies_incomplete" => "This issue has unresolved dependencies. Complete or remove its dependencies to start this run.",
+      "in_tree_dependency_incomplete" => "This feature has incomplete prerequisite tasks. Complete the prerequisite tasks to start this run.",
+      "feature_revising" => "This feature is being revised. Finish the revision and release the feature to start this run.",
+      "feature_not_released" => "This feature is awaiting approval and release. Approve and release the feature to start this run.",
+      "no_approved_revision" => "This feature has no approved repository revision. Record an approved revision and release the feature to start this run.",
+      "confidence_readiness_incomplete" => "This feature has incomplete readiness requirements. Complete them and release the feature to start this run.",
+      "confidence_release_held" => "This feature is awaiting readiness release. Complete its readiness requirements and release the feature to start this run."
+    }.freeze
+
+    DEFAULT_FEATURE_ADMISSION_CANCELLATION_REASON = "This feature is not ready to start this run. Review and resolve the feature's admission requirements, then start a new run."
+
     def self.call(...)
       new(...).call
     end
@@ -43,7 +55,7 @@ module AgentRuns
     # longer eligible; false when the run should proceed normally.
     def call # @spec EAGER-QUEUE-005 ISSUE-ENHANCEMENT-018
       return cancel_phase_unauthorized_run if phase_revoked?
-      return cancel_feature_held_run if feature_held?
+      return cancel_feature_admission_denied_run if feature_admission_denied?
       return recheck_continuation if continuation_run?
       return recheck_automatic_enhancement_hold if automatic_enhancement_recheck?
       return false unless recheck_applicable?
@@ -109,13 +121,22 @@ module AgentRuns
       cancel_run(reason: "Automatic enhancement is held by an effective automatic-execution control at dequeue.")
     end
 
-    def feature_held?
-      agent_run.create_pr_goal? && agent_run.issue_id.present? &&
-        !FeatureIntents::RunAdmission.call(issue: agent_run.issue).allowed?
+    def feature_admission_denied? # @spec FEATURE-APPROVAL-023
+      return false unless agent_run.create_pr_goal? && agent_run.issue_id.present?
+
+      @feature_admission = FeatureIntents::RunAdmission.call(issue: agent_run.issue)
+      !@feature_admission.allowed?
     end
 
-    def cancel_feature_held_run
-      cancel_run(reason: "Feature intent is held at dequeue (RDR-066 release gate).")
+    def cancel_feature_admission_denied_run
+      cancel_run(reason: feature_admission_cancellation_reason)
+    end
+
+    def feature_admission_cancellation_reason
+      FEATURE_ADMISSION_CANCELLATION_REASONS.fetch(
+        @feature_admission.code,
+        DEFAULT_FEATURE_ADMISSION_CANCELLATION_REASON
+      )
     end
 
     def issue_still_eligible?
@@ -170,8 +191,8 @@ module AgentRuns
     # the policy-change race between peek and claim. A workflow ID or running
     # status is already executing and remains owned by the normal lifecycle.
     def cancel_run(reason: nil)
-      reason ||= "Issue no longer eligible at dequeue (RDR-032 recheck); " \
-                 "it will be re-seeded when eligible again"
+      reason ||= "This issue is no longer eligible for automatic work. " \
+                 "It will be queued again when it becomes eligible."
 
       cancelled = agent_run.with_lock do
         next false unless cancellable_before_execution?
