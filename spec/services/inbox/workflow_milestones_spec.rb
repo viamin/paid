@@ -38,4 +38,16 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Owner approval", state: "stale", revision: "new-sha"))
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "current"))
   end
+
+  it "omits the pull-request workflow for a non-PR issue-backed lane" do # @spec OPERATOR-INBOX-022
+    non_pr_issue = create(:issue, project: project)
+    inbox_entry = Inbox::Queue::Entry.new(
+      id: "clarifying_questions:#{non_pr_issue.id}",
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+      project:,
+      issue: non_pr_issue
+    )
+
+    expect(described_class.call(inbox_entry)).to eq(current_action: nil, milestones: [])
+  end
 end

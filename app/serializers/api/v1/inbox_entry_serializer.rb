@@ -52,7 +52,7 @@ module Api
 
       # @spec OPERATOR-INBOX-022
       def workflow_payload
-        return {} unless entry.issue
+        return {} unless entry.workflow_milestones?
 
         { workflow: entry.workflow_milestones }
       end

@@ -6,8 +6,18 @@ module Inbox
   # invokes it, so list/count requests remain free of per-row remote calls.
   # @spec OPERATOR-INBOX-022
   class WorkflowMilestones
+    SUPPORTED_KINDS = [
+      Queue::MERGE_APPROVAL_KIND,
+      Queue::ESCALATED_PR_KIND,
+      Queue::TEST_REVIEW_PENDING_KIND
+    ].freeze
+
     def self.call(entry)
       new(entry).call
+    end
+
+    def self.supported?(entry)
+      SUPPORTED_KINDS.include?(entry.kind) && entry.issue&.is_pull_request?
     end
 
     def initialize(entry)
@@ -15,7 +25,7 @@ module Inbox
     end
 
     def call
-      return empty unless entry.issue
+      return empty unless self.class.supported?(entry)
 
       { current_action: milestones.find { |milestone| milestone[:current] }&.fetch(:action), milestones: milestones }
     end

@@ -76,8 +76,11 @@ rechecks current queue membership and returns an empty frame for stale entries.
 
 ## Workflow milestones
 
-Selected issue-backed Inbox entries project persisted workflow evidence into a
-typed milestone contract shared by the detail pane, API, and contextual chat.
+Selected `merge_approval`, `escalated_pr`, and `test_review_pending` pull-request
+entries project persisted workflow evidence into a typed milestone contract
+shared by the detail pane, API, and contextual chat. Other issue-backed lanes
+omit that projection because they do not represent this review-and-merge
+workflow.
 The compact strip names each stage and its textual state; expandable milestones
 carry reason, revision, actor, exact action, and the relevant GitHub surface.
 The projection is selected-entry work only, so Inbox rows and counts retain

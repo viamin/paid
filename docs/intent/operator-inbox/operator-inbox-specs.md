@@ -68,10 +68,12 @@
   `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
-- [x] **OPERATOR-INBOX-022** — When an operator selects an issue-backed Inbox
-  entry, the system SHALL expose one typed workflow-milestone projection to the
-  detail pane, API, and contextual chat. Each milestone SHALL provide a short
-  textual state (`completed`, `current`, `waiting`, `blocked`, `stale`,
+- [x] **OPERATOR-INBOX-022** — When an operator selects a supported pull-request
+  Inbox entry (`merge_approval`, `escalated_pr`, or `test_review_pending`), the
+  system SHALL expose one typed workflow-milestone projection to the detail
+  pane, API, and contextual chat. Issue-backed lanes that do not represent this
+  pull-request workflow SHALL omit the projection. Each milestone SHALL provide
+  a short textual state (`completed`, `current`, `waiting`, `blocked`, `stale`,
   `not_applicable`, or `unknown`) and expandable reason, evidence revision,
   actor when known, exact action, and relevant GitHub link. The current action
   SHALL be announced in the detail pane and use `aria-current`; manual-merge
