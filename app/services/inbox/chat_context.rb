@@ -106,11 +106,14 @@ module Inbox
     def action_history
       return [] unless issue
 
-      subject_key = "issue:#{chat_session.project_id}:#{issue.github_number}"
-      InboxHistoryEvent.for_subject(account: chat_session.account, subject_key:).newest_first.limit(20).map do |event|
-        { action: event.metadata.fetch("action", event.event_key), actor: event.actor_label, source: event.source,
+      Inbox::ActionHistory.call(entry: action_history_entry).events.map do |event|
+        { id: event.id, action: event.action, actor: event.actor, source: event.source,
           result: event.result, occurred_at: event.occurred_at, revision: event.revision, evidence_url: event.evidence_url }
       end
+    end
+
+    def action_history_entry
+      Inbox::Queue::Entry.new(id: chat_session.inbox_item_key, project: chat_session.project, issue:, record: issue)
     end
 
     # Record-backed lanes are not necessarily issue-backed. Resolve them when

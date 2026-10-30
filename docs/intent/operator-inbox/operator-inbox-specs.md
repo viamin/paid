@@ -21,15 +21,19 @@
   later completed result or current progress. Scanner-observed owner approval,
   pending manual merge, approval invalidation by a newer revision, and later
   reapproval SHALL be separate, replay-safe events derived from explicit
-  scanner approval evidence rather than blocker exhaustion. API detail clients
-  SHALL be able to advance the bounded timeline with a dedicated history
-  cursor and limit. Inbox list and count queries SHALL NOT load per-row history
-  or make live GitHub calls.
+  scanner approval evidence rather than blocker exhaustion. Selected web
+  details SHALL offer a cursor-backed continuation when older events exist,
+  and API detail clients SHALL be able to advance the bounded timeline with a
+  dedicated history cursor and limit. Inbox list and count queries SHALL NOT
+  load per-row history or make live GitHub calls.
   *Code:* `app/services/inbox/action_history.rb`,
   `app/services/inbox/action_history_page.rb`,
+  `app/services/inbox/chat_context.rb`,
   `app/services/inbox/merge_assessment_history_recorder.rb`,
-  `app/serializers/api/v1/inbox_entry_serializer.rb`.
-  *Test:* `spec/services/inbox/action_history_spec.rb`.
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/views/dashboard/_inbox_detail.html.erb`.
+  *Test:* `spec/services/inbox/action_history_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-023** — When Paid records an Inbox removal or restore,
   it SHALL append a deduplicated, subject-keyed Paid event without changing the
