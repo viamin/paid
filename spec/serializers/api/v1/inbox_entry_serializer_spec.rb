@@ -27,11 +27,14 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
   describe "#render" do
     it "serializes clarifying_questions with its questions" do
-      entry = build_entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, questions: [ "What should happen?" ])
+      issue = create(:issue, project: project)
+      entry = build_entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+        issue:, questions: [ "What should happen?" ])
 
       payload = described_class.render(entry)
 
       expect(payload).to include(questions: [ "What should happen?" ])
+      expect(payload).not_to have_key(:workflow)
     end
 
     it "serializes plan_review with its tasks" do
@@ -51,6 +54,13 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       payload = described_class.render(entry)
 
       expect(payload).to include(blockers: guidance.fetch(:blockers), guidance: guidance)
+      expect(payload.fetch(:workflow)).to include(
+        current_action: "Make the manual decision.",
+        milestones: include(
+          a_hash_including(name: "Owner approval", state: "current"),
+          a_hash_including(name: "Merge", state: "waiting")
+        )
+      )
     end
 
     it "serializes action_required with its remediation steps" do

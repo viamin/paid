@@ -144,6 +144,16 @@ module Inbox
         kind == TEST_REVIEW_PENDING_KIND
       end
 
+      # @spec OPERATOR-INBOX-024
+      def workflow_milestones
+        @workflow_milestones ||= Inbox::WorkflowMilestones.call(self)
+      end
+
+      # @spec OPERATOR-INBOX-024
+      def workflow_milestones?
+        Inbox::WorkflowMilestones.supported?(self)
+      end
+
       # @spec PROJECT-READINESS-005
       def project_setup_pending?
         kind == PROJECT_SETUP_PENDING_KIND

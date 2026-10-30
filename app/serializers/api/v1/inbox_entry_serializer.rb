@@ -24,7 +24,7 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload).merge(history_payload)
+        common_fields.merge(kind_payload).merge(history_payload).merge(workflow_payload)
       end
 
       def render_list
@@ -51,6 +51,13 @@ module Api
         return unless entry.project
 
         { id: entry.project.id, owner: entry.project.owner, repo: entry.project.repo, name: entry.project.full_name }
+      end
+
+      # @spec OPERATOR-INBOX-024
+      def workflow_payload
+        return {} unless entry.workflow_milestones?
+
+        { workflow: entry.workflow_milestones }
       end
 
       # @spec OPERATOR-INBOX-022
