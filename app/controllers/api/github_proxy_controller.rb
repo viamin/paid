@@ -410,7 +410,8 @@ module Api
     end
 
     def planning_hold_contract
-      JSON.parse(request.headers["X-Paid-Planning-Hold"].to_s).deep_stringify_keys
+      parsed = JSON.parse(request.headers["X-Paid-Planning-Hold"].to_s)
+      parsed.is_a?(Hash) ? parsed.deep_stringify_keys : {}
     rescue JSON::ParserError
       {}
     end
@@ -656,7 +657,8 @@ module Api
     def parse_request_body(body)
       return {} if body.blank?
 
-      JSON.parse(body)
+      parsed = JSON.parse(body)
+      parsed.is_a?(Hash) ? parsed : {}
     rescue JSON::ParserError
       {}
     end

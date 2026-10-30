@@ -65,6 +65,5 @@ module AgentPlanningHolds
     def contract_hash(key)
       contract[key].is_a?(Hash) ? contract[key] : {}
     end
-
   end
 end

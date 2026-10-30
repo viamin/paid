@@ -243,6 +243,16 @@ RSpec.describe "Api::GithubProxy" do
       expect(response).to have_http_status(:ok)
     end
 
+    it "proxies a valid non-object label body without attempting planning-hold tracking" do # @spec CONFIDENCE-DELIVERY-018
+      expect {
+        post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
+          params: [].to_json,
+          headers: valid_headers
+      }.not_to change(AgentPlanningHold, :count)
+
+      expect(response).to have_http_status(:ok)
+    end
+
     it "records an agent-authored planning label without claiming ownership" do # @spec CONFIDENCE-DELIVERY-018
       create(:issue, project:, github_number: 42, labels: [ "planning" ])
 
@@ -291,6 +301,19 @@ RSpec.describe "Api::GithubProxy" do
 
       expect(response).to have_http_status(:ok)
       expect(AgentPlanningHold.last).to have_attributes(status: "held", task_kind: "implementation")
+    end
+
+    [ [], nil ].each do |contract|
+      it "records a valid JSON #{contract.inspect} planning-hold contract for operator review" do # @spec CONFIDENCE-DELIVERY-018
+        expect {
+          post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
+            params: { labels: [ "planning" ] }.to_json,
+            headers: valid_headers.merge("X-Paid-Planning-Hold" => contract.to_json)
+        }.to change(AgentPlanningHold, :count).by(1)
+
+        expect(response).to have_http_status(:ok)
+        expect(AgentPlanningHold.last).to have_attributes(status: "needs_review", task_kind: nil)
+      end
     end
 
     it "surfaces persistence failures for retry after GitHub accepts the label" do # @spec CONFIDENCE-DELIVERY-018
