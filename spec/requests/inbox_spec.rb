@@ -744,6 +744,25 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-action"]).to eq("advance")
   end
 
+  # @spec OPERATOR-INBOX-022
+  it "offers a cursor-backed continuation when the selected detail has older history" do
+    issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
+    subject_key = "issue:#{project.id}:#{issue.github_number}"
+    21.times do |index|
+      create(:inbox_history_event, account:, project:, subject_key:,
+        occurred_at: index.minutes.ago, metadata: { action: "Event #{index}" })
+    end
+
+    get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css("a[data-testid='inbox-history-continuation']")
+    expect(link).to be_present
+    expect(link.text).to include("See older activity")
+    expect(link["href"]).to include("history_cursor=history%3A")
+    expect(link["data-turbo-frame"]).to eq("inbox-detail")
+  end
+
   it "wires the shared independently scrollable shell panes to the inbox master-detail targets" do
     # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005 @spec LIST-DETAIL-007
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)

@@ -126,3 +126,9 @@ back its credential, runner, and session and reports a typed reason: empty
 catalog, runner incompatibility, tool-capability mismatch, unavailability,
 verified-model restriction, operator/project policy restriction, or lack of a
 Low-tier candidate.
+
+For a runner backed by a newly submitted provider API key, only fresh
+account-scoped unavailable evidence may remove a catalog candidate. A global
+availability result is periodic runner-contract evidence rather than proof
+about the new key; `Runners::ModelCompatibility` remains the gate for global
+runner/auth incompatibility.

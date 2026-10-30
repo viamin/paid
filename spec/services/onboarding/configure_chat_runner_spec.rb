@@ -65,6 +65,25 @@ RSpec.describe Onboarding::ConfigureChatRunner do
       expect(user.runners.where("name LIKE ?", "%onboarding%").reload).to be_empty
       expect(account.chat_sessions.reload).to be_empty
     end
+
+    # @spec ONBOARD-CHAT-015 MODEL-AVAILABILITY-009
+    it "does not let global unavailable evidence block a new #{service_type} API key" do
+      model = LlmModel.find_by!(provider: service_type, model_id: onboarding_model_id(service_type))
+      create(
+        :model_availability_check,
+        llm_model: model,
+        runner_key: RunnerSupport::RUNNER_API_SERVICE_TYPE.key(service_type),
+        auth_type: "api_key",
+        status: "unavailable",
+        account: nil,
+        checked_at: Time.current,
+        expires_at: ModelAvailabilityCheck::DEFAULT_TTL.from_now
+      )
+
+      result = described_class.call(account:, user:, api_service_type: service_type, api_key: "test-key")
+
+      expect_chat_runner_setup(result, service_type)
+    end
   end
 
   # @spec ONBOARD-CHAT-003

@@ -6,7 +6,7 @@ module Inbox
     # one user only and never resolves it, cancels work, changes automation
     # authorization, or deletes questions and history.
     #
-    # @spec INBOX-PHASE-RELEVANCE-006
+    # @spec INBOX-PHASE-RELEVANCE-006 @spec OPERATOR-INBOX-023
     class Remove
       def self.call(...)
         new(...).call
@@ -22,15 +22,19 @@ module Inbox
           user: user,
           request_key: Inbox::RequestIdentity.key_for(entry)
         ).tap do |removal|
+          next if replay?(removal)
+
           removal.assign_attributes(
             project: entry.project,
             entry_kind: entry.kind,
-            request_occurrence: Inbox::RequestIdentity.occurrence_for(entry),
+            request_occurrence: request_occurrence,
             responsible_phase: Inbox::PhaseOwnership.for_entry(entry).responsible_phase,
             removed_at: Time.current,
             cleared_at: nil
           )
           removal.save!
+          HistoryRecorder.call(entry:, event_key: "inbox-removed:#{removal.id}:#{removal.removed_at.to_f}",
+            action: "Removed from Inbox", actor: user, result: "completed", occurred_at: removal.removed_at)
           Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
         end
       end
@@ -38,6 +42,14 @@ module Inbox
       private
 
       attr_reader :entry, :user
+
+      def replay?(removal)
+        removal.active? && removal.request_occurrence == request_occurrence
+      end
+
+      def request_occurrence
+        @request_occurrence ||= Inbox::RequestIdentity.occurrence_for(entry)
+      end
     end
 
     # Clears a user's suppression so the request becomes eligible again.
@@ -56,7 +68,12 @@ module Inbox
         removed = InboxRemoval.active.where(user:, request_key: Inbox::RequestIdentity.key_for(entry))
         return 0 unless removed.exists?
 
-        removed.find_each(&:clear!)
+        removed.find_each do |removal|
+          next unless removal.clear!
+
+          HistoryRecorder.call(entry:, event_key: "inbox-restored:#{removal.id}:#{removal.cleared_at.to_f}",
+            action: "Restored to Inbox", actor: user, result: "completed", occurred_at: removal.cleared_at)
+        end
         Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
       end
 

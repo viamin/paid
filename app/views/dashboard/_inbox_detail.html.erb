@@ -105,5 +105,23 @@
   <% end %>
 
   <%= render "dashboard/inbox_chat_action", entry: entry %>
+  <%# @spec OPERATOR-INBOX-022 %>
+  <% history = Inbox::ActionHistory.call(entry: entry, user: current_user, before: params[:history_cursor]) %>
+  <section class="mt-6 border-t border-gray-200 pt-4" aria-labelledby="inbox-history-heading">
+    <h3 id="inbox-history-heading" class="text-sm font-semibold text-gray-900">Action history</h3>
+    <% if history.incomplete %><p class="mt-1 text-sm text-amber-800">History before Paid recorded durable evidence is unavailable.</p><% end %>
+    <ol class="mt-3 space-y-3" aria-label="Action history timeline">
+      <% history.events.each do |event| %>
+        <li class="text-sm text-gray-700"><strong><%= event.action %></strong> — <%= event.result %> by <%= event.actor %> (<%= event.source %>) <time datetime="<%= event.occurred_at.iso8601 %>"><%= time_ago_in_words(event.occurred_at) %> ago</time><% if event.revision.present? %>, revision <code><%= event.revision %></code><% end %><% if event.evidence_url.present? %> <%= link_to "Evidence", event.evidence_url, target: "_top", rel: "noopener" %><% end %></li>
+      <% end %>
+    </ol>
+    <% if history.next_cursor %>
+      <%= link_to "See older activity",
+            inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind,
+              history_cursor: history.next_cursor)),
+            data: { turbo_frame: "inbox-detail", testid: "inbox-history-continuation" },
+            class: "mt-4 inline-flex text-sm font-medium text-blue-600 hover:text-blue-800" %>
+    <% end %>
+  </section>
   <%= render "dashboard/inbox_phase_and_removal", entry: entry %>
 </div>

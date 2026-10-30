@@ -59,7 +59,7 @@ RSpec.describe ChatSessions::FallbackRunners do
         provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
       healthy = create_openrouter_runner(name: "Healthy")
       create(:model_availability_check, llm_model: claude_low, runner_key: "claude",
-        auth_type: "api_key", status: "unavailable")
+        auth_type: "api_key", status: "unavailable", account: account)
       user.settings.update_columns(kb_chat_fallback_runners: [ unavailable.routing_key, healthy.routing_key ])
 
       expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([ healthy ])

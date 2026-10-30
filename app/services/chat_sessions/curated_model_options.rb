@@ -127,12 +127,23 @@ module ChatSessions
     end
 
     def availability_checks_by_model_id
+      # Global checks are periodic compatibility evidence, not evidence that a
+      # newly supplied API key can use a model. Compatibility is already
+      # applied by Runners::ModelOptions; availability rejections must belong
+      # to this account before they can suppress its API-key runner.
+      # @spec ONBOARD-CHAT-015 MODEL-AVAILABILITY-009
       @availability_checks_by_model_id ||= ModelAvailabilityCheck.where(
         llm_model_id: compatible_model_ids,
         runner_key: runner.runner_key,
         auth_type: runner.auth_type,
-        account: [ runner.user.account, nil ]
+        account: availability_check_accounts
       ).group_by(&:llm_model_id)
+    end
+
+    def availability_check_accounts
+      return runner.user.account if runner.api_key?
+
+      [ runner.user.account, nil ]
     end
 
     def compatible_model_ids

@@ -642,12 +642,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "persists current-head manual-merge assessment while auto-merge is off without scheduling a merge" do
         project.update!(auto_merge_mode: "off", owner_reviewer_login: "viamin")
         pr_issue.update!(pr_review_phase: "ready")
-        stub_owner_approval_ready_signals(review_freshness: :fresh)
+        stub_owner_approval_ready_signals(review_freshness: :fresh, approved_revision: "abc123")
 
         result = activity.execute(project_id: project.id)
 
         expect(pr_issue.reload.auto_merge_blockers).to eq("failed" => [], "not_evaluated" => [])
         expect(pr_issue.auto_merge_evaluated_at).to be_present
+        expect(InboxHistoryEvent.where(project:).pluck(Arel.sql("metadata->>'action'")))
+          .to include("Owner approval recorded", "Manual merge pending")
         expect(automation_scan_results(result)).to be_empty
       end
 
@@ -673,6 +675,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             "current_revision" => "current-revision"
           )
         )
+        expect(InboxHistoryEvent.find_by!(project:,
+          event_key: "merge-assessment:invalidation:viamin:approved-revision:current-revision").result).to eq("failed")
       end
 
       # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
