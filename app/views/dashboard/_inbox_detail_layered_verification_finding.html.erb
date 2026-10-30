@@ -4,6 +4,9 @@
 <% check_result_ids = Array(finding.observations).flat_map { |observation| Array(observation["check_result_ids"]) } %>
 <% check_result_ids.concat(Array(finding.observed_behavior["check_results"])) if finding.observed_behavior.is_a?(Hash) %>
 <% check_results = LayeredVerificationCheckResult.where(id: check_result_ids.uniq).order(:id) %>
+<% audit_path = project_agent_run_path(finding.project, finding.agent_run) %>
+<% intent_path = finding.obligation.canonical_source_path %>
+<% intent_url = "#{finding.project.github_url}/blob/#{audit_revision}/#{intent_path}" if intent_path.present? && audit_revision.present? %>
 <dl class="space-y-4 text-sm">
   <div><dt class="font-medium text-gray-900">Obligation</dt><dd class="mt-1"><%= finding.obligation.external_identity %> — <%= finding.obligation.scope_description %></dd></div>
   <div><dt class="font-medium text-gray-900">Source revision</dt><dd class="mt-1 font-mono text-xs"><%= finding.obligation.external_revision.presence || "Unresolved" %></dd></div>
@@ -15,6 +18,14 @@
   <div><dt class="font-medium text-gray-900">Consequences</dt><dd class="mt-1"><ul class="list-disc pl-5"><% Array(finding.decision["consequences"]).each do |consequence| %><li><%= consequence %></li><% end %></ul></dd></div>
   <div><dt class="font-medium text-gray-900">Contributing check results</dt><dd class="mt-1"><% if check_results.any? %><ul class="space-y-2"><% check_results.each do |result| %><li><span class="font-medium">State:</span> <%= result.execution_state %>; <span class="font-medium">Coverage:</span> <%= result.obligation_coverage %><br><span class="font-medium">Input revisions:</span> <%= result.input_revision.to_json %><br><span class="font-medium">Freshness:</span> <%= result.input_revision.values.map(&:to_s).include?(audit_revision.to_s) ? "matches audit revision" : "does not include audit revision" %></li><% end %></ul><% else %>No contributing result records are available.<% end %></dd></div>
 </dl>
+
+<nav class="mt-6 flex flex-wrap gap-3 text-sm" aria-label="Verification finding evidence">
+  <%= link_to "View audit run", audit_path, class: "text-indigo-600 hover:text-indigo-500" %>
+  <%= link_to "View evidence", "#{audit_path}#layered-verification-coverage", class: "text-indigo-600 hover:text-indigo-500" %>
+  <% if intent_url %>
+    <%= link_to "View canonical intent", intent_url, class: "text-indigo-600 hover:text-indigo-500", target: "_blank", rel: "noopener noreferrer" %>
+  <% end %>
+</nav>
 
 <%= form_with url: inbox_layered_verification_finding_decision_path(entry.id), data: { turbo_frame: "_top" }, class: "mt-6 space-y-3" do |form| %>
   <%= hidden_field_tag "decision[external_revision]", audit_revision %>

@@ -2371,7 +2371,12 @@ RSpec.describe "Inbox" do
 
     expect(response.body).to include("PAYMENTS-017", "Two captures occur after retry.",
       "Only the retry path was exercised.", "Request a separately authorized repair", "Contributing check results",
-      "completed", "contradicted", "matches audit revision")
+      "completed", "contradicted", "matches audit revision", "View audit run", "View canonical intent",
+      "View evidence")
+    expect(response.body).to include(
+      project_agent_run_path(project, finding.agent_run),
+      "#{project.github_url}/blob/abc123/docs/intent/payments-specs.md"
+    )
     expect(response.body).not_to include("Approve plan", "Reject plan", "Revise plan")
 
     post inbox_layered_verification_finding_decision_path(key), params: {
