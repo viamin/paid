@@ -432,7 +432,7 @@ module Projects
       end
 
       result = Issues::ResolveCloseout.call(issue: issue, actor: current_user, reason: params[:reason])
-      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Issue resolved as complete.")
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Issue closed on GitHub.")
     end
 
     # Links a prerequisite to a stalled partial-closeout issue from the Inbox

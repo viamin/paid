@@ -40,7 +40,6 @@ module Issues
       def stalled?
         evidence.present? &&
           open_request.nil? &&
-          !resolved_current_generation &&
           !admissible &&
           blockers.none? { |blocker| blocker.code.in?(NON_STALL_BLOCKER_CODES) }
       end
@@ -48,10 +47,6 @@ module Issues
       def reason
         return "Paid has no terminal closeout evidence for this issue, so there is nothing to continue past." if evidence.blank?
         return "A deliberate continuation is already authorized and its run is in flight." if open_request.present?
-        if resolved_current_generation
-          return "Resolved complete against the current closeout evidence; newer terminal evidence would resurface it."
-        end
-
         return blockers.map(&:message).join(" ") if blockers.any?
 
         if evidence.no_code_required_at.present?

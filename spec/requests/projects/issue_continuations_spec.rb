@@ -131,9 +131,26 @@ RSpec.describe "Issue continuations" do # @spec PARTIAL-CLOSEOUT-007 @spec PARTI
     end
 
     context "when authenticated as the project owner" do
-      before { sign_in user }
+      let(:github_client) { instance_double(GithubClient) }
+
+      before do
+        sign_in user
+        allow(GithubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive_messages(
+          issue: Struct.new(:state).new("open"),
+          update_issue: Struct.new(:state).new("closed")
+        )
+      end
+
+      def accepted_audit
+        run = create(:agent_run, :completed, project:, issue:)
+        run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+          "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => []
+        }) })
+      end
 
       it "resolves the issue as complete against the recorded evidence" do
+        accepted_audit
         post resolve_closeout_project_agent_runs_path(project),
           params: { issue_id: issue.id, reason: "Merged PR #31 covers the work." }
 

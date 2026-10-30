@@ -92,6 +92,23 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
     end
   end
 
+  describe ".candidate?" do
+    it "checks only the named issue against the cheap candidate prefilter" do # @spec PARTIAL-CLOSEOUT-037
+      merged_pr_row(number: 13, parent_issue_id: issue.id)
+      other_issue = create(:issue, project: project, github_state: "open", paid_state: "in_progress")
+      merged_pr_row(number: 14, parent_issue_id: other_issue.id)
+      queries = []
+      subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        expect(described_class.candidate?(issue)).to be(true)
+      end
+
+      candidate_query = queries.find { |query| query.include?("merged_prs") }
+      expect(candidate_query).to include(%("issues"."id" = #{issue.id}))
+    end
+  end
+
   describe ".closeout_evidence_sql" do
     it "matches a parent-linked merged PR via the parent_issue_id prefilter" do
       create(

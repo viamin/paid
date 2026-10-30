@@ -101,7 +101,7 @@ RSpec.describe PartialCloseouts::Assessment do
 
     result = described_class.call(issue)
 
-    expect(result.next_action.fetch("kind")).to eq("fresh_audit")
+    expect(result.next_action.fetch("kind")).to eq("close_on_github")
     expect(result.next_action.fetch("explanation")).to be_present
   end
 
