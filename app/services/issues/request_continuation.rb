@@ -50,6 +50,7 @@ module Issues
         existing = IssueContinuationRequest.open_for_issue(issue)
         return dedupe_or_refuse(existing) if existing
 
+        clear_legacy_resolution_with_unmet_work!
         status = CloseoutStatus.call(issue)
         refusal = refusal_for(status)
         return refusal if refusal
@@ -119,7 +120,7 @@ module Issues
       if status.open_request.present?
         return nil # handled by the open-request fast path; defensive only
       end
-      if status.resolved_current_generation && !fresh_audit_has_unmet_criteria?
+      if status.resolved_current_generation
         return failure(:not_stalled, "This issue was already resolved complete against the current evidence.")
       end
 
@@ -132,9 +133,17 @@ module Issues
       nil
     end
 
-    def fresh_audit_has_unmet_criteria?
+    # A fresh unmet assessment disproves the legacy internal completion
+    # attestation. Clear it before canonical admission is calculated so the
+    # request-time decision and the later dequeue recheck see the same state.
+    def clear_legacy_resolution_with_unmet_work!
+      return unless issue.closeout_resolved?
+
       assessment = PartialCloseouts::Assessment.call(issue)
-      !assessment.stale? && assessment.criteria.any? { |criterion| criterion["state"] == "unmet" }
+      return if assessment.stale?
+      return unless assessment.criteria.any? { |criterion| criterion["state"] == "unmet" }
+
+      issue.update!(closeout_resolved_at: nil, closeout_resolution_digest: nil, closeout_resolved_by: nil)
     end
 
     def create_request_and_run(status)

@@ -26,6 +26,16 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
     described_class.call(issue: issue, actor: actor, reason: reason)
   end
 
+  # Assessment-only runs must not inherit the factory's fabricated PR: an
+  # unsynced PR independently and correctly blocks continuation admission.
+  def record_acceptance_audit(criteria:, gaps: [])
+    run = create(:agent_run, :completed, project:, issue:, goal: "analyze_issue",
+      pull_request_url: nil, pull_request_number: nil)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+      "criteria" => criteria, "gaps" => gaps
+    }) })
+  end
+
   describe "success" do
     it "persists the authorization and queues exactly one continuation run" do
       merged_partial_pr(number: 12)
@@ -72,16 +82,16 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
         closeout_resolution_digest: evidence.digest,
         closeout_resolved_by: user
       )
-      run = create(:agent_run, :completed, project:, issue:)
-      run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
-        "criteria" => [ { "criterion" => "the remaining work", "state" => "unmet" } ],
-        "gaps" => [ { "criterion" => "the remaining work", "kind" => "agent", "title" => "Finish the work" } ]
-      }) })
+      record_acceptance_audit(
+        criteria: [ { "criterion" => "the remaining work", "state" => "unmet" } ],
+        gaps: [ { "criterion" => "the remaining work", "kind" => "agent", "title" => "Finish the work" } ]
+      )
 
       result = request_continuation
 
       expect(result).to be_success
       expect(result.agent_run).to be_queued
+      expect(issue.reload).not_to be_closeout_resolved
     end
   end
 
@@ -165,10 +175,7 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
         closeout_resolution_digest: evidence.digest,
         closeout_resolved_by: user
       )
-      run = create(:agent_run, :completed, project:, issue:)
-      run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
-        "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => []
-      }) })
+      record_acceptance_audit(criteria: [ { "criterion" => "the work", "state" => "satisfied" } ])
 
       result = request_continuation
 
