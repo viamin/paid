@@ -176,7 +176,7 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     ).to_h
   end
 
-  def expect_recommended_agent_count_analysis(result)
+  def expect_recommended_agent_count_analysis(result) # @spec SCALING-EXPERIMENTS-002
     expect(result).to include(
       "status" => "ready",
       "dimension" => "agent_count",
@@ -192,6 +192,11 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     expect(result.dig("allocator_decision", "actionable")).to be(true)
     expect(result.dig("scaling_exponent_confidence_interval", "estimate")).to eq(result["scaling_exponent"])
     expect(result.dig("sample_threshold_review", "rdr_target_min_samples_per_value")).to eq(30)
+    expect(result.dig("statistical_rigor", "simplifications")).to include(
+      "Uses descriptive confidence intervals rather than comparing power-law, logarithmic, and linear regression models.",
+      "Treats experiments configured below 30 samples per value as limited evidence and flags them in reporting."
+    )
+    expect(result.dig("statistical_rigor", "simplifications").join(" ")).not_to include("RDR")
     expect(result.fetch("values")).to include(
       hash_including("assigned_value" => 4, "signals" => include("diminishing_returns"))
     )

@@ -14,7 +14,7 @@ RSpec.describe Projects::ScalingDashboardStats do
       expect(stats[:experiments]).to eq([])
     end
 
-    it "surfaces recommendations, threshold review, and recent observations" do
+    it "surfaces recommendations, threshold review, and recent observations" do # @spec SCALING-EXPERIMENTS-002
       experiment = create(:scaling_experiment, project: project, name: "Agent Count Scaling", status: "completed")
       create(:scaling_observation, project: project, agent_count_planned: 2, parallelism_observed: 2)
       experiment.update!(cached_summary: cached_summary_payload, summary_samples_key: experiment.samples_key)
@@ -77,6 +77,21 @@ RSpec.describe Projects::ScalingDashboardStats do
       expect(stats[:recent_observations].size).to eq(Projects::ScalingDashboardStats::RECENT_OBSERVATION_LIMIT)
       expect(stats[:recent_observations].first.workflow_id).to eq("workflow-0")
       expect(stats[:recent_observations].last.workflow_id).to eq("workflow-14")
+    end
+
+    it "replaces internal terminology in legacy persisted report notes" do # @spec SCALING-EXPERIMENTS-002
+      experiment = create(:scaling_experiment, project: project, status: "completed")
+      experiment.update!(
+        cached_summary: cached_summary_payload.merge(
+          "simplifications" => [ "The dashboard flags experiments configured below the 30-sample RDR target instead of enforcing that threshold retroactively." ]
+        ),
+        summary_samples_key: experiment.samples_key
+      )
+
+      simplifications = described_class.call(project: project).dig(:experiments, 0, :simplifications)
+
+      expect(simplifications).to include("The dashboard flags experiments configured below the 30-sample target instead of enforcing that threshold retroactively.")
+      expect(simplifications.join(" ")).not_to include("RDR")
     end
   end
 
