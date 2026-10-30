@@ -180,7 +180,9 @@ durable workflow marker gives the Action Required list and detail shared
 plain-language copy, current-generation judgment progress, and a state-specific
 action. The action starts, resumes, continues, freezes, or opens the evaluation
 through the existing authorized project route while preserving the validated
-Inbox context. An operator other than the evaluation's sole judge gets a
-view-only action and no judgment controls. Other Action Required notifications
-retain their generic remediation presentation; presentation selection never
-infers a workflow from free-form notification text.
+Inbox context. Operator-facing labels explain the reference-judgment action
+without showing internal design-record identifiers. An operator other than the
+evaluation's sole judge gets a view-only action and no judgment controls. Other
+Action Required notifications retain their generic remediation presentation;
+presentation selection never infers a workflow from free-form notification
+text.

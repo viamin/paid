@@ -1029,9 +1029,10 @@
                   class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
               </div>
               <p class="mt-1 text-xs text-gray-500">
+                <%# @spec SETTINGS-COPY-001 %>
                 Controls how Paid reviews tests before implementation. <strong>Off</strong> preserves existing behavior.
                 <strong>Non-strict</strong> runs an automated test-review verdict before implementation. <strong>Strict</strong>
-                waits for a human-applied <code>paid-tests-approved</code> label before implementation begins. See RDR-056 for the full workflow.
+                waits for a human-applied <code>paid-tests-approved</code> label before implementation begins.
               </p>
               <% if @project.errors[:tdd_mode].any? %>
                 <% @project.errors[:tdd_mode].each do |msg| %>

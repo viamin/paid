@@ -483,13 +483,34 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      # @spec CHAT-API-027
+      it "defers sidebar history and new-chat setup until after the usable chat response" do
+        create(:chat_session, account: account, created_by: user, title: "Deferred sidebar session")
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        document = Nokogiri::HTML(response.body)
+        sidebar_frame = document.at_css("turbo-frame#chat_sessions_sidebar_content")
+
+        expect(document.at_css("textarea[name=content]")).to be_present
+        expect(response.body).not_to include("Deferred sidebar session")
+        expect(sidebar_frame["src"]).to include(sidebar_page_chat_sessions_path)
+        expect(sidebar_frame["loading"]).to eq("lazy")
+        expect(document.css("button[data-chat-session-list-target='newChatButton'][disabled]").size).to eq(2)
+        expect(document.css("[data-chat-session-list-target='newChatLoadingIndicator']").size).to eq(2)
+      end
+
       # @spec QUESTION-EXPLORATION-015
       it "renders only the chat panel in a requesting Inbox frame" do
         create(:chat_message, :assistant, chat_session: chat_session, content: "Inbox conversation")
 
-        get chat_session_path(chat_session), headers: { "Turbo-Frame" => "inbox-detail" }
+        queries = capture_queries do
+          get chat_session_path(chat_session), headers: { "Turbo-Frame" => "inbox-detail" }
+        end
 
         expect(response).to have_http_status(:ok)
+        expect(queries.grep(/FROM "runners"/).size).to eq(1)
         document = Nokogiri::HTML(response.body)
         frame = document.at_css("turbo-frame#inbox-detail")
         panel = frame&.at_css("div[data-controller='chat']")
@@ -1004,7 +1025,7 @@ RSpec.describe "ChatSessions" do
       it "defaults the new-session modal auto-approve checkbox from user settings" do
         user.settings.update!(default_auto_approve: true)
 
-        get chat_session_path(chat_session)
+        get sidebar_page_chat_sessions_path, params: { content: "true" }
 
         expect(response).to have_http_status(:ok)
         doc = Nokogiri::HTML(response.body)
@@ -1019,7 +1040,7 @@ RSpec.describe "ChatSessions" do
       it "leaves the new-session modal auto-approve checkbox unchecked when the user disables the default" do
         user.settings.update!(default_auto_approve: false)
 
-        get chat_session_path(chat_session)
+        get sidebar_page_chat_sessions_path, params: { content: "true" }
 
         expect(response).to have_http_status(:ok)
         doc = Nokogiri::HTML(response.body)
@@ -1042,7 +1063,7 @@ RSpec.describe "ChatSessions" do
           }
         )
 
-        get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+        get_popup_chat_without_runner_load(chat_session)
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Untitled chat")
@@ -1095,7 +1116,7 @@ RSpec.describe "ChatSessions" do
       it "wires the new-chat dialog to refresh runner and model choices for the selected project" do
         create_openai_chat_runner
 
-        get chat_session_path(chat_session)
+        get sidebar_page_chat_sessions_path, params: { content: "true" }
 
         doc = Nokogiri::HTML(response.body)
         dialog_form = doc.at_css("dialog form[data-controller='chat-runner-model-options']")
@@ -1169,17 +1190,22 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include("Message 50")
       end
 
-      it "pins the active session in the sidebar when it falls outside the first batch" do
+      # @spec CHAT-API-027
+      it "pins the active session with a bounded preview when it falls outside the first batch" do
+        create(:chat_message, chat_session: chat_session, content: "x" * 1_000)
         chat_session.update_columns(title: "Pinned session", updated_at: 3.days.ago)
 
         55.times do |index|
           create(:chat_session, account: account, created_by: user, title: "Recent #{index}", updated_at: index.minutes.ago)
         end
 
-        get chat_session_path(chat_session)
+        queries = capture_queries do
+          get sidebar_page_chat_sessions_path, params: { content: "true", active_session_id: chat_session.id }
+        end
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(data-session-id="#{chat_session.id}"))
+        expect(queries).to include(match(/LEFT\(content, #{ChatSession::SIDEBAR_PREVIEW_LENGTH}\)/))
       end
     end
 
@@ -1353,6 +1379,21 @@ RSpec.describe "ChatSessions" do
       expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list"/)
       expect(response.body).to match(/<div[^>]*id="chat_sessions_list_active"/)
       expect(response.body).to include("Active")
+    end
+
+    # @spec CHAT-API-027
+    it "loads history and new-chat setup in the deferred sidebar frame" do
+      create(:chat_session, account: account, created_by: user, title: "Deferred sidebar session")
+
+      get sidebar_page_chat_sessions_path,
+        params: { content: "true" },
+        headers: { "Turbo-Frame" => "chat_sessions_sidebar_content" }
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      expect(document.at_css("turbo-frame#chat_sessions_sidebar_content")).to be_present
+      expect(response.body).to include("Deferred sidebar session")
+      expect(document.at_css("dialog[data-chat-session-list-target='modal']")).to be_present
     end
 
     it "renders the stable sidebar frame for archived sessions" do
@@ -1825,6 +1866,13 @@ RSpec.describe "ChatSessions" do
       &.first
   end
 
+  def get_popup_chat_without_runner_load(chat_session)
+    queries = capture_queries do
+      get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+    end
+
+    expect(queries.grep(/FROM "runners"/)).to be_empty
+  end
 
   def create_api_chat_runner
     create(:runner, :api_key, user: user, runner_key: "opencode",

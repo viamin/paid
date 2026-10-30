@@ -2,9 +2,9 @@
 <div class="mx-auto max-w-4xl space-y-6 px-4 py-8" data-shadow-evaluation="<%= @evaluation.id %>">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Conformance evaluation</h1>
+      <h1 class="text-2xl font-bold text-gray-900">Review conformance decisions</h1>
       <p class="text-sm text-gray-600">
-        <%= @evaluation.purpose %> · policy <span class="font-medium"><%= @evaluation.policy %></span> ·
+        Compare the conformance reviewer with the frozen reference labels · policy <span class="font-medium"><%= @evaluation.policy %></span> ·
         maintainer <%= @evaluation.solo_maintainer&.email %> · status
         <span class="font-medium" data-evaluation-status><%= @evaluation.status %></span>
       </p>

@@ -168,7 +168,7 @@ module FacetConfidence
       end
 
       WORKSHEET_TEMPLATE = <<~WORKSHEET
-        # RDR-070 Facet-Confidence Closeout Evaluation Report
+        # Facet-Confidence Closeout Evaluation Report
 
         Originating closeout: #%{work_item} (%{project_name}) · source revision %{source_revision}.
         Corpus %{corpus_version} (digest %{corpus_digest}) · rubric %{rubric_version} · model %{model_version}.

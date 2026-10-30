@@ -898,6 +898,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_213000) do
     t.string "title"
     t.datetime "updated_at", null: false
     t.string "workspace_volume"
+    t.index ["account_id", "updated_at", "id"], name: "index_chat_sessions_visible_sidebar", order: { updated_at: :desc, id: :desc }, where: "((status)::text <> 'archived'::text)"
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
@@ -2656,6 +2657,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_213000) do
     t.datetime "ci_action_dispatched_at"
     t.datetime "ci_retry_requested_at"
     t.datetime "closed_at", comment: "When github_state first transitioned to 'closed'. Distinct from updated_at and github_updated_at so unrelated sync metadata (label edits, comments) cannot move the resolution timestamp used by epic re-audit eligibility."
+    t.datetime "closeout_closing_at", comment: "When a remote GitHub close is in flight and continuation admission is revoked"
     t.string "closeout_resolution_digest", comment: "Evidence generation the closeout resolution was recorded against; a new generation re-surfaces the lane entry."
     t.datetime "closeout_resolved_at", comment: "When an operator resolved this issue as complete against the recorded closeout evidence."
     t.bigint "closeout_resolved_by_id", comment: "Operator (users.id) who recorded the closeout resolution."

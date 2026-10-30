@@ -27,7 +27,7 @@ RSpec.describe "Projects::ScalingDashboards" do
         expect(response.body).to include("No scaling observations or experiments have been recorded yet")
       end
 
-      it "renders recommendations and simplifications when summaries exist" do
+      it "explains the 30-sample threshold and analysis limitations without internal terminology" do # @spec SCALING-EXPERIMENTS-001
         experiment = create(:scaling_experiment, project: project, name: "Parallelism Scaling", status: "completed")
         create(:scaling_observation, project: project)
         experiment.update!(cached_summary: cached_summary_payload, summary_samples_key: experiment.samples_key)
@@ -37,8 +37,11 @@ RSpec.describe "Projects::ScalingDashboards" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Allocator Recommendations")
         expect(response.body).to include("Parallelism Scaling")
-        expect(response.body).to include("Below 30-sample RDR target")
+        expect(response.body).to include("30-sample target")
+        expect(response.body).to include("Configured below the 30-sample target.")
+        expect(response.body).to include("limitations of the log-log linear analysis")
         expect(response.body).to include("Intentional Simplifications")
+        expect(response.body).not_to include("RDR")
       end
     end
   end
@@ -55,7 +58,7 @@ RSpec.describe "Projects::ScalingDashboards" do
         "rdr_target_min_samples_per_value" => 30,
         "meets_rdr_target" => false
       },
-      "simplifications" => [ "Uses descriptive confidence intervals." ],
+      "simplifications" => [ "The dashboard flags experiments configured below the 30-sample RDR target instead of enforcing that threshold retroactively." ],
       "allocator_decision" => {
         "recommended_value" => 2,
         "sample_count" => 6,

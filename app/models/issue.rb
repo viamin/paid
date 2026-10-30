@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
+  CLOSEOUT_CLOSING_TTL = 15.minutes
+
   belongs_to :reopened_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
@@ -142,6 +144,7 @@ class Issue < ApplicationRecord
   before_create { self.action_history_started_at ||= Time.current }
   before_create :stamp_parent_issue_linked_at, if: :parent_issue_id?
   before_update :sync_parent_issue_linked_at, if: :will_save_change_to_parent_issue_id?
+  before_update :remember_partial_closeout_inbox_candidate, if: :possible_partial_closeout_issue_github_state_change?
   before_save :sync_closed_at, if: :will_save_change_to_github_state?
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
@@ -197,15 +200,16 @@ class Issue < ApplicationRecord
   # Invalidates the cached inbox nav badge count whenever an issue enters or
   # leaves the needs_input queue, enters or leaves manual_review, enters or
   # leaves the retry_limited queue (runner-retry-cap or push-permission
-  # abandonment, cleared by a successful manual run), when a waiting issue
-  # is closed/reopened on GitHub, or when a pull request's labels change
+  # abandonment, cleared by a successful manual run), when a waiting or
+  # partial-closeout issue is closed/reopened on GitHub, or when a pull
+  # request's labels change
   # (the test_review_pending lane is label-derived — see
   # test_review_label_state_changed?), so the async badge endpoint recomputes
   # instead of serving a stale number for the rest of its TTL. Also covers a
   # pull request entering or leaving the escalated_pr inbox lane, since
   # merge_approval_candidate_state_changed? already watches
   # saved_change_to_pr_review_phase? for every pull request.
-  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
+  # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J @spec PARTIAL-CLOSEOUT-037
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
   # RDR-077: the phase that owns a request is assigned when the request is
@@ -966,6 +970,7 @@ class Issue < ApplicationRecord
       saved_change_to_runner_retry_abandoned_at? ||
       saved_change_to_closeout_resolved_at? ||
       waiting_issue_github_state_changed? ||
+      partial_closeout_issue_github_state_changed? ||
       retry_limited_issue_github_state_changed? ||
       merge_approval_candidate_state_changed? ||
       test_review_label_state_changed?
@@ -1003,6 +1008,36 @@ class Issue < ApplicationRecord
 
   def waiting_issue_github_state_changed?
     saved_change_to_github_state? && paid_state.in?(%w[needs_input manual_review])
+  end
+
+  # A partial-closeout Inbox entry is derived from open GitHub state and can
+  # remain actionable after internal acceptance. Refresh the badge as soon as
+  # synchronization observes its source closure or reopening.
+  # @spec PARTIAL-CLOSEOUT-037
+  def partial_closeout_issue_github_state_changed?
+    return false unless saved_change_to_github_state?
+    return true if @partial_closeout_inbox_candidate_before_github_state_change
+    return false unless possible_partial_closeout_issue?
+
+    partial_closeout_inbox_candidate?
+  end
+
+  def remember_partial_closeout_inbox_candidate
+    @partial_closeout_inbox_candidate_before_github_state_change = partial_closeout_inbox_candidate?
+  end
+
+  def partial_closeout_inbox_candidate?
+    Issues::StalledCloseouts.call([ project ], issue_id: id).any?
+  end
+
+  # The lane never admits pull requests. For source issues, check its own
+  # prefiltered row before constructing the expensive eligibility inputs.
+  def possible_partial_closeout_issue_github_state_change?
+    will_save_change_to_github_state? && possible_partial_closeout_issue?
+  end
+
+  def possible_partial_closeout_issue?
+    !is_pull_request? && Issues::StalledCloseouts.candidate?(self)
   end
 
   # Mirror of waiting_issue_github_state_changed? for the retry_limited lane:
@@ -1536,24 +1571,31 @@ class Issue < ApplicationRecord
     closeout_resolved_at.present?
   end
 
-  # Records the operator's attestation that the recorded closeout evidence
-  # (merged partial PR / no-code outcome) completes this issue. The digest
-  # scopes the dismissal to one evidence generation: newer terminal evidence
-  # re-surfaces the partial_closeout inbox entry, and repeated GitHub sync
-  # cannot recreate the suppressed item because sync writes no state here.
-  # Deliberately does NOT write to GitHub — the issue stays open there for a
-  # human to close; Paid only stops surfacing it.
+  # A process can terminate after persisting the marker but before its ensure
+  # block clears it. Bound the lease so an abandoned remote request cannot
+  # permanently revoke closeout retries and continuation admission.
   # @spec PARTIAL-CLOSEOUT-006
+  def closeout_closing?
+    closeout_closing_at.present? && closeout_closing_at >= CLOSEOUT_CLOSING_TTL.ago
+  end
+
+  # Records the authorized GitHub closeout after the close API confirms the
+  # action. The Inbox is derived from GitHub's open state, never suppressed by
+  # this local audit record alone.
+  # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037
   def resolve_closeout!(actor:, evidence_digest:)
     update!(
       paid_state: "completed",
+      github_state: "closed",
+      closed_at: Time.current,
       closeout_resolved_at: Time.current,
       closeout_resolution_digest: evidence_digest,
-      closeout_resolved_by: actor
+      closeout_resolved_by: actor,
+      closeout_closing_at: nil
     )
 
     Rails.logger.info(
-      message: "issue.closeout_resolved",
+      message: "issue.closeout_closed",
       component: "agent_execution",
       issue_id: id,
       project_id: project_id,

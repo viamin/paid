@@ -26,6 +26,13 @@ module Issues
       end
     end
 
+    # Checks the inexpensive SQL prefilter before building the per-project
+    # eligibility and diagnostic inputs. GitHub sync uses this to avoid
+    # evaluating the partial-closeout lane for unrelated state changes.
+    def self.candidate?(issue)
+      candidates_for(issue.project).where(id: issue.id).exists?
+    end
+
     def self.pairs_for(project, candidates: candidates_for(project).to_a)
       return [] if candidates.empty?
 

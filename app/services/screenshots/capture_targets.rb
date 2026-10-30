@@ -56,6 +56,7 @@ module Screenshots
       "integrations" => %i[integrations integrations_new],
       "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations project_knowledge_quality],
       "master_detail_layout" => %i[dashboard chat_sessions chat_session_show],
+      "operator_report_markdown" => %i[project_shadow_evaluation_show project_facet_confidence_evaluation_show],
       "projects/health_check" => [ :project_health_check ],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
       "roi_dashboard" => %i[account_roi_dashboard project_roi_dashboard],

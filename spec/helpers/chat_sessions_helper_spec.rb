@@ -51,6 +51,23 @@ RSpec.describe ChatSessionsHelper do
 
       expect(queries).to be_empty
     end
+
+    # @spec CHAT-API-027
+    it "uses the bounded preview selected for a sidebar row" do
+      content = "x" * 100
+      message = create(:chat_message, chat_session: chat_session, role: "user", content: content)
+
+      preloaded_session = ChatSession.with_preview_content.find(chat_session.id)
+
+      expect(preloaded_session.preview_content).to eq("x" * ChatSession::SIDEBAR_PREVIEW_LENGTH)
+      expect(helper.chat_session_preview(preloaded_session)).to eq("x" * ChatSession::SIDEBAR_PREVIEW_LENGTH)
+
+      message.update!(content: "Updated sidebar preview")
+
+      refreshed_session = ChatSession.with_preview_content.find(chat_session.id)
+      helper.instance_variable_set(:@preview_cache, {})
+      expect(helper.chat_session_preview(refreshed_session)).to eq("Updated sidebar preview")
+    end
   end
 
   describe "#chat_session_projects" do

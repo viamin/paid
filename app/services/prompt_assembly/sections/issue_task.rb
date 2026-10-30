@@ -7,6 +7,15 @@ class PromptAssembly::Sections::IssueTask
   include PromptAssembly::Sections::Base
 
   PROMPT_SLUG = "coding.issue_implementation"
+  CRITERION_VERIFICATION_REQUIREMENTS = [
+    /Before implementation, map every acceptance criterion to the smallest\s+credible verification/,
+    /permanent system test for an important recurring user flow/,
+    /focused\s+unit\/service test for a recurring rule or defect/,
+    /PR-only ephemeral\s+`\.ephemeral-tests\/` system\/integration test for a complex one-off or\s+non-essential flow/,
+    /Human or external criteria require their actual inspectable evidence/,
+    /A broad green suite is not criterion coverage\./,
+    /Do not infer a pass from a test name, agent prose, or a skipped job\./
+  ].freeze
 
   # The instruction block rendered into the issue-implementation prompt when
   # the project has quiet mode enabled. Kept identical to the PR follow-up
@@ -40,6 +49,10 @@ class PromptAssembly::Sections::IssueTask
 
     {{body}}
 
+    # Criterion-Level Verification
+
+    Human or external criteria require their actual inspectable evidence; an automated test cannot settle them.
+
     If this is an epic umbrella final audit, verify shipped behavior, tests,
     and documentation against its approved RDR/HLD/LLD/EARS and acceptance
     criteria. Do not treat closed child issues as sufficient evidence. Make
@@ -51,10 +64,11 @@ class PromptAssembly::Sections::IssueTask
     1. Install dependencies (`bundle install`, `yarn install`, etc.)
     {{setup_database_instruction}}
     2. Analyze the issue and understand what needs to be done
-    3. Make the necessary code changes
-    4. Run lint and fix any violations: `{{lint_command}}`
-    5. Run the test suite and fix any failures: `{{test_command}}`
-    6. Commit your changes with a descriptive message
+    3. Before implementation, map every acceptance criterion to the smallest credible verification and record the plan in the PR/run evidence. Use a permanent system test for an important recurring user flow (for example provider API-key onboarding through welcome chat); use a focused unit/service test for a recurring rule or defect; use a PR-only ephemeral `.ephemeral-tests/` system/integration test for a complex one-off or non-essential flow, then remove it before merge; and use actual inspectable human or external evidence for human/external criteria. A broad green suite is not criterion coverage. Do not infer a pass from a test name, agent prose, or a skipped job. Write tests early enough to expose the failure.
+    4. Make the necessary code changes
+    5. Run lint and fix any violations: `{{lint_command}}`
+    6. Run the test suite and fix any failures: `{{test_command}}`
+    7. Commit your changes with a descriptive message
 
     If you open a pull request that requires human judgment before it can land,
     apply the structured review hold through the GitHub API proxy; no `gh` CLI
@@ -140,8 +154,39 @@ class PromptAssembly::Sections::IssueTask
     )
   end
 
+  # @spec PROMPT-ASSEMBLY-024
   def task_template
-    PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
+    template = PromptAssembly::Sections::SafetyRules.strip_legacy_suffix(render_task_template)
+    return template if criterion_verification_requirements_present?(template)
+
+    [ template, criterion_verification_guidance(include_heading: !criterion_verification_heading?(template)) ].join("\n\n")
+  end
+
+  def criterion_verification_requirements_present?(template)
+    CRITERION_VERIFICATION_REQUIREMENTS.all? { |requirement| template.match?(requirement) }
+  end
+
+  def criterion_verification_heading?(template)
+    template.include?("# Criterion-Level Verification")
+  end
+
+  # Kept outside the persisted template so existing prompt versions gain the
+  # contract immediately; the seed keeps it durable for new prompt records.
+  def criterion_verification_guidance(include_heading:)
+    <<~GUIDANCE
+      #{"# Criterion-Level Verification\n" if include_heading}
+      Before implementation, map every acceptance criterion to the smallest
+      credible verification and record the plan in the PR/run evidence. Use a
+      permanent system test for an important recurring user flow (for example
+      provider API-key onboarding through welcome chat); use a focused
+      unit/service test for a recurring rule or defect; use a PR-only ephemeral
+      `.ephemeral-tests/` system/integration test for a complex one-off or
+      non-essential flow, then remove it before merge. Human or external
+      criteria require their actual inspectable evidence; an automated test
+      cannot settle them. A broad green suite is not criterion coverage. Do not
+      infer a pass from a test name, agent prose, or a skipped job. Write tests
+      early enough to expose the failure.
+    GUIDANCE
   end
 
   # Whether the agent's runtime environment has a usable database service

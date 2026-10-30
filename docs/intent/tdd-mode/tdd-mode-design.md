@@ -64,6 +64,5 @@ the stable colors and descriptions below.
 The project edit form already exposes other string-valued automation knobs
 (`auto_merge_mode`, `auto_release_granularity`) via `form.select`. TDD mode
 follows the same shape: a labeled `<select>` of the three values, with a
-helper line that points operators at the RDR for the broader workflow. The
-project show page surfaces the active value alongside the other automation
-status rows.
+helper line that describes the review behavior for each mode. The project show
+page surfaces the active value alongside the other automation status rows.
