@@ -98,7 +98,7 @@ class ChatSessionsController < ApplicationController
   # @spec CHAT-API-027
   def sidebar_page
     if params[:content] == "true"
-      active_session = policy_scope(ChatSession).find_by(id: params[:active_session_id])
+      active_session = policy_scope(ChatSession).with_preview_content.find_by(id: params[:active_session_id])
       load_sidebar_data(active_session:)
       return render partial: "chat_sessions/sidebar_content", locals: sidebar_content_locals
     end

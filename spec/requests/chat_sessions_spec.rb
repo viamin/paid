@@ -1063,12 +1063,9 @@ RSpec.describe "ChatSessions" do
           }
         )
 
-        queries = capture_queries do
-          get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
-        end
+        get_popup_chat_without_runner_load(chat_session)
 
         expect(response).to have_http_status(:ok)
-        expect(queries.grep(/FROM "runners"/)).to be_empty
         expect(response.body).to include("Untitled chat")
         expect(response.body).to include("Archive &amp; New Chat")
         expect(response.body).to include("Keep Chat Open")
@@ -1193,17 +1190,22 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include("Message 50")
       end
 
-      it "pins the active session in the sidebar when it falls outside the first batch" do
+      # @spec CHAT-API-027
+      it "pins the active session with a bounded preview when it falls outside the first batch" do
+        create(:chat_message, chat_session: chat_session, content: "x" * 1_000)
         chat_session.update_columns(title: "Pinned session", updated_at: 3.days.ago)
 
         55.times do |index|
           create(:chat_session, account: account, created_by: user, title: "Recent #{index}", updated_at: index.minutes.ago)
         end
 
-        get sidebar_page_chat_sessions_path, params: { content: "true", active_session_id: chat_session.id }
+        queries = capture_queries do
+          get sidebar_page_chat_sessions_path, params: { content: "true", active_session_id: chat_session.id }
+        end
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(data-session-id="#{chat_session.id}"))
+        expect(queries).to include(match(/LEFT\(content, #{ChatSession::SIDEBAR_PREVIEW_LENGTH}\)/))
       end
     end
 
@@ -1864,6 +1866,13 @@ RSpec.describe "ChatSessions" do
       &.first
   end
 
+  def get_popup_chat_without_runner_load(chat_session)
+    queries = capture_queries do
+      get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+    end
+
+    expect(queries.grep(/FROM "runners"/)).to be_empty
+  end
 
   def create_api_chat_runner
     create(:runner, :api_key, user: user, runner_key: "opencode",
