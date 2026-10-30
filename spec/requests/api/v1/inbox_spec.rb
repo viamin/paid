@@ -99,6 +99,38 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.fetch("chat_session_id")).to be_present
   end
 
+  # @spec OPERATOR-INBOX-022 MOBILE-API-008
+  it "paginates action history with dedicated show parameters" do
+    issue
+    subject_key = "issue:#{project.id}:#{issue.github_number}"
+    21.times do |index|
+      create(:inbox_history_event, account:, project:, subject_key:,
+        occurred_at: index.minutes.ago, metadata: { action: "Event #{index}" })
+    end
+    entry_id = "clarifying_questions:#{issue.id}"
+
+    get "/api/v1/inbox/entries/#{entry_id}", params: { history_limit: 10 }, headers: headers
+    first_page = response.parsed_body.fetch("entry")
+    get "/api/v1/inbox/entries/#{entry_id}",
+      params: { history_limit: 10, history_cursor: first_page.fetch("history_next_cursor") }, headers: headers
+    second_page = response.parsed_body.fetch("entry")
+
+    expect(first_page.fetch("history").size).to eq(10)
+    expect(second_page.fetch("history").size).to eq(10)
+    expect(first_page.fetch("history").pluck("id") & second_page.fetch("history").pluck("id")).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-022 MOBILE-API-008
+  it "treats a run cursor as invalid for a feature entry" do
+    feature_intent = create(:feature_intent, :ready_for_approval, project:)
+
+    get "/api/v1/inbox/entries/feature_decision:#{feature_intent.id}",
+      params: { history_cursor: "run-start:1" }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("entry")).to include("history" => [], "history_incomplete" => false)
+  end
+
   it "returns not found instead of opening a chat for an unavailable entry" do # @spec MOBILE-API-009
     post "/api/v1/inbox/entries/clarifying_questions:999999/chat", headers: headers
 

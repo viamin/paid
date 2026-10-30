@@ -47,14 +47,18 @@ module Reviews
     # non-approving review (e.g. COMMENTED) must not count as an
     # outstanding approval.
     def self.approved_from_reviews?(project:, reviews:)
-      return false if reviews.nil?
+      latest_approval(project:, reviews:).present?
+    end
+
+    def self.latest_approval(project:, reviews:)
+      return if reviews.nil?
 
       owner_login = project.owner_reviewer_login
-      return false if owner_login.blank?
+      return if owner_login.blank?
 
       owner_reviews = reviews.select { |r| r[:user_login]&.casecmp?(owner_login) }
       latest = owner_reviews.max_by { |r| r[:submitted_at] || Time.at(0) }
-      latest && latest[:state].to_s.upcase == "APPROVED"
+      latest if latest && latest[:state].to_s.upcase == "APPROVED"
     end
   end
 end
