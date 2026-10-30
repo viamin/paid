@@ -65,12 +65,17 @@ module Inbox
 
     def implementation_milestone
       return milestone("Implementation", "waiting", "Waiting", "Implementation starts after the test-review gate clears.") if entry.test_review_pending?
+      if stalled_execution?
+        return milestone("Implementation", "blocked", "Recovery required", "Paid has not confirmed that implementation reached review readiness.",
+          action: guidance_instruction, revision: current_revision, url: entry.issue.github_url, current: true)
+      end
 
       milestone("Implementation", "completed", "Complete", "This pull request has reached the review-ready phase.", revision: entry.issue.last_scanned_head_sha)
     end
 
     def code_review_milestone
       return milestone("Code review", "waiting", "Waiting", "Code review follows implementation.") if entry.test_review_pending?
+      return milestone("Code review", "waiting", "Waiting", "Code review follows recovery of the stalled implementation.") if stalled_execution?
       return blocked_code_review_milestone if blocked_escalation?
 
       milestone("Code review", "completed", "Complete", "The pull request is at its owner-review/merge decision.", revision: entry.issue.last_scanned_head_sha, url: entry.issue.github_url)
@@ -78,12 +83,13 @@ module Inbox
 
     def owner_milestone
       return milestone("Owner approval", "waiting", "Waiting", "Owner approval follows code review.") if entry.test_review_pending?
+      return milestone("Owner approval", "waiting", "Waiting", "Owner approval follows implementation recovery and code review.") if stalled_execution?
       return milestone("Owner approval", "waiting", "Waiting", "Owner approval follows recovery of the escalated pull request.") if blocked_escalation?
       return reapproval_milestone if awaiting_approval_escalation?
 
       if stale_approval?
         milestone("Owner approval", "stale", "Stale", "A commit was added after the recorded approval.",
-          action: guidance_instruction, revision: current_revision, url: entry.issue.github_url)
+          action: guidance_instruction, revision: current_revision, url: entry.issue.github_url, current: true)
       elsif owner_approval_required?
         milestone("Owner approval", "current", "Review required", "The current revision needs owner approval.",
           action: guidance_instruction, revision: current_revision, url: entry.issue.github_url)
@@ -94,7 +100,11 @@ module Inbox
 
     def merge_milestone
       return milestone("Merge", "waiting", "Waiting", "Merge follows the remaining review gates.") if entry.test_review_pending?
+      return milestone("Merge", "waiting", "Waiting", "Merge follows recovery and the remaining review gates.") if stalled_execution?
       return milestone("Merge", "waiting", "Waiting", "Merge follows recovery and the remaining review gates.") if entry.escalated_pr?
+      if stale_approval? || owner_approval_required?
+        return milestone("Merge", "waiting", "Waiting", "Merge follows current-revision owner approval.")
+      end
 
       state = manual_merge? ? "current" : "waiting"
       label = manual_merge? ? "Your next step" : "Automatic evaluation"
@@ -135,6 +145,10 @@ module Inbox
 
     def stale_approval?
       guidance[:stale_approval] || guidance["stale_approval"] || blockers.any? { |blocker| blocker["signal"] == "reviews_fresh" }
+    end
+
+    def stalled_execution?
+      guidance[:stalled_execution] || guidance["stalled_execution"]
     end
 
     def manual_merge?

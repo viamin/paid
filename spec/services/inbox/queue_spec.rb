@@ -435,6 +435,7 @@ RSpec.describe Inbox::Queue do
       expect(entry).to have_attributes(
         summary_text: "Automation stopped before review readiness"
       )
+      expect(entry.guidance).to include(stalled_execution: true)
       expect(entry.guidance.fetch(:instruction)).to include("has not confirmed this pull request is merge-ready")
       expect(stalled_pr.reload.pr_review_phase).to eq("draft")
     end

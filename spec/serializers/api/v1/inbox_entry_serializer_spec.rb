@@ -56,7 +56,10 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(blockers: guidance.fetch(:blockers), guidance: guidance)
       expect(payload.fetch(:workflow)).to include(
         current_action: "Make the manual decision.",
-        milestones: include(a_hash_including(name: "Merge", state: "current", label: "Your next step"))
+        milestones: include(
+          a_hash_including(name: "Owner approval", state: "current"),
+          a_hash_including(name: "Merge", state: "waiting")
+        )
       )
     end
 

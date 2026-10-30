@@ -32,6 +32,17 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "current", label: "Your next step"))
   end
 
+  it "keeps manual merge waiting for required owner approval" do # @spec OPERATOR-INBOX-022
+    instruction = "Approve the current revision on GitHub."
+    projection = described_class.call(entry(kind: Inbox::Queue::MERGE_APPROVAL_KIND, guidance: {
+      instruction:, automatic_merge_active: false, blockers: [ { "signal" => "owner_approved" } ]
+    }))
+
+    expect(projection[:current_action]).to eq(instruction)
+    expect(projection[:milestones]).to include(a_hash_including(name: "Owner approval", state: "current"))
+    expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
+  end
+
   it "shows the strict-TDD review gate before implementation" do # @spec OPERATOR-INBOX-022
     projection = described_class.call(entry(kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND))
 
@@ -46,8 +57,26 @@ RSpec.describe Inbox::WorkflowMilestones do
       approval_evidence: { "current_revision" => "new-sha" }, blockers: [ { "signal" => "reviews_fresh" } ]
     }))
 
-    expect(projection[:milestones]).to include(a_hash_including(name: "Owner approval", state: "stale", revision: "new-sha"))
-    expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "current"))
+    expect(projection[:current_action]).to eq("Re-approve the current revision, then make the manual merge decision on GitHub.")
+    expect(projection[:milestones]).to include(
+      a_hash_including(name: "Owner approval", state: "stale", revision: "new-sha", current: true)
+    )
+    expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
+  end
+
+  it "keeps a stalled draft behind execution recovery" do # @spec OPERATOR-INBOX-022
+    instruction = "Review the current changes on GitHub while Paid recovers execution."
+    projection = described_class.call(entry(kind: Inbox::Queue::MERGE_APPROVAL_KIND, guidance: {
+      instruction:, stalled_execution: true, automatic_merge_active: false, blockers: []
+    }))
+
+    expect(projection[:current_action]).to eq(instruction)
+    expect(projection[:milestones]).to include(
+      a_hash_including(name: "Implementation", state: "blocked", current: true, action: instruction)
+    )
+    expect(projection[:milestones]).to include(a_hash_including(name: "Code review", state: "waiting"))
+    expect(projection[:milestones]).to include(a_hash_including(name: "Owner approval", state: "waiting"))
+    expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
   end
 
   it "shows Unblock as the current action for a failure-streak escalation" do # @spec OPERATOR-INBOX-022
