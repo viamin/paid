@@ -51,6 +51,18 @@ RSpec.describe ChatSessionsHelper do
 
       expect(queries).to be_empty
     end
+
+    # @spec CHAT-API-027
+    it "preloads only a bounded prefix while reflecting an updated first message" do
+      message = create(:chat_message, chat_session: chat_session, role: "user", content: "A" * 1_000)
+
+      preloaded_session = ChatSession.with_preview_content.find(chat_session.id)
+      expect(preloaded_session.preview_content.length).to eq(256)
+
+      message.update!(content: "Updated preview")
+
+      expect(ChatSession.with_preview_content.find(chat_session.id).preview_content).to eq("Updated preview")
+    end
   end
 
   describe "#chat_session_projects" do

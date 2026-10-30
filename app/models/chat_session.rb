@@ -109,13 +109,14 @@ class ChatSession < ApplicationRecord
   # due to have their last unanswered message automatically resent.
   # ChatSessions::AutoResumeRateLimitedSweepJob reactivates these.
   scope :rate_limited_due, ->(now = Time.current) { rate_limited.where(rate_limited_until: ..now) }
+  # @spec CHAT-API-027
   scope :with_preview_content, lambda {
     preview_subquery = ChatMessage.where("chat_messages.chat_session_id = chat_sessions.id")
       .where.not(role: "system")
       .where.not(content: [ nil, "" ])
       .order(:created_at)
       .limit(1)
-      .select(:content)
+      .select("LEFT(chat_messages.content, 256)")
       .to_sql
 
     select("chat_sessions.*", "(#{preview_subquery}) AS preview_content")

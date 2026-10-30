@@ -96,6 +96,12 @@ class ChatSessionsController < ApplicationController
   end
 
   def sidebar_page
+    # @spec CHAT-API-027
+    if initial_sidebar_request?
+      load_sidebar_data(active_session: initial_sidebar_active_session)
+      return render partial: "chat_sessions/sidebar_frame", locals: sidebar_frame_locals
+    end
+
     archived = archived_param?
     sidebar = sidebar_batch(
       archived: archived,
@@ -145,6 +151,7 @@ class ChatSessionsController < ApplicationController
   end
 
   def show
+    # @spec CHAT-API-027
     authorize @chat_session
 
     respond_to do |format|
@@ -161,7 +168,7 @@ class ChatSessionsController < ApplicationController
           load_chat_panel_data
           render partial: "chat_sessions/frame", locals: chat_panel_locals.merge(frame_id: requested_frame)
         else
-          load_sidebar_data(active_session: @chat_session)
+          load_chat_panel_data
         end
       end
 
@@ -602,8 +609,24 @@ class ChatSessionsController < ApplicationController
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
     @new_chat_session = ChatSession.new(container_capability: "none", auto_approve: current_user.settings.default_auto_approve)
-    load_chat_panel_data
+    @available_runners = available_chat_runners
     @available_projects = current_account.projects.order(:name)
+    @available_models = LlmModel.active.order(:provider, :display_name)
+  end
+
+  def sidebar_frame_locals
+    {
+      active_session: initial_sidebar_active_session,
+      sessions: @sessions,
+      sidebar_has_more: @sidebar_has_more,
+      sidebar_next_frame_id: @sidebar_next_frame_id,
+      sidebar_next_params: @sidebar_next_params,
+      archived_view: @archived_view,
+      chat_session: @new_chat_session,
+      available_runners: @available_runners,
+      available_projects: @available_projects,
+      available_models: @available_models
+    }
   end
 
   def load_chat_panel_data
@@ -724,6 +747,17 @@ class ChatSessionsController < ApplicationController
 
   def sidebar_toggle_request?
     params[:before_updated_at].blank? && params[:before_id].blank?
+  end
+
+  # @spec CHAT-API-027
+  def initial_sidebar_request?
+    params[:initial] == "true"
+  end
+
+  def initial_sidebar_active_session
+    return unless params[:active_session_id].present?
+
+    @initial_sidebar_active_session ||= member_scope.find(params[:active_session_id])
   end
 
   def increment_rate_limit_counter(cache:, key:, expires_in:)

@@ -1,0 +1,14 @@
+<%# @spec CHAT-API-027 %>
+<%= turbo_frame_tag "chat-sessions-sidebar" do %>
+  <%= render "sidebar",
+             active_session: active_session,
+             sessions: sessions,
+             sidebar_has_more: sidebar_has_more,
+             sidebar_next_frame_id: sidebar_next_frame_id,
+             sidebar_next_params: sidebar_next_params,
+             archived_view: archived_view,
+             chat_session: chat_session,
+             available_runners: available_runners,
+             available_projects: available_projects,
+             available_models: available_models %>
+<% end %>

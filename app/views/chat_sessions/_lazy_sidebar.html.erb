@@ -1,0 +1,5 @@
+<%# @spec CHAT-API-027 %>
+<%= turbo_frame_tag "chat-sessions-sidebar",
+                    src: sidebar_page_chat_sessions_path(active_session_id: chat_session.id, initial: true) do %>
+  <div class="p-4 text-sm text-gray-500" aria-live="polite">Loading chat history…</div>
+<% end %>

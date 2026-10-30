@@ -1,5 +1,18 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-027** — When a user opens an HTML chat session, the system
+  SHALL render the bounded, ordered transcript and composer in the initial
+  response without loading sidebar history or new-chat setup data. The sidebar
+  SHALL load through an authorized Turbo frame afterwards, preserving active
+  session pinning, archived filtering, cursor pagination, and account scope.
+  Sidebar preview retrieval SHALL select at most 256 characters from the first
+  visible message so a long message cannot make the sidebar query payload
+  unbounded.
+  *Tests:* `spec/requests/chat_sessions_spec.rb`,
+  `spec/helpers/chat_sessions_helper_spec.rb`.
+  *Code:* `ChatSessionsController#show`, `#sidebar_page`,
+  `ChatSession.with_preview_content`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and

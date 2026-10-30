@@ -483,6 +483,24 @@ RSpec.describe "ChatSessions" do
         expect(close_form).to be_nil
       end
 
+      # @spec CHAT-API-027
+      it "defers sidebar history and new-chat setup until its Turbo frame loads" do
+        create(:chat_message, chat_session: chat_session, role: "user", content: "Conversation first")
+        sidebar_session = create(:chat_session, account: account, created_by: user, title: "Sidebar later")
+        create(:chat_message, chat_session: sidebar_session, role: "user", content: "Sidebar preview")
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Conversation first")
+        frame = Nokogiri::HTML(response.body).at_css("turbo-frame#chat-sessions-sidebar")
+        expect(frame).to be_present
+        expect(frame["src"]).to eq("/chat/sidebar_page?active_session_id=#{chat_session.id}&initial=true")
+        expect(response.body).not_to include("Sidebar later")
+        expect(response.body).not_to include("Sidebar preview")
+        expect(response.body).not_to include("Search chat sessions")
+      end
+
       # @spec QUESTION-EXPLORATION-015
       it "renders only the chat panel in a requesting Inbox frame" do
         create(:chat_message, :assistant, chat_session: chat_session, content: "Inbox conversation")
@@ -1004,7 +1022,7 @@ RSpec.describe "ChatSessions" do
       it "defaults the new-session modal auto-approve checkbox from user settings" do
         user.settings.update!(default_auto_approve: true)
 
-        get chat_session_path(chat_session)
+        load_initial_sidebar(chat_session)
 
         expect(response).to have_http_status(:ok)
         doc = Nokogiri::HTML(response.body)
@@ -1019,7 +1037,7 @@ RSpec.describe "ChatSessions" do
       it "leaves the new-session modal auto-approve checkbox unchecked when the user disables the default" do
         user.settings.update!(default_auto_approve: false)
 
-        get chat_session_path(chat_session)
+        load_initial_sidebar(chat_session)
 
         expect(response).to have_http_status(:ok)
         doc = Nokogiri::HTML(response.body)
@@ -1095,7 +1113,7 @@ RSpec.describe "ChatSessions" do
       it "wires the new-chat dialog to refresh runner and model choices for the selected project" do
         create_openai_chat_runner
 
-        get chat_session_path(chat_session)
+        load_initial_sidebar(chat_session)
 
         doc = Nokogiri::HTML(response.body)
         dialog_form = doc.at_css("dialog form[data-controller='chat-runner-model-options']")
@@ -1134,7 +1152,7 @@ RSpec.describe "ChatSessions" do
       end
 
       it "renders mobile archive controls without expanding the sidebar by default" do
-        get chat_session_path(chat_session)
+        load_initial_sidebar(chat_session)
 
         expect(response).to have_http_status(:ok)
         doc = Nokogiri::HTML(response.body)
@@ -1177,6 +1195,11 @@ RSpec.describe "ChatSessions" do
         end
 
         get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        get sidebar_page_chat_sessions_path,
+          params: { initial: true, active_session_id: chat_session.id },
+          headers: { "Turbo-Frame" => "chat-sessions-sidebar" }
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(data-session-id="#{chat_session.id}"))
@@ -1790,6 +1813,12 @@ RSpec.describe "ChatSessions" do
 
   def desktop_header_in(doc)
     doc.xpath("//div[@data-controller='chat']/header").last
+  end
+
+  def load_initial_sidebar(chat_session)
+    get sidebar_page_chat_sessions_path,
+      params: { active_session_id: chat_session.id, initial: true },
+      headers: { "Turbo-Frame" => "chat-sessions-sidebar" }
   end
 
   def expect_compact_mobile_workspace_options(mobile_header)

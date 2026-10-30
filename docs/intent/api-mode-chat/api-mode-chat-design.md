@@ -105,6 +105,17 @@ mutation behavior are owned by the RDR-037 chat segments.
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
 
+### Initial chat loading
+
+The HTML show response prioritizes the bounded transcript and composer. It
+contains an independently loaded Turbo frame for the sidebar rather than synchronously loading
+history, projects, runners, models, or message previews. The frame endpoint
+uses the same account-scoped cursor and active-session pinning as subsequent
+sidebar pages, so desktop and mobile navigation keep the same behavior after
+the independent request completes. Sidebar previews select only a bounded
+prefix of the first visible message; preview text is display metadata, not an
+authorization or transcript cache.
+
 ### Curated paid chat tiers
 
 API-key chat presents and resolves a bounded Low, Medium, and High policy,
