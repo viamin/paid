@@ -21,15 +21,17 @@ module AgentPlanningHolds
       return Result.new(released: false, reason: "Planning hold issue has not synchronized yet.") unless hold.issue
       return retire_closed_issue if hold.issue.github_state == "closed"
 
-      record_reopen! if closed_resolution_pending_reassessment?
+      reopened = closed_resolution_pending_reassessment?
+      record_reopen! if reopened
       return resolve_absent_label unless hold.issue.has_label?(hold.label)
+      RequestReview.call(hold:) if reopened
       return request_operator_review unless hold.supported_release_condition?
       return Result.new(released: false, reason: "Planning hold needs operator reconciliation.") unless hold.releasable?
       return Result.new(released: false, reason: "Planning hold release condition is not satisfied.") unless condition_satisfied?
 
       remove_and_read_back!
       hold.update!(status: "released", reconciled_at: Time.current, last_error: nil)
-      resolve_notification
+      resolve_notification(action: "released")
       Result.new(released: true, reason: nil)
     rescue GithubClient::Error => error
       hold.update!(status: "reconciliation_failed", last_error: error.message)
@@ -95,12 +97,12 @@ module AgentPlanningHolds
         last_error: nil,
         evidence: evidence_with_closed_resolution
       ) unless closed_resolution_recorded?
-      resolve_notification
+      resolve_notification(action: "closed_issue")
       Result.new(released: false, reason: "Planning hold is obsolete while its issue is closed.")
     end
 
     def resolve_absent_label
-      resolve_notification
+      resolve_notification(action: "label_absent")
       Result.new(released: false, reason: "Planning hold label is absent.")
     end
 
@@ -127,10 +129,11 @@ module AgentPlanningHolds
     def record_reopen!
       evidence = hold.evidence.deep_dup
       evidence["closure_resolution"] = evidence.fetch("closure_resolution").merge("reopened_at" => Time.current.iso8601)
-      hold.update!(evidence:)
+      prior_status = evidence.dig("closure_resolution", "status") || hold.status
+      hold.update!(status: prior_status, evidence:)
     end
 
-    def resolve_notification
+    def resolve_notification(action:)
       notifications.find_each do |notification|
         next if notification.resolved_at.present?
 
@@ -138,7 +141,7 @@ module AgentPlanningHolds
           resolved_at: Time.current,
           metadata: notification.metadata.merge(
             "resolution_history" => Array(notification.metadata["resolution_history"]) + [
-              { "action" => "closed_issue", "at" => Time.current.iso8601 }
+              { "action" => action, "at" => Time.current.iso8601 }
             ]
           )
         )

@@ -47,6 +47,26 @@ RSpec.describe AgentPlanningHolds::Reconcile do
     expect(issue.reload.labels).to be_empty
   end
 
+  it "records a mechanical release rather than issue closure in notification history" do
+    create(:issue, :closed, project:, github_number: issue.github_number + 100)
+    notification = AgentPlanningHolds::RequestReview.call(hold:)
+    allow(hold.project.client).to receive(:remove_label_from_issue)
+    allow(hold.project.client).to receive(:issue).and_return(remote_issue(labels: []))
+
+    described_class.call(hold:)
+
+    expect(notification.reload.metadata.fetch("resolution_history").last.fetch("action")).to eq("released")
+  end
+
+  it "records an absent label rather than issue closure in notification history" do
+    issue.update!(labels: [])
+    notification = AgentPlanningHolds::RequestReview.call(hold:)
+
+    described_class.call(hold:)
+
+    expect(notification.reload.metadata.fetch("resolution_history").last.fetch("action")).to eq("label_absent")
+  end
+
   it "releases an ordinary agent hold after its originating run finishes" do
     run.update!(status: "failed", completed_at: Time.current)
     ordinary_hold = create_agent_hold(
@@ -111,6 +131,20 @@ RSpec.describe AgentPlanningHolds::Reconcile do
     expect(previous_notification.reload.metadata.fetch("resolution_history").map { |event| event.fetch("action") })
       .to include("closed_issue", "reopened")
     expect(issue.reload.labels).to include("planning")
+    expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: issue).active.count).to eq(1)
+  end
+
+  # @spec CONFIDENCE-DELIVERY-019
+  it "restores and reassesses a supported hold when its closed issue reopens" do
+    issue.update!(github_state: "closed")
+    described_class.call(hold:)
+    issue.update!(github_state: "open")
+
+    result = described_class.call(hold:)
+    described_class.call(hold:)
+
+    expect(result).not_to be_released
+    expect(hold.reload.status).to eq("held")
     expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: issue).active.count).to eq(1)
   end
 
