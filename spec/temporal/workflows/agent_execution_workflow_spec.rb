@@ -267,6 +267,25 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
           timeout: 30)
     end
 
+    def activity_error_wrapping(application_error)
+      activity_error = Temporalio::Error::ActivityError.new(
+        "Activity task failed",
+        scheduled_event_id: 1,
+        started_event_id: 2,
+        identity: "",
+        activity_type: "AnalyzeIssueActivity",
+        activity_id: "1",
+        retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+      )
+      begin
+        raise application_error
+      rescue Temporalio::Error
+        raise activity_error
+      end
+    rescue Temporalio::Error => error
+      error
+    end
+
     it "runs AnalyzeIssueActivity and queues a create_pr follow-up when context is sufficient" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
@@ -372,6 +391,55 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         Temporalio::Error::ApplicationError,
         "Unexpected application error (RuntimeError): context bundle exploded"
       )
+    end
+
+    # @spec ISSUE-ANALYSIS-010
+    it "labels an SDK-wrapped unexpected AnalyzeIssueActivity exception" do
+      application_error = Temporalio::Error::ApplicationError.new(
+        "context bundle exploded", type: "RuntimeError"
+      )
+      wrapped_error = activity_error_wrapping(application_error)
+
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::AnalyzeIssueActivity" then raise wrapped_error
+        when "Activities::MarkAgentRunFailedActivity"
+          expect(_input[:error]).to eq(
+            "Unexpected application error (RuntimeError): context bundle exploded"
+          )
+          {}
+        else {}
+        end
+      end
+
+      expect { workflow.execute(input) }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "Unexpected application error (RuntimeError): context bundle exploded"
+      )
+    end
+
+    # @spec ISSUE-ANALYSIS-010
+    it "preserves an SDK-wrapped expected AnalyzeIssueActivity failure" do
+      application_error = Temporalio::Error::ApplicationError.new(
+        "All issue-analysis providers exhausted",
+        type: "AnalyzeIssueLlmFailed",
+        non_retryable: true
+      )
+      wrapped_error = activity_error_wrapping(application_error)
+
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::AnalyzeIssueActivity" then raise wrapped_error
+        when "Activities::MarkAgentRunFailedActivity"
+          expect(_input[:error]).to eq("All issue-analysis providers exhausted")
+          {}
+        else {}
+        end
+      end
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ActivityError)
     end
   end
 

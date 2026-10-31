@@ -793,6 +793,13 @@ module Workflows
     end
 
     # @spec ISSUE-ANALYSIS-010
+    ANALYZE_ISSUE_EXPECTED_ERROR_TYPES = %w[
+      AnalyzeIssueInvalidJson
+      AnalyzeIssueLlmFailed
+      RateLimit
+      UntrustedIssue
+    ].freeze
+
     def run_analyze_issue_activity(agent_run_id, timeout)
       run_activity(Activities::AnalyzeIssueActivity,
         { agent_run_id: agent_run_id },
@@ -801,23 +808,35 @@ module Workflows
     rescue => error
       raise unless unexpected_analysis_error?(error)
 
-      original = error.respond_to?(:cause) && error.cause ? error.cause : error
       raise Temporalio::Error::ApplicationError.new(
-        "Unexpected application error (#{original.class.name}): #{original.message}",
+        unexpected_analysis_error_message(error),
         type: "unexpected_application_error",
         non_retryable: true
       )
     end
 
     def unexpected_analysis_error?(error)
+      application_error = application_error_cause(error)
+      application_error.nil? || !ANALYZE_ISSUE_EXPECTED_ERROR_TYPES.include?(application_error.type)
+    end
+
+    def unexpected_analysis_error_message(error)
+      application_error = application_error_cause(error)
+      original = application_error || error
+      error_type = application_error&.type || original.class.name
+
+      "Unexpected application error (#{error_type}): #{original.message}"
+    end
+
+    def application_error_cause(error)
       current = error
       while current
-        return false if current.is_a?(Temporalio::Error::ApplicationError)
+        return current if current.is_a?(Temporalio::Error::ApplicationError)
 
         current = current.respond_to?(:cause) ? current.cause : nil
       end
 
-      true
+      nil
     end
 
     def pre_runner_infra_error?(error_message)
