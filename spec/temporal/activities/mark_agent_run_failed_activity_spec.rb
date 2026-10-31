@@ -52,6 +52,29 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       end
     end
 
+    # @spec ISSUE-ANALYSIS-018
+    it "records a distinct bounded backoff for an unexpected automatic analysis error" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(
+          agent_run_id: agent_run.id,
+          error: "wrong number of arguments (given 0, expected 1)",
+          failure_type: "ArgumentError"
+        )
+
+        agent_run.reload
+        issue.reload
+        expect(agent_run.error_message).to eq("wrong number of arguments (given 0, expected 1)")
+        expect(agent_run.external_metadata.fetch("issue_analysis_failure")).to eq(
+          "category" => "unexpected_application_error",
+          "failure_type" => "ArgumentError"
+        )
+        expect(issue.issue_analysis_next_attempt_at).to eq(5.minutes.from_now)
+      end
+    end
+
     # @spec ISSUE-ANALYSIS-010
     it "caps the issue-level analyze_issue backoff for repeated automatic provider exhaustion failures" do
       issue = create(:issue, :in_progress, project: project)
@@ -63,6 +86,29 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
 
       freeze_time do
         activity.execute(agent_run_id: agent_run.id, error: "All issue-analysis providers exhausted: claude")
+
+        expect(issue.reload.issue_analysis_next_attempt_at).to eq(1.hour.from_now)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "caps repeated unexpected automatic analysis errors without treating them as provider outages" do
+      issue = create(:issue, :in_progress, project: project)
+      12.times do
+        run = create(:agent_run, :failed, :automatic, project: project, issue: issue,
+          goal: "analyze_issue", auto_pick: true, error_message: "wrong number of arguments")
+        run.update!(external_metadata: { "issue_analysis_failure" => {
+          "category" => "unexpected_application_error", "failure_type" => "ArgumentError"
+        } })
+      end
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(
+          agent_run_id: agent_run.id,
+          error: "wrong number of arguments (given 0, expected 1)",
+          failure_type: "ArgumentError"
+        )
 
         expect(issue.reload.issue_analysis_next_attempt_at).to eq(1.hour.from_now)
       end
@@ -100,6 +146,20 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       issue.reload
       expect(issue.issue_analysis_backoff_set_at).to be_nil
       expect(issue.issue_analysis_next_attempt_at).to be_nil
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "does not back off a manual unexpected analysis failure" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: false)
+
+      activity.execute(
+        agent_run_id: agent_run.id,
+        error: "wrong number of arguments (given 0, expected 1)",
+        failure_type: "ArgumentError"
+      )
+
+      expect(issue.reload.issue_analysis_next_attempt_at).to be_nil
     end
 
     # @spec ISSUE-ENHANCEMENT-002

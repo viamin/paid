@@ -611,7 +611,11 @@ module Workflows
         # actual error message from our ApplicationError. Without this, every
         # failure is recorded as the opaque "Activity task failed".
         run_activity(Activities::MarkAgentRunFailedActivity,
-          { agent_run_id: agent_run_id, error: unwrap_error_message(e) }, timeout: 30)
+          {
+            agent_run_id: agent_run_id,
+            error: unwrap_error_message(e),
+            failure_type: unwrap_error_type(e)
+          }, timeout: 30)
 
         raise
 
@@ -793,6 +797,19 @@ module Workflows
       else
         error.message
       end
+    end
+
+    # Preserve the activity's typed failure classification at the terminal-run
+    # boundary. The original exception is still re-raised below, so Temporal
+    # retains its diagnostic stack trace.
+    # @spec ISSUE-ANALYSIS-018
+    def unwrap_error_type(error)
+      return error.type if error.is_a?(Temporalio::Error::ApplicationError)
+
+      cause = error.respond_to?(:cause) ? error.cause : nil
+      return cause.type if cause.is_a?(Temporalio::Error::ApplicationError)
+
+      cause&.class&.name || error.class.name
     end
 
     def pre_runner_infra_error?(error_message)

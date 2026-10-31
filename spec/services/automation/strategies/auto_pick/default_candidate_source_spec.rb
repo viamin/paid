@@ -234,8 +234,13 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
-    it "excludes failed issues during an active analyze_issue provider-exhaustion cooldown" do
+    it "excludes failed issues during an active unexpected analyze_issue application-error cooldown" do
       issue = create(:issue, project: project, paid_state: "failed")
+      run = create(:agent_run, :failed, :automatic, project: project, issue: issue,
+        goal: "analyze_issue", auto_pick: true, error_message: "wrong number of arguments")
+      run.update!(external_metadata: { "issue_analysis_failure" => {
+        "category" => "unexpected_application_error", "failure_type" => "ArgumentError"
+      } })
       travel 1.minute do
         issue.update!(
           issue_analysis_next_attempt_at: 10.minutes.from_now,
@@ -249,7 +254,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
-    it "re-includes failed issues once the analyze_issue provider-exhaustion cooldown expires" do
+    it "re-includes failed issues once the unexpected analyze_issue application-error cooldown expires" do
       issue = create(:issue, project: project, paid_state: "failed",
         issue_analysis_next_attempt_at: 1.minute.ago,
         issue_analysis_backoff_set_at: 11.minutes.ago)

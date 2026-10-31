@@ -4,9 +4,17 @@ module Activities
   class MarkAgentRunFailedActivity < BaseActivity
     activity_name "MarkAgentRunFailed"
 
+    EXPECTED_ISSUE_ANALYSIS_FAILURE_TYPES = %w[
+      AnalyzeIssueInvalidJson
+      AnalyzeIssueLlmFailed
+      RateLimit
+      UntrustedIssue
+    ].freeze
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       error = input[:error]
+      failure_type = input[:failure_type]
       agent_run = AgentRun.find(agent_run_id)
       error = timeout_error_with_diagnostics(agent_run, error)
 
@@ -24,6 +32,7 @@ module Activities
       end
       # @spec FOCUSED-RUN-006
       record_draft_review_round_if_needed(agent_run)
+      record_unexpected_issue_analysis_failure!(agent_run, failure_type)
 
       # Always trigger queue processing so remaining queued runs get claimed.
       # This is safe because ProcessRunQueueJob is idempotent (advisory lock +
@@ -112,11 +121,39 @@ module Activities
       agent_run.issue_analysis_timeout_message(error)
     end
 
-    def record_issue_analysis_backoff?(agent_run) # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-011
+    def record_issue_analysis_backoff?(agent_run) # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-011 ISSUE-ANALYSIS-018
       agent_run.auto_pick? &&
         agent_run.analyze_issue_goal? &&
         agent_run.status == "failed" &&
-        agent_run.provider_unavailable?
+        (agent_run.provider_unavailable? || agent_run.unexpected_issue_analysis_application_error?)
+    end
+
+    # Preserve unexpected application failures as their own terminal category.
+    # The original error message stays on AgentRun and the workflow re-raises
+    # the original exception, preserving Temporal's diagnostic trace.
+    # @spec ISSUE-ANALYSIS-018
+    def record_unexpected_issue_analysis_failure!(agent_run, failure_type)
+      return unless unexpected_issue_analysis_failure?(agent_run, failure_type)
+
+      agent_run.update!(external_metadata: agent_run.external_metadata.to_h.merge(
+        "issue_analysis_failure" => {
+          "category" => "unexpected_application_error",
+          "failure_type" => failure_type
+        }
+      ))
+    end
+
+    def unexpected_issue_analysis_failure?(agent_run, failure_type)
+      agent_run.auto_pick? &&
+        agent_run.analyze_issue_goal? &&
+        agent_run.status == "failed" &&
+        failure_type.present? &&
+        !expected_issue_analysis_failure_type?(failure_type) &&
+        !agent_run.provider_unavailable?
+    end
+
+    def expected_issue_analysis_failure_type?(failure_type)
+      EXPECTED_ISSUE_ANALYSIS_FAILURE_TYPES.include?(failure_type)
     end
 
     # Failed manual runs with no issue/PR attachment (create_feature,
