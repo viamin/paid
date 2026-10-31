@@ -19,6 +19,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
   let(:issue) do
     OpenStruct.new(
+      id: 17,
       title: "Fix login redirect",
       github_number: 42,
       body: "Users are redirected to the wrong page after login.",
@@ -770,6 +771,23 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(github_client).to have_received(:issue_comments)
         .with(project.full_name, issue.github_number)
         .exactly(1).time
+    end
+
+    # @spec PROMPT-ASSEMBLY-007
+    it "records unavailable coverage when comment retrieval fails" do
+      allow(github_client).to receive(:issue_comments)
+        .with(project.full_name, issue.github_number)
+        .and_raise(GithubClient::Error.new("API error"))
+
+      result = described_class.call(
+        issue: issue, project: project, github_client: github_client
+      )
+
+      skipped = result.provenance[:skipped].find { |section| section[:key] == :trusted_comments }
+      expect(skipped).to include(
+        reason: "trusted_comments_unavailable",
+        metadata: { comment_count: 0, untrusted_excluded: 0, unavailable_content_issue_ids: [ issue.id ] }
+      )
     end
   end
 

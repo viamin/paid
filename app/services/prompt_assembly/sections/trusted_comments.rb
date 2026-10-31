@@ -25,6 +25,7 @@ class PromptAssembly::Sections::TrustedComments
   def skip_reason
     return "no_github_client" unless github_client
     return "comments_disabled_by_settings" if max_comments <= 0
+    return "trusted_comments_unavailable" if unavailable_content_issue_ids.any?
     return "no_trusted_comments" if trusted_comments.empty?
 
     nil
@@ -35,8 +36,9 @@ class PromptAssembly::Sections::TrustedComments
 
     {
       comment_count: trusted_comments.size,
-      untrusted_excluded: untrusted_comment_count
-    }
+      untrusted_excluded: untrusted_comment_count,
+      unavailable_content_issue_ids: unavailable_content_issue_ids.presence
+    }.compact
   end
 
   def trusted_comments

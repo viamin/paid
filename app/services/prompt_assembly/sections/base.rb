@@ -108,6 +108,10 @@ module PromptAssembly
         context.issue_comments
       end
 
+      def unavailable_content_issue_ids
+        context.unavailable_content_issue_ids
+      end
+
       # Subclasses implement this to produce section content.
       def build_section
         raise NotImplementedError

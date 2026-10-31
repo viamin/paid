@@ -72,7 +72,8 @@ class PromptAssembly::BuildIssuePrompt
       project: project,
       github_client: github_client,
       agent_run: agent_run,
-      issue_comments: fetched_comments
+      issue_comments: fetched_comments,
+      unavailable_content_issue_ids: unavailable_content_issue_ids
     )
 
     PromptAssembly::Build.call(
@@ -119,8 +120,13 @@ class PromptAssembly::BuildIssuePrompt
 
       github_client.issue_comments(project.full_name, issue.github_number)
     rescue GithubClient::Error
+      @unavailable_content_issue_ids = [ issue.id ]
       []
     end
+  end
+
+  def unavailable_content_issue_ids
+    @unavailable_content_issue_ids ||= []
   end
 
   # A poll snapshot can be old by the time a queued run starts. Refreshing the
