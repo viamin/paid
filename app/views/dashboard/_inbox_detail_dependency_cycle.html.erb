@@ -1,23 +1,40 @@
-<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 %>
+<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-024 %>
 <% cycle = entry.record %>
 <div class="space-y-6">
   <div class="rounded-xl border border-red-200 bg-red-50 p-4">
     <h3 class="text-sm font-semibold text-red-900">Dependency cycle blocks automatic work</h3>
-    <p class="mt-1 text-sm text-red-800">Paid will keep this work held. Review the declared dependencies on GitHub and remove or correct the specific declaration that is wrong; Paid does not choose an edge to delete.</p>
+    <p class="mt-1 text-sm text-red-800">Paid will keep this work held until the cycle agent run resolves it or an operator corrects the declaration on GitHub directly.</p>
   </div>
 
   <% analysis_run = cycle.project.agent_runs.for_cycle_analysis_fingerprint(cycle.fingerprint).where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).first %>
   <% analysis_stale = analysis_run && analysis_run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") != cycle.occurrence %>
   <% analysis_retryable = analysis_run.nil? || analysis_stale || AgentRun::TERMINAL_FAILURE_STATUSES.include?(analysis_run.status) %>
+  <% analysis_result = analysis_run&.successful? ? analysis_run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {}) : {} %>
+  <% repair = analysis_result["repair"] %>
+  <% repair_confirmed = repair && repair["status"] == "repaired" %>
   <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
     <h3 class="text-sm font-semibold text-indigo-900">Cycle analysis</h3>
     <% if analysis_run %>
-      <p class="mt-1 text-sm text-indigo-800">Analysis <%= analysis_run.status %>: <%= link_to "view run", project_agent_run_path(analysis_run.project, analysis_run), class: "font-medium underline" %>.</p>
+      <p class="mt-1 text-sm text-indigo-800">
+        Analysis <%= analysis_run.status %>.
+        <%# @spec AUTO-PICK-QUEUE-024: view run is a follow-up action only for a cycle the agent could not solve. %>
+        <% unless repair_confirmed %>
+          <%= link_to "view run", project_agent_run_path(analysis_run.project, analysis_run), class: "font-medium underline", data: { turbo_frame: "_top" } %>.
+        <% end %>
+      </p>
       <% if analysis_stale %>
         <p class="mt-1 text-sm font-medium text-amber-800">This analysis is stale because the effective dependency graph changed.</p>
       <% end %>
+      <% if repair.present? %>
+        <div class="mt-3 rounded-lg border border-indigo-200 bg-white p-3 text-xs text-indigo-900">
+          <h4 class="font-semibold">Repair attempt: <%= repair["status"].to_s.tr("_", " ") %></h4>
+          <p class="mt-1"><%= repair["message"] %></p>
+          <% if repair["applied_changes"].present? %>
+            <p class="mt-1">Issue IDs edited: <%= Array(repair["applied_changes"]).join(", ") %></p>
+          <% end %>
+        </div>
+      <% end %>
       <% if analysis_run.successful? %>
-        <% analysis_result = analysis_run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {}) %>
         <pre class="mt-2 whitespace-pre-wrap text-xs text-indigo-900"><%= JSON.pretty_generate(analysis_result["recommendation"]) %></pre>
         <% coverage = analysis_result["coverage"] %>
         <% if coverage.present? %>

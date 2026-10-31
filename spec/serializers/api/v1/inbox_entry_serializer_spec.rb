@@ -298,6 +298,35 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload.fetch(:cycle_edges).first).to include(from: first_node, to: second_node)
     end
 
+    def repair_outcome_verification_result
+      { CycleAnalyses::RESULT_KEY => {
+        "recommendation" => { "summary" => "x", "candidates" => [] },
+        "coverage" => {},
+        "repair" => { "status" => "stale", "applied_changes" => [], "message" => "graph changed" }
+      } }
+    end
+
+    # @spec AUTO-PICK-QUEUE-025
+    it "exposes the repair outcome and diagnostics from the cycle analysis run" do
+      user = create(:user, account: account)
+      first = create(:issue, project: project, github_state: "open")
+      second = create(:issue, project: project, github_state: "open")
+      create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      cycle = Issues::DependencyCycles.call(account: account).sole
+      create(:agent_run, :completed, project: project, initiating_user: user,
+        goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+        external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle: cycle) },
+        verification_result: repair_outcome_verification_result)
+      entry = build_entry(Inbox::Queue::DEPENDENCY_CYCLE_KIND, record: cycle)
+
+      payload = described_class.render(entry)
+
+      expect(payload.dig(:analysis_run, :repair)).to eq(
+        { "status" => "stale", "applied_changes" => [], "message" => "graph changed" }
+      )
+    end
+
     it "raises for an unrecognized kind rather than silently returning an empty payload" do
       entry = build_entry("unknown_kind")
 

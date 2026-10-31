@@ -29,6 +29,32 @@ RSpec.describe Tools::GetAgentRun do
       )
     end
 
+    # @spec AUTO-PICK-QUEUE-025
+    it "exposes the cycle analysis repair outcome for a cycle agent run" do
+      project = create(:project, account: account)
+      first = create(:issue, project: project, github_state: "open")
+      second = create(:issue, project: project, github_state: "open")
+      create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      cycle = Issues::DependencyCycles.call(account: account).sole
+      run = create(:agent_run, :completed, project: project, initiating_user: user,
+        goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+        external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle: cycle) },
+        verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "repaired" } } })
+
+      result = tool.call(agent_run_id: run.id)
+
+      expect(result.dig(:cycle_analysis, "repair")).to eq({ "status" => "repaired" })
+    end
+
+    it "does not include cycle analysis diagnostics for an unrelated goal" do
+      run = create(:agent_run, :completed, project: create(:project, account: account))
+
+      result = tool.call(agent_run_id: run.id)
+
+      expect(result).not_to have_key(:cycle_analysis)
+    end
+
     it "raises for runs outside the user's account" do
       other_run = create(:agent_run)
 

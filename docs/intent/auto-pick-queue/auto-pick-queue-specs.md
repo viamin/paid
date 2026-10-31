@@ -118,13 +118,13 @@
   *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
 
-- [x] **AUTO-PICK-QUEUE-016** — When an authorized operator starts cycle
-  analysis for a visible dependency-cycle Inbox occurrence, Paid SHALL require
+- [x] **AUTO-PICK-QUEUE-016** — When an authorized operator starts a cycle
+  agent run for a visible dependency-cycle Inbox occurrence, Paid SHALL require
   run authority for every project represented by that occurrence, create one
-  read-only synthetic agent run with the occurrence and effective graph revision
+  synthetic agent run with the occurrence and effective graph revision
   snapshotted, and expose its queued, running, completed, or failed state on the
   same Inbox detail and authorized API/MCP surface. Paid SHALL reject a duplicate
-  active analysis for the occurrence and SHALL permit an explicit new analysis
+  active run for the occurrence and SHALL permit an explicit new run
   only after terminal failure or a changed graph revision.
 
 - [x] **AUTO-PICK-QUEUE-017** — A cycle-analysis prompt SHALL contain every
@@ -144,11 +144,116 @@
   removals and SHALL NOT infer that removal of a single edge breaks a multi-edge
   strongly connected group.
 
-- [x] **AUTO-PICK-QUEUE-019** — Cycle analysis SHALL remain read-only: it
-  SHALL NOT modify GitHub declarations, issue bodies, comments, labels, or local
-  dependency records. A result whose snapshotted revision differs from the
-  currently synchronized effective graph SHALL be identified as stale until a
-  later synchronization observes an acyclic graph.
+- [x] **AUTO-PICK-QUEUE-019** — Analysis without a qualifying obvious-correction
+  candidate (AUTO-PICK-QUEUE-021), and any attempted repair that cannot be
+  fully verified (AUTO-PICK-QUEUE-022, AUTO-PICK-QUEUE-023), SHALL remain
+  exactly as read-only as the strict #4804 contract: it SHALL NOT modify GitHub
+  declarations, issue bodies, comments, labels, or local dependency records. A
+  result whose snapshotted revision differs from the currently synchronized
+  effective graph SHALL be identified as stale until a later synchronization
+  observes an acyclic graph.
+  *Tests:* `spec/jobs/cycle_analysis_job_spec.rb`,
+  `spec/services/cycle_analyses/apply_repair_spec.rb`.
+  *Code:* `CycleAnalyses::ApplyRepair`, `CycleAnalysisJob`.
+
+- [x] **AUTO-PICK-QUEUE-021** — A candidate qualifies as an obvious correction
+  only when all of the following hold against the snapshotted recommendation:
+  (a) it is the sole candidate in the recommendation meeting (b)–(e) — a
+  second candidate that also meets them makes the result ambiguous, not
+  obvious; (b) its `missing_or_conflicting_intent` is empty; (c) its `evidence`
+  is non-empty; (d) every edge referenced by its `declaration_changes` either
+  carries a known `declaration_source == "issue_body"` (the only surface the
+  existing GitHub write boundary can edit) or carries no persisted local
+  provenance at all — a known `declaration_source` of `"issue_comment"`
+  disqualifies the edge, but a missing one does not, since absent *local*
+  provenance alone is never a stop condition when the live GitHub source
+  turns out to hold an unambiguous declaration (AUTO-PICK-QUEUE-022 performs
+  that live lookup before any write) — and belongs to an issue whose trusted
+  content was available (not listed in `unavailable_content_issue_ids`); and
+  (e) its
+  `resulting_graph` is independently acyclic (AUTO-PICK-QUEUE-018). A
+  candidate's edge count and the model's self-reported confidence SHALL NOT
+  substitute for (a)–(e); a single-edge removal that fails any one of them is
+  not obvious.
+  *Tests:* `spec/services/cycle_analyses/obvious_correction_spec.rb`.
+  *Code:* `CycleAnalyses::ObviousCorrection`.
+
+- [x] **AUTO-PICK-QUEUE-022** — Before writing any declaration edit for an
+  obvious-correction candidate, Paid SHALL require run authority for every
+  project represented by the occurrence and re-derive the cycle from a fresh
+  read of the account's effective dependency graph. Paid SHALL abort without
+  writing, leaving every declaration untouched, when: the occurrence is no
+  longer present; its occurrence/graph-revision differs from the snapshot; an
+  edge's re-fetched declaration source no longer satisfies
+  AUTO-PICK-QUEUE-021(d); a `correct` change's replacement no longer
+  originates from the same declaring issue as its edge; or re-applying the
+  candidate's declared changes to the freshly fetched edges would not yield an
+  acyclic graph. When the fresh read itself is unavailable, Paid SHALL abort
+  without writing rather than guess. When an edge's persisted provenance is
+  absent, Paid SHALL NOT abort on that absence alone: it SHALL fetch the
+  declaring issue's live GitHub body and attempt to locate the target
+  reference there under the same isolation rule AUTO-PICK-QUEUE-023 uses for
+  known-provenance edges, proceeding only when that live source and target
+  match uniquely. Because this write happens before the run's own
+  cancellation is otherwise checked, Paid SHALL re-check whether the run was
+  cancelled during analysis immediately beforehand and SHALL skip the repair
+  attempt entirely (never reaching GitHub) when it was.
+  *Tests:* `spec/services/cycle_analyses/apply_repair_spec.rb`,
+  `spec/jobs/cycle_analysis_job_spec.rb`.
+  *Code:* `CycleAnalyses::ApplyRepair`, `CycleAnalysisJob`.
+
+- [x] **AUTO-PICK-QUEUE-023** — A verified repair SHALL apply exactly the
+  candidate's declared removals/corrections to the specific GitHub issue
+  bodies that carry them, through `GithubClient#update_issue`, leaving
+  unrelated body content, comments, labels, and every other declaration
+  untouched, and SHALL record what changed and why on an audit event. Paid
+  SHALL locate each declaration by requiring its target reference to resolve
+  to exactly one line containing no other reference. For an edge with known
+  local provenance, a target reference entirely absent from the freshly
+  fetched body SHALL be treated as already applied and skipped without
+  rewriting (safe idempotent retry after a prior successful edit). For an
+  edge with no persisted local provenance, that same absence SHALL instead
+  abort the repair without writing, since there is no record confirming the
+  declaration was ever live to have been already edited — a live miss is
+  indistinguishable from a declaration that never existed as stated. Either
+  way, when the reference remains but cannot be isolated to one clean line
+  the repair SHALL abort without writing. After writing, Paid SHALL re-parse the
+  affected issue(s) from the same fetched body and confirm, via
+  `Issues::DependencyCycles`, that the persisted effective graph for that
+  group is acyclic before marking the run's repair outcome successful. When
+  that confirmation read raises a coverage-unavailable error, Paid SHALL
+  record a pending/unknown outcome rather than success or failure; a
+  subsequent attempt SHALL re-verify without repeating any edit already
+  observed on GitHub. A GitHub write failure after some but not all planned
+  edits SHALL be recorded with exactly which edits applied, and SHALL NOT be
+  reported as success.
+  *Tests:* `spec/services/cycle_analyses/declaration_edit_spec.rb`,
+  `spec/services/cycle_analyses/apply_repair_spec.rb`.
+  *Code:* `CycleAnalyses::ApplyRepair`, `CycleAnalyses::DeclarationEdit`.
+
+- [x] **AUTO-PICK-QUEUE-024** — Because the dependency-cycle Inbox always
+  re-derives its occurrences from a fresh `Issues::DependencyCycles` read, an
+  occurrence whose repair is confirmed acyclic SHALL NOT appear on the next
+  read; the completed run remains reachable through ordinary run history. For
+  every other outcome (no qualifying candidate, ambiguous, stale,
+  unauthorized, provenance-unavailable, a declaration that could not be
+  isolated, a write failure, confirmation-pending, or still-cyclic), the
+  occurrence SHALL remain held and the Inbox detail SHALL show the evidence,
+  the proposed change (or the missing decision), the outcome/coverage status,
+  and a **view run** link. **view run** SHALL NOT be presented as a
+  follow-up action for a confirmed repair.
+  *Tests:* `spec/views/dashboard/_inbox_detail_dependency_cycle_spec.rb`.
+  *Code:* `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
+
+- [x] **AUTO-PICK-QUEUE-025** — The authorized API/MCP surface for a cycle
+  agent run SHALL expose the same repair outcome and diagnostics (the
+  obvious-correction decision, any applied changes, and the confirmation
+  status) that the web Inbox renders, honoring the same project/issue
+  authorization boundary.
+  *Tests:* `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/mcp/tools/get_agent_run_spec.rb`.
+  *Code:* `Api::V1::InboxEntrySerializer#cycle_analysis_run_payload`,
+  `Tools::GetAgentRun`.
 
 - [x] **AUTO-PICK-QUEUE-020** — Each cycle path/edge node Paid presents SHALL
   carry its locally synced title and current labels, and, when a parent issue

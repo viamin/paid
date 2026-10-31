@@ -111,7 +111,7 @@ module Api
         end
       end
 
-      # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020
+      # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-025
       def dependency_cycle_payload
         dependency_cycle_list_payload.merge(analysis_run: cycle_analysis_run_payload(entry.record))
       end
@@ -137,7 +137,7 @@ module Api
         result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {})
         { id: run.id, status: run.status, graph_revision: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "graph_revision"),
           stale: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") != cycle.occurrence,
-          recommendation: result["recommendation"], coverage: result["coverage"] }
+          recommendation: result["recommendation"], coverage: result["coverage"], repair: result["repair"] }
       end
 
       def dependency_cycle_edge_payload(edge, from, to, cycle)

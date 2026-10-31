@@ -75,34 +75,102 @@ members are unchanged. It shows an exact cycle path, linked projects/issues,
 the count of downstream open work held by the group, and the persisted GitHub
 source for each declaration when synchronization can identify it. Legacy edges
 without provenance remain visible and explicitly direct the operator to inspect
-the dependent issue. Paid never selects an edge to remove: the operator reviews
-the declarations on GitHub and removes or corrects the appropriate declaration.
-The occurrence remains until a subsequent
-synchronization observes an acyclic persisted graph. A failed reconciliation is
-logged as unavailable; it is not treated as proof that no cycles exist.
+the dependent issue. The occurrence remains until a subsequent synchronization
+observes an acyclic persisted graph (either because the cycle agent run below
+repaired it, or because a human corrected the declaration on GitHub directly).
+A failed reconciliation is logged as unavailable; it is not treated as proof
+that no cycles exist.
 
-An authorized operator may start a read-only cycle analysis from that Inbox
-occurrence. The analysis snapshots the occurrence and effective-graph revision,
-all members of the strongly connected group, and every effective internal edge;
-it never limits its evidence to the displayed witness path. Starting requires
-run authority on every represented project and serializes starts per occurrence
-so only one queued or running analysis exists. A failed analysis, or a graph
-revision change, permits an explicit fresh retry.
+An authorized operator may start a cycle agent run from that Inbox occurrence.
+The run snapshots the occurrence and effective-graph revision, all members of
+the strongly connected group, and every effective internal edge; it never
+limits its evidence to the displayed witness path. Starting requires run
+authority on every represented project and serializes starts per occurrence so
+only one queued or running run exists. A failed run, or a graph revision
+change, permits an explicit fresh retry.
 
-The analysis uses Paid's synthetic agent-run record and `agent_harness` route.
-It supplies issue titles, labels, parent context, URLs, declaration provenance,
+The run uses Paid's synthetic agent-run record and `agent_harness` route. It
+supplies issue titles, labels, parent context, URLs, declaration provenance,
 and only issue bodies and comments admitted by the project's existing trust
-boundary. Its recommendation records candidate
-declaration changes, supporting and conflicting evidence, resulting graphs, and
-an acyclicity determination for each candidate. Paid derives each expected
-resulting graph from the snapshot and the structured removals or endpoint
-corrections, rejecting unaccounted edge changes before checking acyclicity.
-Missing provenance or content is reported as unavailable coverage, never
-silently assumed. The result is rendered
-on the same Inbox occurrence and remains marked stale when synchronization has
-changed the effective graph. It cannot mutate GitHub issues, comments, labels,
-or local dependency records; a human declaration change and later synchronization
-remain the only resolution path.
+boundary. Its recommendation records candidate declaration changes, supporting
+and conflicting evidence, resulting graphs, and an acyclicity determination
+for each candidate. Paid derives each expected resulting graph from the
+snapshot and the structured removals or endpoint corrections, rejecting
+unaccounted edge changes before checking acyclicity. Missing provenance or
+content is reported as unavailable coverage, never silently assumed.
+
+### Bounded repair attempt (#4824)
+
+Issue #4804 shipped this run as strictly read-only: a human always had to edit
+the GitHub declaration by hand. That contract is revised here to a *bounded*
+repair attempt — most cycles still end up presented for a human decision, but
+an obvious, well-evidenced one is corrected automatically.
+
+`CycleAnalyses::ObviousCorrection` applies an explicit, testable threshold to
+the validated recommendation after it is produced: exactly one candidate
+across the whole recommendation must be acyclic, carry no
+`missing_or_conflicting_intent`, carry non-empty `evidence`, have every
+`declaration_changes` edge either known to be sourced from an issue body (not
+a comment — outside the existing write boundary) or carry no persisted local
+provenance at all, and touch no issue whose trusted content was unavailable. A
+missing *local* `declaration_source`/`declaration_url` is never by itself a
+reason to call a candidate unqualified — plenty of pre-existing
+`IssueDependency` rows predate provenance tracking even though the live
+GitHub declaration they describe is perfectly current — so that case is
+deferred to a live re-check at write time rather than rejected here. A
+candidate's edge count and the model's own stated confidence are never
+substituted for these checks — a lone edge removal that fails any one of them
+is not obvious. More than one qualifying candidate is ambiguous, not obvious,
+even if every individual candidate looks clean.
+
+A qualifying candidate goes to `CycleAnalyses::ApplyRepair`, which re-derives
+everything from scratch before writing anything: it re-checks run authority
+for every represented project, re-reads the account's effective dependency
+graph, and aborts without writing if the occurrence is gone, its
+occurrence/graph-revision changed, an edge's re-fetched declaration source no
+longer qualifies (now known to be a comment), or re-applying the candidate's
+declared changes to the fresh edges would not be acyclic. Only then does it
+write: it re-fetches each affected issue's live GitHub body and locates the
+specific declaration line via `CycleAnalyses::DeclarationEdit` — whether or
+not the edge had persisted local provenance, since locating the live
+declaration by its endpoints is the same operation either way. That lookup
+requires the target reference to resolve unambiguously to exactly one line
+with no other reference sharing it; a reference found more than once (or
+sharing its line with another reference) aborts rather than guesses. A
+confirmed match is written via `GithubClient#update_issue` with the edited
+body, never touching unrelated body content, comments, or labels. Absence is
+handled differently depending on provenance: for an edge with known local
+provenance, a target reference entirely absent from the fetched body is
+treated as already applied and skipped rather than rewritten, so a retry
+after a prior partial failure never repeats a completed edit; for an edge
+with no local provenance, that same absence instead aborts the repair,
+because there is no record that the declaration was ever live to have
+already been edited — an unprovenanced miss cannot be told apart from a
+declaration that never existed as stated.
+
+After writing, the affected issue(s) are re-parsed locally from the same fetched
+body (the same contract `Issues::ParseDependencies` always uses), and the
+account's effective graph is read again to confirm the group is actually
+acyclic before the repair is reported successful. Because the Inbox always
+re-derives its dependency-cycle occurrences live from the persisted graph, a
+confirmed repair makes the occurrence disappear on the next read — there is no
+separate "clear" step. If that confirmation read itself fails (infrastructure,
+not the edit), the repair is reported as confirmation-pending rather than
+success or failure, and nothing is rewritten on a later retry since the edit
+already landed. If the group is still cyclic after a verified write — a
+concurrent edit raced the repair — the occurrence stays held and visible with
+that status. Any outcome short of a confirmed repair (ambiguous, stale,
+unauthorized, missing provenance, a declaration that could not be isolated, a
+GitHub write failure, or still-cyclic) leaves every declaration untouched and
+keeps the occurrence held with its evidence, proposed change, and status
+visible — the same shape the strictly-read-only path already produced.
+
+The web Inbox and the authorized API/MCP surface present the identical repair
+outcome and diagnostics. **view run** is shown only for an occurrence the
+agent could not solve; a confirmed repair never needs it as a follow-up action
+because the occurrence it would have pointed at is already gone from the
+Inbox. The run itself remains reachable through ordinary run history either
+way.
 
 Each path node also carries its own title, current labels, and (when a parent
 issue is linked and its project is within the viewer's authorized project set)

@@ -27,6 +27,7 @@ class AccountActivityEvent < ApplicationRecord
     "issue.closeout_resolved" => "project",
     "issue.closeout_revalidation_failed" => "project",
     "issue.prerequisite_linked" => "project",
+    "dependency_cycle.repaired" => "project",
     "runner.created" => "runner",
     "runner.updated" => "runner",
     "runner.deleted" => "runner",

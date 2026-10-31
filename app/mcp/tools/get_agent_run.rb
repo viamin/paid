@@ -43,10 +43,17 @@ module Tools
         started_at: run.started_at,
         completed_at: run.completed_at,
         created_at: run.created_at
-      }
+      }.merge(cycle_analysis_payload(run))
     end
 
     private
+
+    # @spec AUTO-PICK-QUEUE-025
+    def cycle_analysis_payload(run)
+      return {} unless run.cycle_analysis_goal?
+
+      { cycle_analysis: run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {}) }
+    end
 
     def run_for(agent_run_id)
       @runs_by_id ||= {}
