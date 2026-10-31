@@ -160,6 +160,24 @@ class AgentRun < ApplicationRecord
         .and(Arel::Nodes::Not.new(pre_model_infra))
     )
   end
+
+  # @spec AUTO-PICK-QUEUE-016
+  def self.for_cycle_analysis_occurrence(occurrence)
+    cycle_analysis_metadata("occurrence", occurrence)
+  end
+
+  # @spec AUTO-PICK-QUEUE-016
+  def self.for_cycle_analysis_fingerprint(fingerprint)
+    cycle_analysis_metadata("fingerprint", fingerprint)
+  end
+
+  def self.cycle_analysis_metadata(attribute, value)
+    metadata = arel_table[:external_metadata]
+    namespace = Arel::Nodes::InfixOperation.new("->", metadata, Arel::Nodes.build_quoted(CycleAnalyses::METADATA_KEY))
+    key = Arel::Nodes::InfixOperation.new("->>", namespace, Arel::Nodes.build_quoted(attribute))
+    where(key.eq(Arel::Nodes.build_quoted(value)))
+  end
+  private_class_method :cycle_analysis_metadata
   UNFINISHED_STATUSES = %w[queued running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress token_budget].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES

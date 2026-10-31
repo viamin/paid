@@ -39,8 +39,8 @@ module CycleAnalyses
     end
 
     def duplicate_run
-      @duplicate_run ||= cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: %w[queued running completed])
-        .find_by("external_metadata -> ? ->> ? = ?", METADATA_KEY, "occurrence", cycle.occurrence)
+      @duplicate_run ||= cycle.project.agent_runs.for_cycle_analysis_occurrence(cycle.occurrence)
+        .find_by(goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: %w[queued running completed])
     end
 
     def create_run!

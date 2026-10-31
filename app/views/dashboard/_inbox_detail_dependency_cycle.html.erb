@@ -6,7 +6,7 @@
     <p class="mt-1 text-sm text-red-800">Paid will keep this work held. Review the declared dependencies on GitHub and remove or correct the specific declaration that is wrong; Paid does not choose an edge to delete.</p>
   </div>
 
-  <% analysis_run = cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).where("external_metadata -> ? ->> ? = ?", CycleAnalyses::METADATA_KEY, "fingerprint", cycle.fingerprint).order(created_at: :desc).first %>
+  <% analysis_run = cycle.project.agent_runs.for_cycle_analysis_fingerprint(cycle.fingerprint).where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).first %>
   <% analysis_stale = analysis_run && analysis_run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") != cycle.occurrence %>
   <% analysis_retryable = analysis_run.nil? || analysis_stale || AgentRun::TERMINAL_FAILURE_STATUSES.include?(analysis_run.status) %>
   <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">

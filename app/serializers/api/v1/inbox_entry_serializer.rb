@@ -128,8 +128,8 @@ module Api
       end
 
       def cycle_analysis_run_payload(cycle)
-        run = cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL)
-          .where("external_metadata -> ? ->> ? = ?", CycleAnalyses::METADATA_KEY, "fingerprint", cycle.fingerprint)
+        run = cycle.project.agent_runs.for_cycle_analysis_fingerprint(cycle.fingerprint)
+          .where(goal: AgentRun::CYCLE_ANALYSIS_GOAL)
           .order(created_at: :desc).first
         return unless run
 
