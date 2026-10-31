@@ -244,7 +244,10 @@ module Activities
       earliest_reset_at = nil
       attempted_failures = []
 
-      providers.each_with_index do |provider, index|
+      providers.each_with_index do |identifier, index|
+        runner = Runner.for_identifier(agent_run.project.effective_owner, identifier)
+        provider = runner&.runner_key || identifier
+        state_key = runner&.state_key || provider
         response = track_issue_analysis_phase(
           agent_run: agent_run,
           phase_key: "analyze_issue_provider_attempt",
@@ -257,7 +260,7 @@ module Activities
             provider: provider,
             attempt: index + 1
           ) do
-            llm_response = Llm::Request.call(prompt: prompt, project: agent_run.project, runner: provider, timeout: LLM_TIMEOUT)
+            llm_response = Llm::Request.call(prompt: prompt, project: agent_run.project, runner: identifier, timeout: LLM_TIMEOUT)
             # Promote response-shaped failures to an exception so the phase
             # recorder marks this attempt as `failed` (ISSUE-ANALYSIS-012).
             # Without the raise the tracked block would return normally and
@@ -271,7 +274,7 @@ module Activities
             llm_response
           end
         end
-        record_runner_success(user_setting, provider)
+        record_runner_success(user_setting, state_key)
         return response
       rescue UnsuccessfulResponseError => e
         log_failed_response(agent_run, provider, e.response)
@@ -282,7 +285,7 @@ module Activities
           message: e.response.respond_to?(:error) ? e.response.error : nil
         )
         attempted_failures << { provider: provider.to_s, category: category }
-        reset_at = record_response_failure(user_setting, provider, e.response)
+        reset_at = record_response_failure(user_setting, provider, state_key, e.response)
         if reset_at
           rate_limited_count += 1
           earliest_reset_at = [ earliest_reset_at, reset_at ].compact.min
@@ -290,7 +293,7 @@ module Activities
       rescue AgentHarness::RateLimitError => e
         rate_limited_count += 1
         earliest_reset_at = [ earliest_reset_at, e.reset_time ].compact.min
-        record_runner_rate_limit(user_setting, provider, reset_at: e.reset_time)
+        record_runner_rate_limit(user_setting, state_key, reset_at: e.reset_time)
         log_provider_failure(agent_run, provider, e)
         record_provider_attempt_failure!(
           agent_run: agent_run, provider: provider, attempt: index + 1, category: :rate_limited,
@@ -298,7 +301,7 @@ module Activities
         )
         attempted_failures << { provider: provider.to_s, category: :rate_limited }
       rescue AgentHarness::AuthenticationError => e
-        record_runner_auth_failure(user_setting, provider)
+        record_runner_auth_failure(user_setting, state_key)
         log_provider_failure(agent_run, provider, e)
         record_provider_attempt_failure!(
           agent_run: agent_run, provider: provider, attempt: index + 1, category: :auth_expired,
@@ -306,7 +309,7 @@ module Activities
         )
         attempted_failures << { provider: provider.to_s, category: :auth_expired }
       rescue AgentHarness::Error => e
-        record_runner_failure(user_setting, provider)
+        record_runner_failure(user_setting, state_key)
         log_provider_failure(agent_run, provider, e)
         category = failure_category_for(e)
         record_provider_attempt_failure!(
@@ -353,7 +356,7 @@ module Activities
     # (never the raw provider error text, which may contain secrets) so the
     # durable terminal error is actionable without re-reading process logs.
     def issue_analysis_provider_exhaustion_message(attempted_failures)
-      return "All issue-analysis providers exhausted" if attempted_failures.empty?
+      return "No standalone-capable issue-analysis runner is configured; add API credentials or enable host tool control" if attempted_failures.empty?
 
       summary = attempted_failures.map { |f| "#{f[:provider]} (#{f[:category]})" }.join(", ")
       "All issue-analysis providers exhausted: #{summary}"
@@ -367,17 +370,17 @@ module Activities
     # responses get their specialized state transition instead of counting
     # as a generic failure. Returns the rate-limit reset time when the
     # response was classified as rate-limited, otherwise nil.
-    def record_response_failure(user_setting, provider, response)
+    def record_response_failure(user_setting, provider, state_key, response)
       case classify_response_error(response)
       when :rate_limited
         reset_at = RunnerSupport.rate_limit_reset_at(RunnerSupport.harness_for(provider), response.error)
-        record_runner_rate_limit(user_setting, provider, reset_at: reset_at)
+        record_runner_rate_limit(user_setting, state_key, reset_at: reset_at)
         reset_at
       when :auth_expired
-        record_runner_auth_failure(user_setting, provider)
+        record_runner_auth_failure(user_setting, state_key)
         nil
       else
-        record_runner_failure(user_setting, provider)
+        record_runner_failure(user_setting, state_key)
         nil
       end
     end
@@ -438,8 +441,14 @@ module Activities
     def chat_providers(project)
       setting = owner_user_setting(project) or return []
 
-      # Primary: the owner's explicit issue-analysis runner selection.
-      providers = Knowledge::ProviderSelector.for_issue_analysis(user_setting: setting)
+      # Primary: the owner's explicit issue-analysis runner selection. Resolve
+      # a configured provider key against owned records before passing it to
+      # Llm::Request, so a usable API credential cannot be replaced by a
+      # same-key subscription during bare-key resolution.
+      providers = Knowledge::ProviderSelector.available_standalone_chat_runner_keys(
+        user_setting: setting,
+        preferred_identifiers: issue_analysis_runner_identifiers(setting)
+      )
       return providers if providers.any?
 
       # Broaden to every chat-capable runner the owner has, applying the same
@@ -448,8 +457,11 @@ module Activities
       # provider the user never configured (the old Anthropic-only default).
       # Economical runners are tried first so a lightweight assessment call
       # doesn't burn tokens on a heavy-exploration runner.
-      available = Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting)
-      RunnerSupport.lean_first(available)
+      Knowledge::ProviderSelector.available_standalone_chat_runner_keys(user_setting: setting)
+    end
+
+    def issue_analysis_runner_identifiers(setting)
+      [ setting.issue_analysis_runner, *Array(setting.issue_analysis_fallback_runners) ]
     end
 
     def owner_user_setting(project)

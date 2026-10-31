@@ -29,6 +29,10 @@ conflicting API authentication variables. A
 host CLI must advertise reliable tool control; other drivers require API text
 transport with explicit runner credentials or an isolated environment. A
 `tools: none` option alone is not evidence that a driver disables its tools.
+When a standalone caller widens from saved preferences, it filters owned runner
+records for that capability before selecting and passes the selected record's
+routing identifier onward; it never widens to a bare provider key that could
+resolve to a different credential.
 Embedding and interactive API chat keep their existing capability-specific
 transports and settings. Provider identifiers inside those protocol adapters
 are transport identities, not application-level provider preferences.

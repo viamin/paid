@@ -32,7 +32,10 @@ provider independently, through the knowledge/chat provider layer:
 2. **Broadening.** When the preference yields no candidates (none configured or
    the configured runner is unavailable), `Knowledge::ProviderSelector.available_chat_runner_keys`
    widens to every chat-enabled `Runner` the owner actually has, applying the
-   same availability filter. This is what lets an analysis succeed on `codex`
+   same availability and standalone-text-capability filters. Widened candidates
+   retain their credential-specific routing identifiers, so selecting an API-key
+   Codex record cannot be redirected to a subscription Codex record by bare-key
+   resolution. This is what lets an analysis succeed on `codex`
    when `claude` is rate-limited, and what serves the default case where no
    explicit issue-analysis runner is set. The widened list is then reordered via
    `RunnerSupport.lean_first` so economical runners are tried before

@@ -992,7 +992,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
+      }.to raise_error(Temporalio::Error::ApplicationError, /No standalone-capable issue-analysis runner/)
     end
 
     # @spec ISSUE-ANALYSIS-009
@@ -1170,7 +1170,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: second_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
+      }.to raise_error(Temporalio::Error::ApplicationError, /No standalone-capable issue-analysis runner/)
 
       # Only the first run's attempt should have called send_message — the
       # second run's candidate list is empty because "claude" is still
@@ -1372,7 +1372,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
+      }.to raise_error(Temporalio::Error::ApplicationError, /No standalone-capable issue-analysis runner/)
     end
 
     # @spec ISSUE-ANALYSIS-008

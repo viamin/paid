@@ -23,6 +23,10 @@ module Knowledge
       new(user_setting:).available_chat_runner_keys
     end
 
+    def self.available_standalone_chat_runner_keys(user_setting:, preferred_identifiers: nil)
+      new(user_setting:).available_standalone_chat_runner_keys(preferred_identifiers:)
+    end
+
     def initialize(user_setting:)
       @user_setting = user_setting
     end
@@ -53,6 +57,19 @@ module Knowledge
       filtered.select { |runner| runner_available?(runner, runner_states) }
     end
 
+    # @spec ISSUE-ANALYSIS-002 LLM-ROUTING-005
+    # Returns routing keys rather than provider keys so Llm::Request receives
+    # the exact owned credential selected for a host text request.
+    def available_standalone_chat_runner_keys(preferred_identifiers: nil)
+      runners = standalone_chat_runners
+      preferred = Array(preferred_identifiers).filter_map { |identifier| identifier.to_s.presence }
+      runners = runners.select { |runner| preferred_runner?(runner, preferred) } if preferred.any?
+
+      states = user_setting.user.runner_states.where(runner_name: runners.map(&:state_key)).index_by(&:runner_name)
+      capable = runners.select { |runner| standalone_text_capable?(runner) && runner_available?(runner.state_key, states) }
+      ordered_standalone_runners(capable, preferred).map(&:routing_key)
+    end
+
     private
 
     attr_reader :user_setting
@@ -63,6 +80,40 @@ module Knowledge
       end.uniq
 
       filter_supported_runners(runners, operation: operation)
+    end
+
+    def standalone_chat_runners
+      user_setting.user.runners.kept_only.for_chat.includes(:provider_api_key, :integration_credential).ordered
+        .select { |runner| supported_runners_for(:issue_analysis).include?(runner.runner_key) }
+    end
+
+    def preferred_runner?(runner, identifiers)
+      identifiers.include?(runner.routing_key) || identifiers.include?(runner.runner_key)
+    end
+
+    def standalone_text_capable?(runner)
+      return runner.effective_api_secret.present? if runner.api_key?
+      return false unless runner.subscription?
+      return false if managed_subscription?(runner)
+
+      standalone_driver_supports_tool_control?(runner)
+    end
+
+    def managed_subscription?(runner)
+      user_setting.user.account.runner_credentials.for_runner(runner.runner_key).where(revoked_at: nil).exists?
+    end
+
+    def standalone_driver_supports_tool_control?(runner)
+      key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
+      AgentHarness.provider_class(key).new(config: AgentHarness.build_config(key)).supports_tool_control?
+    rescue AgentHarness::ConfigurationError, KeyError
+      false
+    end
+
+    def ordered_standalone_runners(runners, preferred)
+      return runners.sort_by { |runner| [ RunnerSupport.lean_runner?(runner.runner_key) ? 0 : 1, runner.runner_key, runner.id ] } if preferred.empty?
+
+      runners.sort_by { |runner| [ preferred.index(runner.routing_key) || preferred.index(runner.runner_key), runner.id ] }
     end
 
     def configured_runner_values_for(operation)

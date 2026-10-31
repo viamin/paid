@@ -170,4 +170,31 @@ RSpec.describe Knowledge::ProviderSelector do
       expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "kilocode" ])
     end
   end
+
+  # @spec ISSUE-ANALYSIS-002 LLM-ROUTING-005
+  describe ".available_standalone_chat_runner_keys" do
+    before { user.runners.delete_all }
+
+    it "selects an API-key Codex record when the matching subscription cannot disable tools" do
+      subscription = create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
+      api_key = create(:provider_api_key, user: user, api_service_type: "openai")
+      api_runner = create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: api_key)
+      driver = instance_double(AgentHarness::Providers::Codex, supports_tool_control?: false)
+      provider_class = class_double(AgentHarness::Providers::Codex, new: driver)
+      allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
+
+      candidates = described_class.available_standalone_chat_runner_keys(user_setting: setting)
+
+      expect(candidates).to eq([ api_runner.routing_key ])
+      expect(candidates).not_to include(subscription.routing_key)
+    end
+
+    it "excludes a runner whose credential-specific circuit is unavailable" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openai")
+      runner = create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: api_key)
+      create(:runner_state, :circuit_open, user: user, runner_name: runner.state_key)
+
+      expect(described_class.available_standalone_chat_runner_keys(user_setting: setting)).to be_empty
+    end
+  end
 end

@@ -1,0 +1,49 @@
+{
+  "status": "passed",
+  "summary": "Focused selector, issue-analysis activity, and LLM routing tests passed; coherence check completed with pre-existing repository-wide findings.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/services/knowledge/provider_selector_spec.rb:178",
+            "result": "passed: a tool-control-ineligible Codex subscription is excluded and the owned API-key Codex routing key is returned"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/services/knowledge/provider_selector_spec.rb:192",
+            "result": "passed: an open credential-specific runner state excludes that candidate"
+          },
+          {
+            "locator": "spec/services/llm/request_spec.rb:140",
+            "result": "passed: API-key runner uses the API text transport when CLI tool control is unavailable"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-3",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/services/knowledge/provider_selector_spec.rb:178",
+            "result": "passed: owner with both Codex credentials selects API-key Codex when subscription lacks host tool control"
+          }
+        ]
+      }
+    }
+  ]
+}
