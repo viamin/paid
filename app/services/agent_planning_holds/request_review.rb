@@ -52,7 +52,8 @@ module AgentPlanningHolds
     private_class_method :metadata
 
     def self.resolution_history(notification, action)
-      Array(notification.metadata["resolution_history"]) + [{ "action" => action, "at" => Time.current.iso8601 }]
+      history_entry = { "action" => action, "at" => Time.current.iso8601 }
+      Array(notification.metadata["resolution_history"]) + [ history_entry ]
     end
     private_class_method :resolution_history
   end
