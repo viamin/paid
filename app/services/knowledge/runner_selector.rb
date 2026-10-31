@@ -23,6 +23,16 @@ module Knowledge
       new(user_setting:).available_chat_runner_keys
     end
 
+    # Container-free text work must retain the selected credential rather than
+    # resolving a provider key back to a different owned runner.
+    def self.available_standalone_chat_runners(user_setting:)
+      new(user_setting:).available_standalone_chat_runners
+    end
+
+    def self.standalone_chat_runners(user_setting:)
+      new(user_setting:).standalone_chat_runners
+    end
+
     def initialize(user_setting:)
       @user_setting = user_setting
     end
@@ -51,6 +61,23 @@ module Knowledge
       filtered = filter_supported_runners(candidate_keys, operation: :chat)
       runner_states = user_setting.user.runner_states.where(runner_name: filtered).index_by(&:runner_name)
       filtered.select { |runner| runner_available?(runner, runner_states) }
+    end
+
+    # @spec ISSUE-ANALYSIS-014 LLM-ROUTING-005
+    def available_standalone_chat_runners
+      runners = standalone_chat_runners
+      states = user_setting.user.runner_states.where(runner_name: runners.map(&:state_key)).index_by(&:runner_name)
+
+      runners.select do |runner|
+        runner_available?(runner.state_key, states)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005
+    def standalone_chat_runners
+      user_setting.user.runners.kept_only.for_chat.ordered.select do |runner|
+        standalone_text_capable?(runner)
+      end
     end
 
     private
@@ -103,6 +130,18 @@ module Knowledge
 
       state.check_circuit_recovery!(timeout: user_setting.circuit_breaker_timeout_seconds)
       !state.unavailable?
+    end
+
+    def standalone_text_capable?(runner)
+      return runner.effective_api_secret.present? if runner.api_key?
+      return false if managed_subscription?(runner)
+
+      key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
+      AgentHarness.provider_class(key).new(config: AgentHarness.build_config(key)).supports_tool_control?
+    end
+
+    def managed_subscription?(runner)
+      user_setting.user.account.runner_credentials.for_runner(runner.runner_key).where(revoked_at: nil).exists?
     end
 
     def warn_on_embedding_fallback(candidates)

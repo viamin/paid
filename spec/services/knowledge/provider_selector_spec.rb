@@ -170,4 +170,22 @@ RSpec.describe Knowledge::ProviderSelector do
       expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "kilocode" ])
     end
   end
+
+  # @spec ISSUE-ANALYSIS-014 LLM-ROUTING-005
+  describe ".available_standalone_chat_runners" do
+    before { user.runners.delete_all }
+
+    it "preserves an API-key Codex routing identity when its subscription cannot disable tools" do
+      subscription = create(:runner, user: user, runner_key: "codex", enabled_for_chat: true)
+      credential = create(:runner_api_key, user: user, api_service_type: "openai")
+      api_runner = create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_chat: true,
+        provider_api_key: credential)
+      provider = instance_double(AgentHarness::Providers::Codex, supports_tool_control?: false)
+      allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(class_double(AgentHarness::Providers::Codex, new: provider))
+
+      expect(described_class.available_standalone_chat_runners(user_setting: setting)).to eq([ api_runner ])
+      expect(Runner.for_identifier(user, api_runner.routing_key)).to eq(api_runner)
+      expect(Runner.for_identifier(user, "codex")).to eq(subscription)
+    end
+  end
 end

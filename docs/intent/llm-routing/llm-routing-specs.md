@@ -16,7 +16,9 @@
   its driver supports disabling tools, with external-sandbox bypass disabled.
   Other drivers SHALL use the selected runner's API credentials through the
   harness API transport, or fail explicitly requiring an isolated environment;
-  a subscription SHALL NOT silently switch to API billing.
+  a subscription SHALL NOT silently switch to API billing. Candidate widening
+  SHALL retain credential-specific routing identifiers and exclude a
+  non-standalone subscription when an owned API-key credential is available.
 - [x] **LLM-ROUTING-006** — An isolated text request timeout SHALL terminate
   the request process without stopping the run environment. Post-run background
   summaries and diagnostics SHALL route independently of the cleaned-up environment.
