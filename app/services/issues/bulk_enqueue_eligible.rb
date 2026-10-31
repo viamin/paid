@@ -86,7 +86,7 @@ module Issues
     # forever simply because they have no confidence-delivery link.
     # @spec CONFIDENCE-DELIVERY-018
     def reconcile_agent_planning_holds
-      AgentPlanningHold.where(project_id: project.id, status: %w[held reconciliation_failed]).find_each do |hold|
+      AgentPlanningHold.where(project_id: project.id, status: %w[held needs_review reconciliation_failed]).find_each do |hold|
         AgentPlanningHolds::Reconcile.call(hold:)
       end
     end

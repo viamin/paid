@@ -122,6 +122,54 @@ RSpec.describe Issues::UpsertFromGithub do
       expect(Notification.last.title).to eq("Issue #42 was completed: Sync me")
     end
 
+    # @spec CONFIDENCE-DELIVERY-019
+    it "retires an unsupported planning-hold request when issue sync reports closure" do
+      issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42,
+        github_state: "open", labels: [ "planning" ])
+      hold = AgentPlanningHold.create!(
+        account: project.account,
+        project: project,
+        issue: issue,
+        remote_issue_number: issue.github_number,
+        label: "planning",
+        status: "needs_review"
+      )
+      notification = AgentPlanningHolds::RequestReview.call(hold: hold)
+      github_issue.state = "closed"
+      github_issue.pull_request = nil
+      github_issue.labels = [ OpenStruct.new(name: "planning") ]
+
+      described_class.call(project: project, github_issue: github_issue)
+
+      expect(notification.reload.resolved_at).to be_present
+      expect(issue.reload.labels).to eq([ "planning" ])
+    end
+
+    # @spec CONFIDENCE-DELIVERY-019
+    it "reopens one actionable planning-hold request when synchronized work returns open" do
+      issue = create(:issue, project: project, github_issue_id: 1234, github_number: 42,
+        github_state: "closed", labels: [ "planning" ])
+      hold = AgentPlanningHold.create!(
+        account: project.account,
+        project: project,
+        issue: issue,
+        remote_issue_number: issue.github_number,
+        label: "planning",
+        status: "needs_review",
+        evidence: { "closure_resolution" => { "closed_at" => Time.current.iso8601, "reopened_at" => nil } }
+      )
+      notification = AgentPlanningHolds::RequestReview.call(hold: hold)
+      notification.update!(resolved_at: Time.current)
+      github_issue.pull_request = nil
+      github_issue.labels = [ OpenStruct.new(name: "planning") ]
+
+      described_class.call(project: project, github_issue: github_issue)
+      described_class.call(project: project, github_issue: github_issue)
+
+      expect(notification.reload).to be_active
+      expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: issue).active.count).to eq(1)
+    end
+
     it "delivers merge notifications for pull requests closed as completed from issue sync" do
       user = create(:user, account: project.account)
       issue = create(:issue, :pull_request, project: project, github_issue_id: 1234, github_number: 42, github_state: "open")

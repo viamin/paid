@@ -140,7 +140,13 @@ and scope revision, and is idempotent by issue and label so failed runs and
 retries retain one receipt. The bounded eligibility sweep may release only
 explicit mechanical conditions, reads GitHub back after removal, and
 synchronizes local labels. Conditions that require design judgment remain held
-for an operator, even when a related issue closes.
+for an operator while their issue is open. When a synchronized issue is
+closed, Paid resolves the obsolete Inbox request without changing the GitHub
+label, approval state, or hold provenance. The hold records its closure
+resolution and prior decision for audit. If the issue later reopens with the
+label still present, Paid reassesses the recorded ownership and condition and
+creates one fresh actionable request only when that hold remains an admission
+blocker.
 
 Confidence-driven PRs receive an independent conformance review against that
 issue link's immutable release snapshot: its merged baseline, mapped design

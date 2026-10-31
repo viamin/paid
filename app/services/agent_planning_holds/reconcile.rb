@@ -2,9 +2,9 @@
 
 module AgentPlanningHolds
   # Releases only direct agent holds whose recorded, mechanical condition is
-  # satisfied. Conditions that need design judgment remain actionable Inbox
-  # work; neither a closed parent issue nor the bot identity authorizes them.
-  # @spec CONFIDENCE-DELIVERY-018
+  # satisfied. Closure resolves an obsolete Inbox request without granting
+  # authority over the label; reopening reassesses the same durable receipt.
+  # @spec CONFIDENCE-DELIVERY-018 CONFIDENCE-DELIVERY-019
   class Reconcile
     Result = Data.define(:released, :reason) do
       def released? = released
@@ -19,6 +19,10 @@ module AgentPlanningHolds
     def call
       attach_synced_issue!
       return Result.new(released: false, reason: "Planning hold issue has not synchronized yet.") unless hold.issue
+      return retire_closed_issue if hold.issue.github_state == "closed"
+
+      record_reopen! if closed_resolution_pending_reassessment?
+      return resolve_absent_label unless hold.issue.has_label?(hold.label)
       return request_operator_review unless hold.supported_release_condition?
       return Result.new(released: false, reason: "Planning hold needs operator reconciliation.") unless hold.releasable?
       return Result.new(released: false, reason: "Planning hold release condition is not satisfied.") unless condition_satisfied?
@@ -50,7 +54,10 @@ module AgentPlanningHolds
     end
 
     def attach_synced_issue!
-      return if hold.issue
+      if hold.issue
+        hold.issue.reload
+        return
+      end
 
       issue = project.issues.find_by(github_number: hold.remote_issue_number)
       hold.update!(issue:) if issue
@@ -81,9 +88,69 @@ module AgentPlanningHolds
       Result.new(released: false, reason: "Planning hold release condition requires operator review.")
     end
 
+    def retire_closed_issue
+      hold.update!(
+        status: "needs_review",
+        reconciled_at: Time.current,
+        last_error: nil,
+        evidence: evidence_with_closed_resolution
+      ) unless closed_resolution_recorded?
+      resolve_notification
+      Result.new(released: false, reason: "Planning hold is obsolete while its issue is closed.")
+    end
+
+    def resolve_absent_label
+      resolve_notification
+      Result.new(released: false, reason: "Planning hold label is absent.")
+    end
+
+    def closed_resolution_recorded?
+      hold.evidence.dig("closure_resolution", "reopened_at").nil? && hold.evidence.key?("closure_resolution")
+    end
+
+    def closed_resolution_pending_reassessment?
+      hold.evidence.key?("closure_resolution") && hold.evidence.dig("closure_resolution", "reopened_at").nil?
+    end
+
+    def evidence_with_closed_resolution
+      prior_resolution = {
+        "closed_at" => Time.current.iso8601,
+        "status" => hold.status,
+        "last_error" => hold.last_error
+      }.compact
+      evidence = hold.evidence.deep_dup
+      evidence["closure_resolutions"] = Array(evidence["closure_resolutions"]) + [ prior_resolution ]
+      evidence["closure_resolution"] = prior_resolution.merge("reopened_at" => nil)
+      evidence
+    end
+
+    def record_reopen!
+      evidence = hold.evidence.deep_dup
+      evidence["closure_resolution"] = evidence.fetch("closure_resolution").merge("reopened_at" => Time.current.iso8601)
+      hold.update!(evidence:)
+    end
+
     def resolve_notification
-      Notification.where(account: project.account, source: "agent_planning_hold_reconciliation", subject: hold.issue)
-        .update_all(resolved_at: Time.current, updated_at: Time.current)
+      notifications.find_each do |notification|
+        next if notification.resolved_at.present?
+
+        notification.update!(
+          resolved_at: Time.current,
+          metadata: notification.metadata.merge(
+            "resolution_history" => Array(notification.metadata["resolution_history"]) + [
+              { "action" => "closed_issue", "at" => Time.current.iso8601 }
+            ]
+          )
+        )
+      end
+    end
+
+    def notifications
+      scope = Notification.where(account: project.account, source: "agent_planning_hold_reconciliation")
+      issue_notifications = scope.where(subject: hold.issue)
+      return issue_notifications unless hold.agent_run
+
+      issue_notifications.or(scope.where(subject: hold.agent_run))
     end
 
     def client = project.client

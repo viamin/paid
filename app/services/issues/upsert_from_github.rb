@@ -40,6 +40,7 @@ module Issues
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
       require_reopen_review(issue, was_closed: was_closed)
+      AgentPlanningHolds::ReconcileIssueLifecycle.call(issue: issue)
       maybe_unpark_recommend_close_dependents(issue, was_open: was_open)
       maybe_clear_recommend_close(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       sync_priority_labels_to_pull_request(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
