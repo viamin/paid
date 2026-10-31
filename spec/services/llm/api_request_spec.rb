@@ -13,6 +13,22 @@ RSpec.describe Llm::ApiRequest do
     allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(transport)
   end
 
+  # @spec LLM-ROUTING-003
+  it "passes a positional request to the real harness transport" do
+    adapter = instance_double(AgentHarness::Api::RubyLlmChatAdapter,
+      prepare: Object.new,
+      call: { content: "assessment", usage: { input_tokens: 2, output_tokens: 1 } })
+    allow(AgentHarness::Api::ChatTransport).to receive(:new).and_call_original
+    real_transport = AgentHarness::Api::ChatTransport.new(adapter: adapter)
+    allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(real_transport)
+
+    result = described_class.call(runner: runner, runtime: runtime, prompt: "Assess", timeout: 30)
+
+    expect(result).to be_success
+    expect(result.output).to eq("assessment")
+    expect(adapter).to have_received(:call).once
+  end
+
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
   it "uses the selected API credential without running a CLI" do
     allow(transport).to receive(:call).and_return(status: :succeeded, content: "assessment", model: "reported-model",
