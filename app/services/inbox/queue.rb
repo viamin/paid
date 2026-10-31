@@ -1025,7 +1025,7 @@ module Inbox
     # A cycle is a property of the persisted account graph, not an issue state:
     # represent it once under a deterministic component fingerprint so a user
     # dismissal cannot hide an unrelated issue's ordinary Inbox entry.
-    # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016
+    # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-020
     def dependency_cycle_entries
       visible_projects.group_by(&:account).flat_map do |account, authorized_projects|
         authorized_project_ids = authorized_projects.map(&:id).to_set

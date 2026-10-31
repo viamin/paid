@@ -184,6 +184,7 @@ class ApplicationJob < ActiveJob::Base
       AnomalyDetectionJob,
       CaptureAgentRunSessionSummaryJob,
       ContainerMetricsCollectionJob,
+      CycleAnalysisJob,
       DiagnoseErrorJob,
       FailureRecoveryDecisionJob,
       HumanFeedbackCollectionJob,

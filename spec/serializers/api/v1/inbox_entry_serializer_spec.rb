@@ -275,7 +275,7 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload[:summary]).not_to include("Traceability gap")
     end
 
-    # @spec AUTO-PICK-QUEUE-016
+    # @spec AUTO-PICK-QUEUE-020
     it "serializes dependency_cycle path/edge nodes with title, labels, and authorized umbrella context" do
       parent = create(:issue, project: project, title: "Ship the whole epic")
       first = create(:issue, project: project, github_state: "open", parent_issue: parent, labels: [ "bug" ])

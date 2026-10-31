@@ -551,7 +551,9 @@ module ApplicationHelper
     "technical_prerequisite_validation" => "Prerequisite Validation",
     # @spec LAYERED-VERIFY-013
     "layered_verification_audit" => "Layered Verification Audit",
-    "layered_verification_repair" => "Layered Verification Repair"
+    "layered_verification_repair" => "Layered Verification Repair",
+    # @spec AUTO-PICK-QUEUE-016
+    "cycle_analysis" => "Dependency Cycle Analysis"
   }.freeze
 
   AGENT_RUN_FOCUS_LABELS = {

@@ -96,6 +96,7 @@ RSpec.describe ApplicationJob, :no_db do
         StyleGuideExtractionJob
       ],
       low_priority: %w[
+        CycleAnalysisJob
         DashboardBroadcastJob
         DelayedHumanFeedbackCollectionJob
         LiveDashboardBroadcastJob

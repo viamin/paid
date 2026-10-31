@@ -60,7 +60,7 @@ RSpec.describe Inbox::Queue do
     expect(payload.fetch(:downstream_issues_held)).to eq(1)
   end
 
-  # @spec AUTO-PICK-QUEUE-016
+  # @spec AUTO-PICK-QUEUE-020
   it "exposes an umbrella issue linked from a visible path issue" do
     user = create(:user)
     project = create(:project, account: user.account, created_by: user)
@@ -79,7 +79,7 @@ RSpec.describe Inbox::Queue do
   # cross-project parent link can only exist as legacy data written before
   # that guard (mirroring how a dependency cycle itself only survives as a
   # pre-guard legacy artifact). Bypass validation here to simulate that.
-  # @spec AUTO-PICK-QUEUE-016
+  # @spec AUTO-PICK-QUEUE-020
   it "does not expose an umbrella issue from another owner's project" do
     user = create(:user)
     other_user = create(:user, account: user.account)

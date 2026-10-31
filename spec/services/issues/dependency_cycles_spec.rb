@@ -56,6 +56,20 @@ RSpec.describe Issues::DependencyCycles do
     expect(cycle.path_edges.map(&:declaration_url)).to contain_exactly(first_url, second_url)
   end
 
+  # @spec AUTO-PICK-QUEUE-017 AUTO-PICK-QUEUE-018
+  it "retains every effective edge in a multi-edge strongly connected group" do
+    issues = graph([ 1, 2, 3 ])
+    connect(issues, [ [ 0, 1 ], [ 1, 2 ], [ 2, 0 ], [ 0, 2 ] ])
+
+    cycle = described_class.call(account:).sole
+
+    expect(cycle.effective_edges.map { |edge| [ edge.from_id, edge.to_id ] }).to contain_exactly(
+      [ issues[0].id, issues[1].id ], [ issues[1].id, issues[2].id ],
+      [ issues[2].id, issues[0].id ], [ issues[0].id, issues[2].id ]
+    )
+    expect(cycle.graph_revision).to eq(cycle.occurrence)
+  end
+
   it "keeps accounts isolated and ignores nonblocking targets" do
     other_project = create(:project)
     local = graph([ 1, 2 ])
@@ -68,7 +82,7 @@ RSpec.describe Issues::DependencyCycles do
     expect(described_class.call(account:)).to be_empty
   end
 
-  # @spec AUTO-PICK-QUEUE-016
+  # @spec AUTO-PICK-QUEUE-020
   it "returns the linked parent issue as umbrella context when visibility is unrestricted" do
     parent = create(:issue, project:)
     issues = graph([ 1, 2 ])
@@ -81,7 +95,7 @@ RSpec.describe Issues::DependencyCycles do
     expect(cycle.umbrella_for(issues[1])).to be_nil
   end
 
-  # @spec AUTO-PICK-QUEUE-016
+  # @spec AUTO-PICK-QUEUE-020
   it "omits umbrella context once visibility is restricted away from the parent's project" do
     parent = create(:issue, project:)
     issues = graph([ 1, 2 ])

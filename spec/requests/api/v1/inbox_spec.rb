@@ -76,6 +76,7 @@ RSpec.describe "Mobile inbox API" do
     get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
 
     entry = response.parsed_body.fetch("entries").sole
+    expect(entry).not_to have_key("analysis_run")
     expect(entry.fetch("cycle_path").map { |node| node.fetch("number") }).to include(first.github_number, second.github_number)
     expect(entry.fetch("cycle_edges")).to include(
       a_hash_including("declaration_source" => "issue_comment", "declaration_url" => declaration_url)
@@ -87,7 +88,31 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("entry", "id")).to eq(entry.fetch("id"))
   end
 
-  # @spec AUTO-PICK-QUEUE-016 MOBILE-API-006
+  # @spec AUTO-PICK-QUEUE-019 MOBILE-API-006
+  it "keeps a prior analysis visible and marks it stale after the cycle edges change" do
+    issues = Array.new(3) { create(:issue, project:, github_state: "open") }
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1])
+    create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
+    create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
+    cycle = Issues::DependencyCycles.call(account:).sole
+    run = create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
+        "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
+      verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => "Review all declarations.",
+        "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ], "unavailable_content_issue_ids" => [ issues.first.id ] } } })
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[2])
+    current_cycle = Issues::DependencyCycles.call(account:).sole
+
+    get "/api/v1/inbox/entries/#{current_cycle.id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "analysis_run")).to include(
+      "id" => run.id, "stale" => true, "recommendation" => "Review all declarations.",
+      "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ], "unavailable_content_issue_ids" => [ issues.first.id ] }
+    )
+  end
+
+  # @spec AUTO-PICK-QUEUE-020 MOBILE-API-006
   it "exposes title, labels, and authorized umbrella context on every cycle path and edge node" do
     parent = create(:issue, project:, title: "Ship the whole epic")
     first = create(:issue, project:, github_state: "open", parent_issue: parent, labels: [ "bug" ])
@@ -112,7 +137,7 @@ RSpec.describe "Mobile inbox API" do
   # parent can only exist as a legacy artifact predating that guard, written
   # here via update_columns to simulate it (mirrors how a persisted cycle
   # itself only survives as a pre-guard legacy artifact).
-  # @spec AUTO-PICK-QUEUE-016 MOBILE-API-006
+  # @spec AUTO-PICK-QUEUE-020 MOBILE-API-006
   it "omits umbrella context when the linked parent belongs to another owner's project" do
     other_user = create(:user, account:)
     hidden_project = create(:project, account:, created_by: other_user)

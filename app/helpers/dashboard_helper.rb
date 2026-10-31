@@ -237,19 +237,19 @@ module DashboardHelper
     "View #{issue_kind_label(issue)}"
   end
 
-  # @spec AUTO-PICK-QUEUE-016
+  # @spec AUTO-PICK-QUEUE-020
   def dependency_cycle_issue_ref(issue)
     "#{issue.project.full_name}##{issue.github_number}"
   end
 
   # Full "owner/repo#number — Title" text for the hover tooltip and the
   # screen-reader accessible name; the visible link text truncates so a long
-  # title cannot blow out narrow layouts (AUTO-PICK-QUEUE-016).
+  # title cannot blow out narrow layouts (AUTO-PICK-QUEUE-020).
   def dependency_cycle_issue_tooltip(issue)
     "#{dependency_cycle_issue_ref(issue)} — #{issue.title}"
   end
 
-  # @spec AUTO-PICK-QUEUE-016
+  # @spec AUTO-PICK-QUEUE-020
   def dependency_cycle_issue_link(issue, css_class: "font-medium text-indigo-600 hover:text-indigo-500")
     tooltip = dependency_cycle_issue_tooltip(issue)
     link_to issue.github_url, target: "_blank", rel: "noopener noreferrer", title: tooltip,
@@ -259,7 +259,7 @@ module DashboardHelper
   end
 
   # Linked umbrella number/title for a path issue, when one is recorded and
-  # authorized for this viewer; blank otherwise (AUTO-PICK-QUEUE-016).
+  # authorized for this viewer; blank otherwise (AUTO-PICK-QUEUE-020).
   def dependency_cycle_umbrella_link(cycle, issue)
     parent = cycle.umbrella_for(issue)
     return if parent.blank?
@@ -271,7 +271,7 @@ module DashboardHelper
   end
 
   # Readable, wrapping label badges for a path issue, reusing the same
-  # priority-aware styling as the project issue list (AUTO-PICK-QUEUE-016).
+  # priority-aware styling as the project issue list (AUTO-PICK-QUEUE-020).
   def dependency_cycle_label_badges(issue)
     return if issue.labels.blank?
 

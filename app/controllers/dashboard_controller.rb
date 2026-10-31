@@ -64,6 +64,16 @@ class DashboardController < ApplicationController
     ), status: :see_other
   end
 
+  # @spec AUTO-PICK-QUEUE-016
+  def start_cycle_analysis
+    cycle = Issues::DependencyCycles.call(account: current_account).find { |candidate| candidate.occurrence == params[:occurrence] }
+    return redirect_to(inbox_path, alert: "That dependency cycle is no longer present.") unless cycle
+
+    cycle.project_ids.each { |project_id| authorize current_account.projects.find(project_id), :run_agent? }
+    result = CycleAnalyses::Start.call(cycle:, actor: current_user)
+    redirect_to inbox_path, notice: result.message
+  end
+
   def metrics
     @time_range = valid_time_range
     @stats = Dashboard::Stats.call(
