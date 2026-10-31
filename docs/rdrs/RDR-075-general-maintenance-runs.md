@@ -249,12 +249,12 @@ bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy. The
-candidate optimization-recipe policy is drafted in
-[`docs/intent/optimization-recipes/`](../intent/optimization-recipes/optimization-recipes-design.md);
-it is unaccepted pending #4636's explicit owner decision, and this RDR's own
-scope is unchanged. The draft records #4495's owner decisions as provenance;
-those decisions do not themselves accept the canonical HLD/LLD/EARS revision
-or authorize implementation.
+optimization-recipe policy in
+[`docs/intent/optimization-recipes/`](../intent/optimization-recipes/optimization-recipes-design.md)
+was [accepted by the owner](https://github.com/viamin/paid/issues/4636#issuecomment-6534710003)
+on 2026-10-30. This RDR's scope remains unchanged, and the policy decision
+does not enable maintenance runs, authorize automatic repair rollout, or
+waive the base maintenance prerequisites.
 
 ### PR integration
 
