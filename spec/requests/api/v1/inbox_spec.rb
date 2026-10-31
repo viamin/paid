@@ -98,7 +98,8 @@ RSpec.describe "Mobile inbox API" do
     run = create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
         "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
-      verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => "Review all declarations." } })
+      verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => "Review all declarations.",
+        "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ], "unavailable_content_issue_ids" => [ issues.first.id ] } } })
     create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[2])
     current_cycle = Issues::DependencyCycles.call(account:).sole
 
@@ -106,7 +107,8 @@ RSpec.describe "Mobile inbox API" do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig("entry", "analysis_run")).to include(
-      "id" => run.id, "stale" => true, "recommendation" => "Review all declarations."
+      "id" => run.id, "stale" => true, "recommendation" => "Review all declarations.",
+      "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ], "unavailable_content_issue_ids" => [ issues.first.id ] }
     )
   end
 

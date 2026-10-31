@@ -45,10 +45,11 @@ RSpec.describe CycleAnalyses::Start do
       goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
 
-    expect { @result = described_class.call(cycle:, actor: user) }.not_to change(AgentRun, :count)
+    result = nil
+    expect { result = described_class.call(cycle:, actor: user) }.not_to change(AgentRun, :count)
 
-    expect(@result).not_to be_success
-    expect(@result.agent_run).to eq(completed)
+    expect(result).not_to be_success
+    expect(result.agent_run).to eq(completed)
   end
 
   # @spec AUTO-PICK-QUEUE-016
@@ -62,7 +63,8 @@ RSpec.describe CycleAnalyses::Start do
 
     changed_cycle = cycle.with(occurrence: "#{cycle.occurrence}:changed")
 
-    expect { @result = described_class.call(cycle: changed_cycle, actor: user) }.to change(AgentRun, :count).by(1)
-    expect(@result).to be_success
+    result = nil
+    expect { result = described_class.call(cycle: changed_cycle, actor: user) }.to change(AgentRun, :count).by(1)
+    expect(result).to be_success
   end
 end

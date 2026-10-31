@@ -62,6 +62,22 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  def cycle_analysis_run(status: "completed")
+    issues = Array.new(3) { create(:issue, project:, github_state: "open") }
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1])
+    create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
+    create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
+    cycle = Issues::DependencyCycles.call(account:).sole
+    result = { "recommendation" => "Remove the obsolete declaration.",
+               "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ],
+                                 "unavailable_content_issue_ids" => [ issues.first.id ] } }
+    run = create(:agent_run, status:, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
+        "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
+      verification_result: { CycleAnalyses::RESULT_KEY => result })
+    [ issues, cycle, run ]
+  end
+
   # @spec AUTO-PICK-QUEUE-015
   it "links each cycle edge to its persisted GitHub declaration provenance" do
     first = create(:issue, project:, github_state: "open")
@@ -80,17 +96,20 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("declaration source unavailable")
   end
 
-  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-019
-  it "renders completed, stale, and failed cycle-analysis runs" do
-    issues = Array.new(3) { create(:issue, project:, github_state: "open") }
-    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1])
-    create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
-    create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
-    cycle = Issues::DependencyCycles.call(account:).sole
-    run = create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
-      external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
-        "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
-      verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => "Remove the obsolete declaration." } })
+  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-017
+  it "renders a completed cycle analysis with unavailable evidence coverage" do
+    _issues, cycle, = cycle_analysis_run
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Remove the obsolete declaration.", "Unavailable evidence coverage")
+    expect(response.body).to include("Edge IDs without declaration provenance: 41")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "renders a stale cycle analysis as retryable" do
+    issues, _cycle, = cycle_analysis_run
     create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[2])
     current_cycle = Issues::DependencyCycles.call(account:).sole
 
@@ -99,18 +118,13 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Remove the obsolete declaration.", "stale")
     expect(response.body).to include("Start cycle analysis")
+  end
 
-    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => {
-      "fingerprint" => current_cycle.fingerprint, "occurrence" => current_cycle.occurrence,
-      "graph_revision" => current_cycle.graph_revision
-    } })
-    get inbox_entry_path(current_cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+  # @spec AUTO-PICK-QUEUE-016
+  it "renders a failed cycle analysis as retryable" do
+    _issues, cycle, = cycle_analysis_run(status: "failed")
 
-    expect(response).to have_http_status(:ok)
-    expect(response.body).not_to include("Start cycle analysis")
-
-    run.update!(status: "failed")
-    get inbox_entry_path(current_cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Retry cycle analysis")
