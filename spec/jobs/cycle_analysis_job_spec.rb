@@ -6,7 +6,7 @@ RSpec.describe CycleAnalysisJob do
   # @spec AUTO-PICK-QUEUE-016
   it "preserves cancellation while analysis is in progress" do
     run = cycle_run
-    response = AgentHarness::Response.new(output: recommendation.to_json, exit_code: 0,
+    response = AgentHarness::Response.new(output: recommendation(run).to_json, exit_code: 0,
       duration: 1.0, provider: :codex)
     allow(Llm::Request).to receive(:call) do
       AgentRuns::Cancel.call(agent_run: run)
@@ -17,6 +17,22 @@ RSpec.describe CycleAnalysisJob do
     described_class.new.perform(run.id)
 
     expect(run.reload).to have_attributes(status: "cancelled", verification_result: {})
+  end
+
+  # @spec AUTO-PICK-QUEUE-016
+  it "performs the analysis in the run project's tenant context" do
+    run = cycle_run
+    response = AgentHarness::Response.new(output: recommendation(run).to_json, exit_code: 0,
+      duration: 1.0, provider: :codex)
+    allow(Llm::Request).to receive(:call) do
+      expect(Current.account).to eq(run.project.account)
+      response
+    end
+    stub_comments
+
+    described_class.perform_now(run.id)
+
+    expect(run.reload.status).to eq("completed")
   end
 
   # @spec AUTO-PICK-QUEUE-016
@@ -58,15 +74,16 @@ RSpec.describe CycleAnalysisJob do
     expect(run.error_message).not_to include(secret)
   end
 
-  def recommendation
+  def recommendation(run)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     {
       summary: "Review both declarations.",
       candidates: [ {
-        declaration_changes: [ { edge_id: 1, action: "remove" } ],
+        declaration_changes: [ { edge_id: snapshot.fetch("effective_edges").first.fetch("id"), action: "remove" } ],
         evidence: [ "The declaration is obsolete." ],
         tradeoffs: [ "Work may become eligible sooner." ],
         missing_or_conflicting_intent: [],
-        resulting_graph: { issue_ids: [ 1, 2 ], edges: [] },
+        resulting_graph: { issue_ids: snapshot.fetch("issues").pluck("id"), edges: [] },
         acyclic: true
       } ]
     }

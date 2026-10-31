@@ -14,7 +14,7 @@ module CycleAnalyses
     def call
       response = llm.call(prompt: prompt, agent_run:, timeout: 5.minutes)
       validate_response!(response)
-      { "recommendation" => Response.parse(response.output), "coverage" => coverage,
+      { "recommendation" => Response.parse(response.output, snapshot:), "coverage" => coverage,
         "graph_revision" => snapshot.fetch("graph_revision") }
     end
 

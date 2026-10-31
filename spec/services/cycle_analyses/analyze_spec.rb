@@ -3,21 +3,21 @@
 require "rails_helper"
 
 RSpec.describe CycleAnalyses::Analyze do
-  def analysis_output
+  def analysis_output(snapshot)
     {
       "summary" => "Review both declarations before changing either one.",
       "candidates" => [ {
-        "declaration_changes" => [ { "edge_id" => 1, "action" => "remove" } ],
+        "declaration_changes" => [ { "edge_id" => snapshot.fetch("effective_edges").first.fetch("id"), "action" => "remove" } ],
         "evidence" => [ "Issue intent makes the declaration obsolete." ],
         "tradeoffs" => [ "Work may become eligible sooner." ],
         "missing_or_conflicting_intent" => [],
-        "resulting_graph" => { "issue_ids" => [ 1, 2 ], "edges" => [] },
+        "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"), "edges" => [] },
         "acyclic" => true
       } ]
     }
   end
 
-  def harness_response(output: analysis_output.to_json, exit_code: 0, error: nil)
+  def harness_response(snapshot:, output: analysis_output(snapshot).to_json, exit_code: 0, error: nil)
     AgentHarness::Response.new(output:, exit_code:, error:, duration: 1.0, provider: :codex)
   end
 
@@ -41,14 +41,15 @@ RSpec.describe CycleAnalyses::Analyze do
     cycle = Issues::DependencyCycles.call(account: user.account).sole
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     llm = class_double(Llm::Request)
-    allow(llm).to receive(:call).and_return(harness_response)
+    allow(llm).to receive(:call).and_return(harness_response(snapshot:))
     stub_comments([])
 
     result = described_class.call(agent_run: run, llm:)
 
     expect(llm).to have_received(:call) { |prompt:, **| expect(prompt).to include("effective_edges", "Implementation phase", "unavailable_provenance_edge_ids") }
-    expect(result).to include("recommendation" => analysis_output, "graph_revision" => cycle.graph_revision)
+    expect(result).to include("recommendation" => analysis_output(snapshot), "graph_revision" => cycle.graph_revision)
   end
 
   it "caps issue and trusted-comment content in the prompt" do
@@ -62,10 +63,11 @@ RSpec.describe CycleAnalyses::Analyze do
     cycle = Issues::DependencyCycles.call(account: user.account).sole
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     comment = { user: { login: "viamin" }, body: "b" * (limit + 1), html_url: "https://example.test/comment" }
     stub_comments([ comment ])
     llm = class_double(Llm::Request)
-    allow(llm).to receive(:call).and_return(harness_response)
+    allow(llm).to receive(:call).and_return(harness_response(snapshot:))
 
     described_class.call(agent_run: run, llm:)
 
@@ -86,9 +88,10 @@ RSpec.describe CycleAnalyses::Analyze do
     cycle = Issues::DependencyCycles.call(account: user.account).sole
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     edge.destroy!
     stub_comments([])
-    llm = class_double(Llm::Request, call: harness_response)
+    llm = class_double(Llm::Request, call: harness_response(snapshot:))
 
     result = described_class.call(agent_run: run, llm:)
 
@@ -107,8 +110,9 @@ RSpec.describe CycleAnalyses::Analyze do
     cycle = Issues::DependencyCycles.call(account: user.account).sole
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     stub_request(:get, %r{api.github.com/repos/.*/issues/\d+/comments}).to_return(status: 503)
-    llm = class_double(Llm::Request, call: harness_response)
+    llm = class_double(Llm::Request, call: harness_response(snapshot:))
 
     result = described_class.call(agent_run: run, llm:)
 
@@ -126,8 +130,9 @@ RSpec.describe CycleAnalyses::Analyze do
     cycle = Issues::DependencyCycles.call(account: user.account).sole
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     stub_comments([])
-    llm = class_double(Llm::Request, call: harness_response(output: "recommendation"))
+    llm = class_double(Llm::Request, call: harness_response(snapshot:, output: "recommendation"))
 
     expect { described_class.call(agent_run: run, llm:) }
       .to raise_error(CycleAnalyses::InvalidResponse, /valid JSON/)
@@ -144,8 +149,9 @@ RSpec.describe CycleAnalyses::Analyze do
     cycle = Issues::DependencyCycles.call(account: user.account).sole
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     stub_comments([])
-    llm = class_double(Llm::Request, call: harness_response(exit_code: 1, error: "runner failed"))
+    llm = class_double(Llm::Request, call: harness_response(snapshot:, exit_code: 1, error: "runner failed"))
 
     expect { described_class.call(agent_run: run, llm:) }
       .to raise_error(AgentHarness::CommandExecutionError, "Cycle analysis failed: runner failed")
