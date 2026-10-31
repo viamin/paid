@@ -2371,8 +2371,10 @@ RSpec.describe "Inbox" do
       "View evidence")
     expect(response.body).to include(
       project_agent_run_path(project, finding.agent_run),
+      "#{project_agent_run_path(project, finding.agent_run)}#layered-verification-coverage",
       "#{project.github_url}/blob/abc123/docs/intent/payments-specs.md"
     )
+    expect(response.body).to include('data-turbo-frame="_top"')
     expect(response.body).not_to include("Approve plan", "Reject plan", "Revise plan")
 
     post inbox_layered_verification_finding_decision_path(key), params: {
