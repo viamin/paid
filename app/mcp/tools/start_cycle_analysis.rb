@@ -6,6 +6,8 @@ module Tools
 
     def self.tool_name = "start_cycle_analysis"
     def self.write_operation? = true
+    def self.mcp_available? = true
+    def self.available_to?(user:) = run_agent_available_to?(user:)
 
     def self.description = "Start a read-only analysis for one dependency-cycle Inbox occurrence. Requires confirmation and run authority for every represented project."
 

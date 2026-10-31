@@ -9,13 +9,9 @@ class CycleAnalysisJob < ApplicationJob
     return unless claim!(agent_run)
 
     result = CycleAnalyses::Analyze.call(agent_run:)
-    agent_run.update!(status: "completed", completed_at: Time.current,
-      verification_result: agent_run.verification_result.merge(CycleAnalyses::RESULT_KEY => result))
+    publish_result!(agent_run, result)
   rescue StandardError => error
-    unless agent_run&.finished?
-      message = AgentRun::ErrorMessageSanitizer.call(text: error.message)
-      agent_run&.update!(status: "failed", completed_at: Time.current, error_message: message)
-    end
+    fail_run!(agent_run, error) if agent_run
     raise
   end
 
@@ -28,5 +24,25 @@ class CycleAnalysisJob < ApplicationJob
       agent_run.update!(status: "running", started_at: Time.current)
     end
     true
+  end
+
+  def publish_result!(agent_run, result)
+    agent_run.with_lock do
+      agent_run.reload
+      return if agent_run.finished?
+
+      agent_run.update!(status: "completed", completed_at: Time.current,
+        verification_result: agent_run.verification_result.merge(CycleAnalyses::RESULT_KEY => result))
+    end
+  end
+
+  def fail_run!(agent_run, error)
+    agent_run.with_lock do
+      agent_run.reload
+      return if agent_run.finished?
+
+      message = AgentRun::ErrorMessageSanitizer.call(text: error.message)
+      agent_run.update!(status: "failed", completed_at: Time.current, error_message: message)
+    end
   end
 end

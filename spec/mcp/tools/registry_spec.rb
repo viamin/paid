@@ -23,6 +23,7 @@ RSpec.describe Tools::Registry do
       request_issue_continuation
       request_acceptance_audit
       request_layered_verification_audit
+      start_cycle_analysis
       resolve_issue_closeout
       resolve_reopen_review
       record_change_intent
@@ -233,13 +234,14 @@ RSpec.describe Tools::Registry do
       ENV["PAID_OPERATOR_EMAILS"] = original_emails
     end
 
-    it "advertises only read-only tools on the raw MCP surface" do
+    it "advertises read-only and explicitly opted-in write tools on the raw MCP surface" do
       create(:project_membership, :member, user: user, project: project)
 
       definitions = described_class.mcp_definitions_for(user: user)
       names = definitions.map { |definition| definition[:name] }
 
-      expect(names).to include("list_projects", "get_project", "operator_console_inventory")
+      # @spec AUTO-PICK-QUEUE-016
+      expect(names).to include("list_projects", "get_project", "operator_console_inventory", "start_cycle_analysis")
       expect(names).not_to include("trigger_agent_run", "present_chat_diagram", "operator_suspend_account")
     end
   end
