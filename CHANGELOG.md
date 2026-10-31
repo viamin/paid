@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.15.0](https://github.com/viamin/paid/compare/v1.14.0...v1.15.0) (2026-10-31)
+
+
+### Features
+
+* Collect focused validation evidence for unexpected-analysis cooldown behavior ([#4820](https://github.com/viamin/paid/issues/4820)) ([e08f9b6](https://github.com/viamin/paid/commit/e08f9b6edce43ab44b6a2c13e7179b0ca3a189b5))
+* **dependencies:** add reviewable cycle breaker agent analysis ([#4807](https://github.com/viamin/paid/issues/4807)) ([36d7048](https://github.com/viamin/paid/commit/36d7048a82c50bad301cbae59624564c8db443a1))
+* **inbox:** show titles, labels, and umbrella context for dependency cycles ([#4806](https://github.com/viamin/paid/issues/4806)) ([7644eda](https://github.com/viamin/paid/commit/7644eda9e70d554f870c5c78935146c59aa9d101))
+* Issue analysis should select a standalone-capable runner credential ([#4817](https://github.com/viamin/paid/issues/4817)) ([a934108](https://github.com/viamin/paid/commit/a9341083b20009948376d133057806a53676a10f))
+* RDR-076: Phase 2: manual audit runs, reports and Inbox decisions ([#4805](https://github.com/viamin/paid/issues/4805)) ([955a13d](https://github.com/viamin/paid/commit/955a13d490ea7e3b65082a1a01406091be1a6723))
+
+
+### Bug Fixes
+
+* back off unexpected issue analysis errors ([#4818](https://github.com/viamin/paid/issues/4818)) ([867ac78](https://github.com/viamin/paid/commit/867ac785c159d75ead114bf3b06355c40f5c3631))
+* **ci:** remove stray ephemeral test files from main ([#4733](https://github.com/viamin/paid/issues/4733)) ([1e04f9a](https://github.com/viamin/paid/commit/1e04f9a2f67e362168fa0ce7ec8f182a4dd0e1e9))
+* **inbox:** retire planning-hold requests for closed issues ([#4816](https://github.com/viamin/paid/issues/4816)) ([7b3be7e](https://github.com/viamin/paid/commit/7b3be7e676419856434cea2c8ab608c0303793e1))
+* **llm:** pass request hash to harness chat transport ([#4815](https://github.com/viamin/paid/issues/4815)) ([92a6728](https://github.com/viamin/paid/commit/92a6728e2d1d4ac4a9d11566de910b8610b54255))
+* **prompt-assembly:** record unavailable trusted comments ([#4809](https://github.com/viamin/paid/issues/4809)) ([1d3c865](https://github.com/viamin/paid/commit/1d3c865c34c6dd0528d6370396354867c9443b8a))
+
 ## [1.14.0](https://github.com/viamin/paid/compare/v1.13.0...v1.14.0) (2026-10-30)
 
 
