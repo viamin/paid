@@ -1082,8 +1082,8 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
 
       expect(attempted).to eq([ :claude, :codex ])
-      expect_failed_then_completed_provider_phases!(agent_run.reload)
-      expect_diagnostics_for_failover_provider!(agent_run)
+      expect_failed_then_completed_provider_phases!(agent_run.reload, owner)
+      expect_diagnostics_for_failover_provider!(agent_run, owner)
       expect_claude_circuit_breaker_incremented!(owner)
     end
   end

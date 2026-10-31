@@ -277,7 +277,7 @@ module Activities
         log_failed_response(agent_run, provider, e.response)
         category = classify_response_error(e.response)
         record_provider_attempt_failure!(
-          agent_run: agent_run, provider: provider, attempt: index + 1, category: category,
+          agent_run: agent_run, provider: provider_name(user_setting, provider), attempt: index + 1, category: category,
           exit_code: e.response.respond_to?(:exit_code) ? e.response.exit_code : nil,
           message: e.response.respond_to?(:error) ? e.response.error : nil
         )
@@ -293,7 +293,7 @@ module Activities
         record_runner_rate_limit(user_setting, provider, reset_at: e.reset_time)
         log_provider_failure(agent_run, provider, e)
         record_provider_attempt_failure!(
-          agent_run: agent_run, provider: provider, attempt: index + 1, category: :rate_limited,
+          agent_run: agent_run, provider: provider_name(user_setting, provider), attempt: index + 1, category: :rate_limited,
           exit_code: nil, message: e.message
         )
         attempted_failures << { provider: provider_name(user_setting, provider), category: :rate_limited }
@@ -301,7 +301,7 @@ module Activities
         record_runner_auth_failure(user_setting, provider)
         log_provider_failure(agent_run, provider, e)
         record_provider_attempt_failure!(
-          agent_run: agent_run, provider: provider, attempt: index + 1, category: :auth_expired,
+          agent_run: agent_run, provider: provider_name(user_setting, provider), attempt: index + 1, category: :auth_expired,
           exit_code: nil, message: e.message
         )
         attempted_failures << { provider: provider_name(user_setting, provider), category: :auth_expired }
@@ -310,7 +310,7 @@ module Activities
         log_provider_failure(agent_run, provider, e)
         category = failure_category_for(e)
         record_provider_attempt_failure!(
-          agent_run: agent_run, provider: provider, attempt: index + 1, category: category,
+          agent_run: agent_run, provider: provider_name(user_setting, provider), attempt: index + 1, category: category,
           exit_code: nil, message: e.message
         )
         attempted_failures << { provider: provider_name(user_setting, provider), category: category }
@@ -370,7 +370,10 @@ module Activities
     def record_response_failure(user_setting, provider, response)
       case classify_response_error(response)
       when :rate_limited
-        reset_at = RunnerSupport.rate_limit_reset_at(RunnerSupport.harness_for(provider), response.error)
+        # The routing identifier (runner:<id>) selects the credential; the
+        # harness itself is provider-keyed, so resolve the runner key first.
+        harness = RunnerSupport.harness_for(provider_name(user_setting, provider))
+        reset_at = RunnerSupport.rate_limit_reset_at(harness, response.error)
         record_runner_rate_limit(user_setting, provider, reset_at: reset_at)
         reset_at
       when :auth_expired

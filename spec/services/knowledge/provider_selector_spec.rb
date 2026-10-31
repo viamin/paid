@@ -172,7 +172,7 @@ RSpec.describe Knowledge::ProviderSelector do
   end
 
   # @spec ISSUE-ANALYSIS-014 LLM-ROUTING-005
-  describe ".available_standalone_chat_runner_keys" do
+  describe ".available_standalone_chat_runners" do
     before { user.runners.delete_all }
 
     it "preserves an API-key Codex routing identity when its subscription cannot disable tools" do
