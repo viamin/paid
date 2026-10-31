@@ -207,7 +207,8 @@ once and assembles ordered, provenance-tracked sections:
   (title, body, and instructions).
 - `trusted_comments` — collaborator comments, trust-classified via
   `Prompts::BuildForIssue.fetch_trusted_comments`; untrusted authors are
-  excluded.
+  excluded. If retrieval fails, the section remains empty and its skipped
+  provenance records the affected issue ID as unavailable coverage.
 - `clarified_requirements` — trusted clarifying-question answers.
 - `service_environment` — available services and database setup constraints.
 - `knowledge_context` (quarantined) — the knowledge-base codebase context.

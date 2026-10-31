@@ -15,8 +15,8 @@
 #   @return [AgentRun, nil]
 # @!attribute issue_comments
 #   @return [Array] pre-fetched trusted/raw issue comments (may be empty)
-PromptAssembly::Context = Data.define(:issue, :project, :github_client, :agent_run, :issue_comments) do
-  def initialize(issue: nil, project:, github_client: nil, agent_run: nil, issue_comments: [])
+PromptAssembly::Context = Data.define(:issue, :project, :github_client, :agent_run, :issue_comments, :unavailable_content_issue_ids) do
+  def initialize(issue: nil, project:, github_client: nil, agent_run: nil, issue_comments: [], unavailable_content_issue_ids: [])
     super
   end
 end

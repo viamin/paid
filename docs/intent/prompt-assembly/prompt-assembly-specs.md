@@ -40,8 +40,10 @@
   existing `Project#trusted_github_user?` allowlist (via
   `Prompts::BuildForIssue.fetch_trusted_comments` and
   `Prompts::BuildForPr.select_trusted_comments`) rather than introduce a second
-  allowlist policy.
-  *Code:* `PromptAssembly::Trust`.
+  allowlist policy. When trusted-comment retrieval is unavailable, the prompt
+  assembly SHALL retain the empty-comment fallback and record the affected issue
+  identifier as unavailable coverage in the trusted-comments provenance.
+  *Code:* `PromptAssembly::Trust`, `PromptAssembly::BuildIssuePrompt`.
 
 - [x] **PROMPT-ASSEMBLY-008** — When the `prompt_assembly` feature flag is
   enabled for a run's project, the migrated runner-time goal wrappers
