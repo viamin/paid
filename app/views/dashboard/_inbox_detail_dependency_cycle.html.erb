@@ -34,7 +34,7 @@
       <% end %>
     <% end %>
     <% if analysis_retryable %>
-      <%= form_with url: dashboard_cycle_analyses_path, class: "mt-3" do |form| %>
+      <%= form_with url: dashboard_cycle_analyses_path, class: "mt-3", data: { turbo_frame: "_top" } do |form| %>
         <%= form.hidden_field :occurrence, value: cycle.occurrence %>
         <%= form.submit analysis_run && AgentRun::TERMINAL_FAILURE_STATUSES.include?(analysis_run.status) ? "Retry cycle analysis" : "Start cycle analysis", class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
       <% end %>

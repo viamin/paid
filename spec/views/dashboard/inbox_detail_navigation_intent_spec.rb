@@ -652,9 +652,9 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       Struct.new(:declaration_source, :declaration_url).new("issue_comment", "https://github.com/acme/widgets/issues/42#issuecomment-1")
     end
     let(:cycle) do
-      Struct.new(:path, :path_edges, :downstream_issues) do
+      Struct.new(:path, :path_edges, :downstream_issues, :project, :fingerprint, :occurrence) do
         def umbrella_for(_issue) = nil
-      end.new([ entry_issue, entry_issue ], [ cycle_edge ], [])
+      end.new([ entry_issue, entry_issue ], [ cycle_edge ], [], entry_issue.project, "test-fingerprint", "state:dependency_cycle:test")
     end
     let(:entry) do
       build_entry.call(Inbox::Queue::DEPENDENCY_CYCLE_KIND,
