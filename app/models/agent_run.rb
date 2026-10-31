@@ -67,7 +67,6 @@ class AgentRun < ApplicationRecord
   OPERATIONAL_FAILURE_KEYWORDS = [
     "providers exhausted",
     "runners exhausted",
-    "unexpected application error",
     "Docker exec",
     "Activity task timed out",
     "Activity task failed",
@@ -115,8 +114,7 @@ class AgentRun < ApplicationRecord
   # page a human reviewer who cannot help.
   PROVIDER_UNAVAILABLE_KEYWORDS = [
     "providers exhausted",
-    "runners exhausted",
-    "unexpected application error"
+    "runners exhausted"
   ].freeze
   # GitHub rejects a push under .github/workflows/ (or any operation needing a
   # permission the App lacks) with a permanent error: "refusing to allow a

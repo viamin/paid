@@ -176,7 +176,10 @@ module Workflows
         end
 
         if goal == "analyze_issue"
-          result = run_analyze_issue_activity(agent_run_id, issue_goal_timeout_seconds)
+          result = run_activity(Activities::AnalyzeIssueActivity,
+            { agent_run_id: agent_run_id },
+            start_to_close_timeout: issue_goal_timeout_seconds,
+            retry_policy: NO_RETRY)
 
           unless result.is_a?(Hash) && result.key?(:sufficient_context)
             raise Temporalio::Error::ApplicationError.new(
@@ -790,53 +793,6 @@ module Workflows
       else
         error.message
       end
-    end
-
-    # @spec ISSUE-ANALYSIS-010
-    ANALYZE_ISSUE_EXPECTED_ERROR_TYPES = %w[
-      AnalyzeIssueInvalidJson
-      AnalyzeIssueLlmFailed
-      RateLimit
-      UntrustedIssue
-    ].freeze
-
-    def run_analyze_issue_activity(agent_run_id, timeout)
-      run_activity(Activities::AnalyzeIssueActivity,
-        { agent_run_id: agent_run_id },
-        start_to_close_timeout: timeout,
-        retry_policy: NO_RETRY)
-    rescue => error
-      raise unless unexpected_analysis_error?(error)
-
-      raise Temporalio::Error::ApplicationError.new(
-        unexpected_analysis_error_message(error),
-        type: "unexpected_application_error",
-        non_retryable: true
-      )
-    end
-
-    def unexpected_analysis_error?(error)
-      application_error = application_error_cause(error)
-      application_error.nil? || !ANALYZE_ISSUE_EXPECTED_ERROR_TYPES.include?(application_error.type)
-    end
-
-    def unexpected_analysis_error_message(error)
-      application_error = application_error_cause(error)
-      original = application_error || error
-      error_type = application_error&.type || original.class.name
-
-      "Unexpected application error (#{error_type}): #{original.message}"
-    end
-
-    def application_error_cause(error)
-      current = error
-      while current
-        return current if current.is_a?(Temporalio::Error::ApplicationError)
-
-        current = current.respond_to?(:cause) ? current.cause : nil
-      end
-
-      nil
     end
 
     def pre_runner_infra_error?(error_message)

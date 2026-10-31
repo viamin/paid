@@ -53,23 +53,6 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
     end
 
     # @spec ISSUE-ANALYSIS-010
-    it "records a bounded cooldown for an automatic unexpected application error" do
-      issue = create(:issue, :in_progress, project: project)
-      agent_run = create(:agent_run, :running, project: project, issue: issue,
-        goal: "analyze_issue", auto_pick: true)
-
-      freeze_time do
-        activity.execute(
-          agent_run_id: agent_run.id,
-          error: "Unexpected application error (RuntimeError): context bundle exploded"
-        )
-
-        expect(issue.reload.issue_analysis_next_attempt_at).to eq(5.minutes.from_now)
-        expect(agent_run.reload.error_message).to include("RuntimeError): context bundle exploded")
-      end
-    end
-
-    # @spec ISSUE-ANALYSIS-010
     it "caps the issue-level analyze_issue backoff for repeated automatic provider exhaustion failures" do
       issue = create(:issue, :in_progress, project: project)
       12.times do
@@ -112,15 +95,11 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: false)
 
-      activity.execute(
-        agent_run_id: agent_run.id,
-        error: "Unexpected application error (RuntimeError): manual retry failure"
-      )
+      activity.execute(agent_run_id: agent_run.id, error: "All issue-analysis providers exhausted: claude")
 
       issue.reload
       expect(issue.issue_analysis_backoff_set_at).to be_nil
       expect(issue.issue_analysis_next_attempt_at).to be_nil
-      expect(agent_run.reload.error_message).to include("RuntimeError): manual retry failure")
     end
 
     # @spec ISSUE-ENHANCEMENT-002

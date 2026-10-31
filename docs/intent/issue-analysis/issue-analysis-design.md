@@ -180,15 +180,13 @@ an empty candidate list to begin with) keeps the original non-retryable
 
 Non-rate-limit provider exhaustion is still an availability outage, but unlike
 `ISSUE-ANALYSIS-006` it does not have a provider-supplied reset time. When an
-**automatic** `analyze_issue` run fails with provider exhaustion or an
-unexpected application exception escapes the analysis activity
+**automatic** `analyze_issue` run fails with provider exhaustion
 (`ISSUE-ANALYSIS-010`), the issue records a bounded next-attempt timestamp on
 the `issues` row itself. The normal `paid_state = "failed"` re-enqueue hook is
 reused, but its delay is overridden to that persisted next-attempt time so the
 issue does not immediately re-enter auto-pick and churn.
 
-The backoff is issue-local and capped: repeated automatic exhaustion or
-unexpected-application failures
+The backoff is issue-local and capped: repeated automatic exhaustion failures
 for the same issue grow the wait window exponentially up to a fixed maximum.
 This keeps multiple eligible issues from amplifying one provider outage into an
 unbounded retry storm while still guaranteeing another bounded attempt later.
