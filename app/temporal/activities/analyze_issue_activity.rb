@@ -281,7 +281,7 @@ module Activities
           exit_code: e.response.respond_to?(:exit_code) ? e.response.exit_code : nil,
           message: e.response.respond_to?(:error) ? e.response.error : nil
         )
-        attempted_failures << { provider: provider.to_s, category: category }
+        attempted_failures << { provider: provider_name(user_setting, provider), category: category }
         reset_at = record_response_failure(user_setting, provider, e.response)
         if reset_at
           rate_limited_count += 1
@@ -296,7 +296,7 @@ module Activities
           agent_run: agent_run, provider: provider, attempt: index + 1, category: :rate_limited,
           exit_code: nil, message: e.message
         )
-        attempted_failures << { provider: provider.to_s, category: :rate_limited }
+        attempted_failures << { provider: provider_name(user_setting, provider), category: :rate_limited }
       rescue AgentHarness::AuthenticationError => e
         record_runner_auth_failure(user_setting, provider)
         log_provider_failure(agent_run, provider, e)
@@ -304,7 +304,7 @@ module Activities
           agent_run: agent_run, provider: provider, attempt: index + 1, category: :auth_expired,
           exit_code: nil, message: e.message
         )
-        attempted_failures << { provider: provider.to_s, category: :auth_expired }
+        attempted_failures << { provider: provider_name(user_setting, provider), category: :auth_expired }
       rescue AgentHarness::Error => e
         record_runner_failure(user_setting, provider)
         log_provider_failure(agent_run, provider, e)
@@ -313,7 +313,7 @@ module Activities
           agent_run: agent_run, provider: provider, attempt: index + 1, category: category,
           exit_code: nil, message: e.message
         )
-        attempted_failures << { provider: provider.to_s, category: category }
+        attempted_failures << { provider: provider_name(user_setting, provider), category: category }
       end
 
       raise_llm_failure!(agent_run, rate_limited_count, earliest_reset_at, attempted_failures)
@@ -439,7 +439,11 @@ module Activities
       setting = owner_user_setting(project) or return []
 
       # Primary: the owner's explicit issue-analysis runner selection.
-      providers = Knowledge::ProviderSelector.for_issue_analysis(user_setting: setting)
+      configured = Knowledge::ProviderSelector.for_issue_analysis(user_setting: setting)
+      available = Knowledge::ProviderSelector.available_standalone_chat_runners(user_setting: setting)
+      providers = configured.flat_map do |identifier|
+        available.select { |runner| runner.matches_identifier?(identifier) }.map(&:routing_key)
+      end
       return providers if providers.any?
 
       # Broaden to every chat-capable runner the owner has, applying the same
@@ -448,8 +452,8 @@ module Activities
       # provider the user never configured (the old Anthropic-only default).
       # Economical runners are tried first so a lightweight assessment call
       # doesn't burn tokens on a heavy-exploration runner.
-      available = Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting)
-      RunnerSupport.lean_first(available)
+      lean, remaining = available.partition { |runner| RunnerSupport.lean_runner?(runner.runner_key) }
+      (lean + remaining).map(&:routing_key)
     end
 
     def owner_user_setting(project)
@@ -492,10 +496,16 @@ module Activities
     def runner_state_for(user_setting, provider)
       return unless user_setting
 
-      user_setting.user.runner_states.find_or_create_by!(runner_name: provider.to_s) do |state|
+      runner = Runner.for_identifier(user_setting.user, provider)
+      runner_name = runner&.state_key || provider.to_s
+      user_setting.user.runner_states.find_or_create_by!(runner_name: runner_name) do |state|
         state.circuit_state = "closed"
         state.failure_count = 0
       end
+    end
+
+    def provider_name(user_setting, provider)
+      Runner.for_identifier(user_setting.user, provider)&.runner_key || provider.to_s
     end
 
     # @spec ISSUE-ANALYSIS-014

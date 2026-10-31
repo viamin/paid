@@ -27,12 +27,19 @@ provider independently, through the knowledge/chat provider layer:
 1. **Issue-analysis preference.** `Knowledge::ProviderSelector.for_issue_analysis`
    reads the owner's `issue_analysis_runner` + `issue_analysis_fallback_runners`,
    filtered by circuit breaker / rate-limit availability (`RunnerState#unavailable?`).
-   This is a user-configurable selection of which API keys are eligible for the
-   assessment; it is blank by default.
+   `Activities::AnalyzeIssueActivity` resolves those preferences against the
+   owner's standalone-capable Runner records and passes their `routing_key`s to
+   `Llm::Request`. This is a user-configurable selection of which credentials
+   are eligible for the assessment; it is blank by default.
 2. **Broadening.** When the preference yields no candidates (none configured or
-   the configured runner is unavailable), `Knowledge::ProviderSelector.available_chat_runner_keys`
-   widens to every chat-enabled `Runner` the owner actually has, applying the
-   same availability filter. This is what lets an analysis succeed on `codex`
+   the configured runner is unavailable), `Knowledge::ProviderSelector.available_standalone_chat_runners`
+   widens to every chat-enabled `Runner` credential the owner actually has that
+   can make a standalone text request, applying the same credential-specific
+   availability filter. The widened route retains each Runner's `routing_key`;
+   it never collapses an API-key record to a provider key that could resolve to
+   a subscription record. API-key candidates require a present selected secret;
+   subscription candidates require host tool-control support and no managed
+   subscription credential requiring isolation. This is what lets an analysis succeed on `codex`
    when `claude` is rate-limited, and what serves the default case where no
    explicit issue-analysis runner is set. The widened list is then reordered via
    `RunnerSupport.lean_first` so economical runners are tried before
@@ -40,7 +47,9 @@ provider independently, through the knowledge/chat provider layer:
    call does not need aggressive codebase exploration, so it should not burn
    tokens landing on `claude` when `codex` / `opencode` / `omp` is available.
    The candidate set is not narrowed; every available chat runner remains
-   eligible if the lean runners fail.
+   eligible if the lean runners fail. Project privacy and model policy remains
+   authoritative in `Llm::Request`; candidates rejected by policy do not alter
+   another credential's authentication mode.
 
 There is no hardcoded platform default. The previous design forced
 `[DEFAULT_PROVIDER]` ("claude") whenever the candidate list was empty, which

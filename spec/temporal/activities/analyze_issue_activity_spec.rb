@@ -963,6 +963,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     let(:project) { create(:project, account: account, created_by: owner) }
 
     before do
+      configure_llm_routing(project: project)
       owner.settings.update!(kb_chat_runner: "claude", kb_chat_fallback_runners: [])
       # Claude is rate-limited -> Knowledge::ProviderSelector.for_chat returns []
       create(:runner_state, :rate_limited, user: owner, runner_name: "claude")
@@ -1048,7 +1049,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       diagnostics = agent_run.reload.issue_analysis_diagnostics
       expect(diagnostics).to include(
         "phase_key" => "analyze_issue_provider_attempt",
-        "provider" => "codex",
+        "provider" => runner_routing_key(owner, "codex"),
         "attempt" => 2,
         "status" => "completed",
         "cancellation_strategy" => "cooperative_activity_heartbeat"
@@ -1057,7 +1058,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(diagnostics).not_to have_key("error_message")
 
       expect(agent_run.issue_analysis_timeout_message).to eq(
-        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
+        "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider #{runner_routing_key(owner, "codex")} · attempt 2 · budget 90s)"
       )
     end
 
@@ -1323,6 +1324,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     let(:agent_run) { create(:agent_run, project: project, issue: issue, goal: "analyze_issue") }
 
     before do
+      configure_llm_routing(project: project)
       allow(project).to receive(:broadcast_agent_run_detail_update)
       allow(GithubClient).to receive(:new).and_return(client)
       allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return(comments)
@@ -1373,6 +1375,19 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect {
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
+    end
+
+    # @spec ISSUE-ANALYSIS-014 LLM-ROUTING-005
+    it "widens to an API-key Codex credential when its subscription needs isolation" do
+      subscription = create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+      credential = create(:runner_api_key, user: owner, api_service_type: "openai")
+      api_runner = create(:runner, :api_key, user: owner, runner_key: "codex", enabled_for_chat: true,
+        provider_api_key: credential)
+      provider = instance_double(AgentHarness::Providers::Codex, supports_tool_control?: false)
+      allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(class_double(AgentHarness::Providers::Codex, new: provider))
+
+      expect(activity.send(:chat_providers, project).first).to eq(api_runner.routing_key)
+      expect(Runner.for_identifier(owner, "codex")).to eq(subscription)
     end
 
     # @spec ISSUE-ANALYSIS-008
@@ -1492,7 +1507,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   # `completed`) with the `UnsuccessfulResponseError` bridge recorded in
   # metadata; provider 2 is `completed`. Keeps the corresponding regression
   # spec short so it stays under the ExampleLength / MultipleExpectations caps.
-  def expect_failed_then_completed_provider_phases!(agent_run)
+  def expect_failed_then_completed_provider_phases!(agent_run, owner)
     provider_phases = agent_run
       .agent_run_phases
       .where(phase_key: "analyze_issue_provider_attempt")
@@ -1501,7 +1516,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(provider_phases.size).to eq(2)
     expect(provider_phases.first).to have_attributes(
       status: "failed",
-      metadata: include("provider" => "claude", "attempt" => 1, "heartbeat_active" => true)
+      metadata: include("provider" => runner_routing_key(owner, "claude"), "attempt" => 1, "heartbeat_active" => true)
     )
     expect(provider_phases.first.metadata["error_class"]).to eq(
       "Activities::AnalyzeIssueActivity::UnsuccessfulResponseError"
@@ -1509,7 +1524,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(provider_phases.first.metadata["error_message"]).to include("boom")
     expect(provider_phases.last).to have_attributes(
       status: "completed",
-      metadata: include("provider" => "codex", "attempt" => 2)
+      metadata: include("provider" => runner_routing_key(owner, "codex"), "attempt" => 2)
     )
   end
 
@@ -1517,12 +1532,12 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   # failover provider (the worker was last executing it), not the failing
   # one. The merge-vs-replace writer must have wiped provider 1's
   # failure-only keys when provider 2's `running` write landed.
-  def expect_diagnostics_for_failover_provider!(agent_run)
+  def expect_diagnostics_for_failover_provider!(agent_run, owner)
     diagnostics = agent_run.issue_analysis_diagnostics
 
     expect(diagnostics).to include(
       "phase_key" => "analyze_issue_provider_attempt",
-      "provider" => "codex",
+      "provider" => runner_routing_key(owner, "codex"),
       "attempt" => 2,
       "status" => "completed",
       "cancellation_strategy" => "cooperative_activity_heartbeat"
@@ -1531,7 +1546,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(diagnostics).not_to have_key("error_message")
 
     expect(agent_run.issue_analysis_timeout_message).to eq(
-      "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
+      "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider #{runner_routing_key(owner, "codex")} · attempt 2 · budget 90s)"
     )
   end
 
@@ -1571,6 +1586,10 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     expect(state.failure_count).to eq(1)
   end
 
+  def runner_routing_key(owner, runner_key)
+    owner.runners.kept_only.find_by!(runner_key: runner_key).routing_key
+  end
+
   def bot_comment(body, at:)
     OpenStruct.new(
       body: body,
@@ -1607,7 +1626,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       "budget_exceeded" => false
     )
     expect(phases.fetch("analyze_issue_provider_attempt").metadata).to include(
-      "provider" => "claude",
+      "provider" => runner_routing_key(agent_run.project.effective_owner, "claude"),
       "attempt" => 1,
       "heartbeat_active" => true,
       "budget_seconds" => described_class::LLM_TIMEOUT
@@ -1617,7 +1636,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   def expect_issue_analysis_diagnostics!(agent_run)
     expect(agent_run.issue_analysis_diagnostics).to include(
       "phase_key" => "analyze_issue_provider_attempt",
-      "provider" => "claude",
+      "provider" => runner_routing_key(agent_run.project.effective_owner, "claude"),
       "attempt" => 1,
       "status" => "completed",
       "heartbeat_strategy" => "provider_attempt_periodic",
