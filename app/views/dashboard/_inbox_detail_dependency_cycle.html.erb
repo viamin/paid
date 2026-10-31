@@ -12,7 +12,7 @@
   <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
     <h3 class="text-sm font-semibold text-indigo-900">Cycle analysis</h3>
     <% if analysis_run %>
-      <p class="mt-1 text-sm text-indigo-800">Analysis <%= analysis_run.status %>: <%= link_to "view run", project_agent_run_path(analysis_run.project, analysis_run), class: "font-medium underline" %>.</p>
+      <p class="mt-1 text-sm text-indigo-800">Analysis <%= analysis_run.status %>: <%= link_to "view run", project_agent_run_path(analysis_run.project, analysis_run), data: { turbo_frame: "_top" }, class: "font-medium underline" %>.</p>
       <% if analysis_stale %>
         <p class="mt-1 text-sm font-medium text-amber-800">This analysis is stale because the effective dependency graph changed.</p>
       <% end %>
