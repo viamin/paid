@@ -665,6 +665,28 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "dependency_cycle")
     end
+
+    # A fixture with no completed analysis run never renders the "view run"
+    # link, so the context above alone would not have caught #4823 (the link
+    # only appears once an analysis has already run). Cover that branch too.
+    context "when an analysis run already exists for the occurrence" do
+      let(:analysis_run) do
+        TenantContext.with_system_access do
+          create(:agent_run, status: "completed", project: entry_issue.project, initiating_user: owner,
+            goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+            external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint, "occurrence" => cycle.occurrence } },
+            verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => "Remove the obsolete declaration." } })
+        end
+      end
+
+      it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent, including the rendered view-run link" do
+        analysis_run
+        fragment = render_detail_partial(entry)
+
+        expect(fragment.to_html).to include("view run")
+        assert_navigation_intent!(fragment, kind: "dependency_cycle")
+      end
+    end
   end
 
   # @spec INBOX-NAV-INTENT-002

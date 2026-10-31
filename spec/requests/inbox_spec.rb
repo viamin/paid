@@ -107,6 +107,23 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Edge IDs without declaration provenance: 41")
   end
 
+  # @spec AUTO-PICK-QUEUE-016 INBOX-NAV-INTENT-001
+  # Regression for #4823: once a cycle analysis run exists, "view run" must
+  # escape the `inbox-detail` Turbo Frame (data-turbo-frame="_top") rather than
+  # asking Turbo to find a matching frame on the agent run show page, which
+  # renders "Content missing".
+  it "targets the view run link for a completed cycle analysis at the full page, not the inbox-detail frame" do
+    _issues, cycle, run = cycle_analysis_run
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    view_run_link = document.at_css("a[href='#{project_agent_run_path(run.project, run)}']")
+    expect(view_run_link).not_to be_nil
+    expect(view_run_link["data-turbo-frame"]).to eq("_top")
+  end
+
   # @spec AUTO-PICK-QUEUE-019
   it "renders a stale cycle analysis as retryable" do
     issues, _cycle, = cycle_analysis_run
