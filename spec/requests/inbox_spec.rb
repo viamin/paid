@@ -2369,12 +2369,7 @@ RSpec.describe "Inbox" do
       "Only the retry path was exercised.", "Request a separately authorized repair", "Contributing check results",
       "completed", "contradicted", "matches audit revision", "View audit run", "View canonical intent",
       "View evidence")
-    expect(response.body).to include(
-      project_agent_run_path(project, finding.agent_run),
-      "#{project_agent_run_path(project, finding.agent_run)}#layered-verification-coverage",
-      "#{project.github_url}/blob/abc123/docs/intent/payments-specs.md"
-    )
-    expect(response.body).to include('data-turbo-frame="_top"')
+    expect_finding_evidence_links(finding)
     expect(response.body).not_to include("Approve plan", "Reject plan", "Revise plan")
 
     post inbox_layered_verification_finding_decision_path(key), params: {
@@ -2454,5 +2449,16 @@ RSpec.describe "Inbox" do
       input_revision: { "code" => "abc123", "intent" => finding.obligation.external_revision })
     finding.update!(observations: [ { "check_result_ids" => [ check_result.id ] } ])
     finding
+  end
+
+  def expect_finding_evidence_links(finding)
+    audit_path = project_agent_run_path(project, finding.agent_run)
+
+    expect(response.body).to include(
+      audit_path,
+      "#{audit_path}#layered-verification-coverage",
+      "#{project.github_url}/blob/abc123/docs/intent/payments-specs.md",
+      'data-turbo-frame="_top"'
+    )
   end
 end
