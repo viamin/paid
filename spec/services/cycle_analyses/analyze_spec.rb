@@ -4,6 +4,8 @@ require "rails_helper"
 
 RSpec.describe CycleAnalyses::Analyze do
   def analysis_output(snapshot)
+    remaining_edges = snapshot.fetch("effective_edges").drop(1)
+      .map { |edge| edge.slice("from_issue_id", "to_issue_id") }
     {
       "summary" => "Review both declarations before changing either one.",
       "candidates" => [ {
@@ -11,7 +13,7 @@ RSpec.describe CycleAnalyses::Analyze do
         "evidence" => [ "Issue intent makes the declaration obsolete." ],
         "tradeoffs" => [ "Work may become eligible sooner." ],
         "missing_or_conflicting_intent" => [],
-        "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"), "edges" => [] },
+        "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"), "edges" => remaining_edges },
         "acyclic" => true
       } ]
     }

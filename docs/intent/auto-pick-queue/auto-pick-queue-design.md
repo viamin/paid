@@ -94,8 +94,11 @@ It supplies issue titles, labels, parent context, URLs, declaration provenance,
 and only issue bodies and comments admitted by the project's existing trust
 boundary. Its recommendation records candidate
 declaration changes, supporting and conflicting evidence, resulting graphs, and
-an acyclicity determination for each candidate. Missing provenance or content is
-reported as unavailable coverage, never silently assumed. The result is rendered
+an acyclicity determination for each candidate. Paid derives each expected
+resulting graph from the snapshot and the structured removals or endpoint
+corrections, rejecting unaccounted edge changes before checking acyclicity.
+Missing provenance or content is reported as unavailable coverage, never
+silently assumed. The result is rendered
 on the same Inbox occurrence and remains marked stale when synchronization has
 changed the effective graph. It cannot mutate GitHub issues, comments, labels,
 or local dependency records; a human declaration change and later synchronization

@@ -76,6 +76,8 @@ RSpec.describe CycleAnalysisJob do
 
   def recommendation(run)
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    remaining_edges = snapshot.fetch("effective_edges").drop(1)
+      .map { |edge| edge.slice("from_issue_id", "to_issue_id").symbolize_keys }
     {
       summary: "Review both declarations.",
       candidates: [ {
@@ -83,7 +85,7 @@ RSpec.describe CycleAnalysisJob do
         evidence: [ "The declaration is obsolete." ],
         tradeoffs: [ "Work may become eligible sooner." ],
         missing_or_conflicting_intent: [],
-        resulting_graph: { issue_ids: snapshot.fetch("issues").pluck("id"), edges: [] },
+        resulting_graph: { issue_ids: snapshot.fetch("issues").pluck("id"), edges: remaining_edges },
         acyclic: true
       } ]
     }

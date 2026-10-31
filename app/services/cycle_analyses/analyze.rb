@@ -36,7 +36,11 @@ module CycleAnalyses
         {
           "summary": "...",
           "candidates": [{
-            "declaration_changes": [{ "edge_id": 123, "action": "remove or correct", "replacement": "optional" }],
+            "declaration_changes": [{
+              "edge_id": 123,
+              "action": "correct",
+              "replacement": { "from_issue_id": 1, "to_issue_id": 2 }
+            }],
             "evidence": ["..."],
             "tradeoffs": ["..."],
             "missing_or_conflicting_intent": ["..."],
@@ -47,6 +51,8 @@ module CycleAnalyses
             "acyclic": true
           }]
         }
+        Use action "remove" without replacement, or action "correct" with replacement endpoints.
+        The resulting graph edges must be the complete snapshotted edge set after applying exactly those changes.
         #{JSON.pretty_generate(graph_payload)}
       PROMPT
     end

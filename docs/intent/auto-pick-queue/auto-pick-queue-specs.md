@@ -138,8 +138,11 @@
 - [x] **AUTO-PICK-QUEUE-018** — A completed cycle analysis SHALL publish a
   reviewable recommendation containing candidate declaration changes, evidence,
   tradeoffs, missing or conflicting intent, each candidate resulting graph, and
-  whether that graph is acyclic. Paid SHALL NOT infer that removal of a single
-  edge breaks a multi-edge strongly connected group.
+  whether that graph is acyclic. Each resulting graph SHALL equal the complete
+  snapshotted edge set after applying exactly the candidate's declared removals
+  and endpoint corrections. Paid SHALL reject unaccounted edge additions or
+  removals and SHALL NOT infer that removal of a single edge breaks a multi-edge
+  strongly connected group.
 
 - [x] **AUTO-PICK-QUEUE-019** — Cycle analysis SHALL remain read-only: it
   SHALL NOT modify GitHub declarations, issue bodies, comments, labels, or local

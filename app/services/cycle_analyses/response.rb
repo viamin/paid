@@ -32,16 +32,18 @@ module CycleAnalyses
     def validate_candidate!(candidate, index)
       path = "candidates[#{index}]"
       require_object!(candidate, path)
-      validate_changes!(require_nonempty_array!(candidate["declaration_changes"], "#{path}.declaration_changes"), path)
+      changes = require_nonempty_array!(candidate["declaration_changes"], "#{path}.declaration_changes")
+      validate_changes!(changes, path)
       require_text_array!(candidate["evidence"], "#{path}.evidence", allow_empty: false)
       require_text_array!(candidate["tradeoffs"], "#{path}.tradeoffs", allow_empty: false)
       require_text_array!(candidate["missing_or_conflicting_intent"], "#{path}.missing_or_conflicting_intent")
-      validate_graph!(candidate["resulting_graph"], path)
+      validate_graph!(candidate["resulting_graph"], changes, path)
       invalid!("#{path}.acyclic must be boolean") unless [ true, false ].include?(candidate["acyclic"])
       validate_acyclicity!(candidate, path)
     end
 
     def validate_changes!(changes, path)
+      validate_unique_edge_ids!(changes, path)
       changes.each_with_index do |change, index|
         change_path = "#{path}.declaration_changes[#{index}]"
         require_object!(change, change_path)
@@ -49,11 +51,28 @@ module CycleAnalyses
         unless snapshot_edge_ids.include?(change["edge_id"])
           invalid!("#{change_path}.edge_id is not in the snapshotted cycle")
         end
-        require_text!(change["action"], "#{change_path}.action")
+        validate_action!(change, change_path)
       end
     end
 
-    def validate_graph!(graph, path)
+    def validate_unique_edge_ids!(changes, path)
+      edge_ids = changes.filter_map { |change| change["edge_id"] if change.is_a?(Hash) }
+      invalid!("#{path}.declaration_changes edge_id must be unique") unless edge_ids.uniq.size == edge_ids.size
+    end
+
+    def validate_action!(change, path)
+      case change["action"]
+      when "remove"
+        invalid!("#{path}.replacement is only valid for corrections") if change.key?("replacement")
+      when "correct"
+        require_object!(change["replacement"], "#{path}.replacement")
+        validate_edge!(change["replacement"], "#{path}.replacement", snapshot_issue_ids)
+      else
+        invalid!("#{path}.action must be remove or correct")
+      end
+    end
+
+    def validate_graph!(graph, changes, path)
       require_object!(graph, "#{path}.resulting_graph")
       invalid!("#{path}.resulting_graph.issue_ids must be an array of integers") unless integer_array?(graph["issue_ids"])
       unless graph["issue_ids"].sort == snapshot_issue_ids.sort
@@ -63,6 +82,7 @@ module CycleAnalyses
       graph["edges"].each_with_index do |edge, index|
         validate_edge!(edge, "#{path}.resulting_graph.edges[#{index}]", graph["issue_ids"])
       end
+      validate_expected_edges!(graph["edges"], changes, path)
     end
 
     def validate_edge!(edge, path, issue_ids)
@@ -77,6 +97,27 @@ module CycleAnalyses
       graph = candidate.fetch("resulting_graph")
       actual = AcyclicGraph.call(issue_ids: graph.fetch("issue_ids"), edges: graph.fetch("edges"))
       invalid!("#{path}.acyclic does not match the resulting graph") unless candidate["acyclic"] == actual
+    end
+
+    def validate_expected_edges!(edges, changes, path)
+      changes_by_id = changes.index_by { |change| change.fetch("edge_id") }
+      expected = snapshot.fetch("effective_edges").filter_map do |edge|
+        apply_change(edge, changes_by_id[edge.fetch("id")])
+      end
+      return if canonical_edges(edges) == canonical_edges(expected)
+
+      invalid!("#{path}.resulting_graph.edges must match the snapshotted cycle after applying declaration_changes")
+    end
+
+    def apply_change(edge, change)
+      return edge.slice("from_issue_id", "to_issue_id") unless change
+      return if change.fetch("action") == "remove"
+
+      change.fetch("replacement")
+    end
+
+    def canonical_edges(edges)
+      edges.map { |edge| [ edge.fetch("from_issue_id"), edge.fetch("to_issue_id") ] }.sort
     end
 
     def snapshot_issue_ids = snapshot.fetch("issues").pluck("id")
