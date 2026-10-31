@@ -351,6 +351,32 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::CreateFollowupRunActivity, anything, any_args)
     end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "preserves an unexpected analysis error's type and detail for failure handling" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::AnalyzeIssueActivity"
+          raise Temporalio::Error::ApplicationError.new(
+            "wrong number of arguments (given 0, expected 1)", type: "ArgumentError", non_retryable: true
+          )
+        else {}
+        end
+      end
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError,
+        "wrong number of arguments (given 0, expected 1)")
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity,
+          hash_including(
+            agent_run_id: 42,
+            error: "wrong number of arguments (given 0, expected 1)",
+            failure_type: "ArgumentError"
+          ),
+          timeout: 30)
+    end
   end
 
   describe "enhance_issue goal" do

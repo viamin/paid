@@ -2028,6 +2028,15 @@ class AgentRun < ApplicationRecord
     PROVIDER_UNAVAILABLE_KEYWORDS.any? { |keyword| msg.include?(keyword.downcase) }
   end
 
+  # @spec ISSUE-ANALYSIS-018
+  # A workflow-level application exception is categorically distinct from a
+  # provider outage. Its detailed type is retained in external_metadata while
+  # error_message preserves the original terminal error for operators.
+  def unexpected_issue_analysis_application_error?
+    status == "failed" &&
+      external_metadata.dig("issue_analysis_failure", "category") == "unexpected_application_error"
+  end
+
   # Returns true when the run failed due to infrastructure issues before the
   # LLM runner was ever reached (e.g., Docker pull failure, DNS resolution
   # error). These should not count toward the operational failure escalation

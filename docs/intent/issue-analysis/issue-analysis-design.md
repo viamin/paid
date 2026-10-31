@@ -176,7 +176,7 @@ manually re-trigger it. Any other outcome (a genuine mix of failure types, or
 an empty candidate list to begin with) keeps the original non-retryable
 `AnalyzeIssueLlmFailed` behavior — those are not transient rate-limit storms.
 
-## Automatic retry backoff after provider exhaustion
+## Automatic retry backoff after provider exhaustion or unexpected application failure
 
 Non-rate-limit provider exhaustion is still an availability outage, but unlike
 `ISSUE-ANALYSIS-006` it does not have a provider-supplied reset time. When an
@@ -195,6 +195,19 @@ The cooldown is only for automatic selection. Manual retries remain allowed
 (`ISSUE-ANALYSIS-011`) because they do not flow through auto-pick eligibility.
 However, a manual retry failure does not extend or clear the automatic cooldown
 by itself; only a successful provider call clears it.
+
+An unexpected, non-provider exception from the automatic analysis workflow is
+also deterministic evidence that immediately repeating the same work is unsafe.
+The workflow preserves the original exception type, message, and Temporal
+diagnostic trace, then records the terminal run as
+`unexpected_application_error` rather than relabeling it as provider
+exhaustion. It uses the same issue-local bounded cooldown and the same recovery
+conditions as provider exhaustion: the next bounded attempt, or a relevant
+issue-analysis runner/configuration change. Deliberately raised analysis
+outcomes (such as an untrusted issue, malformed model output, provider
+exhaustion, and all-provider rate limiting) retain their existing distinct
+paths. This boundary keeps programming errors observable without allowing an
+auto-pick loop; manual retries remain available.
 
 ## Timeout diagnostics and timeout policy
 

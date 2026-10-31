@@ -355,3 +355,22 @@
   `#reconcile_resolved_clarification_state_attrs`,
   `app/temporal/activities/create_agent_run_activity.rb#clarification_pending?`,
   `app/temporal/workflows/agent_execution_workflow.rb#execute`.
+
+- [x] **ISSUE-ANALYSIS-018** — When an **automatic** `analyze_issue` run
+  fails from an unexpected non-provider application exception, the system
+  SHALL preserve the original failure type, detail, and Temporal diagnostic
+  trace, record the terminal run with the distinct
+  `unexpected_application_error` category, and persist the bounded
+  issue-level automatic-retry cooldown. The cooldown SHALL exclude repeated
+  Auto-Pick attempts until it expires or relevant issue-analysis runner
+  configuration changes; a manual retry remains available. Provider
+  exhaustion, all-provider rate limiting, malformed model output, and other
+  deliberately classified analysis outcomes SHALL retain their existing
+  failure paths and categories.
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/temporal/workflows/agent_execution_workflow.rb#execute`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb#execute`,
+  `app/models/agent_run.rb#unexpected_issue_analysis_application_error?`,
+  `app/models/issue.rb#consecutive_issue_analysis_backoff_failure_count`.
