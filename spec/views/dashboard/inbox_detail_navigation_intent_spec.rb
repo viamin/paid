@@ -665,6 +665,26 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "dependency_cycle")
     end
+
+    # A completed analysis run surfaces the "view run" link
+    # (`_inbox_detail_dependency_cycle.html.erb`); the example above never
+    # exercises that branch because no AgentRun matches the cycle's
+    # fingerprint. Regression coverage for #4823: that link must carry
+    # `data-turbo-frame="_top"` or clicking it inside the `inbox-detail`
+    # frame produces Turbo "Content missing".
+    it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (analysis run completed)" do
+      TenantContext.with_system_access do
+        create(:agent_run, :completed, project: entry_issue.project, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+          external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint, "occurrence" => cycle.occurrence } },
+          verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => { "summary" => "Review the edge." }, "coverage" => {} } })
+      end
+      fragment = render_detail_partial(entry)
+      assert_navigation_intent!(fragment, kind: "dependency_cycle")
+
+      view_run_link = fragment.css("a").find { |anchor| anchor.text.strip == "view run" }
+      expect(view_run_link).to be_present
+      expect(view_run_link["data-turbo-frame"]).to eq("_top")
+    end
   end
 
   # @spec INBOX-NAV-INTENT-002
