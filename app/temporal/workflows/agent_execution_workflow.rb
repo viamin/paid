@@ -176,10 +176,7 @@ module Workflows
         end
 
         if goal == "analyze_issue"
-          result = run_activity(Activities::AnalyzeIssueActivity,
-            { agent_run_id: agent_run_id },
-            start_to_close_timeout: issue_goal_timeout_seconds,
-            retry_policy: NO_RETRY)
+          result = run_analyze_issue_activity(agent_run_id, issue_goal_timeout_seconds)
 
           unless result.is_a?(Hash) && result.key?(:sufficient_context)
             raise Temporalio::Error::ApplicationError.new(
@@ -793,6 +790,34 @@ module Workflows
       else
         error.message
       end
+    end
+
+    # @spec ISSUE-ANALYSIS-010
+    def run_analyze_issue_activity(agent_run_id, timeout)
+      run_activity(Activities::AnalyzeIssueActivity,
+        { agent_run_id: agent_run_id },
+        start_to_close_timeout: timeout,
+        retry_policy: NO_RETRY)
+    rescue => error
+      raise unless unexpected_analysis_error?(error)
+
+      original = error.respond_to?(:cause) && error.cause ? error.cause : error
+      raise Temporalio::Error::ApplicationError.new(
+        "Unexpected application error (#{original.class.name}): #{original.message}",
+        type: "unexpected_application_error",
+        non_retryable: true
+      )
+    end
+
+    def unexpected_analysis_error?(error)
+      current = error
+      while current
+        return false if current.is_a?(Temporalio::Error::ApplicationError)
+
+        current = current.respond_to?(:cause) ? current.cause : nil
+      end
+
+      true
     end
 
     def pre_runner_infra_error?(error_message)

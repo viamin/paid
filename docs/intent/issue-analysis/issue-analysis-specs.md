@@ -86,6 +86,7 @@
 
 - [x] **ISSUE-ANALYSIS-010** — When an **automatic** `analyze_issue` run fails
   because every analysis provider is unavailable and no provider call succeeds,
+  or because an unexpected application exception escapes the analysis activity,
   the system SHALL persist a bounded next-attempt time on the issue and exclude
   the issue from auto-pick until that time. The backoff SHALL grow per issue
   across consecutive automatic provider-exhaustion failures, SHALL be capped,

@@ -351,6 +351,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::CreateFollowupRunActivity, anything, any_args)
     end
+
+    # @spec ISSUE-ANALYSIS-010
+    it "labels an unexpected AnalyzeIssueActivity exception without masking its details" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::AnalyzeIssueActivity"
+          raise RuntimeError, "context bundle exploded"
+        when "Activities::MarkAgentRunFailedActivity"
+          expect(_input[:error]).to eq(
+            "Unexpected application error (RuntimeError): context bundle exploded"
+          )
+          {}
+        else {}
+        end
+      end
+
+      expect { workflow.execute(input) }.to raise_error(
+        Temporalio::Error::ApplicationError,
+        "Unexpected application error (RuntimeError): context bundle exploded"
+      )
+    end
   end
 
   describe "enhance_issue goal" do
