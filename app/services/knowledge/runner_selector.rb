@@ -23,6 +23,10 @@ module Knowledge
       new(user_setting:).available_chat_runner_keys
     end
 
+    def self.available_standalone_text_runner_identifiers(user_setting:)
+      new(user_setting:).available_standalone_text_runner_identifiers
+    end
+
     def initialize(user_setting:)
       @user_setting = user_setting
     end
@@ -51,6 +55,17 @@ module Knowledge
       filtered = filter_supported_runners(candidate_keys, operation: :chat)
       runner_states = user_setting.user.runner_states.where(runner_name: filtered).index_by(&:runner_name)
       filtered.select { |runner| runner_available?(runner, runner_states) }
+    end
+
+    # Returns routing keys, rather than provider keys, so a text request keeps
+    # the selected credential and cannot resolve a different auth mode later.
+    # @spec ISSUE-ANALYSIS-002 LLM-ROUTING-005
+    def available_standalone_text_runner_identifiers
+      runners = user_setting.user.runners.kept_only.for_chat.ordered.includes(:provider_api_key, :integration_credential).to_a
+      states = user_setting.user.runner_states.where(runner_name: runners.map(&:state_key)).index_by(&:runner_name)
+
+      runners.select { |runner| standalone_text_capable?(runner) && runner_record_available?(runner, states) }
+        .map(&:routing_key)
     end
 
     private
@@ -103,6 +118,23 @@ module Knowledge
 
       state.check_circuit_recovery!(timeout: user_setting.circuit_breaker_timeout_seconds)
       !state.unavailable?
+    end
+
+    def runner_record_available?(runner, runner_states)
+      runner_available?(runner.state_key, runner_states)
+    end
+
+    def standalone_text_capable?(runner)
+      return runner.effective_api_secret.present? if runner.api_key?
+
+      subscription_supports_host_text?(runner)
+    end
+
+    def subscription_supports_host_text?(runner)
+      return false if user_setting.user.account.runner_credentials.for_runner(runner.runner_key).where(revoked_at: nil).exists?
+
+      key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
+      AgentHarness.provider_class(key).new(config: AgentHarness.build_config(key)).supports_tool_control?
     end
 
     def warn_on_embedding_fallback(candidates)

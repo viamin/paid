@@ -132,42 +132,29 @@ RSpec.describe Knowledge::ProviderSelector do
     end
   end
 
-  # @spec ISSUE-ANALYSIS-002
-  describe ".available_chat_runner_keys" do
+  # @spec ISSUE-ANALYSIS-002 LLM-ROUTING-005
+  describe ".available_standalone_text_runner_identifiers" do
     before { user.runners.delete_all }
 
-    it "returns the owner's available chat runners, excluding unavailable ones" do
-      create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
-      create(:runner, user: user, runner_key: "codex", enabled_for_chat: true)
-      create(:runner_state, :rate_limited, user: user, runner_name: "claude")
+    it "preserves an API-key Codex credential when the subscription requires isolation" do
+      subscription = create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
+      credential = create(:runner_api_key, user: user, api_service_type: "openai")
+      api_runner = create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: credential)
+      provider_class = class_double(AgentHarness::Providers::Codex)
+      provider = instance_double(AgentHarness::Providers::Codex, supports_tool_control?: false)
+      allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
+      allow(provider_class).to receive(:new).and_return(provider)
 
-      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "codex" ])
+      expect(described_class.available_standalone_text_runner_identifiers(user_setting: setting)).to eq([ api_runner.routing_key ])
+      expect(api_runner.routing_key).not_to eq(subscription.routing_key)
     end
 
-    it "returns an empty array when every chat runner is unavailable" do
-      create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
-      create(:runner_state, :rate_limited, user: user, runner_name: "claude")
+    it "excludes a credential whose own runner state is unavailable" do
+      credential = create(:runner_api_key, user: user, api_service_type: "openai")
+      runner = create(:runner, :api_key, user: user, runner_key: "codex", provider_api_key: credential)
+      create(:runner_state, :rate_limited, user: user, runner_name: runner.state_key)
 
-      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([])
-    end
-
-    it "ignores runners that are not enabled for chat" do
-      create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
-      create(:runner, user: user, runner_key: "codex", enabled_for_chat: false)
-
-      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "claude" ])
-    end
-
-    it "dedupes runners that share a key so each provider is tried once" do
-      # An owner can legitimately hold several api_key Runner rows for the
-      # same direct-outbound key (e.g. two kilocode accounts).
-      key_a = create(:provider_api_key, user: user, api_service_type: "zai_coding")
-      key_b = create(:provider_api_key, user: user, api_service_type: "zai_coding")
-      config = { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
-      create(:runner, :api_key, user: user, runner_key: "kilocode", provider_api_key: key_a, name: "A", config: config)
-      create(:runner, :api_key, user: user, runner_key: "kilocode", provider_api_key: key_b, name: "B", config: config)
-
-      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "kilocode" ])
+      expect(described_class.available_standalone_text_runner_identifiers(user_setting: setting)).to eq([])
     end
   end
 end

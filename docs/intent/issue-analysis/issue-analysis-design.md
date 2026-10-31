@@ -30,17 +30,25 @@ provider independently, through the knowledge/chat provider layer:
    This is a user-configurable selection of which API keys are eligible for the
    assessment; it is blank by default.
 2. **Broadening.** When the preference yields no candidates (none configured or
-   the configured runner is unavailable), `Knowledge::ProviderSelector.available_chat_runner_keys`
-   widens to every chat-enabled `Runner` the owner actually has, applying the
-   same availability filter. This is what lets an analysis succeed on `codex`
+   the configured runner is unavailable), `Knowledge::ProviderSelector.available_standalone_text_runner_identifiers`
+   widens to every chat-enabled `Runner` credential the owner actually has that
+   can execute a host text request. It preserves each record's routing key,
+   applies credential-specific circuit-breaker / rate-limit availability, and
+   admits API-key records only when their credential is available; subscription
+   records additionally require host tool control and no managed subscription
+   credential. This is what lets an analysis succeed on `codex`
    when `claude` is rate-limited, and what serves the default case where no
    explicit issue-analysis runner is set. The widened list is then reordered via
-   `RunnerSupport.lean_first` so economical runners are tried before
+   `RunnerSupport.lean_runner?` so economical runners are tried before
    heavy-exploration ones (`ISSUE-ANALYSIS-008`) — a lightweight assessment
    call does not need aggressive codebase exploration, so it should not burn
    tokens landing on `claude` when `codex` / `opencode` / `omp` is available.
-   The candidate set is not narrowed; every available chat runner remains
-   eligible if the lean runners fail.
+   The candidate set is not narrowed; every standalone-capable chat runner
+   remains eligible if the lean runners fail. Passing the routing key into
+   `Llm::Request` prevents a bare provider key from resolving a non-standalone
+   subscription in preference to an API-key record. Project model and provider
+   policy remains enforced by `Llm::Request`; no subscription is converted to
+   API billing.
 
 There is no hardcoded platform default. The previous design forced
 `[DEFAULT_PROVIDER]` ("claude") whenever the candidate list was empty, which
@@ -50,9 +58,9 @@ keys configured. That is the run-17220 / RDR-052 failure mode this segment now
 guards against (see `ISSUE-ANALYSIS-002`): analysis selects from the owner's
 configured runners rather than assuming Anthropic.
 
-If no provider is available at all, `call_llm` raises a non-retryable
-`AnalyzeIssueLlmFailed` ("No LLM provider produced an issue analysis") rather
-than silently masking the outage.
+If no standalone-capable provider is available at all, `call_llm` raises a
+non-retryable `AnalyzeIssueLlmFailed` ("No standalone-capable issue-analysis
+runner is configured") rather than silently masking the configuration gap.
 
 ## Durable per-provider failure records
 

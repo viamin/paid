@@ -18,19 +18,26 @@
 
 - [x] **ISSUE-ANALYSIS-002** — When the configured issue-analysis runner is
   unavailable (rate-limited or circuit-open), the analysis SHALL widen to an
-  available chat-enabled runner the owner has, rather than forcing a hardcoded
-  platform default (the old Anthropic-only `DEFAULT_PROVIDER`) back into the
-  candidate list. The owner's configured runners are the only source of
-  candidates — no runner is assumed when none is available.
+  available chat-enabled runner credential the owner has, rather than forcing a
+  hardcoded platform default (the old Anthropic-only `DEFAULT_PROVIDER`) back
+  into the candidate list. Widened candidates SHALL preserve their routing-key
+  identity and SHALL be standalone-capable: API-key credentials must be
+  available, and subscription credentials must support host tool control and
+  not require managed isolation. Candidate availability SHALL use the
+  credential-specific runner state. Project policy remains authoritative in
+  `Llm::Request`; a subscription SHALL NOT be silently converted to API
+  billing. The owner's configured runners are the only source of candidates —
+  no runner is assumed when none is available.
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("provider fallback", "does not force claude"),
-  `spec/services/knowledge/provider_selector_spec.rb` (".available_chat_runner_keys").
-  *Code:* `app/services/knowledge/runner_selector.rb#available_chat_runner_keys`,
+  `spec/services/knowledge/provider_selector_spec.rb` (".available_standalone_text_runner_identifiers").
+  *Code:* `app/services/knowledge/runner_selector.rb#available_standalone_text_runner_identifiers`,
   `app/temporal/activities/analyze_issue_activity.rb#chat_providers`.
 
-- [x] **ISSUE-ANALYSIS-003** — When no chat runner is available at all (the
-  candidate list itself is empty), the system SHALL fail the run loudly with a
-  non-retryable `AnalyzeIssueLlmFailed` error instead of masking the outage by
-  targeting a known-unhealthy provider. This is distinct from `ISSUE-ANALYSIS-006`,
+- [x] **ISSUE-ANALYSIS-003** — When no standalone-capable chat runner is
+  available at all (the candidate list itself is empty), the system SHALL fail
+  the run loudly with a non-retryable `AnalyzeIssueLlmFailed` configuration-gap
+  error instead of masking the outage by targeting a known-unhealthy provider.
+  This is distinct from `ISSUE-ANALYSIS-006`,
   where candidates exist but all attempts fail transiently.
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("raises when no chat runner is available").
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`.
