@@ -644,7 +644,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     end
   end
 
-  # @spec AUTO-PICK-QUEUE-015
+  # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-020
   describe "dependency_cycle" do
     INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::DEPENDENCY_CYCLE_KIND
 
@@ -652,7 +652,9 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       Struct.new(:declaration_source, :declaration_url).new("issue_comment", "https://github.com/acme/widgets/issues/42#issuecomment-1")
     end
     let(:cycle) do
-      Struct.new(:path, :path_edges, :downstream_issues).new([ entry_issue, entry_issue ], [ cycle_edge ], [])
+      Struct.new(:path, :path_edges, :downstream_issues) do
+        def umbrella_for(_issue) = nil
+      end.new([ entry_issue, entry_issue ], [ cycle_edge ], [])
     end
     let(:entry) do
       build_entry.call(Inbox::Queue::DEPENDENCY_CYCLE_KIND,

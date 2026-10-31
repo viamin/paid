@@ -60,6 +60,43 @@ RSpec.describe Inbox::Queue do
     expect(payload.fetch(:downstream_issues_held)).to eq(1)
   end
 
+  # @spec AUTO-PICK-QUEUE-020
+  it "exposes an umbrella issue linked from a visible path issue" do
+    user = create(:user)
+    project = create(:project, account: user.account, created_by: user)
+    parent = create(:issue, project:, title: "Ship the whole feature")
+    first = create(:issue, project:, github_state: "open", parent_issue: parent)
+    second = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+
+    expect(entry.record.umbrella_for(first)).to eq(parent)
+  end
+
+  # Issue#parent_issue is validated to stay within the same project, so a
+  # cross-project parent link can only exist as legacy data written before
+  # that guard (mirroring how a dependency cycle itself only survives as a
+  # pre-guard legacy artifact). Bypass validation here to simulate that.
+  # @spec AUTO-PICK-QUEUE-020
+  it "does not expose an umbrella issue from another owner's project" do
+    user = create(:user)
+    other_user = create(:user, account: user.account)
+    visible_project = create(:project, account: user.account, created_by: user)
+    hidden_project = create(:project, account: user.account, created_by: other_user)
+    hidden_parent = create(:issue, project: hidden_project)
+    first = create(:issue, project: visible_project, github_state: "open")
+    second = create(:issue, project: visible_project, github_state: "open")
+    first.update_columns(parent_issue_id: hidden_parent.id)
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+
+    expect(entry.record.umbrella_for(first)).to be_nil
+  end
+
   # @spec AUTO-PICK-QUEUE-015
   it "surfaces a recreated cycle after the prior occurrence was personally removed" do
     user = create(:user)

@@ -1,4 +1,4 @@
-<%# @spec AUTO-PICK-QUEUE-015 %>
+<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 %>
 <% cycle = entry.record %>
 <div class="space-y-6">
   <div class="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -48,12 +48,19 @@
         <% from = cycle.path[index] %>
         <% to = cycle.path[index + 1] %>
         <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <%= from.project.full_name %>#<%= from.github_number %> declares <%= to.project.full_name %>#<%= to.github_number %> as a dependency
-          <% if edge.declaration_url.present? %>
-            — <%= link_to edge.declaration_source == "issue_comment" ? "view declaring comment" : "view issue declaration", edge.declaration_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
-          <% else %>
-            — declaration source unavailable; review the issue body and trusted comments
-          <% end %>
+          <div class="flex min-w-0 flex-wrap items-baseline gap-x-1 gap-y-1">
+            <span class="min-w-0 max-w-full"><%= dependency_cycle_issue_link(from) %></span>
+            <span class="shrink-0 text-gray-500">declares</span>
+            <span class="min-w-0 max-w-full"><%= dependency_cycle_issue_link(to) %></span>
+            <span class="shrink-0 text-gray-500">as a dependency</span>
+          </div>
+          <p class="mt-1">
+            <% if edge.declaration_url.present? %>
+              <%= link_to edge.declaration_source == "issue_comment" ? "view declaring comment" : "view issue declaration", edge.declaration_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+            <% else %>
+              declaration source unavailable; review the issue body and trusted comments
+            <% end %>
+          </p>
         </li>
       <% end %>
     </ul>
@@ -61,12 +68,23 @@
 
   <div>
     <h3 class="text-sm font-semibold text-gray-900">Cycle path</h3>
-    <p class="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+    <ul class="mt-2 space-y-3">
       <% cycle.path.each_with_index do |issue, index| %>
-        <%= " → " if index.positive? %>
-        <%= link_to "#{issue.project.full_name}##{issue.github_number}", issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+          <div class="flex min-w-0 items-start gap-2">
+            <span class="mt-0.5 shrink-0 text-xs font-semibold text-gray-400"><%= index + 1 %></span>
+            <div class="min-w-0 flex-1">
+              <%= dependency_cycle_issue_link(issue) %>
+              <%= dependency_cycle_label_badges(issue) %>
+              <%= dependency_cycle_umbrella_link(cycle, issue) %>
+            </div>
+          </div>
+          <% if index < cycle.path.length - 1 %>
+            <p class="mt-2 text-xs font-medium text-gray-400" aria-hidden="true">&darr; blocked by</p>
+          <% end %>
+        </li>
       <% end %>
-    </p>
+    </ul>
   </div>
 
   <div>

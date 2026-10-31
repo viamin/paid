@@ -150,6 +150,27 @@
   currently synchronized effective graph SHALL be identified as stale until a
   later synchronization observes an acyclic graph.
 
+- [x] **AUTO-PICK-QUEUE-020** — Each cycle path/edge node Paid presents SHALL
+  carry its locally synced title and current labels, and, when a parent issue
+  is linked and that parent's project is within the viewer's authorized
+  project set, the linked umbrella issue's number and title; an absent or
+  not-yet-authorized parent SHALL omit umbrella context rather than failing
+  the detail. The web Inbox detail SHALL keep this context readable on narrow
+  screens (wrapping labels, truncated titles) and SHALL make the full issue
+  title available on hover and on keyboard focus. The Mobile API cycle payload
+  SHALL expose the identical title, label, and umbrella context for every path
+  and edge node so API and agent clients can inspect the same cycle the web
+  Inbox renders, honoring the same authorized-project visibility boundary.
+  *Tests:* `spec/services/issues/dependency_cycles_spec.rb`,
+  `spec/services/inbox/queue_dependency_cycle_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/requests/api/v1/inbox_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::DependencyCycles::Cycle#umbrella_for`,
+  `Api::V1::InboxEntrySerializer#dependency_cycle_issue_payload`,
+  `DashboardHelper#dependency_cycle_issue_link`,
+  `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`,
+  `docs/api/openapi.yaml` (`DependencyCycleIssue`, `DependencyCycleParent`).
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label

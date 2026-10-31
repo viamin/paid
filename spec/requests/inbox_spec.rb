@@ -130,6 +130,73 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Retry cycle analysis")
   end
 
+  # @spec AUTO-PICK-QUEUE-020
+  it "shows each path issue's title, repository, and number, hoverable and keyboard-focusable" do
+    first = create(:issue, project:, github_state: "open", title: "Fix the retry loop")
+    second = create(:issue, project:, github_state: "open", title: "Add the retry metric")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css("a[href='#{first.github_url}']")
+    expect(link.text).to include("#{project.full_name}##{first.github_number}", first.title)
+    expect(link["title"]).to eq("#{project.full_name}##{first.github_number} — #{first.title}")
+    expect(link["aria-label"]).to eq(link["title"])
+  end
+
+  # @spec AUTO-PICK-QUEUE-020
+  it "shows useful labels and the linked umbrella number and title for a path issue" do
+    parent = create(:issue, project:, title: "Ship the whole epic")
+    first = create(:issue, project:, github_state: "open", parent_issue: parent, labels: [ "bug", "needs-triage" ])
+    second = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    expect(document.text).to include("bug", "needs-triage")
+    umbrella_link = document.at_css("a[href='#{parent.github_url}']")
+    expect(umbrella_link.text).to include("#{project.full_name}##{parent.github_number}", parent.title)
+    expect(document.text).to include("Umbrella:")
+  end
+
+  # @spec AUTO-PICK-QUEUE-020
+  it "omits umbrella context for a path issue with no linked parent" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("Umbrella:")
+  end
+
+  # @spec AUTO-PICK-QUEUE-020
+  it "shows each linked project for a cross-project cycle" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project: second_project, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("a[href='#{first.github_url}']").text).to include(project.full_name)
+    expect(document.at_css("a[href='#{second.github_url}']").text).to include(second_project.full_name)
+  end
+
   # @spec OPERATOR-INBOX-017
   it "renders selected context in the detail response without a nested Turbo request" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)
@@ -2343,18 +2410,16 @@ RSpec.describe "Inbox" do
 
   # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
   it "renders finding evidence and records a decision without plan-review actions" do
-    finding = create_layered_verification_finding
-    check_result = create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
-      execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
-      input_revision: { "code" => "abc123", "intent" => finding.obligation.external_revision })
-    finding.update!(observations: [ { "check_result_ids" => [ check_result.id ] } ])
+    finding = create_finding_with_observation
     key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
 
     get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response.body).to include("PAYMENTS-017", "Two captures occur after retry.",
       "Only the retry path was exercised.", "Request a separately authorized repair", "Contributing check results",
-      "completed", "contradicted", "matches audit revision")
+      "completed", "contradicted", "matches audit revision", "View audit run", "View canonical intent",
+      "View evidence")
+    expect_finding_evidence_links(finding)
     expect(response.body).not_to include("Approve plan", "Reject plan", "Revise plan")
 
     post inbox_layered_verification_finding_decision_path(key), params: {
@@ -2425,5 +2490,25 @@ RSpec.describe "Inbox" do
       decision: { "question" => "How should this discrepancy be handled?",
                   "options" => %w[request_repair approve_clarification defer],
                   "consequences" => [ "Repair requires separate authorization." ] })
+  end
+
+  def create_finding_with_observation
+    finding = create_layered_verification_finding
+    check_result = create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
+      execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
+      input_revision: { "code" => "abc123", "intent" => finding.obligation.external_revision })
+    finding.update!(observations: [ { "check_result_ids" => [ check_result.id ] } ])
+    finding
+  end
+
+  def expect_finding_evidence_links(finding)
+    audit_path = project_agent_run_path(project, finding.agent_run)
+
+    expect(response.body).to include(
+      audit_path,
+      "#{audit_path}#layered-verification-coverage",
+      "#{project.github_url}/blob/abc123/docs/intent/payments-specs.md",
+      'data-turbo-frame="_top"'
+    )
   end
 end

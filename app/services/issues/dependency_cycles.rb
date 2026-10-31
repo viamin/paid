@@ -15,7 +15,8 @@ module Issues
 
     Edge = Data.define(:id, :from_id, :to_id, :declaration_source, :declaration_url)
 
-    Cycle = Data.define(:account, :issues, :path, :path_edges, :effective_edges, :downstream_issues, :detected_at, :occurrence) do
+    Cycle = Data.define(:account, :issues, :path, :path_edges, :effective_edges, :downstream_issues, :detected_at,
+      :occurrence, :visible_parent_project_ids) do
       def fingerprint
         Digest::SHA256.hexdigest(issues.map(&:id).sort.join(":"))[0, 20]
       end
@@ -31,6 +32,20 @@ module Issues
       def project_ids = issues.map(&:project_id).uniq
       def visible_within?(visible_project_ids) = project_ids.all? { |project_id| visible_project_ids.include?(project_id) }
       def touches?(visible_project_ids) = project_ids.any? { |project_id| visible_project_ids.include?(project_id) }
+
+      # The parent (umbrella) issue for a path/edge node, when one is linked
+      # and its project is within the caller's authorized visibility. A nil
+      # `visible_parent_project_ids` means the caller is not operator-scoped
+      # (e.g. the reconciliation job) and every locally linked parent is
+      # returned. @spec AUTO-PICK-QUEUE-020
+      def umbrella_for(issue)
+        parent = issue.parent_issue
+        return nil unless parent
+        return parent if visible_parent_project_ids.nil?
+        return nil unless visible_parent_project_ids.include?(parent.project_id)
+
+        parent
+      end
     end
 
     def self.call(...) = new(...).call
@@ -53,7 +68,8 @@ module Issues
 
     def nodes
       @nodes ||= Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
-        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).includes(:project).index_by(&:id)
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .includes(:project, parent_issue: :project).index_by(&:id)
     end
 
     def edges
@@ -128,7 +144,7 @@ module Issues
         path_edges: path_ids.each_cons(2).map { |from, to| edge_between(from, to) },
         effective_edges:,
         downstream_issues: downstream_for(ids), detected_at: component.map { |id| nodes.fetch(id).updated_at }.min,
-        occurrence: cycle_occurrence(effective_edges))
+        occurrence: cycle_occurrence(effective_edges), visible_parent_project_ids: nil)
     end
 
     def edge_between(from_id, to_id)

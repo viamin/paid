@@ -238,6 +238,22 @@ RSpec.describe Issues::BulkEnqueueEligible do
       expect(AgentPlanningHolds::Reconcile).not_to have_received(:call).with(hold: other_hold)
     end
 
+    # @spec CONFIDENCE-DELIVERY-019
+    it "retires only this project's closed review holds during the bounded sweep" do
+      closed_issue = create(:issue, :closed, project: project, labels: [ "planning" ])
+      closed_hold = create_agent_planning_hold(project:, issue: closed_issue, status: "needs_review")
+      closed_notification = AgentPlanningHolds::RequestReview.call(hold: closed_hold)
+      other_project = create(:project)
+      other_issue = create(:issue, :closed, project: other_project, labels: [ "planning" ])
+      other_hold = create_agent_planning_hold(project: other_project, issue: other_issue, status: "needs_review")
+      other_notification = AgentPlanningHolds::RequestReview.call(hold: other_hold)
+
+      service.send(:reconcile_agent_planning_holds)
+
+      expect(closed_notification.reload.resolved_at).to be_present
+      expect(other_notification.reload).to be_active
+    end
+
     def create_agent_planning_hold(project:, issue:, status:)
       AgentPlanningHold.create!(
         account: project.account,

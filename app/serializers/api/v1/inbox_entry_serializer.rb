@@ -111,6 +111,7 @@ module Api
         end
       end
 
+      # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020
       def dependency_cycle_payload
         dependency_cycle_list_payload.merge(analysis_run: cycle_analysis_run_payload(entry.record))
       end
@@ -118,9 +119,9 @@ module Api
       def dependency_cycle_list_payload
         cycle = entry.record
         {
-          cycle_path: cycle.path.map { |issue| { project: issue.project.full_name, number: issue.github_number, url: issue.github_url } },
+          cycle_path: cycle.path.map { |issue| dependency_cycle_issue_payload(issue, cycle) },
           cycle_edges: cycle.path_edges.each_with_index.map do |edge, index|
-            dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1])
+            dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1], cycle)
           end,
           downstream_issues_held: cycle.downstream_issues.size,
           graph_revision: cycle.graph_revision
@@ -139,13 +140,29 @@ module Api
           recommendation: result["recommendation"], coverage: result["coverage"] }
       end
 
-      def dependency_cycle_edge_payload(edge, from, to)
+      def dependency_cycle_edge_payload(edge, from, to, cycle)
         {
-          from: { project: from.project.full_name, number: from.github_number, url: from.github_url },
-          to: { project: to.project.full_name, number: to.github_number, url: to.github_url },
+          from: dependency_cycle_issue_payload(from, cycle),
+          to: dependency_cycle_issue_payload(to, cycle),
           declaration_source: edge.declaration_source,
           declaration_url: edge.declaration_url
         }
+      end
+
+      # Title, labels, and (when authorized) umbrella context for one cycle
+      # path/edge node, so API and agent clients see the same declaration
+      # context the Inbox detail pane renders.
+      def dependency_cycle_issue_payload(issue, cycle)
+        {
+          project: issue.project.full_name, number: issue.github_number, url: issue.github_url,
+          title: issue.title, labels: issue.labels, parent: dependency_cycle_parent_payload(cycle.umbrella_for(issue))
+        }
+      end
+
+      def dependency_cycle_parent_payload(parent)
+        return nil unless parent
+
+        { project: parent.project.full_name, number: parent.github_number, url: parent.github_url, title: parent.title }
       end
 
       def list_kind_payload

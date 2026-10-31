@@ -112,6 +112,49 @@ RSpec.describe "Mobile inbox API" do
     )
   end
 
+  # @spec AUTO-PICK-QUEUE-020 MOBILE-API-006
+  it "exposes title, labels, and authorized umbrella context on every cycle path and edge node" do
+    parent = create(:issue, project:, title: "Ship the whole epic")
+    first = create(:issue, project:, github_state: "open", parent_issue: parent, labels: [ "bug" ])
+    second = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
+
+    entry = response.parsed_body.fetch("entries").sole
+    first_node = entry.fetch("cycle_path").find { |node| node.fetch("number") == first.github_number }
+    second_node = entry.fetch("cycle_path").find { |node| node.fetch("number") == second.github_number }
+    expect(first_node).to include(
+      "title" => first.title, "labels" => [ "bug" ],
+      "parent" => { "project" => project.full_name, "number" => parent.github_number, "url" => parent.github_url, "title" => parent.title }
+    )
+    expect(second_node).to include("title" => second.title, "labels" => [], "parent" => nil)
+    expect(entry.fetch("cycle_edges").first).to include("from" => first_node, "to" => second_node)
+  end
+
+  # Issue#parent_issue is validated to the same project; a cross-project
+  # parent can only exist as a legacy artifact predating that guard, written
+  # here via update_columns to simulate it (mirrors how a persisted cycle
+  # itself only survives as a pre-guard legacy artifact).
+  # @spec AUTO-PICK-QUEUE-020 MOBILE-API-006
+  it "omits umbrella context when the linked parent belongs to another owner's project" do
+    other_user = create(:user, account:)
+    hidden_project = create(:project, account:, created_by: other_user)
+    hidden_parent = create(:issue, project: hidden_project)
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    first.update_columns(parent_issue_id: hidden_parent.id)
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
+
+    entry = response.parsed_body.fetch("entries").sole
+    first_node = entry.fetch("cycle_path").find { |node| node.fetch("number") == first.github_number }
+    expect(first_node.fetch("parent")).to be_nil
+  end
+
   # @spec MOBILE-API-006 MOBILE-API-010
   it "paginates the inbox before serializing entries" do
     issues = create_list(:issue, 3, :needs_input, project:, needs_input_questions: [ "What should happen?" ])

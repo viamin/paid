@@ -82,6 +82,31 @@ RSpec.describe Issues::DependencyCycles do
     expect(described_class.call(account:)).to be_empty
   end
 
+  # @spec AUTO-PICK-QUEUE-020
+  it "returns the linked parent issue as umbrella context when visibility is unrestricted" do
+    parent = create(:issue, project:)
+    issues = graph([ 1, 2 ])
+    issues[0].update!(parent_issue: parent)
+    connect(issues, [ [ 0, 1 ], [ 1, 0 ] ])
+
+    cycle = described_class.call(account:).sole
+
+    expect(cycle.umbrella_for(issues[0])).to eq(parent)
+    expect(cycle.umbrella_for(issues[1])).to be_nil
+  end
+
+  # @spec AUTO-PICK-QUEUE-020
+  it "omits umbrella context once visibility is restricted away from the parent's project" do
+    parent = create(:issue, project:)
+    issues = graph([ 1, 2 ])
+    issues[0].update!(parent_issue: parent)
+    connect(issues, [ [ 0, 1 ], [ 1, 0 ] ])
+
+    cycle = described_class.call(account:).sole.with(visible_parent_project_ids: Set.new)
+
+    expect(cycle.umbrella_for(issues[0])).to be_nil
+  end
+
   it "reports unavailable database coverage distinctly from an acyclic graph" do
     account
     allow(Issue.connection).to receive(:select_all)
