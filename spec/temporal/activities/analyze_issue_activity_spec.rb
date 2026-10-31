@@ -115,6 +115,24 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       }.to raise_error(Temporalio::Error::ApplicationError, "LLM returned invalid analysis JSON")
     end
 
+    # @spec ISSUE-ANALYSIS-018
+    it "preserves unexpected application errors and records their diagnostic trace" do
+      allow(AgentHarness.conductor).to receive(:execute_direct)
+        .and_raise(ArgumentError, "wrong number of arguments (given 0, expected 1)")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(ArgumentError, "wrong number of arguments (given 0, expected 1)")
+
+      diagnostics = agent_run.reload.issue_analysis_diagnostics
+      expect(diagnostics).to include(
+        "failure_category" => "unexpected_application_error",
+        "error_class" => "ArgumentError",
+        "error_message" => "wrong number of arguments (given 0, expected 1)"
+      )
+      expect(diagnostics.fetch("error_trace")).to be_present
+    end
+
     it "raises a non-retryable error when the LLM response is missing required keys" do
       allow(llm_response).to receive(:output).and_return({ foo: "bar" }.to_json)
 

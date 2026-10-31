@@ -75,9 +75,38 @@ module Activities
       ) do
         analyze_issue(agent_run)
       end
+    rescue Temporalio::Error::ApplicationError
+      raise
+    rescue => error
+      record_unexpected_application_error!(agent_run, error) if agent_run
+      raise
     end
 
     private
+
+    # Retain the native exception for Temporal's failure trace. The durable
+    # diagnostics category lets terminal failure handling apply the separate
+    # automatic-error cooldown without mistaking a programming error for a
+    # provider outage.
+    # @spec ISSUE-ANALYSIS-018
+    def record_unexpected_application_error!(agent_run, error)
+      diagnostics = agent_run.issue_analysis_diagnostics.to_h
+      agent_run.record_issue_analysis_diagnostics!(
+        diagnostics.merge(
+          failure_category: "unexpected_application_error",
+          error_class: error.class.name,
+          error_message: error.message.to_s.truncate(200),
+          error_trace: Array(error.backtrace).first(20)
+        )
+      )
+    rescue => recording_error
+      logger.error(
+        message: "agent_execution.analyze_issue_unexpected_error_diagnostics_failed",
+        agent_run_id: agent_run.id,
+        error_class: recording_error.class.name,
+        error: recording_error.message
+      )
+    end
 
     def analyze_issue(agent_run)
       agent_run.start!

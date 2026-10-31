@@ -1465,8 +1465,8 @@ class Issue < ApplicationRecord
     true
   end
 
-  def record_issue_analysis_backoff!(paid_state:, now: Time.current) # @spec ISSUE-ANALYSIS-010
-    streak = consecutive_issue_analysis_provider_exhaustion_count
+  def record_issue_analysis_backoff!(paid_state:, failure_category: :provider_exhaustion, now: Time.current) # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-018
+    streak = consecutive_issue_analysis_failure_count(failure_category)
     next_attempt_at = now + issue_analysis_backoff_delay(streak)
     attrs = {
       issue_analysis_next_attempt_at: next_attempt_at,
@@ -1482,7 +1482,8 @@ class Issue < ApplicationRecord
       project_id: project_id,
       issue_number: github_number,
       next_attempt_at: next_attempt_at.iso8601,
-      consecutive_failures: streak
+      consecutive_failures: streak,
+      failure_category: failure_category
     )
 
     next_attempt_at
@@ -1500,6 +1501,15 @@ class Issue < ApplicationRecord
       project_id: project_id,
       issue_number: github_number,
       reason: reason
+    )
+  end
+
+  # @spec ISSUE-ANALYSIS-018
+  def record_issue_analysis_application_error_backoff!(paid_state:, now: Time.current)
+    record_issue_analysis_backoff!(
+      paid_state: paid_state,
+      failure_category: :unexpected_application_error,
+      now: now
     )
   end
 
@@ -1615,7 +1625,7 @@ class Issue < ApplicationRecord
     [ issue_analysis_next_attempt_at - Time.current, 0 ].max.seconds
   end
 
-  def issue_analysis_backoff_delay(streak = consecutive_issue_analysis_provider_exhaustion_count)
+  def issue_analysis_backoff_delay(streak)
     multiplier = [ streak - 1, 0 ].max
     [ ISSUE_ANALYSIS_BACKOFF_BASE_DELAY * (2**multiplier), ISSUE_ANALYSIS_BACKOFF_MAX_DELAY ].min
   end
@@ -1627,6 +1637,18 @@ class Issue < ApplicationRecord
   # mixing them into this streak would let a single prior rate-limited run push
   # the first actual exhaustion failure from a 5-minute delay to a 10-minute
   # delay (multiplier 0 -> 1) even though no exhaustion has happened yet.
+  def consecutive_issue_analysis_failure_count(category)
+    return consecutive_issue_analysis_provider_exhaustion_count if category == :provider_exhaustion
+
+    agent_runs
+      .where(auto_pick: true, goal: "analyze_issue")
+      .finished
+      .order(created_at: :desc, id: :desc)
+      .limit(ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT)
+      .take_while { |run| run.unexpected_issue_analysis_application_error? }
+      .count
+  end
+
   def consecutive_issue_analysis_provider_exhaustion_count
     agent_runs
       .where(auto_pick: true, goal: "analyze_issue")

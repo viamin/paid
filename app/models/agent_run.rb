@@ -2775,6 +2775,11 @@ class AgentRun < ApplicationRecord
     external_metadata.is_a?(Hash) ? external_metadata[ISSUE_ANALYSIS_DIAGNOSTICS_KEY] : nil
   end
 
+  # @spec ISSUE-ANALYSIS-018
+  def unexpected_issue_analysis_application_error?
+    issue_analysis_diagnostics&.fetch("failure_category", nil) == "unexpected_application_error"
+  end
+
   # Replace the per-phase diagnostics blob rather than merging it. Each
   # `record_issue_analysis_diagnostics!` call describes the currently active
   # phase (running/completed/failed) on the analyze_issue run, and the

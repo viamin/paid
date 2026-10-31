@@ -259,6 +259,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec ISSUE-ANALYSIS-018
+    it "excludes an unexpected-analysis-error failure until its bounded cooldown expires" do
+      issue = create(:issue, project: project, paid_state: "failed",
+        issue_analysis_next_attempt_at: 5.minutes.from_now,
+        issue_analysis_backoff_set_at: Time.current)
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
+
+      travel 6.minutes do
+        expect(described_class.eligible_scope(project)).to include(issue)
+      end
+    end
+
     # @spec AUTO-PICK-QUEUE-002 ISSUE-ANALYSIS-010
     it "treats the cooldown as reset when issue-analysis runner configuration changes" do
       issue = create(:issue, project: project, paid_state: "failed",

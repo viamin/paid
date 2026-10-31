@@ -52,6 +52,45 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       end
     end
 
+    # @spec ISSUE-ANALYSIS-018
+    it "backs off automatic unexpected application errors without classifying them as provider outages" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+      agent_run.record_issue_analysis_diagnostics!(
+        failure_category: "unexpected_application_error",
+        error_class: "ArgumentError",
+        error_message: "wrong number of arguments (given 0, expected 1)",
+        error_trace: [ "app/services/llm/api_request.rb:12" ]
+      )
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id, error: "wrong number of arguments (given 0, expected 1)")
+
+        issue.reload
+        expect(agent_run.reload.error_message).to eq("wrong number of arguments (given 0, expected 1)")
+        expect(issue.issue_analysis_next_attempt_at).to eq(5.minutes.from_now)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "grows the unexpected application-error cooldown without mixing provider-exhaustion failures" do
+      issue = create(:issue, :in_progress, project: project)
+      prior_application_error = create(:agent_run, :failed, :automatic, project: project, issue: issue,
+        goal: "analyze_issue", auto_pick: true, error_message: "wrong number of arguments", created_at: 1.minute.ago)
+      prior_application_error.record_issue_analysis_diagnostics!(failure_category: "unexpected_application_error")
+      expect(prior_application_error.reload).to be_unexpected_issue_analysis_application_error
+      create(:agent_run, :failed, :automatic, project: project, issue: issue,
+        goal: "analyze_issue", auto_pick: true, error_message: "All issue-analysis providers exhausted", created_at: 2.minutes.ago)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+      agent_run.record_issue_analysis_diagnostics!(failure_category: "unexpected_application_error")
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id, error: "wrong number of arguments")
+
+        expect(issue.reload.issue_analysis_next_attempt_at).to eq(10.minutes.from_now)
+      end
+    end
+
     # @spec ISSUE-ANALYSIS-010
     it "caps the issue-level analyze_issue backoff for repeated automatic provider exhaustion failures" do
       issue = create(:issue, :in_progress, project: project)

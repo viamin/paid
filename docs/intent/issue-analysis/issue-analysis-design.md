@@ -176,7 +176,7 @@ manually re-trigger it. Any other outcome (a genuine mix of failure types, or
 an empty candidate list to begin with) keeps the original non-retryable
 `AnalyzeIssueLlmFailed` behavior — those are not transient rate-limit storms.
 
-## Automatic retry backoff after provider exhaustion
+## Automatic retry backoff after provider exhaustion and application errors
 
 Non-rate-limit provider exhaustion is still an availability outage, but unlike
 `ISSUE-ANALYSIS-006` it does not have a provider-supplied reset time. When an
@@ -195,6 +195,22 @@ The cooldown is only for automatic selection. Manual retries remain allowed
 (`ISSUE-ANALYSIS-011`) because they do not flow through auto-pick eligibility.
 However, a manual retry failure does not extend or clear the automatic cooldown
 by itself; only a successful provider call clears it.
+
+Unexpected application exceptions use a separate failure category from provider
+exhaustion and all-provider rate limiting. The activity preserves the original
+exception for Temporal's failure trace and records its class, message, traceback,
+and the last analysis phase in run diagnostics. When the terminal run is an
+automatic `analyze_issue` run with that category, it receives the same bounded,
+issue-local cooldown policy, with its own consecutive-failure streak. This keeps
+a deterministic programming error from re-entering auto-pick immediately while
+neither representing it as a provider outage nor changing the all-rate-limited
+in-place recovery path.
+
+Expiry is the bounded recovery point. The existing relevant runner and
+configuration reset context also makes the issue eligible immediately when its
+analysis configuration changes. Manual retries remain available throughout the
+cooldown and do not change this automatic-error streak. A successful provider
+response clears either automatic-analysis cooldown.
 
 ## Timeout diagnostics and timeout policy
 

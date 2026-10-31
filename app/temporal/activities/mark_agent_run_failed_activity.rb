@@ -72,6 +72,8 @@ module Activities
           end
         if record_issue_analysis_backoff?(agent_run)
           issue.record_issue_analysis_backoff!(paid_state: target_state)
+        elsif record_issue_analysis_application_error_backoff?(agent_run)
+          issue.record_issue_analysis_application_error_backoff!(paid_state: target_state)
         elsif issue.paid_state != target_state
           issue.update!(paid_state: target_state)
         end
@@ -117,6 +119,14 @@ module Activities
         agent_run.analyze_issue_goal? &&
         agent_run.status == "failed" &&
         agent_run.provider_unavailable?
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    def record_issue_analysis_application_error_backoff?(agent_run)
+      agent_run.auto_pick? &&
+        agent_run.analyze_issue_goal? &&
+        agent_run.status == "failed" &&
+        agent_run.unexpected_issue_analysis_application_error?
     end
 
     # Failed manual runs with no issue/PR attachment (create_feature,

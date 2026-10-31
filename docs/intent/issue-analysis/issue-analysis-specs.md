@@ -118,6 +118,22 @@
   out automatic analysis SHALL remain a failed run, not an automatic retry or
   parked state, unless the failure had already been positively classified as
   the all-rate-limited case in `ISSUE-ANALYSIS-006`.
+
+- [x] **ISSUE-ANALYSIS-018** — When an unexpected non-provider exception
+  escapes automatic `analyze_issue` processing, the system SHALL preserve the
+  original exception and diagnostic trace, classify the run as an unexpected
+  application error, and apply a bounded issue-local automatic retry cooldown
+  with a streak distinct from provider exhaustion. The issue SHALL remain out
+  of auto-pick until that cooldown expires or relevant issue-analysis
+  configuration changes, while manual retry remains available. This SHALL NOT
+  reclassify the error as provider exhaustion or all-provider rate limiting.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/models/agent_run.rb`, `app/models/issue.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
   *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`,
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
   *Code:* `app/temporal/activities/base_activity.rb`,
