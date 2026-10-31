@@ -665,6 +665,28 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "dependency_cycle")
     end
+
+    # A completed cycle-analysis AgentRun matching the cycle's fingerprint
+    # renders the "view run" link (#4823) — the no-analysis-yet example above
+    # never exercises that branch, so it alone cannot catch a missing
+    # `data-turbo-frame="_top"` on that link.
+    context "when a cycle analysis run already exists" do
+      let(:analysis_run) do
+        TenantContext.with_system_access do
+          create(:agent_run, project: project, issue: nil, custom_prompt: "Analyze the dependency cycle",
+            goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: "completed",
+            external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint, "occurrence" => cycle.occurrence } },
+            verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => { "summary" => "Drop the contested edge." } } })
+        end
+      end
+
+      before { analysis_run }
+
+      it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
+        fragment = render_detail_partial(entry)
+        assert_navigation_intent!(fragment, kind: "dependency_cycle")
+      end
+    end
   end
 
   # @spec INBOX-NAV-INTENT-002

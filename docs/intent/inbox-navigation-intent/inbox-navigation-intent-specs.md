@@ -29,7 +29,10 @@
   branches], escalated_pr [including its awaiting_approval and
   operational-failures branches], manual_review, intent_conformance,
   feature_decision, retry_limited, change_intent_draft, partial_closeout,
-  test_review_pending, project_setup_pending, traceability_gap) so new
+  test_review_pending, project_setup_pending, traceability_gap,
+  dependency_cycle [including both its no-analysis-yet and its
+  analysis-run-already-exists branches, since the latter renders an
+  additional "view run" link the former never reaches (#4823)]) so new
   kinds added to the dispatcher inherit the policy automatically, with
   that inheritance enforced by INBOX-NAV-INTENT-003.
   *Test:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`.
