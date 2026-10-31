@@ -70,7 +70,9 @@ module Activities
           else
             "failed"
           end
-        if record_issue_analysis_backoff?(agent_run)
+        if record_issue_analysis_internal_error_backoff?(agent_run)
+          issue.record_issue_analysis_internal_error_backoff!(paid_state: target_state)
+        elsif record_issue_analysis_backoff?(agent_run)
           issue.record_issue_analysis_backoff!(paid_state: target_state)
         elsif issue.paid_state != target_state
           issue.update!(paid_state: target_state)
@@ -117,6 +119,21 @@ module Activities
         agent_run.analyze_issue_goal? &&
         agent_run.status == "failed" &&
         agent_run.provider_unavailable?
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    # Unexpected non-provider exceptions (deterministic programming errors
+    # like the #4814 ArgumentError) get their own bounded retry policy,
+    # checked before the provider-exhaustion gate — the strict message marker
+    # is written only by the ISSUE-ANALYSIS-018 classification, so it is the
+    # more specific signal and a programming error is never reclassified as
+    # a provider outage even if its embedded original message happens to
+    # contain exhaustion keywords. Manual failures are excluded, mirroring
+    # ISSUE-ANALYSIS-011.
+    def record_issue_analysis_internal_error_backoff?(agent_run)
+      agent_run.auto_pick? &&
+        agent_run.analyze_issue_goal? &&
+        agent_run.issue_analysis_internal_error?
     end
 
     # Failed manual runs with no issue/PR attachment (create_feature,

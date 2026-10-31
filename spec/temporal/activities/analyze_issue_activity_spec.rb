@@ -1309,6 +1309,111 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     end
   end
 
+  describe "unexpected internal errors" do
+    # Reproduces the #4814 escape: a deterministic programming error (e.g. the
+    # ArgumentError raised by Llm::ApiRequest during the OpenCode provider
+    # attempt) is not an AgentHarness::Error, so before ISSUE-ANALYSIS-018 it
+    # escaped call_llm entirely, never reached the provider-exhaustion
+    # classification, and left the issue eligible for repeated auto-pick.
+    let(:account) { create(:account) }
+    let(:owner) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: owner) }
+    let(:issue) do
+      create(:issue, :in_progress,
+        project: project,
+        github_number: 84,
+        title: "Add audit log",
+        body: "Record user actions for compliance tracking")
+    end
+    let(:agent_run) { create(:agent_run, project: project, issue: issue, goal: "analyze_issue") }
+
+    def internal_error
+      ArgumentError.new("wrong number of arguments (given 0, expected 1)")
+    end
+
+    before do
+      configure_llm_routing(project: project)
+      owner.settings.update!(issue_analysis_runner: "claude", issue_analysis_fallback_runners: [ "codex" ])
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true,
+        tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      allow(project).to receive(:broadcast_agent_run_detail_update)
+      allow(GithubClient).to receive(:new).and_return(client)
+      allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return([])
+      allow(Knowledge::Search).to receive(:call).and_return(results: [], meta: {})
+      allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(content: "", sections: [], total_tokens: 0)
+      allow(ProcessRunQueueJob).to receive(:perform_later)
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "raises a non-retryable AnalyzeIssueInternalError preserving the original error class and message" do
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(internal_error)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("AnalyzeIssueInternalError")
+        expect(error.non_retryable).to be(true)
+        expect(error.message).to start_with(AgentRun::ISSUE_ANALYSIS_INTERNAL_ERROR_PREFIX)
+        expect(error.message).to include("ArgumentError")
+        expect(error.message).to include("wrong number of arguments (given 0, expected 1)")
+      }
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "persists a structured provider-failure log with the internal_error category and a bounded diagnostic trace" do
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(internal_error)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError)
+
+      # Both the primary and the fallback provider raise, so each attempt
+      # leaves one structured log; the primary is the diagnostic anchor.
+      log = agent_run.reload.agent_run_logs.provider_failures.find do |entry|
+        entry.metadata["provider"] == "claude"
+      end
+      expect(log).to be_present
+      expect(log.metadata).to include(
+        "type" => AgentRunLog::PROVIDER_FAILURE_TYPE,
+        "provider" => "claude",
+        "failure_category" => "internal_error",
+        "error_class" => "ArgumentError"
+      )
+      expect(log.content).to include("ArgumentError")
+      expect(log.content).to include("wrong number of arguments (given 0, expected 1)")
+      expect(Array(log.metadata["backtrace"])).not_to be_empty
+      expect(log.metadata["backtrace"].size).to be <= 5
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "keeps failing over to the next provider after an internal error" do
+      attempted = []
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
+        attempted << opts[:provider]
+        opts[:provider] == :claude ? raise(internal_error) : llm_response
+      end
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(attempted).to eq([ :claude, :codex ])
+      expect(result[:sufficient_context]).to be true
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "prefers the internal-error classification over provider exhaustion when both occur" do
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
+        opts[:provider] == :claude ? raise(internal_error) : raise(AgentHarness::ProviderUnavailableError.new("boom"))
+      end
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("AnalyzeIssueInternalError")
+        expect(error.message).not_to include("providers exhausted")
+      }
+    end
+  end
+
   describe "issue analysis runner selection" do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account) }

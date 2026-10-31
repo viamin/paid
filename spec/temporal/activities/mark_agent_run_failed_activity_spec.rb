@@ -102,6 +102,78 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.issue_analysis_next_attempt_at).to be_nil
     end
 
+    # @spec ISSUE-ANALYSIS-018
+    # Reproduces the run-25542 loop from #4814: before this, an unexpected
+    # non-provider exception escaped call_llm as a plain failure with no
+    # issue-level backoff, so the issue stayed eligible for repeated auto-pick
+    # and minted near-identical failing runs every ~15-75 seconds.
+    it "records the distinct bounded internal-error backoff for automatic internal-error failures" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id,
+          error: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+
+        issue.reload
+        expect(issue.paid_state).to eq("failed")
+        expect(issue.issue_analysis_backoff_set_at).to eq(Time.current)
+        expect(issue.issue_analysis_next_attempt_at).to eq(15.minutes.from_now)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "defers automatic attempts by the longer parked window once consecutive internal errors reach the cap" do
+      issue = create(:issue, :in_progress, project: project)
+      3.times do
+        create(:agent_run, :failed, :automatic, project: project, issue: issue,
+          goal: "analyze_issue", auto_pick: true,
+          error_message: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+      end
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id,
+          error: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+
+        expect(issue.reload.issue_analysis_next_attempt_at).to eq(7.days.from_now)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-018 ISSUE-ANALYSIS-011
+    it "does not record the internal-error backoff for manual internal-error failures" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: false)
+
+      activity.execute(agent_run_id: agent_run.id,
+        error: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+
+      issue.reload
+      expect(issue.issue_analysis_backoff_set_at).to be_nil
+      expect(issue.issue_analysis_next_attempt_at).to be_nil
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    it "keeps the internal-error streak distinct from provider-exhaustion failures" do
+      issue = create(:issue, :in_progress, project: project)
+      4.times do
+        create(:agent_run, :failed, :automatic, project: project, issue: issue,
+          goal: "analyze_issue", auto_pick: true,
+          error_message: "All issue-analysis providers exhausted: claude")
+      end
+      agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        activity.execute(agent_run_id: agent_run.id,
+          error: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+
+        # Only this run counts toward the internal-error streak (base delay),
+        # and the internal error is not reclassified as a provider outage.
+        expect(agent_run.reload.provider_unavailable?).to be(false)
+        expect(issue.reload.issue_analysis_next_attempt_at).to eq(15.minutes.from_now)
+      end
+    end
+
     # @spec ISSUE-ENHANCEMENT-002
     it "preserves manual review after an enhancement failure" do
       issue = create(:issue, project: project, paid_state: "manual_review")

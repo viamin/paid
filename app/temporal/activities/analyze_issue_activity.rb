@@ -236,7 +236,7 @@ module Activities
       { content: "", sections: [], total_tokens: 0 }
     end
 
-    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-013
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-013 ISSUE-ANALYSIS-018
     def call_llm(agent_run, prompt)
       user_setting = owner_user_setting(agent_run.project)
       providers = chat_providers(agent_run.project)
@@ -273,6 +273,8 @@ module Activities
         end
         record_runner_success(user_setting, provider)
         return response
+      rescue Temporalio::Error::CanceledError
+        raise
       rescue UnsuccessfulResponseError => e
         log_failed_response(agent_run, provider, e.response)
         category = classify_response_error(e.response)
@@ -314,6 +316,22 @@ module Activities
           exit_code: nil, message: e.message
         )
         attempted_failures << { provider: provider.to_s, category: category }
+      rescue StandardError => e
+        # @spec ISSUE-ANALYSIS-018
+        # A non-Provider exception is an application programming error (e.g.
+        # the ArgumentError from #4814), not a provider outage: it is
+        # deterministic, so failover continues but the terminal error must be
+        # classified distinctly instead of escaping unclassified or being
+        # recorded as provider exhaustion.
+        record_internal_provider_attempt_failure!(
+          agent_run: agent_run, provider: provider, attempt: index + 1, error: e
+        )
+        attempted_failures << {
+          provider: provider.to_s,
+          category: :internal_error,
+          original_class: e.class.name,
+          original_message: e.message
+        }
       end
 
       raise_llm_failure!(agent_run, rate_limited_count, earliest_reset_at, attempted_failures)
@@ -341,11 +359,38 @@ module Activities
         )
       end
 
+      # @spec ISSUE-ANALYSIS-018
+      # An unexpected non-provider exception takes classification precedence
+      # over provider exhaustion: the terminal error keeps the internal-error
+      # marker so failure finalization applies the distinct bounded retry
+      # policy instead of the provider-exhaustion backoff (#4814).
+      internal_failures = attempted_failures.select { |failure| failure[:category] == :internal_error }
+      if internal_failures.any?
+        raise Temporalio::Error::ApplicationError.new(
+          issue_analysis_internal_error_message(internal_failures),
+          type: "AnalyzeIssueInternalError",
+          non_retryable: true
+        )
+      end
+
       raise Temporalio::Error::ApplicationError.new(
         issue_analysis_provider_exhaustion_message(attempted_failures),
         type: "AnalyzeIssueLlmFailed",
         non_retryable: true
       )
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    # Preserves the original error class and (sanitized) message under the
+    # AgentRun-level internal-error marker — never reclassified as a provider
+    # outage — so the diagnostic detail survives into the run's terminal
+    # error without carrying secrets or unbounded payloads.
+    def issue_analysis_internal_error_message(internal_failures)
+      details = internal_failures.map do |failure|
+        "#{failure[:provider]} (#{failure[:original_class]}: #{failure[:original_message]})"
+      end.join("; ")
+      sanitized = AgentRun::ErrorMessageSanitizer.call(text: "#{AgentRun::ISSUE_ANALYSIS_INTERNAL_ERROR_PREFIX}: #{details}")
+      sanitized || AgentRun::ISSUE_ANALYSIS_INTERNAL_ERROR_PREFIX
     end
 
     # @spec ISSUE-ANALYSIS-010 ISSUE-ANALYSIS-013
@@ -403,7 +448,7 @@ module Activities
     # failure category, exit code (when known), and a redacted/truncated
     # message — via the same sanitizer used for runner-attempt error text, so
     # secrets and unbounded provider payloads never land in agent_run_logs.
-    def record_provider_attempt_failure!(agent_run:, provider:, attempt:, category:, exit_code:, message:)
+    def record_provider_attempt_failure!(agent_run:, provider:, attempt:, category:, exit_code:, message:, extra_metadata: {})
       agent_run.agent_run_logs.create!(
         log_type: "system",
         content: AgentRun::ErrorMessageSanitizer.call(text: message) || "(no error message)",
@@ -413,7 +458,7 @@ module Activities
           attempt: attempt,
           failure_category: category.to_s,
           exit_code: exit_code
-        }.compact
+        }.merge(extra_metadata).compact
       )
     rescue => log_error
       logger.warn(
@@ -421,6 +466,31 @@ module Activities
         agent_run_id: agent_run.id,
         provider: provider,
         error: log_error.message
+      )
+    end
+
+    # @spec ISSUE-ANALYSIS-018
+    # Durable record for an unexpected internal (non-provider) exception:
+    # preserves the original error class, sanitized message, and a bounded
+    # backtrace excerpt under the `internal_error` failure category, so the
+    # diagnostic trace survives beyond process logs without being
+    # reclassified as a provider outage.
+    def record_internal_provider_attempt_failure!(agent_run:, provider:, attempt:, error:)
+      logger.warn(
+        message: "agent_execution.analyze_issue_internal_error",
+        agent_run_id: agent_run.id,
+        provider: provider,
+        error_class: error.class.name,
+        error: error.message.to_s.truncate(500),
+        backtrace: Array(error.backtrace).first(5)
+      )
+      record_provider_attempt_failure!(
+        agent_run: agent_run, provider: provider, attempt: attempt, category: :internal_error,
+        exit_code: nil, message: "#{error.class.name}: #{error.message}",
+        extra_metadata: {
+          error_class: error.class.name,
+          backtrace: Array(error.backtrace).first(5)
+        }
       )
     end
 

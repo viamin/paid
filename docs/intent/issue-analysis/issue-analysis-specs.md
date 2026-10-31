@@ -341,7 +341,7 @@
   `EnhanceIssueActivity#sync_needs_input_questions` wrote them, so a genuinely
   unanswered round is never silently discarded by the analyzer pass. The
   removal is local-only (the GitHub-side label was already removed by
-  `ClarifyingQuestions::ClearNeedsInput` once a human answered, or the issue
+  `ClarifyingQuestions::ClearNeedsInput` once the human answered, or the issue
   never carried it); a GitHub write is intentionally skipped here to avoid
   racing with the human's own label sync. The reconciliation runs in the same
   transaction-shaped site as `paid_state: "analyzed"`, so a successful
@@ -355,3 +355,55 @@
   `#reconcile_resolved_clarification_state_attrs`,
   `app/temporal/activities/create_agent_run_activity.rb#clarification_pending?`,
   `app/temporal/workflows/agent_execution_workflow.rb#execute`.
+
+- [x] **ISSUE-ANALYSIS-018** — When a provider attempt inside `call_llm`
+  fails with an unexpected non-provider exception (a deterministic
+  programming/application error such as the `ArgumentError` that escaped
+  `Llm::ApiRequest` during the OpenCode attempt in #4814, run 25542), the
+  system SHALL classify it distinctly instead of letting it escape
+  unclassified: the failover loop SHALL continue to the next provider, each
+  such attempt SHALL persist a structured provider-failure `AgentRunLog`
+  entry carrying `failure_category: "internal_error"`, the original error
+  class, a sanitized original message, and a bounded backtrace excerpt
+  (preserving the diagnostic trace), and — when any attempt failed this way —
+  the terminal error SHALL be a non-retryable `AnalyzeIssueInternalError`
+  whose message starts with the `AgentRun::ISSUE_ANALYSIS_INTERNAL_ERROR_PREFIX`
+  marker and preserves the original error class and message. This
+  classification SHALL take precedence over provider-exhaustion
+  (`ISSUE-ANALYSIS-010`, #3640) and is distinct from all-provider rate
+  limiting (`ISSUE-ANALYSIS-006`, #3314): an internal-error run is never
+  `provider_unavailable?` and never counts toward the exhaustion streak, and
+  exhaustion/rate-limited runs never count toward the internal-error streak.
+  When an **automatic** `analyze_issue` run fails this way, failure
+  finalization SHALL record the bounded internal-error retry policy on the
+  issue (reusing the `ISSUE-ANALYSIS-010` backoff columns so auto-pick
+  exclusion, the runner-configuration reset context, the successful-call
+  clear, and `ISSUE-ANALYSIS-011` manual-retry semantics all apply
+  unchanged): the deferral grows exponentially from a 15-minute base capped
+  at 24 hours, and once the consecutive internal-error streak reaches 3 the
+  next automatic attempt is deferred by the longer bounded 7-day parked
+  window — repeated deterministic failures must not re-arm the auto-pick
+  repeat loop, while a later recovery (the bounded window elapsing, a
+  relevant configuration change resetting the cooldown, or a manual retry)
+  resumes analysis. Manual retries SHALL remain available and SHALL NOT
+  record or extend the automatic cooldown.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`
+  ("unexpected internal errors"),
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`
+  ("records the distinct bounded internal-error backoff",
+  "defers automatic attempts by the longer parked window",
+  "does not record the internal-error backoff for manual internal-error failures",
+  "keeps the internal-error streak distinct from provider-exhaustion failures"),
+  `spec/models/issue_spec.rb` ("#record_issue_analysis_internal_error_backoff!"),
+  `spec/models/agent_run_spec.rb` ("#issue_analysis_internal_error?"),
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`
+  ("excludes issues parked by repeated internal-error failures until the
+  bounded recovery point passes").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`,
+  `#raise_llm_failure!`, `#issue_analysis_internal_error_message`,
+  `#record_internal_provider_attempt_failure!`,
+  `app/models/agent_run.rb#issue_analysis_internal_error?`,
+  `app/models/issue.rb#record_issue_analysis_internal_error_backoff!`,
+  `#issue_analysis_internal_error_backoff_delay`,
+  `#consecutive_issue_analysis_internal_error_count`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb#record_issue_analysis_internal_error_backoff?`.

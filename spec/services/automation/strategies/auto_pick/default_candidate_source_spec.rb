@@ -276,6 +276,30 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       expect(scope.pluck(:id)).to contain_exactly(issue.id)
     end
 
+    # @spec ISSUE-ANALYSIS-018
+    # Repeated deterministic internal errors must not re-arm the auto-pick
+    # loop from #4814: once the consecutive cap is reached the issue is
+    # excluded until the bounded parked recovery point passes.
+    it "excludes issues parked by repeated internal-error failures until the bounded recovery point passes" do
+      issue = create(:issue, project: project, paid_state: "failed")
+      3.times do
+        create(:agent_run, :failed, :automatic, project: project, issue: issue,
+          goal: "analyze_issue", auto_pick: true,
+          error_message: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+      end
+
+      issue.record_issue_analysis_internal_error_backoff!(paid_state: "failed")
+      expect(described_class.eligible_scope(project).pluck(:id)).to be_empty
+
+      # A later recovery can resume analysis: once the bounded parked
+      # window elapses the issue is auto-pickable again. (Anchored to the
+      # recorded timestamp rather than a fixed travel so a DST transition
+      # between now and the window's end cannot shift the assertion.)
+      travel_to(issue.reload.issue_analysis_next_attempt_at + 1.second) do
+        expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id)
+      end
+    end
+
     # @spec AUTO-PICK-QUEUE-011
     context "when an issue's latest model selection pins a tier" do
       let(:owner) { project.effective_owner }

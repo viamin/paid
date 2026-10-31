@@ -196,6 +196,48 @@ The cooldown is only for automatic selection. Manual retries remain allowed
 However, a manual retry failure does not extend or clear the automatic cooldown
 by itself; only a successful provider call clears it.
 
+## Bounded retry policy for unexpected internal errors
+
+Provider exhaustion is an availability outage; the incident behind #4814
+(run 25542) was not. A deterministic programming error — the
+`ArgumentError` raised by `Llm::ApiRequest` during the OpenCode provider
+attempt — escaped `AnalyzeIssueActivity#call_llm` because none of its rescue
+clauses match a non-`AgentHarness` exception, so the run failed as a plain
+error, no issue-level backoff was recorded, and the issue stayed eligible for
+repeated auto-pick: eight near-identical failing runs in about 75 minutes.
+
+`ISSUE-ANALYSIS-018` closes that escape path with a distinct bounded retry
+policy, separate from provider exhaustion
+(`ISSUE-ANALYSIS-010`) and all-provider rate limiting (`ISSUE-ANALYSIS-006`):
+
+- **Classification.** A non-provider `StandardError` during a provider
+  attempt no longer escapes. The failover loop continues, each attempt
+  persists a structured provider-failure log with
+  `failure_category: "internal_error"` plus the original error class, a
+  sanitized message, and a bounded backtrace excerpt, and the terminal error
+  is a non-retryable `AnalyzeIssueInternalError` whose message starts with
+  the `AgentRun::ISSUE_ANALYSIS_INTERNAL_ERROR_PREFIX` marker and preserves
+  the original error class and message. Programming errors are never
+  reclassified as provider outages: `AgentRun#provider_unavailable?` stays
+  false and the exhaustion streak never counts internal-error runs (nor vice
+  versa).
+- **Deferral.** Failure finalization (`MarkAgentRunFailedActivity`) records
+  the internal-error policy on the same `issues` backoff columns as
+  `ISSUE-ANALYSIS-010`, so auto-pick exclusion, the runner-configuration
+  reset context (a relevant configuration change re-admits the issue
+  immediately), the successful-call clear, and the manual-retry semantics of
+  `ISSUE-ANALYSIS-011` all apply unchanged. The sizing is separate and
+  stricter because deterministic errors do not resolve on their own: the
+  deferral grows from a 15-minute base (capped at 24 hours), and once the
+  consecutive internal-error streak reaches 3 the next automatic attempt is
+  deferred by the longer bounded 7-day parked window instead of re-arming
+  the auto-pick repeat loop.
+- **Recovery.** A later recovery resumes analysis through any of: the
+  bounded parked window elapsing (the issue re-enters auto-pick
+  eligibility), a relevant owner-side runner/configuration change resetting
+  the cooldown, or a manual retry — which stays available and, on success,
+  clears the cooldown like any successful provider call.
+
 ## Timeout diagnostics and timeout policy
 
 The `analyze_issue` activity has a 10-minute workflow-level

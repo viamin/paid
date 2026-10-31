@@ -48,6 +48,16 @@ class Issue < ApplicationRecord
   ISSUE_ANALYSIS_BACKOFF_BASE_DELAY = 5.minutes
   ISSUE_ANALYSIS_BACKOFF_MAX_DELAY = 1.hour
   ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT = 12
+  # Bounded retry policy for unexpected non-provider exceptions in automatic
+  # analyze_issue runs (ISSUE-ANALYSIS-018, #4814). Deterministic programming
+  # errors do not resolve on their own the way a provider outage does, so the
+  # deferral starts longer than the exhaustion backoff, and once the
+  # consecutive-failure cap is reached automatic attempts are parked for a
+  # longer bounded recovery window instead of re-arming the auto-pick loop.
+  ISSUE_ANALYSIS_INTERNAL_ERROR_BACKOFF_BASE_DELAY = 15.minutes
+  ISSUE_ANALYSIS_INTERNAL_ERROR_BACKOFF_MAX_DELAY = 24.hours
+  ISSUE_ANALYSIS_INTERNAL_ERROR_MAX_AUTO_ATTEMPTS = 3
+  ISSUE_ANALYSIS_INTERNAL_ERROR_PARKED_DELAY = 7.days
 
   # Default label mirrored to GitHub to surface an issue/PR's paused state.
   # Adding the label in GitHub (or pausing from the UI) flips `paused`;
@@ -1503,6 +1513,36 @@ class Issue < ApplicationRecord
     )
   end
 
+  # Records the distinct bounded retry policy for unexpected non-provider
+  # exceptions in automatic analyze_issue runs. Reuses the ISSUE-ANALYSIS-010
+  # columns (so auto-pick exclusion, the runner-configuration reset context,
+  # and the successful-call clear all apply unchanged) but sizes the window
+  # from a separate consecutive internal-error streak, never from provider
+  # exhaustion (#3640) or all-provider rate limiting (#3314).
+  # @spec ISSUE-ANALYSIS-018
+  def record_issue_analysis_internal_error_backoff!(paid_state:, now: Time.current)
+    streak = consecutive_issue_analysis_internal_error_count
+    next_attempt_at = now + issue_analysis_internal_error_backoff_delay(streak)
+    attrs = {
+      issue_analysis_next_attempt_at: next_attempt_at,
+      issue_analysis_backoff_set_at: now
+    }
+    attrs[:paid_state] = paid_state if self.paid_state != paid_state
+    update!(attrs)
+
+    Rails.logger.info(
+      message: "issue.issue_analysis_internal_error_backoff_recorded",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      next_attempt_at: next_attempt_at.iso8601,
+      consecutive_failures: streak
+    )
+
+    next_attempt_at
+  end
+
   # An issue is abandoned for retry-cap purposes once every available provider
   # has hit the per-issue per-provider retry cap. Abandoned issues are excluded
   # from auto-pick (see DefaultCandidateSource) until the abandonment is cleared.
@@ -1618,6 +1658,38 @@ class Issue < ApplicationRecord
   def issue_analysis_backoff_delay(streak = consecutive_issue_analysis_provider_exhaustion_count)
     multiplier = [ streak - 1, 0 ].max
     [ ISSUE_ANALYSIS_BACKOFF_BASE_DELAY * (2**multiplier), ISSUE_ANALYSIS_BACKOFF_MAX_DELAY ].min
+  end
+
+  # @spec ISSUE-ANALYSIS-018
+  # Deterministic programming errors will not resolve the way a provider
+  # outage does, so once the consecutive internal-error cap is reached the
+  # deferral pins to the longer bounded parked window — repeated failures
+  # stop minting near-identical automatic runs (#4814) while still leaving a
+  # bounded recovery point after which automatic analysis resumes.
+  def issue_analysis_internal_error_backoff_delay(streak = consecutive_issue_analysis_internal_error_count)
+    return ISSUE_ANALYSIS_INTERNAL_ERROR_PARKED_DELAY if streak >= ISSUE_ANALYSIS_INTERNAL_ERROR_MAX_AUTO_ATTEMPTS
+
+    multiplier = [ streak - 1, 0 ].max
+    [ ISSUE_ANALYSIS_INTERNAL_ERROR_BACKOFF_BASE_DELAY * (2**multiplier),
+      ISSUE_ANALYSIS_INTERNAL_ERROR_BACKOFF_MAX_DELAY ].min
+  end
+
+  # Counts recent automatic `analyze_issue` runs that failed on an unexpected
+  # internal (non-provider) exception. Mirrors
+  # {#consecutive_issue_analysis_provider_exhaustion_count} but matches on the
+  # ISSUE-ANALYSIS-018 error marker, so exhaustion failures, rate-limited
+  # runs (ISSUE-ANALYSIS-011's in-place recovery), and manual runs never
+  # inflate this streak — and internal-error failures never inflate the
+  # exhaustion streak.
+  def consecutive_issue_analysis_internal_error_count
+    agent_runs
+      .where(auto_pick: true, goal: "analyze_issue")
+      .where.not(status: "rate_limited")
+      .finished
+      .order(created_at: :desc, id: :desc)
+      .limit(ISSUE_ANALYSIS_BACKOFF_HISTORY_LIMIT)
+      .take_while(&:issue_analysis_internal_error?)
+      .count
   end
 
   # Counts recent automatic `analyze_issue` runs whose failure should grow the

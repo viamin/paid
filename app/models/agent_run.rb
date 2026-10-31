@@ -211,6 +211,13 @@ class AgentRun < ApplicationRecord
   EXECUTION_INGRESS_METADATA_KEY = "execution_ingress".freeze
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
+  # Terminal-error marker for automatic analyze_issue runs that failed on an
+  # unexpected non-provider exception (a programming error such as the
+  # ArgumentError from #4814) rather than a provider outage. The prefix lets
+  # failure finalization apply the distinct bounded internal-error retry
+  # policy (ISSUE-ANALYSIS-018) without reclassifying the run as a provider
+  # outage (`#provider_unavailable?` stays false).
+  ISSUE_ANALYSIS_INTERNAL_ERROR_PREFIX = "Issue analysis internal error"
   FEATURE_CLARIFICATION_ROUND_ID_METADATA_KEY = "feature_clarification_round_id".freeze
   # Records a withheld completion (payload + "withheld_at") when the
   # completion-verification gate holds the run non-terminal. Its presence on
@@ -2026,6 +2033,16 @@ class AgentRun < ApplicationRecord
 
     msg = error_message.to_s.downcase
     PROVIDER_UNAVAILABLE_KEYWORDS.any? { |keyword| msg.include?(keyword.downcase) }
+  end
+
+  # True when this run failed on an unexpected non-provider exception during
+  # issue analysis — a deterministic programming error, not a provider
+  # outage. Distinct from `#provider_unavailable?` so the internal-error
+  # backoff policy (ISSUE-ANALYSIS-018) never counts these runs toward the
+  # provider-exhaustion cooldown (ISSUE-ANALYSIS-010).
+  # @spec ISSUE-ANALYSIS-018
+  def issue_analysis_internal_error?
+    status == "failed" && error_message.to_s.start_with?(ISSUE_ANALYSIS_INTERNAL_ERROR_PREFIX)
   end
 
   # Returns true when the run failed due to infrastructure issues before the

@@ -2762,6 +2762,81 @@ RSpec.describe Issue do
     end
   end
 
+  describe "#record_issue_analysis_internal_error_backoff!" do
+    # @spec ISSUE-ANALYSIS-018
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, :in_progress, project: project) }
+    let(:internal_error_message) { "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)" }
+
+    def record_internal_error_failure!
+      create(:agent_run, :failed, :automatic, project: project, issue: issue,
+        goal: "analyze_issue", auto_pick: true, error_message: internal_error_message)
+    end
+
+    it "grows the deferral exponentially and parks automatic attempts after the consecutive-failure cap" do
+      # No prior failures: streak 0, base delay.
+      freeze_time do
+        issue.record_issue_analysis_internal_error_backoff!(paid_state: "failed")
+        expect(issue.issue_analysis_next_attempt_at).to eq(15.minutes.from_now)
+      end
+
+      2.times { record_internal_error_failure! }
+      # Streak 2: double the base delay.
+      freeze_time do
+        issue.record_issue_analysis_internal_error_backoff!(paid_state: "failed")
+        expect(issue.issue_analysis_next_attempt_at).to eq(30.minutes.from_now)
+      end
+
+      record_internal_error_failure!
+      # Streak 3 (at the cap): the longer bounded parked window defers the
+      # next automatic attempt instead of re-arming the auto-pick loop.
+      freeze_time do
+        issue.record_issue_analysis_internal_error_backoff!(paid_state: "failed")
+        expect(issue.issue_analysis_next_attempt_at).to eq(7.days.from_now)
+        expect(issue.paid_state).to eq("failed")
+        expect(issue.issue_analysis_backoff_set_at).to eq(Time.current)
+      end
+    end
+
+    it "keeps the internal-error streak distinct from provider exhaustion and rate-limited runs" do
+      4.times do
+        create(:agent_run, :failed, :automatic, project: project, issue: issue,
+          goal: "analyze_issue", auto_pick: true,
+          error_message: "All issue-analysis providers exhausted: claude")
+      end
+      create(:agent_run, :rate_limited, project: project, issue: issue,
+        goal: "analyze_issue", auto_pick: true)
+
+      freeze_time do
+        # Neither the exhaustion failures nor the rate-limited run count into
+        # the internal-error streak, so it stays at the base delay.
+        issue.record_issue_analysis_internal_error_backoff!(paid_state: "failed")
+        expect(issue.issue_analysis_next_attempt_at).to eq(15.minutes.from_now)
+      end
+    end
+
+    it "keeps the provider-exhaustion streak distinct from internal-error failures" do
+      4.times { record_internal_error_failure! }
+
+      freeze_time do
+        # Internal-error failures must not inflate the provider-exhaustion
+        # streak (ISSUE-ANALYSIS-010 stays at its base delay).
+        issue.record_issue_analysis_backoff!(paid_state: "failed")
+        expect(issue.issue_analysis_next_attempt_at).to eq(5.minutes.from_now)
+      end
+    end
+
+    it "is cleared by a successful analysis like the exhaustion cooldown" do
+      issue.record_issue_analysis_internal_error_backoff!(paid_state: "failed")
+
+      issue.clear_issue_analysis_backoff!
+
+      issue.reload
+      expect(issue.issue_analysis_next_attempt_at).to be_nil
+      expect(issue.issue_analysis_backoff_set_at).to be_nil
+    end
+  end
+
   describe "#abandon_due_to_push_permission_rejection!" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }

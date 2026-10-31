@@ -1363,6 +1363,37 @@ RSpec.describe AgentRun do
         expect(agent_run.provider_unavailable?).to be false
       end
 
+      # @spec ISSUE-ANALYSIS-018
+      it "returns false for failed status with an issue-analysis internal error" do
+        agent_run = build(:agent_run, :failed, goal: "analyze_issue",
+          error_message: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+
+        expect(agent_run.provider_unavailable?).to be false
+      end
+    end
+
+    describe "#issue_analysis_internal_error?" do
+      # @spec ISSUE-ANALYSIS-018
+      it "returns true for a failed run carrying the internal-error marker" do
+        agent_run = build(:agent_run, :failed, goal: "analyze_issue",
+          error_message: "Issue analysis internal error: ArgumentError: wrong number of arguments (given 0, expected 1)")
+
+        expect(agent_run.issue_analysis_internal_error?).to be true
+      end
+
+      # @spec ISSUE-ANALYSIS-018
+      it "returns false for provider exhaustion and non-failed statuses" do
+        exhausted = build(:agent_run, :failed, goal: "analyze_issue",
+          error_message: "All issue-analysis providers exhausted: claude")
+        rate_limited = build(:agent_run, :rate_limited, goal: "analyze_issue",
+          error_message: "Issue analysis internal error: boom")
+        running = build(:agent_run, :running, goal: "analyze_issue")
+
+        expect(exhausted.issue_analysis_internal_error?).to be false
+        expect(rate_limited.issue_analysis_internal_error?).to be false
+        expect(running.issue_analysis_internal_error?).to be false
+      end
+
       it "returns false for failed status with worktree error" do
         agent_run = build(:agent_run, :failed,
           error_message: "Branch fix/foo has an active worktree from agent run 1234")
