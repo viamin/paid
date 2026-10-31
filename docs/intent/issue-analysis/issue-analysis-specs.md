@@ -29,11 +29,13 @@
 
 - [x] **ISSUE-ANALYSIS-003** — When no chat runner is available at all (the
   candidate list itself is empty), the system SHALL fail the run loudly with a
-  non-retryable `AnalyzeIssueLlmFailed` error instead of masking the outage by
-  targeting a known-unhealthy provider. This is distinct from `ISSUE-ANALYSIS-006`,
+  non-retryable `AnalyzeIssueLlmFailed` error that identifies the missing
+  standalone-capable configured runner, instead of masking the configuration
+  gap by targeting a known-unhealthy provider. This is distinct from `ISSUE-ANALYSIS-006`,
   where candidates exist but all attempts fail transiently.
-  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("raises when no chat runner is available").
-  *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("raises when no chat runner is available", "reports the standalone runner configuration gap").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`,
+  `app/services/knowledge/runner_selector.rb#standalone_chat_runners`.
 
 - [x] **ISSUE-ANALYSIS-014** — When issue-analysis widening encounters owned
   runners for the same provider with different authentication modes, it SHALL

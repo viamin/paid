@@ -29,6 +29,10 @@ module Knowledge
       new(user_setting:).available_standalone_chat_runners
     end
 
+    def self.standalone_chat_runners(user_setting:)
+      new(user_setting:).standalone_chat_runners
+    end
+
     def initialize(user_setting:)
       @user_setting = user_setting
     end
@@ -61,11 +65,18 @@ module Knowledge
 
     # @spec ISSUE-ANALYSIS-014 LLM-ROUTING-005
     def available_standalone_chat_runners
-      runners = user_setting.user.runners.kept_only.for_chat.ordered.to_a
+      runners = standalone_chat_runners
       states = user_setting.user.runner_states.where(runner_name: runners.map(&:state_key)).index_by(&:runner_name)
 
       runners.select do |runner|
-        runner_available?(runner.state_key, states) && standalone_text_capable?(runner)
+        runner_available?(runner.state_key, states)
+      end
+    end
+
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005
+    def standalone_chat_runners
+      user_setting.user.runners.kept_only.for_chat.ordered.select do |runner|
+        standalone_text_capable?(runner)
       end
     end
 

@@ -1377,6 +1377,18 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
     end
 
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005
+    it "reports the standalone runner configuration gap without falling back to a subscription" do
+      provider = double(supports_tool_control?: false)
+      allow(AgentHarness).to receive(:provider_class).with(:claude)
+        .and_return(double(new: provider))
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No standalone-capable configured runner for issue analysis")
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+    end
+
     # @spec ISSUE-ANALYSIS-014 LLM-ROUTING-005
     it "widens to an API-key Codex credential when its subscription needs isolation" do
       subscription = create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)

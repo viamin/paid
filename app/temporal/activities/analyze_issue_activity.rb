@@ -316,6 +316,8 @@ module Activities
         attempted_failures << { provider: provider_name(user_setting, provider), category: category }
       end
 
+      raise_configuration_gap! if providers.empty? && no_standalone_runner?(user_setting)
+
       raise_llm_failure!(agent_run, rate_limited_count, earliest_reset_at, attempted_failures)
     end
 
@@ -352,11 +354,25 @@ module Activities
     # Summarizes attempted providers and their normalized failure categories
     # (never the raw provider error text, which may contain secrets) so the
     # durable terminal error is actionable without re-reading process logs.
+    def raise_configuration_gap!
+      raise Temporalio::Error::ApplicationError.new(
+        "No standalone-capable configured runner for issue analysis",
+        type: "AnalyzeIssueLlmFailed",
+        non_retryable: true
+      )
+    end
+
     def issue_analysis_provider_exhaustion_message(attempted_failures)
       return "All issue-analysis providers exhausted" if attempted_failures.empty?
 
       summary = attempted_failures.map { |f| "#{f[:provider]} (#{f[:category]})" }.join(", ")
       "All issue-analysis providers exhausted: #{summary}"
+    end
+
+    def no_standalone_runner?(user_setting)
+      return true unless user_setting
+
+      Knowledge::ProviderSelector.standalone_chat_runners(user_setting:).empty?
     end
 
     # @spec ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-009

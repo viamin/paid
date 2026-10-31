@@ -59,9 +59,9 @@ keys configured. That is the run-17220 / RDR-052 failure mode this segment now
 guards against (see `ISSUE-ANALYSIS-002`): analysis selects from the owner's
 configured runners rather than assuming Anthropic.
 
-If no provider is available at all, `call_llm` raises a non-retryable
-`AnalyzeIssueLlmFailed` ("No LLM provider produced an issue analysis") rather
-than silently masking the outage.
+If no standalone-capable provider is available at all, `call_llm` raises a
+non-retryable `AnalyzeIssueLlmFailed` that names the missing runner
+configuration rather than silently masking the outage.
 
 ## Durable per-provider failure records
 
