@@ -105,7 +105,7 @@ RSpec.describe CycleAnalysisJob do
   end
 
   def stub_comments
-    stub_request(:get, %r{api.github.com/repos/.*/issues/\d+/comments})
+    stub_request(:get, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+/comments(?:\?.*)?\z})
       .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
   end
 end

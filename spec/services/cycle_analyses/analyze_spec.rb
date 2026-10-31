@@ -28,7 +28,7 @@ RSpec.describe CycleAnalyses::Analyze do
   end
 
   def stub_comments(comments)
-    stub_request(:get, %r{api.github.com/repos/.*/issues/\d+/comments})
+    stub_request(:get, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+/comments(?:\?.*)?\z})
       .to_return(status: 200, body: comments.to_json, headers: { "Content-Type" => "application/json" })
   end
 
@@ -113,7 +113,7 @@ RSpec.describe CycleAnalyses::Analyze do
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
-    stub_request(:get, %r{api.github.com/repos/.*/issues/\d+/comments}).to_return(status: 503)
+    stub_request(:get, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+/comments(?:\?.*)?\z}).to_return(status: 503)
     llm = class_double(Llm::Request, call: harness_response(snapshot:))
 
     result = described_class.call(agent_run: run, llm:)
