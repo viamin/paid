@@ -28,7 +28,7 @@ class CycleAnalysisJob < ApplicationJob
 
   def analyze_and_repair(agent_run)
     result = CycleAnalyses::Analyze.call(agent_run:)
-    result["repair"] = CycleAnalyses::Repair.call(agent_run:, recommendation: result.fetch("recommendation"))
+    result["repair"] = CycleAnalyses::AutomaticRepair.call(agent_run:, recommendation: result.fetch("recommendation"))
     result
   end
 

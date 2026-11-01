@@ -1,0 +1,42 @@
+{
+  "status": "passed",
+  "summary": "Merged main without losing either repair path; lint, coherence, and 371 focused integration/service examples passed.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:7", "result": "passed: uniquely matched live declaration was removed and reported pending_sync" },
+          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:106", "result": "passed: ambiguous or changed live declarations produced no GitHub write" },
+          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:285", "result": "passed: missing project authority prevented the repair" }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          { "locator": "spec/services/cycle_analyses/confirm_spec.rb:7", "result": "passed: synchronization-confirmed graph removal resolved the repair" },
+          { "locator": "spec/services/cycle_analyses/confirm_pending_sync_spec.rb:7", "result": "passed: synchronization requeued local confirmation without repeating the GitHub mutation" },
+          { "locator": "spec/jobs/cycle_analysis_job_spec.rb:24", "result": "passed: cancellation race retained pending_sync repair evidence" }
+        ]
+      }
+    },
+    {
+      "id": "AC-3",
+      "status": "passed",
+      "verification": {
+        "kind": "permanent_system_test",
+        "references": [
+          { "locator": "spec/requests/inbox_spec.rb:124", "result": "passed: Inbox rendered pending synchronization and the confirmation action" },
+          { "locator": "spec/mcp/tools/start_cycle_analysis_spec.rb:13", "result": "passed: MCP disclosed the bounded write and required explicit confirmation" },
+          { "locator": "bundle exec rspec spec/jobs/cycle_analysis_job_spec.rb spec/mcp/tools/start_cycle_analysis_spec.rb spec/requests/inbox_spec.rb spec/services/cycle_analyses spec/temporal/activities/fetch_issues_activity_spec.rb", "result": "371 examples, 0 failures" }
+        ]
+      }
+    }
+  ]
+}

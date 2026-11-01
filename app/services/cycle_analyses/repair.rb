@@ -1,308 +1,238 @@
 # frozen_string_literal: true
 
 module CycleAnalyses
-  # Deterministic gates around the semantic recommendation. This deliberately
-  # performs no local dependency synchronization: GitHub's next normal sync is
-  # the authority that confirms whether the repair cleared the effective graph.
+  # Applies one already-reviewed declaration removal. The service deliberately
+  # owns the final authority, graph, and live-source checks so callers cannot
+  # turn a stale analysis into an arbitrary GitHub body write.
   class Repair
-    Result = Data.define(:status, :reason, :changed_edge_ids, :details) do
-      def to_h = { "status" => status, "reason" => reason, "changed_edge_ids" => changed_edge_ids, "details" => details }
+    Result = Data.define(:status, :message) do
+      def success? = status == :applied
     end
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, recommendation:, client_resolver: ->(project) { project.client })
+    def initialize(agent_run:, candidate:, actor:)
       @agent_run = agent_run
-      @recommendation = recommendation
-      @client_resolver = client_resolver
+      @candidate = candidate
+      @actor = actor
     end
 
-    # @spec AUTO-PICK-QUEUE-019
+    # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
     def call
-      return result("needs_operator_action", "not_obvious") unless obvious?
-      return result("needs_operator_action", "unauthorized") unless authorized?
+      return needs_operator_action("Only a completed cycle analysis can be repaired.") unless agent_run.successful?
+      return unauthorized unless authorized?
+      return stale unless current_cycle
 
-      live_cycle = current_cycle
-      return result("needs_operator_action", "graph_changed") unless live_cycle&.occurrence == snapshot.fetch("occurrence")
-      return result("needs_operator_action", "resulting_graph_changed") unless resulting_graph_matches?(live_cycle)
+      changes = candidate.fetch("declaration_changes")
+      return needs_operator_action("The selected analysis candidate is not acyclic.") unless candidate["acyclic"] == true
+      return needs_operator_action("Only declaration removals can be repaired automatically.") unless removable?(changes)
+      return needs_operator_action("Select a candidate with exactly one declaration removal.") unless changes.one?
 
-      edge = live_cycle.effective_edges.find { |candidate| candidate.id == change.fetch("edge_id") }
-      return result("needs_operator_action", "edge_changed") unless edge
-
-      declaration = live_declaration(edge)
-      return result("needs_operator_action", declaration.fetch(:reason)) unless declaration[:body]
-
-      declaration = current_declaration(declaration)
-      return result("needs_operator_action", declaration.fetch(:reason)) unless declaration[:body]
-      return result("needs_operator_action", "github_comment_write_suppressed") if comment_write_suppressed?(declaration)
-
-      write(declaration)
-      result("pending_sync", "awaiting_github_synchronization", [ edge.id ], declaration.slice(:project_id, :issue_number))
-    rescue GithubClient::AuthenticationError
-      result("needs_operator_action", "github_authorization_failed")
+      apply_removal(changes.first)
+    rescue KeyError, ActiveRecord::RecordNotFound => error
+      needs_operator_action("Cycle repair evidence is incomplete: #{error.message}.")
     rescue GithubClient::Error => error
-      result("needs_operator_action", "github_write_failed", [], { "error" => error.message })
+      needs_operator_action("GitHub rejected the dependency repair: #{error.message}.")
     end
 
     private
 
-    attr_reader :agent_run, :client_resolver, :recommendation
+    attr_reader :actor, :agent_run, :candidate
 
-    def snapshot = agent_run.external_metadata.fetch(METADATA_KEY)
-    def candidate = recommendation.fetch("candidates").sole
-    def change = candidate.fetch("declaration_changes").sole
-
-    def obvious?
-      recommendation.fetch("candidates", []).one? && candidate.fetch("acyclic") &&
-        candidate.fetch("evidence", []).any? && candidate.fetch("missing_or_conflicting_intent", []).empty? &&
-        candidate.fetch("declaration_changes", []).one? && change.fetch("action") == "remove"
-    end
+    def snapshot = agent_run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
 
     def authorized?
-      project_ids = snapshot.fetch("project_ids")
-      projects.size == project_ids.size && projects.all? do |project|
-        policy = ProjectPolicy.new(agent_run.initiating_user, project)
-        policy.run_agent? && policy.manage_issues?
+      declaration_issue_ids.all? do |issue_id|
+        issue = Issue.find(issue_id)
+        ProjectPolicy.new(actor, issue.project).manage_issues?
       end
     end
 
-    def projects
-      @projects ||= Project.where(id: snapshot.fetch("project_ids")).index_by(&:id).values
+    def declaration_issue_ids
+      snapshot.fetch("effective_edges").filter_map do |edge|
+        change_ids.include?(edge.fetch("id")) ? edge.fetch("from_issue_id") : nil
+      end
     end
+
+    def change_ids = candidate.fetch("declaration_changes").filter_map { |change| change["edge_id"] }
 
     def current_cycle
-      Issues::DependencyCycles.call(account: agent_run.project.account)
-        .find { |cycle| cycle.occurrence == snapshot.fetch("occurrence") }
-    end
-
-    def resulting_graph_matches?(live_cycle)
-      expected = candidate.fetch("resulting_graph")
-      expected_edges = expected.fetch("edges")
-      live_edges = live_cycle.effective_edges.reject { |edge| edge.id == change.fetch("edge_id") }
-        .map { |edge| { "from_issue_id" => edge.from_id, "to_issue_id" => edge.to_id } }
-      AcyclicGraph.call(issue_ids: expected.fetch("issue_ids"), edges: expected_edges) &&
-        canonical_edges(expected_edges) == canonical_edges(live_edges)
-    end
-
-    def live_declaration(edge)
-      issue = Issue.find(edge.from_id)
-      return { reason: "untrusted_source" } unless issue.trusted?
-
-      client = client_resolver.call(issue.project)
-      target = Issue.find(edge.to_id)
-      declaration = source_declaration(edge, issue:, target:, client:)
-      return declaration if declaration[:reason]
-
-      edited = remove_unique_declaration(declaration.fetch(:source_body), target:, source_project: issue.project)
-      return { reason: removal_reason(edited) } unless edited.is_a?(String)
-
-      declaration.merge(body: edited)
-    end
-
-    # GitHub has no conditional issue PATCH, so the body is re-read immediately
-    # before writing. When a human edit lands between the two reads, the
-    # removal is recomputed against their text so the edit survives the repair;
-    # a changed body without a unique removable declaration aborts the write.
-    # Mirrors ClarifyingQuestions::DescriptionSection#update_issue_body.
-    def current_declaration(declaration)
-      source = current_source(declaration)
-      return { reason: "live_declaration_missing" } unless source
-
-      body = source.fetch(:body)
-      return declaration if body == declaration.fetch(:source_body)
-
-      edited = remove_unique_declaration(body, target: declaration.fetch(:target), source_project: declaration.fetch(:project))
-      return { reason: removal_reason(edited) } unless edited.is_a?(String)
-
-      declaration.merge(source_body: body, body: edited, comment_id: source[:comment_id])
-    end
-
-    def removal_reason(outcome)
-      return "live_declaration_ambiguous" if outcome == :ambiguous
-      return "live_declaration_not_removable" if outcome == :unremovable
-
-      "live_declaration_missing"
-    end
-
-    def issue_body(client:, project:, issue_number:)
-      remote = client.issue(project.full_name, issue_number)
-      field(remote, :body).to_s
-    end
-
-    def source_declaration(edge, issue:, target:, client:)
-      case edge.declaration_source
-      when "issue_body"
-        issue_declaration(issue:, target:, client:)
-      when "issue_comment"
-        comment_declaration(edge.declaration_url, issue:, target:, client:)
-      when nil
-        unprovenanced_declaration(issue:, target:, client:)
-      else
-        { reason: "live_declaration_missing" }
+      Issues::DependencyCycles.call(account: agent_run.project.account).find do |cycle|
+        cycle.occurrence == snapshot.fetch("occurrence") && cycle.fingerprint == snapshot.fetch("fingerprint")
       end
     end
 
-    def issue_declaration(issue:, target:, client:)
-      body = issue_body(client:, project: issue.project, issue_number: issue.github_number)
-      declaration(issue:, target:, client:, source_type: "issue_body", source_body: body)
+    def removable?(changes)
+      changes.any? && changes.all? { |change| change["action"] == "remove" && change["edge_id"].is_a?(Integer) }
     end
 
-    def comment_declaration(url, issue:, target:, client:)
-      return { reason: "live_declaration_missing" } if url.blank?
+    def apply_removal(change)
+      edge = snapshot.fetch("effective_edges").find { |item| item.fetch("id") == change.fetch("edge_id") }
+      return needs_operator_action("The selected declaration is not in the analysis snapshot.") unless edge
 
-      comment = issue_comments(client:, issue:).find { |candidate| field(candidate, :html_url) == url }
-      return { reason: "live_declaration_missing" } unless comment && trusted_comment?(issue.project, comment)
-      return { reason: "live_declaration_missing" } unless field(comment, :id)
+      issue = Issue.find(edge.fetch("from_issue_id"))
 
-      declaration(issue:, target:, client:, source_type: "issue_comment", source_body: field(comment, :body).to_s,
-        declaration_url: url, comment_id: field(comment, :id))
-    end
-
-    def unprovenanced_declaration(issue:, target:, client:)
-      body_declaration = issue_declaration(issue:, target:, client:)
-      body_outcome = remove_unique_declaration(body_declaration.fetch(:source_body), target:, source_project: issue.project)
-      return { reason: removal_reason(body_outcome) } if body_outcome == :ambiguous
-
-      declarations = issue_comments(client:, issue:).filter_map do |comment|
-        next unless trusted_comment?(issue.project, comment)
-        next unless field(comment, :html_url) && field(comment, :id)
-
-        declaration(issue:, target:, client:, source_type: "issue_comment", source_body: field(comment, :body).to_s,
-          declaration_url: field(comment, :html_url), comment_id: field(comment, :id))
+      client = issue.project.client
+      client = client.trusted_human_mutation_client if client&.respond_to?(:trusted_human_mutation_client)
+      return needs_operator_action("GitHub access is unavailable for the declaration owner.") unless client
+      unless issue.project.trusted_github_user?(client.authenticated_login)
+        return needs_operator_action("A trusted human GitHub credential is required for the declaration owner.")
       end
-      outcomes = ([ body_declaration ] + declarations).map do |candidate|
-        [ candidate, remove_unique_declaration(candidate.fetch(:source_body), target:, source_project: issue.project) ]
+
+      target = Issue.find(edge.fetch("to_issue_id"))
+      return repair_issue_body(client, issue:, edge:, target:) if edge["declaration_source"] == "issue_body"
+      return repair_issue_comment(client, issue:, edge:, target:) if edge["declaration_source"] == "issue_comment"
+
+      needs_operator_action("The selected declaration has unsupported provenance.")
+    end
+
+    def repair_issue_body(client, issue:, edge:, target:)
+      original_body = client.issue(issue.project.full_name, issue.github_number).body.to_s
+      planned_body, diagnostic = remove_unique_reference(original_body, issue:, target:)
+      return needs_operator_action("The selected declaration is #{diagnostic} in the live issue body.") unless planned_body
+
+      live_body = client.issue(issue.project.full_name, issue.github_number).body.to_s
+      comments = trusted_comments(client, issue)
+      if live_body != original_body
+        planned_body, diagnostic = remove_unique_reference(live_body, issue:, target:)
+        return needs_operator_action("The selected declaration changed and is #{diagnostic} in the live issue body.") unless planned_body
       end
-      return { reason: "live_declaration_ambiguous" } if outcomes.any? { |_candidate, outcome| outcome == :ambiguous }
-      return { reason: "live_declaration_not_removable" } if outcomes.any? { |_candidate, outcome| outcome == :unremovable }
 
-      matches = outcomes.filter_map { |candidate, outcome| candidate if outcome.is_a?(String) }
-      return { reason: "live_declaration_missing" } if matches.empty?
-      return { reason: "live_declaration_ambiguous" } unless matches.one?
+      return needs_operator_action("The planned body does not remove only the selected dependency edge.") unless graph_matches?(planned_body, comments:, edge:, issue:)
 
-      matches.sole
+      client.update_issue(issue.project.full_name, issue.github_number, body: planned_body)
+      issue.update!(body: planned_body)
+      Issues::ParseDependencies.call(issue:, body: planned_body, comments: comments)
+      Result.new(status: :applied, message: "Removed dependency declaration from ##{issue.github_number}.")
     end
 
-    def declaration(issue:, target:, client:, source_type:, source_body:, declaration_url: nil, comment_id: nil)
-      { client:, project: issue.project, project_id: issue.project_id, issue_number: issue.github_number, target:,
-        source_type:, source_body:, declaration_url:, comment_id: }
-    end
+    def repair_issue_comment(client, issue:, edge:, target:)
+      original_comment = declaration_comment(trusted_comments(client, issue), edge)
+      return needs_operator_action("The selected declaration is missing or ambiguous in the live issue comments.") unless original_comment
 
-    def current_source(declaration)
-      if declaration.fetch(:source_type) == "issue_body"
-        { body: issue_body(client: declaration.fetch(:client), project: declaration.fetch(:project),
-          issue_number: declaration.fetch(:issue_number)) }
-      else
-        comment = issue_comments(client: declaration.fetch(:client), project: declaration.fetch(:project),
-          issue_number: declaration.fetch(:issue_number)).find do |candidate|
-          field(candidate, :html_url) == declaration.fetch(:declaration_url)
-        end
-        return unless comment && trusted_comment?(declaration.fetch(:project), comment)
-        return unless field(comment, :id)
+      original_body = original_comment.body.to_s
+      planned_body, diagnostic = remove_unique_reference(original_body, issue:, target:)
+      return needs_operator_action("The selected declaration is #{diagnostic} in the live issue comment.") unless planned_body
 
-        { body: field(comment, :body).to_s, comment_id: field(comment, :id) }
+      live_body = client.issue(issue.project.full_name, issue.github_number).body.to_s
+      comments = trusted_comments(client, issue)
+      live_comment = declaration_comment(comments, edge)
+      return needs_operator_action("The selected declaration changed and is missing or ambiguous in the live issue comments.") unless live_comment
+
+      if live_comment.body.to_s != original_body
+        planned_body, diagnostic = remove_unique_reference(live_comment.body.to_s, issue:, target:)
+        return needs_operator_action("The selected declaration changed and is #{diagnostic} in the live issue comment.") unless planned_body
       end
+      return needs_operator_action("The selected comment cannot be updated safely.") unless live_comment.respond_to?(:id) && live_comment.id.present?
+      return needs_operator_action("The planned comment does not remove only the selected dependency edge.") unless graph_matches?(live_body, comments:, edge:, issue:, replacement: [ live_comment, planned_body ])
+
+      client.update_comment(issue.project.full_name, live_comment.id, planned_body)
+      issue.update!(body: live_body)
+      Issues::ParseDependencies.call(issue:, body: live_body, comments: trusted_comments(client, issue))
+      Result.new(status: :applied, message: "Removed dependency declaration from ##{issue.github_number}.")
     end
 
-    def issue_comments(client:, issue: nil, project: nil, issue_number: nil)
-      project ||= issue.project
-      issue_number ||= issue.github_number
-      client.issue_comments(project.full_name, issue_number)
+    def trusted_comments(client, issue)
+      client.recent_issue_comments(issue.project.full_name, issue.github_number)
+        .select { |comment| issue.project.trusted_github_user?(comment.user&.login) }
     end
 
-    def trusted_comment?(project, comment)
-      user = field(comment, :user)
-      project.trusted_github_user?(field(user, :login)) if user
+    def declaration_comment(comments, edge)
+      matches = comments.select { |comment| comment.respond_to?(:html_url) && comment.html_url == edge["declaration_url"] }
+      matches.one? ? matches.first : nil
     end
 
-    def remove_unique_declaration(body, target:, source_project:)
-      full_local, full_cross = Issues::ParseDependencies.extract(body:)
-      return :missing unless dependencies_declare_target?(full_local, full_cross, target:, source_project:)
-
+    def remove_unique_reference(body, issue:, target:)
+      reference = issue.project_id == target.project_id ? "##{target.github_number}" : external_reference(target)
       lines = body.lines
-      carriers = lines.each_index.select do |index|
-        reduced_local, reduced_cross = Issues::ParseDependencies.extract(body: lines.reject.with_index { |_line, position| position == index }.join)
-        removes_target?(full_local, full_cross, reduced_local, reduced_cross, target:, source_project:) &&
-          line_declares_target?(lines[index], target:, source_project:)
-      end
-      return :ambiguous unless carriers.one?
-      return :ambiguous unless target_occurrences(lines.fetch(carriers.first), target:, source_project:) == 1
-      return :unremovable unless standalone_declaration?(lines.fetch(carriers.first), target:, source_project:)
+      matches = declaration_matches(lines, reference)
+      return [ nil, "missing" ] if matches.empty?
+      return [ nil, "ambiguous" ] unless matches.one?
 
-      lines.reject.with_index { |_line, index| index == carriers.first }.join
+      index = matches.first
+      line = lines[index]
+      replacement = line.sub(reference, "").gsub(/[ \t]{2,}/, " ").sub(/[ \t]+\z/, "")
+      lines[index] = replacement.strip == "-" ? "" : replacement
+      [ lines.join, nil ]
     end
 
-    # GitHub's parser permits a dependency declaration in prose. Removing its
-    # whole line would discard the author's explanation, so only remove a line
-    # whose complete meaningful content is the verified declaration.
-    def standalone_declaration?(line, target:, source_project:)
-      content = line.strip.sub(/\A(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/, "")
-      reference = target_reference_pattern(target, source_project:)
-      content.match?(%r{\A(?:#{reference}|(?:depends?\s+on|blocked?\s+by)\s*:?\s*#{reference})\z}i)
-    end
+    def declaration_matches(lines, reference)
+      in_dependency_section = false
+      in_child_section = false
+      in_fence = false
+      in_list_item = false
+      lines.each_index.select do |index|
+        line = lines[index]
+        if line.match?(Issues::ParseDependencies::FENCED_CODE_BLOCK_PATTERN)
+          in_fence = !in_fence
+          next false
+        end
+        next false if in_fence
 
-    def target_reference_pattern(target, source_project:)
-      qualified = "#{Regexp.escape(target.project.owner)}/#{Regexp.escape(target.project.repo)}\\##{target.github_number}"
-      return qualified unless source_project.id == target.project_id
+        if (heading = line.match(Issues::ParseDependencies::MARKDOWN_HEADING_PATTERN))
+          title = heading[1]
+          in_dependency_section = title.match?(Issues::ParseDependencies::DEPENDENCY_HEADING_PATTERN)
+          in_child_section = title.match?(Issues::ParseDependencies::CHILD_LISTING_HEADING_PATTERN)
+          in_list_item = false
+          next false
+        end
 
-      "(?:\\##{target.github_number}|#{qualified})"
-    end
+        if line.match?(Issues::ParseDependencies::LIST_ITEM_PATTERN)
+          in_list_item = in_dependency_section
+        elsif line.strip.present? && !line.match?(Issues::ParseDependencies::CONTINUATION_LINE_PATTERN)
+          in_list_item = false
+        end
+        next false if in_child_section
 
-    def target_occurrences(line, target:, source_project:)
-      qualified = /#{Regexp.escape(target.project.owner)}\/#{Regexp.escape(target.project.repo)}\##{target.github_number}\b/i
-      return line.scan(qualified).size unless source_project.id == target.project_id
-
-      local = /(?<![a-zA-Z0-9._\/-])\##{target.github_number}\b/
-      line.scan(local).size + line.scan(qualified).size
-    end
-
-    def removes_target?(full_local, full_cross, reduced_local, reduced_cross, target:, source_project:)
-      expected_local = source_project.id == target.project_id ? full_local.except(target.github_number) : full_local
-      expected_cross = full_cross.except(cross_key(target))
-      reduced_local == expected_local && reduced_cross == expected_cross
-    end
-
-    def dependencies_declare_target?(local, cross, target:, source_project:)
-      (source_project.id == target.project_id && local.key?(target.github_number)) || cross.key?(cross_key(target))
-    end
-
-    def line_declares_target?(line, target:, source_project:)
-      local, cross = Issues::ParseDependencies.extract(body: "## Dependencies\n#{line}")
-      dependencies_declare_target?(local, cross, target:, source_project:)
-    end
-
-    def cross_key(target)
-      [ target.project.owner.downcase, target.project.repo.downcase, target.github_number ]
-    end
-
-    def canonical_edges(edges)
-      edges.map { |edge| [ edge.fetch("from_issue_id"), edge.fetch("to_issue_id") ] }.sort
-    end
-
-    def comment_write_suppressed?(declaration)
-      declaration.fetch(:source_type) == "issue_comment" &&
-        declaration.fetch(:client).is_a?(GithubClient::CommentSuppressing)
-    end
-
-    def write(declaration)
-      if declaration.fetch(:source_type) == "issue_body"
-        declaration.fetch(:client).update_issue(declaration.fetch(:project).full_name,
-          declaration.fetch(:issue_number), body: declaration.fetch(:body))
-      else
-        declaration.fetch(:client).update_comment(declaration.fetch(:project).full_name,
-          declaration.fetch(:comment_id), declaration.fetch(:body))
+        dependency_line?(line, reference, in_dependency_section, in_list_item)
       end
     end
 
-    def field(source, name)
-      return source.public_send(name) if source.respond_to?(name)
-      return source[name] if source.respond_to?(:key?) && source.key?(name)
+    def dependency_line?(line, reference, in_dependency_section, in_list_item)
+      return false unless line.match?(/(?:^|\s)#{Regexp.escape(reference)}(?:\b|\s|,|$)/i)
+      return true if in_dependency_section && in_list_item
 
-      source[name.to_s]
+      line.match?(/\b(?:depends?\s+on|blocked?\s+by)\b/i)
     end
 
-    def result(status, reason, changed_edge_ids = [], details = {})
-      Result.new(status, reason, changed_edge_ids, details).to_h
+    def graph_matches?(body, comments:, edge:, issue:, replacement: nil)
+      comments = replaced_comments(comments, replacement)
+      local_refs, cross_refs = Issues::ParseDependencies.extract(body: body, comments: comments)
+      target = Issue.find(edge.fetch("to_issue_id"))
+      return false if reference_present?(local_refs, cross_refs, issue:, target:)
+
+      snapshot.fetch("effective_edges").select { |item| item.fetch("from_issue_id") == issue.id }
+        .reject { |item| item.fetch("id") == edge.fetch("id") }
+        .all? do |item|
+          reference_present?(local_refs, cross_refs, issue:, target: Issue.find(item.fetch("to_issue_id")))
+        end
     end
+
+    def reference_present?(local_refs, cross_refs, issue:, target:)
+      return local_refs.key?(target.github_number) if issue.project_id == target.project_id
+
+      cross_refs.key?(external_reference_key(target))
+    end
+
+    def replaced_comments(comments, replacement)
+      return comments unless replacement
+
+      comment, body = replacement
+      comments.map { |item| item.equal?(comment) ? CommentBody.new(body) : item }
+    end
+
+    CommentBody = Data.define(:body)
+
+    def external_reference(issue)
+      "#{issue.project.owner}/#{issue.project.repo}##{issue.github_number}"
+    end
+
+    def external_reference_key(issue)
+      [ issue.project.owner.downcase, issue.project.repo.downcase, issue.github_number ]
+    end
+
+    def unauthorized = Result.new(status: :unauthorized, message: "Issue-mutation authority is required for every declaration owner.")
+    def stale = Result.new(status: :stale, message: "The dependency-cycle analysis is stale; synchronize and analyze again.")
+    def needs_operator_action(message) = Result.new(status: :needs_operator_action, message: message)
   end
 end

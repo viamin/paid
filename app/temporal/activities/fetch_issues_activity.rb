@@ -59,6 +59,7 @@ module Activities
           sync_issue(project, gi, client:, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
         end
         sync_changed = synced_issues.any? { |issue_data| issue_data[:changed] }
+        authoritatively_synced_issue_ids = synced_issues.filter_map { |issue_data| issue_data[:id] if issue_data[:trusted] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
         sync_changed = relationship_changes || sync_changed
 
@@ -120,12 +121,19 @@ module Activities
           )
           stale_issue_count = stale_issue_result[:closed_count]
           sync_changed = stale_issue_result[:changed] || sync_changed
+          authoritatively_synced_issue_ids.concat(Array(stale_issue_result[:authoritatively_synced_issue_ids]))
           sync_changed = repair_questionless_needs_input(
             project,
             stale_issue_result[:synced_issues],
             client: client
           ) || sync_changed
         end
+
+        confirmation_outcomes = PartialCloseouts::ConfirmSync.call(
+          project:,
+          synced_issue_ids: authoritatively_synced_issue_ids.uniq
+        )
+        sync_changed = confirmation_outcomes.any? || sync_changed
 
         completed_state_changed = repair_completed_open_issues(project, client)
         sync_changed = completed_state_changed || sync_changed
@@ -1638,6 +1646,7 @@ module Activities
       {
         changed: backfilled_count.positive? || reconciled_count.positive? || count.positive?,
         closed_count: count,
+        authoritatively_synced_issue_ids: synced_issues.filter_map { |issue_data| issue_data[:id] if issue_data[:trusted] },
         synced_issues: questionless_needs_input_candidates(
           project,
           synced_issues,

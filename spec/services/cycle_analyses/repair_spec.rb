@@ -1,328 +1,198 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe CycleAnalyses::Repair do
-  # @spec AUTO-PICK-QUEUE-019
-  it "removes one uniquely matched section-list declaration when legacy provenance is absent" do
-    _user, cycle, run = cycle_run
-    edge = cycle.effective_edges.first
-    source = Issue.find(edge.from_id)
-    target = Issue.find(edge.to_id)
-    client = instance_double(GithubClient)
-    live = { body: "## Dependencies\n- ##{target.github_number}\n\nKeep this text." }
-    allow(client).to receive_messages(issue: live, issue_comments: [])
-    allow(client).to receive(:update_issue)
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+  let(:user) { create(:user) }
+  let(:project) { create(:project, account: user.account, created_by: user) }
+  let(:client) { instance_double(GithubClient) }
+  let(:first) { create(:issue, project:, github_state: "open", body: "## Dependencies\n- #2\n- #3") }
+  let(:second) { create(:issue, project:, github_number: 2, github_state: "open") }
+  let(:third) { create(:issue, project:, github_number: 3, github_state: "open") }
+  let(:run) { cycle_run(first:, second:) }
 
-    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
-    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
-      body: "## Dependencies\n\nKeep this text.")
+  before do
+    allow(Issue).to receive(:find).and_wrap_original do |find, *args|
+      find.call(*args).tap { |record| allow(record.project).to receive(:client).and_return(client) }
+    end
+    allow(client).to receive_messages(authenticated_login: "viamin", recent_issue_comments: [], issue: OpenStruct.new(body: first.body))
   end
 
-  # @spec AUTO-PICK-QUEUE-019
-  it "removes a uniquely matched declaration from its trusted source comment" do
-    _user, cycle, run = cycle_run
-    edge = cycle.effective_edges.first
-    source = Issue.find(edge.from_id)
-    target = Issue.find(edge.to_id)
-    comment_url = "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42"
-    IssueDependency.find(edge.id).update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
-    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
-      id: 42, body: "Depends on ##{target.github_number}\n", html_url: comment_url,
-      user: GithubClient::CommentAuthor.new(login: "viamin")
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  it "removes the uniquely selected live declaration through the trusted client" do
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(run, edge_id: edge.fetch("id"))
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    expect(client).to receive(:update_issue).with(project.full_name, first.github_number,
+      body: "## Dependencies\n- #3")
+
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "excludes untrusted comments from the immediate dependency reparse" do
+    untrusted_target = create(:issue, project:, github_number: 4, github_state: "open")
+    untrusted_comment = OpenStruct.new(
+      body: "Depends on #4", html_url: "https://github.com/example/repo/issues/1#issuecomment-1",
+      user: OpenStruct.new(login: "attacker")
     )
-    client = instance_double(GithubClient)
-    allow(client).to receive(:issue_comments).and_return([ comment ])
-    allow(client).to receive(:update_comment)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
-    expect(client).to have_received(:update_comment).with(source.project.full_name, 42, "")
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "requires operator action when quiet mode suppresses the comment write" do
-    _user, cycle, run = cycle_run
-    edge = cycle.effective_edges.first
-    source = Issue.find(edge.from_id)
-    source.project.update!(quiet_mode: true)
-    target = Issue.find(edge.to_id)
-    comment_url = "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42"
-    IssueDependency.find(edge.id).update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
-    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
-      id: 42, body: "Depends on ##{target.github_number}\n", html_url: comment_url,
-      user: GithubClient::CommentAuthor.new(login: "viamin")
-    )
-    client = instance_double(GithubClient, issue_comments: [ comment ])
-    allow(client).to receive(:update_comment)
-    quiet_client = GithubClient::CommentSuppressing.new(client)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run),
-      client_resolver: ->(_) { quiet_client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "github_comment_write_suppressed",
-      "changed_edge_ids" => [])
-    expect(client).not_to have_received(:update_comment)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "removes a uniquely matched cross-project declaration from the issue body" do
-    _user, cycle, run = cycle_run
-    edge = cycle.effective_edges.first
-    source = Issue.find(edge.from_id)
-    target = Issue.find(edge.to_id)
-    client = instance_double(GithubClient)
-    live = { body: "Depends on #{target.project.full_name}##{target.github_number}\n" }
-    allow(client).to receive_messages(issue: live, issue_comments: [])
+    allow(client).to receive(:recent_issue_comments).and_return([ untrusted_comment ])
     allow(client).to receive(:update_issue)
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
 
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
 
-    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
-    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number, body: "")
+    expect(result).to have_attributes(status: :applied), result.message
+    expect(first.reload.issue_dependencies.where(depends_on_issue: untrusted_target)).not_to exist
   end
 
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not treat an excluded-section phrase as the live declaration" do
-    _user, cycle, run = cycle_run
-    edge = cycle.effective_edges.first
-    source = Issue.find(edge.from_id)
-    target = Issue.find(edge.to_id)
-    client = instance_double(GithubClient)
-    live = { body: "## Child Issues\n- #999 — Depends on ##{target.github_number} sequencing note\n\n## Dependencies\n- ##{target.github_number}\n" }
-    allow(client).to receive_messages(issue: live, issue_comments: [])
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "pending_sync")
-    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
-      body: "## Child Issues\n- #999 — Depends on ##{target.github_number} sequencing note\n\n## Dependencies\n")
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write when the live declaration is ambiguous or changed" do
-    _user, cycle, run = cycle_run
-    target = Issue.find(cycle.effective_edges.first.to_id)
-    client = instance_double(GithubClient, issue: { body: "Depends on ##{target.github_number}\nDepends on ##{target.github_number}" })
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write when unprovenanced matching declarations occur in the body and a trusted comment" do
-    _user, cycle, run = cycle_run
-    source = Issue.find(cycle.effective_edges.first.from_id)
-    target = Issue.find(cycle.effective_edges.first.to_id)
-    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
-      id: 42, body: "Depends on ##{target.github_number}\n",
-      html_url: "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42",
-      user: GithubClient::CommentAuthor.new(login: "viamin")
-    )
-    client = instance_double(GithubClient, issue: { body: "Depends on ##{target.github_number}\n" }, issue_comments: [ comment ])
-    allow(client).to receive(:update_issue)
-    allow(client).to receive(:update_comment)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
-    expect(client).not_to have_received(:update_issue)
-    expect(client).not_to have_received(:update_comment)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write when one carrier line declares the target twice" do
-    _user, cycle, run = cycle_run
-    target = Issue.find(cycle.effective_edges.first.to_id)
-    client = instance_double(GithubClient, issue: { body: "Depends on ##{target.github_number}, ##{target.github_number}\n" })
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "preserves prose around an inline declaration by leaving it for an operator" do
-    _user, cycle, run = cycle_run
-    target = Issue.find(cycle.effective_edges.first.to_id)
-    body = "Depends on ##{target.github_number} because its API must land first\n"
-    client = instance_double(GithubClient, issue: { body: body }, issue_comments: [])
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_not_removable")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not edit a comment when an unprovenanced body declaration cannot be removed safely" do
-    _user, cycle, run = cycle_run
-    source = Issue.find(cycle.effective_edges.first.from_id)
-    target = Issue.find(cycle.effective_edges.first.to_id)
-    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
-      id: 42, body: "Depends on ##{target.github_number}\n",
-      html_url: "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42",
-      user: GithubClient::CommentAuthor.new(login: "viamin")
-    )
-    client = instance_double(GithubClient,
-      issue: { body: "Depends on ##{target.github_number} because its API must land first\n" }, issue_comments: [ comment ])
-    allow(client).to receive(:update_comment)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_not_removable")
-    expect(client).not_to have_received(:update_comment)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "reports a missing live declaration distinctly from an ambiguous one" do
-    _user, _cycle, run = cycle_run
-    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #999" })
-    allow(client).to receive(:issue_comments).and_return([])
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_missing")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "recomputes the removal when the body changes between the read and the write" do
-    _user, cycle, run = cycle_run
-    edge = cycle.effective_edges.first
-    source = Issue.find(edge.from_id)
-    target = Issue.find(edge.to_id)
-    client = instance_double(GithubClient)
-    allow(client).to receive(:issue).and_return(
-      { body: "## Dependencies\n- ##{target.github_number}\n" },
-      { body: "Human note.\n\n## Dependencies\n- ##{target.github_number}\n" }
-    )
-    allow(client).to receive(:issue_comments).and_return([])
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
-    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
-      body: "Human note.\n\n## Dependencies\n")
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write when a changed second read no longer carries the declaration" do
-    _user, cycle, run = cycle_run
-    target = Issue.find(cycle.effective_edges.first.to_id)
-    client = instance_double(GithubClient)
-    allow(client).to receive(:issue).and_return(
-      { body: "## Dependencies\n- ##{target.github_number}\n" },
-      { body: "Human edit removed the declaration.\n" }
-    )
-    allow(client).to receive(:issue_comments).and_return([])
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_missing")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write when a changed second read makes the declaration ambiguous" do
-    _user, cycle, run = cycle_run
-    target = Issue.find(cycle.effective_edges.first.to_id)
-    client = instance_double(GithubClient)
-    allow(client).to receive(:issue).and_return(
-      { body: "## Dependencies\n- ##{target.github_number}\n" },
-      { body: "Depends on ##{target.github_number}\nDepends on ##{target.github_number}\n" }
-    )
-    allow(client).to receive(:issue_comments).and_return([])
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write when the expected resulting edges differ from the live cycle" do
-    _user, _cycle, run = cycle_run
-    client = instance_double(GithubClient)
-    allow(client).to receive(:update_issue)
-    mismatched = recommendation(run).deep_dup
-    mismatched.fetch("candidates").first.fetch("resulting_graph")["edges"] = []
-
-    result = described_class.call(agent_run: run, recommendation: mismatched, client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "resulting_graph_changed")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write for competing candidates or conflicting intent" do
-    _user, _cycle, run = cycle_run
-    client = instance_double(GithubClient)
-    allow(client).to receive(:update_issue)
-    conflicting = recommendation(run).deep_dup
-    conflicting.fetch("candidates").first["missing_or_conflicting_intent"] = [ "Owner direction conflicts." ]
-
-    result = described_class.call(agent_run: run, recommendation: conflicting, client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "not_obvious")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "does not write when a snapshotted project is no longer available for authorization" do
-    _user, _cycle, run = cycle_run
-    metadata = run.external_metadata.deep_dup
-    metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("project_ids") << -1
-    run.update!(external_metadata: metadata)
-    client = instance_double(GithubClient)
-    allow(client).to receive(:update_issue)
-
-    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
-
-    expect(result).to include("status" => "needs_operator_action", "reason" => "unauthorized")
-    expect(client).not_to have_received(:update_issue)
-  end
-
-  def cycle_run
-    user = create(:user)
-    project = create(:project, account: user.account, created_by: user)
-    first = create(:issue, project:, github_state: "open")
-    second = create(:issue, project:, github_state: "open")
-    create_legacy_issue_dependency(issue: first, depends_on_issue: second)
-    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  it "removes a uniquely selected declaration from an admitted trusted comment" do
+    comment_url = "https://github.com/example/repo/issues/1#issuecomment-1"
+    run
+    first.update!(body: "## Dependencies\n- #3")
+    dependency = first.issue_dependencies.find_by!(depends_on_issue: second)
+    dependency.update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
     cycle = Issues::DependencyCycles.call(account: user.account).sole
-    run = create(:agent_run, project:, initiating_user: user, status: "running", goal: AgentRun::CYCLE_ANALYSIS_GOAL,
-      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
-    [ user, cycle, run ]
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    comment = OpenStruct.new(id: 1, body: "Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    updated_comment = OpenStruct.new(id: 1, body: "Depends on", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    allow(client).to receive(:recent_issue_comments).and_return([ comment ], [ comment ], [ updated_comment ])
+    expect(client).to receive(:update_comment).with(project.full_name, 1, "Depends on")
+
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+    expect(first.reload.issue_dependencies.where(depends_on_issue: second)).not_to exist
   end
 
-  def recommendation(run)
+  # @spec AUTO-PICK-QUEUE-021
+  it "requires mutation authority for every declaration-owning project" do
+    allow(ProjectPolicy).to receive(:new).and_return(instance_double(ProjectPolicy, manage_issues?: false))
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result.status).to eq(:unauthorized)
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "requires a trusted human credential before reading or writing the declaration" do
+    allow(client).to receive(:authenticated_login).and_return("paid-agents[bot]")
+
+    expect(client).not_to receive(:issue)
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "does not write when the persisted cycle is stale" do
+    run.external_metadata[CycleAnalyses::METADATA_KEY]["occurrence"] = "state:old"
+    run.save!
+
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result.status).to eq(:stale)
+  end
+
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  it "rejects multiple selected declarations before the first write" do
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
-    removed = snapshot.fetch("effective_edges").first
-    {
-      "summary" => "The first declaration is obsolete.",
-      "candidates" => [ {
-        "declaration_changes" => [ { "edge_id" => removed.fetch("id"), "action" => "remove" } ],
-        "evidence" => [ "The dependency contradicts the ordered implementation plan." ],
-        "tradeoffs" => [ "The source issue may proceed." ],
-        "missing_or_conflicting_intent" => [],
-        "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"),
-          "edges" => snapshot.fetch("effective_edges").drop(1).map { |edge| edge.slice("from_issue_id", "to_issue_id") } },
-        "acyclic" => true
-      } ]
-    }
+    first_edge = snapshot.fetch("effective_edges").find { |edge| edge.fetch("from_issue_id") == first.id }
+    second_edge = snapshot.fetch("effective_edges").find { |edge| edge.fetch("from_issue_id") == second.id }
+    recommendation = recommendation_for(run, edge_ids: [ first_edge.fetch("id"), second_edge.fetch("id") ])
+    allow(client).to receive(:issue) do |_repo, number|
+      OpenStruct.new(body: number == first.github_number ? first.body : second.body)
+    end
+
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+    expect(first.reload.body).to eq("## Dependencies\n- #2\n- #3")
+  end
+
+  # @spec AUTO-PICK-QUEUE-022
+  it "preserves a changed live body and stops when the declaration is no longer unique" do
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(run, edge_id: edge.fetch("id"))
+    changed_body = "Human edit\n\n## Dependencies\n- #2\n- #2\n- #3"
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body), OpenStruct.new(body: changed_body))
+
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+  end
+
+  # @spec AUTO-PICK-QUEUE-022
+  it "recomputes against a changed live body without clobbering unrelated edits" do
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(run, edge_id: edge.fetch("id"))
+    changed_body = "Human edit\n\n## Dependencies\n- #2\n- #3"
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body), OpenStruct.new(body: changed_body))
+
+    expect(client).to receive(:update_issue).with(project.full_name, first.github_number,
+      body: "Human edit\n\n## Dependencies\n- #3")
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result.status).to eq(:applied)
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "removes a cross-project declaration while retaining a same-number local dependency" do
+    remote_project = create(:project, account: user.account, created_by: user, owner: "other", repo: "repo")
+    local_target = create(:issue, project:, github_number: 42, github_state: "open")
+    remote_target = create(:issue, project: remote_project, github_number: 42, github_state: "open")
+    first.update!(body: "## Dependencies\n- #42\n- other/repo#42")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: remote_target,
+      declaration_source: "issue_body", declaration_url: first.github_url)
+    create_legacy_issue_dependency(issue: remote_target, depends_on_issue: first,
+      declaration_source: "issue_body", declaration_url: remote_target.github_url)
+    cycle = Issues::DependencyCycles.call(account: user.account).find { |item| item.issues.map(&:id).sort == [ first.id, remote_target.id ].sort }
+    cross_project_run = create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = cross_project_run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(cross_project_run, edge_id: edge.fetch("id"))
+
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    expect(client).to receive(:update_issue).with(project.full_name, first.github_number, body: "## Dependencies\n- #42\n")
+
+    result = described_class.call(agent_run: cross_project_run, candidate: recommendation, actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+    expect(local_target).to be_present
+  end
+
+  def cycle_run(first:, second:)
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second,
+      declaration_source: "issue_body", declaration_url: first.github_url)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first,
+      declaration_source: "issue_body", declaration_url: second.github_url)
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+  end
+
+  def recommendation_for(agent_run, edge_id: nil, edge_ids: nil)
+    snapshot = agent_run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    selected_ids = edge_ids || [ edge_id || snapshot.fetch("effective_edges").first.fetch("id") ]
+    edges = snapshot.fetch("effective_edges").reject { |edge| selected_ids.include?(edge.fetch("id")) }
+      .map { |edge| edge.slice("from_issue_id", "to_issue_id") }
+    { "declaration_changes" => selected_ids.map { |id| { "edge_id" => id, "action" => "remove" } },
+      "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"), "edges" => edges },
+      "acyclic" => true }
   end
 end

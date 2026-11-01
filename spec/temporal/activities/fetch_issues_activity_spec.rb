@@ -96,6 +96,17 @@ RSpec.describe Activities::FetchIssuesActivity do
     )
   end
 
+  def pending_sync_reconciliation(expected_body)
+    {
+      "status" => "pending_sync",
+      "assessment" => { "gaps" => [] },
+      "sync_confirmation" => {
+        "status" => "pending", "attempts" => 0, "max_attempts" => 3,
+        "expected_body_digest" => Digest::SHA256.hexdigest(expected_body)
+      }
+    }
+  end
+
   def create_parsed_issue_with_external_dependency(project, issue_number:, depends_on_number:)
     issue = create(:issue,
       project: project,
@@ -565,6 +576,26 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "#execute" do
+    # @spec PARTIAL-CLOSEOUT-039
+    it "leaves a pending confirmation untouched when the issue is omitted from an incremental response" do
+      project.update!(last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: Time.current)
+      issue = create(:issue, project:, github_state: "open", body: "expected repair")
+      run = create(:agent_run, :completed, project:, issue:, reconciliation: {
+        "status" => "pending_sync",
+        "assessment" => { "gaps" => [] },
+        "sync_confirmation" => {
+          "status" => "pending", "attempts" => 0, "max_attempts" => 3,
+          "expected_body_digest" => Digest::SHA256.hexdigest("expected repair")
+        }
+      })
+      stub_issues_by_label(nil => [])
+
+      activity.execute(project_id: project.id)
+
+      expect(run.reload.reconciliation).to include("status" => "pending_sync")
+      expect(run.reconciliation.dig("sync_confirmation", "attempts")).to eq(0)
+    end
+
     context "when GitHub is unavailable" do
       it "skips polling when the circuit is open and logs the reason" do
         create(:github_health_state, :circuit_open)
@@ -3359,6 +3390,32 @@ RSpec.describe Activities::FetchIssuesActivity do
           activity.execute(project_id: project.id)
 
           expect(issue.reload.labels).to eq([ "enhancement" ])
+        end
+
+        # @spec PARTIAL-CLOSEOUT-039 @spec PARTIAL-CLOSEOUT-040
+        it "exhausts an unchanged pending repair across authoritative reconciliation polls" do
+          issue = create(:issue, project: project, github_issue_id: 6011,
+            github_number: 61, github_state: "open", body: "stale repair",
+            github_updated_at: 2.days.ago, reconciled_at: 2.hours.ago)
+          run = create(:agent_run, :completed, project:, issue:,
+            reconciliation: pending_sync_reconciliation("expected repair"))
+          remote_issue = github_issue(61, id: 6011)
+          remote_issue.body = "stale repair"
+          allow(github_client).to receive(:issues).and_return([])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 61, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 61).and_return(remote_issue)
+
+          3.times do
+            project.update_column(:last_issue_reconciliation_at, 2.hours.ago)
+            issue.update_column(:reconciled_at, 2.hours.ago)
+            activity.execute(project_id: project.id)
+          end
+
+          expect(run.reload.reconciliation).to include("status" => "retryable_failure")
+          expect(run.reconciliation.fetch("sync_confirmation")).to include(
+            "status" => "exhausted", "attempts" => 3, "resolution" => "manual_sync_review"
+          )
         end
 
         it "eagerly enqueues reconciled issues when auto-pick is enabled" do

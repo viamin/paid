@@ -35,10 +35,7 @@ RSpec.describe CycleAnalysisJob do
     stub_request(:get, "https://api.github.com/repos/#{source.project.full_name}/issues/#{source.github_number}")
       .to_return(status: 200, body: { body: "Depends on ##{target.github_number}\n" }.to_json,
         headers: { "Content-Type" => "application/json" })
-    stub_request(:patch, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+\z}).to_return do
-      AgentRuns::Cancel.call(agent_run: run)
-      { status: 200, body: "{}", headers: { "Content-Type" => "application/json" } }
-    end
+    stub_cancelling_patch(run)
 
     described_class.new.perform(run.id)
 
@@ -158,6 +155,13 @@ RSpec.describe CycleAnalysisJob do
     snapshot.fetch("issues").each do |issue|
       stub_request(:get, "https://api.github.com/repos/#{issue.fetch("project")}/issues/#{issue.fetch("number")}")
         .to_return(status: 200, body: { body: issue.fetch("body") }.to_json, headers: { "Content-Type" => "application/json" })
+    end
+  end
+
+  def stub_cancelling_patch(run)
+    stub_request(:patch, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+\z}).to_return do
+      AgentRuns::Cancel.call(agent_run: run)
+      { status: 200, body: "{}", headers: { "Content-Type" => "application/json" } }
     end
   end
 end

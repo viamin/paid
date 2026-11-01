@@ -119,6 +119,15 @@ the `pending_sync` repair outcome and source details. Ordinary synchronization
 may requeue that outcome only for local confirmation; it never repeats the
 GitHub mutation.
 
+The recommendation analysis itself is read-only. In addition to the bounded
+automatic attempt above, an operator may separately select a supported
+declaration removal from a completed analysis. That action requires current
+issue-mutation authority and uses the trusted human GitHub client only while
+the persisted graph and live declaration still match the reviewed evidence.
+Missing, ambiguous, or changed declarations stop for operator action; later
+synchronization remains the authoritative confirmation that the cycle is
+resolved.
+
 Each path node also carries its own title, current labels, and (when a parent
 issue is linked and its project is within the viewer's authorized project set)
 the linked umbrella issue's number and title — all read from already-synced

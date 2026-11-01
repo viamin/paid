@@ -74,6 +74,20 @@ class DashboardController < ApplicationController
     redirect_to inbox_path, notice: result.message
   end
 
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  def repair_cycle_analysis
+    run = AgentRun.joins(:project).where(projects: { account_id: current_account.id })
+      .find(params[:agent_run_id])
+    result = CycleAnalyses::Repair.call(
+      agent_run: run,
+      candidate: run.verification_result.fetch(CycleAnalyses::RESULT_KEY).fetch("recommendation").fetch("candidates").fetch(params[:candidate_index].to_i),
+      actor: current_user
+    )
+    redirect_to inbox_path, (result.success? ? { notice: result.message } : { alert: result.message })
+  rescue KeyError, ActiveRecord::RecordNotFound
+    redirect_to inbox_path, alert: "That cycle analysis is no longer available for repair."
+  end
+
   def metrics
     @time_range = valid_time_range
     @stats = Dashboard::Stats.call(
