@@ -1,0 +1,40 @@
+{
+  "status": "failed",
+  "summary": "Mutation recipe 11 was invoked against the admitted-comment repair and trusted-write paths, but Rails boot stopped before mutant generation because the environment had no usable DATABASE_URL/PostgreSQL service and resolved to the unsafe superuser/BYPASSRLS role agent.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "status": "failed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "bundle exec mutant run --results-dir /tmp/paid-pr4831-validation/.mutant/results-recipe-11 --since HEAD~1 --use rspec --jobs 1 (origin/pr-4831 at b89532c4e)",
+            "result": "failed before mutation generation: Database::RuntimeRoleGuard rejected PostgreSQL role agent as SUPERUSER and BYPASSRLS"
+          },
+          {
+            "locator": "app/services/cycle_analyses/repair.rb and app/services/issues/enforce_mutation_trust.rb on origin/pr-4831",
+            "result": "selected mutation-validation production paths; no mutant result artifact was produced"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "passed",
+      "verification": {
+        "kind": "human_or_external_evidence",
+        "references": [
+          {
+            "locator": "bin/lint",
+            "result": "passed; RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb completed"
+          },
+          {
+            "locator": "bundle install; yarn install --immutable",
+            "result": "dependencies installed/satisfied"
+          }
+        ]
+      }
+    }
+  ]
+}
