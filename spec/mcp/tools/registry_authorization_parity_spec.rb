@@ -118,6 +118,18 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "repair_dependency_cycle",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id, occurrence: "state:dependency_cycle:test", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "trigger_agent_run",
         denied_user: -> {
           project

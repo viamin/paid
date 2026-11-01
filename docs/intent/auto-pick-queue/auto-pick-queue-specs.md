@@ -171,6 +171,26 @@
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`,
   `docs/api/openapi.yaml` (`DependencyCycleIssue`, `DependencyCycleParent`).
 
+- [x] **AUTO-PICK-QUEUE-021** — When an operator repairs a visible
+  dependency-cycle occurrence through the MCP surface, Paid SHALL expose the
+  bounded first-path repair — removing the first witness-path edge's
+  declaration line from the live declaring issue body — behind explicit
+  confirmation and manage-issues authority on the declaring project, and
+  SHALL validate the repair against live declarations first: the repair SHALL
+  be refused when the edge is comment-sourced, when the live body no longer
+  declares the dependency, when multiple or bundled lines declare it, or when
+  removing the edge would leave a cycle among the occurrence's members. An
+  applied repair SHALL edit exactly one declaration line through a trusted
+  human GitHub credential, re-synchronize the local dependency graph, and
+  return its outcome — applied or a refusal diagnostic — to the MCP caller.
+  *Tests:* `spec/mcp/tools/repair_dependency_cycle_spec.rb`,
+  `spec/services/cycle_repairs/apply_spec.rb`,
+  `spec/mcp/tools/registry_spec.rb`,
+  `spec/mcp/tools/registry_authorization_parity_spec.rb`.
+  *Code:* `Tools::RepairDependencyCycle`, `CycleRepairs::Apply`,
+  `CycleRepairs::DeclarationMatch`, `CycleRepairs::PostRemovalGraph`,
+  `Tools::Registry`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label

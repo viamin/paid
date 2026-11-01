@@ -114,6 +114,23 @@ cycle payload (`Api::V1::InboxEntrySerializer`) exposes the identical path,
 edge, and umbrella context so API and agent clients can inspect the same
 cycle the web Inbox renders.
 
+An authorized operator may also apply the bounded first-path repair for an
+occurrence through the MCP surface (`repair_dependency_cycle`). The repair
+deterministically targets the first edge of the occurrence's witness path and
+never chooses among candidates: it fetches the live declaring issue body,
+refuses comment-sourced edges, and requires exactly one removable body line
+to declare the dependency using the same whole-body, section-aware parsing as
+declaration ingestion — canonical dependency lists and inline phrases match
+while Child Issues content never does. Distinct diagnostics distinguish a
+declaration that is no longer live from one that is ambiguous (duplicated or
+bundled with other references), and a post-removal graph comparison refuses
+the repair when any occurrence member could still reach itself, so a
+single-edge removal never claims to resolve a multi-edge strongly connected
+group. An applied repair removes exactly one declaration line through a
+trusted human GitHub credential, re-synchronizes the local graph, and reports
+the applied or refused outcome to the MCP caller; a human-edited declaration
+and later synchronization remain the general resolution path.
+
 ## Tier-infeasibility gating
 
 Issues whose most recent model selection pins a tier no enabled runner can

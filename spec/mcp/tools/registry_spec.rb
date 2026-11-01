@@ -24,6 +24,7 @@ RSpec.describe Tools::Registry do
       request_acceptance_audit
       request_layered_verification_audit
       start_cycle_analysis
+      repair_dependency_cycle
       resolve_issue_closeout
       resolve_reopen_review
       record_change_intent
@@ -240,8 +241,8 @@ RSpec.describe Tools::Registry do
       definitions = described_class.mcp_definitions_for(user: user)
       names = definitions.map { |definition| definition[:name] }
 
-      # @spec AUTO-PICK-QUEUE-016
-      expect(names).to include("list_projects", "get_project", "operator_console_inventory", "start_cycle_analysis")
+      # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-021
+      expect(names).to include("list_projects", "get_project", "operator_console_inventory", "start_cycle_analysis", "repair_dependency_cycle")
       expect(names).not_to include("trigger_agent_run", "present_chat_diagram", "operator_suspend_account")
     end
   end
