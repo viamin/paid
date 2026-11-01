@@ -52,6 +52,23 @@ RSpec.describe CycleAnalyses::Repair do
     expect(result.status).to eq(:stale)
   end
 
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  it "rejects multiple selected declarations before the first write" do
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    first_edge = snapshot.fetch("effective_edges").find { |edge| edge.fetch("from_issue_id") == first.id }
+    second_edge = snapshot.fetch("effective_edges").find { |edge| edge.fetch("from_issue_id") == second.id }
+    recommendation = recommendation_for(run, edge_ids: [ first_edge.fetch("id"), second_edge.fetch("id") ])
+    allow(client).to receive(:issue) do |_repo, number|
+      OpenStruct.new(body: number == first.github_number ? first.body : second.body)
+    end
+
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+    expect(first.reload.body).to eq("## Dependencies\n- #2\n- #3")
+  end
+
   # @spec AUTO-PICK-QUEUE-022
   it "preserves a changed live body and stops when the declaration is no longer unique" do
     edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
@@ -91,11 +108,12 @@ RSpec.describe CycleAnalyses::Repair do
       external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
   end
 
-  def recommendation_for(agent_run, edge_id: agent_run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "effective_edges", 0, "id"))
+  def recommendation_for(agent_run, edge_id: nil, edge_ids: nil)
     snapshot = agent_run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
-    edges = snapshot.fetch("effective_edges").reject { |edge| edge.fetch("id") == edge_id }
+    selected_ids = edge_ids || [ edge_id || snapshot.fetch("effective_edges").first.fetch("id") ]
+    edges = snapshot.fetch("effective_edges").reject { |edge| selected_ids.include?(edge.fetch("id")) }
       .map { |edge| edge.slice("from_issue_id", "to_issue_id") }
-    { "declaration_changes" => [ { "edge_id" => edge_id, "action" => "remove" } ],
+    { "declaration_changes" => selected_ids.map { |id| { "edge_id" => id, "action" => "remove" } },
       "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"), "edges" => edges },
       "acyclic" => true }
   end

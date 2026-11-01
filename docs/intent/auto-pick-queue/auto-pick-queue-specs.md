@@ -175,10 +175,10 @@
 - [x] **AUTO-PICK-QUEUE-021** — When an authorized operator requests a
   reviewed cycle repair, Paid SHALL require issue-mutation authority for every
   declaration-owning project, reject a changed persisted graph before any
-  GitHub write, and apply only the selected candidate's supported declaration
-  mutations through the trusted human GitHub client. A missing, ambiguous, or
-  changed live declaration SHALL stop with `needs_operator_action` and SHALL
-  not overwrite the live issue body.
+  GitHub write, require the selected candidate to contain exactly one supported
+  declaration removal, and apply it through the trusted human GitHub client. A
+  missing, ambiguous, or changed live declaration SHALL stop with
+  `needs_operator_action` and SHALL not overwrite the live issue body.
   *Tests:* `spec/services/cycle_analyses/repair_spec.rb`.
 
 - [x] **AUTO-PICK-QUEUE-022** — Before applying a cycle repair, Paid SHALL

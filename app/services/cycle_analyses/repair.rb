@@ -26,12 +26,9 @@ module CycleAnalyses
       changes = candidate.fetch("declaration_changes")
       return needs_operator_action("The selected analysis candidate is not acyclic.") unless candidate["acyclic"] == true
       return needs_operator_action("Only declaration removals can be repaired automatically.") unless removable?(changes)
+      return needs_operator_action("Select a candidate with exactly one declaration removal.") unless changes.one?
 
-      changes.each do |change|
-        result = apply_removal(change)
-        return result unless result.success?
-      end
-      Result.new(status: :applied, message: "Dependency declaration repair applied.")
+      apply_removal(changes.first)
     rescue KeyError, ActiveRecord::RecordNotFound => error
       needs_operator_action("Cycle repair evidence is incomplete: #{error.message}.")
     rescue GithubClient::Error => error
