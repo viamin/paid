@@ -38,8 +38,16 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "bundle install; yarn install --immutable; bin/rails db:prepare",
+            "locator": "bundle install; yarn install --immutable; RAILS_ENV=test bin/rails db:prepare",
             "result": "completed with the provided validation database"
+          },
+          {
+            "locator": "bin/lint",
+            "result": "passed; all configured lint checks passed"
+          },
+          {
+            "locator": "bin/coherence-check.mjs",
+            "result": "completed; repository-wide pre-existing orphan, gap, and staleness signals remain"
           },
           {
             "locator": "PostgreSQL role mutation_runner",
