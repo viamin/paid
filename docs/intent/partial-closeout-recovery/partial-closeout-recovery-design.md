@@ -92,6 +92,63 @@ PR/run links, the recorded completion outcome, unresolved prerequisites
 (blocking dependencies), and the exact reason automatic continuation cannot
 proceed.
 
+### Lane read model: live admission on the request path (#4558)
+
+The lane's membership is derived, not persisted. `Issues::StalledCloseouts`
+asks `DefaultCandidateSource.partial_closeout_eligibility`, which evaluates
+the ordinary `eligible_scope` for a project's candidates and then the
+scoped-continuation `eligible_scope` for the candidates the ordinary scope
+excluded. `eligible_scope` is the canonical admission decision for auto-pick
+selection, for the dequeue recheck, and for continuation admission, and it
+remains so: the lane never decides admission, it reports what admission
+decided.
+
+`Inbox::Queue`, `Inbox::Count`, and `Inbox::Availability` each call
+`Issues::StalledCloseouts` independently, so the lane evaluates live admission
+on the request path. Measured against a migrated database with tenant
+row-level-security policies enabled and a runtime role that does not bypass
+RLS (`script/inbox/measure_partial_closeout_lane.rb`; the recorded run is
+`docs/performance/partial-closeout-lane-2026-10-28.json`):
+
+| Projects with a stall | `eligible_scope` evaluations per measured path | SQL statements per measured path | SQL time per measured path |
+| --- | --- | --- | --- |
+| 1 | 2 | 1–32 | 2.29–215.04 ms |
+| 5 | 10 | 140–161 | 755.66–977.57 ms |
+| 10 | 20 | 275–296 | 1,766.98–1,969.26 ms |
+| 20 | 40 | 545–566 | 3,491.42–5,222.79 ms |
+
+The cost is per project, not per stall: batching inside one invocation
+(`PARTIAL-CLOSEOUT-026`) keeps the query count flat in the number of
+candidates, and the admission statement itself plans in 23–32 ms against
+2–7 ms of execution, so the statement's own subquery shape dominates. The
+`Inbox::Queue` lane pays that on every Inbox index render;
+`Inbox::Count` and `Inbox::Availability` pay it on every cache miss behind
+the account's `inbox` `Dashboard::CacheVersion` and its 90-second TTL.
+
+Replacing the live evaluation with a stored read model is an architecture
+decision, and it is recorded in
+[RDR-079](../../rdrs/RDR-079-partial-closeout-lane-read-model.md). The
+decision, its evidence, and its alternatives:
+
+| Option | Result | Trade-off |
+| --- | --- | --- |
+| A — live admission | Retain the present canonical live evaluation. | No new stale-state contract, but Inbox latency stays coupled to admission complexity. |
+| B — persisted stall read model | Recompute the stalled-closeout projection outside Inbox rendering, on every input that changes admission or lane membership; a durable project checkpoint represents both populated and empty results; the Inbox reads the projection after that checkpoint exists; live `eligible_scope` remains the admission authority at continuation preflight, dequeue, and run start. | Removes admission from the hot path and mirrors the persisted project-readiness snapshot, but adds a durable derived record, invalidation coverage, freshness semantics, and a rollout guard. |
+| C — per-project cache | Cache the `StalledCloseouts` result per project behind the account's `inbox` `Dashboard::CacheVersion`, shared by Queue, Count, and Availability. | Lowest implementation cost, but the cache boundary is the badge boundary, not the admission-input boundary, so it serves badge-grade staleness to the lane list and returns to live admission on every cold cache. |
+
+**Recorded decision: Option B is the recommended direction, and it is
+proposed rather than in force.** The lane keeps live admission until an owner
+ratifies RDR-079. The recommendation rests on three findings: the request-path
+cost grows with the number of projects that have closeout candidates rather
+than with the number of stalls; Option C needs the same invalidation coverage
+as the projection to be correct, because the `inbox` cache version does not
+move when an agent run starts or finishes, when a no-code-required outcome
+appears, when a skip label changes, or when runner configuration changes the
+tier feasibility set; and a display-only projection cannot authorize work,
+because the continuation preflight and the dequeue recheck still decide
+admission live. `PARTIAL-CLOSEOUT-037` and `PARTIAL-CLOSEOUT-038` state the
+proposed contract.
+
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 
 A deliberate continuation is a persisted, auditable authorization — never a
@@ -580,3 +637,27 @@ those revisions change.
 - *Persisted inbox items*: the lane derives from evidence columns like
   `retry_limited` does; only the scoped authorization and the resolution
   dismissal are persisted.
+- *Per-project cache of the stalled-closeout result (#4558)*: rejected — the
+  `inbox` cache version is a badge boundary rather than an admission-input
+  boundary, so the lane list would inherit the badge's staleness.
+- *Persisted stall read model (#4558)*: proposed in RDR-079 and not in force —
+  it is the recommended direction for the lane's request-path cost, and it
+  supersedes only the live-evaluation part of the derived-lane decision, never
+  the admission authority.
+
+## Open Questions & Future Decisions
+
+### Resolved
+
+1. ✅ The lane's admission authority is `DefaultCandidateSource.eligible_scope`
+   at evaluation time; the lane reports admission, it does not decide it.
+2. ✅ The lane's membership stays derived from evidence, not persisted as Inbox
+   items.
+
+### Deferred
+
+1. The owner must choose between Option A (live admission), Option B (the
+   persisted stall read model in RDR-079), and Option C (a per-project cache)
+   for the lane's request-path cost (#4558). Option B is recommended and
+   awaits ratification; implementation is gated on that decision and on an
+   accepted RDR.
