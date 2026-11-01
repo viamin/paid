@@ -176,6 +176,123 @@ RSpec.describe CycleAnalyses::Repair do
     expect(local_target).to be_present
   end
 
+  # @spec AUTO-PICK-QUEUE-021
+  it "rejects admitted-comment repairs when the comment author becomes untrusted" do
+    comment_url = "https://github.com/example/repo/issues/1#issuecomment-1"
+    run
+    first.update!(body: "## Dependencies\n- #3")
+    dependency = first.issue_dependencies.find_by!(depends_on_issue: second)
+    dependency.update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    untrusted_comment = OpenStruct.new(id: 1, body: "Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "untrusted"))
+    allow(client).to receive(:recent_issue_comments).and_return([], [ untrusted_comment ])
+
+    expect(client).not_to receive(:update_comment)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+    expect(result.message).to include("missing or ambiguous")
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "rejects admitted-comment repairs when the comment is deleted" do
+    comment_url = "https://github.com/example/repo/issues/1#issuecomment-1"
+    run
+    first.update!(body: "## Dependencies\n- #3")
+    dependency = first.issue_dependencies.find_by!(depends_on_issue: second)
+    dependency.update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    comment = OpenStruct.new(id: 1, body: "Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    allow(client).to receive(:recent_issue_comments).and_return([ comment ], [])
+
+    expect(client).not_to receive(:update_comment)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+    expect(result.message).to include("missing or ambiguous")
+  end
+
+  # @spec AUTO-PICK-QUEUE-022
+  it "recomputes against a changed live comment and validates the resulting graph" do
+    comment_url = "https://github.com/example/repo/issues/1#issuecomment-1"
+    run
+    first.update!(body: "## Dependencies\n- #3")
+    dependency = first.issue_dependencies.find_by!(depends_on_issue: second)
+    dependency.update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    comment = OpenStruct.new(id: 1, body: "Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    # Comment is edited to add extra context and new dependency, but we still successfully remove #2
+    create(:issue, project:, github_number: 4, github_state: "open")
+    edited_comment = OpenStruct.new(id: 1, body: "Depends on #2 and #4", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    allow(client).to receive(:recent_issue_comments).and_return([ comment ], [ edited_comment ])
+    expect(client).to receive(:update_comment).with(project.full_name, 1, "Depends on and #4")
+
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "rejects admitted-comment repairs when the stale-graph check fails" do
+    comment_url = "https://github.com/example/repo/issues/1#issuecomment-1"
+    run
+    first.update!(body: "## Dependencies\n- #3")
+    dependency = first.issue_dependencies.find_by!(depends_on_issue: second)
+    dependency.update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    comment = OpenStruct.new(id: 1, body: "Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    allow(client).to receive_messages(
+      issue: OpenStruct.new(body: first.body),
+      recent_issue_comments: [ comment ]
+    )
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+
+    # Simulate the cycle becoming stale by making cycle lookup return a different cycle
+    allow(Issues::DependencyCycles).to receive(:call).and_return([])
+
+    expect(client).not_to receive(:update_comment)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
+
+    expect(result.status).to eq(:stale)
+  end
+
+  # @spec AUTO-PICK-QUEUE-022
+  it "recomputes against a changed live comment without clobbering unrelated edits" do
+    comment_url = "https://github.com/example/repo/issues/1#issuecomment-1"
+    run
+    first.update!(body: "## Dependencies\n- #3")
+    dependency = first.issue_dependencies.find_by!(depends_on_issue: second)
+    dependency.update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    comment = OpenStruct.new(id: 1, body: "Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    # Comment was edited with extra context between snapshot and repair
+    edited_comment = OpenStruct.new(id: 1, body: "Extra context. Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    allow(client).to receive(:recent_issue_comments).and_return([ comment ], [ edited_comment ])
+    expect(client).to receive(:update_comment).with(project.full_name, 1, "Extra context. Depends on")
+
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+  end
+
   def cycle_run(first:, second:)
     create_legacy_issue_dependency(issue: first, depends_on_issue: second,
       declaration_source: "issue_body", declaration_url: first.github_url)
