@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Merged main without losing either repair path; lint, coherence, and 371 focused integration/service examples passed.",
+  "summary": "Focused automatic dependency-cycle repair coverage passes, including a regression test for a trusted comment added between provenance-less source selection and write.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -10,7 +10,8 @@
         "references": [
           { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:7", "result": "passed: uniquely matched live declaration was removed and reported pending_sync" },
           { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:106", "result": "passed: ambiguous or changed live declarations produced no GitHub write" },
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:285", "result": "passed: missing project authority prevented the repair" }
+          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:140", "result": "passed (18 examples, 0 failures)" },
+          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:307", "result": "passed: missing project authority prevented the repair" }
         ]
       }
     },

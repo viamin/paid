@@ -96,15 +96,18 @@ module CycleAnalyses
       edited = remove_unique_declaration(declaration.fetch(:source_body), target:, source_project: issue.project)
       return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
-      declaration.merge(body: edited)
+      declaration.merge(body: edited, unprovenanced: edge.declaration_source.nil?)
     end
 
     # GitHub has no conditional issue PATCH, so the body is re-read immediately
     # before writing. When a human edit lands between the two reads, the
     # removal is recomputed against their text so the edit survives the repair;
     # a changed body without a unique removable declaration aborts the write.
+    # Provenance-less edges recheck every admitted carrier before the write.
     # Mirrors ClarifyingQuestions::DescriptionSection#update_issue_body.
     def current_declaration(declaration)
+      return current_unprovenanced_declaration(declaration) if declaration.fetch(:unprovenanced)
+
       source = current_source(declaration)
       return { reason: "live_declaration_missing" } unless source
 
@@ -115,6 +118,18 @@ module CycleAnalyses
       return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
       declaration.merge(source_body: body, body: edited, comment_id: source[:comment_id])
+    end
+
+    def current_unprovenanced_declaration(declaration)
+      refreshed = unprovenanced_declaration(issue: declaration.fetch(:issue), target: declaration.fetch(:target),
+        client: declaration.fetch(:client))
+      return refreshed if refreshed[:reason]
+
+      edited = remove_unique_declaration(refreshed.fetch(:source_body), target: declaration.fetch(:target),
+        source_project: declaration.fetch(:project))
+      return { reason: removal_reason(edited) } unless edited.is_a?(String)
+
+      refreshed.merge(body: edited, unprovenanced: true)
     end
 
     def removal_reason(outcome)
@@ -184,7 +199,7 @@ module CycleAnalyses
     end
 
     def declaration(issue:, target:, client:, source_type:, source_body:, declaration_url: nil, comment_id: nil)
-      { client:, project: issue.project, project_id: issue.project_id, issue_number: issue.github_number, target:,
+      { client:, issue:, project: issue.project, project_id: issue.project_id, issue_number: issue.github_number, target:,
         source_type:, source_body:, declaration_url:, comment_id: }
     end
 
