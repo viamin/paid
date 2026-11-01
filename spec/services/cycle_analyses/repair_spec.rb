@@ -11,8 +11,7 @@ RSpec.describe CycleAnalyses::Repair do
     target = Issue.find(edge.to_id)
     client = instance_double(GithubClient)
     live = { body: "## Dependencies\n- ##{target.github_number}\n\nKeep this text." }
-    allow(client).to receive(:issue).and_return(live)
-    allow(client).to receive(:issue_comments).and_return([])
+    allow(client).to receive_messages(issue: live, issue_comments: [])
     allow(client).to receive(:update_issue)
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
 
@@ -76,8 +75,7 @@ RSpec.describe CycleAnalyses::Repair do
     target = Issue.find(edge.to_id)
     client = instance_double(GithubClient)
     live = { body: "Depends on #{target.project.full_name}##{target.github_number}\n" }
-    allow(client).to receive(:issue).and_return(live)
-    allow(client).to receive(:issue_comments).and_return([])
+    allow(client).to receive_messages(issue: live, issue_comments: [])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
@@ -94,8 +92,7 @@ RSpec.describe CycleAnalyses::Repair do
     target = Issue.find(edge.to_id)
     client = instance_double(GithubClient)
     live = { body: "## Child Issues\n- #999 — Depends on ##{target.github_number} sequencing note\n\n## Dependencies\n- ##{target.github_number}\n" }
-    allow(client).to receive(:issue).and_return(live)
-    allow(client).to receive(:issue_comments).and_return([])
+    allow(client).to receive_messages(issue: live, issue_comments: [])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
@@ -150,6 +147,40 @@ RSpec.describe CycleAnalyses::Repair do
 
     expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
     expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "preserves prose around an inline declaration by leaving it for an operator" do
+    _user, cycle, run = cycle_run
+    target = Issue.find(cycle.effective_edges.first.to_id)
+    body = "Depends on ##{target.github_number} because its API must land first\n"
+    client = instance_double(GithubClient, issue: { body: body }, issue_comments: [])
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_not_removable")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "does not edit a comment when an unprovenanced body declaration cannot be removed safely" do
+    _user, cycle, run = cycle_run
+    source = Issue.find(cycle.effective_edges.first.from_id)
+    target = Issue.find(cycle.effective_edges.first.to_id)
+    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
+      id: 42, body: "Depends on ##{target.github_number}\n",
+      html_url: "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42",
+      user: GithubClient::CommentAuthor.new(login: "viamin")
+    )
+    client = instance_double(GithubClient,
+      issue: { body: "Depends on ##{target.github_number} because its API must land first\n" }, issue_comments: [ comment ])
+    allow(client).to receive(:update_comment)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_not_removable")
+    expect(client).not_to have_received(:update_comment)
   end
 
   # @spec AUTO-PICK-QUEUE-019

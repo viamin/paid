@@ -105,8 +105,9 @@ exact declaration. It rechecks the SCC occurrence, source identity, target,
 authority, and resulting graph before writing only that GitHub declaration.
 It never changes local dependency rows to simulate success. A write is
 `pending_sync` until ordinary synchronization confirms an acyclic persisted
-graph. A pending run can be retried only as local graph reconciliation, never
-as a second GitHub mutation; a changed persisted cycle and stale, ambiguous,
+graph. When ordinary synchronization parses the repaired declaration source,
+it queues the pending run for local graph confirmation, never as a second
+GitHub mutation; a changed persisted cycle and stale, ambiguous,
 unauthorized, failed, and still-cyclic outcomes stay held with diagnostics. A
 confirmed repair clears the occurrence while the run remains available in
 normal history.

@@ -114,7 +114,10 @@ module CycleAnalyses
     end
 
     def removal_reason(outcome)
-      outcome == :ambiguous ? "live_declaration_ambiguous" : "live_declaration_missing"
+      return "live_declaration_ambiguous" if outcome == :ambiguous
+      return "live_declaration_not_removable" if outcome == :unremovable
+
+      "live_declaration_missing"
     end
 
     def issue_body(client:, project:, issue_number:)
@@ -167,6 +170,7 @@ module CycleAnalyses
         [ candidate, remove_unique_declaration(candidate.fetch(:source_body), target:, source_project: issue.project) ]
       end
       return { reason: "live_declaration_ambiguous" } if outcomes.any? { |_candidate, outcome| outcome == :ambiguous }
+      return { reason: "live_declaration_not_removable" } if outcomes.any? { |_candidate, outcome| outcome == :unremovable }
 
       matches = outcomes.filter_map { |candidate, outcome| candidate if outcome.is_a?(String) }
       return { reason: "live_declaration_missing" } if matches.empty?
@@ -219,8 +223,25 @@ module CycleAnalyses
       end
       return :ambiguous unless carriers.one?
       return :ambiguous unless target_occurrences(lines.fetch(carriers.first), target:, source_project:) == 1
+      return :unremovable unless standalone_declaration?(lines.fetch(carriers.first), target:, source_project:)
 
       lines.reject.with_index { |_line, index| index == carriers.first }.join
+    end
+
+    # GitHub's parser permits a dependency declaration in prose. Removing its
+    # whole line would discard the author's explanation, so only remove a line
+    # whose complete meaningful content is the verified declaration.
+    def standalone_declaration?(line, target:, source_project:)
+      content = line.strip.sub(/\A(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/, "")
+      reference = target_reference_pattern(target, source_project:)
+      content.match?(%r{\A(?:#{reference}|(?:depends?\s+on|blocked?\s+by)\s*:?\s*#{reference})\z}i)
+    end
+
+    def target_reference_pattern(target, source_project:)
+      qualified = "#{Regexp.escape(target.project.owner)}/#{Regexp.escape(target.project.repo)}\\##{target.github_number}"
+      return qualified unless source_project.id == target.project_id
+
+      "(?:\\##{target.github_number}|#{qualified})"
     end
 
     def target_occurrences(line, target:, source_project:)

@@ -152,14 +152,17 @@
   resulting graph, and edit only that declaration through the GitHub client.
   It SHALL NOT mutate local dependency rows to claim success. A write remains
   `pending_sync` until synchronization confirms an acyclic persisted graph. A
-  completed `pending_sync` analysis SHALL be retryable as a reconciliation that
-  does not repeat the GitHub declaration mutation; a changed persisted cycle or
-  all other outcomes remain held with diagnostics.
+  completed `pending_sync` analysis SHALL be requeued for reconciliation when
+  ordinary synchronization parses its repaired declaration source, without
+  repeating the GitHub declaration mutation; a changed persisted cycle or all
+  other outcomes remain held with diagnostics.
   *Tests:* `spec/services/cycle_analyses/repair_spec.rb`,
   `spec/services/cycle_analyses/confirm_spec.rb`,
-  `spec/services/cycle_analyses/start_spec.rb`.
+  `spec/services/cycle_analyses/start_spec.rb`,
+  `spec/services/cycle_analyses/confirm_pending_sync_spec.rb`.
   *Code:* `CycleAnalyses::Repair`, `CycleAnalyses::Confirm`,
-  `CycleAnalyses::Start`, `CycleAnalysisJob`.
+  `CycleAnalyses::ConfirmPendingSync`, `CycleAnalyses::Start`,
+  `CycleAnalysisJob`, `Activities::FetchIssuesActivity`.
 
 - [x] **AUTO-PICK-QUEUE-020** — Each cycle path/edge node Paid presents SHALL
   carry its locally synced title and current labels, and, when a parent issue
