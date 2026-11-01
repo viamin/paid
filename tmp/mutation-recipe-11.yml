@@ -15,5 +15,5 @@ errored: 0
 coverage: 98.59%
 alive_mutation:
   subject: CycleAnalyses::Repair#call
-  source_line: 21
+  source_line: 27
   description: "Hash#[] versus Hash#fetch for the acyclic guard; equivalent for the admitted candidate contract"

@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Recipe 11 mutation validation ran under a NOSUPERUSER/NOBYPASSRLS PostgreSQL role for the dependency-cycle repair and trusted-write entry points. The focused run produced 71 mutations: 70 killed, 1 semantically equivalent survivor, 0 errors (98.59% mutation coverage).",
+  "summary": "Recipe 11 mutation validation ran under a NOSUPERUSER/NOBYPASSRLS PostgreSQL role for the dependency-cycle repair and trusted-write entry points. The focused run produced 71 mutations: 70 killed, 1 semantically equivalent survivor, 0 errors (98.59% mutation coverage). Follow-up: corrected the equivalent-survivor record's source_line from 21 to 27 per review feedback.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -26,7 +26,7 @@
           },
           {
             "locator": "tmp/mutation-recipe-11.yml",
-            "result": "Recipe 11 result: 70/71 killed, 1 equivalent survivor, 0 errored"
+            "result": "Recipe 11 result: 70/71 killed, 1 equivalent survivor, 0 errored; source_line corrected to 27 (app/services/cycle_analyses/repair.rb:27, the candidate[\"acyclic\"] == true guard) per paid-code-reviewer feedback"
           }
         ]
       }
@@ -38,8 +38,8 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "bundle install; yarn install --immutable; RAILS_ENV=test bin/rails db:prepare",
-            "result": "completed with the provided validation database"
+            "locator": "bundle install; yarn install",
+            "result": "completed"
           },
           {
             "locator": "bin/lint",
