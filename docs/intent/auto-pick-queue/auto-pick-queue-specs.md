@@ -118,14 +118,17 @@
   *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
 
-- [x] **AUTO-PICK-QUEUE-016** — When an authorized operator starts cycle
-  analysis for a visible dependency-cycle Inbox occurrence, Paid SHALL require
-  run authority for every project represented by that occurrence, create one
-  read-only synthetic agent run with the occurrence and effective graph revision
-  snapshotted, and expose its queued, running, completed, or failed state on the
-  same Inbox detail and authorized API/MCP surface. Paid SHALL reject a duplicate
-  active analysis for the occurrence and SHALL permit an explicit new analysis
-  only after terminal failure or a changed graph revision.
+- [x] **AUTO-PICK-QUEUE-016** — When an authorized operator starts a bounded
+  cycle repair run for a visible dependency-cycle Inbox occurrence, Paid SHALL
+  require run authority for every project represented by that occurrence and
+  explicit confirmation on every authorized API/MCP surface that the run may
+  remove one verified GitHub dependency declaration when the repair safeguards
+  pass. Paid SHALL create one synthetic agent run with the occurrence and
+  effective graph revision snapshotted, and expose its queued, running,
+  completed, or failed state on the same Inbox detail and authorized API/MCP
+  surface. Paid SHALL reject a duplicate active analysis for the occurrence and
+  SHALL permit an explicit new analysis only after terminal failure or a changed
+  graph revision.
 
 - [x] **AUTO-PICK-QUEUE-017** — A cycle-analysis prompt SHALL contain every
   member and effective internal edge of the strongly connected group, including
@@ -144,12 +147,30 @@
   removals and SHALL NOT infer that removal of a single edge breaks a multi-edge
   strongly connected group.
 
-- [x] **AUTO-PICK-QUEUE-019** — Cycle analysis SHALL remain read-only: it
-  SHALL NOT modify GitHub declarations, issue bodies, comments, labels, or local
-  dependency records. A repair is a separate authorized operation. A result
-  whose snapshotted revision differs from the currently synchronized effective
-  graph SHALL be identified as stale until a later synchronization observes an
-  acyclic graph.
+- [x] **AUTO-PICK-QUEUE-019** — Cycle recommendation analysis SHALL be
+  read-only. Its bounded automatic repair SHALL write only when the complete
+  SCC assessment has exactly one supported acyclic declaration change set with
+  evidence and no material missing or conflicting intent. Before writing, it
+  SHALL re-fetch and uniquely locate the trusted live declaration (including
+  when local provenance is absent), recheck authority, occurrence, source and
+  resulting graph, and edit only that declaration through the GitHub client.
+  It SHALL NOT mutate local dependency rows to claim success. A write remains
+  `pending_sync` until synchronization confirms an acyclic persisted graph. A
+  completed `pending_sync` analysis SHALL be requeued for reconciliation when
+  ordinary synchronization parses its repaired declaration source, without
+  repeating the GitHub declaration mutation; a changed persisted cycle or all
+  other outcomes remain held with diagnostics. When cancellation races with a
+  successful GitHub declaration write, Paid SHALL retain the `pending_sync`
+  repair outcome and source details on the cancelled run, and ordinary
+  synchronization SHALL requeue only its local reconciliation without
+  repeating the GitHub declaration mutation.
+  *Tests:* `spec/services/cycle_analyses/automatic_repair_spec.rb`,
+  `spec/services/cycle_analyses/confirm_spec.rb`,
+  `spec/services/cycle_analyses/start_spec.rb`,
+  `spec/services/cycle_analyses/confirm_pending_sync_spec.rb`.
+  *Code:* `CycleAnalyses::AutomaticRepair`, `CycleAnalyses::Confirm`,
+  `CycleAnalyses::ConfirmPendingSync`, `CycleAnalyses::Start`,
+  `CycleAnalysisJob`, `Activities::FetchIssuesActivity`.
 
 - [x] **AUTO-PICK-QUEUE-020** — Each cycle path/edge node Paid presents SHALL
   carry its locally synced title and current labels, and, when a parent issue

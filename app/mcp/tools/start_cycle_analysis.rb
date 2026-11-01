@@ -9,7 +9,7 @@ module Tools
     def self.mcp_available? = true
     def self.available_to?(user:) = run_agent_available_to?(user:)
 
-    def self.description = "Start a read-only analysis for one dependency-cycle Inbox occurrence. Requires confirmation and run authority for every represented project."
+    def self.description = "Start a bounded dependency-cycle repair run for one Inbox occurrence. The run may remove one verified GitHub dependency declaration only when strict safeguards pass. Requires confirmation and run authority for every represented project."
 
     def self.input_schema
       { type: "object", properties: { project_id: { type: "integer" }, occurrence: { type: "string" }, confirmed: { type: "boolean" } }, required: %w[project_id occurrence confirmed] }
@@ -17,7 +17,7 @@ module Tools
 
     # @spec AUTO-PICK-QUEUE-016
     def perform(project_id:, occurrence:, confirmed: false)
-      raise ArgumentError, "Confirmation required: set confirmed=true to start cycle analysis" unless confirmed
+      raise ArgumentError, "Confirmation required: set confirmed=true to authorize a bounded cycle repair attempt" unless confirmed
 
       project = project_for(project_id)
       cycle = Issues::DependencyCycles.call(account: project.account).find { |candidate| candidate.occurrence == occurrence }

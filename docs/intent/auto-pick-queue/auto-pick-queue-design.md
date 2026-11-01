@@ -75,19 +75,24 @@ members are unchanged. It shows an exact cycle path, linked projects/issues,
 the count of downstream open work held by the group, and the persisted GitHub
 source for each declaration when synchronization can identify it. Legacy edges
 without provenance remain visible and explicitly direct the operator to inspect
-the dependent issue. Paid never selects an edge to remove: the operator reviews
-the declarations on GitHub and removes or corrects the appropriate declaration.
+the dependent issue. A run may repair one declaration only when the assessment
+has exactly one supported acyclic change set, non-empty evidence, and no
+material missing or conflicting intent; model confidence or one edge removal
+alone never meets that threshold.
 The occurrence remains until a subsequent
 synchronization observes an acyclic persisted graph. A failed reconciliation is
 logged as unavailable; it is not treated as proof that no cycles exist.
 
-An authorized operator may start a read-only cycle analysis from that Inbox
+An authorized operator may start a cycle repair run from that Inbox
 occurrence. The analysis snapshots the occurrence and effective-graph revision,
 all members of the strongly connected group, and every effective internal edge;
 it never limits its evidence to the displayed witness path. Starting requires
 run authority on every represented project and serializes starts per occurrence
 so only one queued or running analysis exists. A failed analysis, or a graph
 revision change, permits an explicit fresh retry.
+The MCP description and confirmation state that this bounded run may remove one
+verified GitHub dependency declaration only when its repair safeguards pass, so
+clients do not authorize a write while believing the operation is read-only.
 
 The analysis uses Paid's synthetic agent-run record and `agent_harness` route.
 It supplies issue titles, labels, parent context, URLs, declaration provenance,
@@ -97,15 +102,31 @@ declaration changes, supporting and conflicting evidence, resulting graphs, and
 an acyclicity determination for each candidate. Paid derives each expected
 resulting graph from the snapshot and the structured removals or endpoint
 corrections, rejecting unaccounted edge changes before checking acyclicity.
-Missing provenance or content is reported as unavailable coverage, never
-silently assumed. The result is rendered
-on the same Inbox occurrence and remains marked stale when synchronization has
-changed the effective graph. Analysis itself is read-only. A separately
-authorized repair may apply a selected, supported declaration removal through
-the trusted human GitHub client, but only while the persisted graph and live
-declaration still match the reviewed evidence. Missing, ambiguous, or changed
-declarations stop for operator action; later synchronization remains the path
-that confirms the cycle is resolved.
+Missing local provenance is not itself disqualifying: before a write Paid
+re-fetches the trusted source and proceeds only if it uniquely locates the
+exact declaration. It rechecks the SCC occurrence, source identity, target,
+authority, and resulting graph before writing only that GitHub declaration.
+It never changes local dependency rows to simulate success. A write is
+`pending_sync` until ordinary synchronization confirms an acyclic persisted
+graph. When ordinary synchronization parses the repaired declaration source,
+it queues the pending run for local graph confirmation, never as a second
+GitHub mutation; a changed persisted cycle and stale, ambiguous,
+unauthorized, failed, and still-cyclic outcomes stay held with diagnostics. A
+confirmed repair clears the occurrence while the run remains available in
+normal history.
+If cancellation races with a successful GitHub write, the cancelled run retains
+the `pending_sync` repair outcome and source details. Ordinary synchronization
+may requeue that outcome only for local confirmation; it never repeats the
+GitHub mutation.
+
+The recommendation analysis itself is read-only. In addition to the bounded
+automatic attempt above, an operator may separately select a supported
+declaration removal from a completed analysis. That action requires current
+issue-mutation authority and uses the trusted human GitHub client only while
+the persisted graph and live declaration still match the reviewed evidence.
+Missing, ambiguous, or changed declarations stop for operator action; later
+synchronization remains the authoritative confirmation that the cycle is
+resolved.
 
 Each path node also carries its own title, current labels, and (when a parent
 issue is linked and its project is within the viewer's authorized project set)
