@@ -765,7 +765,8 @@
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body
   digest as `pending_sync` and SHALL not report the repair as reconciled until
-  the authoritative GitHub issue sync returns a matching body.
+  the authoritative GitHub issue sync returns a matching body. An incremental
+  response that omits the source issue SHALL leave its confirmation pending.
   *Code:* `app/services/partial_closeouts/reconcile.rb`,
   `app/services/partial_closeouts/confirm_sync.rb`,
   `app/temporal/activities/fetch_issues_activity.rb`.

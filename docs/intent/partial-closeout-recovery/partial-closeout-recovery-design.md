@@ -332,11 +332,12 @@ machinery the workflow uses:
   reuses every replay-safety primitive the workflow uses; it does not
   introduce a parallel code path.
 - **Sync-confirmed repair.** A dependency-body repair remains `pending_sync`
-  until a GitHub synchronization observes the expected content digest. Each
-  synchronization revisits every pending confirmation for the project, even
-  when GitHub's incremental response contains no changed issue. A mismatch
-  advances a bounded three-attempt counter; exhaustion records a retryable
-  failure with a manual sync-review path and stops automatic confirmation.
+  until a GitHub synchronization observes the expected content digest. A
+  confirmation is considered only when that GitHub fetch returned and synced
+  its source issue; an omitted incremental response leaves it pending. A
+  mismatch advances a bounded three-attempt counter; exhaustion records a
+  retryable failure with a manual sync-review path and stops automatic
+  confirmation.
 - **No mass-mutation.** ReconcileLegacy does not touch `paid_state`, does
   not infer completion from closed children, and does not auto-close the
   umbrella. The umbrella remains open for its final audit; legacy

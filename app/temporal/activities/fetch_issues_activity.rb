@@ -59,7 +59,8 @@ module Activities
           sync_issue(project, gi, client:, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
         end
         sync_changed = synced_issues.any? { |issue_data| issue_data[:changed] }
-        confirmation_outcomes = PartialCloseouts::ConfirmSync.call(project:)
+        synced_issue_ids = synced_issues.filter_map { |issue_data| issue_data[:id] if issue_data[:trusted] }
+        confirmation_outcomes = PartialCloseouts::ConfirmSync.call(project:, synced_issue_ids:)
         sync_changed = confirmation_outcomes.any? || sync_changed
         relationship_changes = parse_issue_relationships(project, synced_issues)
         sync_changed = relationship_changes || sync_changed

@@ -8,8 +8,9 @@ module PartialCloseouts
   class ConfirmSync
     def self.call(...) = new(...).call
 
-    def initialize(project:)
+    def initialize(project:, synced_issue_ids:)
       @project = project
+      @synced_issue_ids = synced_issue_ids
     end
 
     def call # @spec PARTIAL-CLOSEOUT-039 PARTIAL-CLOSEOUT-040
@@ -24,8 +25,11 @@ module PartialCloseouts
 
     def pending_runs
       pending = { sync_confirmation: { status: "pending" } }
-      project.agent_runs.where("reconciliation @> ?::jsonb", pending.to_json)
+      project.agent_runs.where(issue_id: synced_issue_ids)
+        .where("reconciliation @> ?::jsonb", pending.to_json)
     end
+
+    attr_reader :synced_issue_ids
 
     def confirm(run)
       reconciliation = run.reconciliation.to_h.deep_stringify_keys

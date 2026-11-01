@@ -19,7 +19,7 @@ RSpec.describe PartialCloseouts::ConfirmSync do
   # @spec PARTIAL-CLOSEOUT-039
   it "confirms a matching body and restores the normal terminal status" do
     run
-    described_class.call(project:)
+    described_class.call(project:, synced_issue_ids: [ issue.id ])
 
     expect(run.reload.reconciliation).to include("status" => "reconciled")
     expect(run.reconciliation.dig("sync_confirmation", "status")).to eq("confirmed")
@@ -33,14 +33,14 @@ RSpec.describe PartialCloseouts::ConfirmSync do
       "sync_confirmation" => { "attempts" => 2 }
     ))
 
-    described_class.call(project:)
+    described_class.call(project:, synced_issue_ids: [ issue.id ])
 
     expect(run.reload.reconciliation).to include("status" => "retryable_failure")
     expect(run.reconciliation.dig("sync_confirmation")).to include(
       "status" => "exhausted", "resolution" => "manual_sync_review", "attempts" => 3
     )
 
-    described_class.call(project:)
+    described_class.call(project:, synced_issue_ids: [ issue.id ])
     expect(run.reload.reconciliation.dig("sync_confirmation", "attempts")).to eq(3)
   end
 end

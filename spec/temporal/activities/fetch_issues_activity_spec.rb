@@ -565,10 +565,10 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "#execute" do
-    # @spec PARTIAL-CLOSEOUT-040
-    it "exhausts pending sync confirmation across unchanged incremental responses" do
+    # @spec PARTIAL-CLOSEOUT-039
+    it "leaves a pending confirmation untouched when the issue is omitted from an incremental response" do
       project.update!(last_issue_sync_at: 1.hour.ago, last_issue_reconciliation_at: Time.current)
-      issue = create(:issue, project:, github_state: "open", body: "concurrent edit")
+      issue = create(:issue, project:, github_state: "open", body: "expected repair")
       run = create(:agent_run, :completed, project:, issue:, reconciliation: {
         "status" => "pending_sync",
         "assessment" => { "gaps" => [] },
@@ -579,12 +579,10 @@ RSpec.describe Activities::FetchIssuesActivity do
       })
       stub_issues_by_label(nil => [])
 
-      3.times { activity.execute(project_id: project.id) }
+      activity.execute(project_id: project.id)
 
-      expect(run.reload.reconciliation).to include("status" => "retryable_failure")
-      expect(run.reconciliation.dig("sync_confirmation")).to include(
-        "status" => "exhausted", "resolution" => "manual_sync_review", "attempts" => 3
-      )
+      expect(run.reload.reconciliation).to include("status" => "pending_sync")
+      expect(run.reconciliation.dig("sync_confirmation", "attempts")).to eq(0)
     end
 
     context "when GitHub is unavailable" do
