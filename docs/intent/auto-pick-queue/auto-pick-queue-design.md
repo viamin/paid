@@ -90,6 +90,9 @@ it never limits its evidence to the displayed witness path. Starting requires
 run authority on every represented project and serializes starts per occurrence
 so only one queued or running analysis exists. A failed analysis, or a graph
 revision change, permits an explicit fresh retry.
+The MCP description and confirmation state that this bounded run may remove one
+verified GitHub dependency declaration only when its repair safeguards pass, so
+clients do not authorize a write while believing the operation is read-only.
 
 The analysis uses Paid's synthetic agent-run record and `agent_harness` route.
 It supplies issue titles, labels, parent context, URLs, declaration provenance,

@@ -281,6 +281,21 @@ RSpec.describe CycleAnalyses::Repair do
     expect(client).not_to have_received(:update_issue)
   end
 
+  # @spec AUTO-PICK-QUEUE-019
+  it "does not write when a snapshotted project is no longer available for authorization" do
+    _user, _cycle, run = cycle_run
+    metadata = run.external_metadata.deep_dup
+    metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("project_ids") << -1
+    run.update!(external_metadata: metadata)
+    client = instance_double(GithubClient)
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "unauthorized")
+    expect(client).not_to have_received(:update_issue)
+  end
+
   def cycle_run
     user = create(:user)
     project = create(:project, account: user.account, created_by: user)

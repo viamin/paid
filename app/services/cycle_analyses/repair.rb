@@ -59,7 +59,11 @@ module CycleAnalyses
     end
 
     def authorized?
-      projects.all? { |project| ProjectPolicy.new(agent_run.initiating_user, project).run_agent? && ProjectPolicy.new(agent_run.initiating_user, project).manage_issues? }
+      project_ids = snapshot.fetch("project_ids")
+      projects.size == project_ids.size && projects.all? do |project|
+        policy = ProjectPolicy.new(agent_run.initiating_user, project)
+        policy.run_agent? && policy.manage_issues?
+      end
     end
 
     def projects

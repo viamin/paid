@@ -118,14 +118,17 @@
   *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
 
-- [x] **AUTO-PICK-QUEUE-016** — When an authorized operator starts cycle
-  analysis for a visible dependency-cycle Inbox occurrence, Paid SHALL require
-  run authority for every project represented by that occurrence, create one
-  read-only synthetic agent run with the occurrence and effective graph revision
-  snapshotted, and expose its queued, running, completed, or failed state on the
-  same Inbox detail and authorized API/MCP surface. Paid SHALL reject a duplicate
-  active analysis for the occurrence and SHALL permit an explicit new analysis
-  only after terminal failure or a changed graph revision.
+- [x] **AUTO-PICK-QUEUE-016** — When an authorized operator starts a bounded
+  cycle repair run for a visible dependency-cycle Inbox occurrence, Paid SHALL
+  require run authority for every project represented by that occurrence and
+  explicit confirmation on every authorized API/MCP surface that the run may
+  remove one verified GitHub dependency declaration when the repair safeguards
+  pass. Paid SHALL create one synthetic agent run with the occurrence and
+  effective graph revision snapshotted, and expose its queued, running,
+  completed, or failed state on the same Inbox detail and authorized API/MCP
+  surface. Paid SHALL reject a duplicate active analysis for the occurrence and
+  SHALL permit an explicit new analysis only after terminal failure or a changed
+  graph revision.
 
 - [x] **AUTO-PICK-QUEUE-017** — A cycle-analysis prompt SHALL contain every
   member and effective internal edge of the strongly connected group, including
