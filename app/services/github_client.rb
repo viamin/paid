@@ -81,6 +81,9 @@ class GithubClient
 
     # @spec QUIET-MODE-002
     def create_pull_request_comment_reply(...) = nil
+
+    # Allow comment fetching since it's read-only
+    def issue_comment(...) = __getobj__.issue_comment(...)
   end
 
   # Explicit no-op result for a label write suppressed by project policy
@@ -191,6 +194,7 @@ class GithubClient
     update_contents
     pull_requests
     request_pull_request_review
+    issue_comment
   ].freeze
   INTERNAL_PASS_THROUGH_METHODS = (PASS_THROUGH_METHODS + %i[remove_label]).freeze
 

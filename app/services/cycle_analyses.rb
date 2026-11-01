@@ -8,4 +8,6 @@ module CycleAnalyses
   RESULT_KEY = "cycle_analysis"
 
   class InvalidResponse < AgentHarness::CommandExecutionError; end
+  class StaleCycleGraph < StandardError; end
+  class InsufficientAuthority < StandardError; end
 end
