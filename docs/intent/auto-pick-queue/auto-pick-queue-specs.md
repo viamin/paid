@@ -146,9 +146,10 @@
 
 - [x] **AUTO-PICK-QUEUE-019** — Cycle analysis SHALL remain read-only: it
   SHALL NOT modify GitHub declarations, issue bodies, comments, labels, or local
-  dependency records. A result whose snapshotted revision differs from the
-  currently synchronized effective graph SHALL be identified as stale until a
-  later synchronization observes an acyclic graph.
+  dependency records. A repair is a separate authorized operation. A result
+  whose snapshotted revision differs from the currently synchronized effective
+  graph SHALL be identified as stale until a later synchronization observes an
+  acyclic graph.
 
 - [x] **AUTO-PICK-QUEUE-020** — Each cycle path/edge node Paid presents SHALL
   carry its locally synced title and current labels, and, when a parent issue
@@ -170,6 +171,22 @@
   `DashboardHelper#dependency_cycle_issue_link`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`,
   `docs/api/openapi.yaml` (`DependencyCycleIssue`, `DependencyCycleParent`).
+
+- [x] **AUTO-PICK-QUEUE-021** — When an authorized operator requests a
+  reviewed cycle repair, Paid SHALL require issue-mutation authority for every
+  declaration-owning project, reject a changed persisted graph before any
+  GitHub write, and apply only the selected candidate's supported declaration
+  mutations through the trusted human GitHub client. A missing, ambiguous, or
+  changed live declaration SHALL stop with `needs_operator_action` and SHALL
+  not overwrite the live issue body.
+  *Tests:* `spec/services/cycle_analyses/repair_spec.rb`.
+
+- [x] **AUTO-PICK-QUEUE-022** — Before applying a cycle repair, Paid SHALL
+  re-fetch the live declaration source immediately before writing. If the live
+  source changed since validation, Paid SHALL recompute the removal against
+  that source and preserve unrelated human edits; if the selected declaration
+  is no longer uniquely removable, the repair SHALL stop without a write.
+  *Tests:* `spec/services/cycle_analyses/repair_spec.rb`.
 
 ## Epic umbrella audits
 

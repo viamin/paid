@@ -100,9 +100,12 @@ corrections, rejecting unaccounted edge changes before checking acyclicity.
 Missing provenance or content is reported as unavailable coverage, never
 silently assumed. The result is rendered
 on the same Inbox occurrence and remains marked stale when synchronization has
-changed the effective graph. It cannot mutate GitHub issues, comments, labels,
-or local dependency records; a human declaration change and later synchronization
-remain the only resolution path.
+changed the effective graph. Analysis itself is read-only. A separately
+authorized repair may apply a selected, supported declaration removal through
+the trusted human GitHub client, but only while the persisted graph and live
+declaration still match the reviewed evidence. Missing, ambiguous, or changed
+declarations stop for operator action; later synchronization remains the path
+that confirms the cycle is resolved.
 
 Each path node also carries its own title, current labels, and (when a parent
 issue is linked and its project is within the viewer's authorized project set)

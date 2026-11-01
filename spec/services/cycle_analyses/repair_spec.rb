@@ -1,0 +1,102 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+require "ostruct"
+
+RSpec.describe CycleAnalyses::Repair do
+  let(:user) { create(:user) }
+  let(:project) { create(:project, account: user.account, created_by: user) }
+  let(:client) { instance_double(GithubClient) }
+  let(:first) { create(:issue, project:, github_state: "open", body: "## Dependencies\n- #2\n- #3") }
+  let(:second) { create(:issue, project:, github_number: 2, github_state: "open") }
+  let(:third) { create(:issue, project:, github_number: 3, github_state: "open") }
+  let(:run) { cycle_run(first:, second:) }
+
+  before do
+    allow(Issue).to receive(:find).and_wrap_original do |find, *args|
+      find.call(*args).tap { |record| allow(record.project).to receive(:client).and_return(client) }
+    end
+    allow(client).to receive_messages(recent_issue_comments: [], issue: OpenStruct.new(body: first.body))
+  end
+
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  it "removes the uniquely selected live declaration through the trusted client" do
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(run, edge_id: edge.fetch("id"))
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    expect(client).to receive(:update_issue).with(project.full_name, first.github_number,
+      body: "## Dependencies\n- #3")
+
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "requires mutation authority for every declaration-owning project" do
+    allow(ProjectPolicy).to receive(:new).and_return(instance_double(ProjectPolicy, manage_issues?: false))
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result.status).to eq(:unauthorized)
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "does not write when the persisted cycle is stale" do
+    run.external_metadata[CycleAnalyses::METADATA_KEY]["occurrence"] = "state:old"
+    run.save!
+
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result.status).to eq(:stale)
+  end
+
+  # @spec AUTO-PICK-QUEUE-022
+  it "preserves a changed live body and stops when the declaration is no longer unique" do
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(run, edge_id: edge.fetch("id"))
+    changed_body = "Human edit\n\n## Dependencies\n- #2\n- #2\n- #3"
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body), OpenStruct.new(body: changed_body))
+
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+  end
+
+  # @spec AUTO-PICK-QUEUE-022
+  it "recomputes against a changed live body without clobbering unrelated edits" do
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(run, edge_id: edge.fetch("id"))
+    changed_body = "Human edit\n\n## Dependencies\n- #2\n- #3"
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body), OpenStruct.new(body: changed_body))
+
+    expect(client).to receive(:update_issue).with(project.full_name, first.github_number,
+      body: "Human edit\n\n## Dependencies\n- #3")
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result.status).to eq(:applied)
+  end
+
+  def cycle_run(first:, second:)
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second,
+      declaration_source: "issue_body", declaration_url: first.github_url)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first,
+      declaration_source: "issue_body", declaration_url: second.github_url)
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+  end
+
+  def recommendation_for(agent_run, edge_id: agent_run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "effective_edges", 0, "id"))
+    snapshot = agent_run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    edges = snapshot.fetch("effective_edges").reject { |edge| edge.fetch("id") == edge_id }
+      .map { |edge| edge.slice("from_issue_id", "to_issue_id") }
+    { "declaration_changes" => [ { "edge_id" => edge_id, "action" => "remove" } ],
+      "resulting_graph" => { "issue_ids" => snapshot.fetch("issues").pluck("id"), "edges" => edges },
+      "acyclic" => true }
+  end
+end
