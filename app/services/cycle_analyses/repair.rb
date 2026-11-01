@@ -76,6 +76,9 @@ module CycleAnalyses
       client = issue.project.client
       client = client.trusted_human_mutation_client if client&.respond_to?(:trusted_human_mutation_client)
       return needs_operator_action("GitHub access is unavailable for the declaration owner.") unless client
+      unless issue.project.trusted_github_user?(client.authenticated_login)
+        return needs_operator_action("A trusted human GitHub credential is required for the declaration owner.")
+      end
 
       original_body = client.issue(issue.project.full_name, issue.github_number).body.to_s
       planned_body, diagnostic = remove_unique_reference(original_body, issue:, target: Issue.find(edge.fetch("to_issue_id")))
@@ -150,19 +153,29 @@ module CycleAnalyses
     end
 
     def graph_matches?(body, edge:, issue:)
-      local_refs, = Issues::ParseDependencies.extract(body: body)
+      local_refs, cross_refs = Issues::ParseDependencies.extract(body: body)
       target = Issue.find(edge.fetch("to_issue_id"))
-      return false if local_refs.key?(target.github_number)
+      return false if reference_present?(local_refs, cross_refs, issue:, target:)
 
       snapshot.fetch("effective_edges").select { |item| item.fetch("from_issue_id") == issue.id }
         .reject { |item| item.fetch("id") == edge.fetch("id") }
         .all? do |item|
-          local_refs.key?(Issue.find(item.fetch("to_issue_id")).github_number)
+          reference_present?(local_refs, cross_refs, issue:, target: Issue.find(item.fetch("to_issue_id")))
         end
+    end
+
+    def reference_present?(local_refs, cross_refs, issue:, target:)
+      return local_refs.key?(target.github_number) if issue.project_id == target.project_id
+
+      cross_refs.key?(external_reference_key(target))
     end
 
     def external_reference(issue)
       "#{issue.project.owner}/#{issue.project.repo}##{issue.github_number}"
+    end
+
+    def external_reference_key(issue)
+      [ issue.project.owner.downcase, issue.project.repo.downcase, issue.github_number ]
     end
 
     def unauthorized = Result.new(status: :unauthorized, message: "Issue-mutation authority is required for every declaration owner.")

@@ -16,7 +16,7 @@ RSpec.describe CycleAnalyses::Repair do
     allow(Issue).to receive(:find).and_wrap_original do |find, *args|
       find.call(*args).tap { |record| allow(record.project).to receive(:client).and_return(client) }
     end
-    allow(client).to receive_messages(recent_issue_comments: [], issue: OpenStruct.new(body: first.body))
+    allow(client).to receive_messages(authenticated_login: "viamin", recent_issue_comments: [], issue: OpenStruct.new(body: first.body))
   end
 
   # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
@@ -39,6 +39,17 @@ RSpec.describe CycleAnalyses::Repair do
     result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
 
     expect(result.status).to eq(:unauthorized)
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "requires a trusted human credential before reading or writing the declaration" do
+    allow(client).to receive(:authenticated_login).and_return("paid-agents[bot]")
+
+    expect(client).not_to receive(:issue)
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
   end
 
   # @spec AUTO-PICK-QUEUE-021
@@ -96,6 +107,32 @@ RSpec.describe CycleAnalyses::Repair do
     result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
 
     expect(result.status).to eq(:applied)
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "removes a cross-project declaration while retaining a same-number local dependency" do
+    remote_project = create(:project, account: user.account, created_by: user, owner: "other", repo: "repo")
+    local_target = create(:issue, project:, github_number: 42, github_state: "open")
+    remote_target = create(:issue, project: remote_project, github_number: 42, github_state: "open")
+    first.update!(body: "## Dependencies\n- #42\n- other/repo#42")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: remote_target,
+      declaration_source: "issue_body", declaration_url: first.github_url)
+    create_legacy_issue_dependency(issue: remote_target, depends_on_issue: first,
+      declaration_source: "issue_body", declaration_url: remote_target.github_url)
+    cycle = Issues::DependencyCycles.call(account: user.account).find { |item| item.issues.map(&:id).sort == [ first.id, remote_target.id ].sort }
+    cross_project_run = create(:agent_run, :completed, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = cross_project_run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    recommendation = recommendation_for(cross_project_run, edge_id: edge.fetch("id"))
+
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    expect(client).to receive(:update_issue).with(project.full_name, first.github_number, body: "## Dependencies\n- #42\n")
+
+    result = described_class.call(agent_run: cross_project_run, candidate: recommendation, actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+    expect(local_target).to be_present
   end
 
   def cycle_run(first:, second:)
