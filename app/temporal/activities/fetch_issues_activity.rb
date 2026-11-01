@@ -58,8 +58,9 @@ module Activities
           heartbeat("fetch_issues.sync_issue", project_id: project.id, github_issue_id: gi.id, index: index, total: github_issues.size)
           sync_issue(project, gi, client:, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
         end
-        PartialCloseouts::ConfirmSync.call(project:, issue_ids: synced_issues.filter_map { |issue| issue[:id] })
         sync_changed = synced_issues.any? { |issue_data| issue_data[:changed] }
+        confirmation_outcomes = PartialCloseouts::ConfirmSync.call(project:)
+        sync_changed = confirmation_outcomes.any? || sync_changed
         relationship_changes = parse_issue_relationships(project, synced_issues)
         sync_changed = relationship_changes || sync_changed
 

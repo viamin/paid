@@ -777,5 +777,7 @@
   maximum it SHALL persist `retryable_failure` with an explicit manual sync
   resolution and SHALL stop retrying automatically. A matching body SHALL
   resolve to the normal reconciled or operator-prerequisite status.
-  *Code:* `app/services/partial_closeouts/confirm_sync.rb`.
-  *Test:* `spec/services/partial_closeouts/confirm_sync_spec.rb`.
+  *Code:* `app/services/partial_closeouts/confirm_sync.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/services/partial_closeouts/confirm_sync_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`.
