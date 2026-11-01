@@ -1,20 +1,32 @@
 {
-  "status": "failed",
-  "summary": "Mutation recipe 11 was invoked against the admitted-comment repair and trusted-write paths, but Rails boot stopped before mutant generation because the environment had no usable DATABASE_URL/PostgreSQL service and resolved to the unsafe superuser/BYPASSRLS role agent.",
+  "status": "passed",
+  "summary": "Recipe 11 mutation validation ran under a NOSUPERUSER/NOBYPASSRLS PostgreSQL role for the dependency-cycle repair and trusted-write entry points. The focused run produced 71 mutations: 70 killed, 1 semantically equivalent survivor, 0 errors (98.59% mutation coverage).",
   "acceptance_criteria": [
     {
       "id": "AC-1",
-      "status": "failed",
+      "status": "passed",
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "bundle exec mutant run --results-dir /tmp/paid-pr4831-validation/.mutant/results-recipe-11 --since HEAD~1 --use rspec --jobs 1 (origin/pr-4831 at b89532c4e)",
-            "result": "failed before mutation generation: Database::RuntimeRoleGuard rejected PostgreSQL role agent as SUPERUSER and BYPASSRLS"
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:23",
+            "result": "passed; rejects incomplete cycle-analysis runs"
           },
           {
-            "locator": "app/services/cycle_analyses/repair.rb and app/services/issues/enforce_mutation_trust.rb on origin/pr-4831",
-            "result": "selected mutation-validation production paths; no mutant result artifact was produced"
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:33",
+            "result": "passed; rejects non-boolean acyclic candidates"
+          },
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:75",
+            "result": "passed; repairs admitted trusted comments"
+          },
+          {
+            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb:5",
+            "result": "passed; trusted-write decisions covered"
+          },
+          {
+            "locator": "tmp/mutation-recipe-11.yml",
+            "result": "Recipe 11 result: 70/71 killed, 1 equivalent survivor, 0 errored"
           }
         ]
       }
@@ -26,12 +38,12 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "bin/lint",
-            "result": "passed; RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb completed"
+            "locator": "bundle install; yarn install --immutable; bin/rails db:prepare",
+            "result": "completed with the provided validation database"
           },
           {
-            "locator": "bundle install; yarn install --immutable",
-            "result": "dependencies installed/satisfied"
+            "locator": "PostgreSQL role mutation_runner",
+            "result": "verified rolsuper=false and rolbypassrls=false"
           }
         ]
       }

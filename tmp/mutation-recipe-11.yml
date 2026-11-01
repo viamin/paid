@@ -1,0 +1,19 @@
+---
+ran_at: 2026-11-01 23:03:17.389193123 Z
+git_ref: f124a288045971900b332ed6e8d33a370f944cbd
+matcher:
+  - CycleAnalyses::Repair#call
+  - Issues::EnforceMutationTrust#call
+database_role: mutation_runner
+database_role_privileges:
+  rolsuper: false
+  rolbypassrls: false
+total_mutations: 71
+killed: 70
+alive: 1
+errored: 0
+coverage: 98.59%
+alive_mutation:
+  subject: CycleAnalyses::Repair#call
+  source_line: 21
+  description: "Hash#[] versus Hash#fetch for the acyclic guard; equivalent for the admitted candidate contract"

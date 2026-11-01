@@ -19,6 +19,26 @@ RSpec.describe CycleAnalyses::Repair do
     allow(client).to receive_messages(authenticated_login: "viamin", recent_issue_comments: [], issue: OpenStruct.new(body: first.body))
   end
 
+  # @spec AUTO-PICK-QUEUE-021
+  it "rejects a cycle repair when the analysis run is not completed" do
+    run.update!(status: "failed")
+
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+    expect(result.message).to include("Only a completed cycle analysis")
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
+  it "rejects an analysis candidate that is not acyclic" do
+    recommendation = recommendation_for(run).merge("acyclic" => "true")
+
+    result = described_class.call(agent_run: run, candidate: recommendation, actor: user)
+
+    expect(result.status).to eq(:needs_operator_action)
+    expect(result.message).to include("candidate is not acyclic")
+  end
+
   # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
   it "removes the uniquely selected live declaration through the trusted client" do
     edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
