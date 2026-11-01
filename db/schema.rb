@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_214000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_01_182046) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2627,11 +2627,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_214000) do
     t.string "depends_on_owner"
     t.string "depends_on_repo"
     t.bigint "issue_id", null: false
+    t.integer "repair_attempts", default: 0, null: false, comment: "Number of repair application attempts."
+    t.datetime "repair_initiated_at", comment: "Timestamp when repair was first initiated."
+    t.jsonb "repair_outcome", default: {}, null: false, comment: "Details of repair application/confirmation."
+    t.string "repair_status", comment: "Repair outcome state: nil/pending_sync/confirmed/failed."
     t.boolean "requires_deployment", default: false, null: false
     t.datetime "updated_at", null: false
     t.index ["depends_on_issue_id"], name: "index_issue_dependencies_on_depends_on_issue_id"
     t.index ["issue_id", "depends_on_issue_id"], name: "idx_issue_dependencies_unique", unique: true
     t.index ["issue_id", "depends_on_owner", "depends_on_repo", "depends_on_number"], name: "idx_issue_deps_external_unique", unique: true, where: "(depends_on_owner IS NOT NULL)"
+    t.index ["issue_id", "repair_status"], name: "idx_issue_dependencies_repair_status"
     t.index ["issue_id"], name: "index_issue_dependencies_on_issue_id"
     t.check_constraint "depends_on_issue_id IS NOT NULL AND depends_on_owner IS NULL AND depends_on_repo IS NULL AND depends_on_number IS NULL OR depends_on_issue_id IS NULL AND NULLIF(depends_on_owner::text, ''::text) IS NOT NULL AND NULLIF(depends_on_repo::text, ''::text) IS NOT NULL AND depends_on_number > 0", name: "issue_dependencies_depends_on_xor"
   end

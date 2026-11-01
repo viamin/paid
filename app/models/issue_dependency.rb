@@ -20,6 +20,10 @@ class IssueDependency < ApplicationRecord
 
   before_validation :normalize_external_ref
 
+  scope :pending_repair, -> { where(repair_status: "pending_sync") }
+  scope :confirmed_repair, -> { where(repair_status: "confirmed") }
+  scope :failed_repair, -> { where(repair_status: "failed") }
+
   # A dependency edge pointing at the dependent's own umbrella (parent
   # issue) is a contextual parent reference, not a prerequisite: the
   # umbrella's sub-issue machinery already governs that work in the other
