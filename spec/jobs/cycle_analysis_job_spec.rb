@@ -76,6 +76,20 @@ RSpec.describe CycleAnalysisJob do
     expect(run.error_message).not_to include(secret)
   end
 
+  # @spec AUTO-PICK-QUEUE-019
+  it "reconciles a pending repair without analyzing or writing to GitHub again" do
+    run = cycle_run
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "pending_sync" } } })
+    IssueDependency.delete_all
+    allow(Llm::Request).to receive(:call)
+
+    described_class.perform_now(run.id)
+
+    expect(Llm::Request).not_to have_received(:call)
+    expect(run.reload.verification_result.dig(CycleAnalyses::RESULT_KEY, "repair"))
+      .to include("status" => "resolved", "reason" => "synchronization_confirmed")
+  end
+
   def recommendation(run)
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     remaining_edges = snapshot.fetch("effective_edges").drop(1)

@@ -8,10 +8,9 @@ class CycleAnalysisJob < ApplicationJob
     agent_run = AgentRun.find(agent_run_id)
     return unless claim!(agent_run)
 
-    result = CycleAnalyses::Analyze.call(agent_run:)
+    result = pending_sync?(agent_run) ? confirm_repair(agent_run) : analyze_and_repair(agent_run)
     return if agent_run.reload.finished?
 
-    result["repair"] = CycleAnalyses::Repair.call(agent_run:, recommendation: result.fetch("recommendation"))
     publish_result!(agent_run, result)
   rescue StandardError => error
     fail_run!(agent_run, error) if agent_run
@@ -27,6 +26,22 @@ class CycleAnalysisJob < ApplicationJob
       agent_run.update!(status: "running", started_at: Time.current)
     end
     true
+  end
+
+  def analyze_and_repair(agent_run)
+    result = CycleAnalyses::Analyze.call(agent_run:)
+    result["repair"] = CycleAnalyses::Repair.call(agent_run:, recommendation: result.fetch("recommendation"))
+    result
+  end
+
+  def confirm_repair(agent_run)
+    agent_run.verification_result.fetch(CycleAnalyses::RESULT_KEY).deep_dup.tap do |result|
+      result["repair"] = CycleAnalyses::Confirm.call(agent_run:)
+    end
+  end
+
+  def pending_sync?(agent_run)
+    agent_run.verification_result.dig(CycleAnalyses::RESULT_KEY, "repair", "status") == "pending_sync"
   end
 
   def publish_result!(agent_run, result)
