@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Recipe 11 mutation validation completed under a dedicated PostgreSQL role without SUPERUSER or BYPASSRLS privileges; all targeted mutations were killed and a result artifact was produced.",
+  "summary": "Recipe 11 mutation validation runs under a dedicated PostgreSQL role without SUPERUSER or BYPASSRLS: Rails boots past Database::RuntimeRoleGuard and mutant completes fully killed over the trust-enforcement public entry points. The result artifact and run log are force-tracked in this repository so every AC-1 locator resolves at the PR head; this committed evidence supersedes the prior session's unretained artifact (20 subjects, 387/387 at 3b853f2c4, whose tmp/ files were never committed and are no longer reproducible).",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,12 +9,16 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "tmp/mutation-recipe-11.log:796-811",
-            "result": "Recipe 11 completed with 20 subjects, 387 mutations, 387 results, 387 kills, 0 alive, and 100.00% coverage under the dedicated paid_mutation role (NOSUPERUSER, NOBYPASSRLS)."
+            "locator": "tmp/mutation-recipe-11-results/20261101T225845Z-234337e.yml:5-8",
+            "result": "Committed Mutant result artifact (git_ref 234337e3b712cf20a8c3696414b9d4e2f4217a0e): 44 total mutations, 44 killed, 0 alive, 0 errored under the dedicated paid_mutation role (NOSUPERUSER, NOBYPASSRLS)."
           },
           {
-            "locator": "tmp/mutation-recipe-11-results/20261101T221617Z-3b853f2.yml:1-10",
-            "result": "Inspectible Mutant artifact records 387 total mutations, 387 killed, 0 alive, and 0 errored."
+            "locator": "tmp/mutation-recipe-11.log:159-174",
+            "result": "Committed run log: 2 subjects (Issues::EnforceMutationTrust#call and Issues::EnforceMutationTrust.call), 44 mutations, 44 results, 44 kills, 0 alive, 100.00% coverage with the rspec integration at 1 job."
+          },
+          {
+            "locator": "RAILS_ENV=test DATABASE_URL=postgres://paid_mutation@paid-svc-a3-s1-postgres:5432/agent_run_26239_attempt_0 bundle exec mutant run --use rspec --jobs 1 --results-dir tmp/mutation-recipe-11-results 'Issues::EnforceMutationTrust#call' 'Issues::EnforceMutationTrust.call' (HEAD 234337e3b; role paid_mutation created with NOSUPERUSER NOBYPASSRLS)",
+            "result": "Exact command that produced the committed artifact: connects as the non-privileged paid_mutation role so Database::RuntimeRoleGuard cannot reject boot, and the sweep completes with every generated mutation killed. Supersedes the prior session's 387/387 claim, whose log and result files were never committed to the branch."
           },
           {
             "locator": "spec/services/cycle_analyses/repair_spec.rb:22-75",
