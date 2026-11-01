@@ -94,9 +94,14 @@ module CycleAnalyses
 
       client.update_issue(issue.project.full_name, issue.github_number, body: planned_body)
       issue.update!(body: planned_body)
-      comments = client.recent_issue_comments(issue.project.full_name, issue.github_number)
+      comments = trusted_comments(client, issue)
       Issues::ParseDependencies.call(issue:, body: planned_body, comments: comments)
       Result.new(status: :applied, message: "Removed dependency declaration from ##{issue.github_number}.")
+    end
+
+    def trusted_comments(client, issue)
+      client.recent_issue_comments(issue.project.full_name, issue.github_number)
+        .select { |comment| issue.project.trusted_github_user?(comment.user&.login) }
     end
 
     def remove_unique_reference(body, issue:, target:)

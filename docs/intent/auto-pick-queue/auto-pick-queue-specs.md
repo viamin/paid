@@ -178,7 +178,9 @@
   GitHub write, require the selected candidate to contain exactly one supported
   declaration removal, and apply it through the trusted human GitHub client. A
   missing, ambiguous, or changed live declaration SHALL stop with
-  `needs_operator_action` and SHALL not overwrite the live issue body.
+  `needs_operator_action` and SHALL not overwrite the live issue body. After a
+  successful write, the immediate dependency reparse SHALL admit only comments
+  whose authors pass the owning project's trusted-GitHub-user policy.
   *Tests:* `spec/services/cycle_analyses/repair_spec.rb`.
 
 - [x] **AUTO-PICK-QUEUE-022** — Before applying a cycle repair, Paid SHALL

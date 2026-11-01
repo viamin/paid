@@ -34,6 +34,22 @@ RSpec.describe CycleAnalyses::Repair do
   end
 
   # @spec AUTO-PICK-QUEUE-021
+  it "excludes untrusted comments from the immediate dependency reparse" do
+    untrusted_target = create(:issue, project:, github_number: 4, github_state: "open")
+    untrusted_comment = OpenStruct.new(
+      body: "Depends on #4", html_url: "https://github.com/example/repo/issues/1#issuecomment-1",
+      user: OpenStruct.new(login: "attacker")
+    )
+    allow(client).to receive(:recent_issue_comments).and_return([ untrusted_comment ])
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+    expect(first.reload.issue_dependencies.where(depends_on_issue: untrusted_target)).not_to exist
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
   it "requires mutation authority for every declaration-owning project" do
     allow(ProjectPolicy).to receive(:new).and_return(instance_double(ProjectPolicy, manage_issues?: false))
     result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
