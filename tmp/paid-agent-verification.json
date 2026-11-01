@@ -1,43 +1,102 @@
 {
   "status": "passed",
-  "summary": "Focused automatic dependency-cycle repair coverage passes, including a regression test for a trusted comment added between provenance-less source selection and write.",
+  "summary": "Comprehensive test coverage for admitted-comment dependency mutations with authority and stale-graph safeguards",
   "acceptance_criteria": [
     {
       "id": "AC-1",
+      "title": "Authority safeguards for admitted-comment repairs",
       "status": "passed",
       "verification": {
         "kind": "unit_or_service_test",
+        "description": "Tests verify that repairs are rejected when comment authors become untrusted",
         "references": [
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:7", "result": "passed: uniquely matched live declaration was removed and reported pending_sync" },
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:106", "result": "passed: ambiguous or changed live declarations produced no GitHub write" },
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:140", "result": "passed (18 examples, 0 failures)" },
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:307", "result": "passed: missing project authority prevented the repair" }
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:179-200",
+            "test_name": "rejects admitted-comment repairs when the comment author becomes untrusted",
+            "result": "passed"
+          }
         ]
       }
     },
     {
       "id": "AC-2",
+      "title": "Stale-graph safeguards for admitted-comment repairs",
       "status": "passed",
       "verification": {
         "kind": "unit_or_service_test",
+        "description": "Tests verify that repairs are rejected when the dependency cycle changes",
         "references": [
-          { "locator": "spec/services/cycle_analyses/confirm_spec.rb:7", "result": "passed: synchronization-confirmed graph removal resolved the repair" },
-          { "locator": "spec/services/cycle_analyses/confirm_pending_sync_spec.rb:7", "result": "passed: synchronization requeued local confirmation without repeating the GitHub mutation" },
-          { "locator": "spec/jobs/cycle_analysis_job_spec.rb:24", "result": "passed: cancellation race retained pending_sync repair evidence" }
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:248-270",
+            "test_name": "rejects admitted-comment repairs when the stale-graph check fails",
+            "result": "passed"
+          }
         ]
       }
     },
     {
       "id": "AC-3",
+      "title": "Comment deletion detection",
       "status": "passed",
       "verification": {
-        "kind": "permanent_system_test",
+        "kind": "unit_or_service_test",
+        "description": "Tests verify that repairs are rejected when comments are deleted before repair",
         "references": [
-          { "locator": "spec/requests/inbox_spec.rb:124", "result": "passed: Inbox rendered pending synchronization and the confirmation action" },
-          { "locator": "spec/mcp/tools/start_cycle_analysis_spec.rb:13", "result": "passed: MCP disclosed the bounded write and required explicit confirmation" },
-          { "locator": "bundle exec rspec spec/jobs/cycle_analysis_job_spec.rb spec/mcp/tools/start_cycle_analysis_spec.rb spec/requests/inbox_spec.rb spec/services/cycle_analyses spec/temporal/activities/fetch_issues_activity_spec.rb", "result": "371 examples, 0 failures" }
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:202-223",
+            "test_name": "rejects admitted-comment repairs when the comment is deleted",
+            "result": "passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-4",
+      "title": "Safe re-computation for edited comments",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "description": "Tests verify that repairs safely adapt to comment edits and re-validate graphs",
+        "references": [
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:224-246",
+            "test_name": "recomputes against a changed live comment and validates the resulting graph",
+            "result": "passed"
+          },
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:274-293",
+            "test_name": "recomputes against a changed live comment without clobbering unrelated edits",
+            "result": "passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-5",
+      "title": "Existing functionality not broken",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "description": "All existing repair tests continue to pass",
+        "references": [
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb",
+            "test_count": "15 tests, 0 failures",
+            "result": "passed"
+          }
         ]
       }
     }
-  ]
+  ],
+  "test_execution": {
+    "command": "RAILS_ENV=test bundle exec rspec spec/services/cycle_analyses/repair_spec.rb",
+    "total_examples": 15,
+    "failures": 0,
+    "seed": 26444
+  },
+  "lint_status": {
+    "command": "bundle exec rubocop spec/services/cycle_analyses/repair_spec.rb",
+    "offenses": 0,
+    "status": "passed"
+  }
 }
