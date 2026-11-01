@@ -32,6 +32,9 @@ module CycleAnalyses
       declaration = live_declaration(edge)
       return result("needs_operator_action", declaration.fetch(:reason)) unless declaration[:body]
 
+      declaration = current_declaration(declaration)
+      return result("needs_operator_action", declaration.fetch(:reason)) unless declaration[:body]
+
       write(declaration)
       result("pending_sync", "awaiting_github_synchronization", [ edge.id ], declaration.slice(:project_id, :issue_number))
     rescue GithubClient::AuthenticationError
@@ -81,14 +84,38 @@ module CycleAnalyses
       return { reason: "untrusted_source" } unless issue.trusted?
 
       client = client_resolver.call(issue.project)
-      remote = client.issue(issue.project.full_name, issue.github_number)
-      body = field(remote, :body).to_s
-      edited = remove_unique_declaration(body, target_number: Issue.find(edge.to_id).github_number)
-      unless edited.is_a?(String)
-        return { reason: edited == :ambiguous ? "live_declaration_ambiguous" : "live_declaration_missing" }
-      end
+      body = issue_body(client:, project: issue.project, issue_number: issue.github_number)
+      target_number = Issue.find(edge.to_id).github_number
+      edited = remove_unique_declaration(body, target_number:)
+      return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
-      { client:, body: edited, project_id: issue.project_id, issue_number: issue.github_number, project: issue.project }
+      { client:, project: issue.project, project_id: issue.project_id, issue_number: issue.github_number,
+        target_number:, source_body: body, body: edited }
+    end
+
+    # GitHub has no conditional issue PATCH, so the body is re-read immediately
+    # before writing. When a human edit lands between the two reads, the
+    # removal is recomputed against their text so the edit survives the repair;
+    # a changed body without a unique removable declaration aborts the write.
+    # Mirrors ClarifyingQuestions::DescriptionSection#update_issue_body.
+    def current_declaration(declaration)
+      body = issue_body(client: declaration.fetch(:client), project: declaration.fetch(:project),
+        issue_number: declaration.fetch(:issue_number))
+      return declaration if body == declaration.fetch(:source_body)
+
+      edited = remove_unique_declaration(body, target_number: declaration.fetch(:target_number))
+      return { reason: removal_reason(edited) } unless edited.is_a?(String)
+
+      declaration.merge(source_body: body, body: edited)
+    end
+
+    def removal_reason(outcome)
+      outcome == :ambiguous ? "live_declaration_ambiguous" : "live_declaration_missing"
+    end
+
+    def issue_body(client:, project:, issue_number:)
+      remote = client.issue(project.full_name, issue_number)
+      field(remote, :body).to_s
     end
 
     def remove_unique_declaration(body, target_number:)

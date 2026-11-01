@@ -64,6 +64,60 @@ RSpec.describe CycleAnalyses::Repair do
   end
 
   # @spec AUTO-PICK-QUEUE-019
+  it "recomputes the removal when the body changes between the read and the write" do
+    _user, cycle, run = cycle_run
+    edge = cycle.effective_edges.first
+    source = Issue.find(edge.from_id)
+    target = Issue.find(edge.to_id)
+    client = instance_double(GithubClient)
+    allow(client).to receive(:issue).and_return(
+      { body: "## Dependencies\n- ##{target.github_number}\n" },
+      { body: "Human note.\n\n## Dependencies\n- ##{target.github_number}\n" }
+    )
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
+    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
+      body: "Human note.\n\n## Dependencies\n")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "does not write when a changed second read no longer carries the declaration" do
+    _user, cycle, run = cycle_run
+    target = Issue.find(cycle.effective_edges.first.to_id)
+    client = instance_double(GithubClient)
+    allow(client).to receive(:issue).and_return(
+      { body: "## Dependencies\n- ##{target.github_number}\n" },
+      { body: "Human edit removed the declaration.\n" }
+    )
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_missing")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "does not write when a changed second read makes the declaration ambiguous" do
+    _user, cycle, run = cycle_run
+    target = Issue.find(cycle.effective_edges.first.to_id)
+    client = instance_double(GithubClient)
+    allow(client).to receive(:issue).and_return(
+      { body: "## Dependencies\n- ##{target.github_number}\n" },
+      { body: "Depends on ##{target.github_number}\nDepends on ##{target.github_number}\n" }
+    )
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
   it "does not write when the expected resulting edges differ from the live cycle" do
     _user, _cycle, run = cycle_run
     client = instance_double(GithubClient)
