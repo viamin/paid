@@ -3,12 +3,15 @@
 class CycleAnalysisJob < ApplicationJob
   queue_as :low_priority
 
-  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-018
+  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-018 AUTO-PICK-QUEUE-019
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
     return unless claim!(agent_run)
 
     result = CycleAnalyses::Analyze.call(agent_run:)
+    return if agent_run.reload.finished?
+
+    result["repair"] = CycleAnalyses::Repair.call(agent_run:, recommendation: result.fetch("recommendation"))
     publish_result!(agent_run, result)
   rescue StandardError => error
     fail_run!(agent_run, error) if agent_run

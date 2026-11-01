@@ -13,6 +13,7 @@ RSpec.describe CycleAnalysisJob do
       response
     end
     stub_comments
+    stub_live_issues(run)
 
     described_class.new.perform(run.id)
 
@@ -29,6 +30,7 @@ RSpec.describe CycleAnalysisJob do
       response
     end
     stub_comments
+    stub_live_issues(run)
 
     described_class.perform_now(run.id)
 
@@ -107,5 +109,13 @@ RSpec.describe CycleAnalysisJob do
   def stub_comments
     stub_request(:get, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+/comments(?:\?.*)?\z})
       .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+  end
+
+  def stub_live_issues(run)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    snapshot.fetch("issues").each do |issue|
+      stub_request(:get, "https://api.github.com/repos/#{issue.fetch("project")}/issues/#{issue.fetch("number")}")
+        .to_return(status: 200, body: { body: issue.fetch("body") }.to_json, headers: { "Content-Type" => "application/json" })
+    end
   end
 end

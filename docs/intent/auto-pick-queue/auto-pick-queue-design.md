@@ -75,13 +75,15 @@ members are unchanged. It shows an exact cycle path, linked projects/issues,
 the count of downstream open work held by the group, and the persisted GitHub
 source for each declaration when synchronization can identify it. Legacy edges
 without provenance remain visible and explicitly direct the operator to inspect
-the dependent issue. Paid never selects an edge to remove: the operator reviews
-the declarations on GitHub and removes or corrects the appropriate declaration.
+the dependent issue. A run may repair one declaration only when the assessment
+has exactly one supported acyclic change set, non-empty evidence, and no
+material missing or conflicting intent; model confidence or one edge removal
+alone never meets that threshold.
 The occurrence remains until a subsequent
 synchronization observes an acyclic persisted graph. A failed reconciliation is
 logged as unavailable; it is not treated as proof that no cycles exist.
 
-An authorized operator may start a read-only cycle analysis from that Inbox
+An authorized operator may start a cycle repair run from that Inbox
 occurrence. The analysis snapshots the occurrence and effective-graph revision,
 all members of the strongly connected group, and every effective internal edge;
 it never limits its evidence to the displayed witness path. Starting requires
@@ -97,12 +99,15 @@ declaration changes, supporting and conflicting evidence, resulting graphs, and
 an acyclicity determination for each candidate. Paid derives each expected
 resulting graph from the snapshot and the structured removals or endpoint
 corrections, rejecting unaccounted edge changes before checking acyclicity.
-Missing provenance or content is reported as unavailable coverage, never
-silently assumed. The result is rendered
-on the same Inbox occurrence and remains marked stale when synchronization has
-changed the effective graph. It cannot mutate GitHub issues, comments, labels,
-or local dependency records; a human declaration change and later synchronization
-remain the only resolution path.
+Missing local provenance is not itself disqualifying: before a write Paid
+re-fetches the trusted source and proceeds only if it uniquely locates the
+exact declaration. It rechecks the SCC occurrence, source identity, target,
+authority, and resulting graph before writing only that GitHub declaration.
+It never changes local dependency rows to simulate success. A write is
+`pending_sync` until ordinary synchronization confirms an acyclic persisted
+graph; stale, ambiguous, unauthorized, failed, and still-cyclic outcomes stay
+held with diagnostics. A confirmed repair clears the occurrence while the run
+remains available in normal history.
 
 Each path node also carries its own title, current labels, and (when a parent
 issue is linked and its project is within the viewer's authorized project set)

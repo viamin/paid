@@ -28,9 +28,10 @@ module CycleAnalyses
 
     def prompt
       <<~PROMPT
-        You are performing a read-only dependency-cycle analysis. Do not propose automatic edits.
+        You are assessing a bounded dependency-cycle repair. Paid may edit only
+        one declaration after deterministic authorization and live-source checks.
         Review the complete strongly connected group and every effective edge below, not only a witness path.
-        For each candidate declaration change, state exact evidence, tradeoffs, missing/conflicting intent,
+        Return one candidate only when it is the sole supported change set. State exact evidence, tradeoffs, missing/conflicting intent,
         the resulting graph, and whether it is acyclic. Removing one edge is not presumed sufficient.
         Return exactly one JSON object with this structure and no Markdown fencing:
         {
