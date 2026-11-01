@@ -71,7 +71,6 @@ module CycleAnalyses
       return needs_operator_action("The selected declaration is not in the analysis snapshot.") unless edge
 
       issue = Issue.find(edge.fetch("from_issue_id"))
-      return needs_operator_action("The selected declaration has no issue-body provenance.") unless edge["declaration_source"] == "issue_body"
 
       client = issue.project.client
       client = client.trusted_human_mutation_client if client&.respond_to?(:trusted_human_mutation_client)
@@ -80,28 +79,67 @@ module CycleAnalyses
         return needs_operator_action("A trusted human GitHub credential is required for the declaration owner.")
       end
 
+      target = Issue.find(edge.fetch("to_issue_id"))
+      return repair_issue_body(client, issue:, edge:, target:) if edge["declaration_source"] == "issue_body"
+      return repair_issue_comment(client, issue:, edge:, target:) if edge["declaration_source"] == "issue_comment"
+
+      needs_operator_action("The selected declaration has unsupported provenance.")
+    end
+
+    def repair_issue_body(client, issue:, edge:, target:)
       original_body = client.issue(issue.project.full_name, issue.github_number).body.to_s
-      planned_body, diagnostic = remove_unique_reference(original_body, issue:, target: Issue.find(edge.fetch("to_issue_id")))
+      planned_body, diagnostic = remove_unique_reference(original_body, issue:, target:)
       return needs_operator_action("The selected declaration is #{diagnostic} in the live issue body.") unless planned_body
 
       live_body = client.issue(issue.project.full_name, issue.github_number).body.to_s
+      comments = trusted_comments(client, issue)
       if live_body != original_body
-        planned_body, diagnostic = remove_unique_reference(live_body, issue:, target: Issue.find(edge.fetch("to_issue_id")))
+        planned_body, diagnostic = remove_unique_reference(live_body, issue:, target:)
         return needs_operator_action("The selected declaration changed and is #{diagnostic} in the live issue body.") unless planned_body
       end
 
-      return needs_operator_action("The planned body does not remove only the selected dependency edge.") unless graph_matches?(planned_body, edge:, issue:)
+      return needs_operator_action("The planned body does not remove only the selected dependency edge.") unless graph_matches?(planned_body, comments:, edge:, issue:)
 
       client.update_issue(issue.project.full_name, issue.github_number, body: planned_body)
       issue.update!(body: planned_body)
-      comments = trusted_comments(client, issue)
       Issues::ParseDependencies.call(issue:, body: planned_body, comments: comments)
+      Result.new(status: :applied, message: "Removed dependency declaration from ##{issue.github_number}.")
+    end
+
+    def repair_issue_comment(client, issue:, edge:, target:)
+      original_comment = declaration_comment(trusted_comments(client, issue), edge)
+      return needs_operator_action("The selected declaration is missing or ambiguous in the live issue comments.") unless original_comment
+
+      original_body = original_comment.body.to_s
+      planned_body, diagnostic = remove_unique_reference(original_body, issue:, target:)
+      return needs_operator_action("The selected declaration is #{diagnostic} in the live issue comment.") unless planned_body
+
+      live_body = client.issue(issue.project.full_name, issue.github_number).body.to_s
+      comments = trusted_comments(client, issue)
+      live_comment = declaration_comment(comments, edge)
+      return needs_operator_action("The selected declaration changed and is missing or ambiguous in the live issue comments.") unless live_comment
+
+      if live_comment.body.to_s != original_body
+        planned_body, diagnostic = remove_unique_reference(live_comment.body.to_s, issue:, target:)
+        return needs_operator_action("The selected declaration changed and is #{diagnostic} in the live issue comment.") unless planned_body
+      end
+      return needs_operator_action("The selected comment cannot be updated safely.") unless live_comment.respond_to?(:id) && live_comment.id.present?
+      return needs_operator_action("The planned comment does not remove only the selected dependency edge.") unless graph_matches?(live_body, comments:, edge:, issue:, replacement: [ live_comment, planned_body ])
+
+      client.update_comment(issue.project.full_name, live_comment.id, planned_body)
+      issue.update!(body: live_body)
+      Issues::ParseDependencies.call(issue:, body: live_body, comments: trusted_comments(client, issue))
       Result.new(status: :applied, message: "Removed dependency declaration from ##{issue.github_number}.")
     end
 
     def trusted_comments(client, issue)
       client.recent_issue_comments(issue.project.full_name, issue.github_number)
         .select { |comment| issue.project.trusted_github_user?(comment.user&.login) }
+    end
+
+    def declaration_comment(comments, edge)
+      matches = comments.select { |comment| comment.respond_to?(:html_url) && comment.html_url == edge["declaration_url"] }
+      matches.one? ? matches.first : nil
     end
 
     def remove_unique_reference(body, issue:, target:)
@@ -157,8 +195,9 @@ module CycleAnalyses
       line.match?(/\b(?:depends?\s+on|blocked?\s+by)\b/i)
     end
 
-    def graph_matches?(body, edge:, issue:)
-      local_refs, cross_refs = Issues::ParseDependencies.extract(body: body)
+    def graph_matches?(body, comments:, edge:, issue:, replacement: nil)
+      comments = replaced_comments(comments, replacement)
+      local_refs, cross_refs = Issues::ParseDependencies.extract(body: body, comments: comments)
       target = Issue.find(edge.fetch("to_issue_id"))
       return false if reference_present?(local_refs, cross_refs, issue:, target:)
 
@@ -174,6 +213,15 @@ module CycleAnalyses
 
       cross_refs.key?(external_reference_key(target))
     end
+
+    def replaced_comments(comments, replacement)
+      return comments unless replacement
+
+      comment, body = replacement
+      comments.map { |item| item.equal?(comment) ? CommentBody.new(body) : item }
+    end
+
+    CommentBody = Data.define(:body)
 
     def external_reference(issue)
       "#{issue.project.owner}/#{issue.project.repo}##{issue.github_number}"

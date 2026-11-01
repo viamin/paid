@@ -42,11 +42,36 @@ RSpec.describe CycleAnalyses::Repair do
     )
     allow(client).to receive(:recent_issue_comments).and_return([ untrusted_comment ])
     allow(client).to receive(:update_issue)
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
 
-    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
 
     expect(result).to have_attributes(status: :applied), result.message
     expect(first.reload.issue_dependencies.where(depends_on_issue: untrusted_target)).not_to exist
+  end
+
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  it "removes a uniquely selected declaration from an admitted trusted comment" do
+    comment_url = "https://github.com/example/repo/issues/1#issuecomment-1"
+    run
+    first.update!(body: "## Dependencies\n- #3")
+    dependency = first.issue_dependencies.find_by!(depends_on_issue: second)
+    dependency.update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    allow(client).to receive(:issue).and_return(OpenStruct.new(body: first.body))
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) })
+    edge = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY).fetch("effective_edges")
+      .find { |item| item.fetch("from_issue_id") == first.id }
+    comment = OpenStruct.new(id: 1, body: "Depends on #2", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    updated_comment = OpenStruct.new(id: 1, body: "Depends on", html_url: comment_url, user: OpenStruct.new(login: "viamin"))
+    allow(client).to receive(:recent_issue_comments).and_return([ comment ], [ comment ], [ updated_comment ])
+    expect(client).to receive(:update_comment).with(project.full_name, 1, "Depends on")
+
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run, edge_id: edge.fetch("id")), actor: user)
+
+    expect(result).to have_attributes(status: :applied), result.message
+    expect(first.reload.issue_dependencies.where(depends_on_issue: second)).not_to exist
   end
 
   # @spec AUTO-PICK-QUEUE-021
