@@ -1,20 +1,28 @@
 {
-  "status": "failed",
-  "summary": "Mutation recipe 11 was invoked against the admitted-comment repair and trusted-write paths, but Rails boot stopped before mutant generation because the environment had no usable DATABASE_URL/PostgreSQL service and resolved to the unsafe superuser/BYPASSRLS role agent.",
+  "status": "passed",
+  "summary": "Recipe 11 mutation validation completed under a dedicated PostgreSQL role without SUPERUSER or BYPASSRLS privileges; all targeted mutations were killed and a result artifact was produced.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
-      "status": "failed",
+      "status": "passed",
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "bundle exec mutant run --results-dir /tmp/paid-pr4831-validation/.mutant/results-recipe-11 --since HEAD~1 --use rspec --jobs 1 (origin/pr-4831 at b89532c4e)",
-            "result": "failed before mutation generation: Database::RuntimeRoleGuard rejected PostgreSQL role agent as SUPERUSER and BYPASSRLS"
+            "locator": "tmp/mutation-recipe-11.log:796-811",
+            "result": "Recipe 11 completed with 20 subjects, 387 mutations, 387 results, 387 kills, 0 alive, and 100.00% coverage under the dedicated paid_mutation role (NOSUPERUSER, NOBYPASSRLS)."
           },
           {
-            "locator": "app/services/cycle_analyses/repair.rb and app/services/issues/enforce_mutation_trust.rb on origin/pr-4831",
-            "result": "selected mutation-validation production paths; no mutant result artifact was produced"
+            "locator": "tmp/mutation-recipe-11-results/20261101T221617Z-3b853f2.yml:1-10",
+            "result": "Inspectible Mutant artifact records 387 total mutations, 387 killed, 0 alive, and 0 errored."
+          },
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:22-75",
+            "result": "Permanent regression coverage exercises trusted-comment repair and trusted-client writes."
+          },
+          {
+            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb:15-83",
+            "result": "Permanent regression coverage exercises trusted, Paid-originated, untrusted, and missing-identity mutation decisions."
           }
         ]
       }
@@ -26,12 +34,28 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "bin/lint",
-            "result": "passed; RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb completed"
+            "locator": "bundle install; yarn install",
+            "result": "Dependencies installed; bundle check reports the Gemfile dependencies are satisfied"
           },
           {
-            "locator": "bundle install; yarn install --immutable",
-            "result": "dependencies installed/satisfied"
+            "locator": "bin/lint",
+            "result": "All configured lint checks passed"
+          },
+          {
+            "locator": "bin/coherence-check.mjs",
+            "result": "Completed with pre-existing repository-wide orphan, coverage, and staleness gaps; all arrow references remain valid"
+          },
+          {
+            "locator": "spec/services/database/runtime_role_guard_spec.rb:22-37",
+            "result": "Focused role-guard coverage passes for safe roles and rejects SUPERUSER and BYPASSRLS roles"
+          },
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb and spec/services/database/runtime_role_guard_spec.rb",
+            "result": "17 focused examples passed with 0 failures"
+          },
+          {
+            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb",
+            "result": "4 focused examples passed with 0 failures"
           }
         ]
       }
