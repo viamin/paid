@@ -43,6 +43,31 @@ RSpec.describe CycleAnalyses::Repair do
   end
 
   # @spec AUTO-PICK-QUEUE-019
+  it "requires operator action when quiet mode suppresses the comment write" do
+    _user, cycle, run = cycle_run
+    edge = cycle.effective_edges.first
+    source = Issue.find(edge.from_id)
+    source.project.update!(quiet_mode: true)
+    target = Issue.find(edge.to_id)
+    comment_url = "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42"
+    IssueDependency.find(edge.id).update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
+      id: 42, body: "Depends on ##{target.github_number}\n", html_url: comment_url,
+      user: GithubClient::CommentAuthor.new(login: "viamin")
+    )
+    client = instance_double(GithubClient, issue_comments: [ comment ])
+    allow(client).to receive(:update_comment)
+    quiet_client = GithubClient::CommentSuppressing.new(client)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run),
+      client_resolver: ->(_) { quiet_client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "github_comment_write_suppressed",
+      "changed_edge_ids" => [])
+    expect(client).not_to have_received(:update_comment)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
   it "removes a uniquely matched cross-project declaration from the issue body" do
     _user, cycle, run = cycle_run
     edge = cycle.effective_edges.first

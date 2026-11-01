@@ -34,6 +34,7 @@ module CycleAnalyses
 
       declaration = current_declaration(declaration)
       return result("needs_operator_action", declaration.fetch(:reason)) unless declaration[:body]
+      return result("needs_operator_action", "github_comment_write_suppressed") if comment_write_suppressed?(declaration)
 
       write(declaration)
       result("pending_sync", "awaiting_github_synchronization", [ edge.id ], declaration.slice(:project_id, :issue_number))
@@ -243,6 +244,11 @@ module CycleAnalyses
 
     def canonical_edges(edges)
       edges.map { |edge| [ edge.fetch("from_issue_id"), edge.fetch("to_issue_id") ] }.sort
+    end
+
+    def comment_write_suppressed?(declaration)
+      declaration.fetch(:source_type) == "issue_comment" &&
+        declaration.fetch(:client).is_a?(GithubClient::CommentSuppressing)
     end
 
     def write(declaration)
