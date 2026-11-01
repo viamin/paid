@@ -293,6 +293,7 @@ module PartialCloseouts
       case status
       when "reconciled" then :reconciled
       when "awaiting_operator" then :awaiting_operator
+      when "pending_sync" then :skipped
       when "retryable_failure"
         Rails.logger.warn(
           message: "partial_closeouts.legacy_reconcile_retryable_failure",

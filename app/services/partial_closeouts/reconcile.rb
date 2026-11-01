@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module PartialCloseouts
   # Turns a validated semantic assessment into durable, replay-safe work owners.
   class Reconcile
     MAX_GAPS = 10
+    MAX_SYNC_CONFIRMATION_ATTEMPTS = 3
     VALID_REFERENCE_KINDS = %w[policy evidence].freeze
     VALID_WORKFLOWS = [ FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW ].freeze
 
@@ -371,7 +374,21 @@ module PartialCloseouts
       return if updated_body == body
 
       agent_run.project.client.update_issue(agent_run.project.full_name, agent_run.issue.github_number, body: updated_body)
+      record_pending_sync!(updated_body)
       agent_run.issue.update!(body: updated_body)
+    end
+
+    def record_pending_sync!(expected_body)
+      sync_confirmation = {
+        "status" => "pending",
+        "attempts" => 0,
+        "max_attempts" => MAX_SYNC_CONFIRMATION_ATTEMPTS,
+        "expected_body_digest" => Digest::SHA256.hexdigest(expected_body),
+        "requested_at" => Time.current.iso8601
+      }
+      agent_run.update!(reconciliation: reconciliation.merge(
+        "status" => "pending_sync", "sync_confirmation" => sync_confirmation
+      ))
     end
 
     def dependency_conventions
@@ -379,6 +396,8 @@ module PartialCloseouts
     end
 
     def finalize!
+      return if reconciliation.fetch("status", nil) == "pending_sync"
+
       status = reconciliation.fetch("gaps", {}).values.any? { |gap| gap["status"].in?(%w[awaiting_operator awaiting_external]) } ? "awaiting_operator" : "reconciled"
       agent_run.update!(reconciliation: reconciliation.merge("status" => status, "reconciled_at" => Time.current.iso8601))
     end

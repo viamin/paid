@@ -148,13 +148,13 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(IssueDependency.where(issue: parent)).to be_empty
     end
 
-    # @spec PARTIAL-CLOSEOUT-019 — unowned implementation work: the
+    # @spec PARTIAL-CLOSEOUT-019 @spec PARTIAL-CLOSEOUT-039 — unowned implementation work: the
     # assessment includes a gap with no `owner_issue_number`, and the
     # sweep files a focused follow-up through the existing owner-creation
     # path.
     it "files a focused follow-up issue for an unowned implementation gap" do
       merged_pr(number: 12, parent_issue: parent)
-      legacy_run(issue: parent, pull_request_number: 12)
+      run = legacy_run(issue: parent, pull_request_number: 12)
       created = OpenStruct.new(number: 99, html_url: "https://github.com/acme/alpha/issues/99",
         id: 99, title: "Wire dispatch", body: "")
       allow(client).to receive(:create_issue).and_return(created)
@@ -167,13 +167,14 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
       result = described_class.call(account_id: account.id)
 
-      expect(result.reconciled).to eq(1)
+      expect(result).to have_attributes(reconciled: 0, skipped: 1)
       expect(client).to have_received(:create_issue).with(
         project.full_name,
         hash_including(title: "Wire dispatch")
       )
       owner = project.issues.find_by(github_number: 99)
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
+      expect(run.reload.reconciliation.fetch("status")).to eq("pending_sync")
     end
 
     # @spec PARTIAL-CLOSEOUT-019 — human-only evidence: the assessment
@@ -238,7 +239,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
     end
 
-    # @spec PARTIAL-CLOSEOUT-020 — replay recovery for an interrupted
+    # @spec PARTIAL-CLOSEOUT-020 @spec PARTIAL-CLOSEOUT-039 — replay recovery for an interrupted
     # attempt: a prior pass left a `creating` marker for a gap, and the
     # second pass resumes owner recovery through the existing
     # `recovered_remote_owner` path instead of filing a second issue.
@@ -248,8 +249,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       marker = "<!-- paid:partial-closeout:#{run.id}:0 -->"
       run.update!(reconciliation: { "status" => "reconciling",
         "gaps" => { "0" => { "status" => "creating", "marker" => marker } } })
-      remote_issue = OpenStruct.new(
-        number: 18, html_url: "https://github.com/acme/alpha/issues/18",
+      remote_issue = OpenStruct.new(number: 18, html_url: "https://github.com/acme/alpha/issues/18",
         id: 18, title: "Wire dispatch",
         body: "Wire dispatch\n\n#{marker}"
       )
@@ -261,9 +261,11 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
       result = described_class.call(account_id: account.id)
 
-      expect(result.reconciled).to eq(1)
+      expect(result.reconciled).to eq(0)
+      expect(result.skipped).to eq(1)
       expect(client).not_to have_received(:create_issue)
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: synced)).to be_present
+      expect(run.reload.reconciliation.fetch("status")).to eq("pending_sync")
     end
 
     # @spec PARTIAL-CLOSEOUT-020 — GitHub failure mid-reconciliation:
@@ -498,7 +500,7 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(run.reload.reconciliation.fetch("assessment")).to include(dispatch_assessment)
     end
 
-    # @spec PARTIAL-CLOSEOUT-020 — when a GitHub failure leaves a `creating`
+    # @spec PARTIAL-CLOSEOUT-020 @spec PARTIAL-CLOSEOUT-039 — when a GitHub failure leaves a `creating`
     # marker and the retry window allows the next pass after one day, the
     # sweep must reuse the assessment already on the run instead of
     # re-invoking the LLM. A reordered re-invocation would attach the owner
@@ -520,9 +522,11 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
       result = described_class.call(account_id: account.id)
 
-      expect(result.reconciled).to eq(1)
+      expect(result.reconciled).to eq(0)
+      expect(result.skipped).to eq(1)
       expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: dispatch_synced_issue)).to be_present
+      expect(run.reload.reconciliation.fetch("status")).to eq("pending_sync")
     end
 
     # @spec PARTIAL-CLOSEOUT-020 — the assessment is preserved across
