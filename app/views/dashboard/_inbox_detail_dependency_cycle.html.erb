@@ -19,6 +19,18 @@
       <% if analysis_run.successful? %>
         <% analysis_result = analysis_run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {}) %>
         <pre class="mt-2 whitespace-pre-wrap text-xs text-indigo-900"><%= JSON.pretty_generate(analysis_result["recommendation"]) %></pre>
+        <% recommendation = analysis_result["recommendation"] %>
+        <% candidates = recommendation.is_a?(Hash) ? recommendation.fetch("candidates", []) : [] %>
+        <% candidates.each_with_index do |candidate, index| %>
+          <% changes = candidate["declaration_changes"] if candidate.is_a?(Hash) %>
+          <% if candidate.is_a?(Hash) && candidate["acyclic"] == true && changes&.one? && changes.first.is_a?(Hash) && changes.first["action"] == "remove" && !analysis_stale %>
+            <%= form_with url: dashboard_cycle_analysis_repairs_path, class: "mt-2", data: { turbo_frame: "_top" } do |form| %>
+              <%= form.hidden_field :agent_run_id, value: analysis_run.id %>
+              <%= form.hidden_field :candidate_index, value: index %>
+              <%= form.submit "Apply candidate #{index + 1} declaration removal", class: "rounded bg-red-700 px-3 py-2 text-sm font-medium text-white" %>
+            <% end %>
+          <% end %>
+        <% end %>
         <% coverage = analysis_result["coverage"] %>
         <% if coverage.present? %>
           <div class="mt-3 rounded-lg border border-indigo-200 bg-white p-3 text-xs text-indigo-900">
