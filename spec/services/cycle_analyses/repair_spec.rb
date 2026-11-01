@@ -21,6 +21,45 @@ RSpec.describe CycleAnalyses::Repair do
   end
 
   # @spec AUTO-PICK-QUEUE-019
+  it "removes a uniquely matched declaration from its trusted source comment" do
+    _user, cycle, run = cycle_run
+    edge = cycle.effective_edges.first
+    source = Issue.find(edge.from_id)
+    target = Issue.find(edge.to_id)
+    comment_url = "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42"
+    IssueDependency.find(edge.id).update_columns(declaration_source: "issue_comment", declaration_url: comment_url)
+    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
+      id: 42, body: "Depends on ##{target.github_number}\n", html_url: comment_url,
+      user: GithubClient::CommentAuthor.new(login: "viamin")
+    )
+    client = instance_double(GithubClient)
+    allow(client).to receive(:issue_comments).and_return([ comment ])
+    allow(client).to receive(:update_comment)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
+    expect(client).to have_received(:update_comment).with(source.project.full_name, 42, "")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "removes a uniquely matched cross-project declaration from the issue body" do
+    _user, cycle, run = cycle_run
+    edge = cycle.effective_edges.first
+    source = Issue.find(edge.from_id)
+    target = Issue.find(edge.to_id)
+    client = instance_double(GithubClient)
+    live = { body: "Depends on #{target.project.full_name}##{target.github_number}\n" }
+    allow(client).to receive(:issue).and_return(live)
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
+    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number, body: "")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
   it "does not treat an excluded-section phrase as the live declaration" do
     _user, cycle, run = cycle_run
     edge = cycle.effective_edges.first
@@ -55,6 +94,7 @@ RSpec.describe CycleAnalyses::Repair do
   it "reports a missing live declaration distinctly from an ambiguous one" do
     _user, _cycle, run = cycle_run
     client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #999" })
+    allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })

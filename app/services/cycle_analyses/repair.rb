@@ -84,13 +84,14 @@ module CycleAnalyses
       return { reason: "untrusted_source" } unless issue.trusted?
 
       client = client_resolver.call(issue.project)
-      body = issue_body(client:, project: issue.project, issue_number: issue.github_number)
-      target_number = Issue.find(edge.to_id).github_number
-      edited = remove_unique_declaration(body, target_number:)
+      target = Issue.find(edge.to_id)
+      declaration = source_declaration(edge, issue:, target:, client:)
+      return declaration if declaration[:reason]
+
+      edited = remove_unique_declaration(declaration.fetch(:source_body), target:, source_project: issue.project)
       return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
-      { client:, project: issue.project, project_id: issue.project_id, issue_number: issue.github_number,
-        target_number:, source_body: body, body: edited }
+      declaration.merge(body: edited)
     end
 
     # GitHub has no conditional issue PATCH, so the body is re-read immediately
@@ -99,14 +100,16 @@ module CycleAnalyses
     # a changed body without a unique removable declaration aborts the write.
     # Mirrors ClarifyingQuestions::DescriptionSection#update_issue_body.
     def current_declaration(declaration)
-      body = issue_body(client: declaration.fetch(:client), project: declaration.fetch(:project),
-        issue_number: declaration.fetch(:issue_number))
+      source = current_source(declaration)
+      return { reason: "live_declaration_missing" } unless source
+
+      body = source.fetch(:body)
       return declaration if body == declaration.fetch(:source_body)
 
-      edited = remove_unique_declaration(body, target_number: declaration.fetch(:target_number))
+      edited = remove_unique_declaration(body, target: declaration.fetch(:target), source_project: declaration.fetch(:project))
       return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
-      declaration.merge(source_body: body, body: edited)
+      declaration.merge(source_body: body, body: edited, comment_id: source[:comment_id])
     end
 
     def removal_reason(outcome)
@@ -118,23 +121,124 @@ module CycleAnalyses
       field(remote, :body).to_s
     end
 
-    def remove_unique_declaration(body, target_number:)
-      full_local, = Issues::ParseDependencies.extract(body:)
-      return :missing unless full_local.key?(target_number)
+    def source_declaration(edge, issue:, target:, client:)
+      case edge.declaration_source
+      when "issue_body"
+        issue_declaration(issue:, target:, client:)
+      when "issue_comment"
+        comment_declaration(edge.declaration_url, issue:, target:, client:)
+      when nil
+        unprovenanced_declaration(issue:, target:, client:)
+      else
+        { reason: "live_declaration_missing" }
+      end
+    end
+
+    def issue_declaration(issue:, target:, client:)
+      body = issue_body(client:, project: issue.project, issue_number: issue.github_number)
+      declaration(issue:, target:, client:, source_type: "issue_body", source_body: body)
+    end
+
+    def comment_declaration(url, issue:, target:, client:)
+      return { reason: "live_declaration_missing" } if url.blank?
+
+      comment = issue_comments(client:, issue:).find { |candidate| field(candidate, :html_url) == url }
+      return { reason: "live_declaration_missing" } unless comment && trusted_comment?(issue.project, comment)
+      return { reason: "live_declaration_missing" } unless field(comment, :id)
+
+      declaration(issue:, target:, client:, source_type: "issue_comment", source_body: field(comment, :body).to_s,
+        declaration_url: url, comment_id: field(comment, :id))
+    end
+
+    def unprovenanced_declaration(issue:, target:, client:)
+      body_declaration = issue_declaration(issue:, target:, client:)
+      body_outcome = remove_unique_declaration(body_declaration.fetch(:source_body), target:, source_project: issue.project)
+      return body_declaration if body_outcome.is_a?(String)
+      return { reason: removal_reason(body_outcome) } if body_outcome == :ambiguous
+
+      declarations = issue_comments(client:, issue:).filter_map do |comment|
+        next unless trusted_comment?(issue.project, comment)
+        next unless field(comment, :html_url) && field(comment, :id)
+
+        declaration(issue:, target:, client:, source_type: "issue_comment", source_body: field(comment, :body).to_s,
+          declaration_url: field(comment, :html_url), comment_id: field(comment, :id))
+      end
+      outcomes = declarations.to_h do |candidate|
+        [ candidate, remove_unique_declaration(candidate.fetch(:source_body), target:, source_project: issue.project) ]
+      end
+      return { reason: "live_declaration_ambiguous" } if outcomes.value?(:ambiguous)
+
+      matches = outcomes.select { |_candidate, outcome| outcome.is_a?(String) }.keys
+      return { reason: "live_declaration_missing" } if matches.empty?
+      return { reason: "live_declaration_ambiguous" } unless matches.one?
+
+      matches.sole
+    end
+
+    def declaration(issue:, target:, client:, source_type:, source_body:, declaration_url: nil, comment_id: nil)
+      { client:, project: issue.project, project_id: issue.project_id, issue_number: issue.github_number, target:,
+        source_type:, source_body:, declaration_url:, comment_id: }
+    end
+
+    def current_source(declaration)
+      if declaration.fetch(:source_type) == "issue_body"
+        { body: issue_body(client: declaration.fetch(:client), project: declaration.fetch(:project),
+          issue_number: declaration.fetch(:issue_number)) }
+      else
+        comment = issue_comments(client: declaration.fetch(:client), project: declaration.fetch(:project),
+          issue_number: declaration.fetch(:issue_number)).find do |candidate|
+          field(candidate, :html_url) == declaration.fetch(:declaration_url)
+        end
+        return unless comment && trusted_comment?(declaration.fetch(:project), comment)
+        return unless field(comment, :id)
+
+        { body: field(comment, :body).to_s, comment_id: field(comment, :id) }
+      end
+    end
+
+    def issue_comments(client:, issue: nil, project: nil, issue_number: nil)
+      project ||= issue.project
+      issue_number ||= issue.github_number
+      client.issue_comments(project.full_name, issue_number)
+    end
+
+    def trusted_comment?(project, comment)
+      user = field(comment, :user)
+      project.trusted_github_user?(field(user, :login)) if user
+    end
+
+    def remove_unique_declaration(body, target:, source_project:)
+      full_local, full_cross = Issues::ParseDependencies.extract(body:)
+      return :missing unless dependencies_declare_target?(full_local, full_cross, target:, source_project:)
 
       lines = body.lines
       carriers = lines.each_index.select do |index|
-        reduced_local, = Issues::ParseDependencies.extract(body: lines.reject.with_index { |_line, position| position == index }.join)
-        reduced_local == full_local.except(target_number) && declares_target?(lines[index], target_number)
+        reduced_local, reduced_cross = Issues::ParseDependencies.extract(body: lines.reject.with_index { |_line, position| position == index }.join)
+        removes_target?(full_local, full_cross, reduced_local, reduced_cross, target:, source_project:) &&
+          line_declares_target?(lines[index], target:, source_project:)
       end
       return :ambiguous unless carriers.one?
 
       lines.reject.with_index { |_line, index| index == carriers.first }.join
     end
 
-    def declares_target?(line, target_number)
-      local, = Issues::ParseDependencies.extract(body: "## Dependencies\n#{line}")
-      local.key?(target_number)
+    def removes_target?(full_local, full_cross, reduced_local, reduced_cross, target:, source_project:)
+      expected_local = source_project.id == target.project_id ? full_local.except(target.github_number) : full_local
+      expected_cross = full_cross.except(cross_key(target))
+      reduced_local == expected_local && reduced_cross == expected_cross
+    end
+
+    def dependencies_declare_target?(local, cross, target:, source_project:)
+      (source_project.id == target.project_id && local.key?(target.github_number)) || cross.key?(cross_key(target))
+    end
+
+    def line_declares_target?(line, target:, source_project:)
+      local, cross = Issues::ParseDependencies.extract(body: "## Dependencies\n#{line}")
+      dependencies_declare_target?(local, cross, target:, source_project:)
+    end
+
+    def cross_key(target)
+      [ target.project.owner.downcase, target.project.repo.downcase, target.github_number ]
     end
 
     def canonical_edges(edges)
@@ -142,8 +246,13 @@ module CycleAnalyses
     end
 
     def write(declaration)
-      declaration.fetch(:client).update_issue(declaration.fetch(:project).full_name,
-        declaration.fetch(:issue_number), body: declaration.fetch(:body))
+      if declaration.fetch(:source_type) == "issue_body"
+        declaration.fetch(:client).update_issue(declaration.fetch(:project).full_name,
+          declaration.fetch(:issue_number), body: declaration.fetch(:body))
+      else
+        declaration.fetch(:client).update_comment(declaration.fetch(:project).full_name,
+          declaration.fetch(:comment_id), declaration.fetch(:body))
+      end
     end
 
     def field(source, name)
