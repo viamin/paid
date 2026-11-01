@@ -24,7 +24,7 @@ module CycleAnalyses
 
       live_cycle = current_cycle
       return result("needs_operator_action", "graph_changed") unless live_cycle&.occurrence == snapshot.fetch("occurrence")
-      return result("needs_operator_action", "resulting_graph_changed") unless resulting_graph_matches?
+      return result("needs_operator_action", "resulting_graph_changed") unless resulting_graph_matches?(live_cycle)
 
       edge = live_cycle.effective_edges.find { |candidate| candidate.id == change.fetch("edge_id") }
       return result("needs_operator_action", "edge_changed") unless edge
@@ -32,7 +32,7 @@ module CycleAnalyses
       declaration = live_declaration(edge)
       return result("needs_operator_action", declaration.fetch(:reason)) unless declaration[:body]
 
-      write(declaration, edge)
+      write(declaration)
       result("pending_sync", "awaiting_github_synchronization", [ edge.id ], declaration.slice(:project_id, :issue_number))
     rescue GithubClient::AuthenticationError
       result("needs_operator_action", "github_authorization_failed")
@@ -67,9 +67,13 @@ module CycleAnalyses
         .find { |cycle| cycle.occurrence == snapshot.fetch("occurrence") }
     end
 
-    def resulting_graph_matches?
+    def resulting_graph_matches?(live_cycle)
       expected = candidate.fetch("resulting_graph")
-      AcyclicGraph.call(issue_ids: expected.fetch("issue_ids"), edges: expected.fetch("edges"))
+      expected_edges = expected.fetch("edges")
+      live_edges = live_cycle.effective_edges.reject { |edge| edge.id == change.fetch("edge_id") }
+        .map { |edge| { "from_issue_id" => edge.from_id, "to_issue_id" => edge.to_id } }
+      AcyclicGraph.call(issue_ids: expected.fetch("issue_ids"), edges: expected_edges) &&
+        canonical_edges(expected_edges) == canonical_edges(live_edges)
     end
 
     def live_declaration(edge)
@@ -80,22 +84,37 @@ module CycleAnalyses
       remote = client.issue(issue.project.full_name, issue.github_number)
       body = field(remote, :body).to_s
       edited = remove_unique_declaration(body, target_number: Issue.find(edge.to_id).github_number)
-      return { reason: edited ? "live_declaration_missing" : "live_declaration_ambiguous" } unless edited
+      unless edited.is_a?(String)
+        return { reason: edited == :ambiguous ? "live_declaration_ambiguous" : "live_declaration_missing" }
+      end
 
       { client:, body: edited, project_id: issue.project_id, issue_number: issue.github_number, project: issue.project }
     end
 
     def remove_unique_declaration(body, target_number:)
-      matches = body.lines.each_index.select do |index|
-        local, = Issues::ParseDependencies.extract(body: body.lines[index])
-        local.keys == [ target_number ]
-      end
-      return if matches.size != 1
+      full_local, = Issues::ParseDependencies.extract(body:)
+      return :missing unless full_local.key?(target_number)
 
-      body.lines.reject.with_index { |_line, index| index == matches.first }.join
+      lines = body.lines
+      carriers = lines.each_index.select do |index|
+        reduced_local, = Issues::ParseDependencies.extract(body: lines.reject.with_index { |_line, position| position == index }.join)
+        reduced_local == full_local.except(target_number) && declares_target?(lines[index], target_number)
+      end
+      return :ambiguous unless carriers.one?
+
+      lines.reject.with_index { |_line, index| index == carriers.first }.join
     end
 
-    def write(declaration, _edge)
+    def declares_target?(line, target_number)
+      local, = Issues::ParseDependencies.extract(body: "## Dependencies\n#{line}")
+      local.key?(target_number)
+    end
+
+    def canonical_edges(edges)
+      edges.map { |edge| [ edge.fetch("from_issue_id"), edge.fetch("to_issue_id") ] }.sort
+    end
+
+    def write(declaration)
       declaration.fetch(:client).update_issue(declaration.fetch(:project).full_name,
         declaration.fetch(:issue_number), body: declaration.fetch(:body))
     end

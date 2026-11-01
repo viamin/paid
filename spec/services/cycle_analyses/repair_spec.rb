@@ -4,31 +4,76 @@ require "rails_helper"
 
 RSpec.describe CycleAnalyses::Repair do
   # @spec AUTO-PICK-QUEUE-019
-  it "removes one uniquely matched live declaration when legacy provenance is absent" do
+  it "removes one uniquely matched section-list declaration when legacy provenance is absent" do
     _user, cycle, run = cycle_run
-    source = cycle.path.first
-    target = cycle.path.second
+    edge = cycle.effective_edges.first
+    source = Issue.find(edge.from_id)
+    target = Issue.find(edge.to_id)
     client = instance_double(GithubClient)
-    live = { body: "## Dependencies\nDepends on ##{target.github_number}\n\nKeep this text." }
+    live = { body: "## Dependencies\n- ##{target.github_number}\n\nKeep this text." }
     allow(client).to receive(:issue).and_return(live)
     allow(client).to receive(:update_issue)
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
 
-    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ cycle.path_edges.first.id ])
+    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
     expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
       body: "## Dependencies\n\nKeep this text.")
   end
 
   # @spec AUTO-PICK-QUEUE-019
+  it "does not treat an excluded-section phrase as the live declaration" do
+    _user, cycle, run = cycle_run
+    edge = cycle.effective_edges.first
+    source = Issue.find(edge.from_id)
+    target = Issue.find(edge.to_id)
+    client = instance_double(GithubClient)
+    live = { body: "## Child Issues\n- #999 — Depends on ##{target.github_number} sequencing note\n\n## Dependencies\n- ##{target.github_number}\n" }
+    allow(client).to receive(:issue).and_return(live)
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "pending_sync")
+    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number,
+      body: "## Child Issues\n- #999 — Depends on ##{target.github_number} sequencing note\n\n## Dependencies\n")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
   it "does not write when the live declaration is ambiguous or changed" do
     _user, cycle, run = cycle_run
-    target = cycle.path.second
+    target = Issue.find(cycle.effective_edges.first.to_id)
     client = instance_double(GithubClient, issue: { body: "Depends on ##{target.github_number}\nDepends on ##{target.github_number}" })
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
 
     expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "reports a missing live declaration distinctly from an ambiguous one" do
+    _user, _cycle, run = cycle_run
+    client = instance_double(GithubClient, issue: { body: "## Dependencies\n- #999" })
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_missing")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "does not write when the expected resulting edges differ from the live cycle" do
+    _user, _cycle, run = cycle_run
+    client = instance_double(GithubClient)
+    allow(client).to receive(:update_issue)
+    mismatched = recommendation(run).deep_dup
+    mismatched.fetch("candidates").first.fetch("resulting_graph")["edges"] = []
+
+    result = described_class.call(agent_run: run, recommendation: mismatched, client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "resulting_graph_changed")
     expect(client).not_to have_received(:update_issue)
   end
 
