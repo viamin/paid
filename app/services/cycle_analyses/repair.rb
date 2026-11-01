@@ -154,7 +154,6 @@ module CycleAnalyses
     def unprovenanced_declaration(issue:, target:, client:)
       body_declaration = issue_declaration(issue:, target:, client:)
       body_outcome = remove_unique_declaration(body_declaration.fetch(:source_body), target:, source_project: issue.project)
-      return body_declaration if body_outcome.is_a?(String)
       return { reason: removal_reason(body_outcome) } if body_outcome == :ambiguous
 
       declarations = issue_comments(client:, issue:).filter_map do |comment|
@@ -164,12 +163,12 @@ module CycleAnalyses
         declaration(issue:, target:, client:, source_type: "issue_comment", source_body: field(comment, :body).to_s,
           declaration_url: field(comment, :html_url), comment_id: field(comment, :id))
       end
-      outcomes = declarations.to_h do |candidate|
+      outcomes = ([ body_declaration ] + declarations).map do |candidate|
         [ candidate, remove_unique_declaration(candidate.fetch(:source_body), target:, source_project: issue.project) ]
       end
-      return { reason: "live_declaration_ambiguous" } if outcomes.value?(:ambiguous)
+      return { reason: "live_declaration_ambiguous" } if outcomes.any? { |_candidate, outcome| outcome == :ambiguous }
 
-      matches = outcomes.select { |_candidate, outcome| outcome.is_a?(String) }.keys
+      matches = outcomes.filter_map { |candidate, outcome| candidate if outcome.is_a?(String) }
       return { reason: "live_declaration_missing" } if matches.empty?
       return { reason: "live_declaration_ambiguous" } unless matches.one?
 
@@ -219,8 +218,17 @@ module CycleAnalyses
           line_declares_target?(lines[index], target:, source_project:)
       end
       return :ambiguous unless carriers.one?
+      return :ambiguous unless target_occurrences(lines.fetch(carriers.first), target:, source_project:) == 1
 
       lines.reject.with_index { |_line, index| index == carriers.first }.join
+    end
+
+    def target_occurrences(line, target:, source_project:)
+      qualified = /#{Regexp.escape(target.project.owner)}\/#{Regexp.escape(target.project.repo)}\##{target.github_number}\b/i
+      return line.scan(qualified).size unless source_project.id == target.project_id
+
+      local = /(?<![a-zA-Z0-9._\/-])\##{target.github_number}\b/
+      line.scan(local).size + line.scan(qualified).size
     end
 
     def removes_target?(full_local, full_cross, reduced_local, reduced_cross, target:, source_project:)

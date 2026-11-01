@@ -12,6 +12,7 @@ RSpec.describe CycleAnalyses::Repair do
     client = instance_double(GithubClient)
     live = { body: "## Dependencies\n- ##{target.github_number}\n\nKeep this text." }
     allow(client).to receive(:issue).and_return(live)
+    allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
 
@@ -76,6 +77,7 @@ RSpec.describe CycleAnalyses::Repair do
     client = instance_double(GithubClient)
     live = { body: "Depends on #{target.project.full_name}##{target.github_number}\n" }
     allow(client).to receive(:issue).and_return(live)
+    allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
@@ -93,6 +95,7 @@ RSpec.describe CycleAnalyses::Repair do
     client = instance_double(GithubClient)
     live = { body: "## Child Issues\n- #999 — Depends on ##{target.github_number} sequencing note\n\n## Dependencies\n- ##{target.github_number}\n" }
     allow(client).to receive(:issue).and_return(live)
+    allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
@@ -107,6 +110,40 @@ RSpec.describe CycleAnalyses::Repair do
     _user, cycle, run = cycle_run
     target = Issue.find(cycle.effective_edges.first.to_id)
     client = instance_double(GithubClient, issue: { body: "Depends on ##{target.github_number}\nDepends on ##{target.github_number}" })
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "does not write when unprovenanced matching declarations occur in the body and a trusted comment" do
+    _user, cycle, run = cycle_run
+    source = Issue.find(cycle.effective_edges.first.from_id)
+    target = Issue.find(cycle.effective_edges.first.to_id)
+    comment = Struct.new(:id, :body, :html_url, :user, keyword_init: true).new(
+      id: 42, body: "Depends on ##{target.github_number}\n",
+      html_url: "https://github.com/#{source.project.full_name}/issues/#{source.github_number}#issuecomment-42",
+      user: GithubClient::CommentAuthor.new(login: "viamin")
+    )
+    client = instance_double(GithubClient, issue: { body: "Depends on ##{target.github_number}\n" }, issue_comments: [ comment ])
+    allow(client).to receive(:update_issue)
+    allow(client).to receive(:update_comment)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "needs_operator_action", "reason" => "live_declaration_ambiguous")
+    expect(client).not_to have_received(:update_issue)
+    expect(client).not_to have_received(:update_comment)
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "does not write when one carrier line declares the target twice" do
+    _user, cycle, run = cycle_run
+    target = Issue.find(cycle.effective_edges.first.to_id)
+    client = instance_double(GithubClient, issue: { body: "Depends on ##{target.github_number}, ##{target.github_number}\n" })
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
@@ -139,6 +176,7 @@ RSpec.describe CycleAnalyses::Repair do
       { body: "## Dependencies\n- ##{target.github_number}\n" },
       { body: "Human note.\n\n## Dependencies\n- ##{target.github_number}\n" }
     )
+    allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
@@ -157,6 +195,7 @@ RSpec.describe CycleAnalyses::Repair do
       { body: "## Dependencies\n- ##{target.github_number}\n" },
       { body: "Human edit removed the declaration.\n" }
     )
+    allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
@@ -174,6 +213,7 @@ RSpec.describe CycleAnalyses::Repair do
       { body: "## Dependencies\n- ##{target.github_number}\n" },
       { body: "Depends on ##{target.github_number}\nDepends on ##{target.github_number}\n" }
     )
+    allow(client).to receive(:issue_comments).and_return([])
     allow(client).to receive(:update_issue)
 
     result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
