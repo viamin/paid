@@ -43,4 +43,27 @@ RSpec.describe Tools::RepairCycleAnalysis do
     expect(result).to eq(agent_run_id: run.id, candidate_index: 0, status: "stale",
       message: "Analyze again.", success: false)
   end
+
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  it "reports incomplete analysis results separately from unavailable candidates" do
+    [
+      {},
+      { CycleAnalyses::RESULT_KEY => {} },
+      { CycleAnalyses::RESULT_KEY => { "recommendation" => {} } }
+    ].each do |verification_result|
+      run.update!(verification_result:)
+
+      expect {
+        tool.call(agent_run_id: run.id, candidate_index: 0, project_id: project.id, confirmed: true)
+      }.to raise_error(ArgumentError, /Cycle analysis result is incomplete/)
+    end
+
+    run.update!(verification_result: {
+      CycleAnalyses::RESULT_KEY => { "recommendation" => { "candidates" => [] } }
+    })
+
+    expect {
+      tool.call(agent_run_id: run.id, candidate_index: 0, project_id: project.id, confirmed: true)
+    }.to raise_error(ArgumentError, "Cycle analysis candidate is no longer available")
+  end
 end

@@ -38,10 +38,10 @@ module Tools
       result = CycleAnalyses::Repair.call(agent_run: run, candidate:, actor: current_user)
 
       { agent_run_id: run.id, candidate_index:, status: result.status.to_s, message: result.message, success: result.success? }
-    rescue IndexError
-      raise ArgumentError, "Cycle analysis candidate is no longer available"
     rescue KeyError => error
       raise ArgumentError, "Cycle analysis result is incomplete: #{error.message}"
+    rescue IndexError
+      raise ArgumentError, "Cycle analysis candidate is no longer available"
     end
 
     private
