@@ -158,4 +158,112 @@ RSpec.describe CycleAnalyses::Analyze do
     expect { described_class.call(agent_run: run, llm:) }
       .to raise_error(AgentHarness::CommandExecutionError, "Cycle analysis failed: runner failed")
   end
+
+  # Regression fixture exercising bounded repair path and incomplete-state safeguards
+  # @spec AUTO-PICK-QUEUE-018 AUTO-PICK-QUEUE-019
+  describe "bounded repair path with incomplete-state safeguards" do
+    def repair_response(edge_id:, issue_ids:, edges:, acyclic:, output_override: nil)
+      output = output_override || {
+        "summary" => "Remove problematic edge to break cycle.",
+        "candidates" => [ {
+          "declaration_changes" => [ { "edge_id" => edge_id, "action" => "remove" } ],
+          "evidence" => [ "Declaration is obsolete." ],
+          "tradeoffs" => [ "Work ordering changes." ],
+          "missing_or_conflicting_intent" => [],
+          "resulting_graph" => { "issue_ids" => issue_ids, "edges" => edges },
+          "acyclic" => acyclic
+        } ]
+      }
+      output.to_json
+    end
+
+    it "accepts a repair that removes one edge to break a simple cycle" do
+      user = create(:user)
+      project = create(:project, account: user.account, created_by: user)
+      first = create(:issue, project:, github_state: "open")
+      second = create(:issue, project:, github_state: "open")
+      create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+      edge_ba = create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      cycle = Issues::DependencyCycles.call(account: user.account).sole
+      run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+        external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+      snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+      llm = class_double(Llm::Request)
+      allow(llm).to receive(:call).and_return(harness_response(snapshot:,
+        output: repair_response(edge_id: edge_ba.id, issue_ids: [ first.id, second.id ],
+          edges: [ { "from_issue_id" => first.id, "to_issue_id" => second.id } ], acyclic: true)))
+      stub_comments([])
+
+      result = described_class.call(agent_run: run, llm:)
+
+      expect(result["recommendation"]["candidates"][0]["acyclic"]).to be(true)
+    end
+
+    it "rejects a repair attempting to remove edges outside the snapshot" do
+      user = create(:user)
+      project = create(:project, account: user.account, created_by: user)
+      first = create(:issue, project:, github_state: "open")
+      second = create(:issue, project:, github_state: "open")
+      third = create(:issue, project:, github_state: "open")
+      create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      create_legacy_issue_dependency(issue: third, depends_on_issue: first)
+      cycle = Issues::DependencyCycles.call(account: user.account).sole
+      run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+        external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+      snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+      llm = class_double(Llm::Request)
+      invalid_output = repair_response(edge_id: 99999, issue_ids: snapshot.fetch("issues").pluck("id"),
+        edges: snapshot.fetch("effective_edges").map { |e| e.slice("from_issue_id", "to_issue_id") }, acyclic: false)
+      allow(llm).to receive(:call).and_return(harness_response(snapshot:, output: invalid_output))
+      stub_comments([])
+
+      expect { described_class.call(agent_run: run, llm:) }
+        .to raise_error(CycleAnalyses::InvalidResponse, /edge_id is not in the snapshotted cycle/)
+    end
+
+    it "rejects a repair that adds undeclared edges" do
+      user = create(:user); project = create(:project, account: user.account, created_by: user)
+      first = create(:issue, project:, github_state: "open")
+      second = create(:issue, project:, github_state: "open")
+      third = create(:issue, project:, github_state: "open")
+      edge_ab = create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: third)
+      create_legacy_issue_dependency(issue: third, depends_on_issue: first)
+      cycle = Issues::DependencyCycles.call(account: user.account).sole
+      run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+        external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+      snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+      llm = class_double(Llm::Request)
+      allow(llm).to receive(:call).and_return(harness_response(snapshot:,
+        output: repair_response(edge_id: edge_ab.id, issue_ids: [ first.id, second.id, third.id ],
+          edges: [ { "from_issue_id" => second.id, "to_issue_id" => third.id },
+            { "from_issue_id" => third.id, "to_issue_id" => first.id },
+            { "from_issue_id" => first.id, "to_issue_id" => third.id } ], acyclic: false)))
+      stub_comments([])
+      expect { described_class.call(agent_run: run, llm:) }
+        .to raise_error(CycleAnalyses::InvalidResponse, /edges must match the snapshotted cycle after applying declaration_changes/)
+    end
+
+    it "rejects a repair where the acyclic claim does not match the resulting graph" do
+      user = create(:user)
+      project = create(:project, account: user.account, created_by: user)
+      first = create(:issue, project:, github_state: "open")
+      second = create(:issue, project:, github_state: "open")
+      create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+      edge_ba = create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      cycle = Issues::DependencyCycles.call(account: user.account).sole
+      run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+        external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+      snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+      llm = class_double(Llm::Request)
+      invalid_output = repair_response(edge_id: edge_ba.id, issue_ids: [ first.id, second.id ],
+        edges: [ { "from_issue_id" => first.id, "to_issue_id" => second.id } ], acyclic: false)
+      allow(llm).to receive(:call).and_return(harness_response(snapshot:, output: invalid_output))
+      stub_comments([])
+
+      expect { described_class.call(agent_run: run, llm:) }
+        .to raise_error(CycleAnalyses::InvalidResponse, /acyclic does not match the resulting graph/)
+    end
+  end
 end
