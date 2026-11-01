@@ -19,6 +19,7 @@ module Tools
       "Tools::RequestAcceptanceAudit",
       "Tools::RequestLayeredVerificationAudit",
       "Tools::StartCycleAnalysis",
+      "Tools::RepairCycleAnalysis",
       "Tools::ResolveIssueCloseout",
       "Tools::ResolveReopenReview",
       "Tools::GetAgentRun",

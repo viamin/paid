@@ -118,6 +118,15 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "repair_cycle_analysis",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, agent_run_id: agent_run.id, candidate_index: 0, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "trigger_agent_run",
         denied_user: -> {
           project
