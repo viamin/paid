@@ -181,14 +181,16 @@
   `needs_operator_action` and SHALL not overwrite the live issue body. After a
   successful write, the immediate dependency reparse SHALL admit only comments
   whose authors pass the owning project's trusted-GitHub-user policy.
-  *Tests:* `spec/services/cycle_analyses/repair_spec.rb`.
+  *Tests:* `spec/services/cycle_analyses/repair_spec.rb`,
+  `spec/mcp/tools/repair_cycle_analysis_spec.rb`.
 
 - [x] **AUTO-PICK-QUEUE-022** — Before applying a cycle repair, Paid SHALL
   re-fetch the live declaration source immediately before writing. If the live
   source changed since validation, Paid SHALL recompute the removal against
   that source and preserve unrelated human edits; if the selected declaration
   is no longer uniquely removable, the repair SHALL stop without a write.
-  *Tests:* `spec/services/cycle_analyses/repair_spec.rb`.
+  *Tests:* `spec/services/cycle_analyses/repair_spec.rb`,
+  `spec/mcp/tools/repair_cycle_analysis_spec.rb`.
 
 ## Epic umbrella audits
 

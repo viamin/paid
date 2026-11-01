@@ -24,6 +24,7 @@ RSpec.describe Tools::Registry do
       request_acceptance_audit
       request_layered_verification_audit
       start_cycle_analysis
+      repair_cycle_analysis
       resolve_issue_closeout
       resolve_reopen_review
       record_change_intent
