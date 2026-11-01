@@ -761,3 +761,21 @@
   `app/services/issues/request_acceptance_audit.rb`.
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
   `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
+  dependency declaration through GitHub, Paid SHALL persist the expected body
+  digest as `pending_sync` and SHALL not report the repair as reconciled until
+  the authoritative GitHub issue sync returns a matching body.
+  *Code:* `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/partial_closeouts/confirm_sync.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_spec.rb`,
+  `spec/services/partial_closeouts/confirm_sync_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-040** — When a pending repair body does not match on
+  sync, Paid SHALL record a bounded confirmation attempt; after the configured
+  maximum it SHALL persist `retryable_failure` with an explicit manual sync
+  resolution and SHALL stop retrying automatically. A matching body SHALL
+  resolve to the normal reconciled or operator-prerequisite status.
+  *Code:* `app/services/partial_closeouts/confirm_sync.rb`.
+  *Test:* `spec/services/partial_closeouts/confirm_sync_spec.rb`.

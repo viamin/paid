@@ -60,7 +60,7 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
 
       result = activity.execute(agent_run_id: run.id)
 
-      expect(result).to include(status: "reconciled", gaps_remain: true)
+      expect(result).to include(status: "pending_sync", gaps_remain: true)
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
     end
 

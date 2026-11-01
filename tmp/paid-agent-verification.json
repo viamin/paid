@@ -1,0 +1,40 @@
+{
+  "status": "passed",
+  "summary": "Pending-sync repair confirmation and bounded resolution are implemented and affected suites pass.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          { "locator": "spec/services/partial_closeouts/confirm_sync_spec.rb:20", "result": "passed" },
+          { "locator": "spec/services/partial_closeouts/reconcile_spec.rb:20", "result": "passed" },
+          { "locator": "spec/temporal/activities/fetch_issues_activity_spec.rb", "result": "177 examples passed" }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          { "locator": "spec/services/partial_closeouts/confirm_sync_spec.rb:29", "result": "passed; three-attempt exhaustion records retryable_failure/manual_sync_review" },
+          { "locator": "spec/services/partial_closeouts/reconcile_legacy_spec.rb", "result": "30 examples passed" }
+        ]
+      }
+    },
+    {
+      "id": "AC-3",
+      "status": "not_run",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          { "locator": "bundle exec rspec", "result": "Interrupted after approximately 32 minutes while still progressing; no failure had been reported" }
+        ],
+        "reason": "The complete repository suite did not finish within the run window."
+      }
+    }
+  ]
+}

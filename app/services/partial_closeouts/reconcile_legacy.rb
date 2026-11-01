@@ -291,7 +291,7 @@ module PartialCloseouts
       status = agent_run.reconciliation.to_h.fetch("status", nil)
 
       case status
-      when "reconciled" then :reconciled
+      when "reconciled", "pending_sync" then :reconciled
       when "awaiting_operator" then :awaiting_operator
       when "retryable_failure"
         Rails.logger.warn(

@@ -8,10 +8,11 @@ RSpec.describe PartialCloseouts::Reconcile do
   let(:parent) { create(:issue, :in_progress, project: project, github_state: "open") }
   let(:run) { create(:agent_run, :completed, project: project, issue: parent, pull_request_number: 99) }
   let(:client) { instance_double(GithubClient) }
+  let(:updated_body) { [] }
 
   before do
     allow(project).to receive(:client).and_return(client)
-    allow(client).to receive(:update_issue)
+    allow(client).to receive(:update_issue) { |_, _, body:| updated_body << body }
     allow(client).to receive(:issue) { OpenStruct.new(body: parent.body.to_s) }
   end
 
@@ -22,7 +23,8 @@ RSpec.describe PartialCloseouts::Reconcile do
     described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "dispatch", "owner_issue_number" => owner.github_number } ]))
 
     expect(parent.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
-    expect(run.reload.reconciliation.fetch("status")).to eq("reconciled")
+    expect(run.reload.reconciliation.fetch("status")).to eq("pending_sync")
+    expect(run.reload.reconciliation.dig("sync_confirmation", "expected_body_digest")).to eq(Digest::SHA256.hexdigest(updated_body.sole))
     expect(client).to have_received(:update_issue).with(project.full_name, parent.github_number, body: a_string_including("Depends on ##{owner.github_number}"))
   end
 
@@ -374,7 +376,7 @@ RSpec.describe PartialCloseouts::Reconcile do
 
     expect(client).to have_received(:create_issue).once
     expect(parent.reload.issue_dependencies.find_by(depends_on_issue: synced)).to be_present
-    expect(run.reload.reconciliation.fetch("status")).to eq("reconciled")
+    expect(run.reload.reconciliation.fetch("status")).to eq("pending_sync")
   end
 
   # @spec NO-OUTPUT-ISSUE-007
