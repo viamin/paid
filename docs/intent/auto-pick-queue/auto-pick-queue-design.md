@@ -114,6 +114,10 @@ GitHub mutation; a changed persisted cycle and stale, ambiguous,
 unauthorized, failed, and still-cyclic outcomes stay held with diagnostics. A
 confirmed repair clears the occurrence while the run remains available in
 normal history.
+If cancellation races with a successful GitHub write, the cancelled run retains
+the `pending_sync` repair outcome and source details. Ordinary synchronization
+may requeue that outcome only for local confirmation; it never repeats the
+GitHub mutation.
 
 Each path node also carries its own title, current labels, and (when a parent
 issue is linked and its project is within the viewer's authorized project set)

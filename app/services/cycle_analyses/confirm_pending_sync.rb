@@ -22,7 +22,7 @@ module CycleAnalyses
 
     def pending_runs
       AgentRun.joins(:project).where(projects: { account_id: project.account_id },
-        goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: "completed")
+        goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: %w[completed cancelled])
         .where("verification_result -> ? -> 'repair' ->> 'status' = ?", RESULT_KEY, "pending_sync")
         .where("verification_result -> ? -> 'repair' -> 'details' ->> 'project_id' = ?", RESULT_KEY, project.id.to_s)
     end
@@ -43,7 +43,7 @@ module CycleAnalyses
     end
 
     def pending_sync?(run)
-      run.status == "completed" && run.verification_result.dig(RESULT_KEY, "repair", "status") == "pending_sync"
+      run.status.in?(%w[completed cancelled]) && run.verification_result.dig(RESULT_KEY, "repair", "status") == "pending_sync"
     end
   end
 end

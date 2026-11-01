@@ -158,7 +158,11 @@
   completed `pending_sync` analysis SHALL be requeued for reconciliation when
   ordinary synchronization parses its repaired declaration source, without
   repeating the GitHub declaration mutation; a changed persisted cycle or all
-  other outcomes remain held with diagnostics.
+  other outcomes remain held with diagnostics. When cancellation races with a
+  successful GitHub declaration write, Paid SHALL retain the `pending_sync`
+  repair outcome and source details on the cancelled run, and ordinary
+  synchronization SHALL requeue only its local reconciliation without
+  repeating the GitHub declaration mutation.
   *Tests:* `spec/services/cycle_analyses/repair_spec.rb`,
   `spec/services/cycle_analyses/confirm_spec.rb`,
   `spec/services/cycle_analyses/start_spec.rb`,

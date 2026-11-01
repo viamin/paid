@@ -9,8 +9,6 @@ class CycleAnalysisJob < ApplicationJob
     return unless claim!(agent_run)
 
     result = pending_sync?(agent_run) ? confirm_repair(agent_run) : analyze_and_repair(agent_run)
-    return if agent_run.reload.finished?
-
     publish_result!(agent_run, result)
   rescue StandardError => error
     fail_run!(agent_run, error) if agent_run
@@ -47,11 +45,20 @@ class CycleAnalysisJob < ApplicationJob
   def publish_result!(agent_run, result)
     agent_run.with_lock do
       agent_run.reload
+      return persist_cancelled_repair!(agent_run, result) if cancelled_with_pending_repair?(agent_run, result)
       return if agent_run.finished?
 
       agent_run.update!(status: "completed", completed_at: Time.current,
         verification_result: agent_run.verification_result.merge(CycleAnalyses::RESULT_KEY => result))
     end
+  end
+
+  def cancelled_with_pending_repair?(agent_run, result)
+    agent_run.status == "cancelled" && result.dig("repair", "status") == "pending_sync"
+  end
+
+  def persist_cancelled_repair!(agent_run, result)
+    agent_run.update!(verification_result: agent_run.verification_result.merge(CycleAnalyses::RESULT_KEY => result))
   end
 
   def fail_run!(agent_run, error)
