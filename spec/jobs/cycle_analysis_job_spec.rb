@@ -13,10 +13,36 @@ RSpec.describe CycleAnalysisJob do
       response
     end
     stub_comments
+    stub_live_issues(run)
 
     described_class.new.perform(run.id)
 
     expect(run.reload).to have_attributes(status: "cancelled", verification_result: {})
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
+  it "retains a successful repair when cancellation races with the GitHub write" do
+    run = cycle_run
+    response = AgentHarness::Response.new(output: recommendation(run).to_json, exit_code: 0,
+      duration: 1.0, provider: :codex)
+    allow(Llm::Request).to receive(:call).and_return(response)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    source_edge = snapshot.fetch("effective_edges").first
+    source = Issue.find(source_edge.fetch("from_issue_id"))
+    target = Issue.find(source_edge.fetch("to_issue_id"))
+    stub_comments
+    stub_live_issues(run)
+    stub_request(:get, "https://api.github.com/repos/#{source.project.full_name}/issues/#{source.github_number}")
+      .to_return(status: 200, body: { body: "Depends on ##{target.github_number}\n" }.to_json,
+        headers: { "Content-Type" => "application/json" })
+    stub_cancelling_patch(run)
+
+    described_class.new.perform(run.id)
+
+    repair = run.reload.verification_result.dig(CycleAnalyses::RESULT_KEY, "repair")
+    expect(run.status).to eq("cancelled")
+    expect(repair).to include("status" => "pending_sync", "reason" => "awaiting_github_synchronization")
+    expect(repair.fetch("details")).to include("project_id" => source.project_id, "issue_number" => source.github_number)
   end
 
   # @spec AUTO-PICK-QUEUE-016
@@ -29,6 +55,7 @@ RSpec.describe CycleAnalysisJob do
       response
     end
     stub_comments
+    stub_live_issues(run)
 
     described_class.perform_now(run.id)
 
@@ -74,6 +101,20 @@ RSpec.describe CycleAnalysisJob do
     expect(run.error_message).not_to include(secret)
   end
 
+  # @spec AUTO-PICK-QUEUE-019
+  it "reconciles a pending repair without analyzing or writing to GitHub again" do
+    run = cycle_run
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "pending_sync" } } })
+    IssueDependency.delete_all
+    allow(Llm::Request).to receive(:call)
+
+    described_class.perform_now(run.id)
+
+    expect(Llm::Request).not_to have_received(:call)
+    expect(run.reload.verification_result.dig(CycleAnalyses::RESULT_KEY, "repair"))
+      .to include("status" => "resolved", "reason" => "synchronization_confirmed")
+  end
+
   def recommendation(run)
     snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
     remaining_edges = snapshot.fetch("effective_edges").drop(1)
@@ -107,5 +148,20 @@ RSpec.describe CycleAnalysisJob do
   def stub_comments
     stub_request(:get, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+/comments(?:\?.*)?\z})
       .to_return(status: 200, body: "[]", headers: { "Content-Type" => "application/json" })
+  end
+
+  def stub_live_issues(run)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    snapshot.fetch("issues").each do |issue|
+      stub_request(:get, "https://api.github.com/repos/#{issue.fetch("project")}/issues/#{issue.fetch("number")}")
+        .to_return(status: 200, body: { body: issue.fetch("body") }.to_json, headers: { "Content-Type" => "application/json" })
+    end
+  end
+
+  def stub_cancelling_patch(run)
+    stub_request(:patch, %r{\Ahttps://api\.github\.com/repos/.*/issues/\d+\z}).to_return do
+      AgentRuns::Cancel.call(agent_run: run)
+      { status: 200, body: "{}", headers: { "Content-Type" => "application/json" } }
+    end
   end
 end

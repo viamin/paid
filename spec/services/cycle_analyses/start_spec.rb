@@ -52,6 +52,24 @@ RSpec.describe CycleAnalyses::Start do
     expect(result.agent_run).to eq(completed)
   end
 
+  # @spec AUTO-PICK-QUEUE-019
+  it "requeues a pending synchronization run for confirmation without creating another run" do
+    user = create(:user)
+    create(:runner, user:, enabled_for_agent_runs: true)
+    cycle = cycle_for(user)
+    pending = create(:agent_run, :completed, project: cycle.project, initiating_user: user,
+      goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) },
+      verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "pending_sync" } } })
+
+    result = nil
+    expect { result = described_class.call(cycle:, actor: user) }.not_to change(AgentRun, :count)
+
+    expect(result).to be_success
+    expect(result.agent_run).to eq(pending)
+    expect(pending.reload).to have_attributes(status: "queued", completed_at: nil)
+  end
+
   # @spec AUTO-PICK-QUEUE-016
   it "permits a new analysis after the graph occurrence changes" do
     user = create(:user)

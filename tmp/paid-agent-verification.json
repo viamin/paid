@@ -17,11 +17,11 @@
             "result": "Reproduction command for the admitted-comment repair path: connects as the same non-privileged paid_mutation role. The rerun completed all 192 generated mutations with no surviving mutations."
           },
           {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb:22-75",
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:22",
             "result": "Permanent regression coverage exercises trusted-comment repair and trusted-client writes."
           },
           {
-            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb:15-83",
+            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb:15",
             "result": "Permanent regression coverage exercises trusted, Paid-originated, untrusted, and missing-identity mutation decisions."
           }
         ]
@@ -31,31 +31,31 @@
       "id": "AC-2",
       "status": "passed",
       "verification": {
-        "kind": "human_or_external_evidence",
+        "kind": "unit_or_service_test",
         "references": [
           {
             "locator": "bundle install; yarn install",
-            "result": "Dependencies installed; bundle check reports the Gemfile dependencies are satisfied"
+            "result": "Dependencies installed; bundle check reports the Gemfile dependencies are satisfied."
           },
           {
             "locator": "bin/lint",
-            "result": "All configured lint checks passed"
+            "result": "All configured lint checks passed."
           },
           {
             "locator": "bin/coherence-check.mjs",
-            "result": "Completed with pre-existing repository-wide orphan, coverage, and staleness gaps; all arrow references remain valid"
+            "result": "Completed with pre-existing repository-wide orphan, coverage, and staleness gaps; all arrow references remain valid."
           },
           {
-            "locator": "spec/services/database/runtime_role_guard_spec.rb:22-37",
-            "result": "Focused role-guard coverage passes for safe roles and rejects SUPERUSER and BYPASSRLS roles"
+            "locator": "spec/services/database/runtime_role_guard_spec.rb:22",
+            "result": "Focused role-guard coverage passes for safe roles and rejects SUPERUSER and BYPASSRLS roles."
           },
           {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb and spec/services/database/runtime_role_guard_spec.rb",
-            "result": "18 focused examples passed with 0 failures"
+            "locator": "spec/services/cycle_analyses/repair_spec.rb spec/services/database/runtime_role_guard_spec.rb",
+            "result": "22 focused examples passed with 0 failures."
           },
           {
             "locator": "spec/services/issues/enforce_mutation_trust_spec.rb",
-            "result": "4 focused examples passed with 0 failures (22 focused examples passed with 0 failures across all three referenced specs)"
+            "result": "4 focused examples passed with 0 failures (22 focused examples passed with 0 failures across all three referenced specs)."
           }
         ]
       }

@@ -1040,6 +1040,7 @@ module Activities
       adjacency = IssueDependency.account_adjacency(project.account)
       parent_child_changed = false
       dependency_changed = false
+      parsed_issue_numbers = []
 
       # Batch-fetch comments for all candidate issues in one GraphQL request
       # instead of N separate REST calls.
@@ -1080,6 +1081,7 @@ module Activities
         )
 
         stamp_relationships_parsed(issue, parsed_before)
+        parsed_issue_numbers << issue.github_number
       rescue GithubClient::RateLimitError
         # Always re-raise reactive rate-limit errors.
         raise
@@ -1100,6 +1102,7 @@ module Activities
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
       dependency_changed = resolve_external_dependencies(project, synced_numbers) || dependency_changed
       reconcile_dependency_cycles(project.account) if dependency_changed
+      CycleAnalyses::ConfirmPendingSync.call(project:, issue_numbers: parsed_issue_numbers)
       parent_child_changed || dependency_changed
     end
 

@@ -17,6 +17,12 @@ module CycleAnalyses
     def call
       AgentRun.transaction do
         lock_occurrence!
+        if (run = pending_sync_run)
+          resume_confirmation!(run)
+          CycleAnalysisJob.perform_later(run.id)
+          return Result.new(status: :queued, agent_run: run, message: "Cycle repair confirmation queued.")
+        end
+
         if duplicate_run
           return Result.new(status: :duplicate, agent_run: duplicate_run,
             message: "Cycle analysis already exists for this occurrence.")
@@ -41,6 +47,16 @@ module CycleAnalyses
     def duplicate_run
       @duplicate_run ||= cycle.project.agent_runs.for_cycle_analysis_occurrence(cycle.occurrence)
         .find_by(goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: %w[queued running completed])
+    end
+
+    def pending_sync_run
+      cycle.project.agent_runs.for_cycle_analysis_occurrence(cycle.occurrence)
+        .where(goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: "completed")
+        .find { |run| run.verification_result.dig(RESULT_KEY, "repair", "status") == "pending_sync" }
+    end
+
+    def resume_confirmation!(run)
+      run.update!(status: "queued", started_at: nil, completed_at: nil)
     end
 
     def create_run!
