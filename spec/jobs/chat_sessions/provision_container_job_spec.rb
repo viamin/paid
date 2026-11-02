@@ -240,12 +240,14 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
 
     it "limits provisioning to one job per account" do
       chat_session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
+      rules = described_class.good_job_concurrency_rules
+      expect(rules.size).to eq(1)
+      rule = rules.fetch(0)
+      job = described_class.new(chat_session_id: chat_session.id, account_id: account.id)
 
-      config = described_class.good_job_concurrency_config
-      expect(config[:total_limit]).to eq(1)
-      expect(config[:enqueue_limit]).to eq(1)
-      expect(described_class.new(chat_session_id: chat_session.id, account_id: account.id).good_job_concurrency_key)
-        .to eq(described_class.concurrency_key_for(account.id))
+      expect(rule.total_limit).to eq(1)
+      expect(rule.enqueue_limit).to eq(1)
+      expect(job.good_job_labels).to contain_exactly(described_class.concurrency_key_for(account.id))
     end
   end
 end

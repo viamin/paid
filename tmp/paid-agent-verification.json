@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Recipe 11 mutation validation runs under a dedicated PostgreSQL role without SUPERUSER or BYPASSRLS: Rails boots past Database::RuntimeRoleGuard and mutant completes fully killed over both trust-enforcement public entry points. The transient mutant result artifact and run log are not committed (tmp/* stays gitignored); durable evidence is the permanent regression coverage below plus one reproduction command for each production path.",
+  "summary": "The GoodJob 4.23 dependency update now uses labelled concurrency rules, and its regression specs assert the current public API rather than GoodJob's removed legacy concurrency configuration.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,20 +9,20 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "RAILS_ENV=test DATABASE_URL=postgres://paid_mutation@paid-svc-a3-s1-postgres:5432/agent_run_26239_attempt_0 bundle exec mutant run --use rspec --jobs 1 'Issues::EnforceMutationTrust#call' 'Issues::EnforceMutationTrust.call' (HEAD 234337e3b; role paid_mutation created with NOSUPERUSER NOBYPASSRLS)",
-            "result": "Reproduction command: connects as the non-privileged paid_mutation role so Database::RuntimeRoleGuard cannot reject boot. Rerunning at this head: 2 subjects, 44 mutations, 44 killed, 0 alive, 100.00% coverage."
+            "locator": "spec/jobs/account_health_check_sweep_job_spec.rb:27",
+            "result": "passed: static labelled single-flight rule retains total_limit=1 and enqueue_limit=1."
           },
           {
-            "locator": "RAILS_ENV=test DATABASE_URL=postgres://paid_mutation@paid-svc-a3-s1-postgres:5432/agent_run_26239_attempt_0 bundle exec mutant run --use rspec --jobs 4 'CycleAnalyses::Repair#call' 'CycleAnalyses::Repair.call' (role paid_mutation created with NOSUPERUSER NOBYPASSRLS)",
-            "result": "Reproduction command for the admitted-comment repair path: connects as the same non-privileged paid_mutation role. The rerun completed all 192 generated mutations with no surviving mutations."
+            "locator": "spec/jobs/issues/reenqueue_eligible_job_spec.rb:51",
+            "result": "passed: dynamic per-issue label retains enqueue_limit=1."
           },
           {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb:75",
-            "result": "Permanent regression coverage exercises trusted-comment repair and trusted-client writes."
+            "locator": "spec/jobs/chat_sessions/provision_container_job_spec.rb:241",
+            "result": "passed: dynamic per-account label retains total_limit=1 and enqueue_limit=1."
           },
           {
-            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb:15",
-            "result": "Permanent regression coverage exercises trusted, Paid-originated, untrusted, and missing-identity mutation decisions."
+            "locator": "spec/jobs/intent_conformance/review_job_spec.rb:181",
+            "result": "passed: dynamic per-project label retains total_limit=2 and enqueue_limit=8."
           }
         ]
       }
@@ -34,62 +34,16 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "bundle install; yarn install",
-            "result": "Dependencies installed; bundle check reports the Gemfile dependencies are satisfied."
-          },
-          {
-            "locator": "bin/lint",
-            "result": "All configured lint checks passed."
-          },
-          {
-            "locator": "bin/coherence-check.mjs",
-            "result": "Completed with pre-existing repository-wide orphan, coverage, and staleness gaps; all arrow references remain valid."
-          },
-          {
-            "locator": "spec/services/database/runtime_role_guard_spec.rb:22",
-            "result": "Focused role-guard coverage passes for safe roles and rejects SUPERUSER and BYPASSRLS roles."
-          },
-          {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb spec/services/database/runtime_role_guard_spec.rb spec/services/issues/enforce_mutation_trust_spec.rb",
-            "result": "24 focused examples passed with 0 failures at the merged head."
-          }
-        ]
-      }
-    },
-    {
-      "id": "AC-3",
-      "status": "passed",
-      "verification": {
-        "kind": "unit_or_service_test",
-        "references": [
-          {
-            "locator": "BUNDLE_FROZEN=true bundle install",
-            "result": "passed: 73 dependencies and 253 gems installed."
-          },
-          {
-            "locator": "spec/config spec/lib/avo spec/controllers/avo/application_controller_spec.rb",
-            "result": "passed: 297 examples, 0 failures."
-          }
-        ]
-      }
-    },
-    {
-      "id": "AC-4",
-      "status": "passed",
-      "verification": {
-        "kind": "unit_or_service_test",
-        "references": [
-          {
             "locator": "spec/config/good_job_configuration_spec.rb:117",
-            "result": "passed: 14 examples, 0 failures; every concurrent job uses a labelled GoodJob rule, and static and dynamic labels resolve as expected."
+            "result": "passed: every concurrent job uses a labelled GoodJob rule."
           },
           {
             "locator": "RAILS_ENV=test bin/rails runner 'Rails.application.eager_load!'",
-            "result": "passed: eager_load_ok with GoodJob 4.23.1 and no legacy concurrency-macro deprecation output."
+            "result": "passed: eager_load_ok with GoodJob 4.23.1."
           },
           {
-            "locator": "bin/lint",
-            "result": "passed: all lint checks passed."
+            "locator": "bin/lint; bin/coherence-check.mjs",
+            "result": "passed: lint passed; coherence completed with only pre-existing repository-wide gaps."
           }
         ]
       }

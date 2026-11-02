@@ -178,9 +178,14 @@ RSpec.describe IntentConformance::ReviewJob do
     )
   end
 
-  it "uses a bounded per-project concurrency key" do
-    expect(described_class.good_job_concurrency_config).to include(total_limit: 2, enqueue_limit: 8)
-    expect(described_class.new(project.id, schedule.id).good_job_concurrency_key)
-      .to eq("intent_conformance_review_project_#{project.id}")
+  it "uses a bounded per-project concurrency label" do
+    rules = described_class.good_job_concurrency_rules
+    expect(rules.size).to eq(1)
+    rule = rules.fetch(0)
+    job = described_class.new(project.id, schedule.id)
+
+    expect(rule.total_limit).to eq(2)
+    expect(rule.enqueue_limit).to eq(8)
+    expect(job.good_job_labels).to contain_exactly("intent_conformance_review_project_#{project.id}")
   end
 end

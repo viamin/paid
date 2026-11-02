@@ -50,10 +50,13 @@ RSpec.describe Issues::ReenqueueEligibleJob do
   describe "GoodJob concurrency" do
     it "deduplicates re-enqueue work per issue" do
       issue = build(:issue)
-      config = described_class.good_job_concurrency_config
+      rules = described_class.good_job_concurrency_rules
+      expect(rules.size).to eq(1)
+      rule = rules.fetch(0)
+      job = described_class.new(issue.id)
 
-      expect(config[:enqueue_limit]).to eq(1)
-      expect(described_class.new(issue.id).good_job_concurrency_key).to eq("reenqueue_eligible_issue_#{issue.id}")
+      expect(rule.enqueue_limit).to eq(1)
+      expect(job.good_job_labels).to contain_exactly("reenqueue_eligible_issue_#{issue.id}")
     end
   end
 

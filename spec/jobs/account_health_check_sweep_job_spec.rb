@@ -24,14 +24,17 @@ RSpec.describe AccountHealthCheckSweepJob do
   end
 
   describe "GoodJob concurrency" do
-    it "runs on the maintenance queue with a single-flight concurrency key" do
-      config = described_class.good_job_concurrency_config
+    it "runs on the maintenance queue with a single-flight concurrency label" do
+      rules = described_class.good_job_concurrency_rules
+      expect(rules.size).to eq(1)
+      rule = rules.fetch(0)
+      job = described_class.new
 
       expect(described_class.queue_name).to eq("maintenance")
-      expect(config[:total_limit]).to eq(1)
-      expect(config[:enqueue_limit]).to eq(1)
-      expect(config[:key]).to eq("account_health_sweep")
-      expect(described_class.new.good_job_concurrency_key).to eq("account_health_sweep")
+      expect(rule.total_limit).to eq(1)
+      expect(rule.enqueue_limit).to eq(1)
+      expect(rule.label).to eq("account_health_sweep")
+      expect(job.good_job_labels).to contain_exactly("account_health_sweep")
     end
   end
 
