@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Recipe 11 mutation validation runs under a dedicated PostgreSQL role without SUPERUSER or BYPASSRLS: Rails boots past Database::RuntimeRoleGuard and mutant completes fully killed over the trust-enforcement public entry points. The transient mutant result artifact and run log are not committed (tmp/* stays gitignored); durable evidence is the permanent regression coverage below plus the reproduction command, which any reviewer can rerun to regenerate the same result.",
+  "summary": "Recipe 11 mutation validation runs under a dedicated PostgreSQL role without SUPERUSER or BYPASSRLS: Rails boots past Database::RuntimeRoleGuard and mutant completes fully killed over both trust-enforcement public entry points. The transient mutant result artifact and run log are not committed (tmp/* stays gitignored); durable evidence is the permanent regression coverage below plus one reproduction command for each production path.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -11,6 +11,10 @@
           {
             "locator": "RAILS_ENV=test DATABASE_URL=postgres://paid_mutation@paid-svc-a3-s1-postgres:5432/agent_run_26239_attempt_0 bundle exec mutant run --use rspec --jobs 1 'Issues::EnforceMutationTrust#call' 'Issues::EnforceMutationTrust.call' (HEAD 234337e3b; role paid_mutation created with NOSUPERUSER NOBYPASSRLS)",
             "result": "Reproduction command: connects as the non-privileged paid_mutation role so Database::RuntimeRoleGuard cannot reject boot. Rerunning at this head: 2 subjects, 44 mutations, 44 killed, 0 alive, 100.00% coverage."
+          },
+          {
+            "locator": "RAILS_ENV=test DATABASE_URL=postgres://paid_mutation@paid-svc-a3-s1-postgres:5432/agent_run_26239_attempt_0 bundle exec mutant run --use rspec --jobs 4 'CycleAnalyses::Repair#call' 'CycleAnalyses::Repair.call' (role paid_mutation created with NOSUPERUSER NOBYPASSRLS)",
+            "result": "Reproduction command for the admitted-comment repair path: connects as the same non-privileged paid_mutation role. The rerun completed all 192 generated mutations with no surviving mutations."
           },
           {
             "locator": "spec/services/cycle_analyses/repair_spec.rb:22-75",
@@ -47,11 +51,11 @@
           },
           {
             "locator": "spec/services/cycle_analyses/repair_spec.rb and spec/services/database/runtime_role_guard_spec.rb",
-            "result": "17 focused examples passed with 0 failures"
+            "result": "18 focused examples passed with 0 failures"
           },
           {
             "locator": "spec/services/issues/enforce_mutation_trust_spec.rb",
-            "result": "4 focused examples passed with 0 failures"
+            "result": "4 focused examples passed with 0 failures (22 focused examples passed with 0 failures across all three referenced specs)"
           }
         ]
       }

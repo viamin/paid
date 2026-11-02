@@ -94,6 +94,17 @@ RSpec.describe CycleAnalyses::Repair do
   end
 
   # @spec AUTO-PICK-QUEUE-021
+  it "does not write when the agent run has not completed successfully" do
+    run.update!(status: "failed")
+
+    expect(client).not_to receive(:update_issue)
+    result = described_class.call(agent_run: run, candidate: recommendation_for(run), actor: user)
+
+    expect(result).to have_attributes(status: :needs_operator_action,
+      message: "Only a completed cycle analysis can be repaired.")
+  end
+
+  # @spec AUTO-PICK-QUEUE-021
   it "does not write when the persisted cycle is stale" do
     run.external_metadata[CycleAnalyses::METADATA_KEY]["occurrence"] = "state:old"
     run.save!
