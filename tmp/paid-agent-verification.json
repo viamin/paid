@@ -55,6 +55,23 @@
           }
         ]
       }
+    },
+    {
+      "id": "AC-3",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "BUNDLE_FROZEN=true bundle install",
+            "result": "passed: 73 dependencies and 253 gems installed."
+          },
+          {
+            "locator": "spec/config spec/lib/avo spec/controllers/avo/application_controller_spec.rb",
+            "result": "passed: 297 examples, 0 failures."
+          }
+        ]
+      }
     }
   ]
 }
