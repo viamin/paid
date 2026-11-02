@@ -8,8 +8,9 @@ module IntentConformance
 
     queue_as :low_priority
     self.perform_timeout = 2.minutes
-    good_job_control_concurrency_with(total_limit: 2, enqueue_limit: 8,
-      key: -> { self.class.concurrency_key_for(arguments.first) })
+    self.good_job_labels = [ -> { self.class.concurrency_key_for(arguments.first) } ]
+    good_job_concurrency_rule(total_limit: 2, enqueue_limit: 8,
+      label: -> { self.class.concurrency_key_for(arguments.first) })
     retry_on TransientReviewError, wait: :polynomially_longer, attempts: 3 do |job, error|
       job.on_retries_exhausted(error)
     end

@@ -7,7 +7,8 @@ class DependencyCycleReconciliationJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(total_limit: 1, enqueue_limit: 1, key: "dependency_cycle_reconciliation")
+  self.good_job_labels = [ "dependency_cycle_reconciliation" ]
+  good_job_concurrency_rule(total_limit: 1, enqueue_limit: 1, label: "dependency_cycle_reconciliation")
 
   def perform # @spec AUTO-PICK-QUEUE-014
     Account.find_each do |account|

@@ -20,10 +20,11 @@ module Runners
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { "runners_recover_parked_runs/#{arguments.first}" } ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { "runners_recover_parked_runs/#{arguments.first}" }
+      label: -> { "runners_recover_parked_runs/#{arguments.first}" }
     )
 
     def self.parked_runs_for(user)

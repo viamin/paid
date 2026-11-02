@@ -8,10 +8,11 @@ module ChatSessions
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ "chat_sessions_idle_reaper" ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: "chat_sessions_idle_reaper"
+      label: "chat_sessions_idle_reaper"
     )
 
     def perform

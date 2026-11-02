@@ -5,10 +5,11 @@ class ExecutionResourceReconciliationJob < ApplicationJob # @spec CONTAINER-RUNT
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "execution_resource_reconciliation" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "execution_resource_reconciliation"
+    label: "execution_resource_reconciliation"
   )
 
   # @spec CONTAINER-RUNTIME-036

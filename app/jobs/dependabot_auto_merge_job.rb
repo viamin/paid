@@ -17,10 +17,11 @@ class DependabotAutoMergeJob < ApplicationJob
 
   queue_as :default
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ -> { "dependabot-auto-merge-#{arguments.first}-#{arguments.second&.fetch(:pr_number, nil)}" } ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: -> { "dependabot-auto-merge-#{arguments.first}-#{arguments.second&.fetch(:pr_number, nil)}" }
+    label: -> { "dependabot-auto-merge-#{arguments.first}-#{arguments.second&.fetch(:pr_number, nil)}" }
   )
 
   DEPENDABOT_AUTHORS = %w[dependabot[bot] dependabot-preview[bot]].freeze

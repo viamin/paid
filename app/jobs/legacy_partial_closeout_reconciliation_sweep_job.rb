@@ -18,13 +18,14 @@ class LegacyPartialCloseoutReconciliationSweepJob < ApplicationJob
   # while the other caller finishes.
   LOCK_CONTENTION_RETRY_DELAY = 5.minutes
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "legacy_partial_closeout_reconciliation_sweep" ]
+  good_job_concurrency_rule(
     # A full batch enqueues its cursor continuation while it is still
     # performing. Keep that queued continuation separate from the single
     # performing job; total_limit would count the current job at enqueue time.
     enqueue_limit: 2,
     perform_limit: 1,
-    key: "legacy_partial_closeout_reconciliation_sweep"
+    label: "legacy_partial_closeout_reconciliation_sweep"
   )
 
   def perform(account_id: nil, after_id: nil, after_account_id: nil)

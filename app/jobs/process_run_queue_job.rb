@@ -9,10 +9,11 @@ class ProcessRunQueueJob < ApplicationJob
 
   queue_as :default
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "process_run_queue" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "process_run_queue"
+    label: "process_run_queue"
   )
 
   # Advisory lock key derived from class name to avoid collisions with other locks.

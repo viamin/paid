@@ -21,9 +21,10 @@ class RetryFailedManualRunJob < ApplicationJob
   RETRY_BASE_DELAY = 30.seconds
   RETRY_MAX_DELAY = 5.minutes
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ -> { "retry_failed_manual_run_#{arguments.first}" } ]
+  good_job_concurrency_rule(
     enqueue_limit: 1,
-    key: -> { "retry_failed_manual_run_#{arguments.first}" }
+    label: -> { "retry_failed_manual_run_#{arguments.first}" }
   )
 
   def self.retry_delay(attempt)

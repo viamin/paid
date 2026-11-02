@@ -22,7 +22,8 @@ class CoordinationPolicyEvolutionJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(total_limit: 1)
+  self.good_job_labels = [ name ]
+  good_job_concurrency_rule(total_limit: 1, label: name)
 
   # Policy types to evolve in each weekly run.
   POLICY_TYPES = CoordinationPolicyEvolution::PrepareInputs::SUPPORTED_POLICY_TYPES.freeze

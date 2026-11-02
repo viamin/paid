@@ -34,9 +34,10 @@ module Issues
     # A repeated inline failure while a retry for the same issue is already
     # pending is discarded; the pending retry re-runs the same idempotent
     # label diff.
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { "issues_sync_priority_labels_to_pull_request_#{arguments.first}" } ]
+    good_job_concurrency_rule(
       enqueue_limit: 1,
-      key: -> { "issues_sync_priority_labels_to_pull_request_#{arguments.first}" }
+      label: -> { "issues_sync_priority_labels_to_pull_request_#{arguments.first}" }
     )
 
     def notification_project_id

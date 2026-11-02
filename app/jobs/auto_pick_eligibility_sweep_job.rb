@@ -20,10 +20,11 @@ class AutoPickEligibilitySweepJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "auto_pick_eligibility_sweep" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "auto_pick_eligibility_sweep"
+    label: "auto_pick_eligibility_sweep"
   )
 
   def perform

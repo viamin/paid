@@ -13,10 +13,11 @@ module ChatTurns
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ "chat_turns_stall_detector" ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: "chat_turns_stall_detector"
+      label: "chat_turns_stall_detector"
     )
 
     STALL_THRESHOLD = ->() { ENV.fetch("CHAT_TURN_STALL_THRESHOLD_SECONDS", 180).to_i.seconds }

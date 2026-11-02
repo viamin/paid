@@ -21,10 +21,11 @@ module FeatureIntents
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { "design_artifact_reconciliation_#{arguments.first}_#{arguments.second}" } ]
+    good_job_concurrency_rule(
       enqueue_limit: 1,
       perform_limit: 1,
-      key: -> { "design_artifact_reconciliation_#{arguments.first}_#{arguments.second}" }
+      label: -> { "design_artifact_reconciliation_#{arguments.first}_#{arguments.second}" }
     )
 
     discard_on ActiveRecord::RecordNotFound

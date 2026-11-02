@@ -12,8 +12,9 @@ class ShadowEvaluationExecutionJob < ApplicationJob
   queue_as :shadow_evaluation
   self.enqueue_after_transaction_commit = false
   self.perform_timeout = IntentConformanceShadowEvaluation::EXECUTION_TIMEOUT
-  good_job_control_concurrency_with(total_limit: 1,
-    key: -> { "shadow_evaluation_#{arguments.second}" })
+  self.good_job_labels = [ -> { "shadow_evaluation_#{arguments.second}" } ]
+  good_job_concurrency_rule(total_limit: 1,
+    label: -> { "shadow_evaluation_#{arguments.second}" })
   retry_on StandardError, wait: :polynomially_longer, attempts: 3 do |job, error|
     job.mark_interrupted(error)
     terminal_error = error.is_a?(ReportCompilationError) ? error.cause : error

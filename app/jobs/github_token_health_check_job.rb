@@ -13,10 +13,11 @@ class GithubTokenHealthCheckJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "github_token_health_check" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "github_token_health_check"
+    label: "github_token_health_check"
   )
 
   RECENTLY_VALIDATED_THRESHOLD = 24.hours

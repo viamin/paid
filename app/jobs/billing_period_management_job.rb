@@ -6,10 +6,11 @@ class BillingPeriodManagementJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "billing_period_management" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "billing_period_management"
+    label: "billing_period_management"
   )
 
   def perform

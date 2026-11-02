@@ -18,10 +18,11 @@ module Runners
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { "runners_refresh_quota_snapshots" } ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { "runners_refresh_quota_snapshots" }
+      label: -> { "runners_refresh_quota_snapshots" }
     )
 
     def perform

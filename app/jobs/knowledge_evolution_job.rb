@@ -10,7 +10,8 @@ class KnowledgeEvolutionJob < ApplicationJob
 
   queue_as :knowledge
 
-  good_job_control_concurrency_with(total_limit: 1)
+  self.good_job_labels = [ name ]
+  good_job_concurrency_rule(total_limit: 1, label: name)
 
   # Minimum completed enhance_issue runs in the lookback window
   MIN_ENHANCE_RUNS = 5

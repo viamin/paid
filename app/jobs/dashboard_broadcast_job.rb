@@ -10,10 +10,11 @@ class DashboardBroadcastJob < ApplicationJob
 
   # Coalesce rapid-fire broadcasts for the same account. Only one broadcast
   # per account needs to run at a time; newer enqueues replace stale ones.
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ -> { "dashboard_broadcast_#{arguments.first}" } ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: -> { "dashboard_broadcast_#{arguments.first}" }
+    label: -> { "dashboard_broadcast_#{arguments.first}" }
   )
 
   def perform(account_id)

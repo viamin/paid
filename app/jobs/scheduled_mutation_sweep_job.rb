@@ -6,7 +6,8 @@ class ScheduledMutationSweepJob < ApplicationJob
 
   queue_as :metrics
 
-  good_job_control_concurrency_with(total_limit: 1)
+  self.good_job_labels = [ name ]
+  good_job_concurrency_rule(total_limit: 1, label: name)
 
   def perform(project_id: nil, sweep_date: Date.current.iso8601, attempted_project_ids: [])
     @sweep_date = Date.iso8601(sweep_date)

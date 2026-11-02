@@ -9,10 +9,11 @@ class AutoPickQueueBackfillJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "auto_pick_queue_backfill" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "auto_pick_queue_backfill"
+    label: "auto_pick_queue_backfill"
   )
 
   CACHE_NAMESPACE = "auto_pick_queue_backfill/v1"

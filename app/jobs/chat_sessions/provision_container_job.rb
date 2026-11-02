@@ -25,10 +25,11 @@ module ChatSessions
     # it so a stuck provision fails loudly instead of pinning a worker thread.
     self.perform_timeout = 5.minutes
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { self.class.concurrency_key_for(arguments.first[:account_id]) } ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { self.class.concurrency_key_for(arguments.first[:account_id]) }
+      label: -> { self.class.concurrency_key_for(arguments.first[:account_id]) }
     )
 
     discard_on ActiveRecord::RecordNotFound

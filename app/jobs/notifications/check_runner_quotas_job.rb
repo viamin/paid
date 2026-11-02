@@ -6,10 +6,11 @@ module Notifications
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ "notifications_check_runner_quotas" ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: "notifications_check_runner_quotas"
+      label: "notifications_check_runner_quotas"
     )
 
     def perform

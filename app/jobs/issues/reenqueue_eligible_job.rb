@@ -10,9 +10,10 @@ module Issues
     NO_RUNNER_RETRY_MAX_DELAY = 1.minute
     MAX_NO_RUNNER_RETRIES = 3
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { "reenqueue_eligible_issue_#{arguments.first}" } ]
+    good_job_concurrency_rule(
       enqueue_limit: 1,
-      key: -> { "reenqueue_eligible_issue_#{arguments.first}" }
+      label: -> { "reenqueue_eligible_issue_#{arguments.first}" }
     )
 
     def self.schedule_no_runner_retry(issue_id, no_runner_retry_count:)

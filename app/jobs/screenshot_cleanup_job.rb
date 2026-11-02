@@ -5,10 +5,11 @@ class ScreenshotCleanupJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "screenshot_cleanup" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "screenshot_cleanup"
+    label: "screenshot_cleanup"
   )
 
   # Deletes screenshots older than the configured retention period.

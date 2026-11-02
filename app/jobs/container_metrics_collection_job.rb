@@ -15,10 +15,11 @@ class ContainerMetricsCollectionJob < ApplicationJob
   COLLECTION_INTERVAL = 30.seconds
   MAX_BACKOFF_INTERVAL = 5.minutes
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ -> { "container_metrics_#{arguments.first}" } ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: -> { "container_metrics_#{arguments.first}" }
+    label: -> { "container_metrics_#{arguments.first}" }
   )
 
   def perform(agent_run_id, consecutive_failures: 0)

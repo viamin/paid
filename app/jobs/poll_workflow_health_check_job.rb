@@ -24,10 +24,11 @@ class PollWorkflowHealthCheckJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "poll_workflow_health_check" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "poll_workflow_health_check"
+    label: "poll_workflow_health_check"
   )
 
   def perform

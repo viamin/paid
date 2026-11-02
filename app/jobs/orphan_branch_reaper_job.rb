@@ -14,10 +14,11 @@ class OrphanBranchReaperJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "orphan_branch_reaper" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "orphan_branch_reaper"
+    label: "orphan_branch_reaper"
   )
 
   # How long after an AgentRun's last update before we consider its branch

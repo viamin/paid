@@ -11,10 +11,11 @@ module PreviewSessions
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ "preview_sessions_expire" ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: "preview_sessions_expire"
+      label: "preview_sessions_expire"
     )
 
     def perform

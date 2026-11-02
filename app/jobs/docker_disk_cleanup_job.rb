@@ -7,10 +7,11 @@ class DockerDiskCleanupJob < ApplicationJob
 
   self.perform_timeout = 20.minutes.to_i
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "docker_disk_cleanup" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "docker_disk_cleanup"
+    label: "docker_disk_cleanup"
   )
 
   # @spec DOCKER-DISK-CLEANUP-001 DOCKER-DISK-CLEANUP-002 DOCKER-DISK-CLEANUP-004

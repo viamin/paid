@@ -5,10 +5,11 @@ class TemporalPatchGuardSweepJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "temporal_patch_guard_sweep" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "temporal_patch_guard_sweep"
+    label: "temporal_patch_guard_sweep"
   )
 
   def perform

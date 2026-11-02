@@ -21,10 +21,11 @@ class RunCollectorsJob < ApplicationJob
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection
   # polls frequently and the prior job hasn't started yet.
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ -> { "run_collectors_#{arguments[0]}_#{arguments[1]}" } ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: -> { "run_collectors_#{arguments[0]}_#{arguments[1]}" }
+    label: -> { "run_collectors_#{arguments[0]}_#{arguments[1]}" }
   )
 
   def notification_project_id

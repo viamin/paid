@@ -113,6 +113,26 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
     end
   end
 
+  describe "job concurrency declarations" do
+    it "uses GoodJob's labelled concurrency rules" do # @spec RAILS-CONTROL-PLANE-009
+      job_sources = Rails.root.glob("app/jobs/**/*.rb")
+      legacy_declarations = job_sources.select do |path|
+        path.read.include?("good_job_control_concurrency_with")
+      end
+      unlabelled_rules = job_sources.select do |path|
+        source = path.read
+        source.include?("good_job_concurrency_rule") && !source.include?("self.good_job_labels")
+      end
+
+      aggregate_failures do
+        expect(legacy_declarations).to be_empty
+        expect(unlabelled_rules).to be_empty
+        expect(AccountHealthCheckSweepJob.new.good_job_labels).to contain_exactly("account_health_sweep")
+        expect(AutoReleaseEvaluationJob.new(42).good_job_labels).to contain_exactly("auto-release-42")
+      end
+    end
+  end
+
   describe "cron schedule" do
     let(:cron) { Rails.application.config.good_job.cron }
     let(:staggered_offsets) do

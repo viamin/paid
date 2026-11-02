@@ -5,10 +5,11 @@ class GithubTokenValidationJob < ApplicationJob
 
   queue_as :default
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ -> { "github_token_validation_#{arguments.first}" } ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: -> { "github_token_validation_#{arguments.first}" }
+    label: -> { "github_token_validation_#{arguments.first}" }
   )
 
   retry_on GithubClient::RateLimitError, wait: :polynomially_longer, attempts: 3

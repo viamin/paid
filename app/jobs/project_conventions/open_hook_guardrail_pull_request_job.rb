@@ -7,10 +7,11 @@ module ProjectConventions
     queue_as :default
     discard_on ActiveRecord::RecordNotFound
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { self.class.concurrency_key_for(arguments.second) } ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { self.class.concurrency_key_for(arguments.second) }
+      label: -> { self.class.concurrency_key_for(arguments.second) }
     )
 
     def self.concurrency_key_for(recommendation_id)

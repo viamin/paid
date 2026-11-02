@@ -15,10 +15,11 @@ module ChatSessions
       wait: 2.seconds,
       attempts: 10
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { self.class.concurrency_key_for(arguments.first[:account_id]) } ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { self.class.concurrency_key_for(arguments.first[:account_id]) }
+      label: -> { self.class.concurrency_key_for(arguments.first[:account_id]) }
     )
 
     def self.concurrency_key_for(account_id)

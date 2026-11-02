@@ -14,10 +14,11 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "recover_missing_pull_request_labels" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "recover_missing_pull_request_labels"
+    label: "recover_missing_pull_request_labels"
   )
 
   CANDIDATE_WINDOW = 30.days

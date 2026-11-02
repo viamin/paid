@@ -10,10 +10,11 @@ module PreviewSessions
     queue_as :low_priority
     self.perform_timeout = 10.minutes
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ -> { "preview_sessions_provision_#{arguments.first}" } ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { "preview_sessions_provision_#{arguments.first}" }
+      label: -> { "preview_sessions_provision_#{arguments.first}" }
     )
 
     discard_on ActiveRecord::RecordNotFound

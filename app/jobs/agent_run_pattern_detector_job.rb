@@ -6,10 +6,11 @@ class AgentRunPatternDetectorJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "agent_run_pattern_detector" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "agent_run_pattern_detector"
+    label: "agent_run_pattern_detector"
   )
 
   def perform

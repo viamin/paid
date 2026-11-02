@@ -10,10 +10,11 @@ class PoolReplenishmentJob < ApplicationJob
   # rather than pinning a worker thread (and the code reloader) forever.
   self.perform_timeout = 15.minutes.to_i
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ -> { "container_pool_replenishment_#{arguments.first || "all"}" } ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: -> { "container_pool_replenishment_#{arguments.first || "all"}" }
+    label: -> { "container_pool_replenishment_#{arguments.first || "all"}" }
   )
 
   def perform(project_id = nil)

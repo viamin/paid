@@ -9,10 +9,11 @@ class AppleVerificationRetryJob < ApplicationJob
 
   queue_as :maintenance
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "apple_verification_retry" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "apple_verification_retry"
+    label: "apple_verification_retry"
   )
 
   def perform

@@ -10,10 +10,11 @@ class PartialCloseoutAcceptanceAuditSweepJob < ApplicationJob
 
   MAX_PER_PROJECT = 3
 
-  good_job_control_concurrency_with(
+  self.good_job_labels = [ "partial_closeout_acceptance_audit_sweep" ]
+  good_job_concurrency_rule(
     total_limit: 1,
     enqueue_limit: 1,
-    key: "partial_closeout_acceptance_audit_sweep"
+    label: "partial_closeout_acceptance_audit_sweep"
   )
 
   def perform

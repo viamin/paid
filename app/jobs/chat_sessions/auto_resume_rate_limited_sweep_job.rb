@@ -15,10 +15,11 @@ module ChatSessions
 
     queue_as :maintenance
 
-    good_job_control_concurrency_with(
+    self.good_job_labels = [ "chat_sessions_auto_resume_rate_limited_sweep" ]
+    good_job_concurrency_rule(
       total_limit: 1,
       enqueue_limit: 1,
-      key: "chat_sessions_auto_resume_rate_limited_sweep"
+      label: "chat_sessions_auto_resume_rate_limited_sweep"
     )
 
     def perform
