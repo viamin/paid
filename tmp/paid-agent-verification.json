@@ -17,7 +17,7 @@
             "result": "Reproduction command for the admitted-comment repair path: connects as the same non-privileged paid_mutation role. The rerun completed all 192 generated mutations with no surviving mutations."
           },
           {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb:22",
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:75",
             "result": "Permanent regression coverage exercises trusted-comment repair and trusted-client writes."
           },
           {
@@ -50,12 +50,8 @@
             "result": "Focused role-guard coverage passes for safe roles and rejects SUPERUSER and BYPASSRLS roles."
           },
           {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb spec/services/database/runtime_role_guard_spec.rb",
-            "result": "22 focused examples passed with 0 failures."
-          },
-          {
-            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb",
-            "result": "4 focused examples passed with 0 failures (22 focused examples passed with 0 failures across all three referenced specs)."
+            "locator": "spec/services/cycle_analyses/repair_spec.rb spec/services/database/runtime_role_guard_spec.rb spec/services/issues/enforce_mutation_trust_spec.rb",
+            "result": "24 focused examples passed with 0 failures at the merged head."
           }
         ]
       }
