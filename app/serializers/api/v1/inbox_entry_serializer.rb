@@ -137,7 +137,7 @@ module Api
         result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {})
         { id: run.id, status: run.status, graph_revision: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "graph_revision"),
           stale: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") != cycle.occurrence,
-          recommendation: result["recommendation"], coverage: result["coverage"] }
+          recommendation: result["recommendation"], coverage: result["coverage"], repair: result["repair"] }
       end
 
       def dependency_cycle_edge_payload(edge, from, to, cycle)

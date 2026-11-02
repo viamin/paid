@@ -120,6 +120,17 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Start cycle analysis")
   end
 
+  # @spec AUTO-PICK-QUEUE-019
+  it "renders a pending synchronization repair as retryable" do
+    _issues, cycle, run = cycle_analysis_run
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "pending_sync" } } })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Repair: Pending sync", "Confirm cycle repair")
+  end
+
   # @spec AUTO-PICK-QUEUE-016
   it "renders a failed cycle analysis as retryable" do
     _issues, cycle, = cycle_analysis_run(status: "failed")
