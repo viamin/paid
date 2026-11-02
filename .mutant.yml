@@ -5,7 +5,7 @@ environment_variables:
   COVERAGE: "false"
   RAILS_ENV: test
 jobs: 4
-fail_fast: true
+fail_fast: false
 coverage_criteria:
   timeout: false
   process_abort: false
