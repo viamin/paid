@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Focused automatic dependency-cycle repair coverage passes, including a regression test for a trusted comment added between provenance-less source selection and write.",
+  "summary": "Dependency-cycle repair coverage includes Recipe 11 mutation validation (70/71 killed, one equivalent survivor, zero errors) and focused automatic-repair regression coverage, including trusted-comment write safety.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -8,10 +8,30 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:7", "result": "passed: uniquely matched live declaration was removed and reported pending_sync" },
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:106", "result": "passed: ambiguous or changed live declarations produced no GitHub write" },
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:140", "result": "passed (18 examples, 0 failures)" },
-          { "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:307", "result": "passed: missing project authority prevented the repair" }
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:23",
+            "result": "passed; rejects incomplete cycle-analysis runs"
+          },
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:33",
+            "result": "passed; rejects non-boolean acyclic candidates"
+          },
+          {
+            "locator": "spec/services/cycle_analyses/repair_spec.rb:75",
+            "result": "passed; repairs admitted trusted comments"
+          },
+          {
+            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb:5",
+            "result": "passed; trusted-write decisions covered"
+          },
+          {
+            "locator": "tmp/mutation-recipe-11.yml",
+            "result": "Recipe 11 result: 70/71 killed, 1 equivalent survivor, 0 errored; source_line corrected to 27 (app/services/cycle_analyses/repair.rb:27, the candidate[\"acyclic\"] == true guard) per paid-code-reviewer feedback"
+          },
+          {
+            "locator": "bundle exec rspec spec/services/cycle_analyses/repair_spec.rb",
+            "result": "passed; 12 examples, 0 failures"
+          }
         ]
       }
     },
@@ -23,7 +43,8 @@
         "references": [
           { "locator": "spec/services/cycle_analyses/confirm_spec.rb:7", "result": "passed: synchronization-confirmed graph removal resolved the repair" },
           { "locator": "spec/services/cycle_analyses/confirm_pending_sync_spec.rb:7", "result": "passed: synchronization requeued local confirmation without repeating the GitHub mutation" },
-          { "locator": "spec/jobs/cycle_analysis_job_spec.rb:24", "result": "passed: cancellation race retained pending_sync repair evidence" }
+           { "locator": "spec/jobs/cycle_analysis_job_spec.rb:24", "result": "passed: cancellation race retained pending_sync repair evidence" },
+           { "locator": "bundle exec rspec spec/services/cycle_analyses/automatic_repair_spec.rb spec/services/cycle_analyses/confirm_spec.rb spec/services/cycle_analyses/confirm_pending_sync_spec.rb", "result": "passed; 24 examples, 0 failures" }
         ]
       }
     },
