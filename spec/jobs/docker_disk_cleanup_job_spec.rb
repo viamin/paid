@@ -36,9 +36,11 @@ RSpec.describe DockerDiskCleanupJob do
     schedule = Rails.application.config.good_job.cron.fetch(:docker_disk_cleanup)
     expect(schedule).to include(cron: "17 4 * * * UTC", class: "DockerDiskCleanupJob", queue: "maintenance")
     expect(described_class.perform_timeout).to eq(20.minutes.to_i)
-    expect(described_class.good_job_concurrency_config).to include(
-      total_limit: 1, enqueue_limit: 1, key: "docker_disk_cleanup"
-    )
+    rule = described_class.good_job_concurrency_rules.sole
+    expect(rule.total_limit).to eq(1)
+    expect(rule.enqueue_limit).to eq(1)
+    expect(rule.label).to eq("docker_disk_cleanup")
+    expect(described_class.new.good_job_labels).to contain_exactly("docker_disk_cleanup")
   end
 
   # @spec DOCKER-DISK-CLEANUP-002 DOCKER-DISK-CLEANUP-004

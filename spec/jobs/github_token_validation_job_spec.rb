@@ -9,11 +9,12 @@ RSpec.describe GithubTokenValidationJob do
 
   describe "GoodJob concurrency" do
     it "serializes validation per GitHub token" do
-      config = described_class.good_job_concurrency_config
+      rule = described_class.good_job_concurrency_rules.sole
+      job = described_class.new(github_token.id)
 
-      expect(config[:total_limit]).to eq(1)
-      expect(config[:enqueue_limit]).to eq(1)
-      expect(described_class.new(github_token.id).good_job_concurrency_key).to eq("github_token_validation_#{github_token.id}")
+      expect(rule.total_limit).to eq(1)
+      expect(rule.enqueue_limit).to eq(1)
+      expect(job.good_job_labels).to contain_exactly("github_token_validation_#{github_token.id}")
     end
   end
 

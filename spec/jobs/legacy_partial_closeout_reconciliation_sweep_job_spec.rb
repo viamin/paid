@@ -13,12 +13,14 @@ RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
 
   describe "GoodJob concurrency" do
     it "runs on maintenance with one fleet-wide scheduler invocation" do
-      config = described_class.good_job_concurrency_config
+      rule = described_class.good_job_concurrency_rules.sole
 
       expect(described_class.queue_name).to eq("maintenance")
-      expect(config).to include(enqueue_limit: 2, perform_limit: 1)
-      expect(config).not_to have_key(:total_limit)
-      expect(config[:key]).to eq("legacy_partial_closeout_reconciliation_sweep")
+      expect(rule.enqueue_limit).to eq(2)
+      expect(rule.perform_limit).to eq(1)
+      expect(rule.total_limit).to be_nil
+      expect(rule.label).to eq("legacy_partial_closeout_reconciliation_sweep")
+      expect(described_class.new.good_job_labels).to contain_exactly("legacy_partial_closeout_reconciliation_sweep")
     end
   end
 

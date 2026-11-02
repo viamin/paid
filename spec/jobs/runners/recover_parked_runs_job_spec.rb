@@ -23,11 +23,12 @@ RSpec.describe Runners::RecoverParkedRunsJob do
 
   describe "GoodJob concurrency" do
     it "deduplicates recovery work per user" do
-      config = described_class.good_job_concurrency_config
+      rule = described_class.good_job_concurrency_rules.sole
+      job = described_class.new(user.id)
 
-      expect(config[:total_limit]).to eq(1)
-      expect(config[:enqueue_limit]).to eq(1)
-      expect(described_class.new(user.id).good_job_concurrency_key).to eq("runners_recover_parked_runs/#{user.id}")
+      expect(rule.total_limit).to eq(1)
+      expect(rule.enqueue_limit).to eq(1)
+      expect(job.good_job_labels).to contain_exactly("runners_recover_parked_runs/#{user.id}")
     end
   end
 

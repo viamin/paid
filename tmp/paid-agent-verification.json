@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "GoodJob 4.23 uses labelled concurrency rules throughout; the focused regression set (68 examples), repository lint, and coherence check completed successfully.",
+  "summary": "GoodJob 4.23 labeled-concurrency regression expectations pass; repository lint, coherence checking, and the complete single-shard RSpec suite passed.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,20 +9,20 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/jobs/account_health_check_sweep_job_spec.rb:27",
-            "result": "passed: static labelled single-flight rule retains total_limit=1 and enqueue_limit=1."
+            "locator": "spec/jobs/runners/recover_parked_runs_job_spec.rb:25",
+            "result": "passed: dynamic per-user label retains total_limit=1 and enqueue_limit=1."
           },
           {
-            "locator": "spec/jobs/issues/reenqueue_eligible_job_spec.rb:51",
-            "result": "passed: dynamic per-issue label retains enqueue_limit=1."
+            "locator": "spec/jobs/github_token_validation_job_spec.rb:11",
+            "result": "passed: dynamic per-token label retains total_limit=1 and enqueue_limit=1."
           },
           {
-            "locator": "spec/jobs/chat_sessions/provision_container_job_spec.rb:241",
-            "result": "passed: dynamic per-account label retains total_limit=1 and enqueue_limit=1."
+            "locator": "spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb:57",
+            "result": "passed: dynamic reconciliation label retains enqueue_limit=1 and perform_limit=1."
           },
           {
-            "locator": "spec/jobs/intent_conformance/review_job_spec.rb:181",
-            "result": "passed: dynamic per-project label retains total_limit=2 and enqueue_limit=8."
+            "locator": "spec/jobs/legacy_partial_closeout_reconciliation_sweep_job_spec.rb:15",
+            "result": "passed: fleet-wide label retains enqueue_limit=2 and perform_limit=1 without total_limit."
           }
         ]
       }
@@ -35,11 +35,11 @@
         "references": [
           {
             "locator": "spec/config/good_job_configuration_spec.rb:117",
-            "result": "passed in the 68-example focused regression run: legacy key-based declarations are absent and every concurrency rule has a label."
+            "result": "passed: legacy key-based declarations are absent and every concurrency rule has a label."
           },
           {
             "locator": "tmp/paid-agent-verification.json",
-            "result": "passed: bin/lint passed; bin/coherence-check.mjs completed with documented pre-existing repository-wide gaps only."
+            "result": "passed: bin/lint and bin/coherence-check.mjs completed; the complete RSPEC_SHARD_COUNT=1 bin/rspec-shard suite had zero failures."
           }
         ]
       }

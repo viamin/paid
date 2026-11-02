@@ -71,8 +71,12 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
 
       pending = GoodJob::Job.where(job_class: described_class.name, finished_at: nil).sole
       expect(pending.serialized_params.fetch("arguments")).to eq([ project.id ])
-      expect(described_class.good_job_concurrency_config).to include(enqueue_limit: 1, perform_limit: 1)
-      expect(described_class.good_job_concurrency_config).not_to have_key(:total_limit)
+      rule = described_class.good_job_concurrency_rules.sole
+      expect(rule.enqueue_limit).to eq(1)
+      expect(rule.perform_limit).to eq(1)
+      expect(rule.total_limit).to be_nil
+      expect(described_class.new(project.id).good_job_labels)
+        .to contain_exactly("design_artifact_reconciliation_#{project.id}_")
     end
 
     it "waits for synchronized evidence to commit before coalescing or enqueueing" do
