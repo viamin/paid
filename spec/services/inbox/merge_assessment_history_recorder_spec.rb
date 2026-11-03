@@ -59,6 +59,29 @@ RSpec.describe Inbox::MergeAssessmentHistoryRecorder do
     expect(InboxHistoryEvent.where(project:).count).to eq(1)
   end
 
+  # @spec OPERATOR-INBOX-025
+  it "refreshes a warm item timeline for new scanner evidence without evicting it on replay" do
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    entry = Inbox::Queue::Entry.new(id: "merge_approval:#{issue.id}", kind: "merge_approval", project:, issue:,
+      record: issue, waiting_since: Time.current, questions: [], tasks: [], summary_text: "Review",
+      title_text: issue.title, action_url: issue.github_url)
+
+    expect(Inbox::ActionHistory.call(entry:).events).to be_empty
+    described_class.call(issue:, previous_snapshot: nil, snapshot: stale,
+      scanned_at: Time.current, head_sha: "new-sha")
+    expect(Inbox::ActionHistory.call(entry:).events.map(&:action)).to include("Approval invalidated by newer revision")
+
+    cache_key = Inbox::ActionHistory.cache_key_for(account_id: project.account_id,
+      subject_key: "issue:#{project.id}:#{issue.github_number}")
+    expect(Rails.cache.exist?(cache_key)).to be(true)
+    described_class.call(issue:, previous_snapshot: nil, snapshot: stale,
+      scanned_at: Time.current, head_sha: "new-sha")
+    expect(Rails.cache.exist?(cache_key)).to be(true)
+  ensure
+    Rails.cache = original_cache
+  end
+
   # @spec OPERATOR-INBOX-022
   it "records every stale approval independently and deduplicates each replay" do
     stale_approvals = stale.dig("failed", 0, "approval_evidence", "stale_approvals")

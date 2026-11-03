@@ -49,10 +49,10 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
   end
 
   it "renders the desktop split-pane with the inline one-page answer form" do
-    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     sign_in_as(user)
-    visit inbox_path(
+    visit inbox_entry_path("clarifying_questions:#{issue.id}",
       project_id: project.id,
       kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
     )
@@ -172,10 +172,10 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
   end
 
   it "embeds an empty inbox_kind when the All tab is active so the submit preserves the mixed scope" do
-    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     sign_in_as(user)
-    visit inbox_path(project_id: project.id)
+    visit inbox_entry_path("clarifying_questions:#{issue.id}", project_id: project.id)
 
     form = page.find(%(form[action="#{project_issue_clarifying_questions_path(project, project.issues.first)}"]))
 

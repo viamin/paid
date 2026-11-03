@@ -63,6 +63,25 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     expect(page).to have_selector(selector, visible: visibility)
   end
 
+  # @spec OPERATOR-INBOX-025
+  it "loads a selected detail and its history after the list appears" do
+    visit inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    expect(page).to have_content("Alpha question")
+    expect(page).to have_selector("turbo-frame#inbox-detail")
+    expect(page).to have_selector("form[action='#{project_issue_clarifying_questions_path(project_a, project_a.issues.first)}']")
+    expect(page).to have_content("Action history")
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "keeps a clicked row selected when the initial detail request is in flight" do
+    visit inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+    within("#inbox-list") { click_link "Beta question" }
+
+    expect(page).to have_selector("turbo-frame#inbox-detail h2", text: "Beta question")
+    expect(page).to have_selector("turbo-frame#inbox-detail form[action='#{project_issue_clarifying_questions_path(project_b, project_b.issues.first)}']")
+  end
+
   it "keeps the project search applied when the selected type changes" do
     open_filters
     fill_in "Search projects", with: "beta"

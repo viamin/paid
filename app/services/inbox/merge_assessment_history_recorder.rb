@@ -56,12 +56,15 @@ module Inbox
     end
 
     def record(kind, action, actor, source, result, revision)
-      InboxHistoryEvent.find_or_create_by!(account: issue.project.account, project: issue.project,
-        subject_key: "issue:#{issue.project_id}:#{issue.github_number}",
+      subject_key = "issue:#{issue.project_id}:#{issue.github_number}"
+      event = InboxHistoryEvent.find_or_create_by!(account: issue.project.account, project: issue.project,
+        subject_key:,
         event_key: "merge-assessment:#{kind}:#{revision || snapshot_digest}") do |event|
         event.assign_attributes(occurred_at: scanned_at, actor_label: actor, source:, result:, revision:,
           evidence_url: issue.github_url, metadata: { action: })
       end
+      ActionHistory.invalidate_subject(account_id: issue.project.account_id, subject_key:) if event.previously_new_record?
+      event
     end
 
     def stale_approval?

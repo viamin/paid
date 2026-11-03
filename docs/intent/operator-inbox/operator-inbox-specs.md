@@ -464,7 +464,8 @@
   `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-003** — When the inbox renders on desktop, the system
-  SHALL show the queue list and the selected entry detail at the same time; on
+  SHALL show the queue list and selected detail at the same time once the
+  selected detail loads asynchronously; on
   mobile, the system SHALL support a master-detail flow where the member route
   opens the detail pane with a path back to the list. The two panes SHALL
   render through the shared
@@ -758,6 +759,21 @@
   request SHALL recheck entry visibility and lane membership and render an
   empty frame if the entry is no longer available.
   *Test:* `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-025** — When an operator opens the Inbox collection,
+  the system SHALL return the list and filters without constructing a
+  selected detail, then fetch the first detail asynchronously through an
+  eager Turbo Frame using the same filtered member route. Opening another row
+  SHALL replace any in-flight first-detail request. When a detail renders,
+  it SHALL return its local actions without waiting for action history; a
+  separate eager history request
+  SHALL recheck entry visibility and membership. Read-only history MAY use a
+  short-lived per-subject Rails cache; new Paid-owned history writes SHALL
+  invalidate that item's cache, while authorization and actionable state
+  SHALL always be read from current records.
+  *Test:* `spec/requests/inbox_spec.rb`,
+  `spec/services/inbox/action_history_spec.rb`,
+  `spec/services/inbox/merge_assessment_history_recorder_spec.rb`.
 
 - [x] **OPERATOR-INBOX-018** — When reconciliation leaves an actionable
   traceability finding after structural matching, the Inbox SHALL explain in

@@ -35,10 +35,13 @@ export default class extends Controller {
     this.syncPaneVisibility()
   }
 
+  // @spec OPERATOR-INBOX-025
   open(event) {
     // The route changes on selection now, but we still update the mobile
     // pane state and row highlight immediately so the click feels responsive
     // before the navigation completes.
+    const placeholder = this.detailSectionTarget.querySelector("[data-inbox-detail-placeholder]")
+    if (placeholder) placeholder.textContent = "Loading item…"
     this.highlightRow(event.currentTarget)
     this.detailOpenValue = true
   }
