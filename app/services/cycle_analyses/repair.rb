@@ -197,7 +197,9 @@ module CycleAnalyses
 
     def graph_matches?(body, comments:, edge:, issue:, replacement: nil)
       comments = replaced_comments(comments, replacement)
-      local_refs, cross_refs = Issues::ParseDependencies.extract(body: body, comments: comments)
+      local_refs, cross_refs = Issues::ParseDependencies.extract(
+        body: body, comments: comments, current_issue_number: issue.github_number
+      )
       target = Issue.find(edge.fetch("to_issue_id"))
       return false if reference_present?(local_refs, cross_refs, issue:, target:)
 

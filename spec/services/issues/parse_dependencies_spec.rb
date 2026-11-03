@@ -29,6 +29,111 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to contain_exactly(dep)
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "ignores a quoted declaration while retaining an actual inline dependency" do
+      create(:issue, project: project, github_number: 9051)
+      actual = create(:issue, project: project, github_number: 9052)
+      issue = create(:issue, project: project,
+        body: "The old issue says `Depends on #9051` as an example. This issue depends on #9052.")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to contain_exactly(actual)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "does not treat another issue's prerequisites as its own" do
+      create(:issue, project: project, github_number: 9053)
+      actual = create(:issue, project: project, github_number: 9054)
+      issue = create(:issue, project: project,
+        body: "Issue #4635 depends on #9053. This issue depends on #9054.")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to contain_exactly(actual)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "accepts a declaration that explicitly names the current issue" do
+      dependency = create(:issue, project: project, github_number: 9060)
+      issue = create(:issue, project: project, github_number: 4824,
+        body: "Issue #4824 depends on #9060. Issue #4635 depends on #9061.")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to contain_exactly(dependency)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "ignores another issue being blocked in prose" do
+      create(:issue, project: project, github_number: 9058)
+      actual = create(:issue, project: project, github_number: 9059)
+      issue = create(:issue, project: project,
+        body: "Issue #4635 is blocked by #9058. This issue depends on #9059.")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to contain_exactly(actual)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "does not turn a cycle analysis example into the current issue's dependencies" do
+      body = <<~MARKDOWN
+        ## Required regression case
+
+        The cycle contains #4334 → #4635 → #4604 → #4334. Issue #4604 says
+        its validation must precede implementation, yet declares `Depends on #4334`.
+        Issue #4635 explicitly depends on #4604; issue #4334 declares `Depends on #4635`.
+      MARKDOWN
+
+      expect(described_class.extract(body:).first).to be_empty
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "keeps dependency examples masked until a real Markdown fence closes" do
+      body = <<~MARKDOWN
+        ```
+        Example ``` is not a closing fence
+        Depends on #9058
+        ```
+        Depends on #9059
+      MARKDOWN
+
+      expect(described_class.extract(body:).first.keys).to eq([ 9059 ])
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "ignores a quoted removal in a later comment" do
+      dependency = create(:issue, project: project, github_number: 9055)
+      issue = create(:issue, project: project, body: "Depends on #9055")
+
+      described_class.call(issue: issue, comments: [ "Example: `Remove dependency #9055`" ])
+
+      expect(issue.dependencies).to contain_exactly(dependency)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "does not apply another issue's removal to the current issue" do
+      dependency = create(:issue, project: project, github_number: 9057)
+      issue = create(:issue, project: project, body: "Depends on #9057")
+
+      described_class.call(issue: issue, comments: [ "Issue #4635 no longer depends on #9057." ])
+
+      expect(issue.dependencies).to contain_exactly(dependency)
+      expect(described_class.extract(body: "Issue #4635 no longer depends on #9057.").first).to be_empty
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "ignores another issue's deployment prerequisite" do
+      create(:issue, project: project, github_number: 9056)
+      issue = create(:issue, project: project,
+        body: "Issue #4635 awaits deployment of #9056 before closeout.")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to be_empty
+    end
+
     it "parses 'Depends on:' with colon" do
       dep = create(:issue, project: project, github_number: 9010)
       issue = create(:issue, project: project, body: "Depends on: #9010")

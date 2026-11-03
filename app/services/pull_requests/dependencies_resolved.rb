@@ -26,7 +26,8 @@ module PullRequests
     def call # @spec DEPENDENCY-DECLARATIONS-005
       local_deps, cross_deps = Issues::ParseDependencies.extract(
         body: @issue.body,
-        comments: @collector.dependency_comment_bodies(issue: @issue)
+        comments: @collector.dependency_comment_bodies(issue: @issue),
+        current_issue_number: @issue.github_number
       )
 
       return true if local_deps.empty? && cross_deps.empty?

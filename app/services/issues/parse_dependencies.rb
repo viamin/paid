@@ -127,8 +127,9 @@ module Issues
 
     attr_reader :issue, :adjacency, :comments, :body, :reconcile
 
-    def initialize(issue:, adjacency: nil, comments: [], body: nil, reconcile: true)
+    def initialize(issue:, adjacency: nil, comments: [], body: nil, reconcile: true, current_issue_number: nil)
       @issue = issue
+      @current_issue_number = current_issue_number || issue&.github_number
       @adjacency = adjacency
       @comments = comments || []
       @body = body || issue&.body
@@ -139,8 +140,8 @@ module Issues
       new(...).call
     end
 
-    def self.extract(body:, comments: [])
-      new(issue: nil, body: body, comments: comments).extract
+    def self.extract(body:, comments: [], current_issue_number: nil)
+      new(issue: nil, body: body, comments: comments, current_issue_number: current_issue_number).extract
     end
 
     def extract
@@ -280,7 +281,10 @@ module Issues
     # one-element arrays. Parenthesized destructuring |(refs_str)| extracts
     # the captured String directly — without it, refs_str would be an Array.
     def extract_removal_refs(text, local_numbers, cross_refs)
-      text.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
+      scratch = without_markdown_code(text)
+      scratch.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
+        next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+
         refs_str.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
           cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
         end
@@ -370,19 +374,78 @@ module Issues
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
     # Deployment-phrased matches are consumed first so the plain pattern does
     # not double-count them as non-deployment deps.
-    def extract_inline_refs(text, local_deps, cross_deps)
-      scratch = text.dup
+    def extract_inline_refs(text, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-009
+      scratch = without_markdown_code(text)
 
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       scratch.scan(INLINE_DEPLOYMENT_PATTERN) do |(refs_str)|
+        next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+
         extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
       end
       scratch = scratch.gsub(INLINE_DEPLOYMENT_PATTERN, "")
 
       scratch.scan(INLINE_DEPENDS_PATTERN) do |(refs_str)|
+        next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+
         extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: false)
       end
+    end
+
+    def describes_another_issue?(text, directive_start)
+      # Only the immediately preceding subject can own a directive. Limit the
+      # lookback so many directives in a long issue body stay linear to parse.
+      prefix = text[[ directive_start - 256, 0 ].max...directive_start]
+      clause = prefix[(prefix.rindex(/[.!?;\n]/) || -1) + 1..]
+      subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)\s+(?:(?:is|was|are|were|explicitly|currently|also|now|no longer)\s+)*\z/i)
+      subject && subject[1].to_i != @current_issue_number
+    end
+
+    def without_markdown_code(text)
+      visible = +""
+      each_markdown_line(text) do |line, in_fenced_code_block|
+        visible << if in_fenced_code_block || FENCED_CODE_BLOCK_PATTERN.match?(line)
+          line.gsub(/[^\r\n]/, " ")
+        else
+          line
+        end
+      end
+      mask_inline_code_spans(visible)
+    end
+
+    def mask_inline_code_spans(text)
+      runs = text.to_enum(:scan, /`+/).map do
+        match = Regexp.last_match
+        [ match.bytebegin(0), match.byteend(0), match[0].bytesize ]
+      end
+      return text if runs.empty?
+
+      next_same_length = Array.new(runs.length)
+      last_by_length = {}
+      (runs.length - 1).downto(0) do |index|
+        length = runs[index][2]
+        next_same_length[index] = last_by_length[length]
+        last_by_length[length] = index
+      end
+
+      result = String.new(encoding: text.encoding)
+      cursor = 0
+      index = 0
+      while index < runs.length
+        close_index = next_same_length[index]
+        if close_index
+          first = runs[index][0]
+          finish = runs[close_index][1]
+          result << text.byteslice(cursor...first)
+          result << text.byteslice(first...finish).gsub(/[^\r\n]/, " ")
+          cursor = finish
+          index = close_index + 1
+        else
+          index += 1
+        end
+      end
+      result << text.byteslice(cursor, text.bytesize - cursor)
     end
 
     # Extracts both cross-repo and local issue refs from a string of refs.

@@ -1,5 +1,8 @@
 CHANGELOG.md
 
+# Per-developer session memory, ignored by Git and outside project docs.
+WORKLOG.md
+
 # Vendored LID reference docs — byte-identical to upstream (jszmajda/lid),
 # so excluded from host style checks. Authored files in docs/lid/ (README.md,
 # workflow.md) stay linted. See docs/lid/README.md. Do not edit these here.
