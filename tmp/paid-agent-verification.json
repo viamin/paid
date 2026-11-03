@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Focused dependency parsing, PR dependency, and cycle-repair tests passed (148 examples, 0 failures); lint and LID coherence checks passed.",
+  "summary": "Fixed the failing CI shard by updating the phase-relevance request spec to the asynchronous Inbox detail contract (OPERATOR-INBOX-025): the collection response returns the list only, and the stop reason and recovery action arrive with the detail request the eager Turbo Frame loads. Shard 2 passed (6875 examples, 0 failures, 4 pre-existing pending) locally and again with CI=true eager loading; lint and LID coherence checks passed.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,12 +9,8 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:33",
-            "result": "passed: quoted declarations are ignored while a real directive is retained"
-          },
-          {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:45",
-            "result": "passed: another issue's prerequisite is not attributed to the current issue"
+            "locator": "spec/requests/inbox_phase_relevance_spec.rb:37",
+            "result": "passed: a phase-hidden request stays out of the default list, stays listed in the Disabled phases view, and shows its responsible phase and recovery action on the detail route the eager frame loads"
           }
         ]
       }
@@ -23,19 +19,23 @@
       "id": "AC-2",
       "status": "passed",
       "verification": {
-        "kind": "unit_or_service_test",
+        "kind": "permanent_system_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:67",
-            "result": "passed: an attributed declaration for the current issue is retained"
+            "locator": "spec/requests/inbox_spec.rb:921",
+            "result": "passed: the collection response returns an eager inbox-detail frame instead of the selected detail"
           },
           {
-            "locator": "spec/services/pull_requests/dependencies_resolved_spec.rb:58",
-            "result": "passed: PR dependency checks pass the current PR number to the parser"
+            "locator": "spec/requests/inbox_spec.rb:1023",
+            "result": "passed: the detail renders an eager history frame and the history route offers the cursor-backed continuation"
           },
           {
-            "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:24",
-            "result": "passed: cycle repair removes a declaration attributed to the source issue"
+            "locator": "spec/requests/inbox_spec.rb:1051",
+            "result": "passed: the history route returns an empty frame once the item leaves the inbox"
+          },
+          {
+            "locator": "spec/system/dashboard_inbox_spec.rb:51",
+            "result": "passed: the split pane still renders the selected detail on the member route"
           }
         ]
       }
@@ -47,12 +47,41 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:780",
-            "result": "passed: chained removals retain their established behavior"
+            "locator": "spec/services/inbox/action_history_spec.rb:149",
+            "result": "passed: a warm per-subject history projection serves the second read without repeating the timeline queries"
           },
           {
-            "locator": ".markdownlintignore:1",
-            "result": "passed: bin/lint completed with ignored local WORKLOG.md session notes"
+            "locator": "spec/services/inbox/action_history_spec.rb:165",
+            "result": "passed: a newly recorded Paid transition invalidates the warm item cache"
+          },
+          {
+            "locator": "spec/services/inbox/action_history_spec.rb:179",
+            "result": "passed: a replayed Paid transition keeps the warm item cache"
+          },
+          {
+            "locator": "spec/services/inbox/merge_assessment_history_recorder_spec.rb:63",
+            "result": "passed: new scanner evidence refreshes the warm item timeline while a replay does not evict it"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-4",
+      "status": "passed",
+      "verification": {
+        "kind": "human_or_external_evidence",
+        "references": [
+          {
+            "locator": "spec/requests/inbox_phase_relevance_spec.rb:37",
+            "result": "passed: RSPEC_SHARD_COUNT=4 RSPEC_SHARD_INDEX=2 bin/rspec-shard reported 6875 examples, 0 failures, 4 pre-existing pending"
+          },
+          {
+            "locator": "bin/lint",
+            "result": "passed: RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb all passed"
+          },
+          {
+            "locator": "bin/coherence-check.mjs",
+            "result": "passed: exit code 0 with only pre-existing repository drift reported"
           }
         ]
       }

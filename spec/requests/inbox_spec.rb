@@ -917,7 +917,8 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include(discard_project_change_intent_path(project, change_intent))
   end
 
-  it "selects the first entry on the collection route" do
+  # @spec OPERATOR-INBOX-025
+  it "returns the collection before fetching its first detail" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -925,10 +926,12 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     document = Nokogiri::HTML(response.body)
     frame = document.at_css("turbo-frame#inbox-detail")
-    form = frame.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, issue)}"]))
     master_detail = document.at_css("[data-controller~='inbox-master-detail']")
 
-    expect(form).to be_present
+    expect(frame["src"]).to eq(inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue),
+      project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
+    expect(frame["loading"]).to eq("eager")
+    expect(frame.at_css("form")).to be_nil
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("false")
   end
 
@@ -1016,7 +1019,7 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-action"]).to eq("advance")
   end
 
-  # @spec OPERATOR-INBOX-022
+  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
   it "offers a cursor-backed continuation when the selected detail has older history" do
     issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
     subject_key = "issue:#{project.id}:#{issue.github_number}"
@@ -1027,12 +1030,34 @@ RSpec.describe "Inbox" do
 
     get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
+    detail = Nokogiri::HTML(response.body)
+    history_frame = detail.at_css("turbo-frame#inbox-history")
+    expect(history_frame["src"]).to eq(inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)))
+    expect(history_frame["loading"]).to eq("eager")
+    expect(history_frame.at_css("ol")).to be_nil
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
     document = Nokogiri::HTML(response.body)
     link = document.at_css("a[data-testid='inbox-history-continuation']")
     expect(link).to be_present
     expect(link.text).to include("See older activity")
     expect(link["href"]).to include("history_cursor=history%3A")
-    expect(link["data-turbo-frame"]).to eq("inbox-detail")
+    expect(link["data-turbo-frame"]).to eq("inbox-history")
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "returns an empty history frame after the item leaves the inbox" do
+    issue = create(:issue, :needs_input, project:, body: questions_body)
+    issue.update!(github_state: "closed")
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    expect(response).to have_http_status(:ok)
+    expect(Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-history")).to be_present
+    expect(response.body).not_to include("Action history")
   end
 
   it "wires the shared independently scrollable shell panes to the inbox master-detail targets" do
@@ -1144,7 +1169,7 @@ RSpec.describe "Inbox" do
   it "embeds the active inbox-kind filter in the answer form so submit preserves the tab" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
-    get inbox_path
+    get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
     form = Nokogiri::HTML(response.body)
       .at_css(%(form[action="#{project_issue_clarifying_questions_path(project, issue)}"]))

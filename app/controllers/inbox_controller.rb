@@ -2,9 +2,9 @@
 
 class InboxController < ApplicationController
   before_action :authenticate_user!
-  before_action :load_inbox, only: %i[index show supplement]
+  before_action :load_inbox, only: %i[index show supplement history]
 
-  # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003
+  # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-025
   def index
     flash.keep if turbo_frame_request_id == "inbox-detail"
     @selected_entry = @inbox_entries.first
@@ -58,6 +58,11 @@ class InboxController < ApplicationController
 
   # @spec OPERATOR-INBOX-017
   def supplement
+    @selected_entry = resolve_selected_entry(@inbox_entries)
+  end
+
+  # @spec OPERATOR-INBOX-025
+  def history
     @selected_entry = resolve_selected_entry(@inbox_entries)
   end
 
@@ -145,7 +150,7 @@ class InboxController < ApplicationController
   # A request that renders exactly one entry: the turbo-frame detail pane and
   # the chat/supplement entry points.
   def single_entry_request?
-    detail_frame_request? || %w[open_chat supplement].include?(action_name)
+    detail_frame_request? || %w[open_chat supplement history].include?(action_name)
   end
 
   def selected_entry_queue

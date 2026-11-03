@@ -41,6 +41,8 @@ entries into one responsive page.
      [`list-detail-layout`](../list-detail-layout/list-detail-layout-design.md)
      shell (`grid gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]`, `22rem` list pane,
      shared pane chrome, shared empty state, shared active-row treatment)
+   - an asynchronously loaded first detail on the collection route, without
+     delaying the list response
    - a mobile master-detail flow where the member route opens the detail pane
    - a neutral `Waiting —` label when a legacy entry has no waiting timestamp
 4. Existing action endpoints stay as the mutation surface:
@@ -57,6 +59,18 @@ own route-based mobile flow (`OPERATOR-INBOX-003`) and its own
 shared pattern.
 
 ## Request cost
+
+The collection response renders the queue and filter controls before the
+selected detail loads through a separate eager Turbo Frame, so progress,
+actions, and history never hold up the first list response. The eager loading
+mode allows a row click to replace the in-flight first-detail request rather
+than race with it. A selected detail renders its local actions before a
+separate eager history frame loads. History requests
+recheck current entry visibility and may reuse a short-lived, per-subject
+Rails cache entry for the read-only timeline. Cached history can lag recent
+run or external events briefly; new Paid-owned history writes invalidate that
+item's cache. Actionable state, permissions, and entry membership are always
+checked against current records and are never served from that cache.
 
 Inbox detail-frame requests resolve only the requested entry through its
 lane's existing visibility and admission rules and render only `inbox-detail`.
