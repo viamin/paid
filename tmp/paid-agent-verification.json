@@ -9,6 +9,7 @@
         "kind": "unit_or_service_test",
         "references": [
           { "locator": "spec/requests/projects_spec.rb:624", "result": "passed" },
+          { "locator": "spec/services/projects/create_blank_spec.rb:107", "result": "passed" },
           { "locator": "spec/services/projects/create_blank_spec.rb:154", "result": "passed" },
           { "locator": "spec/requests/projects_spec.rb:2462", "result": "passed" }
         ]
