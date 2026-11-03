@@ -1,8 +1,10 @@
 # EARS Specs: Label Integration Mode
 
 - [x] **LABEL-INTEGRATION-001** — When a project is created without an
-  explicit label mode, it SHALL use its tenant's default; changing that default
-  SHALL NOT change existing projects.
+  explicit label mode, it SHALL start in `read_only` regardless of the
+  tenant-level default. An explicit mode remains selected, and changing a
+  tenant preference SHALL NOT change existing projects or silently opt a new
+  repository into GitHub label writes.
 
 - [x] **LABEL-INTEGRATION-002** — When a project's mode is `read_only` or
   `ignored`, Paid SHALL NOT create, update, add, remove, or replace a GitHub
@@ -75,6 +77,17 @@
   SHALL be safe. On return to `read_write`, standard-label provisioning SHALL
   restore the catalog; local state imported while ignored takes precedence over
   stale labels rather than being re-imported.
+
+- [x] **LABEL-INTEGRATION-009** — When an authorized operator confirms a
+  project-settings transition into `read_write`, Paid SHALL save the selected
+  mode and then provision the standard label catalog. A provisioning error
+  SHALL be visible with a retry through **Sync Labels to GitHub**; transitions
+  among `read_only` and `ignored`, project creation, and transitions away from
+  `read_write` SHALL NOT provision or delete repository label definitions.
+  *Code:* `ProjectsController#update`, `Project#apply_opt_in_label_integration_default`,
+  `Projects::CreateBlank#apply_post_create_defaults`.
+  *Test:* `spec/requests/projects_spec.rb`, `spec/services/projects/create_blank_spec.rb`,
+  `spec/models/tenant_setting_spec.rb`.
 
 - [x] **LABEL-CONTROL-008** — In `read_write` and `read_only` modes, effective
   inherited or project-configured skip labels SHALL hold automatic issue

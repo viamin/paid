@@ -23,8 +23,8 @@
   `HandleNoOutputIssueRunActivity#add_recommend_close_label`,
   `EnhanceIssueActivity#labels_added`) SHALL call
   `EnsureStandardLabels.call_best_effort` immediately before the label
-  write, so a repo that never went through the manual sync button or the
-  project-create bootstrap still gets the label created on first use
+  write, so a repo that never went through the manual sync button or an
+  explicit project-level opt-in still gets the label created on first use
   instead of silently 404ing.
   *Code:* `app/services/projects/ensure_standard_labels.rb#expected_labels`,
   `app/services/projects/ensure_standard_labels.rb#call_best_effort`,

@@ -116,9 +116,9 @@ canonical definition, `EnsureStandardLabels` calls the new
 `reconciled` (`{ name:, fields: [...] }`) instead of the old `divergent`
 bucket. A permission failure on the update is recorded in `errors` with the
 same actionable phrasing used for failed creates, so a caller checking
-`any_errors?` — the "Sync Labels" controller action already does, and the
-best-effort provisioning call at project creation logs it — never treats
-reconciliation failure as success.
+`any_errors?` — the "Sync Labels" controller action and the explicit
+project-settings opt-in both do — never treats reconciliation failure as
+success.
 
 ### Create failures are verified, not guessed
 
@@ -190,15 +190,14 @@ authoritative until the operator removes it.
 
 ### Provisioning trigger points
 
-Full-catalog provisioning happens at the two points it always has —
-automatically, best-effort, when a project is connected
-(`ProjectsController#ensure_labels_best_effort`, called from both project
-creation paths), and on demand via the "Sync Labels" action
-(`ProjectsController#ensure_labels`) — plus a per-write guard immediately
+Full-catalog provisioning happens when an operator explicitly opts a saved
+project into `read_write` label integration (`ProjectsController#update`) and
+on demand via the "Sync Labels" action (`ProjectsController#ensure_labels`) —
+plus a per-write guard immediately
 before every runtime call site that applies one of the four labels added to
 the catalog by this segment (`paid-ready`, `paid-auto-merged`,
 `paid-auto-merged-dependabot`, `paid-auto-released`). Without that guard, a
-repo that never went through project creation or a manual "Sync Labels"
+  repo that never went through an explicit opt-in or a manual "Sync Labels"
 click (e.g. one connected before this segment shipped) could still 404 the
 first time one of these labels was applied — the two bootstrap points are
 each best-effort and neither is guaranteed to have run. `EnsureStandardLabels`
@@ -257,8 +256,8 @@ before the full catalog existed.
 - `app/temporal/activities/mark_escalated_activity.rb` — fronts the
   `paid-escalated` transition with `EnsureStandardLabels` and aborts the local
   escalation only when a label this transition depends on failed to sync.
-- `app/controllers/projects_controller.rb` — `ensure_labels` (manual sync)
-  and `ensure_labels_best_effort` (project creation) call sites, unchanged.
+- `app/controllers/projects_controller.rb` — `ensure_labels` (manual retry)
+  and the confirmed `read_write` settings transition call site.
 - `app/temporal/activities/mark_pr_ready_activity.rb`,
   `app/temporal/activities/merge_pull_request_activity.rb`,
   `app/jobs/dependabot_auto_merge_job.rb`,

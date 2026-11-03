@@ -106,7 +106,7 @@
         <%= select_tag "tenant_setting[default_label_integration_mode]",
           options_for_select(TenantSetting::LABEL_INTEGRATION_MODES.map { |value| [value.humanize, value] }, @tenant_setting.default_label_integration_mode),
           class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Applied only to projects created after this setting changes.</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">New projects always start Read only. Each project must explicitly enable Read &amp; write before Paid can manage GitHub labels.</p>
       </div>
     </section>
 

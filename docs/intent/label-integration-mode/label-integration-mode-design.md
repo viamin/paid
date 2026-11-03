@@ -6,9 +6,11 @@
 ## Design
 
 Each project has `label_integration_mode`: `read_write`, `read_only`, or
-`ignored`. New projects inherit `TenantSetting#default_label_integration_mode`
-at creation, without changing existing projects when the tenant setting later
-changes. `read_write` is the default and preserves existing behavior.
+`ignored`. New projects start in `read_only`; only a confirmed project-settings
+transition to `read_write` authorizes Paid to provision its GitHub label
+catalog. A tenant-level default is not a per-repository authorization and
+cannot opt a new project into label writes. Existing projects retain their
+selected modes when this behavior is introduced.
 
 `Labels::WritePolicy` is the sole authority for GitHub label mutations. Project
 GitHub clients are decorated with its gate, and label provisioning checks it
@@ -45,7 +47,12 @@ page and the MCP tool registry (and thus chat) expose reversible actions for
 these local controls; manual run actions remain the activation surface.
 
 The project settings form and `update_project_settings` MCP write surface
-expose the setting; tenant configuration exposes the creation default.
+expose the setting. Saving a transition into `read_write` provisions the
+canonical catalog after the project setting is persisted. If provisioning
+returns errors or GitHub is unavailable, the saved setting remains visible with
+an actionable failure and the operator can retry through **Sync Labels to
+GitHub**. Read-only and ignored transitions do not provision labels; moving
+away from `read_write` never deletes repository label definitions.
 
 Entering `ignored` snapshots the existing paused and escalated control labels
 into their local fields. This is assignment-based and retry-safe, so a mode

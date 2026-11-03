@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_214000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_03_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3682,7 +3682,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_214000) do
     t.jsonb "interop_settings", default: {}, null: false, comment: "Project-level coexistence settings for gradual adoption, imports, connectors, and external execution sources."
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
-    t.string "label_integration_mode", default: "read_write", null: false, comment: "Whether Paid writes GitHub labels: read_write, read_only, or ignored."
+    t.string "label_integration_mode", default: "read_only", null: false, comment: "Whether Paid writes GitHub labels: read_write, read_only, or ignored."
     t.jsonb "label_mappings", default: {}, null: false
     t.jsonb "language_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile. Drives polyglot test/lint command routing (e.g. { \"languages\": [...], \"test_languages\": [...] }). Populated by detection (#3207) and optional .paid.yml manifest."
     t.datetime "last_agent_run_at"

@@ -4,11 +4,18 @@ require "rails_helper"
 
 RSpec.describe TenantSetting do
   describe "label integration defaults" do
-    it "applies the tenant default to newly created projects" do
+    it "does not let a write-enabled tenant default opt a new project into label writes" do # @spec LABEL-INTEGRATION-001
       account = create(:account)
-      account.tenant_setting!.update!(default_label_integration_mode: "read_only")
+      account.tenant_setting!.update!(default_label_integration_mode: "read_write")
 
-      expect(build(:project, account:).tap(&:valid?).label_integration_mode).to eq("read_only")
+      expect(Project.new(account:).tap(&:valid?).label_integration_mode).to eq("read_only")
+    end
+
+    it "preserves an explicit new-project label mode" do # @spec LABEL-INTEGRATION-001
+      account = create(:account)
+
+      expect(build(:project, account:, label_integration_mode: "read_write").tap(&:valid?).label_integration_mode)
+        .to eq("read_write")
     end
   end
 

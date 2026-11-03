@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Focused dependency parsing, PR dependency, and cycle-repair tests passed (148 examples, 0 failures); lint and LID coherence checks passed.",
+  "summary": "New projects remain read-only without GitHub label-definition writes; an explicit confirmed Read & write transition provisions labels and surfaces retryable failures.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -8,14 +8,9 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:33",
-            "result": "passed: quoted declarations are ignored while a real directive is retained"
-          },
-          {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:45",
-            "result": "passed: another issue's prerequisite is not attributed to the current issue"
-          }
+          { "locator": "spec/requests/projects_spec.rb:624", "result": "passed" },
+          { "locator": "spec/services/projects/create_blank_spec.rb:154", "result": "passed" },
+          { "locator": "spec/requests/projects_spec.rb:2462", "result": "passed" }
         ]
       }
     },
@@ -25,18 +20,10 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:67",
-            "result": "passed: an attributed declaration for the current issue is retained"
-          },
-          {
-            "locator": "spec/services/pull_requests/dependencies_resolved_spec.rb:58",
-            "result": "passed: PR dependency checks pass the current PR number to the parser"
-          },
-          {
-            "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:24",
-            "result": "passed: cycle repair removes a declaration attributed to the source issue"
-          }
+          { "locator": "spec/requests/projects_spec.rb:2469", "result": "passed" },
+          { "locator": "spec/requests/projects_spec.rb:2476", "result": "passed" },
+          { "locator": "spec/requests/projects_spec.rb:2485", "result": "passed" },
+          { "locator": "spec/requests/projects_spec.rb:2509", "result": "passed" }
         ]
       }
     },
@@ -46,14 +33,29 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:780",
-            "result": "passed: chained removals retain their established behavior"
-          },
-          {
-            "locator": ".markdownlintignore:1",
-            "result": "passed: bin/lint completed with ignored local WORKLOG.md session notes"
-          }
+          { "locator": "spec/requests/projects_spec.rb:2500", "result": "passed" }
+        ]
+      }
+    },
+    {
+      "id": "AC-4",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          { "locator": "spec/models/tenant_setting_spec.rb:7", "result": "passed" },
+          { "locator": "spec/models/tenant_setting_spec.rb:14", "result": "passed" }
+        ]
+      }
+    },
+    {
+      "id": "AC-5",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          { "locator": "docs/intent/label-integration-mode/label-integration-mode-specs.md:76", "result": "updated" },
+          { "locator": "docs/intent/github-label-provisioning/github-label-provisioning-specs.md:13", "result": "updated" }
         ]
       }
     }

@@ -151,15 +151,16 @@ RSpec.describe Projects::CreateBlank do
       expect(result.bootstrap_issue_url).to be_nil
     end
 
-    it "applies standard labels to the created repository" do
+    it "does not provision standard labels for the created repository" do # @spec LABEL-INTEGRATION-009
       allow(client).to receive(:create_repository).and_return(repo_response)
 
-      described_class.call(
+      result = described_class.call(
         account: account, user: user, github_token: github_token, repo_name: "fresh-start"
       )
 
-      expect(client).to have_received(:labels).with("octocat/fresh-start")
-      expect(client).to have_received(:create_label).at_least(:once)
+      expect(result.project.label_integration_mode).to eq("read_only")
+      expect(client).not_to have_received(:labels)
+      expect(client).not_to have_received(:create_label)
     end
   end
 

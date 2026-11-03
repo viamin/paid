@@ -621,6 +621,14 @@ RSpec.describe "Projects" do
           expect(Project.last.primary_language).to eq("Ruby")
         end
 
+        it "creates a connected project without touching GitHub label definitions" do # @spec LABEL-INTEGRATION-009
+          post projects_path, params: valid_params.deep_merge(project: { label_integration_mode: "read_write" })
+
+          expect(Project.last.label_integration_mode).to eq("read_only")
+          expect(github_client).not_to have_received(:labels)
+          expect(github_client).not_to have_received(:create_label)
+        end
+
         it "uses repository name as display name if not provided" do
           post projects_path, params: {
             project: {
@@ -2439,6 +2447,72 @@ RSpec.describe "Projects" do
         patch project_path(project), params: { project: { name: "Updated Name" } }
         expect(response).to redirect_to(project_path(project))
         expect(flash[:notice]).to include("successfully updated")
+      end
+
+      describe "label integration opt-in" do # @spec LABEL-INTEGRATION-009
+        let(:project) { create(:project, account: account, github_token: github_token, label_integration_mode: "read_only") }
+        let(:provisioning_result) do
+          instance_double(Projects::EnsureStandardLabels::Result, any_errors?: false, notice_message: "Labels synced.")
+        end
+
+        before do
+          allow(Projects::EnsureStandardLabels).to receive(:call).and_return(provisioning_result)
+        end
+
+        it "explains the per-project label opt-in in settings" do
+          get edit_project_path(project)
+
+          expect(response.body).to include("New projects start read-only")
+          expect(response.body).to include("Read &amp; write")
+        end
+
+        it "requires confirmation before enabling read and write" do
+          patch project_path(project), params: { project: { label_integration_mode: "read_write" } }
+
+          expect(project.reload.label_integration_mode).to eq("read_only")
+          expect(Projects::EnsureStandardLabels).not_to have_received(:call)
+        end
+
+        it "provisions labels after a confirmed transition to read and write" do
+          patch project_path(project), params: {
+            project: { label_integration_mode: "read_write" }, label_mode_transition_confirmed: "true"
+          }
+
+          expect(project.reload.label_integration_mode).to eq("read_write")
+          expect(Projects::EnsureStandardLabels).to have_received(:call).with(project: project)
+        end
+
+        it "saves the mode and exposes a retryable provisioning failure" do
+          allow(provisioning_result).to receive_messages(
+            any_errors?: true,
+            notice_message: "GitHub denied label creation."
+          )
+
+          patch project_path(project), params: {
+            project: { label_integration_mode: "read_write" }, label_mode_transition_confirmed: "true"
+          }
+
+          expect(project.reload.label_integration_mode).to eq("read_write")
+          expect(response).to redirect_to(edit_project_path(project, anchor: "labels"))
+          expect(flash[:alert]).to include("settings were saved", "Sync Labels to GitHub")
+        end
+
+        it "does not provision when changing between non-writing modes" do
+          patch project_path(project), params: {
+            project: { label_integration_mode: "ignored" }, label_mode_transition_confirmed: "true"
+          }
+
+          expect(project.reload.label_integration_mode).to eq("ignored")
+          expect(Projects::EnsureStandardLabels).not_to have_received(:call)
+        end
+
+        it "retries a failed opt-in through Sync Labels to GitHub" do
+          project.update!(label_integration_mode: "read_write")
+
+          post ensure_labels_project_path(project)
+
+          expect(Projects::EnsureStandardLabels).to have_received(:call).with(project: project)
+        end
       end
 
       it "allows updating poll interval" do
