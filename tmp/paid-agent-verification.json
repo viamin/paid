@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Automatic cycle repair preserves explicitly attributed current-issue declarations through parsing and safely removes the unique live declaration.",
+  "summary": "Colon-attributed foreign dependency directives are ignored while current-issue directives remain valid.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,12 +9,12 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:24",
-            "result": "passed (127 focused examples, 0 failures)"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:57",
+            "result": "passed in the focused 129-example RSpec command"
           },
           {
-            "locator": "app/services/cycle_analyses/automatic_repair.rb:237",
-            "result": "current issue number supplied to full, reduced, and line extraction"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:67",
+            "result": "passed in the focused 129-example RSpec command"
           }
         ]
       }

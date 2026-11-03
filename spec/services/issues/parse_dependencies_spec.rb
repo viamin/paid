@@ -54,6 +54,26 @@ RSpec.describe Issues::ParseDependencies do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-009
+    it "does not treat a colon-attributed directive as its own" do
+      create(:issue, project: project, github_number: 9053)
+      issue = create(:issue, project: project, body: "Issue #4635: depends on #9053")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to be_empty
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "accepts a colon-attributed directive for the current issue" do
+      dependency = create(:issue, project: project, github_number: 9061)
+      issue = create(:issue, project: project, github_number: 4635, body: "Issue #4635: depends on #9061")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to contain_exactly(dependency)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
     it "accepts a declaration that explicitly names the current issue" do
       dependency = create(:issue, project: project, github_number: 9060)
       issue = create(:issue, project: project, github_number: 4824,
