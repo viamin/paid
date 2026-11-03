@@ -776,6 +776,17 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies.reload).to be_empty
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "applies a removal after another directive in the same clause" do
+      retained = create(:issue, project: project, github_number: 9010)
+      create(:issue, project: project, github_number: 9011)
+      issue = create(:issue, project: project, body: "Depends on #9011")
+
+      described_class.call(issue: issue, comments: [ "Blocked by #9010 remove dependency #9011" ])
+
+      expect(issue.dependencies.reload).to contain_exactly(retained)
+    end
+
     it "removal in comment overrides addition in same comment" do
       create(:issue, project: project, github_number: 9010)
       issue = create(:issue, project: project, body: nil)

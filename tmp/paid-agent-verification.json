@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Passive foreign-issue dependency and removal declarations are ignored while current-issue declarations remain eligible.",
+  "summary": "Dependency parsing preserves body-only callers, confines code and foreign-issue exclusions to text outside dependency sections, and retains chained directives.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,12 +9,42 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:100",
-            "result": "passed (focused dependency suite: 131 examples, 0 failures)"
+            "locator": "spec/services/issues/parse_dependencies_extract_spec.rb:224",
+            "result": "passed (focused dependency and repair suite: 148 examples, 0 failures)"
           },
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:159",
-            "result": "passed (focused dependency suite: 131 examples, 0 failures)"
+            "locator": "app/services/issues/parse_dependencies.rb:134",
+            "result": "verified by the body-only object service test"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/services/issues/parse_dependencies_extract_spec.rb:56",
+            "result": "passed (dependency-section quoted and attributed directives are retained)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-3",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/services/issues/parse_dependencies_extract_spec.rb:72",
+            "result": "passed (chained positive directives are retained)"
+          },
+          {
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:780",
+            "result": "passed (chained removal directives are applied)"
           }
         ]
       }
