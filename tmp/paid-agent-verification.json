@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "After merging origin/main, new projects remain read-only without GitHub label-definition writes; confirmed Read & write transitions provision labels, preserve the saved mode on failure, and expose manual retry. Focused specs, lint, and LID coherence passed.",
+  "summary": "New projects remain read-only until an explicit Read & write opt-in. The failing system scenario was synchronized with the asynchronously loaded initial Inbox detail; lint and LID coherence passed, but the local system rerun was unavailable because this workspace exposed no database service.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -58,6 +58,18 @@
           { "locator": "bundle exec rspec spec/models/tenant_setting_spec.rb spec/services/projects/create_blank_spec.rb spec/requests/projects_spec.rb", "result": "passed: 422 examples, 0 failures" },
           { "locator": "bin/lint", "result": "passed: RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb completed with no failing offenses" },
           { "locator": "bin/coherence-check.mjs", "result": "passed: exit code 0; 5 reverse orphans, 141 uncovered specs, 0 arrow reference issues, 17 stale/needs-work arrows, 1167 untagged code files, and 939 untagged test files remain advisory repository drift" }
+        ]
+      }
+    },
+    {
+      "id": "AC-CI-SYSTEM",
+      "status": "not_run",
+      "verification": {
+        "kind": "permanent_system_test",
+        "references": [
+          { "locator": "spec/system/inbox_supplement_spec.rb:84", "result": "updated: waits for the asynchronously loaded initial detail before making both displayed entries stale" },
+          { "locator": "https://github.com/viamin/paid/actions/runs/41733673353/job/126257200147", "result": "external failure evidence: the prior run clicked during the initial frame request and raised Turbo AbortError" },
+          { "locator": "local DATABASE_URL", "result": "not run: DATABASE_URL and PostgreSQL host variables were absent and no local PostgreSQL service was listening" }
         ]
       }
     }

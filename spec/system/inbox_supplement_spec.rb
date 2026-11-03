@@ -70,6 +70,7 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
     page.driver.resize(1440, 1000)
     visit inbox_path
     expect(page).to have_css("#inbox-list", text: "Second question")
+    expect(page).to have_css("#inbox-detail h2", text: "First question")
     second_issue.update_columns(github_state: "closed")
 
     within("#inbox-list") { click_link "Second question", exact: false }
@@ -84,6 +85,7 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
     page.driver.resize(1440, 1000)
     visit inbox_path
     expect(page).to have_css("#inbox-list", text: "Second question")
+    expect(page).to have_css("#inbox-detail h2", text: "First question")
     first_issue.update_columns(github_state: "closed")
     second_issue.update_columns(github_state: "closed")
 
