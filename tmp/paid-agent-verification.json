@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Updated vulnerable transitive Ruby dependencies; both Ruby and Yarn audits report no vulnerabilities.",
+  "summary": "The PR's security audit passes locally; the dependency-only workflow pin is valid and workflow-scanned.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,16 +9,29 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "Gemfile.lock",
-            "result": "loofah 2.25.3, nokogiri 1.19.7, and rails-html-sanitizer 1.7.2 are locked at patched versions"
+            "locator": ".github/workflows/claude-code-review.yml:141",
+            "result": "anthropics/claude-code-action is pinned to the v1.0.266 release commit d535f5172dec02b204866b393d6b20b9b2aaf98d"
           },
           {
-            "locator": "bin/bundler-audit",
-            "result": "passed: No vulnerabilities found"
+            "locator": "bin/audit",
+            "result": "passed: secret scan, Brakeman, Bundler audit, and Yarn audit all succeeded"
           },
           {
-            "locator": "bin/yarn-audit-check",
-            "result": "passed: 0 blocking advisories"
+            "locator": "bin/zizmor-scan",
+            "result": "passed: no findings in .github/workflows/claude-code-review.yml"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "not_run",
+      "verification": {
+        "kind": "permanent_system_test",
+        "references": [
+          {
+            "locator": "bin/ci",
+            "result": "not run to completion: the supplied PostgreSQL service was unreachable; Rails db:prepare failed with ActiveRecord::ConnectionNotEstablished before database-backed tests"
           }
         ]
       }
