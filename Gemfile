@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.3.5"
+gem "avo", "4.3.10"
 
 # json 3.0.0 changed JSON.parse/dump options to keyword-only arguments.
 # Rails 8.1.4's ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25)
@@ -84,7 +84,7 @@ gem "aws-sdk-s3", require: false
 # 0.44.22 includes viamin/agent-harness#499 and #500: OpenAI Responses
 # protocol support for reasoning models with function tools, plus allowlisted
 # actionable provider diagnostics (fixes #4546).
-gem "agent-harness", "0.44.27"
+gem "agent-harness", "0.44.28"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
@@ -191,7 +191,7 @@ group :development do
   gem "herb", require: false
 end
 
-gem "good_job", "~> 4.22"
+gem "good_job", "~> 4.24"
 
 # Pagination [https://github.com/ddnexus/pagy]
 gem "pagy", "~> 43.8"
