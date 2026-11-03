@@ -93,7 +93,8 @@ module CycleAnalyses
       declaration = source_declaration(edge, issue:, target:, client:)
       return declaration if declaration[:reason]
 
-      edited = remove_unique_declaration(declaration.fetch(:source_body), target:, source_project: issue.project)
+      edited = remove_unique_declaration(declaration.fetch(:source_body), target:, source_project: issue.project,
+        current_issue_number: issue.github_number)
       return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
       declaration.merge(body: edited, unprovenanced: edge.declaration_source.nil?)
@@ -114,7 +115,8 @@ module CycleAnalyses
       body = source.fetch(:body)
       return declaration if body == declaration.fetch(:source_body)
 
-      edited = remove_unique_declaration(body, target: declaration.fetch(:target), source_project: declaration.fetch(:project))
+      edited = remove_unique_declaration(body, target: declaration.fetch(:target), source_project: declaration.fetch(:project),
+        current_issue_number: declaration.fetch(:issue_number))
       return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
       declaration.merge(source_body: body, body: edited, comment_id: source[:comment_id])
@@ -126,7 +128,7 @@ module CycleAnalyses
       return refreshed if refreshed[:reason]
 
       edited = remove_unique_declaration(refreshed.fetch(:source_body), target: declaration.fetch(:target),
-        source_project: declaration.fetch(:project))
+        source_project: declaration.fetch(:project), current_issue_number: declaration.fetch(:issue_number))
       return { reason: removal_reason(edited) } unless edited.is_a?(String)
 
       refreshed.merge(body: edited, unprovenanced: true)
@@ -175,7 +177,8 @@ module CycleAnalyses
 
     def unprovenanced_declaration(issue:, target:, client:)
       body_declaration = issue_declaration(issue:, target:, client:)
-      body_outcome = remove_unique_declaration(body_declaration.fetch(:source_body), target:, source_project: issue.project)
+      body_outcome = remove_unique_declaration(body_declaration.fetch(:source_body), target:, source_project: issue.project,
+        current_issue_number: issue.github_number)
       return { reason: removal_reason(body_outcome) } if body_outcome == :ambiguous
 
       declarations = issue_comments(client:, issue:).filter_map do |comment|
@@ -186,7 +189,8 @@ module CycleAnalyses
           declaration_url: field(comment, :html_url), comment_id: field(comment, :id))
       end
       outcomes = ([ body_declaration ] + declarations).map do |candidate|
-        [ candidate, remove_unique_declaration(candidate.fetch(:source_body), target:, source_project: issue.project) ]
+        [ candidate, remove_unique_declaration(candidate.fetch(:source_body), target:, source_project: issue.project,
+          current_issue_number: issue.github_number) ]
       end
       return { reason: "live_declaration_ambiguous" } if outcomes.any? { |_candidate, outcome| outcome == :ambiguous }
       return { reason: "live_declaration_not_removable" } if outcomes.any? { |_candidate, outcome| outcome == :unremovable }
@@ -230,19 +234,22 @@ module CycleAnalyses
       project.trusted_github_user?(field(user, :login)) if user
     end
 
-    def remove_unique_declaration(body, target:, source_project:)
-      full_local, full_cross = Issues::ParseDependencies.extract(body:)
+    def remove_unique_declaration(body, target:, source_project:, current_issue_number:)
+      full_local, full_cross = Issues::ParseDependencies.extract(body:, current_issue_number:)
       return :missing unless dependencies_declare_target?(full_local, full_cross, target:, source_project:)
 
       lines = body.lines
       carriers = lines.each_index.select do |index|
-        reduced_local, reduced_cross = Issues::ParseDependencies.extract(body: lines.reject.with_index { |_line, position| position == index }.join)
+        reduced_local, reduced_cross = Issues::ParseDependencies.extract(
+          body: lines.reject.with_index { |_line, position| position == index }.join, current_issue_number:
+        )
         removes_target?(full_local, full_cross, reduced_local, reduced_cross, target:, source_project:) &&
-          line_declares_target?(lines[index], target:, source_project:)
+          line_declares_target?(lines[index], target:, source_project:, current_issue_number:)
       end
       return :ambiguous unless carriers.one?
       return :ambiguous unless target_occurrences(lines.fetch(carriers.first), target:, source_project:) == 1
-      return :unremovable unless standalone_declaration?(lines.fetch(carriers.first), target:, source_project:)
+      return :unremovable unless standalone_declaration?(lines.fetch(carriers.first), target:, source_project:,
+        current_issue_number:)
 
       lines.reject.with_index { |_line, index| index == carriers.first }.join
     end
@@ -250,10 +257,11 @@ module CycleAnalyses
     # GitHub's parser permits a dependency declaration in prose. Removing its
     # whole line would discard the author's explanation, so only remove a line
     # whose complete meaningful content is the verified declaration.
-    def standalone_declaration?(line, target:, source_project:)
+    def standalone_declaration?(line, target:, source_project:, current_issue_number:)
       content = line.strip.sub(/\A(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s*)?/, "")
       reference = target_reference_pattern(target, source_project:)
-      content.match?(%r{\A(?:#{reference}|(?:depends?\s+on|blocked?\s+by)\s*:?\s*#{reference})\z}i)
+      subject = "(?:(?:issue|pr|pull request)\\s+\\##{current_issue_number}\\s+)?"
+      content.match?(%r{\A(?:#{reference}|#{subject}(?:depends?\s+on|blocked?\s+by)\s*:?\s*#{reference})\z}i)
     end
 
     def target_reference_pattern(target, source_project:)
@@ -281,8 +289,8 @@ module CycleAnalyses
       (source_project.id == target.project_id && local.key?(target.github_number)) || cross.key?(cross_key(target))
     end
 
-    def line_declares_target?(line, target:, source_project:)
-      local, cross = Issues::ParseDependencies.extract(body: "## Dependencies\n#{line}")
+    def line_declares_target?(line, target:, source_project:, current_issue_number:)
+      local, cross = Issues::ParseDependencies.extract(body: "## Dependencies\n#{line}", current_issue_number:)
       dependencies_declare_target?(local, cross, target:, source_project:)
     end
 
