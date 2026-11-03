@@ -33,6 +33,7 @@ RSpec.describe "Inbox phase relevance and removal" do
     )
   end
 
+  # @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-003
   it "keeps the request out of the default list and inside the Disabled phases view" do
     FeatureFlags.enable!(:automation_phases, project:)
     configure_phases({ "issue_preparation" => false })
@@ -43,6 +44,12 @@ RSpec.describe "Inbox phase relevance and removal" do
     expect(response.body).not_to include("Which behavior?")
 
     get inbox_path(scope: Inbox::Queue::DISABLED_PHASES_SCOPE)
+
+    expect(response.body).to include("Which behavior?")
+
+    # The collection response no longer builds the detail, so the operator's
+    # browser loads it through the eager detail frame.
+    get inbox_entry_path(entry_id: "clarifying_questions:#{issue.id}")
 
     expect(response.body).to include("Issue preparation")
     expect(response.body).not_to include("Restore to Inbox")
