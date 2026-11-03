@@ -1,57 +1,24 @@
 {
   "status": "passed",
-  "summary": "Recipe 11 mutation validation runs under a dedicated PostgreSQL role without SUPERUSER or BYPASSRLS: Rails boots past Database::RuntimeRoleGuard and mutant completes fully killed over both trust-enforcement public entry points. The transient mutant result artifact and run log are not committed (tmp/* stays gitignored); durable evidence is the permanent regression coverage below plus one reproduction command for each production path.",
+  "summary": "Updated vulnerable transitive Ruby dependencies; both Ruby and Yarn audits report no vulnerabilities.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
       "status": "passed",
       "verification": {
-        "kind": "unit_or_service_test",
+        "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "RAILS_ENV=test DATABASE_URL=postgres://paid_mutation@paid-svc-a3-s1-postgres:5432/agent_run_26239_attempt_0 bundle exec mutant run --use rspec --jobs 1 'Issues::EnforceMutationTrust#call' 'Issues::EnforceMutationTrust.call' (HEAD 234337e3b; role paid_mutation created with NOSUPERUSER NOBYPASSRLS)",
-            "result": "Reproduction command: connects as the non-privileged paid_mutation role so Database::RuntimeRoleGuard cannot reject boot. Rerunning at this head: 2 subjects, 44 mutations, 44 killed, 0 alive, 100.00% coverage."
+            "locator": "Gemfile.lock",
+            "result": "loofah 2.25.3, nokogiri 1.19.7, and rails-html-sanitizer 1.7.2 are locked at patched versions"
           },
           {
-            "locator": "RAILS_ENV=test DATABASE_URL=postgres://paid_mutation@paid-svc-a3-s1-postgres:5432/agent_run_26239_attempt_0 bundle exec mutant run --use rspec --jobs 4 'CycleAnalyses::Repair#call' 'CycleAnalyses::Repair.call' (role paid_mutation created with NOSUPERUSER NOBYPASSRLS)",
-            "result": "Reproduction command for the admitted-comment repair path: connects as the same non-privileged paid_mutation role. The rerun completed all 192 generated mutations with no surviving mutations."
+            "locator": "bin/bundler-audit",
+            "result": "passed: No vulnerabilities found"
           },
           {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb:75",
-            "result": "Permanent regression coverage exercises trusted-comment repair and trusted-client writes."
-          },
-          {
-            "locator": "spec/services/issues/enforce_mutation_trust_spec.rb:15",
-            "result": "Permanent regression coverage exercises trusted, Paid-originated, untrusted, and missing-identity mutation decisions."
-          }
-        ]
-      }
-    },
-    {
-      "id": "AC-2",
-      "status": "passed",
-      "verification": {
-        "kind": "unit_or_service_test",
-        "references": [
-          {
-            "locator": "bundle install; yarn install",
-            "result": "Dependencies installed; bundle check reports the Gemfile dependencies are satisfied."
-          },
-          {
-            "locator": "bin/lint",
-            "result": "All configured lint checks passed."
-          },
-          {
-            "locator": "bin/coherence-check.mjs",
-            "result": "Completed with pre-existing repository-wide orphan, coverage, and staleness gaps; all arrow references remain valid."
-          },
-          {
-            "locator": "spec/services/database/runtime_role_guard_spec.rb:22",
-            "result": "Focused role-guard coverage passes for safe roles and rejects SUPERUSER and BYPASSRLS roles."
-          },
-          {
-            "locator": "spec/services/cycle_analyses/repair_spec.rb spec/services/database/runtime_role_guard_spec.rb spec/services/issues/enforce_mutation_trust_spec.rb",
-            "result": "24 focused examples passed with 0 failures at the merged head."
+            "locator": "bin/yarn-audit-check",
+            "result": "passed: 0 blocking advisories"
           }
         ]
       }
