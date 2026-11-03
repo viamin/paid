@@ -21,6 +21,23 @@ RSpec.describe CycleAnalyses::AutomaticRepair do
   end
 
   # @spec AUTO-PICK-QUEUE-019
+  it "removes an inline declaration attributed to the source issue" do
+    _user, cycle, run = cycle_run
+    edge = cycle.effective_edges.first
+    source = Issue.find(edge.from_id)
+    target = Issue.find(edge.to_id)
+    client = instance_double(GithubClient)
+    live = { body: "Issue ##{source.github_number} depends on ##{target.github_number}\n" }
+    allow(client).to receive_messages(issue: live, issue_comments: [])
+    allow(client).to receive(:update_issue)
+
+    result = described_class.call(agent_run: run, recommendation: recommendation(run), client_resolver: ->(_) { client })
+
+    expect(result).to include("status" => "pending_sync", "changed_edge_ids" => [ edge.id ])
+    expect(client).to have_received(:update_issue).with(source.project.full_name, source.github_number, body: "")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019
   it "removes a uniquely matched declaration from its trusted source comment" do
     _user, cycle, run = cycle_run
     edge = cycle.effective_edges.first

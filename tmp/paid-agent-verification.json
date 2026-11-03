@@ -1,37 +1,58 @@
 {
   "status": "passed",
-  "summary": "The PR's security audit passes locally; the dependency-only workflow pin is valid and workflow-scanned.",
+  "summary": "Focused dependency parsing, PR dependency, and cycle-repair tests passed (148 examples, 0 failures); lint and LID coherence checks passed.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
       "status": "passed",
       "verification": {
-        "kind": "human_or_external_evidence",
+        "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": ".github/workflows/claude-code-review.yml:141",
-            "result": "anthropics/claude-code-action is pinned to the v1.0.266 release commit d535f5172dec02b204866b393d6b20b9b2aaf98d"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:33",
+            "result": "passed: quoted declarations are ignored while a real directive is retained"
           },
           {
-            "locator": "bin/audit",
-            "result": "passed: secret scan, Brakeman, Bundler audit, and Yarn audit all succeeded"
-          },
-          {
-            "locator": "bin/zizmor-scan",
-            "result": "passed: no findings in .github/workflows/claude-code-review.yml"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:45",
+            "result": "passed: another issue's prerequisite is not attributed to the current issue"
           }
         ]
       }
     },
     {
       "id": "AC-2",
-      "status": "not_run",
+      "status": "passed",
       "verification": {
-        "kind": "permanent_system_test",
+        "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "bin/ci",
-            "result": "not run to completion: the supplied PostgreSQL service was unreachable; Rails db:prepare failed with ActiveRecord::ConnectionNotEstablished before database-backed tests"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:67",
+            "result": "passed: an attributed declaration for the current issue is retained"
+          },
+          {
+            "locator": "spec/services/pull_requests/dependencies_resolved_spec.rb:58",
+            "result": "passed: PR dependency checks pass the current PR number to the parser"
+          },
+          {
+            "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:24",
+            "result": "passed: cycle repair removes a declaration attributed to the source issue"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-3",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:780",
+            "result": "passed: chained removals retain their established behavior"
+          },
+          {
+            "locator": ".markdownlintignore:1",
+            "result": "passed: bin/lint completed with ignored local WORKLOG.md session notes"
           }
         ]
       }

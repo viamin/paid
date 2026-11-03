@@ -52,6 +52,34 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       expect(cross_deps).to eq([ "owner", "repo", 9044 ] => true)
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
+    it "keeps quoted and attributed directives inside a dependency section" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          Issue #500 depends on #41.
+          `Depends on #42`
+        BODY
+        comments: [],
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(41 => false, 42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "keeps a directive after another directive in the same clause" do
+      local_deps, cross_deps = described_class.extract(
+        body: "Depends on #41 also depends on #42",
+        comments: [],
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(41 => false, 42 => false)
+      expect(cross_deps).to eq({})
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-004
     it "ends bare-reference admission at a nested heading" do
       local_deps, cross_deps = described_class.extract(

@@ -55,6 +55,16 @@ RSpec.describe PullRequests::DependenciesResolved do
     end
   end
 
+  context "when the declaration names the current pull request" do
+    let(:issue) { create(:issue, :pull_request, project: project, github_number: 4824, body: "PR #4824 is blocked by #41") }
+
+    it "checks the dependency" do
+      expect(collector).to receive(:dependency_resolved?).with(number: 41).and_return(false)
+
+      expect(call).to be(false)
+    end
+  end
+
   context "when a same-repo dependency is not resolved" do
     let(:body) { "Depends on #41" }
 
