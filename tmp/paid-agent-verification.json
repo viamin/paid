@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "New projects remain read-only without GitHub label-definition writes; an explicit confirmed Read & write transition provisions labels and surfaces retryable failures.",
+  "summary": "After merging origin/main, new projects remain read-only without GitHub label-definition writes; confirmed Read & write transitions provision labels, preserve the saved mode on failure, and expose manual retry. Focused specs, lint, and LID coherence passed.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -8,10 +8,9 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          { "locator": "spec/requests/projects_spec.rb:624", "result": "passed" },
-          { "locator": "spec/services/projects/create_blank_spec.rb:107", "result": "passed" },
-          { "locator": "spec/services/projects/create_blank_spec.rb:154", "result": "passed" },
-          { "locator": "spec/requests/projects_spec.rb:2462", "result": "passed" }
+          { "locator": "spec/requests/projects_spec.rb:624", "result": "passed: connected project creation forced read_only and made no label-list or label-create request" },
+          { "locator": "spec/services/projects/create_blank_spec.rb:107", "result": "passed: blank-project bootstrap issue was created without labels" },
+          { "locator": "spec/services/projects/create_blank_spec.rb:154", "result": "passed: blank-project creation remained read_only and did not provision labels" }
         ]
       }
     },
@@ -21,10 +20,9 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          { "locator": "spec/requests/projects_spec.rb:2469", "result": "passed" },
-          { "locator": "spec/requests/projects_spec.rb:2476", "result": "passed" },
-          { "locator": "spec/requests/projects_spec.rb:2485", "result": "passed" },
-          { "locator": "spec/requests/projects_spec.rb:2509", "result": "passed" }
+          { "locator": "spec/requests/projects_spec.rb:2469", "result": "passed: enabling Read & write required explicit transition confirmation" },
+          { "locator": "spec/requests/projects_spec.rb:2476", "result": "passed: a confirmed transition persisted read_write before provisioning standard labels" },
+          { "locator": "spec/requests/projects_spec.rb:2485", "result": "passed: provisioning errors preserved read_write and returned an actionable Sync Labels to GitHub retry" }
         ]
       }
     },
@@ -34,7 +32,8 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          { "locator": "spec/requests/projects_spec.rb:2500", "result": "passed" }
+          { "locator": "spec/requests/projects_spec.rb:2500", "result": "passed: changing between non-writing modes did not provision labels" },
+          { "locator": "spec/requests/projects_spec.rb:2509", "result": "passed: manual Sync Labels to GitHub retried provisioning idempotently for read_write" }
         ]
       }
     },
@@ -44,8 +43,9 @@
       "verification": {
         "kind": "unit_or_service_test",
         "references": [
-          { "locator": "spec/models/tenant_setting_spec.rb:7", "result": "passed" },
-          { "locator": "spec/models/tenant_setting_spec.rb:14", "result": "passed" }
+          { "locator": "spec/models/tenant_setting_spec.rb:7", "result": "passed: a tenant read_write default could not opt a newly created project into writes" },
+          { "locator": "spec/models/tenant_setting_spec.rb:14", "result": "passed: an explicitly supplied project mode remained selected at model validation" },
+          { "locator": "spec/requests/projects_spec.rb:2462", "result": "passed: project settings explained the initial read-only state and explicit Read & write opt-in" }
         ]
       }
     },
@@ -53,10 +53,11 @@
       "id": "AC-5",
       "status": "passed",
       "verification": {
-        "kind": "unit_or_service_test",
+        "kind": "human_or_external_evidence",
         "references": [
-          { "locator": "docs/intent/label-integration-mode/label-integration-mode-specs.md:76", "result": "updated" },
-          { "locator": "docs/intent/github-label-provisioning/github-label-provisioning-specs.md:13", "result": "updated" }
+          { "locator": "bundle exec rspec spec/models/tenant_setting_spec.rb spec/services/projects/create_blank_spec.rb spec/requests/projects_spec.rb", "result": "passed: 422 examples, 0 failures" },
+          { "locator": "bin/lint", "result": "passed: RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb completed with no failing offenses" },
+          { "locator": "bin/coherence-check.mjs", "result": "passed: exit code 0; 5 reverse orphans, 141 uncovered specs, 0 arrow reference issues, 17 stale/needs-work arrows, 1167 untagged code files, and 939 untagged test files remain advisory repository drift" }
         ]
       }
     }

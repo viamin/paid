@@ -144,4 +144,50 @@ RSpec.describe Inbox::ActionHistory do
     expect(history_selects).not_to be_empty
     expect(history_selects).to all(include("LIMIT"))
   end
+
+  # @spec OPERATOR-INBOX-025
+  it "reuses a per-subject history projection" do
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}")
+
+    first_queries = count_queries { described_class.call(entry:) }
+    second_queries = count_queries { described_class.call(entry:) }
+
+    expect(first_queries).to be > second_queries
+    expect(second_queries).to be <= 1
+  ensure
+    Rails.cache = original_cache
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "shows a newly recorded Paid transition despite a warm item cache" do
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+
+    expect(described_class.call(entry:).events).to be_empty
+    Inbox::HistoryRecorder.call(entry:, event_key: "operator-action", action: "Operator acted",
+      actor: "Paid", result: "completed")
+
+    expect(described_class.call(entry:).events.map(&:action)).to include("Operator acted")
+  ensure
+    Rails.cache = original_cache
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "keeps a warm item cache on a replayed Paid transition" do
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+
+    Inbox::HistoryRecorder.call(entry:, event_key: "operator-action", action: "Operator acted",
+      actor: "Paid", result: "completed")
+    described_class.call(entry:)
+    Inbox::HistoryRecorder.call(entry:, event_key: "operator-action", action: "Operator acted",
+      actor: "Paid", result: "completed")
+
+    expect(count_queries { described_class.call(entry:) }).to eq(0)
+  ensure
+    Rails.cache = original_cache
+  end
 end

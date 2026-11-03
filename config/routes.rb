@@ -75,6 +75,7 @@ Rails.application.routes.draw do
   post "inbox/:entry_id/layered-verification-decision", to: "inbox#decide_layered_verification_finding",
     as: :inbox_layered_verification_finding_decision
   get "inbox/:entry_id/supplement", to: "inbox#supplement", as: :inbox_entry_supplement
+  get "inbox/:entry_id/history", to: "inbox#history", as: :inbox_entry_history
   get "inbox/:entry_id", to: "inbox#show", as: :inbox_entry
   get "dashboard/inbox", to: "legacy_inbox_redirects#index", as: :dashboard_inbox
   get "dashboard/inbox/entries/:entry_kind/:entry_id", to: "legacy_inbox_redirects#show", as: :dashboard_inbox_entry

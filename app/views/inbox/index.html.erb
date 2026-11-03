@@ -129,12 +129,21 @@
         drives its viewport bound and the mobile single-column flow is
         unaffected. %>
     <% detail_content = capture do %>
-      <%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
-        <%= render "dashboard/inbox_detail",
-                   entry: @selected_entry,
-                   scoped_project: @scoped_project,
-                   selected_kind: @selected_kind,
-                   selected_scope: @selected_scope %>
+      <% if action_name == "index" %>
+        <%# @spec OPERATOR-INBOX-025 %>
+        <%= turbo_frame_tag("inbox-detail",
+              src: inbox_entry_path(@selected_entry, **inbox_query_params(project: @scoped_project, kind: @selected_kind)),
+              loading: :eager, class: "block h-full") do %>
+          <p class="px-4 py-5 text-sm text-gray-500" data-inbox-detail-placeholder role="status">Loading item…</p>
+        <% end %>
+      <% else %>
+        <%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
+          <%= render "dashboard/inbox_detail",
+                     entry: @selected_entry,
+                     scoped_project: @scoped_project,
+                     selected_kind: @selected_kind,
+                     selected_scope: @selected_scope %>
+        <% end %>
       <% end %>
     <% end %>
     <%= render "shared/list_detail_shell",

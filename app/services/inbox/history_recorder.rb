@@ -11,13 +11,16 @@ module Inbox
       @entry, @event_key, @action, @actor, @result, @occurred_at, @revision, @evidence_url = entry, event_key, action, actor, result, occurred_at, revision, evidence_url
     end
 
+    # @spec OPERATOR-INBOX-025
     def call
       subject_key = ActionHistory.subject_key_for(entry)
       return unless subject_key && entry.project
 
-      InboxHistoryEvent.find_or_create_by!(account: entry.project.account, project: entry.project, subject_key:, event_key:) do |event|
-        event.assign_attributes(actor_label:, source: "paid", result:, occurred_at:, revision:, evidence_url:, metadata: { action: })
+      event = InboxHistoryEvent.find_or_create_by!(account: entry.project.account, project: entry.project, subject_key:, event_key:) do |record|
+        record.assign_attributes(actor_label:, source: "paid", result:, occurred_at:, revision:, evidence_url:, metadata: { action: })
       end
+      ActionHistory.invalidate(entry:) if event.previously_new_record?
+      event
     end
 
     private

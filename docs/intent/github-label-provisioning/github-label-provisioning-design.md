@@ -197,7 +197,7 @@ plus a per-write guard immediately
 before every runtime call site that applies one of the four labels added to
 the catalog by this segment (`paid-ready`, `paid-auto-merged`,
 `paid-auto-merged-dependabot`, `paid-auto-released`). Without that guard, a
-  repo that never went through an explicit opt-in or a manual "Sync Labels"
+repo that opted into `read_write` without completing provisioning or a manual "Sync Labels"
 click (e.g. one connected before this segment shipped) could still 404 the
 first time one of these labels was applied — the two bootstrap points are
 each best-effort and neither is guaranteed to have run. `EnsureStandardLabels`
