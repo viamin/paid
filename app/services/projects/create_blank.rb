@@ -178,13 +178,6 @@ module Projects
 
     def apply_post_create_defaults(project)
       TenantConfigurations::ApplyProjectDefaults.call(project)
-      ensure_labels_best_effort(project)
-    end
-
-    def ensure_labels_best_effort(project)
-      Projects::EnsureStandardLabels.call(project: project)
-    rescue StandardError => e
-      Rails.logger.warn(message: "projects.create_blank.ensure_labels_failed", project_id: project.id, error: e.message)
     end
 
     # Opens the grill-me bootstrap issue carrying the setup questionnaire.

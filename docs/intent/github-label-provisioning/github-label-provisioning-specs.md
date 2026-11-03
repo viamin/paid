@@ -23,9 +23,10 @@
   `HandleNoOutputIssueRunActivity#add_recommend_close_label`,
   `EnhanceIssueActivity#labels_added`) SHALL call
   `EnsureStandardLabels.call_best_effort` immediately before the label
-  write, so a repo that never went through the manual sync button or the
-  project-create bootstrap still gets the label created on first use
-  instead of silently 404ing.
+  write, so a `read_write` repo whose explicit opt-in or manual sync did not
+  complete still gets the label created on first use instead of silently
+  404ing. In `read_only` and `ignored` modes the write policy SHALL suppress
+  both provisioning and the subsequent label mutation.
   *Code:* `app/services/projects/ensure_standard_labels.rb#expected_labels`,
   `app/services/projects/ensure_standard_labels.rb#call_best_effort`,
   `app/temporal/activities/mark_pr_ready_activity.rb`,

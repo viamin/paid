@@ -145,6 +145,10 @@ class ProjectsController < ApplicationController
     return create_blank_project if params[:creation_mode] == "create"
 
     @project = current_account.projects.build(project_params)
+    # Creation never grants label-write authority, even if a client submits a
+    # mode parameter. Read & write is a confirmed transition on saved settings.
+    # @spec LABEL-INTEGRATION-001
+    @project.label_integration_mode = "read_only"
     assign_selected_github_credential(@project)
     @project.created_by = current_user
     @project.allowed_github_usernames = [ @project.owner ] if @project.allowed_github_usernames.blank?
@@ -211,16 +215,25 @@ class ProjectsController < ApplicationController
     assign_selected_github_credential(@project, update_params)
     update_params = update_params.except(:github_auth_source, :github_token_id, :github_installation_id)
 
+    previous_label_mode = @project.label_integration_mode
     Project.transaction do
-      previous_label_mode = @project.label_integration_mode
       @project.update!(update_params)
       import_label_control_state_if_needed(previous_label_mode)
       redetect_lid_mode! if redetect_lid_mode_requested?
     end
+    label_provisioning_result = provision_labels_after_opt_in(previous_label_mode)
     refresh_code_scanning_after_enable if enabling_security_scan?(update_params)
 
     audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
+    if label_provisioning_result&.any_errors?
+      return redirect_to edit_project_path(@project, anchor: "labels"),
+        alert: "Project settings were saved, but GitHub labels were not fully synced: #{label_provisioning_result.notice_message}. Retry with Sync Labels to GitHub."
+    end
+
     redirect_to @project, notice: "Project was successfully updated."
+  rescue GithubClient::Error, Faraday::Error => e
+    redirect_to edit_project_path(@project, anchor: "labels"),
+      alert: "Project settings were saved, but GitHub labels could not be synced: #{e.message}. Retry with Sync Labels to GitHub."
   rescue ActiveRecord::RecordInvalid
     ensure_github_app_installation_error
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
@@ -258,6 +271,14 @@ class ProjectsController < ApplicationController
     Projects::ImportLabelControlState.call(project: @project)
   end
   private :import_label_control_state_if_needed
+
+  # @spec LABEL-INTEGRATION-009
+  def provision_labels_after_opt_in(previous_label_mode)
+    return unless previous_label_mode != "read_write" && @project.label_integration_mode == "read_write"
+
+    Projects::EnsureStandardLabels.call(project: @project)
+  end
+  private :provision_labels_after_opt_in
 
   # @spec GITHUB-SYNC-020
   def refresh_code_scanning_availability
@@ -940,12 +961,6 @@ class ProjectsController < ApplicationController
       notice: "Created screenshot config PR: #{result.pull_request_url}"
   end
 
-  def ensure_labels_best_effort(project)
-    Projects::EnsureStandardLabels.call(project: project)
-  rescue => e
-    Rails.logger.warn(message: "github_sync.ensure_labels_on_create_failed", project_id: project.id, error: e.message)
-  end
-
   def parse_usernames_csv
     params.dig(:project, :allowed_github_usernames_csv).to_s.split(",").map(&:strip).reject(&:blank?).uniq
   end
@@ -1034,7 +1049,6 @@ class ProjectsController < ApplicationController
     if @project.save
       check_code_scanning_availability(@project)
       TenantConfigurations::ApplyProjectDefaults.call(@project)
-      ensure_labels_best_effort(@project)
       audit_event("project.created", metadata: { name: @project.name, github_url: "https://github.com/#{@project.full_name}" })
       redirect_to @project, notice: "Project was successfully added."
     else
@@ -1108,7 +1122,6 @@ class ProjectsController < ApplicationController
     if @project.save
       check_code_scanning_availability(@project)
       TenantConfigurations::ApplyProjectDefaults.call(@project)
-      ensure_labels_best_effort(@project)
       audit_event("project.created", metadata: { name: @project.name, github_url: "https://github.com/#{@project.full_name}" })
       redirect_to @project, notice: "Project was successfully added."
     else

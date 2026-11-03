@@ -13,6 +13,10 @@ FactoryBot.define do
     default_branch { "main" }
     active { true }
     poll_interval_seconds { 60 }
+    # Factories represent pre-existing projects that had already selected the
+    # historical write-enabled mode; creation-path specs exercise the new
+    # read-only default directly.
+    label_integration_mode { "read_write" }
     label_mappings { {} }
     allowed_github_usernames { [ "viamin" ] }
 

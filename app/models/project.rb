@@ -375,7 +375,7 @@ class Project < ApplicationRecord
   before_validation :ensure_paid_reviewer_bot_allowlisted
   before_validation :reset_git_push_pat_fallback_unless_app_backed
   # @spec LABEL-INTEGRATION-001
-  before_validation :apply_tenant_label_integration_default, on: :create
+  before_validation :apply_opt_in_label_integration_default, on: :create
   after_update_commit :invalidate_relationship_parsing_on_trust_change
   after_update_commit :bump_inbox_cache_for_membership_change, if: :inbox_cache_membership_changed?
 
@@ -1785,12 +1785,16 @@ class Project < ApplicationRecord
   end
   private :build_github_client
 
-  def apply_tenant_label_integration_default
+  # New repositories never inherit a write-enabled mode. A tenant preference
+  # is not an explicit per-repository authorization to change GitHub's label
+  # catalog; an operator must select read_write in this project's settings.
+  # @spec LABEL-INTEGRATION-001
+  def apply_opt_in_label_integration_default
     return if label_integration_mode_came_from_user?
 
-    self.label_integration_mode = account&.tenant_setting&.default_label_integration_mode || "read_write"
+    self.label_integration_mode = "read_only"
   end
-  private :apply_tenant_label_integration_default
+  private :apply_opt_in_label_integration_default
 
   # @spec GITHUB-SYNC-017
   def saved_change_to_git_push_pat_fallback_configuration?
