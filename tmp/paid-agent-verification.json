@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Dependency parsing preserves body-only callers, confines code and foreign-issue exclusions to text outside dependency sections, and retains chained directives.",
+  "summary": "Focused dependency parsing, PR dependency, and cycle-repair tests passed (148 examples, 0 failures); lint and LID coherence checks passed.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,12 +9,12 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_extract_spec.rb:224",
-            "result": "passed (focused dependency and repair suite: 148 examples, 0 failures)"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:33",
+            "result": "passed: quoted declarations are ignored while a real directive is retained"
           },
           {
-            "locator": "app/services/issues/parse_dependencies.rb:134",
-            "result": "verified by the body-only object service test"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:45",
+            "result": "passed: another issue's prerequisite is not attributed to the current issue"
           }
         ]
       }
@@ -26,8 +26,16 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_extract_spec.rb:56",
-            "result": "passed (dependency-section quoted and attributed directives are retained)"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:67",
+            "result": "passed: an attributed declaration for the current issue is retained"
+          },
+          {
+            "locator": "spec/services/pull_requests/dependencies_resolved_spec.rb:58",
+            "result": "passed: PR dependency checks pass the current PR number to the parser"
+          },
+          {
+            "locator": "spec/services/cycle_analyses/automatic_repair_spec.rb:24",
+            "result": "passed: cycle repair removes a declaration attributed to the source issue"
           }
         ]
       }
@@ -39,12 +47,12 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_extract_spec.rb:72",
-            "result": "passed (chained positive directives are retained)"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:780",
+            "result": "passed: chained removals retain their established behavior"
           },
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:780",
-            "result": "passed (chained removal directives are applied)"
+            "locator": ".markdownlintignore:1",
+            "result": "passed: bin/lint completed with ignored local WORKLOG.md session notes"
           }
         ]
       }
