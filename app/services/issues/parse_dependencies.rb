@@ -398,7 +398,7 @@ module Issues
       # lookback so many directives in a long issue body stay linear to parse.
       prefix = text[[ directive_start - 256, 0 ].max...directive_start]
       clause = prefix[(prefix.rindex(/[.!?;\n]/) || -1) + 1..]
-      subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|explicitly|currently|also|now|no longer)\s+)*\z/i)
+      subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i)
       subject && subject[1].to_i != @current_issue_number
     end
 

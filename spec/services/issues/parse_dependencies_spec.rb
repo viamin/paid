@@ -97,6 +97,18 @@ RSpec.describe Issues::ParseDependencies do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-009
+    it "ignores another issue that has been blocked in prose" do
+      create(:issue, project: project, github_number: 9058)
+      actual = create(:issue, project: project, github_number: 9059)
+      issue = create(:issue, project: project,
+        body: "Issue #4635 has been blocked by #9058. This issue depends on #9059.")
+
+      described_class.call(issue: issue)
+
+      expect(issue.dependencies).to contain_exactly(actual)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
     it "does not turn a cycle analysis example into the current issue's dependencies" do
       body = <<~MARKDOWN
         ## Required regression case
@@ -141,6 +153,16 @@ RSpec.describe Issues::ParseDependencies do
 
       expect(issue.dependencies).to contain_exactly(dependency)
       expect(described_class.extract(body: "Issue #4635 no longer depends on #9057.").first).to be_empty
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "does not apply another issue's passive removal to the current issue" do
+      dependency = create(:issue, project: project, github_number: 9057)
+      issue = create(:issue, project: project, body: "Depends on #9057")
+
+      described_class.call(issue: issue, comments: [ "Issue #4635 has been unblocked by #9057." ])
+
+      expect(issue.dependencies).to contain_exactly(dependency)
     end
 
     # @spec DEPENDENCY-DECLARATIONS-009

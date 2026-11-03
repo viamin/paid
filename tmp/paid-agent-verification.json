@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "Colon-attributed foreign dependency directives are ignored while current-issue directives remain valid.",
+  "summary": "Passive foreign-issue dependency and removal declarations are ignored while current-issue declarations remain eligible.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,12 +9,12 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:57",
-            "result": "passed in the focused 129-example RSpec command"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:100",
+            "result": "passed (focused dependency suite: 131 examples, 0 failures)"
           },
           {
-            "locator": "spec/services/issues/parse_dependencies_spec.rb:67",
-            "result": "passed in the focused 129-example RSpec command"
+            "locator": "spec/services/issues/parse_dependencies_spec.rb:159",
+            "result": "passed (focused dependency suite: 131 examples, 0 failures)"
           }
         ]
       }
