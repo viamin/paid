@@ -2041,6 +2041,103 @@ RSpec.describe "Inbox" do
     end
   end
 
+  # @spec OPERATOR-INBOX-026 @spec ISSUE-ENHANCEMENT-020 @spec ISSUE-ENHANCEMENT-021
+  context "when a clarification carries a structured payload" do
+    let(:structured_question) { "Which storage backend should the export use?" }
+    let(:structured_details) do
+      [
+        {
+          "question" => structured_question,
+          "choices" => [
+            { "label" => "SQLite", "text" => "local file, zero setup" },
+            { "label" => "Postgres", "text" => "already used for app data" }
+          ],
+          "multiple" => false,
+          "recommendation" => { "label" => "SQLite", "text" => "matches the existing export path" },
+          "rationale" => "Both backends are vendored.",
+          "examples" => [ "A nightly CSV dump written to a local path" ],
+          "evidence" => [ "app/models/export.rb" ]
+        }
+      ]
+    end
+
+    def create_structured_issue(details: structured_details)
+      create(:issue, :needs_input, project: project, title: "Structured question",
+        body: "No markdown here",
+        needs_input_questions: [ structured_question ],
+        needs_input_question_details: details)
+    end
+
+    it "renders the question, the recommendation, and the choices in one block" do
+      issue = create_structured_issue
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      expect(response).to have_http_status(:ok)
+      block = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-question-0']")
+
+      expect(block.text).to include("Which storage backend should the export use?")
+      recommendation = block.at_css("[data-testid='inbox-recommendation-0']")
+      expect(recommendation.text).to include("SQLite")
+      expect(recommendation.text).to include("not a confirmed decision")
+      radios = block.css("input[type='radio']")
+      expect(radios.map { |radio| radio["value"] }).to eq([ "SQLite", "Postgres", "Other" ])
+      # The recommendation is a suggestion, never a pre-selected answer.
+      expect(radios.none? { |radio| radio["checked"] }).to be(true)
+    end
+
+    it "hides the supporting detail behind a closed disclosure" do
+      issue = create_structured_issue
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      detail = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-question-details-0']")
+      expect(detail).to be_present
+      expect(detail.attribute("open")).to be_nil
+      expect(detail.at_css("summary")).to be_present
+      expect(detail.text).to include("Both backends are vendored.")
+      expect(detail.text).to include("app/models/export.rb")
+    end
+
+    it "omits the recommendation when the payload carries no evidence for it" do
+      issue = create_structured_issue(details: [ structured_details.first.except("evidence") ])
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      expect(response.body).not_to include("inbox-recommendation-0")
+    end
+  end
+
+  # @spec OPERATOR-INBOX-026
+  context "when the questions mix legacy prose and legacy choice questions" do
+    let(:prose_question) { "The export currently writes JSON. Should the export support CSV too?" }
+    let(:choice_question) do
+      "Which storage backend should the export use? " \
+        "- ( ) SQLite) local file, zero setup " \
+        "- ( ) Postgres) already used for app data"
+    end
+
+    it "keeps the prose question whole and shows the choice question without its folded options" do
+      issue = create(:issue, :needs_input, project: project, title: "Mixed questions",
+        body: "No markdown here",
+        needs_input_questions: [ prose_question, choice_question ])
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      document = Nokogiri::HTML(response.body)
+      prose_block = document.at_css("[data-testid='inbox-question-0']")
+      choice_block = document.at_css("[data-testid='inbox-question-1']")
+
+      expect(prose_block.text).to include(prose_question)
+      expect(choice_block.text).to include("Which storage backend should the export use?")
+      expect(choice_block.text).not_to include("- ( ) SQLite)")
+      expect(choice_block.at_css("[data-controller='clarifying-choice']")).to be_present
+      # Nothing is inferred from prose, so no recommendation is rendered.
+      expect(document.at_css("[data-testid='inbox-recommendation-0']")).to be_nil
+      expect(document.at_css("[data-testid='inbox-recommendation-1']")).to be_nil
+    end
+  end
+
   # @spec OPERATOR-INBOX-011
   context "when the enhancement comment carries context sections" do
     let(:context_comment_body) do
@@ -2082,29 +2179,45 @@ RSpec.describe "Inbox" do
       expect(context_node["data-markdown-text-content-value"]).to include("- The repo already has a flag toggle wired up.")
     end
 
-    it "lays the context out beside the form on lg+ viewports via a two-column grid" do
+    it "keeps the question and the answer control in one column on every viewport" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
-      grid = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-question-layout']")
-      expect(grid["class"]).to include("lg:has-[[data-testid=inbox-clarifying-context]]:grid")
-      expect(grid["class"]).to include("grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+      layout = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-question-layout']")
+      expect(layout["class"]).not_to include("grid")
+      expect(layout["class"]).not_to include("lg:has-")
     end
 
-    it "does not collapse the disclosure on lg+ so the operator does not have to tap to read context" do
+    it "renders the context below the answer form" do
+      issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      document = Nokogiri::HTML(response.body)
+      form = document.at_css("form[action='#{project_issue_clarifying_questions_path(project, issue)}']")
+      panel = document.at_css("[data-testid='inbox-clarifying-context']")
+      expect(form).to be_present
+      expect(panel).to be_present
+      # The supporting context sits outside the answer form and after it in
+      # the markup, so the operator reads the question and the offered
+      # choices first.
+      expect(form.at_css("[data-testid='inbox-clarifying-context']")).to be_nil
+      expect(response.body.index("inbox-clarifying-context"))
+        .to be > response.body.index("inbox-question-layout")
+    end
+
+    it "collapses the context disclosure so the operator reads the question first" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
       get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       panel = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']")
-      # OPERATOR-INBOX-011 expects the context to be visible by default on lg+
-      # so the operator does not have to expand the disclosure before reading it.
-      # The native <details open> default-expansion is what removes that tap;
-      # Nokogiri represents a present boolean attribute as `""`, so we look
-      # for the attribute itself rather than a truthy string value.
-      expect(panel.attribute("open")).not_to be_nil
-      expect(panel.at_css("summary")["class"]).to include("lg:cursor-default")
+      # OPERATOR-INBOX-011 expects the supporting context to stay hidden by
+      # default: the native <details> disclosure keeps it one tap away
+      # without pushing the question and its answer control off screen.
+      expect(panel.attribute("open")).to be_nil
+      expect(panel.at_css("summary")["class"]).not_to include("lg:cursor-default")
     end
 
     it "escapes the fallback text so it never renders as raw HTML before JS runs" do

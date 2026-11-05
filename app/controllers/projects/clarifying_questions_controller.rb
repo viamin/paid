@@ -35,7 +35,8 @@ module Projects
     before_action :authorize_project_update, only: [ :create, :chat ]
 
     def show
-      @questions = ClarifyingQuestions::Load.call(project: @project, issue: @issue)
+      @questions = current_questions
+      @clarifications = current_clarifications
 
       if @questions.empty?
         redirect_to empty_questions_redirect_path, alert: "No clarifying questions found for #{issue_kind_label} ##{@issue.github_number}."
@@ -111,6 +112,25 @@ module Projects
       @current_questions ||= ClarifyingQuestions::Load.call(project: @project, issue: @issue)
     end
 
+    # The normalized clarifications for the current questions: the offered
+    # choices come from the structured payload when there is one, and from the
+    # legacy choice markers otherwise. The server validates answers against
+    # the options the operator was actually offered.
+    # @spec OPERATOR-INBOX-012
+    # @spec OPERATOR-INBOX-026
+    def current_clarifications
+      @current_clarifications ||= ClarifyingQuestions::Normalize.call(
+        questions: current_questions,
+        details: question_details
+      )
+    end
+
+    def question_details
+      return [] unless @issue.respond_to?(:has_attribute?) && @issue.has_attribute?(:needs_input_question_details)
+
+      Array(@issue.needs_input_question_details)
+    end
+
     def build_questions_and_answers(questions:)
       answers = Array(params[:answers])
       submitted_questions = Array(params[:questions]).map { |question| question.to_s.strip }
@@ -120,9 +140,15 @@ module Projects
         raise ArgumentError, "Clarifying questions changed. Please reload and try again."
       end
 
+      clarifications = current_clarifications
       questions.each_with_index.map do |question, i|
         answer = answers[i].to_s.strip
-        validate_choice_answer!(question: question, answer: answer, position: i + 1)
+        validate_choice_answer!(
+          question: question,
+          choices: clarifications[i]&.choices,
+          answer: answer,
+          position: i + 1
+        )
         { question: question, answer: answer }
       end
     end
@@ -134,11 +160,12 @@ module Projects
     # reject answers whose selections are not offered options or a specified
     # "Other". Questions without parsed choices (free text) skip validation —
     # the textarea answer is authoritative as typed.
-    def validate_choice_answer!(question:, answer:, position:)
+    def validate_choice_answer!(question:, answer:, position:, choices: nil)
       error = ClarifyingQuestions::ChoiceAnswers.error_for(
         question: question,
         answer: answer,
-        position: position
+        position: position,
+        choices: choices
       )
       raise ArgumentError, error if error
     end

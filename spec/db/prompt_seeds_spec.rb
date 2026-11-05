@@ -419,20 +419,46 @@ RSpec.describe Prompt, type: :model do
       expect(seed_template.strip).to eq(fallback_template.strip)
     end
 
-    it "seeded template requires strict choice-option markers for enumerable questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
-      expect(seed_template).to include("Choice questions")
-      expect(seed_template).to include("- ( ) SQLite) local file, zero setup")
-      expect(seed_template).to include("`- ( ) Label) description` lines when exactly one answer applies")
-      expect(seed_template).to include("`- [ ] Label) description` lines when several answers may apply")
-      expect(seed_template).to match(/Provide at least two\s+option lines/)
+    it "seeded template keeps the question line short and moves the detail into the payload", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
+      expect(seed_template).to match(/Keep the\s+numbered question short/)
+      expect(seed_template).to include("Do NOT put background, alternatives, code references, or your reasoning")
+      expect(seed_template).to include("\"rationale\": \"Both backends are vendored")
+      expect(seed_template).to include("\"evidence\": [ \"app/models/export.rb\", \"#1234\" ]")
     end
 
-    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires strict choice-option markers", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
-      expect(fallback_template).to include("Choice questions")
-      expect(fallback_template).to include("- ( ) SQLite) local file, zero setup")
-      expect(fallback_template).to include("`- ( ) Label) description` lines when exactly one answer applies")
-      expect(fallback_template).to include("`- [ ] Label) description` lines when several answers may apply")
-      expect(fallback_template).to match(/Provide at least two\s+option lines/)
+    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT keeps the question line short and moves the detail into the payload", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
+      expect(fallback_template).to match(/Keep the\s+numbered question short/)
+      expect(fallback_template).to include("Do NOT put background, alternatives, code references, or your reasoning")
+      expect(fallback_template).to include("\"rationale\": \"Both backends are vendored")
+      expect(fallback_template).to include("\"evidence\": [ \"app/models/export.rb\", \"#1234\" ]")
+    end
+
+    it "seeded template requires the structured choice contract for enumerable questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
+      expect(seed_template).to include("\"choices\": [")
+      expect(seed_template).to include("{ \"label\": \"SQLite\", \"text\": \"local file, zero setup\" }")
+      expect(seed_template).to include("Leave \"choices\" out when the answer is open-ended")
+      expect(seed_template).to include("Add \"multiple\": true when several")
+    end
+
+    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires the structured choice contract", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
+      expect(fallback_template).to include("\"choices\": [")
+      expect(fallback_template).to include("{ \"label\": \"SQLite\", \"text\": \"local file, zero setup\" }")
+      expect(fallback_template).to include("Leave \"choices\" out when the answer is open-ended")
+      expect(fallback_template).to include("Add \"multiple\": true when several")
+    end
+
+    it "seeded template requires an evidence-backed recommendation", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-021
+      expect(seed_template).to include("\"recommendation\": { \"label\": \"SQLite\"")
+      expect(seed_template).to include("Include it only when the repository, the issue, or a trusted")
+      expect(seed_template).to include("Never present a guess as a")
+      expect(seed_template).to include("leave it out when the requirement is genuinely ambiguous")
+    end
+
+    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires an evidence-backed recommendation", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-021
+      expect(fallback_template).to include("\"recommendation\": { \"label\": \"SQLite\"")
+      expect(fallback_template).to include("Include it only when the repository, the issue, or a trusted")
+      expect(fallback_template).to include("Never present a guess as a")
+      expect(fallback_template).to include("leave it out when the requirement is genuinely ambiguous")
     end
   end
 

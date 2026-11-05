@@ -2,7 +2,7 @@
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8"
      data-controller="clarifying-questions"
-     data-clarifying-questions-total-value="<%= @questions.size %>">
+     data-clarifying-questions-total-value="<%= @clarifications.size %>">
 
   <div class="sm:flex sm:items-center sm:justify-between">
     <div class="sm:flex-auto">
@@ -29,7 +29,7 @@
       <div class="px-4 py-4 sm:px-6">
         <div class="flex items-center justify-between">
           <p class="text-sm font-medium text-gray-700">
-            Progress: <span data-clarifying-questions-target="progressAnswered">0</span> / <%= @questions.size %> questions answered
+            Progress: <span data-clarifying-questions-target="progressAnswered">0</span> / <%= @clarifications.size %> questions answered
           </p>
           <p class="text-sm text-gray-500">
             <span data-clarifying-questions-target="progressPercent">0</span>%
@@ -59,7 +59,7 @@
         <%= hidden_field_tag :return_to, params[:return_to] %>
       <% end %>
 
-      <% @questions.each_with_index do |question, index| %>
+      <% @clarifications.each_with_index do |question, index| %>
         <div class="mt-4 overflow-hidden rounded-lg bg-white shadow"
              data-clarifying-questions-target="step"
              data-step-index="<%= index %>"
@@ -67,18 +67,17 @@
           <div class="px-4 py-5 sm:p-6">
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-gray-500">
-                Question <%= index + 1 %> of <%= @questions.size %>
+                Question <%= index + 1 %> of <%= @clarifications.size %>
               </span>
             </div>
-            <h3 class="text-lg font-medium text-gray-900 mb-4"><%= render "shared/markdown_text", content: question, tag: :span, class: "text-lg font-medium text-gray-900" %></h3>
 
-            <%= f.hidden_field "questions[]", value: question, id: "question_#{index}" %>
+            <%= f.hidden_field "questions[]", value: question.raw, id: "question_#{index}" %>
 
-            <%# @spec OPERATOR-INBOX-012 %>
-            <%= render "projects/clarifying_questions/answer_field",
+            <%# @spec OPERATOR-INBOX-012 @spec OPERATOR-INBOX-026 %>
+            <%= render "projects/clarifying_questions/question",
                   question: question,
+                  index: index,
                   field_id: "answer_#{index}",
-                  label: "Your answer",
                   pending_answer: nil,
                   field_class: "block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
                   answer_data: {
@@ -98,7 +97,7 @@
                 <% end %>
               </div>
               <div class="flex items-center gap-3">
-                <% if index < @questions.size - 1 %>
+                <% if index < @clarifications.size - 1 %>
                   <button type="button"
                           class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer"
                           data-action="click->clarifying-questions#next">

@@ -1414,6 +1414,59 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    # @spec OPERATOR-INBOX-026 @spec ISSUE-ENHANCEMENT-020
+    context "when the question carries a structured payload" do
+      let(:structured_question) { "Which storage backend should the export use?" }
+      let(:structured_details) do
+        [
+          {
+            "question" => structured_question,
+            "choices" => [
+              { "label" => "SQLite", "text" => "local file, zero setup" },
+              { "label" => "Postgres", "text" => "already used for app data" }
+            ],
+            "multiple" => false,
+            "recommendation" => { "label" => "SQLite", "text" => "matches the existing export path" },
+            "rationale" => "Both backends are vendored.",
+            "evidence" => [ "app/models/export.rb" ]
+          }
+        ]
+      end
+      let(:issue) do
+        create(:issue, :needs_input, project: project, body: issue_body,
+          needs_input_questions: [ structured_question ],
+          needs_input_question_details: structured_details)
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "posts an answer that matches the offered choices" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ structured_question ],
+          answers: [ "SQLite (local file, zero setup)" ]
+        }
+
+        expect(github_client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("**A1:** SQLite (local file, zero setup)")
+        )
+      end
+
+      it "rejects a forged selection that is not an offered choice" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ structured_question ],
+          answers: [ "Redis (not offered)" ]
+        }
+
+        expect(github_client).not_to have_received(:add_comment)
+        follow_redirect!
+        expect(response.body).to include(CGI.escapeHTML("isn't one of the offered options"))
+      end
+    end
+
     context "when the submitted questions no longer match the current questions" do
       before do
         allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])

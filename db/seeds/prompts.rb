@@ -760,116 +760,21 @@ upsert_global_prompt.call(
 # ----------------------------------------------------------------------------
 # goal.enhance_issue — Augment a base prompt for the enhance-issue goal
 # Used by: Activities::RunAgentActivity#augment_prompt_for_enhance_issue_goal
+# Template and variables are defined in Prompts::GoalEnhanceIssue. When the
+# question-shape instructions change, update Prompts::GoalEnhanceIssue::TEMPLATE
+# together with the prompt-sync migration, or fallback runs and seeded runs
+# will ask differently-shaped questions.
 # @spec ISSUE-ENHANCEMENT-001
 # @spec ISSUE-ENHANCEMENT-018
+# @spec ISSUE-ENHANCEMENT-020
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
-  slug: "goal.enhance_issue",
+  slug: Prompts::GoalEnhanceIssue::PROMPT_SLUG,
   name: "Goal: Enhance Issue",
   description: "Augments a base prompt with instructions to enhance an existing GitHub issue by adding implementation context or asking clarifying questions.",
   category: "planning",
-  template: <<~'TEMPLATE',
-    {{base_prompt}}
-
-    ---
-    IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
-    Do NOT write code, create PRs, create new issues, push commits, or post GitHub comments.
-
-    This run is read-only: do NOT modify files in /workspace, commit, push, create a PR,
-    or mutate GitHub. The workflow discards workspace modifications and posts the validated
-    enhancement comment itself. You can explore and read the repo freely.
-    State directories (under /home/agent/) are writable for scratch/tooling needs.
-
-    Read issue #{{issue_number}} in {{repo}}. Trusted collaborator comments are already included in
-    the base prompt. Do not fetch raw issue comments. Explore the repository
-    to self-answer codebase-determinable questions (existing models, platform targets, patterns, etc.)
-    before asking the human. Only ask about genuine product, scope, or intent ambiguities.
-
-    Write the comment in simplified technical English. Use short sentences. One idea per sentence.
-    Use plain technical words. Do not stack jargon. Avoid nested clauses and long noun chains.
-    Keep technical precision. Simplify the wording, not the meaning.
-
-    You can search the project's knowledge base to look up existing code,
-    symbols, routes, and patterns before asking questions:
-
-    ```bash
-    curl -s --connect-timeout 10 --max-time 30 "$KNOWLEDGE_SEARCH_URL?q=sortable+column+dashboard" \
-      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-      -H "X-Proxy-Token: $PROXY_TOKEN"
-    ```
-
-    Use the GitHub API proxy only to read issue details:
-
-    ```bash
-    curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}" \
-      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-      -H "X-Proxy-Token: $PROXY_TOKEN"
-    ```
-
-    When you are finished, print your result on stdout wrapped between
-    delimiter lines (exactly `paid-enhance-issue-output` on its own line,
-    before and after the JSON). Print nothing else between the markers:
-
-    paid-enhance-issue-output
-    {
-      "sufficient_context": true or false,
-      "comment_body": "Markdown comment with implementation context or clarifying questions"
-    }
-    paid-enhance-issue-output
-
-    If sufficient_context is true, the comment_body should include:
-    ## Implementation context
-    ### Relevant files and symbols
-    - ...
-    ### Architecture notes
-    - ...
-    ### Suggested approach
-    - ...
-
-    If sufficient_context is false, the comment_body should include:
-    ## Clarifying questions
-    1. ...
-    ## Current context
-    - ...
-
-    Write each clarifying question so it stands on its own: the reader cannot be
-    assumed to know the project, the issue history, or the roadmap. For each
-    numbered question:
-    - Open with one or two sentences of background: why you are asking and what
-      you found in the repository that raised the question.
-    - Reference the relevant code, issue, or doc when one exists (file path and
-      symbol, issue number such as #123, or design doc).
-    - When the question could be read two ways, name the options you are asking
-      about. When the answers form a short, enumerable set, mark the question as
-      a choice question with the option-marker syntax in "Choice questions"
-      below instead of naming the options in prose.
-    - When the answer depends on where the issue sits in the roadmap, say so —
-      dependencies on other issues, or follow-up work this issue enables.
-    Keep each question a single numbered item with its context sentences inline,
-    then the question itself, so the question list stays machine-parseable.
-
-    Choice questions. When — and only when — a question has a short, enumerable
-    set of answers, put the answers in a sub-list under the numbered question
-    using these exact marker lines:
-
-    1. Which storage backend should the export use?
-       - ( ) SQLite) local file, zero setup
-       - ( ) Postgres) already used for app data
-       - ( ) Flat JSON) easiest to diff
-
-    Use `- ( ) Label) description` lines when exactly one answer applies. Use
-    `- [ ] Label) description` lines when several answers may apply. The Label
-    is a short answer name of up to a few words and must not contain the `)`
-    character. The description is one short sentence. Provide at least two
-    option lines; with fewer options the question is not a choice question —
-    write it as prose. Never use these markers for context bullets or for
-    examples anywhere else in the comment.
-  TEMPLATE
-  variables: [
-    var.call("base_prompt", "The base prompt this augmentation extends"),
-    var.call("repo", "Repository full_name (owner/repo)"),
-    var.call("issue_number", "GitHub issue number")
-  ]
+  template: Prompts::GoalEnhanceIssue::TEMPLATE,
+  variables: Prompts::GoalEnhanceIssue::VARIABLES
 )
 
 # ----------------------------------------------------------------------------

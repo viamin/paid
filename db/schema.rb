@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_03_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_05_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2694,6 +2694,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_000000) do
     t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
+    t.jsonb "needs_input_question_details", comment: "Structured clarifying-question payload persisted with needs_input_questions (choices, recommendation, rationale, examples, evidence), so the inbox can render the clarification detail without a per-issue GitHub API round-trip"
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
     t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "no_code_required_at", comment: "When non-null, an agent explicitly declared this issue's work complete without a code change (no_code_required outcome). Permanently excludes the issue from auto-pick's completed-issue recovery path even though paid_state is 'completed', so it does not loop back into the queue on its own; only a manually triggered run can pick it up again."

@@ -883,7 +883,14 @@ module Activities
       round_id = feature_clarification_round_id(agent_run)
       question_comment = build_feature_clarifying_questions_comment(questions, round_id: round_id)
       if upstream_issue_write_skipped?(project, "create_feature_clarification", issue: issue, agent_run_id: agent_run.id)
-        issue.update!(paid_state: "needs_input", needs_input_questions: questions)
+        # The create_feature producer has no structured payload, so any detail
+        # left over from an earlier enhancement run is cleared with the
+        # questions it belonged to.
+        issue.update!(
+          paid_state: "needs_input",
+          needs_input_questions: questions,
+          needs_input_question_details: nil
+        )
         agent_run.log!("stdout", question_comment)
         return
       end
@@ -934,7 +941,8 @@ module Activities
       issue.update!(
         paid_state: "needs_input",
         labels: Array(issue.labels) | [ label ],
-        needs_input_questions: ClarifyingQuestions::Parse.call(comment_body: question_comment)
+        needs_input_questions: ClarifyingQuestions::Parse.call(comment_body: question_comment),
+        needs_input_question_details: nil
       )
     end
 

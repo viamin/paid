@@ -1461,7 +1461,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("where the issue sits in the roadmap")
     end
 
-    it "instructs the agent to mark enumerable choice questions with strict option markers", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
+    it "instructs the agent to list enumerable choices in the structured payload", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
         .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
@@ -1469,17 +1469,45 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
 
-      # Pin the author-side choice-marker opt-in (#3893): the agent must only
-      # emit `- ( ) Label) description` (single) / `- [ ] Label) description`
-      # (multi) sub-lists for genuinely enumerable questions, so the platform
-      # parser (ClarifyingQuestions::Choices) never has to guess which
-      # sub-lines are options.
-      expect(prompt).to include("Choice questions")
-      expect(prompt).to include("- ( ) SQLite) local file, zero setup")
-      expect(prompt).to include("`- ( ) Label) description` lines when exactly one answer applies")
-      expect(prompt).to include("`- [ ] Label) description` lines when several answers may apply")
-      expect(prompt).to match(/Provide at least two\s+option lines/)
-      expect(prompt).to include("Never use these markers for context bullets")
+      # Pin the author-side choice opt-in (#3893, #4865): the agent must list
+      # the options it offers in the structured payload's `choices` field, so
+      # the platform never has to guess which lines are options.
+      expect(prompt).to include(%q("choices": [))
+      expect(prompt).to include(%q({ "label": "SQLite", "text": "local file, zero setup" }))
+      expect(prompt).to include(%q(Leave "choices" out when the answer is open-ended))
+      expect(prompt).to include(%q(Add "multiple": true when several))
+    end
+
+    it "keeps the numbered question short and carries the detail in the payload", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
+      base_prompt = "Enhance this issue with implementation context."
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
+        .and_return(content: "")
+
+      prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
+
+      # Pin the question/payload split (#4865): the operator reads the
+      # question first, so the question line stays short and the background,
+      # options, and references travel in the payload.
+      expect(prompt).to match(/Keep the\s+numbered question short/)
+      expect(prompt).to include("Do NOT put background, alternatives, code references, or your reasoning")
+      expect(prompt).to include(%q("clarifying_questions": [))
+      expect(prompt).to include(%q("rationale": "Both backends are vendored))
+      expect(prompt).to include(%q("evidence": [ "app/models/export.rb", "#1234" ]))
+    end
+
+    it "requires an evidence-backed recommendation and forbids guessing", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-021
+      base_prompt = "Enhance this issue with implementation context."
+      allow(Knowledge::ContextBundle::Build).to receive(:call)
+        .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
+        .and_return(content: "")
+
+      prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
+
+      expect(prompt).to include(%q("recommendation": { "label": "SQLite"))
+      expect(prompt).to include("Include it only when the repository, the issue, or a trusted")
+      expect(prompt).to include("Never present a guess as a")
+      expect(prompt).to include("leave it out when the requirement is genuinely ambiguous")
     end
 
     it "renders without knowledge context when no artifacts are available" do

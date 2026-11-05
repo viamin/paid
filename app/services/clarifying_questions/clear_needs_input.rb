@@ -49,7 +49,8 @@ module ClarifyingQuestions
       attrs = {
         paid_state: "new",
         labels: Array(issue.labels) - [ label ],
-        needs_input_questions: nil
+        needs_input_questions: nil,
+        needs_input_question_details: nil
       }
       attrs[:enhance_issue_rounds] = 0 if issue.respond_to?(:enhance_issue_rounds) && issue.enhance_issue_rounds.to_i.positive?
       # @spec OPERATOR-INBOX-007
@@ -107,6 +108,7 @@ module ClarifyingQuestions
       # still awaiting input.
       attrs = {
         needs_input_questions: nil,
+        needs_input_question_details: nil,
         needs_input_since: nil,
         labels: Array(issue.labels) - [ label ]
       }

@@ -40,6 +40,14 @@ module ClarifyingQuestions
       new(...).call
     end
 
+    # The question text without the folded option markers. The operator
+    # reads this as the question label, so a legacy choice question shows
+    # its question instead of the option list folded into it.
+    # @spec OPERATOR-INBOX-026
+    def self.label_for(question)
+      question.to_s.split(ANY_MARKER, 2).first.to_s.strip
+    end
+
     def initialize(question:)
       @question = question.to_s
     end

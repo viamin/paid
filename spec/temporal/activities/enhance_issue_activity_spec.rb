@@ -309,6 +309,64 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(grant.reload).to be_active
     end
 
+    # @spec ISSUE-ENHANCEMENT-020
+    context "when the agent emits a structured clarifying-question payload" do
+      let(:structured_payload_entry) do
+        {
+          question: "Which events should be recorded?",
+          choices: [
+            { label: "Audit log", text: "kept for a year" },
+            { label: "Activity feed", text: "kept for a month" }
+          ],
+          multiple: false,
+          recommendation: { label: "Audit log", text: "matches the retention policy" },
+          rationale: "Both events are already collected.",
+          examples: [ "A user changes a setting" ],
+          evidence: [ "app/models/audit_event.rb" ]
+        }
+      end
+
+      let(:sanitized_payload_entry) do
+        {
+          "question" => "Which events should be recorded?",
+          "choices" => [
+            { "label" => "Audit log", "text" => "kept for a year" },
+            { "label" => "Activity feed", "text" => "kept for a month" }
+          ],
+          "recommendation" => { "label" => "Audit log", "text" => "matches the retention policy" },
+          "rationale" => "Both events are already collected.",
+          "examples" => [ "A user changes a setting" ],
+          "evidence" => [ "app/models/audit_event.rb" ]
+        }
+      end
+
+      it "persists the structured clarifying-question payload with the questions" do
+        log_agent_stdout({
+          sufficient_context: false,
+          comment_body: "## Clarifying questions\n1. Which events should be recorded?",
+          clarifying_questions: [ structured_payload_entry ]
+        }.to_json)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.needs_input_questions).to eq([ "Which events should be recorded?" ])
+        expect(issue.needs_input_question_details).to eq([ sanitized_payload_entry ])
+      end
+
+      it "publishes the questions and stores no payload when the agent emits a malformed one" do
+        log_agent_stdout({
+          sufficient_context: false,
+          comment_body: "## Clarifying questions\n1. Which events should be recorded?",
+          clarifying_questions: [ { "choices" => [ { "label" => "Audit log" } ] } ]
+        }.to_json)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(issue.reload.needs_input_questions).to eq([ "Which events should be recorded?" ])
+        expect(issue.needs_input_question_details).to be_nil
+      end
+    end
+
     context "when quiet-mode questions are being replaced" do
       before do
         project.update!(quiet_mode: true)

@@ -258,6 +258,30 @@ module Inbox
         @context_markdown = context_loader&.context_markdown
       end
 
+      # The normalized clarifications for this entry: the question the
+      # operator reads, the offered choices, Paid's grounded recommendation,
+      # and the supporting detail. Legacy entries without a structured payload
+      # normalize through the same contract, so no entry needs a second
+      # rendering path.
+      # @spec OPERATOR-INBOX-026
+      def clarifications
+        @clarifications ||= ClarifyingQuestions::Normalize.call(
+          questions: Array(questions),
+          details: question_details
+        )
+      end
+
+      # @spec OPERATOR-INBOX-026
+      def question_details
+        return @question_details if defined?(@question_details)
+
+        @question_details = if issue.respond_to?(:has_attribute?) && issue.has_attribute?(:needs_input_question_details)
+          Array(issue.needs_input_question_details)
+        else
+          []
+        end
+      end
+
       # Lazy accessor, mirroring `context_markdown`: resolves the enhancement
       # comment link for the SELECTED entry only, so building the queue never
       # makes a GitHub API call per manual_review row.

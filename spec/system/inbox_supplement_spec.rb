@@ -33,20 +33,32 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
 
   after { Warden.test_reset! }
 
-  it "loads context beside the form and replaces it when another entry is selected" do
+  it "loads the context below the form and replaces it when another entry is selected" do
     page.driver.resize(1440, 1000)
     visit inbox_path(kind: "clarifying_questions")
 
-    expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
+    # The context is supporting detail: the disclosure stays closed until the
+    # operator opens it, and it renders in one column with the answer form.
+    expect(page).to have_css("[data-testid='inbox-clarifying-context'] summary", text: "Context from Paid's analysis")
+    expect(page).to have_no_text("Existing behavior is documented.")
     expect(page).to have_button("Submit Answers")
-    expect(page.evaluate_script("getComputedStyle(document.querySelector('[data-testid=inbox-question-layout]')).display")).to eq("grid")
+    expect(page.evaluate_script("getComputedStyle(document.querySelector('[data-testid=inbox-question-layout]')).display")).to eq("block")
 
     within("#inbox-list") { click_link "Second question", exact: false }
 
     within("#inbox-detail") do
       expect(page).to have_css("h2", text: "Second question")
-      expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.", count: 1)
+      expect(page).to have_css("[data-testid='inbox-clarifying-context'] summary", text: "Context from Paid's analysis", count: 1)
     end
+  end
+
+  it "keeps the supporting context one tap away" do
+    page.driver.resize(1440, 1000)
+    visit inbox_path(kind: "clarifying_questions")
+
+    find("[data-testid='inbox-clarifying-context'] summary").click
+
+    expect(page).to have_text("Existing behavior is documented.")
   end
 
   # @spec OPERATOR-INBOX-017 @spec OPERATOR-INBOX-003
@@ -59,7 +71,7 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
     within("#inbox-list") { click_link "Second question", exact: false }
 
     expect(page).to have_css("#inbox-detail h2", text: "Second question")
-    expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
+    expect(page).to have_css("[data-testid='inbox-clarifying-context'] summary", text: "Context from Paid's analysis")
     expect(page).to have_button("Submit Answers")
     click_link "Back to queue"
     expect(page).to have_css("#inbox-list", text: "Second question")

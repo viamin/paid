@@ -1,11 +1,16 @@
 <%# @spec OPERATOR-INBOX-008 @spec OPERATOR-INBOX-011 @spec OPERATOR-INBOX-002D
+    @spec OPERATOR-INBOX-026
     Shared clarifying-questions answer form used by both the clarifying_questions
     and manual_review inbox detail panes: same submit endpoint
-    (ClarifyingQuestionsController#create), same inbox redirect contract. The
-    two-column lg+ layout puts the agent-authored context beside the answer
-    form (sticky sidebar) when the supplementary frame loads context
-    (clarifying_questions entries only); manual_review entries render the
-    questions alone. %>
+    (ClarifyingQuestionsController#create), same inbox redirect contract.
+
+    Each clarification renders from ONE shared partial
+    (projects/clarifying_questions/_question), so the question, Paid's
+    recommendation, the answer control, and the supporting detail stay in one
+    block on desktop and on mobile. The agent-authored context (the
+    "Current Context" section plus the preamble) renders BELOW the answer form
+    in a closed disclosure, so the operator reads the question and the offered
+    choices before any background prose. %>
 <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
 <% pending_freeform_note = flash[:inbox_pending_freeform_notes]&.dig(entry.record.id.to_s) %>
 <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
@@ -22,52 +27,36 @@
     <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
   <% end %>
 
-  <div class="space-y-4 lg:has-[[data-testid=inbox-clarifying-context]]:grid lg:has-[[data-testid=inbox-clarifying-context]]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:has-[[data-testid=inbox-clarifying-context]]:items-start lg:has-[[data-testid=inbox-clarifying-context]]:gap-6 lg:has-[[data-testid=inbox-clarifying-context]]:space-y-0"
-       data-testid="inbox-question-layout">
-    <% if entry.clarifying_questions? %>
-      <div class="block min-h-px lg:sticky lg:top-4">
-        <%= render "inbox/supplement_content", entry: entry %>
-      </div>
+  <div class="space-y-4" data-testid="inbox-question-layout">
+    <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
+
+    <% entry.clarifications.each_with_index do |question, index| %>
+      <%= render "projects/clarifying_questions/question",
+            question: question,
+            index: index,
+            field_id: dom_id(entry.record, "answer_#{index}"),
+            pending_answer: pending_answers&.at(index),
+            field_class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
+            answer_data: { testid: "inbox-answer-#{index}" } %>
     <% end %>
 
-    <div class="space-y-4">
-      <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
-      <% entry.questions.each_with_index do |question, index| %>
-        <div class="rounded-lg bg-gray-50 px-4 py-3">
-          <label for="<%= dom_id(entry.record, "answer_#{index}") %>" class="block text-sm font-medium text-gray-700">
-            <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
-            <%= render "shared/markdown_text", content: question %>
-          </label>
-          <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
-          <%# @spec OPERATOR-INBOX-012 %>
-          <%= render "projects/clarifying_questions/answer_field",
-                question: question,
-                field_id: dom_id(entry.record, "answer_#{index}"),
-                label: nil,
-                pending_answer: pending_answers&.at(index),
-                field_class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
-                answer_data: { testid: "inbox-answer-#{index}" } %>
-        </div>
-      <% end %>
-
-      <%# @spec OPERATOR-INBOX-013
-          Optional freeform textarea at the bottom of every inbox
-          clarifying-questions answer form. Pre-filled from the one-shot
-          flash when the previous submission bounced back with a
-          validation/GitHub failure so the operator does not retype it. %>
-      <div class="rounded-lg bg-gray-50 px-4 py-3">
-        <label for="<%= dom_id(entry.record, "freeform_note") %>" class="block text-sm font-medium text-gray-700">
-          Anything else? (optional)
-        </label>
-        <p class="mt-1 text-xs text-gray-500">
-          Use this space for cross-cutting context that doesn't fit any single question.
-        </p>
-        <%= text_area_tag :freeform_note, pending_freeform_note,
-              id: dom_id(entry.record, "freeform_note"),
-              rows: 4,
-              placeholder: "Anything else the agent should know...",
-              class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
-      </div>
+    <%# @spec OPERATOR-INBOX-013
+        Optional freeform textarea at the bottom of every inbox
+        clarifying-questions answer form. Pre-filled from the one-shot
+        flash when the previous submission bounced back with a
+        validation/GitHub failure so the operator does not retype it. %>
+    <div class="rounded-lg bg-gray-50 px-4 py-3">
+      <label for="<%= dom_id(entry.record, "freeform_note") %>" class="block text-sm font-medium text-gray-700">
+        Anything else? (optional)
+      </label>
+      <p class="mt-1 text-xs text-gray-500">
+        Use this space for cross-cutting context that doesn't fit any single question.
+      </p>
+      <%= text_area_tag :freeform_note, pending_freeform_note,
+            id: dom_id(entry.record, "freeform_note"),
+            rows: 4,
+            placeholder: "Anything else the agent should know...",
+            class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
     </div>
   </div>
 
@@ -80,5 +69,15 @@
     <%= f.submit "Submit Answers",
           class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer",
           data: { turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub #{issue_kind_label(entry.issue, style: :long)}." } %>
+  </div>
+<% end %>
+
+<%# @spec OPERATOR-INBOX-011
+    The agent-authored context renders below the answer form in a closed
+    disclosure: the operator reads the question and the offered choices
+    first, and the surrounding prose stays one tap away. %>
+<% if entry.clarifying_questions? %>
+  <div class="mt-6">
+    <%= render "inbox/supplement_content", entry: entry %>
   </div>
 <% end %>

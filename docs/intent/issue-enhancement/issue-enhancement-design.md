@@ -48,6 +48,14 @@ therefore carries its own context:
 - where the issue fits in the roadmap (dependencies, follow-up work) when it
   affects the answer.
 
+Since #4865 that context no longer rides inside the numbered question line.
+The question itself is one or two sentences that ask for one decision, and the
+background, references, options, and roadmap context travel in the structured
+payload described below (`rationale`, `evidence`, `choices`). The question
+still stands on its own — it names the subject and the decision it needs — but
+the operator reads the question first and the supporting detail second instead
+of digging for the actual choice inside one long block.
+
 The enhancement comment and its questions are written in simplified technical
 English: short sentences with one idea per sentence, plain technical words, no
 nested clauses or stacked jargon, keeping technical meaning precise (#3840).
@@ -87,12 +95,31 @@ The activity still emits the same markdown shape:
 That preserves the existing parser, `paid_state: "needs_input"` handling,
 dashboard queue, answer form, and answer-ingestion flow.
 
-## Choice questions (strict option markers)
+## Choice questions (structured options, legacy markers)
 
 When — and only when — a question has a short, enumerable set of answers,
-the enhancement prompt tells the agent to opt the question into choice
-semantics by listing the answers as a marker sub-list under the numbered
-question (#3893):
+the enhancement prompt tells the agent to list those options in the
+structured payload's `choices` field rather than in prose inside the numbered
+question (#3893, #4865):
+
+```json
+{
+  "question": "Which storage backend should the export use?",
+  "choices": [
+    { "label": "SQLite", "text": "local file, zero setup" },
+    { "label": "Postgres", "text": "already used for app data" },
+    { "label": "Flat JSON", "text": "easiest to diff" }
+  ],
+  "multiple": false
+}
+```
+
+`multiple` selects the widget family: `false` (the default) means exactly one
+answer applies, `true` means several may apply.
+
+Questions published before the payload existed carry their options as marker
+sub-lines under the numbered question. That spelling stays supported on the
+reader side:
 
 ```
 1. Which storage backend should the export use?
@@ -101,7 +128,7 @@ question (#3893):
    - ( ) Flat JSON) easiest to diff
 ```
 
-The markers are author-side opt-in and deliberately strict:
+The markers are deliberately strict:
 
 - `- ( ) Label) description` marks a single-answer question (radio-style).
 - `- [ ] Label) description` (and `- [x]` as the checked-box spelling)
@@ -121,12 +148,97 @@ Choice markers are a **view-time** attribute: the folded question strings
 that `Parse` produces — and everything downstream of them (inbox queue
 entries, `needs_input_questions` persistence, the answer-form tamper guard,
 `AnswerPairs.questions_match?` reconciliation) — stay byte-identical,
-markers included. Rendering the parsed options as click-able choice UI and
-validating answers against them are tracked in a follow-up issue.
+markers included. The normalization contract turns either spelling into the
+same `choices` field, and the label the operator reads is the question text
+before the first marker, so a legacy choice question shows its question
+rather than the folded option list.
 
 The seeded `goal.enhance_issue` template, the code fallback
 (`RunAgentActivity::FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`), and the
 prompt-sync migration must stay in lockstep (see "Prompt deployment").
+
+## Structured clarifying-question payload
+
+A clarification carries more than the question itself: the options the
+operator can pick, why the agent is asking, what an answer looks like, and
+which code, issue, or doc the question came from. Since #4865 those parts
+travel as a structured payload instead of as prose folded into the numbered
+question.
+
+The producer emits the payload next to the comment body in the agent's
+structured output:
+
+```json
+{
+  "sufficient_context": false,
+  "comment_body": "## Clarifying questions\n1. Which storage backend should the export use?",
+  "clarifying_questions": [
+    {
+      "question": "Which storage backend should the export use?",
+      "choices": [
+        { "label": "SQLite", "text": "local file, zero setup" },
+        { "label": "Postgres", "text": "already used for app data" }
+      ],
+      "multiple": false,
+      "recommendation": { "label": "SQLite", "text": "matches the existing export path" },
+      "rationale": "Both backends are vendored, but only SQLite needs no server.",
+      "examples": [ "A nightly CSV dump written to a local path" ],
+      "evidence": [ "app/models/export.rb", "#1234" ]
+    }
+  ]
+}
+```
+
+The payload contract has six distinct fields; only `question` is required:
+
+| Field | Meaning |
+| --- | --- |
+| `question` | The question text, matching the numbered item in the comment body. |
+| `choices` | The offered answers (`label` plus a one-sentence `text`). Two or more usable entries make it a choice question; omit the field for an open-ended question. |
+| `multiple` | `true` when several answers may apply (checkbox family), `false` (the default) for exactly one (radio family). |
+| `recommendation` | The option Paid believes is best, with the reason. Only present when the answer is evidence-backed. |
+| `rationale` | Why the agent is asking and what it found — the reasoning the operator reads before answering. |
+| `examples` | Concrete examples that show what an answer looks like. |
+| `evidence` | The code, issue, or doc references that back the question. |
+
+`ClarifyingQuestions::StructuredPayload` sanitizes the agent's array before
+it is trusted: non-object entries, blank questions, blank labels, and
+non-string fields are dropped, and a `choices` array with fewer than two
+usable options is discarded rather than rendered as a one-button choice. A
+malformed payload never fails the enhancement run — the questions still
+publish, and the clarification falls back to the legacy rendering.
+
+`ClarifyingQuestions::Normalize` is the reader-side contract. It takes the
+question strings the platform already stores (`needs_input_questions`, or the
+questions parsed from a GitHub comment or description section) plus the
+stored payload, and returns one `ClarifyingQuestions::Question` per question
+carrying the six fields above. Questions are matched to payload entries by
+their question text; an entry that matches no question is ignored.
+
+Compatibility with questions published before the payload existed is a
+read-time concern, not a data migration:
+
+- a question published with the old choice markers keeps its choices —
+  `ClarifyingQuestions::Choices` still parses the markers — and its label is
+  the text before the first marker, so the operator sees the question instead
+  of the folded option list;
+- a question published as prose keeps its full text as the label;
+- **no** recommendation, rationale, example, or evidence is ever inferred
+  from prose. Paid does not guess a product answer, so a legacy question
+  shows no recommendation block at all.
+
+A recommendation is only rendered when it is *grounded*: it names an option
+the question actually offers, and the question carries at least one
+`evidence` reference. Otherwise the operator sees no recommendation rather
+than an unsourced suggestion, and the freeform answer path stays open. A
+recommendation is never pre-selected — the answer the operator submits is
+the only decision of record, and the agent's hypothesis never becomes a
+user-confirmed decision.
+
+The structured payload is persisted with the questions
+(`issues.needs_input_question_details`) so the inbox can render the
+recommendation and the supporting detail without a GitHub round-trip, and it
+is cleared together with the questions when the clarification is answered.
 
 ## Codebase-grounded questions and sufficiency
 

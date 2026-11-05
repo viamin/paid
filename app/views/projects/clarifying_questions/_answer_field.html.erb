@@ -1,14 +1,18 @@
+<%# locals: question (String, required), field_id (String, required), choices (Hash, optional), label (String, optional), pending_answer (String, optional), field_class (String, required), answer_data (Hash, optional) %>
 <%# @spec OPERATOR-INBOX-012 %>
-<%# Shared click-to-answer answer field rendered by BOTH answer surfaces —
+<%# @spec OPERATOR-INBOX-026
+    Shared click-to-answer answer field rendered by BOTH answer surfaces —
     the inbox detail pane and the standalone clarifying_questions#show page
     (which also serves the needs-input dashboard flow). A question with
-    strict choice markers (ClarifyingQuestions::Choices) renders native
-    radio/checkbox inputs styled as segmented buttons, an always-present
-    "Other" option, and a detail textarea that becomes required when "Other"
-    is selected; a question whose parsed choices are nil renders the
-    textarea-only widget unchanged. Both branches submit the same
+    choices renders native radio/checkbox inputs styled as segmented
+    buttons, an always-present "Other" option, and a detail textarea that
+    becomes required when "Other" is selected; a question whose normalized
+    choices are nil renders the textarea-only widget unchanged. The choices
+    come from the normalization contract (ClarifyingQuestions::Normalize),
+    which reads them from the structured payload or, for a legacy question,
+    from the strict choice markers. Both branches submit the same
     questions[]/answers[] params with unmutated question strings. %>
-<% choices = ClarifyingQuestions::Choices.call(question: question) %>
+<% choices = local_assigns.key?(:choices) ? local_assigns[:choices] : ClarifyingQuestions::Choices.call(question: question) %>
 <% if label.present? %>
   <label for="<%= field_id %>" class="block text-sm font-medium text-gray-700 mb-1">
     <%= label %> <span class="text-red-500">*</span>

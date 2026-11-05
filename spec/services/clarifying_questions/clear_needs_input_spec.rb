@@ -35,7 +35,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
     it "resets paid_state and drops the label locally" do
       described_class.call(project: project, issue: issue)
 
-      expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
+      expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil, needs_input_question_details: nil)
     end
 
     # @spec ISSUE-ENHANCEMENT-014
@@ -59,7 +59,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         described_class.call(project: project, issue: issue)
 
         expect(issue).to have_received(:update!).with(
-          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil,
+          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil, needs_input_question_details: nil,
           enhance_issue_rounds: 0
         )
       end
@@ -107,7 +107,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         described_class.call(project: project, issue: issue)
 
         expect(issue).to have_received(:update!).with(
-          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil,
+          paid_state: "new", labels: [ "P2" ], needs_input_questions: nil, needs_input_question_details: nil,
           enhance_issue_rounds: 0
         )
       end
@@ -136,7 +136,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         described_class.call(project: project, issue: issue)
 
         expect(github_client).not_to have_received(:remove_label_from_issue)
-        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
+        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil, needs_input_question_details: nil)
       end
     end
 
@@ -146,7 +146,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       it "still resets local state" do
         described_class.call(project: project, issue: issue)
 
-        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
+        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil, needs_input_question_details: nil)
       end
     end
 
@@ -159,7 +159,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
       it "logs and still resets local state" do
         described_class.call(project: project, issue: issue)
 
-        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil)
+        expect(issue).to have_received(:update!).with(paid_state: "new", labels: [ "P2" ], needs_input_questions: nil, needs_input_question_details: nil)
       end
     end
   end
@@ -227,6 +227,18 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         expect(issue.reload.needs_input_questions).to be_nil
       end
 
+      # @spec ISSUE-ENHANCEMENT-020
+      it "clears the structured clarifying-question payload with the questions" do
+        issue.update!(
+          needs_input_questions: [ "What is the desired behavior?" ],
+          needs_input_question_details: [ { "question" => "What is the desired behavior?" } ]
+        )
+
+        described_class.call(project: project, issue: issue)
+
+        expect(issue.reload.needs_input_question_details).to be_nil
+      end
+
       # @spec TEMPORAL-ORCHESTRATION-007
       it "clears the clarification round identity so a later round can post" do
         agent_run.update!(external_metadata: agent_run.external_metadata.merge(
@@ -286,7 +298,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
 
         expect(issue.reload).to have_attributes(
           paid_state: "in_progress",
-          needs_input_questions: nil,
+          needs_input_questions: nil, needs_input_question_details: nil,
           needs_input_since: nil,
           enhance_issue_rounds: 0,
           manual_review_reason: nil,

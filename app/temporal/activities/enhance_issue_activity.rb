@@ -99,7 +99,7 @@ module Activities
 
       gh_comment = publish_enhancement(agent_run, project, issue, client, comment_body)
       label_result = apply_label_state(client, project, issue, parsed, agent_run)
-      sync_needs_input_questions(issue, questions)
+      sync_needs_input_questions(issue, questions, structured_question_details(parsed))
 
       # Reset the enhancement round counter on a successful verdict (#3842):
       # the lane has converged, and a later regression shouldn't inherit an
@@ -350,7 +350,9 @@ module Activities
 
     def recover_paid_question_comment!(agent_run, project, issue, client, comment)
       label_result = apply_label_state(client, project, issue, { sufficient_context: false }, agent_run)
-      issue.update!(needs_input_questions: paid_comment_questions(comment))
+      # A directly posted comment carries no structured payload, so the
+      # recovered questions normalize through the legacy rendering.
+      sync_needs_input_questions(issue, paid_comment_questions(comment))
       complete_run!(agent_run, "needs_input", sufficient_context: false)
       ProcessRunQueueJob.perform_later
 
@@ -740,8 +742,20 @@ module Activities
       !parsed[:sufficient_context] && !max_rounds_reached
     end
 
-    def sync_needs_input_questions(issue, questions)
-      issue.update!(needs_input_questions: questions.presence)
+    def sync_needs_input_questions(issue, questions, details = nil)
+      issue.update!(
+        needs_input_questions: questions.presence,
+        needs_input_question_details: details.presence
+      )
+    end
+
+    # The structured clarifying-question payload the agent emitted next to its
+    # comment body. Sanitized before it is persisted: a malformed payload
+    # never fails the run, the questions still publish, and the clarification
+    # falls back to the legacy rendering.
+    # @spec ISSUE-ENHANCEMENT-020
+    def structured_question_details(parsed)
+      ClarifyingQuestions::StructuredPayload.call(payload: parsed[:clarifying_questions])
     end
 
     # The round cap bounds *automatic* re-evaluation (ISSUE-ENHANCEMENT-011).

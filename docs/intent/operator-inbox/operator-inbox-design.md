@@ -215,15 +215,31 @@ the numbered questions in the latest enhancement comment — the
 `## Clarifying questions` heading — as `context_markdown`, surfaced by
 `ClarifyingQuestions::Load#context_markdown` fetching and memoizing
 `issue_comments` in the separate supplementary request. The inbox detail pane
-(`OPERATOR-INBOX-011`) renders that markdown beside the answer form on `lg+`
-viewports (two-column grid, sticky scrollable sidebar) and inside a
-collapsible native `<details>` disclosure above the questions on smaller
-viewports, via the shared `shared/markdown_text` partial in block mode.
-The panel hides gracefully when no context is fetchable (no GitHub
-credential, transient GitHub failure, or questions sourced from the local
-`needs_input_questions` snapshot rather than a fetched comment); the
-existing `View Issue` / `View PR` link remains so the operator can still
-read the comment directly on GitHub.
+(`OPERATOR-INBOX-011`) renders that markdown BELOW the answer form inside a
+native `<details>` disclosure that is closed by default, via the shared
+`shared/markdown_text` partial in block mode. Since #4865 the context no
+longer sits beside the questions in a two-column grid: the answer form and
+the context share one column on every viewport, so each question and its
+answer control stay together and the operator reads the question and the
+offered choices before any background prose. The panel hides gracefully when
+no context is fetchable (no GitHub credential, transient GitHub failure, or
+questions sourced from the local `needs_input_questions` snapshot rather than
+a fetched comment); the existing `View Issue` / `View PR` link remains so the
+operator can still read the comment directly on GitHub.
+
+Each clarification itself renders from ONE shared partial
+(`projects/clarifying_questions/_question`) so the inbox detail pane and the
+standalone `clarifying_questions#show` wizard stay in step. The partial
+renders the normalized question label, Paid's grounded recommendation (when
+the question carries one), the answer control, and — closed by default — the
+rationale, examples, and evidence references. The normalization contract that
+supplies those fields lives in
+[`issue-enhancement`](../issue-enhancement/issue-enhancement-design.md): the
+question text is the label (the text before the first legacy choice marker),
+the answer control is the click-to-answer widget when the question carries
+choices and the freeform textarea otherwise, and the supporting detail stays
+hidden without losing keyboard or screen-reader access because it uses a
+native `<details>` element.
 
 ### `plan_review`
 

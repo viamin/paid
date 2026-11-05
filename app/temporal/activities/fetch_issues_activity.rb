@@ -681,7 +681,8 @@ module Activities
         issue.update!(
           paid_state: "failed",
           labels: Array(issue.labels) - repair_labels,
-          needs_input_questions: nil
+          needs_input_questions: nil,
+          needs_input_question_details: nil
         )
         changed = true
 

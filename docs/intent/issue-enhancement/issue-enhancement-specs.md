@@ -178,13 +178,15 @@
 
 - [x] **ISSUE-ENHANCEMENT-014** — When issue enhancement asks clarifying
   questions, the system SHALL require every question to stand on its own so a
-  reader without deep project knowledge can understand and answer it. Each
-  question SHALL open with one or two sentences of background explaining why
-  the agent is asking and what it found in the repository, SHALL reference the
-  relevant code, issue, or doc when one exists, SHALL name the options being
-  asked about when the question could be read more than one way, and SHALL
-  note where the issue fits in the roadmap (dependencies, follow-up work)
-  when it affects the answer (#3841).
+  reader without deep project knowledge can understand and answer it. The
+  numbered question line SHALL stay short — one or two sentences that ask for
+  one decision — and SHALL NOT carry the agent's background, alternatives,
+  code references, or reasoning; that supporting context SHALL travel in the
+  structured payload's `rationale`, `evidence`, and `choices` fields
+  (#3841, #4865). The question SHALL name the options being asked about when
+  the question could be read more than one way and SHALL note where the issue
+  fits in the roadmap (dependencies, follow-up work) when it affects the
+  answer, in the payload rather than inside the question line.
   *Tests:* `spec/models/agent_run_spec.rb#prompt_for_enhance_issue`,
   `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`,
   `spec/db/prompt_seeds_spec.rb` (`goal.enhance_issue self-contained questions coupling`),
@@ -196,13 +198,14 @@
 
 - [x] **ISSUE-ENHANCEMENT-018** — When a clarifying question has a short,
   enumerable set of answers, the `goal.enhance_issue` prompt SHALL instruct
-  the agent to opt the question into choice semantics with strict sub-list
-  option markers — `- ( ) Label) description` lines for single-answer
-  questions, `- [ ]` / `- [x]` checkbox-family lines for multi-answer
-  questions — instead of naming the options in prose (#3893). The seeded
-  template, the code fallback in `RunAgentActivity`, and the prompt-sync
-  migration SHALL carry the same option-syntax instructions. On the reader
-  side, `ClarifyingQuestions::Choices` SHALL parse those markers — and only
+  the agent to opt the question into choice semantics by listing the answers
+  in the structured payload's `choices` field — one `{ label, text }` entry
+  per option, with `multiple` selecting the single-answer or multi-answer
+  family — instead of naming the options in prose inside the question
+  (#3893, #4865). The seeded template, the code fallback in
+  `RunAgentActivity`, and the prompt-sync migration SHALL carry the same
+  option-syntax instructions. On the reader side, `ClarifyingQuestions::Choices`
+  SHALL continue to parse the legacy strict sub-list option markers — and only
   those markers — from a single folded question string, returning
   `{ type: :single | :multi, options: [{ label:, text: }] }` for a
   well-formed choice question with at least two options, and `nil` for
@@ -220,6 +223,55 @@
   `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
   `db/seeds/prompts.rb` (`goal.enhance_issue`),
   `db/migrate/*_sync_enhance_issue_choice_markers_prompt.rb`.
+
+- [x] **ISSUE-ENHANCEMENT-020** — When issue enhancement produces clarifying
+  questions, the system SHALL accept a structured question payload with six
+  distinct fields — `question`, `choices`, `recommendation`, `rationale`,
+  `examples`, and `evidence` — alongside the published comment body, and
+  SHALL sanitize it before trusting it: non-object entries, blank questions,
+  blank choice labels, non-string fields, and a `choices` array with fewer
+  than two usable options SHALL be dropped rather than rendered. A malformed
+  payload SHALL NOT fail the enhancement run; the questions still publish and
+  the clarification falls back to the legacy rendering. The system SHALL
+  normalize every clarification — payload-backed or not — through one
+  read-time contract that exposes those six fields per question, matching
+  payload entries to questions by question text and ignoring entries that
+  match no question. The system SHALL preserve compatibility with questions
+  published before the payload existed: a legacy marker choice question keeps
+  its parsed choices and shows the text before the first marker as its label,
+  a legacy prose question keeps its full text as its label, and the system
+  SHALL NOT infer a recommendation, rationale, examples, or evidence from
+  prose — Paid does not guess a product answer. The payload SHALL be
+  persisted with the questions so the inbox can render it without a GitHub
+  round-trip, and SHALL be cleared together with the questions when the
+  clarification is answered (#4865).
+  *Tests:* `spec/services/clarifying_questions/structured_payload_spec.rb`,
+  `spec/services/clarifying_questions/normalize_spec.rb`,
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`,
+  `spec/services/clarifying_questions/clear_needs_input_spec.rb`.
+  *Code:* `app/services/clarifying_questions/structured_payload.rb`,
+  `app/services/clarifying_questions/normalize.rb`,
+  `app/services/clarifying_questions/question.rb`,
+  `app/temporal/activities/enhance_issue_activity.rb#sync_needs_input_questions`,
+  `app/services/clarifying_questions/clear_needs_input.rb`.
+
+- [x] **ISSUE-ENHANCEMENT-021** — When a clarifying question carries a Paid
+  recommendation, the system SHALL render it only when the recommendation is
+  grounded: it names an option the question actually offers, and the question
+  carries at least one evidence reference. An ungrounded recommendation SHALL
+  be omitted rather than shown as an unsourced suggestion, and the system
+  SHALL NOT infer a recommendation for a question that has none. A rendered
+  recommendation SHALL be presented as Paid's suggestion and SHALL NOT be
+  pre-selected: the operator's submitted answer remains the only decision of
+  record, and the agent's hypothesis never becomes a user-confirmed decision.
+  The freeform answer path SHALL stay available whenever the offered options
+  do not fit (#4865).
+  *Tests:* `spec/services/clarifying_questions/normalize_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+  *Code:* `app/services/clarifying_questions/normalize.rb`,
+  `app/views/projects/clarifying_questions/_question.html.erb`,
+  `app/views/projects/clarifying_questions/_answer_field.html.erb`.
 
 - [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
   after the user answers clarifying questions, the system SHALL include the

@@ -603,10 +603,12 @@
   in a separate lazy Turbo Frame, fetching comments once per supplementary
   request, SHALL flow through `Inbox::Queue::Entry#context_markdown`,
   and SHALL be exposed through `shared/markdown_text` rendered in block
-  mode so paragraphs and lists keep their structure. On `lg+` viewports
-  the context SHALL sit in a two-column grid beside the questions; below
-  `lg` it SHALL collapse into a native `<details>` disclosure above the
-  questions so it does not dominate the answer form on phones. When the
+  mode so paragraphs and lists keep their structure. The context SHALL NOT
+  sit beside the questions: the answer form and the context SHALL share one
+  column on every viewport so each question and its answer control stay
+  together, and the context SHALL render BELOW the answer form inside a
+  native `<details>` disclosure that is closed by default, so the operator
+  reads the question and the offered choices first (#4865). When the
   comment body cannot be fetched (missing GitHub credential, transient
   GitHub failure, or the questions came from a local `needs_input_questions`
   snapshot rather than a fetched comment), the system SHALL hide the panel
@@ -616,6 +618,8 @@
   `app/services/clarifying_questions/load.rb`,
   `app/services/inbox/queue.rb`,
   `app/views/dashboard/_inbox_detail_clarifying_questions.html.erb`,
+  `app/views/dashboard/_inbox_clarifying_answer_form.html.erb`,
+  `app/views/inbox/_supplement_content.html.erb`,
   `app/views/shared/_markdown_text.html.erb`,
   `app/javascript/controllers/markdown_text_controller.js`.
   *Test:* `spec/services/clarifying_questions/context_spec.rb`,
@@ -657,6 +661,37 @@
   `spec/services/clarifying_questions/answer_pairs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-026** — When a clarifying-question entry renders its
+  answer form, the system SHALL render, for each clarification, the question
+  text and its answer control together in one block, on desktop and on
+  mobile, from ONE shared partial. The question text SHALL be the normalized
+  question label — the text before the first legacy choice marker — and the
+  answer control SHALL be the click-to-answer widget when the normalized
+  question carries choices and the freeform textarea otherwise. The system
+  SHALL render Paid's grounded recommendation above the answer control when
+  the normalized question carries one, SHALL label it as a suggestion rather
+  than a decision, and SHALL NOT pre-select it. The rationale, the examples,
+  and the evidence references SHALL render inside a native `<details>`
+  disclosure that is closed by default, so supporting detail is hidden
+  without losing keyboard or screen-reader access. The system SHALL NOT
+  render a recommendation, rationale, examples, or evidence for a question
+  that carries none, and SHALL NOT force a choice: the freeform answer path
+  stays available for every question. Answer submission, inbox progress,
+  trusted-comment admission, issue and PR support, and revision-sensitive
+  reassessment SHALL keep working unchanged for both legacy questions and
+  structured ones (#4865).
+  *Code:* `app/views/projects/clarifying_questions/_question.html.erb`,
+  `app/views/projects/clarifying_questions/_answer_field.html.erb`,
+  `app/views/dashboard/_inbox_clarifying_answer_form.html.erb`,
+  `app/views/projects/clarifying_questions/show.html.erb`,
+  `app/services/clarifying_questions/normalize.rb`,
+  `app/services/inbox/queue.rb`,
+  `app/controllers/projects/clarifying_questions_controller.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`,
+  `spec/requests/projects/clarifying_questions_spec.rb`,
+  `spec/views/dashboard/inbox_detail_clarifying_questions_partial_spec.rb`,
+  `spec/services/clarifying_questions/normalize_spec.rb`.
 
 - [x] **OPERATOR-INBOX-013** — When a clarifying-questions answer form is
   rendered — both the inbox detail pane (`clarifying_questions` and

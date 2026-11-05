@@ -43,6 +43,9 @@ module ClarifyingQuestions
     # Serializes one offered option into the line the widget composes and the
     # server validates selections against.
     def option_line(label:, text:)
+      text = text.to_s.strip
+      return label.to_s if text.blank?
+
       "#{label} (#{text})"
     end
 
@@ -73,8 +76,15 @@ module ClarifyingQuestions
     # question has no parsed choices and must not be validated); otherwise an
     # operator-facing error string, prefixed with the answer position when
     # given.
-    def error_for(question:, answer:, position: nil)
-      choices = Choices.call(question: question)
+    #
+    # `choices` overrides the question's own marker parsing: a structured
+    # question carries its options in the payload rather than in the question
+    # string, and the server must validate against the options the operator
+    # was actually offered.
+    # @spec OPERATOR-INBOX-012
+    # @spec ISSUE-ENHANCEMENT-020
+    def error_for(question:, answer:, position: nil, choices: nil)
+      choices ||= Choices.call(question: question)
       return nil if choices.nil?
       return nil if answer.to_s.strip.empty?
 
