@@ -32,11 +32,67 @@ RSpec.describe BoundedDelegatedAction do
     expect(action.errors[:evidence]).to include("must include an intent_digest")
   end
 
+  it "rejects evidence without acceptance references" do
+    action = build(:bounded_delegated_action, project:, issue:, created_by: user,
+      evidence: { "intent_digest" => "sha256:abc" })
+
+    expect(action).not_to be_valid
+    expect(action.errors[:evidence]).to include("must include acceptance_refs")
+  end
+
+  it "rejects empty acceptance references" do
+    action = build(:bounded_delegated_action, project:, issue:, created_by: user,
+      evidence: { "intent_digest" => "sha256:abc", "acceptance_refs" => [] })
+
+    expect(action).not_to be_valid
+    expect(action.errors[:evidence]).to include("must include acceptance_refs")
+  end
+
   it "is terminal when revoked" do
     action = create(:bounded_delegated_action, project:, issue:, created_by: user)
 
     expect(action.revoke!(user:)).to be(true)
     expect(action.reload).to be_revoked
     expect(action.revoke!(user:)).to be(false)
+  end
+
+  it "rejects revocation by a user from another account" do
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+    other_user = create(:user)
+
+    expect { action.revoke!(user: other_user) }.to raise_error(ActiveRecord::RecordInvalid)
+    expect(action.reload).to be_active
+  end
+
+  it "retains authorization history when its creator is destroyed" do
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+    user.destroy!
+
+    expect(action.reload.created_by).to be_nil
+  end
+
+  it "is destroyed with its issue" do
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+    issue.destroy!
+
+    expect(described_class.exists?(action.id)).to be(false)
+  end
+
+  it "does not block project deletion" do
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+    project.destroy!
+
+    expect(described_class.exists?(action.id)).to be(false)
+  end
+
+  it "does not block account deletion" do
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+    account.destroy!
+
+    expect(described_class.exists?(action.id)).to be(false)
   end
 end

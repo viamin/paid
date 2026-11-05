@@ -41,4 +41,10 @@ RSpec.describe Automation::AuthorizeBoundedAction do
       described_class.call(project:, issue: other_issue, user:, action: "repair", evidence:)
     }.to raise_error(Automation::AuthorizeBoundedAction::InvalidScope)
   end
+
+  it "rejects evidence that is not an object" do
+    expect {
+      described_class.call(project:, issue:, user:, action: "repair", evidence: nil)
+    }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence)
+  end
 end

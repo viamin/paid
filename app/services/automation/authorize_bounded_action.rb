@@ -9,6 +9,7 @@ module Automation
     class PermissionDenied < Error; end
     class ProhibitedAction < Error; end
     class InvalidScope < Error; end
+    class InvalidEvidence < Error; end
 
     def self.call(...)
       new(...).call
@@ -27,6 +28,7 @@ module Automation
       ensure_action_supported!
       ensure_scope!
       ensure_permission!
+      ensure_evidence!
 
       project.transaction do
         authorization = project.bounded_delegated_actions.create!(
@@ -67,6 +69,12 @@ module Automation
       return if ProjectPolicy.new(user, project).delegate_bounded_action?(action)
 
       raise PermissionDenied, "You do not have permission to delegate #{action} for this project."
+    end
+
+    def ensure_evidence!
+      return if evidence.is_a?(Hash)
+
+      raise InvalidEvidence, "Evidence must be an object."
     end
   end
 end
