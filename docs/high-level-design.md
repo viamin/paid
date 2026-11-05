@@ -195,6 +195,16 @@ readiness. Normal CI, security, quality and release controls remain applicable.
 Feature policy snapshots keep existing approval-gated work unchanged until
 deliberately migrated. These are planned capabilities, not claims of shipping.
 
+After product intent is settled, a project can deliberately choose whether Paid
+continues bounded downstream delivery or preserves today's conservative Inbox
+posture. That setting composes with the existing approval, confidence, phase,
+bounded-authorization, and repository controls through one effective-policy
+contract; it cannot refresh review evidence or enlarge a work item's consent.
+Current intent/evidence revisions are rechecked at every boundary, and a
+material delta routes to a focused human decision. The accepted authority,
+pilot metrics, and rollback posture are in
+[RDR-080](rdrs/RDR-080-project-delegation-after-settled-intent.md).
+
 An epic umbrella remains open until its authoritative child work and explicit
 dependencies resolve, then receives a final acceptance audit against its
 approved intent and evidence. The audit may correct bounded gaps or file

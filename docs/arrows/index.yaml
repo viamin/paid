@@ -195,6 +195,15 @@ arrows:
     audited: 2026-10-13
     blockedBy: [facet-confidence, question-exploration]
     next: "Approval-gated foundations are shipped; implement policy/enrollment foundation (#4310), facets/evidence (#4314), assessments (#4315), scoped readiness (#4318), held-issue publication and release (#4319), builder dispatch (#4320), completion follow-ups (#4321), then complete the RDR-070 audit (#4323)."
+  project-delegation:
+    title: Project Delegation After Settled Intent
+    path: docs/intent/project-delegation/project-delegation-design.md
+    specs: docs/intent/project-delegation/project-delegation-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: MAPPED
+    blockedBy: [automation-phases, bounded-phase-authorization, confidence-driven-delivery]
+    next: "Implement the default-off per-project posture and shared effective-policy composition from RDR-080, then run its bounded pilot before changing any default."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md
