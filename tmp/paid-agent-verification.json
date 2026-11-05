@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "RDR-079, its unified-work-items LID artifacts, and the RDR index were reconciled with origin/main without duplicate RDR identities.",
+  "summary": "RDR-079 and its LID artifacts are reconciled with origin/main, and the system-test workflow now bounds and retries PostgreSQL client installation.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -27,6 +27,23 @@
           {
             "locator": "yarn exec markdownlint docs/high-level-design.md docs/intent/unified-work-items/unified-work-items-design.md docs/intent/unified-work-items/unified-work-items-specs.md docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md docs/rdrs/README.md",
             "result": "passed."
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/config/ci_database_workflow_file_spec.rb",
+            "result": "39 examples, 0 failures (bundle exec rspec spec/config/ci_database_workflow_file_spec.rb)"
+          },
+          {
+            "locator": ".github/workflows/system_tests.yml:135",
+            "result": "PostgreSQL client installation uses three bounded retries."
           }
         ]
       }
