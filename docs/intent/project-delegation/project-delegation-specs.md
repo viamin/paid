@@ -49,7 +49,7 @@ Status markers: `[ ]` planned implementation gap.
   prevent the next action while preserving audit/evidence history and exposing
   a recovery decision.
 
-- [ ] **PROJECT-DELEGATION-007** — For each opted-in project, the system SHALL
+- [x] **PROJECT-DELEGATION-007** — For each opted-in project, the system SHALL
   record revision-aware human Inbox decisions per completed issue, decision
   time, completion rate, and later-reversed decisions; it SHALL keep broadening
   disabled until the RDR-080 pilot threshold is met and SHALL pause expansion

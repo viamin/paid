@@ -336,6 +336,7 @@ class Project < ApplicationRecord
   has_many :change_intents, dependent: :destroy
   has_many :agent_run_session_summaries, dependent: :destroy
   has_many :orchestration_decisions, dependent: :destroy
+  has_many :project_delegation_metrics, dependent: :destroy
   has_many :scaling_observations, dependent: :destroy
   has_many :scaling_experiments, dependent: :destroy
   has_many :scaling_experiment_assignments, dependent: :destroy
