@@ -108,6 +108,26 @@ and implementation as not applicable. API detail and Inbox contextual chat use t
 serialization, queue construction, and the badge deliberately do not invoke
 it, avoiding per-item GitHub calls or evidence queries.
 
+## Decision brief
+
+Every Inbox entry has a compact `Inbox::DecisionBrief` projection. It is the
+opening contract for a list row, selected detail, API detail, and contextual
+chat. The projection names the project goal or work item, what changed, the
+one decision or action now needed, the recommended next step when current
+structured evidence supports it, why that step is supported, the work waiting
+on it, and the expected result after the action. The list uses its plain-language
+project, work item, action, and impact label without loading detail evidence.
+
+The projection derives only from the entry's persisted record, current local
+state, and existing lane guidance. It never calls an LLM or remote provider at
+render time. Unknown, stale, and conflicting evidence are explicit states;
+when no recommendation is supportable, the brief asks one focused question
+instead of inventing certainty. Detail views put supporting evidence, revisions,
+examples, and action history in labelled native disclosures. Lane-specific
+controls remain the action authority: the brief identifies one primary control
+and treats other choices as secondary, without changing authorization,
+revision checks, or mutation endpoints.
+
 ## Workflow milestones
 
 Selected `merge_approval`, `escalated_pr`, and `test_review_pending` pull-request

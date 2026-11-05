@@ -33,6 +33,29 @@
   *Test:* `spec/services/inbox/progress_projection_spec.rb`,
   `spec/requests/api/v1/inbox_spec.rb`, `spec/services/inbox/chat_context_spec.rb`.
 
+- [x] **OPERATOR-INBOX-026** — When an Inbox entry is rendered in a list,
+  selected detail, API detail, or authorized contextual chat, the system SHALL
+  project one deterministic decision brief from current local entry state and
+  structured evidence. The list SHALL name the project, work item, required
+  decision or action, and impact in plain language. The selected detail SHALL
+  open with the current goal or agreed intent, what changed, the exact action,
+  supported recommendation and rationale, waiting work, expected next state,
+  and one clearly identified primary action. Unknown, stale, unavailable, or
+  conflicting evidence SHALL be disclosed; when no recommendation is grounded,
+  the brief SHALL ask one focused question. The projection SHALL NOT call an
+  LLM or remote provider during rendering. Supporting evidence, revisions,
+  examples, and history SHALL remain available behind labelled expandable
+  sections, while authorization, revision checks, direct links, and existing
+  action endpoints retain their semantics.
+  *Code:* `app/services/inbox/decision_brief.rb`,
+  `app/views/dashboard/_inbox_list.html.erb`,
+  `app/views/dashboard/_inbox_detail_brief.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/decision_brief_spec.rb`,
+  `spec/system/dashboard_inbox_spec.rb`, `spec/requests/api/v1/inbox_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`.
+
 - [x] **OPERATOR-INBOX-001** — When a signed-in user opens the inbox, the
   system SHALL list actionable clarifying-question entries drawn from the
   existing needs-input queue, preserving the user's project visibility and any

@@ -39,6 +39,19 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("progress").fetch(:milestones)).to include(hash_including(id: "merge"))
   end
 
+  it "retrieves the same decision brief as Inbox detail on demand" do
+    # @spec OPERATOR-INBOX-026
+    issue.update!(paid_state: "needs_input", needs_input_questions: [ "What should happen next?" ], needs_input_since: Time.current)
+
+    context = described_class.call(chat_session:, user:, sections: [ :brief ])
+
+    expect(context.fetch("brief")).to include(
+      project: project.full_name,
+      decision: "Answer one product question",
+      focused_question: "What should happen next?"
+    )
+  end
+
   it "rejects context access after comment permission is removed" do
     # @spec QUESTION-EXPLORATION-014
     chat_session

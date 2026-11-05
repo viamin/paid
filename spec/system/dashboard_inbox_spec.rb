@@ -68,6 +68,22 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     expect(form).to have_button("Submit Answers")
   end
 
+  it "opens a concise decision brief before the question and its answer form" do
+    # @spec OPERATOR-INBOX-026
+    issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    sign_in_as(user)
+    visit inbox_entry_path("clarifying_questions:#{issue.id}", project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    brief = page.find("[data-testid='inbox-decision-brief']")
+    expect(brief).to have_content("Goal")
+    expect(brief).to have_content("Answer one product question")
+    expect(brief).to have_content("What is the expected behavior?")
+    expect(brief).to have_link("Answer the question", href: "#inbox-actions")
+    expect(page.find("[data-testid='inbox-list-decision-brief']")).to have_content("Project: acme/alpha")
+  end
+
   # @spec LIST-DETAIL-007
   it "renders Inbox in the shared viewport-bound shell with independent pane scroll regions" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)

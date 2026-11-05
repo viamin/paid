@@ -36,12 +36,15 @@
 </div>
 
 <div class="px-4 py-5 sm:px-6">
-  <% if entry.issue %>
-    <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
-  <% end %>
+  <%= render "dashboard/inbox_detail_brief", brief: Inbox::DecisionBrief.call(entry: entry) %>
 
-  <%= render "dashboard/inbox_workflow_milestones", entry: entry if entry.workflow_milestones? %>
-  <% if entry.clarifying_questions? %>
+  <div id="inbox-actions">
+    <% if entry.issue %>
+      <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
+    <% end %>
+
+    <%= render "dashboard/inbox_workflow_milestones", entry: entry if entry.workflow_milestones? %>
+    <% if entry.clarifying_questions? %>
     <%= render "dashboard/inbox_detail_clarifying_questions",
           entry: entry,
           scoped_project: scoped_project,
@@ -100,12 +103,13 @@
     <%= render "dashboard/inbox_detail_layered_verification_finding", entry: entry %>
   <% elsif entry.dependency_cycle? %>
     <%= render "dashboard/inbox_detail_dependency_cycle", entry: entry %>
-  <% else %>
+    <% else %>
     <%= render "dashboard/inbox_detail_plan_review",
           entry: entry,
           scoped_project: scoped_project,
           selected_kind: selected_kind %>
-  <% end %>
+    <% end %>
+  </div>
 
   <%= render "dashboard/inbox_chat_action", entry: entry %>
   <%# @spec OPERATOR-INBOX-022 %>

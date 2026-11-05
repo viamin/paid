@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history brief].freeze
 
     def self.call(...)
       new(...).call
@@ -90,6 +90,14 @@ module Inbox
 
     def queue_metadata
       chat_session.inbox_item_metadata
+    end
+
+    # @spec OPERATOR-INBOX-026
+    # The brief is resolved on demand through the same authorized entry lookup
+    # as the API detail, so chat receives the exact current local projection.
+    def brief
+      entry = Inbox::FindEntry.call(user:, entry_id: chat_session.inbox_item_key)
+      entry ? DecisionBrief.call(entry:).to_h : {}
     end
 
     # Uses the exact detail/API contract rather than asking an agent to infer

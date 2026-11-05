@@ -232,7 +232,8 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
       payload = described_class.render(entry)
 
-      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url history history_incomplete history_next_cursor])
+      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary brief action_url history history_incomplete history_next_cursor])
+      expect(payload.fetch(:brief)).to include(decision: "Review this work")
     end
 
     it "serializes project_setup_pending with its task descriptions" do

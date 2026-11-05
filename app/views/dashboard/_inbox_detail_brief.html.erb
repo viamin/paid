@@ -1,0 +1,22 @@
+<%# @spec OPERATOR-INBOX-026 %>
+<section class="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="decision-brief-heading" data-testid="inbox-decision-brief">
+  <h3 id="decision-brief-heading" class="text-sm font-semibold text-indigo-950">Decision brief</h3>
+  <dl class="mt-3 grid gap-3 text-sm text-indigo-950 sm:grid-cols-2">
+    <div><dt class="font-medium">Goal</dt><dd><%= brief.goal %></dd></div>
+    <div><dt class="font-medium">What changed</dt><dd><%= brief.changed %></dd></div>
+    <div><dt class="font-medium">Your decision</dt><dd><%= brief.decision %></dd></div>
+    <div><dt class="font-medium">Work waiting</dt><dd><%= brief.waiting_on %></dd></div>
+  </dl>
+  <% if brief.recommendation %>
+    <p class="mt-4 rounded-lg bg-white px-3 py-2 text-sm text-indigo-950"><span class="font-semibold">Recommended next step:</span> <%= brief.recommendation %></p>
+    <p class="mt-2 text-sm text-indigo-900"><span class="font-medium">Why:</span> <%= brief.rationale %></p>
+  <% else %>
+    <p class="mt-4 rounded-lg bg-white px-3 py-2 text-sm text-indigo-950"><span class="font-semibold">One question:</span> <%= brief.focused_question %></p>
+  <% end %>
+  <p class="mt-2 text-sm text-indigo-900"><span class="font-medium">After this:</span> <%= brief.after_action %></p>
+  <a href="#inbox-actions" class="mt-4 inline-flex rounded-md bg-indigo-700 px-3 py-2 text-sm font-semibold text-white" aria-label="Primary action: <%= brief.primary_action %>"><%= brief.primary_action %></a>
+  <details class="mt-4 text-sm text-indigo-900">
+    <summary class="cursor-pointer font-medium">Evidence and history</summary>
+    <p class="mt-2">Current evidence status: <%= brief.evidence_status.humanize %>. Detailed evidence, revisions, and history appear below.</p>
+  </details>
+</section>
