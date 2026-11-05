@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history decision_brief].freeze
 
     def self.call(...)
       new(...).call
@@ -90,6 +90,21 @@ module Inbox
 
     def queue_metadata
       chat_session.inbox_item_metadata
+    end
+
+    # @spec OPERATOR-INBOX-026
+    def decision_brief
+      entry = Queue.find_entry(user:, entry_id: chat_session.inbox_item_key) || decision_brief_entry
+      entry ? DecisionBrief.call(entry:, detailed: true).to_h : {}
+    end
+
+    def decision_brief_entry
+      return unless issue && Queue::KINDS.include?(inbox_kind)
+
+      Queue::Entry.new(id: chat_session.inbox_item_key, kind: inbox_kind,
+        project: chat_session.project, issue:, record: issue, waiting_since: nil,
+        questions: Queue.questions_for(issue), tasks: [], summary_text: nil,
+        title_text: nil, action_url: nil)
     end
 
     # Uses the exact detail/API contract rather than asking an agent to infer

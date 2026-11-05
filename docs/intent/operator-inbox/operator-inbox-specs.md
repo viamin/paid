@@ -777,6 +777,27 @@
   `spec/services/inbox/action_history_spec.rb`,
   `spec/services/inbox/merge_assessment_history_recorder_spec.rb`.
 
+- [x] **OPERATOR-INBOX-026** — When an Inbox item is listed, selected, read
+  through API detail, or explicitly requested by its contextual chat, the
+  system SHALL use one deterministic decision-brief contract naming the
+  project, work item/goal, change, exact decision, recommendation and reason
+  when grounded, waiting work, and primary action. The list SHALL expose its
+  project, work item, decision/action, and impact in plain language. Selected
+  details SHALL show the brief before lane-specific evidence and actions. A
+  genuine product question SHALL not receive an invented recommendation; it
+  SHALL disclose the unknown and ask one focused question. Stale closeout
+  evidence SHALL be labelled stale and require a fresh audit rather than be
+  presented as certainty. The projection SHALL use current structured state
+  and persisted evidence only, and SHALL NOT invoke an LLM while rendering.
+  *Code:* `app/services/inbox/decision_brief.rb`,
+  `app/views/dashboard/_inbox_decision_brief.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/decision_brief_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`,
+  `spec/system/dashboard_inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-018** — When reconciliation leaves an actionable
   traceability finding after structural matching, the Inbox SHALL explain in
   plain language whether it is missing linkage, potentially missing/partial

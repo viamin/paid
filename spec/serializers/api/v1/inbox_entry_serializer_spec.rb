@@ -71,6 +71,20 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(described_class.render_list(entry)).not_to have_key(:progress)
     end
 
+    it "serializes the same concise decision brief for list and detail clients" do # @spec OPERATOR-INBOX-026
+      entry = build_entry(Inbox::Queue::ACTION_REQUIRED_KIND, tasks: [ "Grant deployment access" ])
+
+      expect(described_class.render_list(entry).fetch(:decision_brief)).to include(
+        project: project.full_name,
+        work_item: "title",
+        decision: "Complete the required remediation.",
+        recommendation: "Grant deployment access"
+      )
+      expect(described_class.render(entry).fetch(:decision_brief)).to include(
+        decision: "Complete the required remediation."
+      )
+    end
+
     it "serializes action_required with its remediation steps" do
       entry = build_entry(Inbox::Queue::ACTION_REQUIRED_KIND, tasks: [ "Grant the missing permission" ])
 
@@ -232,7 +246,7 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
       payload = described_class.render(entry)
 
-      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url history history_incomplete history_next_cursor])
+      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url decision_brief history history_incomplete history_next_cursor])
     end
 
     it "serializes project_setup_pending with its task descriptions" do

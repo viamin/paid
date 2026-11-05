@@ -1,0 +1,49 @@
+<%# @spec OPERATOR-INBOX-026 %>
+<section class="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="decision-brief-heading" data-testid="inbox-decision-brief">
+  <h3 id="decision-brief-heading" class="text-sm font-semibold text-indigo-950">Decision brief</h3>
+  <dl class="mt-3 space-y-3 text-sm text-indigo-950">
+    <div>
+      <dt class="font-medium">Project goal</dt>
+      <dd><%= brief.goal %></dd>
+    </div>
+    <% if brief.changed.present? %>
+      <div>
+        <dt class="font-medium">What changed</dt>
+        <dd><%= brief.changed %></dd>
+      </div>
+    <% end %>
+    <div>
+      <dt class="font-medium">What needs your decision</dt>
+      <dd><%= brief.decision %></dd>
+    </div>
+    <% if brief.recommendation.present? %>
+      <div>
+        <dt class="font-medium">Paid recommends</dt>
+        <dd><%= brief.recommendation %></dd>
+      </div>
+      <div>
+        <dt class="font-medium">Why</dt>
+        <dd><%= brief.why %></dd>
+      </div>
+    <% else %>
+      <div>
+        <dt class="font-medium">What is unknown</dt>
+        <dd><%= brief.unknown %></dd>
+      </div>
+      <div>
+        <dt class="font-medium">Question</dt>
+        <dd><%= brief.focused_question %></dd>
+      </div>
+    <% end %>
+    <% if brief.waiting_on.any? %>
+      <div>
+        <dt class="font-medium">Work waiting</dt>
+        <dd><%= brief.waiting_on.join(" ") %></dd>
+      </div>
+    <% end %>
+  </dl>
+  <% if brief.evidence_status != "current" %>
+    <p class="mt-3 rounded-md bg-amber-100 p-2 text-sm text-amber-950">Evidence is <%= brief.evidence_status %>; the recommendation needs a fresh audit before it is reliable.</p>
+  <% end %>
+  <p class="mt-3 font-semibold text-indigo-950" data-testid="inbox-primary-action">Primary action: <%= brief.primary_action %></p>
+</section>

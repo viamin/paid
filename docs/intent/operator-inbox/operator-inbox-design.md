@@ -90,6 +90,20 @@ rechecks current queue membership and returns an empty frame for stale entries.
 
 ## Detail progress projection
 
+## Decision brief
+
+Every Inbox presentation begins from `Inbox::DecisionBrief`, a deterministic
+projection of the current queue entry rather than a prose summary or a
+render-time LLM request. The compact list uses its project, work item,
+decision, and impact fields. Selected web detail, API detail, and requested
+contextual-chat context use the same contract, with selected detail allowed to
+check whether persisted closeout evidence is stale. The detail pane puts the
+goal, change, exact decision, recommendation and reason, waiting work, and
+primary action before lane-specific material. A genuine product question has
+no invented recommendation: it names the unknown and presents its first
+focused question. Existing lane actions remain the mutation boundary; evidence,
+history, and technical detail remain in their existing named sections.
+
 For an issue-backed selected detail only, `Inbox::ProgressProjection` returns
 an ordered, typed lifecycle contract. The contract names design approval,
 proposed-test review, implementation, code review, owner approval, and merge

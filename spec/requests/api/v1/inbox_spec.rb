@@ -37,7 +37,12 @@ RSpec.describe "Mobile inbox API" do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.fetch("entries").first).to include(
         "id" => "clarifying_questions:#{issue.id}", "kind" => "clarifying_questions",
-        "project" => { "id" => project.id, "owner" => "acme", "repo" => "mobile", "name" => "acme/mobile" }
+        "project" => { "id" => project.id, "owner" => "acme", "repo" => "mobile", "name" => "acme/mobile" },
+        "decision_brief" => a_hash_including(
+          "project" => "acme/mobile", "work_item" => issue.title,
+          "decision" => "Answer one product question.",
+          "recommendation" => nil, "focused_question" => "What should happen?"
+        )
       )
       expect(response.headers["Cache-Control"]).to include("private", "max-age=0")
 

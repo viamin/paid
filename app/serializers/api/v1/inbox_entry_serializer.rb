@@ -24,7 +24,7 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
+        common_fields(detailed: true).merge(kind_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
       end
 
       def render_list
@@ -35,7 +35,7 @@ module Api
 
       attr_reader :entry, :history_cursor, :history_limit, :user
 
-      def common_fields
+      def common_fields(detailed: false)
         {
           id: entry.id,
           kind: entry.kind,
@@ -43,7 +43,8 @@ module Api
           project: project,
           title: entry.title,
           summary: entry.summary,
-          action_url: entry.action_url
+          action_url: entry.action_url,
+          decision_brief: Inbox::DecisionBrief.call(entry:, detailed:).to_h
         }
       end
 

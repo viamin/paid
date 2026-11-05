@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe Inbox::ChatContext do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account:) }
-  let(:project) { create(:project, account:, created_by: user) }
+  let(:project) { create(:project, account:, created_by: user, active: true) }
   let(:issue) { create(:issue, project:, labels: [ "bug", "paid:needs-input" ]) }
   let(:chat_session) do
     create(
@@ -37,6 +37,24 @@ RSpec.describe Inbox::ChatContext do
 
     expect(context.fetch("progress")).to include(current_head: "a" * 40)
     expect(context.fetch("progress").fetch(:milestones)).to include(hash_including(id: "merge"))
+  end
+
+  it "retrieves the same concise decision brief on demand" do # @spec OPERATOR-INBOX-026
+    issue.update!(paid_state: "needs_input", needs_input_since: Time.current, body: <<~BODY)
+      <!-- paid:enhance-issue -->
+
+      ## Clarifying questions
+      1. Which invitation expiry should we use?
+    BODY
+
+    context = described_class.call(chat_session:, user:, sections: [ :decision_brief ])
+
+    expect(context.fetch("decision_brief")).to include(
+      project: project.full_name,
+      work_item: issue.title,
+      recommendation: nil,
+      focused_question: "Which invitation expiry should we use?"
+    )
   end
 
   it "rejects context access after comment permission is removed" do

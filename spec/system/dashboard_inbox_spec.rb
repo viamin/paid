@@ -66,6 +66,9 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     expect(form).to have_field("inbox_kind", type: :hidden, with: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
     expect(form).to have_css("textarea[name='answers[]']", count: 2)
     expect(form).to have_button("Submit Answers")
+    expect(page).to have_css("[data-testid='inbox-decision-brief']")
+    expect(page).to have_content("What needs your decision")
+    expect(page).to have_content("Paid cannot recommend an answer from the recorded evidence.")
   end
 
   # @spec LIST-DETAIL-007
