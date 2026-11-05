@@ -66,6 +66,8 @@ class DashboardController < ApplicationController
 
   # @spec AUTO-PICK-QUEUE-016
   def start_cycle_analysis
+    return redirect_to(inbox_path, alert: "Confirm that this analysis may edit one verified GitHub dependency declaration.") unless params[:confirmed] == "1"
+
     cycle = Issues::DependencyCycles.call(account: current_account).find { |candidate| candidate.occurrence == params[:occurrence] }
     return redirect_to(inbox_path, alert: "That dependency cycle is no longer present.") unless cycle
 
@@ -76,6 +78,8 @@ class DashboardController < ApplicationController
 
   # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
   def repair_cycle_analysis
+    return redirect_to(inbox_path, alert: "Confirm the exact dependency declaration before applying this repair.") unless params[:confirmed] == "1"
+
     run = AgentRun.joins(:project).where(projects: { account_id: current_account.id })
       .find(params[:agent_run_id])
     result = CycleAnalyses::Repair.call(

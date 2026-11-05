@@ -62,18 +62,28 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
-  def cycle_analysis_run(status: "completed")
+  def cycle_analysis_run(status: "completed", recommendation: nil, repair: nil)
     issues = Array.new(3) { create(:issue, project:, github_state: "open") }
     create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1])
     create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
     create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
     cycle = Issues::DependencyCycles.call(account:).sole
-    result = { "recommendation" => "Remove the obsolete declaration.",
+    result = { "recommendation" => recommendation || {
+      "summary" => "Remove the obsolete declaration.",
+      "candidates" => [ {
+        "declaration_changes" => [ { "edge_id" => cycle.effective_edges.first.id, "action" => "remove" } ],
+        "evidence" => [ "The implementation plan no longer requires this dependency." ],
+        "tradeoffs" => [ "The source issue can proceed sooner." ],
+        "missing_or_conflicting_intent" => [],
+        "resulting_graph" => { "issue_ids" => issues.map(&:id), "edges" => cycle.effective_edges.drop(1).map { |edge| { "from_issue_id" => edge.from_id, "to_issue_id" => edge.to_id } } },
+        "acyclic" => true
+      } ]
+    },
                "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ],
                                  "unavailable_content_issue_ids" => [ issues.first.id ] } }
+    result["repair"] = repair if repair
     run = create(:agent_run, status:, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
-      external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
-        "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) },
       verification_result: { CycleAnalyses::RESULT_KEY => result })
     [ issues, cycle, run ]
   end
@@ -96,15 +106,40 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("declaration source unavailable")
   end
 
-  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-017
-  it "renders a completed cycle analysis with unavailable evidence coverage" do
-    _issues, cycle, = cycle_analysis_run
+  # @spec AUTO-PICK-QUEUE-023
+  it "explains the held work and the possible GitHub mutation before analysis starts" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
 
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Remove the obsolete declaration.", "Unavailable evidence coverage")
-    expect(response.body).to include("Edge IDs without declaration provenance: 41")
+    expect(response.body).to include("0 downstream open issues are held", "Paid recommends analyzing the complete cycle")
+    expect(response.body).to include("may remove one verified GitHub dependency declaration")
+    expect(response.body).to include("Analyze cycle and possibly remove a verified GitHub declaration")
+    expect(response.body).to include("I understand that this analysis may edit one verified GitHub dependency declaration")
+  end
+
+  # @spec AUTO-PICK-QUEUE-024
+  it "renders a completed recommendation as readable fields with a named manual repair" do
+    _issues, cycle, run = cycle_analysis_run
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    edge = snapshot.fetch("effective_edges").first
+    source = snapshot.fetch("issues").find { |issue| issue.fetch("id") == edge.fetch("from_issue_id") }
+    target = snapshot.fetch("issues").find { |issue| issue.fetch("id") == edge.fetch("to_issue_id") }
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Recommendation", "Remove the obsolete declaration.", "Proposed change", "Evidence", "Tradeoffs", "Expected result")
+    expect(response.body).to include("Review and remove #{source.fetch("project")}##{source.fetch("number")} → #{target.fetch("project")}##{target.fetch("number")}")
+    expect(response.body).to include("Before: #{source.fetch("project")}##{source.fetch("number")} declares #{target.fetch("project")}##{target.fetch("number")} as a dependency.")
+    expect(response.body).to include("After: that dependency declaration is removed.")
+    expect(response.body).to include("Technical details")
+    expect(response.body).not_to include('\"declaration_changes\"')
   end
 
   # @spec AUTO-PICK-QUEUE-019
@@ -117,7 +152,7 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Remove the obsolete declaration.", "stale")
-    expect(response.body).to include("Start cycle analysis")
+    expect(response.body).to include("Start a fresh guarded analysis")
   end
 
   # @spec AUTO-PICK-QUEUE-019
@@ -128,7 +163,7 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Repair: Pending sync", "Confirm cycle repair")
+    expect(response.body).to include("A repair was made safely and is awaiting GitHub synchronization", "Check synchronization status (does not change GitHub)")
   end
 
   # @spec AUTO-PICK-QUEUE-016
@@ -138,7 +173,32 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Retry cycle analysis")
+    expect(response.body).to include("Analysis failed", "Start a fresh analysis")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "gives active, confirmed, ambiguous, and unavailable-evidence analyses distinct next actions" do
+    _issues, cycle, run = cycle_analysis_run(status: "queued")
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+    expect(response.body).to include("Analysis is queued", "wait for the analysis to finish")
+
+    run.update!(status: "running")
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+    expect(response.body).to include("Analysis is running", "wait for the analysis to finish")
+
+    run.update!(status: "completed", verification_result: { CycleAnalyses::RESULT_KEY => {
+      "repair" => { "status" => "resolved", "reason" => "synchronization_confirmed" }
+    } })
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+    expect(response.body).to include("GitHub synchronization confirmed the repair", "No further action is needed")
+
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => {
+      "recommendation" => { "summary" => "No unique repair.", "candidates" => [] },
+      "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ] }
+    } })
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+    expect(response.body).to include("ambiguous recommendation", "Evidence is unavailable")
   end
 
   # @spec AUTO-PICK-QUEUE-020

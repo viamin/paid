@@ -213,6 +213,27 @@
   *Tests:* `spec/services/cycle_analyses/repair_spec.rb`,
   `spec/mcp/tools/repair_cycle_analysis_spec.rb`.
 
+- [x] **AUTO-PICK-QUEUE-023** — When Paid renders a dependency-cycle Inbox
+  detail, it SHALL state the held work and one state-specific next action in
+  plain language. Before analysis, the acknowledged action SHALL explain that
+  a qualifying run may remove one verified GitHub declaration; queued/running,
+  pending synchronization, confirmed repair, stale graph, failed run,
+  ambiguous recommendation, and unavailable evidence SHALL have distinct
+  status and next-action copy.
+  *Tests:* `spec/requests/inbox_spec.rb`.
+  *Code:* `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
+
+- [x] **AUTO-PICK-QUEUE-024** — When a completed dependency-cycle analysis
+  has a recommendation, Paid SHALL render its summary, proposed declaration
+  source and target, evidence, tradeoffs, missing or conflicting intent, and
+  expected result as readable fields rather than raw JSON. A human repair
+  confirmation SHALL name the exact declaration and its issue-body or comment
+  source with a reviewable before/after; raw payloads, declaration links, and
+  diagnostic IDs SHALL be expandable technical details, and the cycle SHALL be
+  shown once.
+  *Tests:* `spec/requests/inbox_spec.rb`.
+  *Code:* `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label

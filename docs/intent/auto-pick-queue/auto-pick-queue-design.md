@@ -138,6 +138,31 @@ cycle payload (`Api::V1::InboxEntrySerializer`) exposes the identical path,
 edge, and umbrella context so API and agent clients can inspect the same
 cycle the web Inbox renders.
 
+## Dependency-cycle operator detail
+
+The dependency-cycle Inbox detail explains the blocked work and one next
+action before exposing diagnostics. Before an analysis exists, it identifies
+the held-work count, states that Paid will analyze the complete cycle, and
+requires an operator acknowledgement that a qualifying analysis may remove one
+verified GitHub dependency declaration. Queued and running analyses ask the
+operator to wait; a pending synchronization repair offers a status-only check
+that does not change GitHub; a confirmed repair, stale graph, failed run,
+ambiguous recommendation, and unavailable evidence each name their distinct
+state and next action.
+
+A completed recommendation is rendered as its summary, proposed source-to-
+target declaration changes, evidence, tradeoffs, missing or conflicting
+intent, and expected graph result. Raw recommendation payloads, declaration
+links, and diagnostic identifiers remain available in expandable technical
+details. The cycle itself is shown once as the readable path, with the held
+work count kept visible.
+
+Before a human repair is submitted, Paid shows the exact source-to-target
+declaration, whether its source is an issue body or comment, and a reviewable
+before/after. The confirmation names that declaration; the repair service
+remains the authority for the submission-time authorization, graph, and live
+source checks.
+
 ## Tier-infeasibility gating
 
 Issues whose most recent model selection pins a tier no enabled runner can
