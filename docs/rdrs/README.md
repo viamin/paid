@@ -163,6 +163,7 @@ cycles.
 | [RDR-068](RDR-068-apple-platform-verification-workers.md) | Apple Platform Verification Workers | Partially Implemented | P1 |
 | [RDR-074](RDR-074-project-readiness.md) | Settings-Aware Project Readiness | Implemented | P2 |
 | [RDR-075](RDR-075-general-maintenance-runs.md) | General Maintenance Runs — Directed Audits and Recurring Repository Care | Draft | — |
+| [RDR-081](RDR-081-partial-closeout-lane-read-model.md) | Partial-Closeout Lane Read Model — Moving the Lane's Admission Off the Request Path | Accepted | P2 |
 
 ### Cloud Execution Readiness
 
