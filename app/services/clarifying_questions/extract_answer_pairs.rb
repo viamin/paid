@@ -81,7 +81,7 @@ module ClarifyingQuestions
         answer = parsed_pairs[index]&.fetch(:answer, nil)
         next if answer.blank?
 
-        { question: question, answer: answer }
+        { question: QuestionPayload.submission_text(question), answer: answer }
       end
     end
   end

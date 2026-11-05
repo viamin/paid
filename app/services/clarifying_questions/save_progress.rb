@@ -63,7 +63,12 @@ module ClarifyingQuestions
       progress = ClarifyingQuestionProgress.find_or_initialize_by(issue:, question_digest:, position:)
       return progress if progress.persisted?
 
-      progress.assign_attributes(account: issue.project.account, project: issue.project, chat_session:, question:)
+      progress.assign_attributes(
+        account: issue.project.account,
+        project: issue.project,
+        chat_session:,
+        question: QuestionPayload.submission_text(question)
+      )
       progress.save!
       progress
     rescue ActiveRecord::RecordNotUnique

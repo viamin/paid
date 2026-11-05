@@ -196,6 +196,32 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     end
   end
 
+  # @spec OPERATOR-INBOX-025
+  it "returns concise text when a matching structured question is the local fallback" do
+    structured_issue = build_stubbed(
+      :issue,
+      body: "Original issue body",
+      needs_input_questions: [
+        {
+          "question" => "Which cache should exports use?",
+          "choices" => [
+            { "label" => "Redis", "detail" => "Shared cache" },
+            { "label" => "Postgres", "detail" => "Persistent rows" }
+          ]
+        }
+      ]
+    )
+    answer = comment(
+      body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which cache should exports use?**\n**A1:** Redis",
+      created_at: Time.current,
+      login: trusted_login
+    )
+
+    result = described_class.call(project:, issue: structured_issue, issue_comments: [ answer ])
+
+    expect(result.qa_pairs).to eq([ { question: "Which cache should exports use?", answer: "Redis" } ])
+  end
+
   context "when the clarifying questions are persisted locally" do
     let(:stored_issue) do
       build_stubbed(

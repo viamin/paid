@@ -238,7 +238,10 @@ module Inbox
       end
 
       def summary
-        return questions.first(2).join(" ").truncate(220) if clarifying_questions?
+        if clarifying_questions?
+          return questions.first(2).map { |question| ClarifyingQuestions::QuestionPayload.submission_text(question) }
+            .join(" ").truncate(220)
+        end
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
           test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding? ||

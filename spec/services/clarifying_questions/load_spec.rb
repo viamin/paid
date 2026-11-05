@@ -145,6 +145,30 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           "Should this be behind a flag?"
         ])
       end
+
+      # @spec OPERATOR-INBOX-025
+      it "preserves a structured payload when its question text matches the GitHub comment" do
+        structured_question = {
+          "question" => "Which scope should ship first?",
+          "choices" => [
+            { "label" => "API", "detail" => "Ship the API first" },
+            { "label" => "UI", "detail" => "Ship the UI first" }
+          ],
+          "recommendation" => "API",
+          "evidence_references" => [ "app/controllers/api_controller.rb:1" ]
+        }
+        allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
+        comment = double(
+          body: "<!-- paid:enhance-issue -->\n\n## Clarifying questions\n1. Which scope should ship first?",
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ structured_question ])
+      end
     end
 
     context "when the latest clarifying questions were already answered" do

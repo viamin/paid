@@ -16,7 +16,6 @@ module ClarifyingQuestions
     # @spec QUIET-MODE-011
     def call
       body_questions = Parse.call(comment_body: issue.body)
-      stored_questions = issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions).filter_map { |question| stored_question(question) } : []
       current_questions = body_questions.presence || stored_questions
 
       if current_questions.any?
@@ -87,6 +86,12 @@ module ClarifyingQuestions
       return question if question.is_a?(Hash) && QuestionPayload.submission_text(question).present?
 
       question.to_s.strip.presence
+    end
+
+    def stored_questions
+      return [] unless issue.respond_to?(:needs_input_questions)
+
+      Array(issue.needs_input_questions).filter_map { |question| stored_question(question) }
     end
 
     def latest_enhancement_comment
@@ -174,7 +179,15 @@ module ClarifyingQuestions
       enhancement_comment = latest_enhancement_comment
       return unless enhancement_comment
 
-      Parse.call(comment_body: comment_body(enhancement_comment)).presence
+      questions = Parse.call(comment_body: comment_body(enhancement_comment)).presence
+      return unless questions
+      return stored_questions if same_question_text?(questions, stored_questions)
+
+      questions
+    end
+
+    def same_question_text?(left, right)
+      right.any? && AnswerPairs.normalize_questions(left) == AnswerPairs.normalize_questions(right)
     end
 
     def marked_description_questions?

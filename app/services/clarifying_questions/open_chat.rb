@@ -145,7 +145,7 @@ module ClarifyingQuestions
     def append_focus_notice(chat, questions)
       chat.messages.create!(role: "system", content: <<~TEXT.strip)
         The conversation now focuses on the clarifying questions for #{issue.project.full_name}##{issue.github_number}: #{issue.title}
-        #{questions.each_with_index.map { |question, index| "#{index + 1}. #{question}" }.join("\n")}
+        #{questions.each_with_index.map { |question, index| "#{index + 1}. #{QuestionPayload.submission_text(question)}" }.join("\n")}
       TEXT
     end
 

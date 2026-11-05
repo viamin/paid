@@ -662,6 +662,27 @@ RSpec.describe Inbox::Queue do
       ])
     end
 
+    # @spec OPERATOR-INBOX-025
+    it "uses concise question text in the summary for structured questions" do
+      feature_issue = create_needs_input(
+        github_number: 21,
+        body: "Need export caching",
+        needs_input_questions: [
+          {
+            "question" => "Which cache should exports use?",
+            "choices" => [
+              { "label" => "Redis", "detail" => "Shared cache" },
+              { "label" => "Postgres", "detail" => "Persistent rows" }
+            ]
+          }
+        ]
+      )
+
+      entry = described_class.call(user: user, project: project).find { |item| item.issue == feature_issue }
+
+      expect(entry.summary).to eq("Which cache should exports use?")
+    end
+
     it "skips questionless issues until sync repairs them" do
       questionless = create_needs_input(github_number: 9, body: "Needs manual retry")
       answerable = create_needs_input(github_number: 10, body: questions_body)

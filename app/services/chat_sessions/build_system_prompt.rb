@@ -286,19 +286,24 @@ module ChatSessions
     # assistant can echo a selectable string exactly as the validator accepts
     # it. Free-text questions render unchanged.
     def render_pending_question(question, index:, progress: nil)
+      payload = ClarifyingQuestions::QuestionPayload.call(question: question)
       choices = ClarifyingQuestions::Choices.call(question: question)
       rendered = if choices.nil?
-        "#{index + 1}. #{question}"
+        "#{index + 1}. #{payload[:question]}"
       else
-        prose = question.split(ClarifyingQuestions::Choices::ANY_MARKER).first.to_s.strip
+        question_text = payload[:structured] ? payload[:question] : legacy_question_text(payload[:question])
         option_lines = choices[:options].map do |option|
           "   - #{ClarifyingQuestions::ChoiceAnswers.option_line(label: option[:label], text: option[:text])}"
         end
-        ([ "#{index + 1}. #{prose}" ] + option_lines).join("\n")
+        ([ "#{index + 1}. #{question_text}" ] + option_lines).join("\n")
       end
       return rendered if progress&.answer.blank?
 
       "#{rendered}\n   - Saved draft answer: #{progress.answer}#{saved_evidence_context(progress)}"
+    end
+
+    def legacy_question_text(question)
+      question.split(ClarifyingQuestions::Choices::ANY_MARKER).first.to_s.strip
     end
 
     # The evidence a person attached to a draft answer is durable human input,
