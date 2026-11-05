@@ -52,6 +52,24 @@ RSpec.describe Tdd::WriteGuard do
 
         expect(result).to be_valid
       end
+
+      it "allows Swift tests in nested package test directories" do
+        result = described_class.call(agent_run: agent_run, changed_files: [
+          "iOS/Tests/ColorMatchingLPSAppTests/APIClientTests.swift",
+          "ColorComposerCore/Tests/ColorComposerCoreTests/SolverParityCorpusTests.swift"
+        ])
+
+        expect(result).to be_valid
+      end
+
+      it "allows the exact run verification result but rejects other temporary files" do
+        result = described_class.call(agent_run: agent_run, changed_files: [
+          AgentRuns::VerificationPrompt::RESULT_PATH,
+          "tmp/generated_client.swift"
+        ])
+
+        expect(result.forbidden_files).to eq([ "tmp/generated_client.swift" ])
+      end
     end
 
     context "when in test_fixing phase" do
@@ -76,6 +94,12 @@ RSpec.describe Tdd::WriteGuard do
 
         expect(result).not_to be_valid
         expect(result.forbidden_files).to eq([ "tests/widget_test.gd" ])
+      end
+
+      it "rejects nested Swift test changes when the run has not returned to test review" do
+        result = described_class.call(agent_run: agent_run, changed_files: [ "iOS/Tests/AppTests/APIClientTests.swift" ])
+
+        expect(result.forbidden_files).to eq([ "iOS/Tests/AppTests/APIClientTests.swift" ])
       end
 
       context "when the run has returned the PR to test review" do

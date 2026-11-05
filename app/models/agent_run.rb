@@ -2284,7 +2284,7 @@ class AgentRun < ApplicationRecord
   end
 
   def complete!(result_commit: nil, pr_url: nil, pr_number: nil, issue_url: nil, issue_number: nil)
-    with_lock do
+    completed = with_lock do
       reload
       return false if finished?
 
@@ -2304,6 +2304,21 @@ class AgentRun < ApplicationRecord
         external_metadata: external_metadata.except(COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
       )
     end
+    clear_retry_abandonment_after_pr_completion if completed && create_pr_goal? && pull_request_url.present?
+    completed
+  end
+
+  # @spec EAGER-QUEUE-010
+  def clear_retry_abandonment_after_pr_completion
+    issue&.clear_runner_retry_abandonment!(window_reset_at: created_at) if issue&.runner_retry_abandoned?
+  rescue StandardError => e
+    Rails.logger.error(
+      message: "agent_run.retry_abandonment_clear_failed",
+      agent_run_id: id,
+      issue_id: issue_id,
+      error_class: e.class.name,
+      error: e.message
+    )
   end
 
   # The completion-verification gate verifies committed agent output. Goals

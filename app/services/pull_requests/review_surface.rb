@@ -12,7 +12,7 @@ module PullRequests
     TEST_OUTLINE_HEADING = "## Test Outline"
     SPEC_TAG = "@ spec".delete(" ")
     SPEC_ID_PATTERN = /([A-Z0-9-]+-\d+)/
-    TEST_FILE_PATTERN = /\A(spec|test|tests|\.ephemeral-tests)\//.freeze
+    TEST_FILE_PATTERN = %r{\A(?:spec|test|tests|\.ephemeral-tests)/|(?:\A|/)Tests/}.freeze
     LID_DOC_PATTERN = %r{\A(?:docs/high-level-design\.md|docs/arrows/index\.yaml|docs/intent/|AGENTS\.md|CLAUDE\.md|\.github/copilot-instructions\.md)}.freeze
 
     def self.call(...)
@@ -117,7 +117,10 @@ module PullRequests
       return ruby_match[1] if ruby_match
 
       python_match = stripped.match(/\Aclass\s+([A-Z][\w]*)(?:\([^)]*\))?:\s*\z/)
-      python_match[1] if python_match
+      return python_match[1] if python_match
+
+      swift_match = stripped.match(/\A(?:(?:final|public|private|internal|open)\s+)*\b(?:class|struct)\s+([A-Z][\w]*)(?:\s*:[^{]+)?\s*\{\s*\z/)
+      swift_match[1] if swift_match
     end
 
     def example_title_for(stripped)
@@ -138,9 +141,10 @@ module PullRequests
 
     def test_method_title(stripped)
       match = stripped.match(/\Adef\s+(test_[\w!?]+)\s*(?:\(.*\))?\s*(?::|\z)/)
+      match ||= stripped.match(/\A(?:@Test\s+)?func\s+(test[\w]+)\s*\(/)
       return unless match
 
-      match[1].sub(/\Atest_/, "").tr("_", " ")
+      match[1].sub(/\Atest_?/, "").tr("_", " ")
     end
 
     def normalize_title_argument(argument)

@@ -121,6 +121,27 @@ RSpec.describe PullRequests::ReviewSurface, :no_db do
     end
   end
 
+  context "with a Swift test in a nested package" do
+    let(:changed_files_output) { "iOS/Tests/AppTests/APIClientTests.swift\n" }
+
+    before do
+      FileUtils.mkdir_p(File.join(worktree_path, "iOS/Tests/AppTests"))
+      File.write(File.join(worktree_path, "iOS/Tests/AppTests/APIClientTests.swift"), <<~SWIFT)
+        final class APIClientTests: XCTestCase {
+          func testGeneratedClient() {}
+        }
+      SWIFT
+    end
+
+    it "includes the test in the PR outline" do # @spec TDD-PR-004
+      body = described_class.call(body: "## Summary\n\nTest PR", agent_run: agent_run)
+
+      expect(body).to include("## Test Outline")
+      expect(body).to include("APIClientTests")
+      expect(body).to include("GeneratedClient")
+    end
+  end
+
   context "when a follow-up run does not touch any test files" do
     let(:changed_files_output) { "app/services/projects/import.rb\n" }
     let(:existing_body) do

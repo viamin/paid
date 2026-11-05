@@ -301,7 +301,8 @@
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit
-  the per-issue retry cap, or by
+  the per-issue retry cap or after one automated goal exhausted its run-level
+  retry budget, or by
   `Issue#abandon_due_to_push_permission_rejection!` when the GitHub App
   installation token lacks a required permission) and its project is within
   the operator's authorized Inbox visibility (`INBOX-FOUNDATION-006` —
@@ -378,7 +379,8 @@
 - [x] **OPERATOR-INBOX-002G** — When `Issue#clear_runner_retry_abandonment!`
   runs — whether from the inbox's "Re-enable" action (`clear_retry_abandonment`)
   or automatically after a successful manual run
-  (`RunAgentActivity#clear_issue_runner_retry_abandonment`) — the system SHALL
+  (`RunAgentActivity#clear_issue_runner_retry_abandonment` for non-PR goals,
+  `AgentRun#complete!` after PR publication for `create_pr`) — the system SHALL
   stamp `runner_retry_failure_window_reset_at` with the clear time, and
   `AgentRuns::IssueRunnerFailureHistory` SHALL exclude runner attempts recorded
   before that timestamp from the per-provider failure counts it computes (consumed by

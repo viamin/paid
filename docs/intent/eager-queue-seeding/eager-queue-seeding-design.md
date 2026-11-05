@@ -73,11 +73,24 @@ When a run finishes in `failed` state, the issue re-enters the queue via
 `Issue#enqueue_self_if_became_auto_pick_eligible` →
 `Issues::ReenqueueEligibleJob`. The wait uses Sidekiq's exponential backoff
 curve (`Issue#auto_pick_reenqueue_delay`), with the retry attempt `n` taken
-as the consecutive auto-pick failure count minus one (floored at zero):
+as the consecutive auto-pick failure count for the latest failed goal minus one
+(floored at zero). A successful issue analysis cannot erase a failed PR
+creation streak:
 
 ```ruby
 delay = (n**4) + 15 + (rand(10) * (n + 1))
 ```
+
+The same failure window reset that accompanies an operator's retry-abandonment
+clear also starts a fresh backoff streak. Old failures do not impose a long
+delay on a repaired issue.
+
+When the same goal reaches the effective issue retry cap, Paid parks the issue
+in the retry-limited Inbox instead of scheduling another automatic attempt.
+This covers failures after successful runner execution, such as a PR write
+guard rejection, which the per-provider runner-attempt cap cannot count.
+The issue's retry hold remains in place during a `create_pr` run until PR
+publication completes; runner execution alone cannot release it.
 
 First retries are nearly free (sub-minute), the curve keeps growing past the
 old 4-hour ceiling, and `consecutive_auto_pick_failure_count` is bounded at

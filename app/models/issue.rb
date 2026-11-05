@@ -1406,7 +1406,22 @@ class Issue < ApplicationRecord
     paid_state.in?(%w[new planning failed completed analyzed])
   end
 
-  def enqueue_self_if_became_auto_pick_eligible # @spec EAGER-QUEUE-007
+  def enqueue_self_if_became_auto_pick_eligible # @spec EAGER-QUEUE-007 EAGER-QUEUE-010
+    return if runner_retry_abandoned?
+
+    if paid_state == "failed"
+      goal, failure_count = auto_pick_failure_streak
+      cap = project.effective_max_issue_runner_failures
+      if cap.present? && cap.positive? && failure_count >= cap
+        abandon_due_to_runner_retry_cap!(
+          reason: "Automated #{goal} failed #{failure_count} consecutive times (retry cap #{cap}); review the run failures before re-enabling.",
+          cap: cap,
+          runner_keys: []
+        )
+        return
+      end
+    end
+
     wait = auto_pick_reenqueue_delay
     job = Issues::ReenqueueEligibleJob
 
@@ -1440,20 +1455,38 @@ class Issue < ApplicationRecord
     ((n**4) + 15 + (rand(10) * (n + 1))).seconds
   end
 
-  # Counts the most recent consecutive failed/no_output auto-pick runs.
+  # Counts consecutive failed/no_output auto-pick runs for the latest failed
+  # goal. A successful analysis cannot reset a create_pr failure streak.
   # Bounded at 50 so the retry curve can keep growing past the ~2-hour
   # mark (n=10 produces ~3h, n=49 produces ~72 days) without scanning
   # an unbounded number of historical runs. A 51st consecutive failure
   # is treated the same as the 50th.
   def consecutive_auto_pick_failure_count
-    statuses = agent_runs
+    auto_pick_failure_streak.last
+  end
+
+  # @spec EAGER-QUEUE-010
+  def auto_pick_failure_streak
+    scope = agent_runs
       .where(auto_pick: true, goal: %w[create_pr analyze_issue])
       .finished
+    if runner_retry_failure_window_reset_at.present?
+      scope = scope.where(created_at: runner_retry_failure_window_reset_at..)
+    end
+
+    failed_goal = scope
+      .order(created_at: :desc, id: :desc)
+      .where(status: AgentRun::FAILURE_STATUSES + %w[no_output])
+      .pick(:goal)
+    return [ nil, 0 ] unless failed_goal
+
+    statuses = scope
+      .where(goal: failed_goal)
       .order(created_at: :desc, id: :desc)
       .limit(50)
       .pluck(:status)
 
-    statuses.take_while { |status| (AgentRun::FAILURE_STATUSES + %w[no_output]).include?(status) }.count
+    [ failed_goal, statuses.take_while { |status| (AgentRun::FAILURE_STATUSES + %w[no_output]).include?(status) }.count ]
   end
 
   public
@@ -1504,7 +1537,8 @@ class Issue < ApplicationRecord
   end
 
   # An issue is abandoned for retry-cap purposes once every available provider
-  # has hit the per-issue per-provider retry cap. Abandoned issues are excluded
+  # has hit the per-issue per-provider retry cap or one automated goal has
+  # exhausted its run-level retry budget. Abandoned issues are excluded
   # from auto-pick (see DefaultCandidateSource) until the abandonment is cleared.
   # See {#clear_runner_retry_abandonment!} for how clearing interacts with the
   # per-provider failure counts that tripped the cap.

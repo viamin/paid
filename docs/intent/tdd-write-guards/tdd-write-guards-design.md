@@ -83,10 +83,15 @@ the run's `tdd_phase`, `tdd_returned_to_test_review` flag, and a flat list of
 changed file paths — no I/O, no AI judgment (Zero Framework Cognition: this
 is a structural policy check, not a semantic one). File classification
 mirrors `PullRequests::ReviewSurface::TEST_FILE_PATTERN`'s test-path
-convention (`spec/`, `test/`, `tests/`, `.ephemeral-tests/`) and the LID doc
-allowlist already used for `lid_planning` runs (`docs/`, `AGENTS.md`,
+convention (`spec/`, `test/`, `tests/`, `.ephemeral-tests/`), including nested
+`Tests/` directories in Swift packages, and the LID doc allowlist already used
+for `lid_planning` runs (`docs/`, `AGENTS.md`,
 `CLAUDE.md`, `.github/copilot-instructions.md`), so the checks in
 `CreatePullRequestActivity` agree on what counts as a test file or a LID doc.
+The exact run verification result path is permitted during test writing because
+Paid asks the agent to write it; other temporary files remain outside the
+test-writing boundary. The prompt tells the agent to keep that result out of
+the commit.
 
 The result carries `forbidden_files` (not just a boolean) so the caller can
 produce an actionable error message naming the specific paths that violated
@@ -139,7 +144,9 @@ unrelated failures to be resolved or reported before the tests-only commit.
 The structural write guard, lint, and later-phase green-test checks remain
 authoritative.
 
-A `test_writing` run commits only tests and permitted LID docs, then finishes;
-it never transitions itself to implementation. Paid publishes the draft PR and
+A `test_writing` run commits tests and permitted LID docs, then finishes. The
+run-local verification result is tolerated if the agent commits it, though the
+prompt instructs the agent to keep it out of the commit. The run never
+transitions itself to implementation. Paid publishes the draft PR and
 the persisted label gate selects the subsequent run: an automated test-review
 verdict in non-strict mode or human `paid-tests-approved` in strict mode.

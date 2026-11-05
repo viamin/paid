@@ -529,6 +529,54 @@ RSpec.describe Issue do
       end
     end
 
+    it "does not reset create_pr backoff after successful issue analysis" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      3.times do
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+        create(:agent_run, :completed, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+      end
+      allow(issue).to receive(:rand).with(10).and_return(0)
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(31.seconds.from_now)
+      end
+    end
+
+    it "starts a fresh backoff window after an operator clears retry abandonment" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      3.times { create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true) }
+      issue.update!(runner_retry_abandoned_at: Time.current)
+      issue.clear_runner_retry_abandonment!
+      create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      allow(issue).to receive(:rand).with(10).and_return(0)
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.seconds.from_now)
+      end
+    end
+
+    it "parks an issue after the configured number of failed create_pr runs despite successful analyses" do # @spec EAGER-QUEUE-010
+      project = create(:project, auto_pick_enabled: true, max_issue_runner_failures: 3)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      3.times do
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true,
+          runners_attempted: [ { "runner" => "codex", "success" => true } ])
+        create(:agent_run, :completed, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+      end
+
+      expect {
+        issue.update!(paid_state: "failed")
+      }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
+      expect(issue.reload).to be_runner_retry_abandoned
+      expect(issue.runner_retry_abandon_reason).to include("create_pr", "3")
+    end
+
     it "counts no_output runs toward the failure backoff streak" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")

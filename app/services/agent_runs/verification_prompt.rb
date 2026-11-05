@@ -64,6 +64,7 @@ module AgentRuns
         # Acceptance Criterion Evidence
 
         Before you finish, record criterion-level verification evidence by writing JSON to `#{RESULT_PATH}`:
+        Keep this run-local file out of your Git commit and pull request.
 
         ```json
         {
@@ -126,6 +127,7 @@ module AgentRuns
         evidence, never a passing check. Capture and inspect the log again if startup or browser verification fails.
 
         Record the verification result by writing JSON to `#{RESULT_PATH}` before you finish:
+        Keep this run-local file out of your Git commit and pull request.
 
         ```json
         {
