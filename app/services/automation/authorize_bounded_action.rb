@@ -3,7 +3,7 @@
 module Automation
   # Single write boundary for bounded delivery authorization. Every caller
   # supplies explicit evidence; reserved product/release actions fail closed.
-  # @spec BOUNDED-DELEGATED-ACTION-001 @spec BOUNDED-DELEGATED-ACTION-002
+  # @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
   class AuthorizeBoundedAction
     class Error < StandardError; end
     class PermissionDenied < Error; end
@@ -56,6 +56,10 @@ module Automation
     def ensure_action_supported!
       return if BoundedDelegatedAction::ACTIONS.include?(action)
 
+      if BoundedDelegatedAction::RESERVED_ACTIONS.include?(action)
+        raise ProhibitedAction, "#{action} is a reserved decision and cannot be delegated"
+      end
+
       raise ProhibitedAction, "#{action.presence || "unknown"} is not a delegable delivery action"
     end
 
@@ -72,9 +76,19 @@ module Automation
     end
 
     def ensure_evidence!
-      return if evidence.is_a?(Hash)
+      raise InvalidEvidence, "Evidence must be an object." unless evidence.is_a?(Hash)
 
-      raise InvalidEvidence, "Evidence must be an object."
+      missing_evidence_fields = []
+      missing_evidence_fields << "intent_digest" if evidence_value("intent_digest").blank?
+      acceptance_references = evidence_value("acceptance_refs")
+      missing_evidence_fields << "acceptance_refs" unless acceptance_references.is_a?(Array) && acceptance_references.any?(&:present?)
+      return if missing_evidence_fields.empty?
+
+      raise InvalidEvidence, "Evidence must include #{missing_evidence_fields.join(" and ")}."
+    end
+
+    def evidence_value(key)
+      evidence[key] || evidence[key.to_sym]
     end
   end
 end

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec BOUNDED-DELEGATED-ACTION-001 @spec BOUNDED-DELEGATED-ACTION-002
+# @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
 RSpec.describe BoundedDelegatedAction do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:) }
@@ -53,7 +53,15 @@ RSpec.describe BoundedDelegatedAction do
 
     expect(action.revoke!(user:)).to be(true)
     expect(action.reload).to be_revoked
+    expect(action.allowed?).to be(false)
     expect(action.revoke!(user:)).to be(false)
+  end
+
+  it "does not allow an expired authorization" do
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user, expires_at: 1.minute.ago)
+
+    expect(action).not_to be_active
+    expect(action).not_to be_allowed
   end
 
   it "rejects revocation by a user from another account" do

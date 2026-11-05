@@ -41,7 +41,7 @@ class ProjectPolicy < ApplicationPolicy
   # Bounded delivery is action-specific. Review and repair follow the existing
   # run permission; merge remains reserved to project automation owners. The
   # caller must still provide an identified work item and evidence.
-  # @spec BOUNDED-DELEGATED-ACTION-002
+  # @spec BOUNDED-PHASE-AUTHORIZATION-011
   def delegate_bounded_action?(action)
     return false unless user_in_account?
 

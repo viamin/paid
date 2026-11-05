@@ -4,7 +4,7 @@
 # It is execution authority only: product decisions, releases, deployments,
 # and project setting changes remain independently authorized.
 #
-# @spec BOUNDED-DELEGATED-ACTION-001 @spec BOUNDED-DELEGATED-ACTION-002
+# @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
 class BoundedDelegatedAction < ApplicationRecord
   ACTIONS = %w[review repair merge].freeze
   RESERVED_ACTIONS = %w[
@@ -29,7 +29,7 @@ class BoundedDelegatedAction < ApplicationRecord
   scope :active, -> { where(status: "active").where("expires_at > ?", Time.current) }
 
   def allowed?
-    ACTIONS.include?(action)
+    active? && ACTIONS.include?(action)
   end
 
   def active?

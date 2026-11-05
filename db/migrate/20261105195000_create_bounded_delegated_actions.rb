@@ -6,7 +6,7 @@ class CreateBoundedDelegatedActions < ActiveRecord::Migration[8.1]
       t.references :account, null: false, foreign_key: true
       t.references :project, null: false, foreign_key: true
       t.references :issue, null: false, foreign_key: true
-      t.references :created_by, null: false, foreign_key: { to_table: :users }
+      t.references :created_by, foreign_key: { to_table: :users }
       t.references :revoked_by, foreign_key: { to_table: :users }
       t.string :action, null: false
       t.string :status, null: false, default: "active"

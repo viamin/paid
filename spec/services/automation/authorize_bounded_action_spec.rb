@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec BOUNDED-DELEGATED-ACTION-001 @spec BOUNDED-DELEGATED-ACTION-002
+# @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
 RSpec.describe Automation::AuthorizeBoundedAction do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:) }
@@ -27,10 +27,19 @@ RSpec.describe Automation::AuthorizeBoundedAction do
     }.to raise_error(Automation::AuthorizeBoundedAction::PermissionDenied)
   end
 
+  it "permits merge delegation for a project administrator" do
+    user.add_role(:project_admin, project)
+
+    action = described_class.call(project:, issue:, user:, action: "merge", evidence:)
+
+    expect(action).to be_persisted
+    expect(action.action).to eq("merge")
+  end
+
   it "never authorizes reserved product or release decisions" do
     expect {
       described_class.call(project:, issue:, user:, action: "product_decision", evidence:)
-    }.to raise_error(Automation::AuthorizeBoundedAction::ProhibitedAction)
+    }.to raise_error(Automation::AuthorizeBoundedAction::ProhibitedAction, /reserved decision/)
   end
 
   it "rejects an issue from another project" do
@@ -46,5 +55,17 @@ RSpec.describe Automation::AuthorizeBoundedAction do
     expect {
       described_class.call(project:, issue:, user:, action: "repair", evidence: nil)
     }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence)
+  end
+
+  it "rejects evidence without an intent digest with a typed domain error" do
+    expect {
+      described_class.call(project:, issue:, user:, action: "repair", evidence: { "acceptance_refs" => [ "AC-1" ] })
+    }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence, /intent_digest/)
+  end
+
+  it "rejects evidence without acceptance references with a typed domain error" do
+    expect {
+      described_class.call(project:, issue:, user:, action: "repair", evidence: { "intent_digest" => "sha256:abc" })
+    }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence, /acceptance_refs/)
   end
 end

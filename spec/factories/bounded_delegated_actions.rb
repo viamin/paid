@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec BOUNDED-DELEGATED-ACTION-001
+# @spec BOUNDED-PHASE-AUTHORIZATION-010
 FactoryBot.define do
   factory :bounded_delegated_action do
     account { project.account }
