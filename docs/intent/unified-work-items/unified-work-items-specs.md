@@ -50,10 +50,12 @@
   possible and explicit user linking otherwise; ticket migration SHALL NOT
   replace pull-request review, approval, branch, commit, or merge semantics.
 
-- [ ] **UNIFIED-WORK-ITEMS-009** — The proposed `[inferred]`
-  `unified_work_items` project-scoped feature flag SHALL default off and gate
-  unified synchronization and workflow admissions; disabling it SHALL stop
-  new unified behavior while preserving imported records, audit data, and
-  explicit overrides, and the guard SHALL remain until closeout evidence
-  verifies synchronization, migration, trust, conflict, relationship,
-  rollback, and regression behavior.
+- [ ] **UNIFIED-WORK-ITEMS-009** — The proposed `unified_work_items`
+  project-scoped feature flag SHALL default off and gate every new unified
+  runtime entry point, including synchronization, workflow admissions,
+  browser and project-page browsing/read surfaces, assignment, and lifecycle
+  operations; while disabled, those surfaces SHALL continue existing GitHub
+  issue behavior and SHALL NOT expose unified-ticket behavior. Disabling the
+  flag SHALL preserve imported records, audit data, and explicit overrides,
+  and the guard SHALL remain until closeout evidence verifies synchronization,
+  migration, trust, conflict, relationship, rollback, and regression behavior.

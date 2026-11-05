@@ -106,11 +106,14 @@ reconciles issues created during its maintenance window and avoids long-term
 dual-write. Existing GitHub issue workflows continue through the unified
 contract after cutover.
 
-The proposed runtime guard is `[inferred]` `unified_work_items`, evaluated
-through the existing project-scoped feature-flag mechanism and disabled by
-default. It gates new synchronization and workflow admissions. Disabling it
-stops new unified behavior but preserves imported records, audit data, and
-explicit overrides; it does not silently delete or revert migrated data.
+The proposed `unified_work_items` runtime guard is evaluated through the
+existing project-scoped feature-flag mechanism and disabled by default. It
+gates every new unified runtime entry point, including synchronization,
+workflow admissions, browser and project-page browsing/read surfaces,
+assignment, and lifecycle operations. While it is disabled, those surfaces
+continue existing GitHub issue behavior and do not expose unified-ticket
+behavior. Disabling it preserves imported records, audit data, and explicit
+overrides; it does not silently delete or revert migrated data.
 
 ## Decisions and alternatives
 
@@ -120,7 +123,7 @@ explicit overrides; it does not silently delete or revert migrated data.
 | Keep pull requests as separate review artifacts | The authored framing distinguishes work tickets from completed work awaiting review; PR approval, merge, branch, and commit semantics remain distinct. | Migrate pull requests into the ticket model; that conflates review with work tracking. |
 | Migrate GitHub issues offline and idempotently | The authored plan preserves existing state and bounded maintenance-window reconciliation without permanent dual-write. | Add Linear abstractions without GitHub migration; existing workflows would remain on a second model. |
 | Preserve explicit mapping provenance and overrides | The authored plan requires bulk mapping without silently overwriting issue-level decisions, with preview and review flags. | Treat the latest mapping as authoritative for every issue; this loses human intent. |
-| Use `[inferred]` `unified_work_items` as the default-off rollout guard | The repository already has project-scoped feature flags, so this is a cautious implementation seam for controlled cutover. | Enable the unified model globally or invent a parallel rollout mechanism. |
+| Use `unified_work_items` as the default-off rollout guard for every new unified runtime entry point | The authored rollout requires the unified model to remain unavailable, including its browse/read surfaces, until a project explicitly enables it; the repository already has project-scoped feature flags for that controlled cutover. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
 
 ## Cascade ordering and segment boundaries
 
@@ -152,5 +155,5 @@ The following authored questions must be settled before implementation locks
 the design: the exact Linear API capabilities and rate-limit/pagination
 behavior; the extension of trusted-team/user and provider identity mappings;
 and the pragmatic migration/reconciliation tooling while Paid is not
-production-bound. The `[inferred]` rollout-flag name and its exact enablement
-surface also require human confirmation.
+production-bound. The rollout-flag name and its enablement surface require
+human confirmation before implementation.

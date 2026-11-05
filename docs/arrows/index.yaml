@@ -823,7 +823,7 @@ arrows:
     taxonomy: integrations
     status: MAPPED
     sampled: 2026-11-05
-    next: "Confirm Linear API capabilities, trusted identity mappings, migration tooling, and the [inferred] default-off rollout guard before implementation."
+    next: "Confirm Linear API capabilities, trusted identity mappings, migration tooling, and the proposed default-off rollout guard for every unified runtime entry point before implementation."
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.
