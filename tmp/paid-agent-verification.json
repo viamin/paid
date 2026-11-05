@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "The complete dependency audit passed locally after updating Rails to 8.1.4.1; Bundler and Yarn reported no vulnerabilities.",
+  "summary": "The security audit completes successfully on the PR head.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -10,7 +10,7 @@
         "references": [
           {
             "locator": "bin/audit",
-            "result": "passed locally: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully; both package audits reported zero vulnerabilities"
+            "result": "passed locally on 2026-11-05: secret scan, Brakeman, Bundler audit, and Yarn audit all succeeded"
           }
         ]
       }
