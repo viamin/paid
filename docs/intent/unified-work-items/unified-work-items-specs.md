@@ -1,0 +1,59 @@
+# EARS Specs: Unified Tracker Work Items
+
+> Planned claims translated from the authored proposal in [PR #4853](https://github.com/viamin/paid/pull/4853). Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
+
+- [ ] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent GitHub and
+  external tracker tickets through a provider-neutral work-item contract with
+  stable provider/resource identity, normalized fields, typed provider
+  extensions, retained raw payloads, assignment provenance, and explicit
+  relationships to separate pull-request review artifacts.
+
+- [ ] **UNIFIED-WORK-ITEMS-002** — When an account configures Linear, the
+  system SHALL support one workspace connection with observable health,
+  configurable synchronization defaulting to 15 minutes, pagination and
+  rate-limit outcomes, and clearly reported unsupported operations.
+
+- [ ] **UNIFIED-WORK-ITEMS-003** — During Linear synchronization, the system
+  SHALL idempotently retain all supported ticket metadata, comments, projects,
+  teams, users, relations, dependencies, cycles, attachments, archive/delete
+  state, and raw provider payloads, keyed by provider identity; imported
+  comments SHALL NOT be reposted.
+
+- [ ] **UNIFIED-WORK-ITEMS-004** — The browser and assignment services SHALL
+  show unassigned work first and support filters, individual and bulk
+  assignment, current-and-future/future-only/no-auto-assignment mapping modes,
+  issue-level customization or replacement, assignment provenance, affected
+  issue review flags, preview/confirmation, and mapping- or issue-level
+  execution-project defaults.
+
+- [ ] **UNIFIED-WORK-ITEMS-005** — When a user starts a workflow from a
+  unified ticket, the system SHALL preserve existing project permissions and
+  issue workflow behavior, admit trusted comments only through explicit
+  account/project team, user, and provider-identity mappings, post comments as
+  the configured API-key user when permitted, and allow agent-run lifecycle
+  writes to be configured independently.
+
+- [ ] **UNIFIED-WORK-ITEMS-006** — When lifecycle mappings are configured
+  between Linear and Paid, the system SHALL synchronize supported changes in
+  both directions with loop prevention, surface simultaneous conflicting
+  changes for human review, and never treat an unsupported provider operation
+  as successful.
+
+- [ ] **UNIFIED-WORK-ITEMS-007** — The GitHub migration SHALL run offline and
+  idempotently, preserve GitHub identity, metadata, comments, Paid state,
+  assignments, agent-run history, relationships, and provenance, reconcile
+  issues created during the maintenance window, and keep existing GitHub issue
+  workflows operational through the unified model.
+
+- [ ] **UNIFIED-WORK-ITEMS-008** — Pull requests SHALL remain separate review
+  artifacts, with discoverable relationships for Paid-created PRs where
+  possible and explicit user linking otherwise; ticket migration SHALL NOT
+  replace pull-request review, approval, branch, commit, or merge semantics.
+
+- [ ] **UNIFIED-WORK-ITEMS-009** — The proposed `[inferred]`
+  `unified_work_items` project-scoped feature flag SHALL default off and gate
+  unified synchronization and workflow admissions; disabling it SHALL stop
+  new unified behavior while preserving imported records, audit data, and
+  explicit overrides, and the guard SHALL remain until closeout evidence
+  verifies synchronization, migration, trust, conflict, relationship,
+  rollback, and regression behavior.
