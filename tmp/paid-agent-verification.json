@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "RDR-079 and its RDR index entry remain intact after merging origin/main; documentation structural validation passed.",
+  "summary": "RDR-079, its unified-work-items LID artifacts, and the RDR index were reconciled with origin/main without duplicate RDR identities.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -10,15 +10,23 @@
         "references": [
           {
             "locator": "docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md:1",
-            "result": "RDR-079 documents the proposed provider-neutral work-item model, Linear-first rollout, GitHub migration, retained pull-request artifacts, rollout guard, implementation phases, and validation scenarios."
+            "result": "RDR-079 records the provider-neutral work-item model, Linear-first integration, offline GitHub migration, separate pull-request artifacts, rollout guard, implementation phases, and validation scenarios."
           },
           {
             "locator": "docs/rdrs/README.md:217",
-            "result": "The RDR index links RDR-079 with Draft status and P1 priority."
+            "result": "The RDR index contains one Draft P1 entry for RDR-079."
+          },
+          {
+            "locator": "docs/intent/unified-work-items/unified-work-items-design.md:1",
+            "result": "The merged LID design references the canonical RDR-079 and preserves the proposed work-item boundaries."
           },
           {
             "locator": "bin/coherence-check.mjs",
-            "result": "passed locally after the merge."
+            "result": "passed: all arrow references, including unified-work-items, are valid; the report's uncovered-spec and staleness warnings are repository-wide existing planning gaps."
+          },
+          {
+            "locator": "yarn exec markdownlint docs/high-level-design.md docs/intent/unified-work-items/unified-work-items-design.md docs/intent/unified-work-items/unified-work-items-specs.md docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md docs/rdrs/README.md",
+            "result": "passed."
           }
         ]
       }
