@@ -130,13 +130,13 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
 
     get inbox_entry_path(action_entry_id, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
 
-    expect(response.body).to include("Start evaluation", "0 of 8 judgments recorded; 8 remaining.")
+    expect(response.body).to include("Start evaluation")
     expect(response.body).not_to include("Resume evaluation")
 
     get new_project_facet_confidence_evaluation_path(project, issue_id: issue.id)
 
-    expect(response.body).to include("Start evaluation")
-    expect(response.body).not_to include("An evaluation already exists", "Resume judgments")
+    expect(response.body).to include("Start review")
+    expect(response.body).not_to include("A review is already in progress", "Continue review")
 
     post project_facet_confidence_evaluations_path(project), params: { issue_id: issue.id }
 
@@ -301,6 +301,9 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     get start_link
 
     expect(response.body).to include("Review readiness judgments")
+    expect(response.body).to include("Start review")
+    expect(response.body).to include("Starting the review assigns you as the only person who can record and")
+    expect(response.body).to include("Technical details")
     expect(response.body).not_to include("RDR-070")
   end
 

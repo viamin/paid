@@ -1,24 +1,23 @@
-<%# @spec FACET-CONFIDENCE-020 %>
+<%# @spec FACET-CONFIDENCE-020 SETTINGS-COPY-002 %>
 <div class="mx-auto max-w-2xl space-y-6 px-4 py-8">
   <div>
     <h1 class="text-2xl font-bold text-gray-900">Review readiness judgments</h1>
     <p class="mt-1 text-sm text-gray-600">
-      Record blinded human reference judgments for the frozen corpus, then return the compiled report to the
-      originating Inbox item. Completing this never closes the source issue, enables delivery, or changes the 80/80
-      defaults.
+      Decide whether this closeout is ready. Starting the review assigns you as the only person who can record and
+      finalize these judgments. It does not close the issue or enable delivery.
     </p>
   </div>
 
   <% if @existing %>
     <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-      <h2 class="text-sm font-semibold text-indigo-900">An evaluation already exists for this closeout</h2>
+      <h2 class="text-sm font-semibold text-indigo-900">A review is already in progress</h2>
       <p class="mt-1 text-sm text-indigo-800">
         Status: <span class="font-medium"><%= @existing.status %></span> ·
         judgments <%= @existing.progress[:labeled] %>/<%= @existing.progress[:total] %>
         (skipped <%= @existing.progress[:skipped] %>).
         Repeated starts resume the same evaluation for the same evidence generation instead of creating duplicates.
       </p>
-      <%= link_to @existing.labeling? ? "Resume judgments" : "Open evaluation and report",
+      <%= link_to @existing.labeling? ? "Continue review" : "View review report",
             project_facet_confidence_evaluation_path(@project, @existing, **@inbox_context),
             data: { turbo_frame: "_top" },
             class: "mt-3 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
@@ -26,39 +25,34 @@
   <% end %>
 
   <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
-    <div class="space-y-1 text-sm text-gray-700">
-      <p>
-        Originating work item <span class="font-medium">#<%= @packet.work_item %></span> ·
-        project <span class="font-medium"><%= @packet.project %></span> ·
-        source revision <code class="break-all"><%= @packet.source_revision || "not recorded" %></code>.
-      </p>
-      <p>
-        Frozen corpus <code><%= @packet.corpus_version %></code> ·
-        rubric <code><%= @packet.rubric_version %></code> · model <code><%= @packet.model_version %></code> ·
-        <%= @packet.input_revisions.size %> corpus cases · digest
-        <code class="break-all"><%= @packet.corpus_digest %></code>.
-      </p>
-    </div>
-
     <% if @packet.ready? %>
       <%= form_with url: project_facet_confidence_evaluations_path(@project, **@inbox_context), method: :post, class: "space-y-3" do |form| %>
         <%= form.hidden_field :issue_id, value: @issue.id %>
-        <p class="text-xs text-gray-500">
-          You, <%= current_user.email %>, become the sole reference judge: you alone record and freeze the blinded
-          reference judgments. Case shapes, selection rationale, and the frozen expectations stay hidden until you
-          freeze; a skipped case never counts as completed evidence.
+        <p class="text-sm text-gray-700">
+          Recommended: start the review when you can make every judgment. If you start it, only you can save and
+          finalize the review; skipped cases still need a judgment before it can finish.
         </p>
-        <%= form.submit "Start evaluation",
+        <%= form.submit "Start review",
               class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       <% end %>
     <% else %>
-      <p class="text-sm font-medium text-indigo-900">Evaluation is not ready; resolve its recorded prerequisite first.</p>
-      <ul class="space-y-1 text-sm text-gray-700">
-        <% @packet.blockers.each do |blocker| %>
-          <li><code><%= blocker[:code] %></code>: <%= blocker[:message] %> <span class="text-gray-500">Route: <%= blocker[:recovery] %></span></li>
-        <% end %>
-      </ul>
+      <p class="text-sm font-medium text-indigo-900">This review cannot start yet. Resolve the recorded prerequisite, then return here.</p>
     <% end %>
+
+    <details class="rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+      <summary class="cursor-pointer font-medium text-gray-900">Technical details</summary>
+      <div class="mt-2 space-y-1">
+        <p>Work item #<%= @packet.work_item %> · project <%= @packet.project %> · source revision <code class="break-all"><%= @packet.source_revision || "not recorded" %></code>.</p>
+        <p>Frozen corpus <code><%= @packet.corpus_version %></code> · rubric <code><%= @packet.rubric_version %></code> · model <code><%= @packet.model_version %></code> · <%= @packet.input_revisions.size %> cases · digest <code class="break-all"><%= @packet.corpus_digest %></code>.</p>
+        <% unless @packet.ready? %>
+          <ul class="mt-2 space-y-1">
+            <% @packet.blockers.each do |blocker| %>
+              <li><%= blocker[:message] %> Next step: <%= blocker[:recovery] %>.</li>
+            <% end %>
+          </ul>
+        <% end %>
+      </div>
+    </details>
   </div>
 
   <%= link_to "Back to Inbox", inbox_path(project_id: @project, kind: @inbox_context[:inbox_kind], sort: @inbox_context[:inbox_sort], entry_id: @inbox_context[:inbox_entry_id]),

@@ -37,6 +37,17 @@ RSpec.describe "Settings visible copy" do
     expect(response.body).not_to include("docs/rdrs/RDR-051.md")
   end
 
+  # @spec SETTINGS-COPY-002
+  it "explains the effect and confirmation of resuming automatic work" do
+    project.update!(quality_paused_at: 1.hour.ago, quality_pause_metadata: { "threshold" => 0.5 })
+
+    get edit_project_path(project)
+
+    expect(response.body).to include("Resume automatic work")
+    expect(response.body).to include("This lets Paid schedule automatic work for this project again. It does not start a run now.")
+    expect(response.body).to include("Resume automatic work for this project? This allows future automatic work; it does not start a run now.")
+  end
+
   # @spec SETTINGS-COPY-001
   it "renders tenant chat and feature flag descriptions without internal design references" do
     get edit_tenant_configuration_path

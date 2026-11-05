@@ -1,3 +1,4 @@
+<%# @spec SETTINGS-COPY-002 %>
 <% content_for(:title) { "Edit #{@project.name} - Projects - Paid" } %>
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
@@ -91,10 +92,11 @@
           <% end %>
 
           <div class="mt-4">
-            <%= button_to "Resume", quality_resume_project_path(@project),
+            <p class="mb-3 text-sm text-amber-800">This lets Paid schedule automatic work for this project again. It does not start a run now.</p>
+            <%= button_to "Resume automatic work", quality_resume_project_path(@project),
               method: :post,
               class: "rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 cursor-pointer",
-              data: { turbo_confirm: "Resume automatic work for this project?" } %>
+              data: { turbo_confirm: "Resume automatic work for this project? This allows future automatic work; it does not start a run now." } %>
           </div>
         <% end %>
       </div>
