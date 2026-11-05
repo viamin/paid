@@ -25,8 +25,8 @@ The initial owner-facing choices are:
 
 | Posture | Delegated downstream work | Human review still required |
 | --- | --- | --- |
-| `conservative` (default) | Current behavior only; Paid surfaces downstream decisions in Inbox. | Every existing approval, review, merge, hold, and unresolved-stop decision. |
-| `bounded_delivery` | In-scope technical choices, focused follow-up filing, technical-stop recovery, evidence-gated closeout, and cycle analysis/repair. | Settling material intent, all existing repository review/merge gates, and every routed exception. |
+| `conservative` (default) | Current behavior only, including RDR-071's completion-blocking follow-ups; Paid surfaces every other downstream decision in the Inbox. | Every existing approval, review, merge, hold, and unresolved-stop decision. |
+| `bounded_delivery` | In-scope technical choices, focused follow-up recording, technical-stop recovery, evidence-gated closeout, and cycle analysis/repair. | Settling material intent, all existing repository review/merge gates, and every routed exception. |
 
 The rendered setting must show the effective posture, its source and revision,
 the enabled action classes, the phases it can reach, applicable RDR-078 stop
@@ -57,11 +57,17 @@ bounded authorization. The audit record includes actor or system initiator,
 policy revision/signature, work identity and lineage, input/output evidence
 references, action/result, timestamps, and its routed decision when stopped.
 
+The posture answers one question per action class: is this decision delegated
+to Paid, or must it go to a human? It never supplies execution authority. The
+execution authority for the admitted lineage stays with the RDR-077 phase
+policy and the RDR-078 bounded authorization, and the posture only decides
+whether Paid may take that class of decision on its own.
+
 | Action | Limit and required evidence | Stop conditions |
 | --- | --- | --- |
-| Bounded implementation choice | Choose an implementation detail expressly left open by the settled intent; record the alternatives, selected option, rationale, tests/review evidence, and design/acceptance revisions. | Any product-behavior, scope, acceptance, policy, or risk change; no bounded option; stale revision. |
-| Focused follow-up ownership | File or assign one deduplicated issue for a finding, with affected scope, evidence, owner, and explicit dependency on completion where applicable. | Unclear affected scope, conflicting ownership, or a finding that changes active product intent. |
-| Technical-stop recovery | Retry, repair, requeue, or request a bounded technical remediation with failure classification, attempted recovery, current checks, and budget evidence. | Explicit hold, exhausted/revoked budget, unrecoverable external failure, or a semantic/product decision. |
+| Bounded implementation choice | Choose an implementation detail expressly left open by the settled intent; record the alternatives, selected option, rationale, tests and review evidence current at that revision, and the design/acceptance revisions. | Any product-behavior, scope, acceptance, policy, or risk change; no bounded option; stale revision. |
+| Focused follow-up ownership | Record one deduplicated follow-up issue for a finding, with affected scope, evidence, owner, and the completion dependency RDR-071 already requires; record the follow-up and its link only, never its execution. | Unclear affected scope, conflicting ownership, or a finding that changes active product intent. |
+| Technical-stop recovery | Retry, repair, requeue, or request a bounded technical remediation inside the admitted lineage, with failure classification, attempted recovery, current checks, and budget evidence. | Explicit hold, exhausted/revoked budget, unrecoverable external failure, or a semantic/product decision. |
 | Evidence-gated issue closure | Close only when the current acceptance revision, required tests/checks, review/merge state, dependencies, and open follow-ups all have recorded evidence. | Missing, stale, contradictory, or failed evidence; open material follow-up; unavailable assessment. |
 | Cycle analysis and repair | Analyze a repeated delivery stop and apply a bounded repair to the same technical lineage, recording cycle evidence, proposed repair, result, and recurrence count. | Material-risk escalation, changed intent, repeated unsuccessful bounded repair, or a repair outside the pinned lineage. |
 
@@ -70,6 +76,19 @@ scope, conflicting evidence, new material risk, an explicit hold, or an
 unavailable assessment. The decision names the smallest affected question,
 recommendation, consequences, revision delta, evidence, and next action. It
 does not reopen unrelated settled questions.
+
+`Focused follow-up ownership` is the single narrow exception to the
+no-new-lineage rule. It authorizes recording the follow-up issue and its
+completion dependency — the same forward-work behavior RDR-071 already allows
+— and nothing more. The follow-up stays a separate work item: it needs its own
+admission, policy snapshot, and boundary rechecks, and this posture grants it
+none of that authority. Recording a follow-up does not change the delegated
+work's scope, acceptance criteria, or lineage, and it keeps evidence-gated
+closeout blocked while a material follow-up stays open.
+
+Recovery stays inside the admitted lineage. A remediation that needs its own
+work item is recorded as a follow-up or routed to a human decision; it is
+never executed as new lineage under this posture.
 
 ## One policy contract and revision boundaries
 
@@ -81,17 +100,22 @@ old approval, queue state, or UI visibility.
 
 A work admission snapshots the effective policy signature and the settled
 intent/acceptance/evidence revisions. At every action boundary, including
-creation, dequeue, retry, follow-up, repair, and closeout, the service checks
-that these are current. A project setting change that broadens authority affects
-only new admissions: it must never silently broaden an in-flight authorization.
-A running action is not force-killed, but no next action begins after a failed
-recheck. Narrowing, an explicit hold, policy rollback, expiry, or RDR-078's
-exclusive stop blocks the next action and records why.
+creation, dequeue, retry, follow-up recording, repair, and closeout, the
+service checks that these are current. A project setting change that broadens
+authority affects only new admissions: it must never silently broaden an
+in-flight authorization. A running action is not force-killed, but no next
+action begins after a failed recheck. Narrowing, an explicit hold, policy
+rollback, expiry, or RDR-078's exclusive stop blocks the next action and
+records why.
 
 RDR-078 remains the only per-lineage exclusive stop. RDR-077 phase settings
 and continuation grants retain their meanings. This posture never refreshes a
 stale review, waives a required review, adds merge authority, or authorizes
-release, deployment, settings changes, child work, dependencies, or a new PR.
+release, deployment, settings changes, executing child work, acting on
+dependencies, opening an additional PR, or starting a new work lineage. The
+only exception is the follow-up record and its link described in the delegated
+action contract; it grants no execution and no change to the delegated work's
+own scope, acceptance, or lineage.
 
 ## Rollout Guard and rollback
 
@@ -129,12 +153,14 @@ review.
 | Always ask downstream technical questions | Rejected: settled intent should reduce routine Inbox work without removing material decisions. |
 | Let a setting immediately expand in-flight work | Rejected: consent and evidence must be bound to the policy current at admission. |
 | Make automatic closure unconditional | Rejected: closure is a claim about current acceptance evidence, not a workflow terminal state. |
+| Let the posture also execute the follow-up | Rejected: the follow-up is separate work that needs its own admission, so executing it would open a new lineage. |
 
 ## Follow-on implementation boundaries
 
 1. Add the posture record, policy signature, audit events, and shared effective-policy input behind the named guard.
 2. Build intent-checkpoint grouping and immutable revision binding on existing RDR-066/071 records; do not duplicate feature approval or confidence assessment.
-3. Add action services and boundary rechecks for all queue, dequeue, retry, follow-up, closeout, and repair paths.
+3. Add action services and boundary rechecks for all queue, dequeue, retry,
+   follow-up recording, closeout, and repair paths.
 4. Add surface-parity projections for settings, Inbox, API, and MCP, then run the pilot and its review before any default change.
 
 Follow-on implementation issues must cite this accepted RDR and the EARS in

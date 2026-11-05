@@ -25,7 +25,8 @@ Status markers: `[ ]` planned implementation gap.
   bounded cycle analysis/repair, each with the action-specific evidence and
   audit record defined by RDR-080; it SHALL NOT delegate product behavior,
   requirements, scope, acceptance criteria, explicit holds, release,
-  deployment, settings changes, or new work lineage.
+  deployment, settings changes, or new work lineage, except for the narrow
+  follow-up recording exception in PROJECT-DELEGATION-008.
 
 - [ ] **PROJECT-DELEGATION-004** — Before creating, queueing, dequeueing,
   retrying, following up, repairing, or closing delegated work, the system
@@ -53,3 +54,10 @@ Status markers: `[ ]` planned implementation gap.
   time, completion rate, and later-reversed decisions; it SHALL keep broadening
   disabled until the RDR-080 pilot threshold is met and SHALL pause expansion
   on a material reversal, security/tenant/trust breach, or missing evidence.
+
+- [ ] **PROJECT-DELEGATION-008** — When a delegated action records a focused
+  follow-up, the system SHALL record the finding, affected scope, evidence,
+  owner, and completion dependency exactly once, SHALL keep evidence-gated
+  closeout blocked while a material follow-up is open, and SHALL NOT execute
+  that follow-up under the delegated authority; the follow-up's own execution
+  SHALL require its own admission, policy snapshot, and boundary rechecks.
