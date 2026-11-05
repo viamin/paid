@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "The dependency-update head installs under Bundler frozen mode and the local security audit completed successfully; the reported GitHub audit failure could not be reproduced.",
+  "summary": "The dependency-update head resolves Rails 8.1.4.1, which clears the advisories that caused the audit failure; the security audit then completed successfully.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -17,12 +17,16 @@
             "result": "Lockfile resolves agent-harness 0.44.32."
           },
           {
+            "locator": "Gemfile.lock:39",
+            "result": "Rails and its action* components resolve to the advisory-fixed 8.1.4.1 release."
+          },
+          {
             "locator": "BUNDLE_FROZEN=true bundle install",
             "result": "passed: bundle completed with 73 Gemfile dependencies and 253 gems."
           },
           {
             "locator": "bin/audit",
-            "result": "passed locally after dependency installation: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully."
+            "result": "passed locally after upgrading Rails 8.1.4 to 8.1.4.1: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully."
           }
         ]
       }
