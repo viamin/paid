@@ -1,6 +1,6 @@
 # EARS Specs: Unified Tracker Work Items
 
-> Planned claims governed by `docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md`, which must land before this segment is merged. Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
+> Planned claims. Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
 - [ ] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent GitHub and
   external tracker tickets through a provider-neutral work-item contract with
@@ -64,5 +64,5 @@
   surfaces SHALL continue existing GitHub issue behavior and SHALL NOT expose
   unified-ticket behavior. Disabling the flag SHALL preserve imported records,
   audit data, and explicit overrides, and the guard SHALL remain until the
-  RDR-079 closeout audit verifies synchronization, migration, trust, conflict,
+  closeout audit verifies synchronization, migration, trust, conflict,
   relationship, rollback, and regression behavior.

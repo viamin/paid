@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "The complete dependency audit passed locally after updating Rails to 8.1.4.1; Bundler and Yarn reported no vulnerabilities.",
+  "summary": "Unified work-item LID artifacts are registered, internally coherent, and no longer reference the absent RDR-079 artifact.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,8 +9,50 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "bin/audit",
-            "result": "passed locally: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully; both package audits reported zero vulnerabilities"
+            "locator": "docs/intent/unified-work-items/unified-work-items-design.md:1",
+            "result": "passed: provider-neutral work-item, synchronization, trust, migration, PR-boundary, and rollout design is present"
+          },
+          {
+            "locator": "docs/intent/unified-work-items/unified-work-items-specs.md:1",
+            "result": "passed: nine planned EARS claims cover the design contract"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "passed",
+      "verification": {
+        "kind": "human_or_external_evidence",
+        "references": [
+          {
+            "locator": "docs/arrows/index.yaml:818",
+            "result": "passed: unified-work-items segment is registered under PAID in the integrations taxonomy"
+          },
+          {
+            "locator": "bin/coherence-check.mjs",
+            "result": "passed: arrow reference integrity reported all references valid"
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-3",
+      "status": "passed",
+      "verification": {
+        "kind": "human_or_external_evidence",
+        "references": [
+          {
+            "locator": "docs/intent/unified-work-items/unified-work-items-design.md:8",
+            "result": "passed: rollout decision is explicitly planned and requires confirmation before implementation"
+          },
+          {
+            "locator": "git diff --check main...HEAD",
+            "result": "passed: no whitespace errors"
+          },
+          {
+            "locator": "docs/arrows/index.yaml",
+            "result": "passed: YAML parsed with Ruby Psych using Date as a permitted class"
           }
         ]
       }

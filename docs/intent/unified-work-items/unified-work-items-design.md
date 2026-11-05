@@ -5,7 +5,8 @@ prefix: UNIFIED-WORK-ITEMS
 
 # Low-Level Design: Unified Tracker Work Items
 
-> This planned capability depends on `docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md`. That RDR must land before this segment is merged; it is the normative record for the decision and its rollout guard.
+> This is a planned capability. Its rollout guard and open product decisions
+> require confirmation before implementation.
 
 ## Context and problem
 
@@ -122,7 +123,7 @@ surfaces, assignment, and lifecycle operations. While it is disabled, those
 surfaces continue existing GitHub issue behavior and do not expose
 unified-ticket behavior. Disabling it preserves imported records, audit data,
 and explicit overrides; it does not silently delete or revert migrated data.
-The flag remains until the RDR-079 closeout audit passes with synchronization,
+The flag remains until its closeout audit passes with synchronization,
 migration, trust, conflict, relationship, rollback, and regression evidence.
 
 ## Decisions and alternatives
@@ -133,7 +134,7 @@ migration, trust, conflict, relationship, rollback, and regression evidence.
 | Keep pull requests as separate review artifacts | The authored framing distinguishes work tickets from completed work awaiting review; PR approval, merge, branch, and commit semantics remain distinct. | Migrate pull requests into the ticket model; that conflates review with work tracking. |
 | Migrate GitHub issues offline and idempotently | The authored plan preserves existing state and bounded maintenance-window reconciliation without permanent dual-write. | Add Linear abstractions without GitHub migration; existing workflows would remain on a second model. |
 | Preserve explicit mapping provenance and overrides | The authored plan requires bulk mapping without silently overwriting issue-level decisions, with preview and review flags. | Treat the latest mapping as authoritative for every issue; this loses human intent. |
-| Provisionally propose `unified_work_items` as the default-off rollout guard for every new unified runtime entry point | RDR-079 proposes a project-scoped guard so the unified model, including browse/read surfaces, stays unavailable until an authorized project enablement. The flag name and enablement surface remain an open product decision; see Open decisions. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
+| Provisionally propose `unified_work_items` as the default-off rollout guard for every new unified runtime entry point | This planned contract proposes a project-scoped guard so the unified model, including browse/read surfaces, stays unavailable until an authorized project enablement. The flag name and enablement surface remain an open product decision; see Open decisions. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
 
 ## Cascade ordering and segment boundaries
 
