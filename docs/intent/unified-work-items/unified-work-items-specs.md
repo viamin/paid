@@ -1,7 +1,7 @@
 # EARS Specs: Unified Tracker Work Items
 
 > Planned claims. Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
-> Tracking proposal: #4862. Rollout decision: [RDR-079](../../rdrs/RDR-079-unified-tracker-work-items.md).
+> Tracking issue: #4854. Rollout decision: [RDR-079](../../rdrs/RDR-079-unified-tracker-work-items.md).
 
 - [ ] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent GitHub and
   external tracker tickets through a provider-neutral work-item contract with
@@ -55,9 +55,9 @@
   possible and explicit user linking otherwise; ticket migration SHALL NOT
   replace pull-request review, approval, branch, commit, or merge semantics.
 
-- [ ] **UNIFIED-WORK-ITEMS-009** — Subject to confirmation of the proposed
-  `unified_work_items` guard, the system SHALL add `:unified_work_items` to
-  `FeatureFlags::DEFINITIONS` and default it off. A project-scoped unified
+- [ ] **UNIFIED-WORK-ITEMS-009** — Implementation issue #4855 SHALL add the
+  default-off `:unified_work_items` guard to `FeatureFlags::DEFINITIONS` and
+  wire its runtime decision. A project-scoped unified
   entry point SHALL evaluate
   `FeatureFlags.enabled?(:unified_work_items, project:)`. An account-scoped
   unified entry point SHALL establish `Current.account` and evaluate

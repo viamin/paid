@@ -823,7 +823,7 @@ arrows:
     taxonomy: integrations
     status: MAPPED
     sampled: 2026-11-05
-    next: "Tracking proposal #4862: confirm Linear API capabilities, trusted identity mappings, migration tooling, and the RDR-079 default-off rollout guard for every unified runtime entry point before implementation."
+    next: "Tracking issue #4854: confirm Linear API capabilities, trusted identity mappings, migration tooling, and the RDR-079 default-off rollout guard for every unified runtime entry point before implementation."
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

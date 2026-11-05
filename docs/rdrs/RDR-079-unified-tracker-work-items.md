@@ -7,21 +7,25 @@
 - **Type**: Architecture + External Integration
 - **Related RDRs**: [RDR-012](RDR-012-github-integration.md) and [RDR-023](RDR-023-automation-modularization-architecture.md)
 - **Related intent**: `docs/intent/unified-work-items/`
-- **Tracking proposal**: #4862
+- **Tracking issue**: #4854
 - **Implementation status**: Design proposal only; no runtime behavior changes in this RDR.
 
-## Decision required
+## Problem Statement
 
 Adopt a provider-neutral persisted `WorkItem` record for GitHub and external
 tracker tickets, beginning with Linear, while composing with the existing
 tracker configuration, tracker adapter, and automation provider seams.
 
+Paid currently uses GitHub-centered issue workflows. Users need a single,
+trustworthy workflow and assignment boundary for GitHub and external-tracker
+tickets without conflating tickets with pull-request review artifacts.
+
 ## Context
 
-Paid currently uses GitHub-centered issue workflows, but it already has two
-integration seams relevant to external trackers. `TrackerConfiguration` owns
-the account, user, or project tracker configuration, credential, and project
-mapping; `IssueTrackers::Adapters::Linear` provides the Linear transport.
+Paid already has two integration seams relevant to external trackers.
+`TrackerConfiguration` owns the account, user, or project tracker
+configuration, credential, and project mapping;
+`IssueTrackers::Adapters::Linear` provides the Linear transport.
 Separately, `Automation::Providers::Resolver` chooses a registered
 `WorkItemProvider` for a project's provider type. A new unified model must not
 copy Linear credentials or mappings into a second configuration path.
@@ -29,7 +33,15 @@ copy Linear credentials or mappings into a second configuration path.
 Tickets represent work to be done. Pull requests remain review artifacts and
 must not acquire ticket lifecycle semantics.
 
-## Proposed decision
+## Research Findings
+
+`TrackerConfiguration` already owns the Linear connection, integration
+credential, configuration scope, and `project_mapping`. The adapter and
+automation seams provide provider-specific transport and capability selection,
+but neither supplies a provider-neutral persisted ticket identity or bounded
+GitHub-to-unified migration path.
+
+## Proposed Solution
 
 `WorkItem` is the durable local identity and reconciliation record. It stores
 provider/resource identity, normalized imported state, typed extensions, raw
@@ -58,7 +70,7 @@ state, assignments, agent-run history, relationships, provenance, and the
 existing trusted-GitHub-user configuration. It reconciles issues created in the
 window and avoids permanent dual-write.
 
-## Alternatives considered
+## Alternatives Considered
 
 | Alternative | Decision |
 | --- | --- |
@@ -67,10 +79,22 @@ window and avoids permanent dual-write.
 | Move pull requests into `WorkItem` | Rejected: review, approval, branch, commit, and merge behavior are distinct from ticket tracking. |
 | Continue GitHub and unified storage indefinitely with dual writes | Rejected: it makes reconciliation and authority permanent instead of bounded to migration. |
 
+## Trade-offs and Consequences
+
+The unified model adds reconciliation, migration, and conflict-handling
+complexity, and the exact Linear API guarantees still require implementation
+research. In return, it gives GitHub and Linear tickets a consistent local
+workflow while retaining each provider's credential and transport boundary.
+The default-off guard makes rollout reversible at the behavior boundary, but
+disabling it intentionally preserves imported records rather than undoing a
+migration.
+
 ## Rollout Guard
 
-`unified_work_items` is proposed as a default-off feature flag. The future
-implementation issue must add it to `FeatureFlags::DEFINITIONS`.
+`unified_work_items` is a default-off feature flag. Implementation issue
+[#4855](https://github.com/viamin/paid/issues/4855), “Phase 1: define
+unified work-item domain and provider contracts,” owns adding it to
+`FeatureFlags::DEFINITIONS` and wiring the runtime decision.
 
 Project-scoped entry points evaluate
 `FeatureFlags.enabled?(:unified_work_items, project:)`. Account-scoped ticket
@@ -86,7 +110,7 @@ not delete or reverse migrated data. Keep the guard until a closeout audit
 verifies synchronization, migration, trust, conflicts, ticket-to-PR
 relationships, rollback, and regression evidence.
 
-## Focused implementation and validation plan
+## Implementation Plan
 
 1. Define the `WorkItem` model and reconciliation records, reusing
    `TrackerConfiguration` for Linear credentials and mappings.
@@ -99,3 +123,13 @@ relationships, rollback, and regression evidence.
    reconcile work created during that window.
 5. Close out against the EARS claims and rollout-guard evidence before changing
    the RDR status or removing the guard.
+
+## Validation
+
+Validate the implementation against the unified-work-items EARS claims:
+provider-identity upserts, Linear pagination and rate-limit outcomes,
+trust-boundary admission, lifecycle-loop and conflict handling, GitHub
+migration idempotency and maintenance-window reconciliation, ticket-to-PR
+relationships, and default-off guard behavior. The RDR closeout audit must
+record synchronization, migration, trust, conflict, relationship, rollback,
+and regression evidence before the guard is removed.

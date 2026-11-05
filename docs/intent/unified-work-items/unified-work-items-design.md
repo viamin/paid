@@ -5,15 +5,15 @@ prefix: UNIFIED-WORK-ITEMS
 
 # Low-Level Design: Unified Tracker Work Items
 
-> This is a planned capability. Its rollout guard and open product decisions
-> require confirmation before implementation. Tracking proposal: #4862.
+> This is a planned capability. Its remaining open product decisions require
+> confirmation before implementation. Tracking issue: #4854.
 
 ## Context and problem
 
 Paid's issue workflows are GitHub-centered. Users need to browse external
 tracker tickets, associate them with one or more repository-backed projects,
 start Paid workflows from a project page, bulk-assign tickets, and preserve
-issue-level assignment choices. The tracked proposal (#4862) confirms that tickets
+issue-level assignment choices. The tracking issue (#4854) confirms that tickets
 represent work to be done, while pull requests represent completed work
 awaiting review. The design therefore unifies tracker-backed tickets without
 moving pull-request review semantics into the ticket model.
@@ -134,8 +134,9 @@ trusted-GitHub-user configuration. The migration reconciles issues created
 during its maintenance window and avoids long-term dual-write. Existing GitHub
 issue workflows continue through the unified contract after cutover.
 
-Subject to the open product decision below, the proposed
-`unified_work_items` runtime guard is disabled by default. Project-scoped
+Implementation issue [#4855](https://github.com/viamin/paid/issues/4855)
+owns the default-off `unified_work_items` runtime guard, including its
+`FeatureFlags::DEFINITIONS` entry and runtime wiring. Project-scoped
 entry points evaluate
 `FeatureFlags.enabled?(:unified_work_items, project:)`. Account-scoped
 surfaces (the account ticket browser, Linear connection, and account trust
@@ -159,14 +160,14 @@ rollback, and regression evidence.
 | Decision | Rationale | Alternative rejected |
 |---|---|---|
 | Compose `WorkItem` with existing tracker and automation seams | `TrackerConfiguration` already owns the connection credential and mapping, `IssueTrackers` owns provider transport, and `Automation::Providers::Resolver` owns automation capability registration. `WorkItem` supplies durable normalized state and reconciliation without duplicating any of those responsibilities. | Create a second Linear credential, mapping, or provider interface; that would create divergent configuration and behavior. |
-| Keep pull requests as separate review artifacts | The tracked proposal (#4862) distinguishes work tickets from completed work awaiting review; PR approval, merge, branch, and commit semantics remain distinct. | Migrate pull requests into the ticket model; that conflates review with work tracking. |
-| Migrate GitHub issues offline and idempotently | The tracked proposal (#4862) preserves existing state and bounded maintenance-window reconciliation without permanent dual-write. | Add Linear abstractions without GitHub migration; existing workflows would remain on a second model. |
-| Preserve explicit mapping provenance and overrides | The tracked proposal (#4862) requires bulk mapping without silently overwriting issue-level decisions, with preview and review flags. | Treat the latest mapping as authoritative for every issue; this loses human intent. |
-| Provisionally propose `unified_work_items` as a default-off account-and-project rollout guard | Project entry points have a project context, while account settings and browsing must use the current account's tenant override. This keeps every surface unavailable until the appropriate scoped enablement. The flag name and enablement surface remain an open product decision; see Open decisions and RDR-079. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
+| Keep pull requests as separate review artifacts | The tracking issue (#4854) distinguishes work tickets from completed work awaiting review; PR approval, merge, branch, and commit semantics remain distinct. | Migrate pull requests into the ticket model; that conflates review with work tracking. |
+| Migrate GitHub issues offline and idempotently | The tracking issue (#4854) preserves existing state and bounded maintenance-window reconciliation without permanent dual-write. | Add Linear abstractions without GitHub migration; existing workflows would remain on a second model. |
+| Preserve explicit mapping provenance and overrides | The tracking issue (#4854) requires bulk mapping without silently overwriting issue-level decisions, with preview and review flags. | Treat the latest mapping as authoritative for every issue; this loses human intent. |
+| Use the default-off `unified_work_items` account-and-project rollout guard owned by implementation issue #4855 | Project entry points have a project context, while account settings and browsing must use the current account's tenant override. This keeps every surface unavailable until the appropriate scoped enablement, and assigns the flag definition and runtime wiring to a traceable implementation owner. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
 
 ## Cascade ordering and segment boundaries
 
-Implementation follows the tracked proposal (#4862) in this order:
+Implementation follows tracking issue #4854 in this order:
 
 1. Define the domain model, provider contracts, raw payloads, relationships,
    provenance, overrides, conflict records, and the default-off guard.
@@ -196,6 +197,5 @@ contracts remain owned by their existing components.
 
 The following decisions must be settled before implementation locks the design:
 the exact Linear API capabilities and rate-limit/pagination behavior; the
-extension of trusted-team/user and provider identity mappings; the pragmatic
-migration/reconciliation tooling while Paid is not production-bound; and the
-rollout-flag name and enablement surface.
+extension of trusted-team/user and provider identity mappings; and the
+pragmatic migration/reconciliation tooling while Paid is not production-bound.
