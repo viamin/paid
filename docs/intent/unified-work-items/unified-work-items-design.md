@@ -3,10 +3,68 @@ parent: PAID
 prefix: UNIFIED-WORK-ITEMS
 ---
 
-# Low-Level Design: Unified Tracker Work Items
+# Low-Level Design: Unified Work Items
 
-> This is a planned capability. Its remaining open product decisions require
-> confirmation before implementation. Tracking issue: #4854.
+RDR-079 Phase 1 establishes the contract and default-off rollout guard. The
+remaining delivery work is tracked by #4854.
+
+## Purpose
+
+Paid accepts work from trackers with different identifiers, lifecycle names,
+assignment semantics, and pull-request representations. The provider-neutral
+contract must preserve those differences without making orchestration depend on
+one provider's payload shape.
+
+## Contract
+
+`Automation::Providers::Data::WorkItem` is the Phase 1 immutable snapshot.
+Its `Identity` has provider, resource type, resource ID, and container ID so a
+provider-local key is never mistaken for a globally unique identifier. The
+normalized fields carry title, body, author, labels, timestamps, URL, and a
+normalized lifecycle. `raw_payload` retains the source response for audit and
+future provider-specific interpretation; it is not a policy input.
+
+Provider-specific fields are represented by typed extension records. The base
+`Extension` carries an explicit provider and type discriminator; supported
+providers can expose a typed record such as `GithubExtension` without changing
+the normalized contract.
+
+Comments, relations, attachments, assignments, and pull-request links are
+separate typed collections. A relation records the unified relation kind, the
+provider-native kind it was mapped from, and the provider's dependency target,
+so normalizing a relation never discards provider meaning. An assignment
+records its provider, Paid, or inherited provenance and any explicit Paid
+override actor and time. A
+`Lifecycle` records the normalized state, native state, mapping outcome, and a
+structured conflict where a requested and observed state disagree. Work item to
+pull request links use an explicit relationship and a pull-request identity;
+they are not inferred from title, body, or numeric coincidence.
+
+## GitHub compatibility
+
+Existing callers continue to receive `Data::Issue` from
+`Github::WorkItemProvider`. The legacy snapshot now retains the raw GitHub
+response and exposes `#to_work_item`; conversion preserves the established
+GitHub issue fields while offering the richer unified representation. This
+phase does not change issue selection, lifecycle writes, or existing GitHub
+automation behavior.
+
+## Rollout guard
+
+`unified_work_items` is a default-off feature flag defined in `FeatureFlags`.
+New unified-work-item runtime surfaces must read
+`Automation::Providers::UnifiedWorkItemsRolloutGuard.enabled?(project)`, which
+uses `FeatureFlags.enabled?(:unified_work_items, project:)`. This evaluates the
+project actor while honoring an account tenant-setting override. Existing
+GitHub issue behavior remains outside this new guard.
+
+## Decisions & Alternatives
+
+| Decision | Alternatives considered | Rationale |
+| --- | --- | --- |
+| Add a parallel immutable contract | Replace `Data::Issue` immediately | A compatibility adapter avoids breaking current GitHub consumers while providers migrate independently. |
+| Preserve raw payloads | Normalize only | Normalization necessarily loses provider detail needed for audit, repair, and future mappings. |
+| Record lifecycle conflicts | Silently pick native or normalized state | A visible conflict prevents a failed mapping from looking like a successful state transition. |
 
 ## Context and problem
 
@@ -20,8 +78,8 @@ moving pull-request review semantics into the ticket model.
 
 `IssueTrackers::Adapters::Base` is the existing provider-neutral tracker
 operation seam; its Linear adapter is selected by
-`IssueTrackers::AdapterFactory` from `TrackerConfiguration`. The proposed
-persisted `WorkItem` model is the local identity and reconciliation store, not
+`IssueTrackers::AdapterFactory` from `TrackerConfiguration`. Subsequent phases
+add a persisted `WorkItem` model as the local identity and reconciliation store, not
 a second automation provider interface. A Linear `WorkItem` records
 the provider resource and normalized state fetched through that adapter; it
 does not duplicate the account's credential or `project_mapping`.
@@ -134,18 +192,15 @@ trusted-GitHub-user configuration. The migration reconciles issues created
 during its maintenance window and avoids long-term dual-write. Existing GitHub
 issue workflows continue through the unified contract after cutover.
 
-Implementation issue [#4855](https://github.com/viamin/paid/issues/4855)
-owns the default-off `unified_work_items` runtime guard, including its
-`FeatureFlags::DEFINITIONS` entry and runtime wiring. Project-scoped
-entry points evaluate
+Phase 1 added the default-off `unified_work_items` feature flag and its
+project-scoped rollout guard. Future project-scoped entry points evaluate
 `FeatureFlags.enabled?(:unified_work_items, project:)`. Account-scoped
 surfaces (the account ticket browser, Linear connection, and account trust
 defaults) establish `Current.account` and evaluate
 `FeatureFlags.enabled?(:unified_work_items)` against that account's
 `tenant_settings.features` override; they do not render or mutate unified
-state without an account context. Its implementation must add
-`:unified_work_items` to `FeatureFlags::DEFINITIONS` and apply the applicable
-evaluation rule to synchronization, workflow admissions, browser and
+state without an account context. Future implementations apply the guard to
+synchronization, workflow admissions, browser and
 project-page browsing/read surfaces, assignment, lifecycle operations, and
 account settings. While it is disabled, those surfaces continue existing
 GitHub issue behavior and do not expose unified-ticket behavior. Disabling it

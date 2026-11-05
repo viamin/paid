@@ -9,8 +9,11 @@
 - **Type**: Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-010](RDR-010-multi-tenancy-rbac.md), [RDR-012](RDR-012-github-integration.md), [RDR-051](RDR-051-lid-aware-agent-runs.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md)
-- **Related Issues**: Implementation tree to be filed from this RDR
-- **LID**: Full mode, version 1.3.0; `lid_planning` will convert this RDR into HLD/LLD/EARS artifacts
+- **Tracking issue**: #4854
+- **Implementation status**: Phase 1 provider-contract and rollout-guard
+  work is implemented by #4855; the remaining phases are planned.
+- **LID**: Full mode, version 1.3.0; the linked LLD and EARS artifacts record
+  the implementation cascade.
 
 ## Problem Statement
 
@@ -116,9 +119,9 @@ evidence:
    trusted by default.
 10. The repository's rollout mechanism is `FeatureFlags::DEFINITIONS` plus
     `FeatureFlags.enabled?(..., project:)`, with tenant/project enablement
-    surfaces and explicit cleanup criteria. No unified-work-item flag exists
-    today. The flag named below is therefore an **[inferred]** implementation
-    guard, to be confirmed by LID planning and the human reviewer.
+    surfaces and explicit cleanup criteria. Phase 1 adds the default-off
+    `unified_work_items` flag and a project-scoped guard; account-scoped
+    surfaces remain planned.
 
 ### Unknowns preserved from the brief
 
@@ -248,10 +251,12 @@ Costs and risks:
 
 ## Rollout Guard
 
-**[inferred] Feature flag:** `unified_work_items`, to be added by the provider
-and domain-model implementation issue to `FeatureFlags::DEFINITIONS`. Runtime
-entry points must read it through
-`FeatureFlags.enabled?(:unified_work_items, project:)`.
+The Phase 1 provider-contract implementation adds the default-off
+`unified_work_items` feature flag to `FeatureFlags::DEFINITIONS` and protects
+new project-scoped entry points through
+`FeatureFlags.enabled?(:unified_work_items, project:)`. Account-scoped
+surfaces remain planned and must establish `Current.account` before evaluating
+the account tenant-setting override.
 
 - **Default:** disabled for all tenants and projects.
 - **Enablement surface:** tenant/project feature settings using the existing
@@ -274,14 +279,16 @@ cutover result.
 
 ## Implementation Plan
 
-### Phase 1 — Domain model and provider contracts
+### Phase 1 — Domain model and provider contracts (implemented)
 
 Define provider/resource identity, normalized work-item fields, typed provider
 extensions, raw payload retention, comments/relations/attachments, assignment
 provenance and overrides, status mappings/conflicts, and the separate
 work-item-to-pull-request relationship. Extend provider-neutral adapter
 contracts without removing GitHub compatibility. Add the rollout flag and
-mechanically guard all new runtime entry points.
+mechanically guard new project-scoped runtime entry points. Phase 1 supplies
+the immutable contract and compatibility conversion; persisted reconciliation
+records remain a later phase.
 
 ### Phase 2 — Linear synchronization and provider operations
 
