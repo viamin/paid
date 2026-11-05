@@ -3,7 +3,6 @@
 require "rails_helper"
 
 # @spec UNIFIED-WORK-ITEMS-001
-# @spec UNIFIED-WORK-ITEMS-009
 RSpec.describe Automation::Providers::Data::WorkItem do
   let(:identity) do
     Automation::Providers::Data::WorkItem::Identity.new(

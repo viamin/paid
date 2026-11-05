@@ -48,6 +48,11 @@ module Automation
       )
         STATES = %i[open closed].freeze
 
+        # Provider relation spellings normalized onto the unified relation
+        # kinds. Every other provider-native kind is carried through
+        # unchanged so no provider meaning is discarded.
+        RELATION_KIND_ALIASES = { related_to: :relates_to, duplicates: :duplicate }.freeze
+
         # Additive compatibility field: existing provider call sites retain
         # their established keyword shape while adapters can preserve the
         # source payload for conversion into the richer WorkItem contract.
@@ -63,9 +68,8 @@ module Automation
             title:, body:,
             lifecycle: WorkItem::Lifecycle.new(state:, raw_state:, mapping: :direct, conflict: nil),
             author: author_login && WorkItem::Actor.new(provider:, external_id: author_login, login: author_login),
-            labels:, comments: [], relations: dependencies.map { |dependency|
-              WorkItem::Relation.new(kind: dependency.relation, target: dependency, raw_kind: nil)
-            }, attachments: [],
+            labels:, comments: [], relations: dependencies.map { |dependency| build_relation(dependency) },
+            attachments: [],
             assignments: assignee_logins.map { |login|
               WorkItem::Assignment.new(
                 assignee: WorkItem::Actor.new(provider:, external_id: login, login:),
@@ -77,6 +81,20 @@ module Automation
               relationship: :relates_to, url:
             ) ] : [],
             provider_extensions: [], raw_payload: raw_payload || {}, created_at:, updated_at:, url:
+          )
+        end
+
+        private
+
+        # A relation keeps the provider-native kind beside the unified kind it
+        # maps onto, so the normalization stays auditable.
+        def build_relation(dependency)
+          raw_kind = dependency.relation
+
+          WorkItem::Relation.new(
+            kind: RELATION_KIND_ALIASES.fetch(raw_kind, raw_kind),
+            target: dependency,
+            raw_kind:
           )
         end
       end

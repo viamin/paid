@@ -29,8 +29,11 @@ providers can expose a typed record such as `GithubExtension` without changing
 the normalized contract.
 
 Comments, relations, attachments, assignments, and pull-request links are
-separate typed collections. An assignment records its provider, Paid, or
-inherited provenance and any explicit Paid override actor and time. A
+separate typed collections. A relation records the unified relation kind, the
+provider-native kind it was mapped from, and the provider's dependency target,
+so normalizing a relation never discards provider meaning. An assignment
+records its provider, Paid, or inherited provenance and any explicit Paid
+override actor and time. A
 `Lifecycle` records the normalized state, native state, mapping outcome, and a
 structured conflict where a requested and observed state disagree. Work item to
 pull request links use an explicit relationship and a pull-request identity;

@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-30
+last_updated: 2026-11-05
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -822,6 +822,7 @@ arrows:
     parent: PAID
     taxonomy: integrations
     status: PARTIAL
+    audited: 2026-11-05
     next: "Phase 1 provider-neutral contracts and the default-off rollout guard are implemented; add provider adapters and guarded runtime entry points in subsequent phases."
 
 # Items found during mapping that don't yet belong to a segment.
