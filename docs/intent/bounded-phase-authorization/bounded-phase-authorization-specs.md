@@ -7,6 +7,25 @@ prefix: BOUNDED-PHASE-AUTHORIZATION
 
 Status markers: `[ ]` proposed implementation gap.
 
+The initial bounded delegated action contract is shipped as the durable,
+action-specific authorization boundary below. The broader phase lifecycle
+claims remain proposed until their admission and reassessment paths land.
+
+- [x] **BOUNDED-DELEGATED-ACTION-001** — When an authorized actor delegates a
+  bounded delivery action, the system SHALL require an identified issue in the
+  same project and account, a pinned intent digest, and acceptance evidence;
+  it SHALL persist the actor, action, expiry, and evidence and record an audit
+  event in the same transaction.
+  *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb`.
+
+- [x] **BOUNDED-DELEGATED-ACTION-002** — The system SHALL authorize review and
+  repair using the existing run permission and SHALL require the stronger
+  merge-delegation permission for merge. Product decisions, feature approval,
+  release, deployment, and setting enablement SHALL never be delegable
+  delivery actions.
+  *Verified by:* `spec/models/bounded_delegated_action_spec.rb` and
+  `spec/services/automation/authorize_bounded_action_spec.rb`.
+
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-001** — When an authorized actor explicitly
   confirms a bounded authorization, the system SHALL record the actor, tenant,
   identified issue or PR, established same-work lineage, pinned intent and
