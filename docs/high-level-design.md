@@ -325,8 +325,8 @@ through the unified ticket contract while pull requests remain separate
 review artifacts linked to tickets. Subject to product confirmation, the
 capability is proposed as default-off behind a project-scoped rollout guard
 until synchronization, migration, conflict, and trust evidence supports
-cutover. See
-`docs/intent/unified-work-items/` for the planned contract.
+cutover. [RDR-079](rdrs/RDR-079-unified-tracker-work-items.md) and
+`docs/intent/unified-work-items/` define the planned contract.
 
 Apple verification workers extend the execution boundary without becoming agent
 runners: the control plane sends source and provider-neutral manifests to a

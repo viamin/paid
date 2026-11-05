@@ -6,27 +6,29 @@ prefix: UNIFIED-WORK-ITEMS
 # Low-Level Design: Unified Tracker Work Items
 
 > This is a planned capability. Its rollout guard and open product decisions
-> require confirmation before implementation.
+> require confirmation before implementation. Tracking proposal: #4862.
 
 ## Context and problem
 
 Paid's issue workflows are GitHub-centered. Users need to browse external
 tracker tickets, associate them with one or more repository-backed projects,
 start Paid workflows from a project page, bulk-assign tickets, and preserve
-issue-level assignment choices. The authored proposal confirms that tickets
+issue-level assignment choices. The tracked proposal (#4862) confirms that tickets
 represent work to be done, while pull requests represent completed work
 awaiting review. The design therefore unifies tracker-backed tickets without
 moving pull-request review semantics into the ticket model.
 
-`Automation::Providers::WorkItemProvider` is the existing provider-neutral
-adapter contract: its implementations map provider-native tickets to
-`Automation::Providers::Data::Issue`, while automation policy operates on work
-items. The proposed persisted `WorkItem` model is a separate identity and
-reconciliation record composed with that adapter contract, not a second
-provider interface. The existing account-wide Linear credential surface is
-also a useful boundary, but Linear operations and the persisted model are not
-yet complete. External tracker data, comments, webhooks, and issue text remain
-untrusted at the integration boundary.
+`IssueTrackers::Adapters::Base` is the existing provider-neutral tracker
+operation seam; its Linear adapter is selected by
+`IssueTrackers::AdapterFactory` from `TrackerConfiguration`. The proposed
+persisted `WorkItem` model is the local identity and reconciliation store, not
+a second automation provider interface. A Linear `WorkItem` records
+the provider resource and normalized state fetched through that adapter; it
+does not duplicate the account's credential or `project_mapping`.
+`TrackerConfiguration` remains authoritative for the account Linear
+connection, integration credential, configuration scope, and mapping. External
+tracker data, comments, webhooks, and issue text remain untrusted at the
+integration boundary.
 
 ## Scope and boundaries
 
@@ -66,6 +68,25 @@ Pull requests remain review artifacts with their branch, commit, approval,
 merge, and review lifecycle. A relationship model links a work item to a
 pull request when Paid can discover the relationship; otherwise a user can
 link it explicitly.
+
+### Existing tracker and automation seams
+
+`IssueTrackers::Adapters::Linear` remains the provider-specific transport for
+connection validation, reads, comments, status writes, and PR links. Sync and
+write services use the adapter selected from the account's
+`TrackerConfiguration`, then upsert the corresponding `WorkItem` by provider
+identity. The local model holds imported state, reconciliation metadata,
+assignment provenance, overrides, and relationships; it holds neither a second
+Linear credential nor a second ticket-to-project mapping.
+
+Automation retains its existing `Automation::Providers::WorkItemProvider`
+contract. The Linear implementation is registered as
+`Automation::Providers::Resolver.register(:linear, work_item: ...)`; a project
+selects it through its `provider_type` of `:linear`. That factory resolves the
+account's Linear `TrackerConfiguration` and operates on its persisted
+`WorkItem` records. Repository and review capabilities remain registered only
+where Linear supports them, so the resolver raises its existing explicit error
+for an unavailable capability rather than silently using GitHub.
 
 ### Linear synchronization
 
@@ -114,31 +135,38 @@ during its maintenance window and avoids long-term dual-write. Existing GitHub
 issue workflows continue through the unified contract after cutover.
 
 Subject to the open product decision below, the proposed
-`unified_work_items` runtime guard is project-scoped and disabled by default.
-Its implementation must add `:unified_work_items` to
-`FeatureFlags::DEFINITIONS` and evaluate every new unified runtime entry point
-through `FeatureFlags.enabled?(:unified_work_items, project:)`, including
-synchronization, workflow admissions, browser and project-page browsing/read
-surfaces, assignment, and lifecycle operations. While it is disabled, those
-surfaces continue existing GitHub issue behavior and do not expose
-unified-ticket behavior. Disabling it preserves imported records, audit data,
-and explicit overrides; it does not silently delete or revert migrated data.
-The flag remains until its closeout audit passes with synchronization,
-migration, trust, conflict, relationship, rollback, and regression evidence.
+`unified_work_items` runtime guard is disabled by default. Project-scoped
+entry points evaluate
+`FeatureFlags.enabled?(:unified_work_items, project:)`. Account-scoped
+surfaces (the account ticket browser, Linear connection, and account trust
+defaults) establish `Current.account` and evaluate
+`FeatureFlags.enabled?(:unified_work_items)` against that account's
+`tenant_settings.features` override; they do not render or mutate unified
+state without an account context. Its implementation must add
+`:unified_work_items` to `FeatureFlags::DEFINITIONS` and apply the applicable
+evaluation rule to synchronization, workflow admissions, browser and
+project-page browsing/read surfaces, assignment, lifecycle operations, and
+account settings. While it is disabled, those surfaces continue existing
+GitHub issue behavior and do not expose unified-ticket behavior. Disabling it
+preserves imported records, audit data, and explicit overrides; it does not
+silently delete or revert migrated data. The flag remains until the
+[RDR-079](../../rdrs/RDR-079-unified-tracker-work-items.md) closeout audit
+passes with synchronization, migration, trust, conflict, relationship,
+rollback, and regression evidence.
 
 ## Decisions and alternatives
 
 | Decision | Rationale | Alternative rejected |
 |---|---|---|
-| Use one provider-neutral work-item model, with Linear first | The authored proposal requires unified ticket workflows while preserving provider identity and raw data for reconciliation. | Keep Linear separate from GitHub; that retains duplicate workflows and does not meet the confirmed framing. |
-| Keep pull requests as separate review artifacts | The authored framing distinguishes work tickets from completed work awaiting review; PR approval, merge, branch, and commit semantics remain distinct. | Migrate pull requests into the ticket model; that conflates review with work tracking. |
-| Migrate GitHub issues offline and idempotently | The authored plan preserves existing state and bounded maintenance-window reconciliation without permanent dual-write. | Add Linear abstractions without GitHub migration; existing workflows would remain on a second model. |
-| Preserve explicit mapping provenance and overrides | The authored plan requires bulk mapping without silently overwriting issue-level decisions, with preview and review flags. | Treat the latest mapping as authoritative for every issue; this loses human intent. |
-| Provisionally propose `unified_work_items` as the default-off rollout guard for every new unified runtime entry point | This planned contract proposes a project-scoped guard so the unified model, including browse/read surfaces, stays unavailable until an authorized project enablement. The flag name and enablement surface remain an open product decision; see Open decisions. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
+| Compose `WorkItem` with existing tracker and automation seams | `TrackerConfiguration` already owns the connection credential and mapping, `IssueTrackers` owns provider transport, and `Automation::Providers::Resolver` owns automation capability registration. `WorkItem` supplies durable normalized state and reconciliation without duplicating any of those responsibilities. | Create a second Linear credential, mapping, or provider interface; that would create divergent configuration and behavior. |
+| Keep pull requests as separate review artifacts | The tracked proposal (#4862) distinguishes work tickets from completed work awaiting review; PR approval, merge, branch, and commit semantics remain distinct. | Migrate pull requests into the ticket model; that conflates review with work tracking. |
+| Migrate GitHub issues offline and idempotently | The tracked proposal (#4862) preserves existing state and bounded maintenance-window reconciliation without permanent dual-write. | Add Linear abstractions without GitHub migration; existing workflows would remain on a second model. |
+| Preserve explicit mapping provenance and overrides | The tracked proposal (#4862) requires bulk mapping without silently overwriting issue-level decisions, with preview and review flags. | Treat the latest mapping as authoritative for every issue; this loses human intent. |
+| Provisionally propose `unified_work_items` as a default-off account-and-project rollout guard | Project entry points have a project context, while account settings and browsing must use the current account's tenant override. This keeps every surface unavailable until the appropriate scoped enablement. The flag name and enablement surface remain an open product decision; see Open decisions and RDR-079. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
 
 ## Cascade ordering and segment boundaries
 
-Implementation follows the authored plan in this order:
+Implementation follows the tracked proposal (#4862) in this order:
 
 1. Define the domain model, provider contracts, raw payloads, relationships,
    provenance, overrides, conflict records, and the default-off guard.
@@ -151,8 +179,8 @@ Implementation follows the authored plan in this order:
 5. Build offline GitHub migration, maintenance-window reconciliation, and
    GitHub consumer cutover.
 6. Add pull-request relationships and regression coverage, then perform the
-   RDR closeout validation against migration, trust, rollback, and workflow
-   evidence.
+   RDR-079 closeout validation against migration, trust, rollback, and
+   workflow evidence.
 
 The segment owns the ticket model, tracker adapters, synchronization,
 assignment/trust policy, migration, and ticket-to-PR relationship. It composes
@@ -160,10 +188,9 @@ the reusable policies owned by
 `docs/intent/tenant-access-control/`,
 `docs/intent/upstream-issue-pickup/`,
 `docs/intent/rdr-rollout-guards/`, and
-`docs/intent/review-pull-request/`. The currently unmapped
-`Automation::Providers::WorkItemProvider` adapter and tracker-adapter seams
-must be mapped to an owning intent segment before implementation crosses that
-boundary.
+`docs/intent/review-pull-request/`. This segment owns the composition of the
+existing tracker-adapter and automation work-item-provider seams; their shared
+contracts remain owned by their existing components.
 
 ## Open decisions
 

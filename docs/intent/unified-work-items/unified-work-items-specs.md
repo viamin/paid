@@ -1,6 +1,7 @@
 # EARS Specs: Unified Tracker Work Items
 
 > Planned claims. Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
+> Tracking proposal: #4862. Rollout decision: [RDR-079](../../rdrs/RDR-079-unified-tracker-work-items.md).
 
 - [ ] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent GitHub and
   external tracker tickets through a provider-neutral work-item contract with
@@ -56,13 +57,17 @@
 
 - [ ] **UNIFIED-WORK-ITEMS-009** — Subject to confirmation of the proposed
   `unified_work_items` guard, the system SHALL add `:unified_work_items` to
-  `FeatureFlags::DEFINITIONS`, default it off, and gate every new unified
-  runtime entry point through
-  `FeatureFlags.enabled?(:unified_work_items, project:)`, including
-  synchronization, workflow admissions, browser and project-page browsing/read
-  surfaces, assignment, and lifecycle operations. While disabled, those
-  surfaces SHALL continue existing GitHub issue behavior and SHALL NOT expose
-  unified-ticket behavior. Disabling the flag SHALL preserve imported records,
-  audit data, and explicit overrides, and the guard SHALL remain until the
-  closeout audit verifies synchronization, migration, trust, conflict,
-  relationship, rollback, and regression behavior.
+  `FeatureFlags::DEFINITIONS` and default it off. A project-scoped unified
+  entry point SHALL evaluate
+  `FeatureFlags.enabled?(:unified_work_items, project:)`. An account-scoped
+  unified entry point SHALL establish `Current.account` and evaluate
+  `FeatureFlags.enabled?(:unified_work_items)` against that account's
+  `tenant_settings.features` override; it SHALL NOT render or mutate unified
+  state without that account context. This includes synchronization, workflow
+  admissions, browser and project-page browsing/read surfaces, assignment,
+  lifecycle operations, and account Linear/trust settings. While disabled,
+  those surfaces SHALL continue existing GitHub issue behavior and SHALL NOT
+  expose unified-ticket behavior. Disabling the flag SHALL preserve imported
+  records, audit data, and explicit overrides, and the guard SHALL remain
+  until the RDR-079 closeout audit verifies synchronization, migration, trust,
+  conflict, relationship, rollback, and regression behavior.
