@@ -1,0 +1,44 @@
+{
+  "status": "passed",
+  "summary": "Unified work-item LID design artifacts merged with origin/main; YAML, Markdown, structural coherence, and lint checks passed.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "status": "passed",
+      "verification": {
+        "kind": "human_or_external_evidence",
+        "references": [
+          {
+            "locator": "docs/intent/unified-work-items/unified-work-items-design.md:1",
+            "result": "passed: planned provider-neutral work-item, trust, migration, and rollout design is present."
+          },
+          {
+            "locator": "docs/intent/unified-work-items/unified-work-items-specs.md:1",
+            "result": "passed: EARS claims cover synchronization, trust, migration, and feature rollout."
+          },
+          {
+            "locator": "bin/coherence-check.mjs",
+            "result": "passed: the unified-work-items arrow reference is valid; repository-wide pre-existing coverage and staleness warnings remain."
+          },
+          {
+            "locator": "npx markdownlint docs/high-level-design.md docs/intent/unified-work-items/unified-work-items-design.md docs/intent/unified-work-items/unified-work-items-specs.md docs/rdrs/RDR-079-unified-tracker-work-items.md docs/rdrs/README.md",
+            "result": "passed."
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-2",
+      "status": "not_run",
+      "verification": {
+        "kind": "human_or_external_evidence",
+        "references": [
+          {
+            "locator": "bin/rails db:prepare",
+            "result": "not run: DATABASE_URL was not set and no local PostgreSQL socket was available."
+          }
+        ]
+      }
+    }
+  ]
+}
