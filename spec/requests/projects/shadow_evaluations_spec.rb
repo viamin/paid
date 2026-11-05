@@ -311,7 +311,9 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Review conformance decisions")
-    expect(response.body).to include("Start evaluation")
+    expect(response.body).to include("Start review")
+    expect(response.body).to include("Starting saves a frozen evidence set for this project. It does not enable enforcement or close work.")
+    expect(response.body).to include("Technical details")
     expect(response.body).not_to include("RDR-067")
     expect(response.body).not_to include("rdr-067-measured-rollout")
     expect(response.body).not_to include('name="purpose"')
