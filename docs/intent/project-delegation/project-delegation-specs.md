@@ -40,11 +40,13 @@ Status markers: `[ ]` planned implementation gap.
   delegation projection; no surface SHALL infer authority from a label, stale
   approval, queue state, or local UI state.
 
-- [ ] **PROJECT-DELEGATION-006** — When a project setting changes, the system
-  SHALL apply the new posture only to new admissions and SHALL NOT silently
-  broaden an in-flight authorization; rollback to `conservative`, a hold,
-  expiry, revocation, or a bounded stop SHALL prevent the next action while
-  preserving audit/evidence history and exposing a recovery decision.
+- [ ] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
+  authority, the system SHALL apply the broader posture only to new admissions
+  and SHALL NOT silently broaden an in-flight authorization; when a project
+  setting narrows delegated authority, including rollback to `conservative`,
+  or when a hold, expiry, revocation, or bounded stop occurs, the system SHALL
+  prevent the next action while preserving audit/evidence history and exposing
+  a recovery decision.
 
 - [ ] **PROJECT-DELEGATION-007** — For each opted-in project, the system SHALL
   record revision-aware human Inbox decisions per completed issue, decision

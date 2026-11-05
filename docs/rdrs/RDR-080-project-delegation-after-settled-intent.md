@@ -82,11 +82,11 @@ old approval, queue state, or UI visibility.
 A work admission snapshots the effective policy signature and the settled
 intent/acceptance/evidence revisions. At every action boundary, including
 creation, dequeue, retry, follow-up, repair, and closeout, the service checks
-that these are current. A changed project setting affects only new admissions:
-it must never silently broaden an in-flight authorization. A running action is
-not force-killed, but no next action begins after a failed recheck. Narrowing,
-an explicit hold, policy rollback, expiry, or RDR-078's exclusive stop blocks
-the next action and records why.
+that these are current. A project setting change that broadens authority affects
+only new admissions: it must never silently broaden an in-flight authorization.
+A running action is not force-killed, but no next action begins after a failed
+recheck. Narrowing, an explicit hold, policy rollback, expiry, or RDR-078's
+exclusive stop blocks the next action and records why.
 
 RDR-078 remains the only per-lineage exclusive stop. RDR-077 phase settings
 and continuation grants retain their meanings. This posture never refreshes a
