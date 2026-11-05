@@ -68,12 +68,15 @@ RSpec.describe "Inbox" do
     create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
     create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
     cycle = Issues::DependencyCycles.call(account:).sole
-    result = { "recommendation" => "Remove the obsolete declaration.",
+    result = { "recommendation" => { "summary" => "Remove the obsolete declaration.", "candidates" => [ {
+      "declaration_changes" => [ { "edge_id" => cycle.path_edges.first.id, "action" => "remove" } ],
+      "evidence" => [ "The owner marked this dependency obsolete." ], "tradeoffs" => [ "The source work may proceed." ],
+      "missing_or_conflicting_intent" => [], "resulting_graph" => { "issue_ids" => issues.map(&:id), "edges" => [] }, "acyclic" => true
+    } ] },
                "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ],
                                  "unavailable_content_issue_ids" => [ issues.first.id ] } }
     run = create(:agent_run, status:, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
-      external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
-        "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
+      external_metadata: { CycleAnalyses::METADATA_KEY => CycleAnalyses::Snapshot.call(cycle:) },
       verification_result: { CycleAnalyses::RESULT_KEY => result })
     [ issues, cycle, run ]
   end
@@ -92,22 +95,24 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     document = Nokogiri::HTML(response.body)
-    expect(document.at_css("a[href='#{declaration_url}']").text).to include("view declaring comment")
-    expect(response.body).to include("declaration source unavailable")
+    expect(document.at_css("a[href='#{declaration_url}']").text).to include("declaring comment")
+    expect(document.at_css("details").text).to include("declaration source unavailable")
   end
 
-  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-017
-  it "renders a completed cycle analysis with unavailable evidence coverage" do
+  # @spec AUTO-PICK-QUEUE-023
+  it "renders a completed recommendation as readable fields with technical details" do
     _issues, cycle, = cycle_analysis_run
 
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Remove the obsolete declaration.", "Unavailable evidence coverage")
-    expect(response.body).to include("Edge IDs without declaration provenance: 41")
+    document = Nokogiri::HTML(response.body)
+    expect(document.text).to include("Paid recommends:", "Remove the obsolete declaration.", "Proposed change:", "Evidence:", "Tradeoffs:", "Expected result:")
+    expect(document.at_css("details").text).to include("Unavailable provenance edge IDs: 41")
+    expect(document.at_css("details pre").text).to include('"summary"')
   end
 
-  # @spec AUTO-PICK-QUEUE-019
+  # @spec AUTO-PICK-QUEUE-023
   it "renders a stale cycle analysis as retryable" do
     issues, _cycle, = cycle_analysis_run
     create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[2])
@@ -116,11 +121,10 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(current_cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Remove the obsolete declaration.", "stale")
-    expect(response.body).to include("Start cycle analysis")
+    expect(response.body).to include("dependency graph changed")
   end
 
-  # @spec AUTO-PICK-QUEUE-019
+  # @spec AUTO-PICK-QUEUE-023
   it "renders a pending synchronization repair as retryable" do
     _issues, cycle, run = cycle_analysis_run
     run.update!(verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "pending_sync" } } })
@@ -128,17 +132,44 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Repair: Pending sync", "Confirm cycle repair")
+    expect(response.body).to include("safe declaration repair was made", "Checking sync status does not change GitHub")
   end
 
-  # @spec AUTO-PICK-QUEUE-016
+  # @spec AUTO-PICK-QUEUE-023
   it "renders a failed cycle analysis as retryable" do
     _issues, cycle, = cycle_analysis_run(status: "failed")
 
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Retry cycle analysis")
+    expect(response.body).to include("last analysis failed")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "explains the guarded pre-analysis action and places declarations in details" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response.body).to include("may remove that one GitHub dependency declaration", "Analyze cycle — may remove one verified GitHub declaration")
+    expect(response.body.scan("Cycle path").size).to eq(1)
+    expect(response.body).not_to include("Declarations to review")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "shows an exact declaration before/after and requires confirmation" do
+    _issues, cycle, run = cycle_analysis_run
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response.body).to include("Before:", "After:", "I confirm that Paid may remove this exact GitHub declaration")
+    post dashboard_cycle_analysis_repairs_path, params: { agent_run_id: run.id, candidate_index: 0, confirmation: "0" }
+    expect(response).to redirect_to(inbox_path)
+    expect(flash[:alert]).to include("Confirm the reviewed declaration change")
   end
 
   # @spec AUTO-PICK-QUEUE-020

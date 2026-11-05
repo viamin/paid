@@ -74,8 +74,12 @@ class DashboardController < ApplicationController
     redirect_to inbox_path, notice: result.message
   end
 
-  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-022 AUTO-PICK-QUEUE-023
   def repair_cycle_analysis
+    unless ActiveModel::Type::Boolean.new.cast(params[:confirmation])
+      return redirect_to(inbox_path, alert: "Confirm the reviewed declaration change before Paid can update GitHub.")
+    end
+
     run = AgentRun.joins(:project).where(projects: { account_id: current_account.id })
       .find(params[:agent_run_id])
     result = CycleAnalyses::Repair.call(

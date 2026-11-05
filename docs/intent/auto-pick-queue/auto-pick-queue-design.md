@@ -93,6 +93,18 @@ revision change, permits an explicit fresh retry.
 The MCP description and confirmation state that this bounded run may remove one
 verified GitHub dependency declaration only when its repair safeguards pass, so
 clients do not authorize a write while believing the operation is read-only.
+The Inbox describes the blocked-work count, recommendation, and one next
+action before technical detail. Before analysis, its action and confirmation
+say that the run may edit one verified GitHub dependency declaration when its
+safeguards pass. Completed analysis renders its summary, proposed source to
+target declaration change, evidence, tradeoffs, conflicting or missing intent,
+and expected result as readable fields; raw response data and diagnostic IDs
+remain expandable. The detail has distinct next-action copy for queued or
+running analysis, pending synchronization after a safe repair, confirmed
+repair, ambiguous recommendation, stale graph, failed analysis, and unavailable
+evidence. A human-selected repair names the exact declaring issue or comment,
+shows its before/after effect, and requires an explicit confirmation before the
+existing live authority, graph, and source checks can write GitHub.
 
 The analysis uses Paid's synthetic agent-run record and `agent_harness` route.
 It supplies issue titles, labels, parent context, URLs, declaration provenance,

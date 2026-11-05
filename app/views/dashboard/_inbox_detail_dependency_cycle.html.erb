@@ -1,94 +1,60 @@
-<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 %>
+<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-023 %>
 <% cycle = entry.record %>
+<% issue_by_id = cycle.issues.index_by(&:id) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-red-200 bg-red-50 p-4">
     <h3 class="text-sm font-semibold text-red-900">Dependency cycle blocks automatic work</h3>
-    <p class="mt-1 text-sm text-red-800">Paid keeps this work held until a bounded repair is confirmed by GitHub synchronization.</p>
+    <p class="mt-1 text-sm text-red-800"><strong><%= cycle.downstream_issues.size %> downstream open issue(s)</strong> are held until GitHub synchronization confirms an acyclic dependency graph.</p>
   </div>
 
   <% analysis_run = cycle.project.agent_runs.for_cycle_analysis_fingerprint(cycle.fingerprint).where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).first %>
   <% analysis_stale = analysis_run && analysis_run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") != cycle.occurrence %>
-  <% pending_sync = analysis_run&.verification_result&.dig(CycleAnalyses::RESULT_KEY, "repair", "status") == "pending_sync" %>
+  <% analysis_result = analysis_run&.verification_result&.fetch(CycleAnalyses::RESULT_KEY, {}) || {} %>
+  <% pending_sync = analysis_result.dig("repair", "status") == "pending_sync" %>
+  <% repair_confirmed = analysis_result.dig("repair", "status") == "confirmed" %>
   <% analysis_failed = analysis_run && AgentRun::TERMINAL_FAILURE_STATUSES.include?(analysis_run.status) %>
-  <% analysis_retryable = analysis_run.nil? || analysis_stale || pending_sync || analysis_failed %>
-  <% analysis_action_label = if pending_sync
-       "Confirm cycle repair"
-     elsif analysis_failed
-       "Retry cycle analysis"
-     else
-       "Start cycle analysis"
-     end %>
+  <% recommendation = analysis_result["recommendation"] %>
+  <% candidates = recommendation.is_a?(Hash) ? recommendation.fetch("candidates", []) : [] %>
+  <% coverage = analysis_result["coverage"] || {} %>
+  <% unavailable_evidence = coverage.values.any?(&:present?) %>
   <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-    <h3 class="text-sm font-semibold text-indigo-900">Cycle repair</h3>
-    <% if analysis_run %>
-      <p class="mt-1 text-sm text-indigo-800">Analysis <%= analysis_run.status %>: <%= link_to "view run", project_agent_run_path(analysis_run.project, analysis_run), data: { turbo_frame: "_top" }, class: "font-medium underline" %>.</p>
-      <% if analysis_stale %>
-        <p class="mt-1 text-sm font-medium text-amber-800">This analysis is stale because the effective dependency graph changed.</p>
-      <% end %>
-      <% if analysis_run.successful? %>
-        <% analysis_result = analysis_run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {}) %>
-        <pre class="mt-2 whitespace-pre-wrap text-xs text-indigo-900"><%= JSON.pretty_generate(analysis_result["recommendation"]) %></pre>
-        <% recommendation = analysis_result["recommendation"] %>
-        <% candidates = recommendation.is_a?(Hash) ? recommendation.fetch("candidates", []) : [] %>
-        <% candidates.each_with_index do |candidate, index| %>
-          <% changes = candidate["declaration_changes"] if candidate.is_a?(Hash) %>
-          <% if candidate.is_a?(Hash) && candidate["acyclic"] == true && changes&.one? && changes.first.is_a?(Hash) && changes.first["action"] == "remove" && !analysis_stale %>
-            <%= form_with url: dashboard_cycle_analysis_repairs_path, class: "mt-2", data: { turbo_frame: "_top" } do |form| %>
-              <%= form.hidden_field :agent_run_id, value: analysis_run.id %>
-              <%= form.hidden_field :candidate_index, value: index %>
-              <%= form.submit "Apply candidate #{index + 1} declaration removal", class: "rounded bg-red-700 px-3 py-2 text-sm font-medium text-white" %>
-            <% end %>
-          <% end %>
-        <% end %>
-        <% coverage = analysis_result["coverage"] %>
-        <% repair = analysis_result["repair"] %>
-        <% if repair.present? %>
-          <p class="mt-2 text-sm font-medium text-indigo-900">Repair: <%= repair["status"].to_s.humanize %> (<%= repair["reason"].to_s.humanize %>).</p>
-        <% end %>
-        <% if coverage.present? %>
-          <div class="mt-3 rounded-lg border border-indigo-200 bg-white p-3 text-xs text-indigo-900">
-            <h4 class="font-semibold"><%= coverage.values.any?(&:present?) ? "Unavailable evidence coverage" : "Evidence coverage complete" %></h4>
-            <% if coverage["unavailable_provenance_edge_ids"].present? %>
-              <p class="mt-1">Edge IDs without declaration provenance: <%= coverage["unavailable_provenance_edge_ids"].join(", ") %></p>
-            <% end %>
-            <% if coverage["unavailable_content_issue_ids"].present? %>
-              <p class="mt-1">Issue IDs with unavailable trusted content: <%= coverage["unavailable_content_issue_ids"].join(", ") %></p>
-            <% end %>
-          </div>
-        <% end %>
-      <% end %>
-    <% end %>
-    <% if analysis_retryable %>
+    <h3 class="text-sm font-semibold text-indigo-900">Recommended next action</h3>
+    <% if analysis_run.nil? %>
+      <p class="mt-1 text-sm text-indigo-800">Paid recommends analyzing the complete cycle before anyone edits a declaration. If one repair is verified, this guarded run may remove that one GitHub dependency declaration.</p>
       <%= form_with url: dashboard_cycle_analyses_path, class: "mt-3", data: { turbo_frame: "_top" } do |form| %>
         <%= form.hidden_field :occurrence, value: cycle.occurrence %>
-        <%= form.submit analysis_action_label, class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
+        <%= form.submit "Analyze cycle — may remove one verified GitHub declaration", class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
       <% end %>
+      <p class="mt-2 text-xs text-indigo-800">Starting authorizes a bounded analysis that may change GitHub only after authority, evidence, live-source, and graph checks pass.</p>
+    <% elsif analysis_run.queued? || analysis_run.running? %>
+      <p class="mt-1 text-sm text-indigo-800">Cycle analysis is <strong><%= analysis_run.status %></strong>. Paid is checking the full graph and declaration evidence; wait for its recommendation.</p>
+    <% elsif analysis_stale %>
+      <p class="mt-1 text-sm text-amber-800">The dependency graph changed after this analysis. Start a fresh analysis; it may remove one verified GitHub declaration only if safeguards pass.</p>
+      <%= form_with url: dashboard_cycle_analyses_path, class: "mt-3", data: { turbo_frame: "_top" } do |form| %><%= form.hidden_field :occurrence, value: cycle.occurrence %><%= form.submit "Analyze changed cycle — may remove one verified GitHub declaration", class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %><% end %>
+    <% elsif pending_sync %>
+      <p class="mt-1 text-sm text-indigo-800">A safe declaration repair was made and Paid is waiting for GitHub synchronization. Checking sync status does not change GitHub.</p>
+      <%= form_with url: dashboard_cycle_analyses_path, class: "mt-3", data: { turbo_frame: "_top" } do |form| %><%= form.hidden_field :occurrence, value: cycle.occurrence %><%= form.submit "Check whether GitHub sync confirmed the repair", class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %><% end %>
+    <% elsif repair_confirmed %>
+      <p class="mt-1 text-sm text-emerald-800">GitHub synchronization confirmed the repair. Paid will release held work when the cycle disappears from the Inbox.</p>
+    <% elsif analysis_failed %>
+      <p class="mt-1 text-sm text-rose-800">The last analysis failed before producing a usable recommendation. Retry only after reviewing the run.</p>
+      <%= form_with url: dashboard_cycle_analyses_path, class: "mt-3", data: { turbo_frame: "_top" } do |form| %><%= form.hidden_field :occurrence, value: cycle.occurrence %><%= form.submit "Retry cycle analysis — may remove one verified GitHub declaration", class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %><% end %>
+    <% elsif analysis_run.successful? && recommendation.is_a?(Hash) %>
+      <p class="mt-1 text-sm text-indigo-800"><strong>Paid recommends:</strong> <%= recommendation["summary"] %></p>
+      <% if unavailable_evidence %><p class="mt-2 text-sm text-amber-800">Some evidence was unavailable. Review the technical details before acting.</p><% end %>
+      <% candidates.each_with_index do |candidate, index| %>
+        <% change = candidate["declaration_changes"].one? ? candidate["declaration_changes"].first : nil %>
+        <% edge = change && analysis_run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "effective_edges").find { |item| item["id"] == change["edge_id"] } %>
+        <% from, to = edge && issue_by_id[edge["from_issue_id"]], edge && issue_by_id[edge["to_issue_id"]] %>
+        <div class="mt-3 rounded-lg border border-indigo-200 bg-white p-3 text-sm text-indigo-950">
+          <h4 class="font-semibold">Candidate <%= index + 1 %></h4>
+          <% if change && from && to %><p class="mt-1"><strong>Proposed change:</strong> <%= dependency_cycle_issue_ref(from) %> → <%= dependency_cycle_issue_ref(to) %> (<%= change["action"] %>).</p><% end %>
+          <p class="mt-1"><strong>Evidence:</strong> <%= Array(candidate["evidence"]).to_sentence %></p><p class="mt-1"><strong>Tradeoffs:</strong> <%= Array(candidate["tradeoffs"]).to_sentence %></p><p class="mt-1"><strong>Conflicting or missing intent:</strong> <%= Array(candidate["missing_or_conflicting_intent"]).presence&.to_sentence || "None recorded." %></p><p class="mt-1"><strong>Expected result:</strong> <%= candidate["acyclic"] ? "The resulting graph is acyclic." : "The resulting graph still contains a cycle." %></p>
+          <% if candidate["acyclic"] && change&.fetch("action", nil) == "remove" && edge && from && to && !analysis_stale %><%= form_with url: dashboard_cycle_analysis_repairs_path, class: "mt-3", data: { turbo_frame: "_top" } do |form| %><%= form.hidden_field :agent_run_id, value: analysis_run.id %><%= form.hidden_field :candidate_index, value: index %><p><strong>Before:</strong> <%= dependency_cycle_issue_ref(from) %> declares <%= dependency_cycle_issue_ref(to) %> as a dependency.</p><p class="mt-1"><strong>After:</strong> that declaration is removed from the <%= edge["declaration_source"] == "issue_comment" ? "linked GitHub comment" : "GitHub issue body" %>.</p><label class="mt-3 flex gap-2"><%= form.check_box :confirmation %><span>I confirm that Paid may remove this exact GitHub declaration after rechecking authority, source, and graph.</span></label><%= form.submit "Remove #{dependency_cycle_issue_ref(from)} → #{dependency_cycle_issue_ref(to)} declaration", class: "mt-3 rounded bg-red-700 px-3 py-2 text-sm font-medium text-white" %><% end %><% end %>
+        </div>
+      <% end %>
+      <% if candidates.many? || candidates.none? || candidates.all? { |candidate| !candidate["acyclic"] } %><p class="mt-3 text-sm text-amber-800">No unambiguous safe repair is ready. Review the declarations on GitHub with the owners.</p><% end %>
     <% end %>
-  </div>
-
-  <div>
-    <h3 class="text-sm font-semibold text-gray-900">Declarations to review</h3>
-    <ul class="mt-2 space-y-2 text-sm text-gray-700">
-      <% cycle.path_edges.each_with_index do |edge, index| %>
-        <% from = cycle.path[index] %>
-        <% to = cycle.path[index + 1] %>
-        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <div class="flex min-w-0 flex-wrap items-baseline gap-x-1 gap-y-1">
-            <span class="min-w-0 max-w-full"><%= dependency_cycle_issue_link(from) %></span>
-            <span class="shrink-0 text-gray-500">declares</span>
-            <span class="min-w-0 max-w-full"><%= dependency_cycle_issue_link(to) %></span>
-            <span class="shrink-0 text-gray-500">as a dependency</span>
-          </div>
-          <p class="mt-1">
-            <% if edge.declaration_url.present? %>
-              <%= link_to edge.declaration_source == "issue_comment" ? "view declaring comment" : "view issue declaration", edge.declaration_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
-            <% else %>
-              declaration source unavailable; review the issue body and trusted comments
-            <% end %>
-          </p>
-        </li>
-      <% end %>
-    </ul>
   </div>
 
   <div>
@@ -117,7 +83,10 @@
     <p class="mt-1 text-sm text-gray-600"><%= cycle.downstream_issues.size %> downstream open issue(s) are held by this cycle.</p>
   </div>
 
-  <div class="text-sm text-gray-700">
-    Open the linked issues’ <strong>Dependencies</strong> declarations on GitHub, confirm intent with the owners, then edit the declaration(s) that should not block. This occurrence clears only after a later synchronization persists an acyclic effective graph.
-  </div>
+  <details class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+    <summary class="cursor-pointer font-semibold">Technical details</summary>
+    <ul class="mt-2 space-y-2"><% cycle.path_edges.each_with_index do |edge, index| %><li><%= dependency_cycle_issue_ref(cycle.path[index]) %> → <%= dependency_cycle_issue_ref(cycle.path[index + 1]) %>: <% if edge.declaration_url.present? %><%= link_to(edge.declaration_source == "issue_comment" ? "declaring comment" : "issue declaration", edge.declaration_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500") %><% else %>declaration source unavailable<% end %> (edge ID <%= edge.id %>)</li><% end %></ul>
+    <% if unavailable_evidence %><p class="mt-2">Unavailable provenance edge IDs: <%= Array(coverage["unavailable_provenance_edge_ids"]).join(", ").presence || "none" %>. Unavailable trusted-content issue IDs: <%= Array(coverage["unavailable_content_issue_ids"]).join(", ").presence || "none" %>.</p><% end %>
+    <% if recommendation.is_a?(Hash) %><pre class="mt-2 overflow-x-auto whitespace-pre-wrap text-xs"><%= JSON.pretty_generate(recommendation) %></pre><% end %>
+  </details>
 </div>
