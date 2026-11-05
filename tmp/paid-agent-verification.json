@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "The origin/main merge conflicts are resolved, the canonical RDR-079 is reconciled with the implemented Phase 1 contract and guard, and focused regression checks pass.",
+  "summary": "The canonical RDR-079 remains reconciled with the implemented Phase 1 contract, and the system-test workflow now verifies a preinstalled PostgreSQL client before using a bounded package-install fallback.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -31,7 +31,7 @@
         "references": [
           {
             "locator": "spec/config/system_workflow_file_spec.rb:46",
-            "result": "passed (33 examples, 0 failures): verifies the retained bounded PostgreSQL client installation retry contract."
+            "result": "passed (45 examples, 0 failures): verifies the preinstalled PostgreSQL client path and bounded package-install fallback."
           },
           {
             "locator": "spec/services/automation/providers/data/work_item_spec.rb:6",
@@ -40,6 +40,19 @@
           {
             "locator": "spec/services/automation/providers/unified_work_items_rollout_guard_spec.rb:6",
             "result": "passed (33 examples, 0 failures): verifies the default-off project-scoped rollout guard."
+          }
+        ]
+      }
+    },
+    {
+      "id": "AC-3",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/config/ci_database_workflow_file_spec.rb:131",
+            "result": "passed (45 examples, 0 failures): verifies the system workflow avoids a PGDG bootstrap, checks for psql first, and retains bounded apt retries as a fallback."
           }
         ]
       }

@@ -46,10 +46,11 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
   end
 
-  it "retries transient PostgreSQL client package setup failures" do
+  it "uses the preinstalled PostgreSQL client before a bounded package fallback" do
     install_step = system_step("Install PostgreSQL client")
 
     expect(install_step.fetch("run")).to include(
+      "command -v psql",
       'for attempt in 1 2 3; do',
       'sudo timeout 5m apt-get',
       '-o Acquire::http::Timeout=30',

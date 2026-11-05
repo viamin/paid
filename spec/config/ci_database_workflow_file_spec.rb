@@ -123,19 +123,19 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           end
         end
 
-        it "installs the PGDG postgres client major package for #{job_name}" do
+        it "installs the PostgreSQL client major package for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
 
-          expect(install_step.fetch("run")).to include("apt.postgresql.org/pub/repos/apt")
           expect(install_step.fetch("run")).to include("postgresql-client-16")
         end
 
         if workflow_path == ".github/workflows/system_tests.yml" && job_name == "system"
-          it "bounds PostgreSQL client archive requests before retrying" do
+          it "uses the existing PostgreSQL client before a bounded package fallback" do
             job = workflow.fetch("jobs").fetch(job_name)
             install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
 
+            expect(install_step.fetch("run")).to include("command -v psql")
             expect(install_step.fetch("run")).to include("timeout 5m apt-get")
             expect(install_step.fetch("run")).to include("-o Acquire::http::Timeout=30")
             expect(install_step.fetch("run")).to include("-o Acquire::https::Timeout=30")
