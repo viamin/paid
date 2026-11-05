@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "The dependency-update head pins agent-harness 0.44.32 and the dependency audit completed successfully.",
+  "summary": "Unified work-item LID design artifacts merged with origin/main; YAML, Markdown, structural coherence, and lint checks passed.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,20 +9,20 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "Gemfile:87",
-            "result": "agent-harness is pinned to 0.44.32."
+            "locator": "docs/intent/unified-work-items/unified-work-items-design.md:1",
+            "result": "passed: planned provider-neutral work-item, trust, migration, and rollout design is present."
           },
           {
-            "locator": "Gemfile.lock:123",
-            "result": "Lockfile resolves agent-harness 0.44.32."
+            "locator": "docs/intent/unified-work-items/unified-work-items-specs.md:1",
+            "result": "passed: EARS claims cover synchronization, trust, migration, and feature rollout."
           },
           {
-            "locator": "BUNDLE_FROZEN=true bundle install",
-            "result": "passed: bundle completed with 73 Gemfile dependencies and 253 gems."
+            "locator": "bin/coherence-check.mjs",
+            "result": "passed: the unified-work-items arrow reference is valid; repository-wide pre-existing coverage and staleness warnings remain."
           },
           {
-            "locator": "bin/audit",
-            "result": "passed locally: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully."
+            "locator": "npx markdownlint docs/high-level-design.md docs/intent/unified-work-items/unified-work-items-design.md docs/intent/unified-work-items/unified-work-items-specs.md docs/rdrs/RDR-079-unified-tracker-work-items.md docs/rdrs/README.md",
+            "result": "passed."
           }
         ]
       }
@@ -35,7 +35,7 @@
         "references": [
           {
             "locator": "bin/rails db:prepare",
-            "result": "not run: the configured database endpoint was unreachable (no PostgreSQL socket available)."
+            "result": "not run: DATABASE_URL was not set and no local PostgreSQL socket was available."
           }
         ]
       }

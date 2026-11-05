@@ -112,6 +112,7 @@ cycles.
 |-----|-------|--------|----------|
 | [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Partially Implemented | High |
 | [RDR-030](RDR-030-github-app-bot-account.md) | GitHub App Bot Account for Repository Actions | Partially Implemented | High |
+| [RDR-079](RDR-079-unified-tracker-work-items.md) | Unified Tracker Work Items | Draft | P2 |
 
 ### Service Infrastructure
 

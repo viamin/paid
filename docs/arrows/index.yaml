@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-30
+last_updated: 2026-11-05
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -815,6 +815,15 @@ arrows:
     status: MAPPED
     sampled: 2026-10-23
     next: "Implement Phase 1 intent and audit foundation (#4432), then Phase 2 manual audit and Inbox (#4433), per RDR-076's accepted design"
+  unified-work-items:
+    title: Unified Tracker Work Items
+    path: docs/intent/unified-work-items/unified-work-items-design.md
+    specs: docs/intent/unified-work-items/unified-work-items-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: MAPPED
+    sampled: 2026-11-05
+    next: "Tracking issue #4854: confirm Linear API capabilities, trusted identity mappings, migration tooling, and the RDR-079 default-off rollout guard for every unified runtime entry point before implementation."
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

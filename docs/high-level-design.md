@@ -38,9 +38,13 @@ have moved elsewhere:
 - **Orchestration.** Turning a labeled issue into a merged PR is a multi-step
   workflow — plan, execute in an isolated container, open a PR, respond to
   review — that must be durable, resumable, and parallelizable.
+- **Work-item continuity.** Work tickets may originate in GitHub or an
+  external tracker, but Paid needs one trustworthy workflow and assignment
+  boundary for them. Pull requests remain review artifacts rather than being
+  conflated with tickets.
 
 Paid exists to make AI agents useful and safe for real software work by solving
-these four problems together, as one system.
+these problems together, as one system.
 
 ## Approach: Data Over Configuration
 
@@ -311,6 +315,21 @@ between them.
 4. **Agent layer** — the `agent_harness` gem: a unified interface to CLI agents
    (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, and others) and the
    single interface for all application-level LLM calls.
+
+A planned unified work-item boundary extends the Rails control plane with a
+provider-neutral ticket model. Linear is the first external tracker, with one
+account connection, full supported synchronization, explicit trust and
+identity mappings, assignment provenance and overrides, and an offline
+idempotent migration of existing GitHub issues. Existing issue workflows run
+through the unified ticket contract while pull requests remain separate
+review artifacts linked to tickets. Subject to product confirmation, the
+capability is proposed as default-off behind an account-and-project-scoped
+rollout guard: project entry points evaluate their project context, while the
+account ticket browser, Linear connection, and account trust defaults evaluate
+the account tenant override without a project. This keeps every unified
+surface guarded until synchronization, migration, conflict, and trust evidence
+supports cutover. [RDR-079](rdrs/RDR-079-unified-tracker-work-items.md) and
+`docs/intent/unified-work-items/` define the planned contract.
 
 Apple verification workers extend the execution boundary without becoming agent
 runners: the control plane sends source and provider-neutral manifests to a
