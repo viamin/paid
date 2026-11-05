@@ -38,6 +38,15 @@ module Automation
     module WorkItemProvider
       class ProviderError < StandardError; end
 
+      # Fetches the richer, provider-neutral work-item snapshot. This new
+      # entry point is guarded by +unified_work_items+; existing Issue methods
+      # intentionally remain available for GitHub compatibility.
+      #
+      # @return [Automation::Providers::Data::WorkItem]
+      def fetch_work_item(repo:, number:)
+        raise NotImplementedError, not_implemented_message(__method__)
+      end
+
       # Fetches a single work item by its provider-local identifier.
       #
       # @param repo [String] Provider-specific container identifier

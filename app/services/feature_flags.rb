@@ -113,6 +113,13 @@ class FeatureFlags
       intent: "Gate the audit-only layered-verification add-on while its authority, evidence, and operation boundaries are validated.",
       rollout_plan: "Default-off; enable selected tenant projects only after shared UI, chat, MCP, authorization, and host-check paths are verified together.",
       cleanup_criteria: "Remove only after closeout establishes a safe default and migrates any remaining tenant configuration."
+    ),
+    unified_work_items: Definition.new(
+      name: :unified_work_items,
+      owner: "unified-work-items",
+      intent: "Gate provider-neutral work-item reads while GitHub issue behavior remains on its established contract.",
+      rollout_plan: "Default-off; enable selected projects only after provider identity, lifecycle mapping, assignment provenance, and pull-request relationship behavior are verified.",
+      cleanup_criteria: "Remove only after the unified work-item contract is the default for every supported tracker."
     )
   }.freeze
 

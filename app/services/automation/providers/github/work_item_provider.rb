@@ -33,6 +33,13 @@ module Automation
           build_issue(issue)
         end
 
+        # @spec UNIFIED-WORK-ITEMS-001 UNIFIED-WORK-ITEMS-009
+        def fetch_work_item(repo:, number:)
+          UnifiedWorkItems::Feature.ensure_enabled!(project:)
+          issue = with_errors { client.issue(repo, number) }
+          build_work_item(issue, repo:)
+        end
+
         # GitHub's REST `/issues` endpoint only accepts a single +assignee+
         # query parameter, so this adapter cannot silently combine multiple
         # assignee logins into an intersection filter. Per the
@@ -133,6 +140,75 @@ module Automation
             url: read_field(issue, :html_url),
             pull_request_number: pr_payload.present? ? read_field(issue, :number) : nil
           )
+        end
+
+        def build_work_item(issue, repo:)
+          legacy_issue = build_issue(issue)
+          identity = Data::ProviderIdentity.new(
+            provider: :github,
+            resource_type: legacy_issue.pull_request_number ? :pull_request : :issue,
+            external_id: legacy_issue.number.to_s,
+            container_id: repo,
+            url: legacy_issue.url
+          )
+          lifecycle = Data::Lifecycle.new(
+            state: legacy_issue.state,
+            raw_state: legacy_issue.raw_state,
+            mapping: ISSUE_STATE_MAP.key?(legacy_issue.raw_state) ? :direct : :fallback,
+            conflict: nil
+          )
+
+          Data::WorkItem.new(
+            identity:,
+            title: legacy_issue.title,
+            body: legacy_issue.body,
+            state: legacy_issue.state,
+            raw_state: legacy_issue.raw_state,
+            author_identity: provider_identity(legacy_issue.author_login),
+            labels: legacy_issue.labels,
+            comments: [],
+            relations: [],
+            attachments: [],
+            assignment: Data::Assignment.new(
+              assignee_identities: legacy_issue.assignee_logins.map { |login| provider_identity(login) },
+              provenance: :provider,
+              override: nil
+            ),
+            lifecycle:,
+            pull_request_relationships: pull_request_relationships(identity, legacy_issue),
+            provider_extension: Data::ProviderExtension.new(
+              provider: :github,
+              type: :github_issue,
+              attributes: github_extension(issue)
+            ),
+            raw_payload: raw_payload(issue),
+            created_at: legacy_issue.created_at,
+            updated_at: legacy_issue.updated_at,
+            closed_at: legacy_issue.closed_at,
+            url: legacy_issue.url
+          )
+        end
+
+        def pull_request_relationships(identity, issue)
+          return [] unless issue.pull_request_number
+
+          [ Data::PullRequestRelationship.new(identity:, relation: :implements, url: issue.url) ]
+        end
+
+        def provider_identity(login)
+          login && "github:#{login}"
+        end
+
+        def github_extension(issue)
+          { "node_id" => read_field(issue, :node_id), "repository_url" => read_field(issue, :repository_url) }.compact
+        end
+
+        def raw_payload(issue)
+          return issue.to_hash if issue.respond_to?(:to_hash)
+          return issue.to_h if issue.respond_to?(:to_h)
+          return issue if issue.is_a?(Hash)
+
+          {}
         end
 
         def build_comment(comment)

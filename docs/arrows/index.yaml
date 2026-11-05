@@ -60,6 +60,14 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-10-30
+  unified-work-items:
+    title: Unified Work Items
+    path: docs/intent/unified-work-items/unified-work-items-design.md
+    specs: docs/intent/unified-work-items/unified-work-items-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: OK
+    audited: 2026-11-05
   llm-routing:
     title: Application LLM Routing
     path: docs/intent/llm-routing/llm-routing-design.md

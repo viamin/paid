@@ -107,6 +107,10 @@ Paid parks the reopened issue for validation of the prior closure and current
 intent before it can return to work or be completed again. See
 `docs/intent/issue-reopen-review/`.
 
+Tracker work is evolving from GitHub-specific issues to provider-neutral work
+items while retaining GitHub compatibility during rollout. The default-off
+guard and normalized contract are recorded in [RDR-079](rdrs/RDR-079-unified-tracker-work-items.md).
+
 Paid's own reviewer follows the same human-final-say posture at the
 comment-policy level: every preset on the project-level `review_depth`
 control (`Focused`, `Balanced`, `Thorough`, default `Balanced`) enforces the

@@ -14,6 +14,7 @@ RSpec.describe Automation::Providers::WorkItemProvider do
   describe "the interface contract" do
     it "declares the capability methods automation policy depends on" do
       expected_methods = %i[
+        fetch_work_item
         fetch_issue
         list_issues
         fetch_issue_comments
@@ -29,6 +30,8 @@ RSpec.describe Automation::Providers::WorkItemProvider do
     end
 
     it "raises NotImplementedError for each method when not overridden" do
+      expect { unimplemented.fetch_work_item(repo: "x/y", number: 1) }
+        .to raise_error(NotImplementedError, /#fetch_work_item/)
       expect { unimplemented.fetch_issue(repo: "x/y", number: 1) }
         .to raise_error(NotImplementedError, /#fetch_issue/)
       expect { unimplemented.list_issues(repo: "x/y") }

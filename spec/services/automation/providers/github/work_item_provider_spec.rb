@@ -7,6 +7,8 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
   let(:project_class) do
     Class.new do
       def full_name = "acme/widgets"
+      def account = nil
+      def flipper_id = "Project;github-work-item-provider"
     end
   end
 
@@ -75,6 +77,36 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
       expect {
         adapter.fetch_issue(repo: "acme/widgets", number: 1)
       }.to raise_error(GithubClient::AuthenticationError)
+    end
+  end
+
+  describe "#fetch_work_item" do
+    # @spec UNIFIED-WORK-ITEMS-001 UNIFIED-WORK-ITEMS-009
+    it "is default-off and leaves the legacy issue API available" do
+      expect {
+        adapter.fetch_work_item(repo: "acme/widgets", number: 42)
+      }.to raise_error(UnifiedWorkItems::FeatureDisabledError, /disabled/)
+
+      expect(client).to receive(:issue).with("acme/widgets", 42).and_return(issue_resource)
+      expect(adapter.fetch_issue(repo: "acme/widgets", number: 42)).to be_a(Automation::Providers::Data::Issue)
+    end
+
+    it "normalizes GitHub identity, assignment, raw payload, and PR links when enabled" do
+      project_stub = instance_double(Project, flipper_id: "Project;1", account: nil)
+      allow(adapter).to receive(:project).and_return(project_stub)
+      FeatureFlags.enable!(:unified_work_items, project: project_stub)
+      issue_resource.pull_request = OpenStruct.new(url: "...")
+      issue_resource.define_singleton_method(:to_h) { { "number" => 42, "node_id" => "I_1" } }
+      expect(client).to receive(:issue).with("acme/widgets", 42).and_return(issue_resource)
+
+      result = adapter.fetch_work_item(repo: "acme/widgets", number: 42)
+
+      expect(result.identity).to have_attributes(provider: :github, external_id: "42", container_id: "acme/widgets")
+      expect(result.assignment).to have_attributes(assignee_identities: [ "github:bob" ], provenance: :provider, override: nil)
+      expect(result.raw_payload).to include("node_id" => "I_1")
+      expect(result.pull_request_relationships).to contain_exactly(
+        have_attributes(relation: :implements, identity: result.identity)
+      )
     end
   end
 
