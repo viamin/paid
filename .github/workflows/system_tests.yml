@@ -136,14 +136,15 @@ jobs:
           # then waits forever and the job dies at its overall timeout. Bound each
           # apt command and retry so a stalled mirror costs minutes, not the run.
           apt_with_retry() {
-            local operation="$1"
-            shift
             local attempt
             for attempt in 1 2 3; do
-              if sudo timeout 5m apt-get "$operation" "$@"; then
+              if sudo timeout 5m apt-get \
+                -o Acquire::http::Timeout=30 \
+                -o Acquire::https::Timeout=30 \
+                -o Acquire::Retries=3 "$@"; then
                 return 0
               fi
-              echo "::warning::apt-get $operation failed or timed out (attempt $attempt/3); retrying"
+              echo "::warning::apt-get $* timed out or failed (attempt $attempt/3); retrying"
               sleep "$((attempt * 10))"
             done
             return 1

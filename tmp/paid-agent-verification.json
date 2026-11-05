@@ -38,12 +38,12 @@
         "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "spec/config/ci_database_workflow_file_spec.rb",
-            "result": "39 examples, 0 failures (bundle exec rspec spec/config/ci_database_workflow_file_spec.rb)"
+            "locator": "spec/config/ci_database_workflow_file_spec.rb:134",
+            "result": "40 examples, 0 failures (bin/rspec spec/config/ci_database_workflow_file_spec.rb; seed 8088)."
           },
           {
-            "locator": ".github/workflows/system_tests.yml:135",
-            "result": "PostgreSQL client installation uses three bounded retries."
+            "locator": ".github/workflows/system_tests.yml:136",
+            "result": "PostgreSQL client installation uses three five-minute-bounded retries with 30-second HTTP(S) acquisition timeouts and three acquisition retries."
           }
         ]
       }
