@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-30
+last_updated: 2026-11-05
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  unified-work-items:
+    title: Unified Work Items
+    path: docs/intent/unified-work-items/unified-work-items-design.md
+    specs: docs/intent/unified-work-items/unified-work-items-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: OK
+    audited: 2026-11-05
+    next: "Add provider synchronization only through the default-off unified_work_items rollout guard."
   settings-visible-copy:
     title: Settings Visible Copy
     path: docs/intent/settings-visible-copy/settings-visible-copy-design.md

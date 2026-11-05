@@ -33,6 +33,13 @@ module Automation
           build_issue(issue)
         end
 
+        # @spec UNIFIED-WORK-ITEMS-001
+        def fetch_work_item(repo:, number:)
+          UnifiedWorkItems::RolloutGuard.require_enabled!(project)
+          item = with_errors { client.issue(repo, number) }
+          build_work_item(item, repo:)
+        end
+
         # GitHub's REST `/issues` endpoint only accepts a single +assignee+
         # query parameter, so this adapter cannot silently combine multiple
         # assignee logins into an intersection filter. Per the
@@ -52,6 +59,14 @@ module Automation
 
           issues = with_errors { client.issues(repo, labels: labels, **options) }
           Array(issues).map { |issue| build_issue(issue) }
+        end
+
+        # @spec UNIFIED-WORK-ITEMS-001
+        def list_work_items(repo:, state: :open, labels: nil, assignees: nil)
+          UnifiedWorkItems::RolloutGuard.require_enabled!(project)
+          list_issues(repo:, state:, labels:, assignees:).map do |issue|
+            Data::WorkItem.from_issue(issue, provider: "github", resource: repo)
+          end
         end
 
         def fetch_issue_comments(repo:, number:)
@@ -133,6 +148,49 @@ module Automation
             url: read_field(issue, :html_url),
             pull_request_number: pr_payload.present? ? read_field(issue, :number) : nil
           )
+        end
+
+        def build_work_item(issue, repo:)
+          legacy_issue = build_issue(issue)
+          item = Data::WorkItem.from_issue(legacy_issue, provider: "github", resource: repo)
+          raw = if issue.respond_to?(:to_hash)
+            issue.to_hash
+          elsif issue.respond_to?(:to_h)
+            issue.to_h
+          elsif issue.is_a?(Hash)
+            issue
+          else
+            {}
+          end
+
+          item.with(
+            provider_extensions: github_extensions(issue),
+            raw_payload: raw,
+            attachments: extract_attachments(issue)
+          )
+        end
+
+        def github_extensions(issue)
+          {
+            "node_id" => read_field(issue, :node_id),
+            "milestone" => read_sub_field(issue, :milestone, :title),
+            "state_reason" => read_field(issue, :state_reason)
+          }.compact
+        end
+
+        def extract_attachments(issue)
+          Array(read_field(issue, :attachments)).filter_map do |attachment|
+            id = read_field(attachment, :id)
+            url = read_field(attachment, :browser_download_url) || read_field(attachment, :url)
+            next if id.blank? || url.blank?
+
+            Data::Attachment.new(
+              id: id.to_s,
+              name: read_field(attachment, :name).to_s,
+              url:,
+              content_type: read_field(attachment, :content_type)
+            )
+          end
         end
 
         def build_comment(comment)

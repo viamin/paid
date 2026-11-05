@@ -42,6 +42,14 @@ have moved elsewhere:
 Paid exists to make AI agents useful and safe for real software work by solving
 these four problems together, as one system.
 
+Provider integrations evolve behind stable, provider-neutral contracts. A work
+item is identified by provider, resource, and external identifier; its
+normalized orchestration fields remain distinct from typed provider extensions
+and retained source payload. New cross-provider work-item behavior is rolled
+out behind an explicit default-off project flag so existing GitHub issue
+automation remains stable during migration. See
+`docs/intent/unified-work-items/` and RDR-079.
+
 ## Approach: Data Over Configuration
 
 Paid's load-bearing bet is that **configuration is ephemeral, but data

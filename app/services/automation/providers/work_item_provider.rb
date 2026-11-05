@@ -51,6 +51,14 @@ module Automation
         raise NotImplementedError, not_implemented_message(__method__)
       end
 
+        # @spec UNIFIED-WORK-ITEMS-001
+        # Fetches the richer unified snapshot. The default adapter keeps
+        # existing implementations compatible by projecting their Issue value;
+        # providers can override it to retain typed extensions and raw payloads.
+        def fetch_work_item(repo:, number:)
+          Data::WorkItem.from_issue(fetch_issue(repo:, number:), provider: provider_key, resource: repo)
+        end
+
       # Lists work items matching the given filters.
       #
       # @param repo [String]
@@ -63,6 +71,13 @@ module Automation
       def list_issues(repo:, state: :open, labels: nil, assignees: nil)
         raise NotImplementedError, not_implemented_message(__method__)
       end
+
+        # @spec UNIFIED-WORK-ITEMS-001
+        def list_work_items(repo:, state: :open, labels: nil, assignees: nil)
+          list_issues(repo:, state:, labels:, assignees:).map do |issue|
+            Data::WorkItem.from_issue(issue, provider: provider_key, resource: repo)
+          end
+        end
 
       # Fetches conversation comments on a work item.
       #
@@ -141,6 +156,10 @@ module Automation
       end
 
       private
+
+      def provider_key
+        self.class.name&.deconstantize&.demodulize&.underscore || "unknown"
+      end
 
       def not_implemented_message(method_name)
         "#{self.class} must implement ##{method_name}"

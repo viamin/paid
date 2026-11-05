@@ -1,16 +1,37 @@
 {
   "status": "passed",
-  "summary": "The complete dependency audit passed locally after updating Rails to 8.1.4.1; Bundler and Yarn reported no vulnerabilities.",
+  "summary": "Provider-domain contracts, GitHub compatibility, and the default-off rollout guard passed focused verification.",
   "acceptance_criteria": [
     {
-      "id": "AC-1",
+      "id": "UNIFIED-WORK-ITEMS-001",
       "status": "passed",
       "verification": {
-        "kind": "human_or_external_evidence",
+        "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "bin/audit",
-            "result": "passed locally: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully; both package audits reported zero vulnerabilities"
+            "locator": "spec/services/automation/providers/data/work_item_spec.rb:6",
+            "result": "passed (63 focused examples)"
+          },
+          {
+            "locator": "spec/services/automation/providers/github/work_item_provider_spec.rb:82",
+            "result": "passed (63 focused examples)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "UNIFIED-WORK-ITEMS-009",
+      "status": "passed",
+      "verification": {
+        "kind": "unit_or_service_test",
+        "references": [
+          {
+            "locator": "spec/services/feature_flags/unified_work_items_spec.rb:6",
+            "result": "passed (63 focused examples)"
+          },
+          {
+            "locator": "spec/services/unified_work_items/rollout_guard_spec.rb:6",
+            "result": "passed (63 focused examples)"
           }
         ]
       }

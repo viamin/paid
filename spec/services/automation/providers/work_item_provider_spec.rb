@@ -15,7 +15,9 @@ RSpec.describe Automation::Providers::WorkItemProvider do
     it "declares the capability methods automation policy depends on" do
       expected_methods = %i[
         fetch_issue
+        fetch_work_item
         list_issues
+        list_work_items
         fetch_issue_comments
         fetch_issue_timeline
         create_issue
@@ -109,6 +111,14 @@ RSpec.describe Automation::Providers::WorkItemProvider do
         .to be_a(Automation::Providers::Data::Comment)
       expect(impl.transition_state(repo: "x/y", number: 1, state: :closed))
         .to be_a(Automation::Providers::Data::Issue)
+    end
+
+    it "projects the existing issue implementation to unified work items" do
+      impl = implementation_class.new
+
+      expect(impl.fetch_work_item(repo: "x/y", number: 1))
+        .to be_a(Automation::Providers::Data::WorkItem)
+      expect(impl.list_work_items(repo: "x/y")).to eq([])
     end
   end
 end

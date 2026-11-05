@@ -7,6 +7,8 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
   let(:project_class) do
     Class.new do
       def full_name = "acme/widgets"
+      def account = nil
+      def flipper_id = "Project;test"
     end
   end
 
@@ -75,6 +77,39 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
       expect {
         adapter.fetch_issue(repo: "acme/widgets", number: 1)
       }.to raise_error(GithubClient::AuthenticationError)
+    end
+  end
+
+  describe "#fetch_work_item" do
+    it "does not expose the new entry point while unified work items are disabled" do
+      expect(client).not_to receive(:issue)
+
+      expect {
+        adapter.fetch_work_item(repo: "acme/widgets", number: 42)
+      }.to raise_error(UnifiedWorkItems::RolloutGuard::FeatureDisabledError)
+    end
+
+    it "retains GitHub identity, provider extensions, and raw payload" do
+      issue_resource.node_id = "I_kwDOA"
+      issue_resource.milestone = OpenStruct.new(title: "v1")
+      issue_resource.state_reason = "completed"
+      expect(client).to receive(:issue).with("acme/widgets", 42).and_return(issue_resource)
+
+      FeatureFlags.enable!(:unified_work_items)
+      result = adapter.fetch_work_item(repo: "acme/widgets", number: 42)
+
+      expect(result.identity).to have_attributes(
+        provider: "github", resource: "acme/widgets", external_id: "42", display_id: "42"
+      )
+      expect(result.assignments).to contain_exactly(
+        have_attributes(principal: "bob", provenance: :provider, overridden: false)
+      )
+      expect(result.provider_extensions).to include(
+        "node_id" => "I_kwDOA", "milestone" => "v1", "state_reason" => "completed"
+      )
+      expect(result.raw_payload).to include(number: 42)
+    ensure
+      FeatureFlags.disable!(:unified_work_items)
     end
   end
 
