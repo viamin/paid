@@ -1,41 +1,41 @@
 {
   "status": "passed",
-  "summary": "The dependency-update head pins agent-harness 0.44.32 and the dependency audit completed successfully.",
+  "summary": "Phase 1 unified work-item contract, legacy GitHub conversion, and default-off rollout guard verified with focused provider contract tests.",
   "acceptance_criteria": [
     {
-      "id": "AC-1",
+      "id": "UNIFIED-WORK-ITEMS-001",
       "status": "passed",
       "verification": {
-        "kind": "human_or_external_evidence",
+        "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "Gemfile:87",
-            "result": "agent-harness is pinned to 0.44.32."
+            "locator": "spec/services/automation/providers/data/work_item_spec.rb:7",
+            "result": "passed (3 examples)"
           },
           {
-            "locator": "Gemfile.lock:123",
-            "result": "Lockfile resolves agent-harness 0.44.32."
+            "locator": "spec/services/automation/providers/github/work_item_provider_spec.rb:54",
+            "result": "passed; raw GitHub payload and conversion preserve legacy behavior"
           },
           {
-            "locator": "BUNDLE_FROZEN=true bundle install",
-            "result": "passed: bundle completed with 73 Gemfile dependencies and 253 gems."
-          },
-          {
-            "locator": "bin/audit",
-            "result": "passed locally: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully."
+            "locator": "spec/services/automation/providers/github/work_item_provider_contract_spec.rb:6",
+            "result": "passed (18 examples)"
           }
         ]
       }
     },
     {
-      "id": "AC-2",
-      "status": "not_run",
+      "id": "UNIFIED-WORK-ITEMS-009",
+      "status": "passed",
       "verification": {
-        "kind": "human_or_external_evidence",
+        "kind": "unit_or_service_test",
         "references": [
           {
-            "locator": "bin/rails db:prepare",
-            "result": "not run: the configured database endpoint was unreachable (no PostgreSQL socket available)."
+            "locator": "spec/services/automation/providers/unified_work_items_rollout_guard_spec.rb:6",
+            "result": "passed; default-off, project actor, and account tenant override"
+          },
+          {
+            "locator": "app/services/feature_flags.rb:117",
+            "result": "defined default-off rollout metadata"
           }
         ]
       }

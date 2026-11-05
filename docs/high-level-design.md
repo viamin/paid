@@ -55,6 +55,13 @@ rather than what was assumed to work. See `docs/VISION.md` for the full thesis.
 This is the through-line for every component: when a behavior could be a rule or
 a record, Paid stores the record.
 
+Tracker work enters the platform through provider-neutral contracts that retain
+both normalized orchestration fields and provider-native evidence. This lets
+Paid extend beyond GitHub without erasing provider-specific lifecycle,
+assignment, relation, or pull-request meaning. New unified tracker surfaces are
+introduced behind default-off account-and-project-scoped rollout guards, while
+existing GitHub automation remains stable during migration.
+
 ## Approach: Isolation by Default
 
 Agents run in Docker containers built from a dedicated agent image

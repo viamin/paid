@@ -131,7 +131,8 @@ module Automation
             updated_at: parse_time(read_field(issue, :updated_at)),
             closed_at: parse_time(read_field(issue, :closed_at)),
             url: read_field(issue, :html_url),
-            pull_request_number: pr_payload.present? ? read_field(issue, :number) : nil
+            pull_request_number: pr_payload.present? ? read_field(issue, :number) : nil,
+            raw_payload: raw_payload(issue)
           )
         end
 
@@ -173,6 +174,14 @@ module Automation
             login = normalize_login(read_sub_field(issue, :assignee, :login))
             login ? [ login ] : []
           end
+        end
+
+        def raw_payload(record)
+          return record if record.is_a?(Hash)
+          return record.to_hash if record.respond_to?(:to_hash)
+          return record.to_h if record.respond_to?(:to_h)
+
+          {}
         end
       end
     end

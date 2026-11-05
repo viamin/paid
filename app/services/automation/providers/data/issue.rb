@@ -43,9 +43,42 @@ module Automation
         :updated_at,
         :closed_at,
         :url,
-        :pull_request_number
+        :pull_request_number,
+        :raw_payload
       )
         STATES = %i[open closed].freeze
+
+        # Additive compatibility field: existing provider call sites retain
+        # their established keyword shape while adapters can preserve the
+        # source payload for conversion into the richer WorkItem contract.
+        def initialize(number:, title:, body:, state:, raw_state:, author_login:, assignee_logins:, labels:, dependencies:,
+          created_at:, updated_at:, closed_at:, url:, pull_request_number:, raw_payload: nil)
+          super
+        end
+
+        # @spec UNIFIED-WORK-ITEMS-001
+        def to_work_item(provider: :github, container_id: nil)
+          WorkItem.new(
+            identity: WorkItem::Identity.new(provider:, resource_type: :issue, resource_id: number.to_s, container_id:),
+            title:, body:,
+            lifecycle: WorkItem::Lifecycle.new(state:, raw_state:, mapping: :direct, conflict: nil),
+            author: author_login && WorkItem::Actor.new(provider:, external_id: author_login, login: author_login),
+            labels:, comments: [], relations: dependencies.map { |dependency|
+              WorkItem::Relation.new(kind: dependency.relation, target: dependency, raw_kind: nil)
+            }, attachments: [],
+            assignments: assignee_logins.map { |login|
+              WorkItem::Assignment.new(
+                assignee: WorkItem::Actor.new(provider:, external_id: login, login:),
+                provenance: :provider, overridden_by: nil, overridden_at: nil
+              )
+            },
+            pull_request_links: pull_request_number ? [ WorkItem::PullRequestLink.new(
+              identity: WorkItem::Identity.new(provider:, resource_type: :pull_request, resource_id: pull_request_number.to_s, container_id:),
+              relationship: :relates_to, url:
+            ) ] : [],
+            provider_extensions: [], raw_payload: raw_payload || {}, created_at:, updated_at:, url:
+          )
+        end
       end
     end
   end

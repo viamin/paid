@@ -51,6 +51,17 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
       expect(result.pull_request_number).to be_nil
     end
 
+    it "retains the raw response for lossless unified conversion" do
+      expect(client).to receive(:issue).with("acme/widgets", 42).and_return(issue_resource)
+
+      result = adapter.fetch_issue(repo: "acme/widgets", number: 42)
+
+      expect(result.raw_payload).to include(number: 42, state: "open")
+      unified = result.to_work_item(container_id: "acme/widgets")
+      expect(unified.identity).to have_attributes(provider: :github, resource_id: "42")
+      expect(unified.raw_payload).to include(number: 42, state: "open")
+    end
+
     it "exposes pull_request_number when the item is also a PR" do
       issue_resource.pull_request = OpenStruct.new(url: "...")
 
