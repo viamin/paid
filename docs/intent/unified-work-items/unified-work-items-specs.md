@@ -1,6 +1,6 @@
 # EARS Specs: Unified Tracker Work Items
 
-> Planned claims translated from the authored proposal in [PR #4853](https://github.com/viamin/paid/pull/4853). Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
+> Planned claims governed by `docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md`, which must land before this segment is merged. Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
 - [ ] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent GitHub and
   external tracker tickets through a provider-neutral work-item contract with
@@ -28,10 +28,13 @@
 
 - [ ] **UNIFIED-WORK-ITEMS-005** — When a user starts a workflow from a
   unified ticket, the system SHALL preserve existing project permissions and
-  issue workflow behavior, admit trusted comments only through explicit
-  account/project team, user, and provider-identity mappings, post comments as
-  the configured API-key user when permitted, and allow agent-run lifecycle
-  writes to be configured independently.
+  issue workflow behavior. GitHub-sourced content SHALL remain admitted only
+  through the existing GitHub-user allowlist and `issue.trusted?` gate;
+  explicit account/project team, user, and provider-identity mappings SHALL be
+  an additional admission path for non-GitHub providers and SHALL NOT replace
+  or widen that GitHub path. The system SHALL post comments as the configured
+  API-key user when permitted and allow agent-run lifecycle writes to be
+  configured independently.
 
 - [ ] **UNIFIED-WORK-ITEMS-006** — When lifecycle mappings are configured
   between Linear and Paid, the system SHALL synchronize supported changes in
@@ -41,21 +44,25 @@
 
 - [ ] **UNIFIED-WORK-ITEMS-007** — The GitHub migration SHALL run offline and
   idempotently, preserve GitHub identity, metadata, comments, Paid state,
-  assignments, agent-run history, relationships, and provenance, reconcile
-  issues created during the maintenance window, and keep existing GitHub issue
-  workflows operational through the unified model.
+  assignments, agent-run history, relationships, provenance, and the existing
+  trusted-GitHub-user configuration; it SHALL reconcile issues created during
+  the maintenance window and keep existing GitHub issue workflows operational
+  through the unified model.
 
 - [ ] **UNIFIED-WORK-ITEMS-008** — Pull requests SHALL remain separate review
   artifacts, with discoverable relationships for Paid-created PRs where
   possible and explicit user linking otherwise; ticket migration SHALL NOT
   replace pull-request review, approval, branch, commit, or merge semantics.
 
-- [ ] **UNIFIED-WORK-ITEMS-009** — The proposed `unified_work_items`
-  project-scoped feature flag SHALL default off and gate every new unified
-  runtime entry point, including synchronization, workflow admissions,
-  browser and project-page browsing/read surfaces, assignment, and lifecycle
-  operations; while disabled, those surfaces SHALL continue existing GitHub
-  issue behavior and SHALL NOT expose unified-ticket behavior. Disabling the
-  flag SHALL preserve imported records, audit data, and explicit overrides,
-  and the guard SHALL remain until closeout evidence verifies synchronization,
-  migration, trust, conflict, relationship, rollback, and regression behavior.
+- [ ] **UNIFIED-WORK-ITEMS-009** — Subject to confirmation of the proposed
+  `unified_work_items` guard, the system SHALL add `:unified_work_items` to
+  `FeatureFlags::DEFINITIONS`, default it off, and gate every new unified
+  runtime entry point through
+  `FeatureFlags.enabled?(:unified_work_items, project:)`, including
+  synchronization, workflow admissions, browser and project-page browsing/read
+  surfaces, assignment, and lifecycle operations. While disabled, those
+  surfaces SHALL continue existing GitHub issue behavior and SHALL NOT expose
+  unified-ticket behavior. Disabling the flag SHALL preserve imported records,
+  audit data, and explicit overrides, and the guard SHALL remain until the
+  RDR-079 closeout audit verifies synchronization, migration, trust, conflict,
+  relationship, rollback, and regression behavior.

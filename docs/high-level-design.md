@@ -322,9 +322,10 @@ account connection, full supported synchronization, explicit trust and
 identity mappings, assignment provenance and overrides, and an offline
 idempotent migration of existing GitHub issues. Existing issue workflows run
 through the unified ticket contract while pull requests remain separate
-review artifacts linked to tickets. The capability is default-off behind a
-project-scoped rollout guard until synchronization, migration, conflict, and
-trust evidence supports cutover. See
+review artifacts linked to tickets. Subject to product confirmation, the
+capability is proposed as default-off behind a project-scoped rollout guard
+until synchronization, migration, conflict, and trust evidence supports
+cutover. See
 `docs/intent/unified-work-items/` for the planned contract.
 
 Apple verification workers extend the execution boundary without becoming agent

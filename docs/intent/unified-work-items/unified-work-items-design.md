@@ -5,7 +5,7 @@ prefix: UNIFIED-WORK-ITEMS
 
 # Low-Level Design: Unified Tracker Work Items
 
-> This design translates the authored proposal in [PR #4853](https://github.com/viamin/paid/pull/4853), titled “docs: propose unified tracker work items with Linear migration.” It is a planned capability, not a claim that the runtime already provides it.
+> This planned capability depends on `docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md`. That RDR must land before this segment is merged; it is the normative record for the decision and its rollout guard.
 
 ## Context and problem
 
@@ -17,10 +17,15 @@ represent work to be done, while pull requests represent completed work
 awaiting review. The design therefore unifies tracker-backed tickets without
 moving pull-request review semantics into the ticket model.
 
-The existing tracker adapter seam and account-wide Linear credential surface
-are useful boundaries, but Linear operations and a persisted provider-neutral
-work-item model are not yet complete. External tracker data, comments,
-webhooks, and issue text remain untrusted at the integration boundary.
+`Automation::Providers::WorkItemProvider` is the existing provider-neutral
+adapter contract: its implementations map provider-native tickets to
+`Automation::Providers::Data::Issue`, while automation policy operates on work
+items. The proposed persisted `WorkItem` model is a separate identity and
+reconciliation record composed with that adapter contract, not a second
+provider interface. The existing account-wide Linear credential surface is
+also a useful boundary, but Linear operations and the persisted model are not
+yet complete. External tracker data, comments, webhooks, and issue text remain
+untrusted at the integration boundary.
 
 ## Scope and boundaries
 
@@ -87,11 +92,12 @@ run started from a ticket can choose among assigned projects according to
 those defaults.
 
 Mapping changes show affected assignments before confirmation and flag review
-when Linear projects or mappings change. Account trusted-team/user defaults,
-project additions/overrides, and explicit Paid-to-Linear and Paid-to-GitHub
-identity mappings control which external authors and comments may enter
-trusted prompt context. Imported text never becomes trusted merely because it
-was synchronized.
+when Linear projects or mappings change. GitHub-sourced content continues to
+be admitted only through the existing GitHub-user allowlist and `issue.trusted?`
+gate. Account trusted-team/user defaults, project additions/overrides, and
+explicit Paid-to-provider identity mappings are an additional admission path
+for non-GitHub providers; they do not replace or widen the GitHub path.
+Imported text never becomes trusted merely because it was synchronized.
 
 Lifecycle mappings work in both directions, prevent synchronization loops,
 and surface simultaneous conflicting changes for human review. Agent-run
@@ -101,19 +107,23 @@ lifecycle writes are independently configurable.
 
 GitHub issues migrate offline and idempotently into the unified model while
 preserving provider identity, metadata, comments, Paid state, assignments,
-agent-run history, relationships, and assignment provenance. The migration
-reconciles issues created during its maintenance window and avoids long-term
-dual-write. Existing GitHub issue workflows continue through the unified
-contract after cutover.
+agent-run history, relationships, assignment provenance, and the existing
+trusted-GitHub-user configuration. The migration reconciles issues created
+during its maintenance window and avoids long-term dual-write. Existing GitHub
+issue workflows continue through the unified contract after cutover.
 
-The proposed `unified_work_items` runtime guard is evaluated through the
-existing project-scoped feature-flag mechanism and disabled by default. It
-gates every new unified runtime entry point, including synchronization,
-workflow admissions, browser and project-page browsing/read surfaces,
-assignment, and lifecycle operations. While it is disabled, those surfaces
-continue existing GitHub issue behavior and do not expose unified-ticket
-behavior. Disabling it preserves imported records, audit data, and explicit
-overrides; it does not silently delete or revert migrated data.
+Subject to the open product decision below, the proposed
+`unified_work_items` runtime guard is project-scoped and disabled by default.
+Its implementation must add `:unified_work_items` to
+`FeatureFlags::DEFINITIONS` and evaluate every new unified runtime entry point
+through `FeatureFlags.enabled?(:unified_work_items, project:)`, including
+synchronization, workflow admissions, browser and project-page browsing/read
+surfaces, assignment, and lifecycle operations. While it is disabled, those
+surfaces continue existing GitHub issue behavior and do not expose
+unified-ticket behavior. Disabling it preserves imported records, audit data,
+and explicit overrides; it does not silently delete or revert migrated data.
+The flag remains until the RDR-079 closeout audit passes with synchronization,
+migration, trust, conflict, relationship, rollback, and regression evidence.
 
 ## Decisions and alternatives
 
@@ -123,7 +133,7 @@ overrides; it does not silently delete or revert migrated data.
 | Keep pull requests as separate review artifacts | The authored framing distinguishes work tickets from completed work awaiting review; PR approval, merge, branch, and commit semantics remain distinct. | Migrate pull requests into the ticket model; that conflates review with work tracking. |
 | Migrate GitHub issues offline and idempotently | The authored plan preserves existing state and bounded maintenance-window reconciliation without permanent dual-write. | Add Linear abstractions without GitHub migration; existing workflows would remain on a second model. |
 | Preserve explicit mapping provenance and overrides | The authored plan requires bulk mapping without silently overwriting issue-level decisions, with preview and review flags. | Treat the latest mapping as authoritative for every issue; this loses human intent. |
-| Use `unified_work_items` as the default-off rollout guard for every new unified runtime entry point | The authored rollout requires the unified model to remain unavailable, including its browse/read surfaces, until a project explicitly enables it; the repository already has project-scoped feature flags for that controlled cutover. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
+| Provisionally propose `unified_work_items` as the default-off rollout guard for every new unified runtime entry point | RDR-079 proposes a project-scoped guard so the unified model, including browse/read surfaces, stays unavailable until an authorized project enablement. The flag name and enablement surface remain an open product decision; see Open decisions. | Enable the unified model globally, expose read surfaces while the flag is off, or invent a parallel rollout mechanism. |
 
 ## Cascade ordering and segment boundaries
 
@@ -144,16 +154,20 @@ Implementation follows the authored plan in this order:
    evidence.
 
 The segment owns the ticket model, tracker adapters, synchronization,
-assignment/trust policy, migration, and ticket-to-PR relationship. Existing
-project authorization, issue workflow, feature-flag, and review-artifact
-segments remain the owners of their reusable policies; this segment composes
-them through provider-neutral contracts.
+assignment/trust policy, migration, and ticket-to-PR relationship. It composes
+the reusable policies owned by
+`docs/intent/tenant-access-control/`,
+`docs/intent/upstream-issue-pickup/`,
+`docs/intent/rdr-rollout-guards/`, and
+`docs/intent/review-pull-request/`. The currently unmapped
+`Automation::Providers::WorkItemProvider` adapter and tracker-adapter seams
+must be mapped to an owning intent segment before implementation crosses that
+boundary.
 
 ## Open decisions
 
-The following authored questions must be settled before implementation locks
-the design: the exact Linear API capabilities and rate-limit/pagination
-behavior; the extension of trusted-team/user and provider identity mappings;
-and the pragmatic migration/reconciliation tooling while Paid is not
-production-bound. The rollout-flag name and its enablement surface require
-human confirmation before implementation.
+The following decisions must be settled before implementation locks the design:
+the exact Linear API capabilities and rate-limit/pagination behavior; the
+extension of trusted-team/user and provider identity mappings; the pragmatic
+migration/reconciliation tooling while Paid is not production-bound; and the
+rollout-flag name and enablement surface.

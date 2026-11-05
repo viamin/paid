@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "The default-off unified-work-items guard now covers every new runtime entry point, including browse and project-page reads.",
+  "summary": "The complete dependency audit passed locally after updating Rails to 8.1.4.1; Bundler and Yarn reported no vulnerabilities.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,16 +9,8 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "docs/intent/unified-work-items/unified-work-items-design.md:109",
-            "result": "The LLD explicitly gates browser and project-page browsing/read surfaces and keeps existing GitHub issue behavior while disabled."
-          },
-          {
-            "locator": "docs/intent/unified-work-items/unified-work-items-specs.md:53",
-            "result": "UNIFIED-WORK-ITEMS-009 makes the all-entry-point default-off guard a testable claim."
-          },
-          {
-            "locator": "bin/coherence-check.mjs",
-            "result": "passed structural validation; pre-existing repository-wide warnings remain."
+            "locator": "bin/audit",
+            "result": "passed locally: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully; both package audits reported zero vulnerabilities"
           }
         ]
       }
