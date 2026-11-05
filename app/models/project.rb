@@ -3,6 +3,8 @@
 class Project < ApplicationRecord
   include PreferredDockerHostIdentifierValidation
 
+  DELEGATION_POSTURES = %w[conservative bounded_delivery].freeze
+
   has_many :chat_investigations, dependent: :destroy
   has_many :agent_planning_holds, dependent: :destroy
 
@@ -307,6 +309,9 @@ class Project < ApplicationRecord
   has_many :agent_runs, dependent: :destroy
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
+
+  validates :delegation_posture, inclusion: { in: DELEGATION_POSTURES }
+  validates :delegation_posture_revision, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy

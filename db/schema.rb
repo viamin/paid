@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_03_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_05_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -306,6 +306,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_000000) do
   end
 
   create_table "agent_runs", force: :cascade do |t|
+    t.datetime "admission_changed_at"
+    t.datetime "admission_expires_at"
+    t.text "admission_hold_reason"
+    t.jsonb "admission_snapshot", default: {}, null: false, comment: "Immutable posture and evidence revisions used to admit this run."
+    t.string "admission_state", default: "active", null: false
     t.string "adoption_mode_snapshot", comment: "Project adoption mode captured when an external execution was ingested."
     t.string "agent_type", limit: 50, null: false
     t.string "approved_design_revision", comment: "Approved feature design revision that admitted this implementation run."
@@ -410,6 +415,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_000000) do
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
     t.index "status, COALESCE(completed_at, updated_at)", name: "index_agent_runs_on_status_terminal_timestamp"
+    t.index ["admission_state"], name: "index_agent_runs_on_admission_state"
     t.index ["approved_design_revision"], name: "index_agent_runs_on_approved_design_revision"
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
@@ -3665,6 +3671,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_03_000000) do
     t.string "creation_origin", default: "connected", null: false, comment: "How the project came to be: connected (existing repo) or blank (repo created by Paid)."
     t.string "data_classification", default: "internal", null: false, comment: "Sensitivity level for project data shared with model providers."
     t.string "default_branch", default: "main", null: false
+    t.string "delegation_posture", default: "conservative", null: false, comment: "RDR-080 project delegation posture; conservative is fail-closed."
+    t.integer "delegation_posture_revision", default: 0, null: false
     t.datetime "dependabot_fetch_error_at", comment: "Timestamp of the most recent transient Dependabot fetch failure. Used to back off retries without blocking code-scanning coverage."
     t.datetime "dependabot_permission_error_at", comment: "Timestamp of the most recent Dependabot permissions error. Used to back off identical failures until credentials or repository settings change."
     t.string "enhance_issue_enhanced_label_name", default: "paid-enhanced", null: false

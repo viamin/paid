@@ -54,6 +54,7 @@ module AgentRuns
     # Returns true when the run was cancelled because its issue is no
     # longer eligible; false when the run should proceed normally.
     def call # @spec EAGER-QUEUE-005 ISSUE-ENHANCEMENT-018
+      return cancel_admission_boundary if admission_boundary_blocked?
       return cancel_phase_unauthorized_run if phase_revoked?
       return cancel_feature_admission_denied_run if feature_admission_denied?
       return recheck_continuation if continuation_run?
@@ -67,6 +68,14 @@ module AgentRuns
     private
 
     attr_reader :agent_run
+
+    def admission_boundary_blocked?
+      Automation::AdmissionBoundary.call(agent_run:)
+    end
+
+    def cancel_admission_boundary
+      cancel_run(reason: "Delegated admission is held at its next boundary: #{agent_run.admission_hold_reason}")
+    end
 
     def after_claim?
       @after_claim
