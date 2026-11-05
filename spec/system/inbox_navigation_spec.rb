@@ -87,6 +87,9 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
 
     page.driver.resize(390, 844)
     visit inbox_path(kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
+    expect(page).to have_no_css("#inbox-detail-pane", visible: true)
+
+    within("#inbox-list") { click_link "Dependency cycle" }
     expect(page).to have_css("#inbox-detail h2", text: "Dependency cycle")
 
     install_clipboard_spy
@@ -94,8 +97,6 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page.evaluate_script("window.__copiedInboxLink")).to end_with(inbox_entry_path(cycle_entry.id,
       kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND))
 
-    click_link "Back to queue"
-    within("#inbox-list") { click_link "Dependency cycle" }
     expect(page).to have_current_path(inbox_entry_path(cycle_entry.id, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND))
     expect(page).to have_css("#inbox-detail h2", text: "Dependency cycle")
   end

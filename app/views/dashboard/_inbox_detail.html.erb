@@ -26,7 +26,7 @@
     <div class="flex items-center gap-2">
       <button type="button"
           data-action="click->inbox-master-detail#copyLink"
-          data-inbox-master-detail-copy-link-url-value="<%= inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)) %>"
+          data-inbox-master-detail-copy-link-url="<%= inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)) %>"
           aria-describedby="inbox-copy-link-status"
           class="inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
         Copy link to this item

@@ -518,7 +518,9 @@
   *Code:* `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`,
   `app/javascript/controllers/inbox_master_detail_controller.js`.
-  *Test:* `spec/system/inbox_navigation_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Test:* `spec/system/inbox_navigation_spec.rb`,
+  `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning

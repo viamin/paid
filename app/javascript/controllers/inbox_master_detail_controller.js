@@ -56,9 +56,14 @@ export default class extends Controller {
     try {
       await window.navigator.clipboard.writeText(url)
       this.announceCopyResult("Link copied.")
-    } catch {
-      this.copyWithSelection(url)
-      this.announceCopyResult("Link copied.")
+    } catch (clipboardError) {
+      try {
+        this.copyWithSelection(url)
+        this.announceCopyResult("Link copied.")
+      } catch (fallbackError) {
+        this.reportCopyFailure(clipboardError, fallbackError)
+        this.announceCopyResult("Copy failed.")
+      }
     }
   }
 
@@ -112,16 +117,27 @@ export default class extends Controller {
     selection.value = url
     selection.setAttribute("readonly", "")
     selection.classList.add("sr-only")
+    const previouslyFocused = document.activeElement
     document.body.append(selection)
     selection.select()
 
-    const copied = document.execCommand("copy")
-    selection.remove()
-    if (!copied) throw new Error("Clipboard copy failed")
+    try {
+      if (document.execCommand("copy") !== true) throw new Error("Clipboard copy failed")
+    } finally {
+      selection.remove()
+      previouslyFocused?.focus()
+    }
   }
 
   announceCopyResult(message) {
     if (this.hasCopyStatusTarget) this.copyStatusTarget.textContent = message
+  }
+
+  reportCopyFailure(clipboardError, fallbackError) {
+    window.console?.warn(
+      "inbox-master-detail#copyLink: clipboard write failed",
+      { clipboardError, fallbackError }
+    )
   }
 
   show(element) {
