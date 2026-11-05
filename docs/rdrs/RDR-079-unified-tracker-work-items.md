@@ -93,8 +93,8 @@ migration.
 
 `unified_work_items` is a default-off feature flag. Implementation issue
 [#4855](https://github.com/viamin/paid/issues/4855), “Phase 1: define
-unified work-item domain and provider contracts,” owns adding it to
-`FeatureFlags::DEFINITIONS` and wiring the runtime decision.
+unified work-item domain and provider contracts,” adds it to
+`FeatureFlags::DEFINITIONS` and supplies the project-scoped rollout guard.
 
 Project-scoped entry points evaluate
 `FeatureFlags.enabled?(:unified_work_items, project:)`. Account-scoped ticket

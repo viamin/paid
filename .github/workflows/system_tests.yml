@@ -132,8 +132,18 @@ jobs:
           # GitHub's Ubuntu runners sometimes ship unrelated Microsoft sources
           # that transiently 403 and break apt-get update before PGDG installs.
           sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-16
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y postgresql-client-16; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::PostgreSQL client install failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 5))"
+            fi
+          done
+
+          exit 1
 
       - name: Create application database role
         env:

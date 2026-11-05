@@ -46,6 +46,15 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
   end
 
+  it "retries transient PostgreSQL client package setup failures" do
+    install_step = system_step("Install PostgreSQL client")
+
+    expect(install_step.fetch("run")).to include(
+      'for attempt in 1 2 3; do',
+      'sudo apt-get update && sudo apt-get install -y postgresql-client-16'
+    )
+  end
+
   it "installs a pinned Chrome binary for explicit browser specs" do
     setup_step = system_step("Set up Chrome")
     export_step = system_step("Export Chromium path")

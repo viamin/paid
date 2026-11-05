@@ -1,13 +1,20 @@
-# EARS Specs: Unified Tracker Work Items
+# EARS Specs: Unified Work Items
 
-> Planned claims. Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
+> Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Tracking issue: #4854. Rollout decision: [RDR-079](../../rdrs/RDR-079-unified-tracker-work-items.md).
 
-- [ ] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent GitHub and
-  external tracker tickets through a provider-neutral work-item contract with
-  stable provider/resource identity, normalized fields, typed provider
-  extensions, retained raw payloads, assignment provenance, and explicit
-  relationships to separate pull-request review artifacts.
+- [x] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent a provider work
+  item with an explicit provider/resource identity, normalized lifecycle and
+  common fields, typed provider extensions, and retained raw payload; SHALL
+  represent comments, relations, attachments, assignment provenance and Paid
+  overrides, lifecycle mappings and conflicts, and explicit pull-request links
+  as typed values; and SHALL preserve existing GitHub `Data::Issue` behavior
+  through a lossless conversion path.
+  *Tests:* `spec/services/automation/providers/data/work_item_spec.rb`,
+  `spec/services/automation/providers/github/work_item_provider_spec.rb`
+  *Code:* `Automation::Providers::Data::WorkItem`,
+  `Automation::Providers::Data::Issue`,
+  `Automation::Providers::Github::WorkItemProvider`
 
 - [ ] **UNIFIED-WORK-ITEMS-002** — When an account configures Linear, the
   system SHALL support one workspace connection with observable health,
@@ -55,19 +62,11 @@
   possible and explicit user linking otherwise; ticket migration SHALL NOT
   replace pull-request review, approval, branch, commit, or merge semantics.
 
-- [ ] **UNIFIED-WORK-ITEMS-009** — Implementation issue #4855 SHALL add the
-  default-off `:unified_work_items` guard to `FeatureFlags::DEFINITIONS` and
-  wire its runtime decision. A project-scoped unified
-  entry point SHALL evaluate
-  `FeatureFlags.enabled?(:unified_work_items, project:)`. An account-scoped
-  unified entry point SHALL establish `Current.account` and evaluate
-  `FeatureFlags.enabled?(:unified_work_items)` against that account's
-  `tenant_settings.features` override; it SHALL NOT render or mutate unified
-  state without that account context. This includes synchronization, workflow
-  admissions, browser and project-page browsing/read surfaces, assignment,
-  lifecycle operations, and account Linear/trust settings. While disabled,
-  those surfaces SHALL continue existing GitHub issue behavior and SHALL NOT
-  expose unified-ticket behavior. Disabling the flag SHALL preserve imported
-  records, audit data, and explicit overrides, and the guard SHALL remain
-  until the RDR-079 closeout audit verifies synchronization, migration, trust,
-  conflict, relationship, rollback, and regression behavior.
+- [x] **UNIFIED-WORK-ITEMS-009** — The system SHALL keep unified work-item
+  runtime entry points disabled unless the default-off `unified_work_items`
+  feature flag is enabled through `FeatureFlags.enabled?(:unified_work_items,
+  project:)`; account tenant-setting overrides SHALL take precedence, and the
+  guard SHALL NOT alter existing GitHub issue behavior while disabled.
+  *Tests:* `spec/services/automation/providers/unified_work_items_rollout_guard_spec.rb`
+  *Code:* `FeatureFlags`,
+  `Automation::Providers::UnifiedWorkItemsRolloutGuard`
