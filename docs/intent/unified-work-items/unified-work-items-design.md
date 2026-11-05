@@ -65,6 +65,7 @@ GitHub issue behavior remains outside this new guard.
 | Add a parallel immutable contract | Replace `Data::Issue` immediately | A compatibility adapter avoids breaking current GitHub consumers while providers migrate independently. |
 | Preserve raw payloads | Normalize only | Normalization necessarily loses provider detail needed for audit, repair, and future mappings. |
 | Record lifecycle conflicts | Silently pick native or normalized state | A visible conflict prevents a failed mapping from looking like a successful state transition. |
+
 ## Context and problem
 
 Paid's issue workflows are GitHub-centered. Users need to browse external
