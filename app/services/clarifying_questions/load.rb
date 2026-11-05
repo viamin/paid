@@ -16,7 +16,7 @@ module ClarifyingQuestions
     # @spec QUIET-MODE-011
     def call
       body_questions = Parse.call(comment_body: issue.body)
-      stored_questions = issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions).map { |question| question.to_s.strip }.reject(&:blank?) : []
+      stored_questions = issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions).filter_map { |question| stored_question(question) } : []
       current_questions = body_questions.presence || stored_questions
 
       if current_questions.any?
@@ -81,6 +81,12 @@ module ClarifyingQuestions
 
     def github_available?
       project.github_credential_present?
+    end
+
+    def stored_question(question)
+      return question if question.is_a?(Hash) && QuestionPayload.submission_text(question).present?
+
+      question.to_s.strip.presence
     end
 
     def latest_enhancement_comment

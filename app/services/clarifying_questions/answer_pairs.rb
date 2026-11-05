@@ -37,7 +37,7 @@ module ClarifyingQuestions
     end
 
     def normalize_question(question)
-      question.to_s.strip.gsub(/\s+/, " ")
+      QuestionPayload.submission_text(question).gsub(/\s+/, " ")
     end
   end
 end

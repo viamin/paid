@@ -399,20 +399,20 @@ RSpec.describe Prompt, type: :model do
     end
     let(:fallback_template) { Activities::RunAgentActivity::FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT }
 
-    it "seeded template requires each clarifying question to stand on its own", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
-      expect(seed_template).to include("stands on its own")
-      expect(seed_template).to match(/why you are asking and what\s+you found in the repository/)
-      expect(seed_template).to include("Reference the relevant code, issue, or doc")
-      expect(seed_template).to include("name the options")
-      expect(seed_template).to include("where the issue sits in the roadmap")
+    it "seeded template requires structured standalone clarifying questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
+      expect(seed_template).to include("concise and standalone")
+      expect(seed_template).to include('"questions"')
+      expect(seed_template).to include('"evidence_references"')
+      expect(seed_template).to include("Keep background, reasons")
+      expect(seed_template).to include("recommendation is an aid")
     end
 
-    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires self-contained questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
-      expect(fallback_template).to include("stands on its own")
-      expect(fallback_template).to match(/why you are asking and what\s+you found in the repository/)
-      expect(fallback_template).to include("Reference the relevant code, issue, or doc")
-      expect(fallback_template).to include("name the options")
-      expect(fallback_template).to include("where the issue sits in the roadmap")
+    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires structured standalone questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
+      expect(fallback_template).to include("concise and standalone")
+      expect(fallback_template).to include('"questions"')
+      expect(fallback_template).to include('"evidence_references"')
+      expect(fallback_template).to include("Keep background, reasons")
+      expect(fallback_template).to include("recommendation is an aid")
     end
 
     it "seeded template matches the code fallback template exactly" do

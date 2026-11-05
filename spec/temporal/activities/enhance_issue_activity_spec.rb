@@ -288,6 +288,27 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.last_analyzer_sufficient_context).to be(false)
     end
 
+    # @spec ISSUE-ENHANCEMENT-020
+    it "persists the structured question payload for the inbox" do
+      question = {
+        question: "Which cache should exports use?",
+        choices: [ { label: "Redis", detail: "Shared cache" }, { label: "Postgres", detail: "Persistent rows" } ],
+        recommendation: "Redis",
+        rationale: "Existing workers already use it.",
+        examples: [ "Nightly exports" ],
+        evidence_references: [ "app/jobs/export_job.rb:12" ]
+      }
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: "## Clarifying questions\n1. Which cache should exports use?",
+        questions: [ question ]
+      }.to_json)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.needs_input_questions).to eq([ question.deep_stringify_keys ])
+    end
+
     # @spec AUTOMATION-PHASES-008
     it "posts clarifying questions without completing the issue-preparation grant" do
       grant = create(:work_item_continuation_grant, project:, issue:,

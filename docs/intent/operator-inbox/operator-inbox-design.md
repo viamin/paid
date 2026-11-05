@@ -215,15 +215,23 @@ the numbered questions in the latest enhancement comment — the
 `## Clarifying questions` heading — as `context_markdown`, surfaced by
 `ClarifyingQuestions::Load#context_markdown` fetching and memoizing
 `issue_comments` in the separate supplementary request. The inbox detail pane
-(`OPERATOR-INBOX-011`) renders that markdown beside the answer form on `lg+`
-viewports (two-column grid, sticky scrollable sidebar) and inside a
-collapsible native `<details>` disclosure above the questions on smaller
-viewports, via the shared `shared/markdown_text` partial in block mode.
+(`OPERATOR-INBOX-011`) renders that markdown in a collapsed native `<details>`
+disclosure after the question and answer control on every viewport, via the
+shared `shared/markdown_text` partial in block mode. This keeps the decision
+surface first while retaining keyboard and screen-reader access to context.
 The panel hides gracefully when no context is fetchable (no GitHub
 credential, transient GitHub failure, or questions sourced from the local
 `needs_input_questions` snapshot rather than a fetched comment); the
 existing `View Issue` / `View PR` link remains so the operator can still
 read the comment directly on GitHub.
+
+Clarifying-question payloads normalize both legacy strings and structured
+records. A structured record has `question`, `choices`, `recommendation`,
+`rationale`, `examples`, and `evidence_references` fields. The Inbox never
+derives a recommendation from a legacy string: only an explicitly supplied
+recommendation accompanied by evidence references is shown. Rationale,
+examples, and references stay in a collapsed disclosure; the short question,
+choices, and existing freeform answer route remain the primary interaction.
 
 ### `plan_review`
 

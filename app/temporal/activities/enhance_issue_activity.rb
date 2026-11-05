@@ -88,7 +88,7 @@ module Activities
     end
 
     # Build comment, post, apply labels, complete run.
-    # @spec ISSUE-ENHANCEMENT-006 @spec ISSUE-ENHANCEMENT-019
+    # @spec ISSUE-ENHANCEMENT-006 @spec ISSUE-ENHANCEMENT-019 @spec ISSUE-ENHANCEMENT-020
     def finish_enhance_issue(agent_run, project, issue, client, parsed)
       max_rounds_reached = !parsed[:sufficient_context] && max_rounds_reached?(project, issue, agent_run)
       parsed = stop_after_max_rounds(parsed, project, issue, agent_run)
@@ -733,6 +733,8 @@ module Activities
     def needs_input_questions(parsed, comment_body)
       return [] if parsed[:sufficient_context]
 
+      return parsed[:questions] if structured_questions?(parsed[:questions])
+
       ClarifyingQuestions::Parse.call(comment_body:)
     end
 
@@ -742,6 +744,12 @@ module Activities
 
     def sync_needs_input_questions(issue, questions)
       issue.update!(needs_input_questions: questions.presence)
+    end
+
+    def structured_questions?(questions)
+      Array(questions).any? && Array(questions).all? do |question|
+        question.is_a?(Hash) && ClarifyingQuestions::QuestionPayload.submission_text(question).present?
+      end
     end
 
     # The round cap bounds *automatic* re-evaluation (ISSUE-ENHANCEMENT-011).

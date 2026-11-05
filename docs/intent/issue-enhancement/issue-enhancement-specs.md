@@ -178,13 +178,7 @@
 
 - [x] **ISSUE-ENHANCEMENT-014** — When issue enhancement asks clarifying
   questions, the system SHALL require every question to stand on its own so a
-  reader without deep project knowledge can understand and answer it. Each
-  question SHALL open with one or two sentences of background explaining why
-  the agent is asking and what it found in the repository, SHALL reference the
-  relevant code, issue, or doc when one exists, SHALL name the options being
-  asked about when the question could be read more than one way, and SHALL
-  note where the issue fits in the roadmap (dependencies, follow-up work)
-  when it affects the answer (#3841).
+  reader without deep project knowledge can understand and answer it.
   *Tests:* `spec/models/agent_run_spec.rb#prompt_for_enhance_issue`,
   `spec/temporal/activities/run_agent_activity_spec.rb#augment_prompt_for_enhance_issue_goal`,
   `spec/db/prompt_seeds_spec.rb` (`goal.enhance_issue self-contained questions coupling`),
@@ -193,6 +187,19 @@
   `app/temporal/activities/run_agent_activity.rb#FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT`,
   `db/seeds/prompts.rb` (`goal.enhance_issue`),
   enhancement question-context prompt synchronization migration.
+
+- [x] **ISSUE-ENHANCEMENT-020** — When issue enhancement requests human input,
+  the agent output SHALL provide a structured question payload with distinct
+  `question`, `choices`, `recommendation`, `rationale`, `examples`, and
+  `evidence_references` fields. The question label SHALL be concise and
+  standalone; supporting explanation SHALL not be embedded in it. A
+  recommendation SHALL be omitted unless its evidence references directly
+  support it, and SHALL remain an aid rather than a confirmed decision.
+  *Tests:* `spec/services/clarifying_questions/question_payload_spec.rb`,
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/temporal/activities/run_agent_activity.rb`,
+  `app/temporal/activities/enhance_issue_activity.rb`,
+  `app/services/clarifying_questions/question_payload.rb`.
 
 - [x] **ISSUE-ENHANCEMENT-018** — When a clarifying question has a short,
   enumerable set of answers, the `goal.enhance_issue` prompt SHALL instruct
