@@ -1,11 +1,11 @@
-# RDR-079: Partial-Closeout Lane Read Model
+# RDR-081: Partial-Closeout Lane Read Model
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
 ## Metadata
 
 - **Date**: 2026-10-28
-- **Status**: Draft — proposed, pending owner ratification (#4558)
+- **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implementation pending
 - **Type**: Architecture
 - **Related RDRs**: [RDR-074](RDR-074-project-readiness.md) (the persisted project-readiness snapshot this read model mirrors), [RDR-032](RDR-032-eager-queue-seeding.md) (auto-pick admission authority)
 - **Related Issues**: #4558 (this decision), #4120 (partial-closeout recovery umbrella), #4119 (gap ownership), #4556 (eligible-scope query optimization)
@@ -66,7 +66,7 @@ The three consumers also repeat each other's work: for 20 projects the badge
 issued 560 statements and the filter matrix 563, each independently issuing the
 same 40 admission evaluations.
 
-## Decision (proposed)
+## Decision
 
 Paid SHALL read the lane's membership from a persisted, display-only stall
 projection instead of evaluating live admission on the Inbox request path.
@@ -252,9 +252,10 @@ radius to operator experience rather than to unauthorized work. The projection
 also adds a recomputation path that must cover every admission input, which is
 the same coverage Option C would need and the main implementation risk.
 
-## Open owner decision
+## Owner decision and implementation state
 
-This RDR is **proposed, not accepted**. The owner must choose between Option A
-(status quo), Option B (this proposal), and Option C (per-project cache) before
-implementation begins. Until then the lane keeps live admission, no projection
-table exists, and no runtime behavior changes.
+The owner chose Option B on 2026-11-05. This accepts the display-only read
+model while keeping live admission authoritative at preflight, dequeue, and run
+start. The lane continues using live admission until the projection is
+implemented and the rollout guard is enabled; accepting this RDR does not
+create a projection table or change runtime behavior.

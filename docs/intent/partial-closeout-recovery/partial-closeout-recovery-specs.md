@@ -222,8 +222,8 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-037** — Pending the owner decision recorded for #4558,
-  when the partial-closeout Inbox lane reads a persisted stall projection, the
+- [ ] **PARTIAL-CLOSEOUT-037** — When the partial-closeout Inbox lane reads the
+  accepted persisted stall projection, the
   system SHALL recompute that projection outside Inbox rendering whenever an
   issue's closeout evidence, blocking runs, continuation request, explicit
   holds, or admission-relevant runner configuration change; SHALL remove a
@@ -237,14 +237,14 @@
   projection SHALL be tenant-isolated and SHALL never grant a continuation or
   mutate `paid_state`.
   *Issue:* #4558.
-  *Proposed RDR:* `docs/rdrs/RDR-079-partial-closeout-lane-read-model.md`.
+  *RDR:* `docs/rdrs/RDR-081-partial-closeout-lane-read-model.md`.
   *Proposed code:* `Issues::StalledCloseoutProjection`, its recomputation job,
   `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`.
   *Proposed tests:* projection recomputation and invalidation, stale-row
   removal, failure retention, and tenant isolation.
 
-- [ ] **PARTIAL-CLOSEOUT-038** — Pending the owner decision recorded for #4558,
-  the partial-closeout lane's list, nav-badge count, and filter matrix SHALL
+- [ ] **PARTIAL-CLOSEOUT-038** — The partial-closeout lane's list, nav-badge
+  count, and filter matrix SHALL
   read one shared projection reader and SHALL report the same lane membership
   for the same operator; for each project with a successful projection
   checkpoint, an Inbox index render SHALL evaluate no
@@ -254,7 +254,7 @@
   operator action taken from a projected lane entry SHALL still be decided by
   the live scoped continuation preflight.
   *Issue:* #4558.
-  *Proposed RDR:* `docs/rdrs/RDR-079-partial-closeout-lane-read-model.md`.
+  *RDR:* `docs/rdrs/RDR-081-partial-closeout-lane-read-model.md`.
   *Proposed code:* `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`,
   `Issues::StalledCloseoutProjection`.
   *Proposed tests:* a Queue/Count/Availability agreement spec and an Inbox
