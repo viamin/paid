@@ -222,14 +222,14 @@ module Containers
     end
 
     def test_file_patterns
-      @test_file_patterns ||= Tdd::WriteGuard::TEST_PATH_PREFIXES.map { |prefix| "#{prefix}*" }.join("|")
+      @test_file_patterns ||= (Tdd::WriteGuard::TEST_PATH_PREFIXES.map { |prefix| "#{prefix}*" } + [ "Tests/*", "*/Tests/*" ]).join("|")
     end
 
     def allowed_test_writing_patterns
       @allowed_test_writing_patterns ||= shell_patterns(
         prefixes: Tdd::WriteGuard::TEST_PATH_PREFIXES + Tdd::WriteGuard::LID_DOC_PREFIXES,
-        exact_paths: Tdd::WriteGuard::LID_DOC_EXACT_PATHS
-      )
+        exact_paths: Tdd::WriteGuard::LID_DOC_EXACT_PATHS + [ AgentRuns::VerificationPrompt::RESULT_PATH ]
+      ) + "|Tests/*|*/Tests/*"
     end
 
     def shell_patterns(prefixes:, exact_paths: [])

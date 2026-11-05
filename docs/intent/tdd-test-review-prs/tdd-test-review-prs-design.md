@@ -63,7 +63,8 @@ and the run-scoped file boundary checks in
 ## Test outline rendering
 
 `PullRequests::ReviewSurface` reads the changed test files from the run's git
-diff and renders a documentation-style summary without test bodies:
+diff, including nested Swift `Tests/` directories, and renders a
+documentation-style summary without test bodies:
 
 - RSpec-style suites (`describe`, `context`, `feature`) become nested headings.
 - RSpec examples (`it`, `example`, `specify`, `scenario`) become leaf lines.

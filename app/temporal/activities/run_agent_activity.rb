@@ -372,8 +372,8 @@ module Activities
             # different models) remain distinguishable in UI and retry logic.
             agent_run.update!(final_runner: attempt_label)
 
-            # A successful attempt made progress on the issue. Clear any prior
-            # retry-cap abandonment so the issue is auto-pickable again.
+            # A successful non-PR attempt made progress on the issue. PR runs
+            # retain the hold until publication completes successfully.
             # Clearing also resets the per-provider failure window (see
             # Issue#clear_runner_retry_abandonment!): prior failures that
             # tripped the cap no longer count toward it, so the next dispatch
@@ -1517,7 +1517,11 @@ module Activities
       )
     end
 
+    # @spec EAGER-QUEUE-010
     def clear_issue_runner_retry_abandonment(agent_run)
+      # PR runs must pass the write guard and complete PR publication first.
+      return if agent_run.create_pr_goal?
+
       issue = agent_run.issue
       return unless issue&.runner_retry_abandoned?
 

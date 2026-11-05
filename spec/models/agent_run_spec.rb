@@ -1762,6 +1762,16 @@ RSpec.describe AgentRun do
     end
 
     describe "#complete!" do
+      it "clears a retry hold only after create_pr completes" do # @spec EAGER-QUEUE-010
+        issue = create(:issue)
+        issue.abandon_due_to_runner_retry_cap!(reason: "Repeated PR failures", cap: 3, runner_keys: [])
+        agent_run = create(:agent_run, issue: issue, project: issue.project, goal: "create_pr", status: "running")
+
+        agent_run.complete!(pr_url: "https://github.com/example/repo/pull/42", pr_number: 42)
+
+        expect(issue.reload).not_to be_runner_retry_abandoned
+      end
+
       it "sets status to completed with results and duration", :aggregate_failures do
         started_time = 10.minutes.ago
         agent_run = create(:agent_run, status: "running", started_at: started_time)

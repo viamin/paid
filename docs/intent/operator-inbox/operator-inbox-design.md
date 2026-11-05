@@ -335,7 +335,8 @@ split. `waiting_since` is
 `runner_retry_abandoned_at`; both producers stamp the timestamp on
 abandonment, so there are no legacy nulls to worry about. The clearing path is
 the existing `clear_runner_retry_abandonment!` (called from
-`RunAgentActivity` on a successful run), the same producer the abandonment
+`RunAgentActivity` after a successful non-PR runner or from `AgentRun#complete!`
+after PR publication), the same producer the abandonment
 flag already has — no inbox-side controller change is needed, just the cache
 invalidation that `Issue#inbox_count_cache_invalidation_needed?` adds for
 `saved_change_to_runner_retry_abandoned_at?`.

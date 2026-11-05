@@ -13,8 +13,9 @@
   *Test:* `spec/temporal/activities/create_pull_request_activity_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
 
-- [x] **TDD-PR-002** — Any PR whose diff includes tests SHALL include a
-  `## Test Outline` section in the PR body.
+- [x] **TDD-PR-002** — Any PR whose diff includes tests, including Swift tests
+  under a nested `Tests/` directory, SHALL include a `## Test Outline` section
+  in the PR body.
   *Code:* `app/services/pull_requests/review_surface.rb`.
   *Test:* `spec/services/pull_requests/review_surface_spec.rb`.
 

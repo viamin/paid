@@ -33,6 +33,7 @@ RSpec.describe AgentRuns::VerificationPrompt do
     expect(section.content).to include("http://localhost:3000")
     expect(section.content).to include("bundle exec bin/rails server -b 0.0.0.0 -p 3000")
     expect(section.content).to include(described_class::RESULT_PATH)
+    expect(section.content).to include("Keep this run-local file out of your Git commit")
     expect(section.content).to include("--data-binary @-")
     expect(section.content).to include("application-diagnostics")
     expect(section.fallback_result).to be_nil
@@ -53,6 +54,7 @@ RSpec.describe AgentRuns::VerificationPrompt do
     section = described_class.call(agent_run:, repo_path:)
 
     expect(section.content).to include("# Acceptance Criterion Evidence")
+    expect(section.content).to include("Keep this run-local file out of your Git commit")
     expect(section.content).to include('"acceptance_criteria"')
     expect(section.content).not_to include("# Interactive Verification")
     expect(section.fallback_result).to be_nil

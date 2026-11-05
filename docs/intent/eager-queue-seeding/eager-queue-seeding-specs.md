@@ -75,7 +75,9 @@
 - [x] **EAGER-QUEUE-007** — When a failed run makes an issue re-enter the
   queue, the system SHALL delay re-enqueue by Sidekiq's exponential curve
   `(n**4) + 15 + jitter` seconds (n = consecutive auto-pick failure count
-  minus one), bounded so the count saturates at 50, so first retries are
+  for the latest failed goal minus one), bounded so the count saturates at 50.
+  Successful runs for another goal SHALL not reset the failure count. Clearing
+  retry abandonment SHALL start a new backoff window, so first retries are
   fast and persistently broken issues taper out rather than cycling forever.
   Re-enqueues following a non-`failed` state transition SHALL be immediate.
   *Code:* `Issue#auto_pick_reenqueue_delay`,
@@ -83,6 +85,20 @@
   `Issue#enqueue_self_if_became_auto_pick_eligible`,
   `Issues::ReenqueueEligibleJob`.
   *Test:* `spec/models/issue_spec.rb`.
+
+## Failed-run retry cap
+
+- [x] **EAGER-QUEUE-010** — When the number of consecutive failed or
+  no-output auto-picked runs for one issue and goal reaches the project's
+  effective issue retry cap, the issue SHALL enter retry-limited abandonment
+  instead of scheduling another automatic run, even when each runner attempt
+  succeeded or runs for another goal completed between failures. Clearing
+  retry abandonment SHALL reset this failure window. For `create_pr`, a
+  successful runner attempt SHALL not clear abandonment before PR publication
+  completes; a completed PR run SHALL clear it.
+  *Code:* `Issue#enqueue_self_if_became_auto_pick_eligible`,
+  `RunAgentActivity#clear_issue_runner_retry_abandonment`, `AgentRun#complete!`.
+  *Test:* `spec/models/issue_spec.rb`, `spec/models/agent_run_spec.rb`.
 
 ## Duplicate-PR prevention
 

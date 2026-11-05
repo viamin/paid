@@ -5,7 +5,7 @@ module Tdd
   #
   # | Phase        | Allowed changes             | Forbidden changes           |
   # |--------------|------------------------------|------------------------------|
-  # | test_writing | tests, applicable LID docs   | implementation code         |
+  # | test_writing | tests, LID docs, run evidence | implementation code         |
   # | test_fixing  | implementation code          | tests, unless the run has   |
   # |              |                               | returned the PR to review   |
   # | refactor     | implementation code          | tests (no exception)        |
@@ -20,10 +20,9 @@ module Tdd
   #   result.forbidden_files # => ["app/models/widget.rb"]
   #   result.reason          # => "test-writing runs may not change implementation code"
   class WriteGuard
-    # Mirrors PullRequests::ReviewSurface::TEST_FILE_PATTERN's test-path
-    # convention so the guard and the rest of the pipeline agree on what
-    # counts as a test file.
+    # @spec TDD-GUARD-003
     TEST_PATH_PREFIXES = %w[spec/ test/ tests/ .ephemeral-tests/].freeze
+    NESTED_TEST_DIRECTORY = %r{(?:\A|/)Tests/}.freeze
 
     # Docs a test_writing run may touch alongside tests: LID artifacts and
     # the instruction files that carry the "## LID" block. Mirrors
@@ -79,11 +78,15 @@ module Tdd
     end
 
     def implementation_files
-      changed_files.reject { |path| test_file?(path) || lid_doc?(path) }
+      changed_files.reject { |path| test_file?(path) || lid_doc?(path) || verification_result?(path) }
     end
 
     def test_file?(path)
-      TEST_PATH_PREFIXES.any? { |prefix| path.start_with?(prefix) }
+      TEST_PATH_PREFIXES.any? { |prefix| path.start_with?(prefix) } || NESTED_TEST_DIRECTORY.match?(path)
+    end
+
+    def verification_result?(path)
+      path == AgentRuns::VerificationPrompt::RESULT_PATH
     end
 
     def lid_doc?(path)
