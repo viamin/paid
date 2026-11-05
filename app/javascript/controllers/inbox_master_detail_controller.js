@@ -10,7 +10,7 @@ import { Controller } from "@hotwired/stimulus"
 // tweak to the shared active-row treatment lives in one place.
 // @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-003A @spec LIST-DETAIL-003
 export default class extends Controller {
-  static targets = ["list", "detailSection", "row"]
+  static targets = ["list", "detailSection", "row", "copyStatus"]
   static values = { detailOpen: Boolean }
 
   // @spec OPERATOR-INBOX-003A
@@ -44,6 +44,22 @@ export default class extends Controller {
     if (placeholder) placeholder.textContent = "Loading item…"
     this.highlightRow(event.currentTarget)
     this.detailOpenValue = true
+  }
+
+  // @spec OPERATOR-INBOX-026
+  async copyLink(event) {
+    const path = event.currentTarget.dataset.inboxMasterDetailCopyLinkUrl
+    if (!path) return
+
+    const url = new URL(path, window.location.origin).toString()
+
+    try {
+      await window.navigator.clipboard.writeText(url)
+      this.announceCopyResult("Link copied.")
+    } catch {
+      this.copyWithSelection(url)
+      this.announceCopyResult("Link copied.")
+    }
   }
 
   close() {
@@ -89,6 +105,23 @@ export default class extends Controller {
       // gray hover affordance and the just-deselected row doesn't lose it.
       row.classList.toggle("hover:bg-gray-50", !selected)
     })
+  }
+
+  copyWithSelection(url) {
+    const selection = document.createElement("textarea")
+    selection.value = url
+    selection.setAttribute("readonly", "")
+    selection.classList.add("sr-only")
+    document.body.append(selection)
+    selection.select()
+
+    const copied = document.execCommand("copy")
+    selection.remove()
+    if (!copied) throw new Error("Clipboard copy failed")
+  }
+
+  announceCopyResult(message) {
+    if (this.hasCopyStatusTarget) this.copyStatusTarget.textContent = message
   }
 
   show(element) {
