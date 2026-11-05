@@ -1,75 +1,17 @@
 {
   "status": "passed",
-  "summary": "New projects remain read-only until an explicit Read & write opt-in. The failing system scenario was synchronized with the asynchronously loaded initial Inbox detail; lint and LID coherence passed, but the local system rerun was unavailable because this workspace exposed no database service.",
+  "summary": "The complete dependency audit passed locally after updating Rails to 8.1.4.1; Bundler and Yarn reported no vulnerabilities.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
       "status": "passed",
       "verification": {
-        "kind": "unit_or_service_test",
-        "references": [
-          { "locator": "spec/requests/projects_spec.rb:624", "result": "passed: connected project creation forced read_only and made no label-list or label-create request" },
-          { "locator": "spec/services/projects/create_blank_spec.rb:107", "result": "passed: blank-project bootstrap issue was created without labels" },
-          { "locator": "spec/services/projects/create_blank_spec.rb:154", "result": "passed: blank-project creation remained read_only and did not provision labels" }
-        ]
-      }
-    },
-    {
-      "id": "AC-2",
-      "status": "passed",
-      "verification": {
-        "kind": "unit_or_service_test",
-        "references": [
-          { "locator": "spec/requests/projects_spec.rb:2469", "result": "passed: enabling Read & write required explicit transition confirmation" },
-          { "locator": "spec/requests/projects_spec.rb:2476", "result": "passed: a confirmed transition persisted read_write before provisioning standard labels" },
-          { "locator": "spec/requests/projects_spec.rb:2485", "result": "passed: provisioning errors preserved read_write and returned an actionable Sync Labels to GitHub retry" }
-        ]
-      }
-    },
-    {
-      "id": "AC-3",
-      "status": "passed",
-      "verification": {
-        "kind": "unit_or_service_test",
-        "references": [
-          { "locator": "spec/requests/projects_spec.rb:2500", "result": "passed: changing between non-writing modes did not provision labels" },
-          { "locator": "spec/requests/projects_spec.rb:2509", "result": "passed: manual Sync Labels to GitHub retried provisioning idempotently for read_write" }
-        ]
-      }
-    },
-    {
-      "id": "AC-4",
-      "status": "passed",
-      "verification": {
-        "kind": "unit_or_service_test",
-        "references": [
-          { "locator": "spec/models/tenant_setting_spec.rb:7", "result": "passed: a tenant read_write default could not opt a newly created project into writes" },
-          { "locator": "spec/models/tenant_setting_spec.rb:14", "result": "passed: an explicitly supplied project mode remained selected at model validation" },
-          { "locator": "spec/requests/projects_spec.rb:2462", "result": "passed: project settings explained the initial read-only state and explicit Read & write opt-in" }
-        ]
-      }
-    },
-    {
-      "id": "AC-5",
-      "status": "passed",
-      "verification": {
         "kind": "human_or_external_evidence",
         "references": [
-          { "locator": "bundle exec rspec spec/models/tenant_setting_spec.rb spec/services/projects/create_blank_spec.rb spec/requests/projects_spec.rb", "result": "passed: 422 examples, 0 failures" },
-          { "locator": "bin/lint", "result": "passed: RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb completed with no failing offenses" },
-          { "locator": "bin/coherence-check.mjs", "result": "passed: exit code 0; 5 reverse orphans, 141 uncovered specs, 0 arrow reference issues, 17 stale/needs-work arrows, 1167 untagged code files, and 939 untagged test files remain advisory repository drift" }
-        ]
-      }
-    },
-    {
-      "id": "AC-CI-SYSTEM",
-      "status": "not_run",
-      "verification": {
-        "kind": "permanent_system_test",
-        "references": [
-          { "locator": "spec/system/inbox_supplement_spec.rb:84", "result": "updated: waits for the asynchronously loaded initial detail before making both displayed entries stale" },
-          { "locator": "https://github.com/viamin/paid/actions/runs/41733673353/job/126257200147", "result": "external failure evidence: the prior run clicked during the initial frame request and raised Turbo AbortError" },
-          { "locator": "local DATABASE_URL", "result": "not run: DATABASE_URL and PostgreSQL host variables were absent and no local PostgreSQL service was listening" }
+          {
+            "locator": "bin/audit",
+            "result": "passed locally: secret scan, Brakeman, Bundler audit, and Yarn audit completed successfully; both package audits reported zero vulnerabilities"
+          }
         ]
       }
     }
