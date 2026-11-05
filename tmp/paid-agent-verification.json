@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "summary": "The security audit completes successfully on the PR head.",
+  "summary": "RDR-079 and its RDR index entry remain intact after merging origin/main; documentation structural validation passed.",
   "acceptance_criteria": [
     {
       "id": "AC-1",
@@ -9,8 +9,16 @@
         "kind": "human_or_external_evidence",
         "references": [
           {
-            "locator": "bin/audit",
-            "result": "passed locally on 2026-11-05: secret scan, Brakeman, Bundler audit, and Yarn audit all succeeded"
+            "locator": "docs/rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md:1",
+            "result": "RDR-079 documents the proposed provider-neutral work-item model, Linear-first rollout, GitHub migration, retained pull-request artifacts, rollout guard, implementation phases, and validation scenarios."
+          },
+          {
+            "locator": "docs/rdrs/README.md:217",
+            "result": "The RDR index links RDR-079 with Draft status and P1 priority."
+          },
+          {
+            "locator": "bin/coherence-check.mjs",
+            "result": "passed locally after the merge."
           }
         ]
       }
