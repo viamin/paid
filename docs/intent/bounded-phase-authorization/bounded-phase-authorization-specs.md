@@ -25,9 +25,11 @@ claims remain proposed until their admission and reassessment paths land.
   repair using the existing run permission and SHALL require the stronger
   merge-delegation permission for merge. Product decisions, feature approval,
   release, deployment, and setting enablement SHALL never be delegable
-  delivery actions.
+  delivery actions. Revocation SHALL pass the same action-specific permission
+  gate as authorization.
   *Verified by:* `spec/models/bounded_delegated_action_spec.rb` and
-  `spec/services/automation/authorize_bounded_action_spec.rb`.
+  `spec/services/automation/authorize_bounded_action_spec.rb` and
+  `spec/services/automation/revoke_bounded_action_spec.rb`.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-001** — When an authorized actor explicitly
   confirms a bounded authorization, the system SHALL record the actor, tenant,

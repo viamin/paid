@@ -19,7 +19,10 @@ dependencies, mentions, and unrelated PRs never extend it.
 The initial implementation slice is the action-specific durable
 `BoundedDelegatedAction` contract. It records bounded evidence and an
 account-activity audit event before later admission and lifecycle enforcement
-composes it with `Automation::EffectivePolicy`.
+composes it with `Automation::EffectivePolicy`. Authorization and revocation
+are service write boundaries (`Automation::AuthorizeBoundedAction`,
+`Automation::RevokeBoundedAction`) that delegate permission checks to the
+project policy; the model stays validation-only.
 
 The authorization stores its author, consent projection, permitted actions,
 intent/acceptance references, policy signature, lifecycle timestamps, and

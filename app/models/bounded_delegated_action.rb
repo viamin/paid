@@ -41,6 +41,10 @@ class BoundedDelegatedAction < ApplicationRecord
     status == "revoked"
   end
 
+  # Lifecycle write only: caller surfaces reach this through
+  # Automation::RevokeBoundedAction, which enforces the action-specific
+  # project policy before revocation. The model still fails closed on
+  # cross-account revokers via revoker_belongs_to_account.
   def revoke!(user:)
     return false unless status == "active"
 
