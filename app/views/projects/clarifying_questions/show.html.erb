@@ -72,6 +72,15 @@
               </span>
             </div>
             <h3 class="text-lg font-medium text-gray-900 mb-4"><%= render "shared/markdown_text", content: payload[:question], tag: :span, class: "text-lg font-medium text-gray-900" %></h3>
+            <%# @spec OPERATOR-INBOX-025 — same evidence-gated recommendation and
+                collapsed supporting detail the inbox detail form renders, so
+                operators answering from the Needs Input queue path see the
+                grounded recommendation, rationale, examples, and evidence. %>
+            <% if payload[:recommendation].present? %>
+              <p class="mb-4 text-sm text-indigo-700" data-testid="standalone-question-recommendation">
+                Paid recommends: <%= payload[:recommendation] %>
+              </p>
+            <% end %>
 
             <%= f.hidden_field "questions[]", value: payload[:question], id: "question_#{index}" %>
 
@@ -88,6 +97,15 @@
                     step_index: index,
                     action: "input->clarifying-questions#updateProgress"
                   } %>
+
+            <% if payload[:rationale].present? || payload[:examples].any? || payload[:evidence_references].any? %>
+              <details class="mt-3 text-sm text-gray-600" data-testid="standalone-question-details">
+                <summary class="cursor-pointer font-medium text-gray-700">Why Paid is asking</summary>
+                <% if payload[:rationale].present? %><p class="mt-2"><%= payload[:rationale] %></p><% end %>
+                <% if payload[:examples].any? %><p class="mt-2">Examples: <%= payload[:examples].join(", ") %></p><% end %>
+                <% if payload[:evidence_references].any? %><p class="mt-2">Sources: <%= payload[:evidence_references].join(", ") %></p><% end %>
+              </details>
+            <% end %>
 
             <div class="mt-4 flex items-center justify-between">
               <div>

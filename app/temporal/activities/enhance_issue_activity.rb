@@ -765,7 +765,38 @@ module Activities
         structured_question_count: parsed[:questions].size,
         posted_question_count: posted_questions.size
       )
-      parsed[:questions] = posted_questions
+      parsed[:questions] = reconciled_questions(parsed[:questions], posted_questions)
+    end
+
+    # The posted comment is the contract the inbox answers against, so a
+    # structured payload that disagrees with it cannot be stored verbatim.
+    # But the usual disagreement is confined to the choice options — the same
+    # agent writes `choices[].detail` and the comment marker line
+    # independently, and a one-character drift must not discard the
+    # recommendation, rationale, examples, and evidence_references, which are
+    # independent of the option details. When the question labels line up,
+    # keep the structured records and let the posted markers supply the
+    # answer options; only a label-level mismatch (different questions,
+    # order, or count) discards the payload wholesale.
+    # @spec ISSUE-ENHANCEMENT-020
+    def reconciled_questions(structured_questions, posted_questions)
+      return posted_questions unless question_labels(structured_questions) == question_labels(posted_questions)
+
+      structured_questions.zip(posted_questions).map { |question, posted| merge_posted_choices(question, posted) }
+    end
+
+    def merge_posted_choices(question, posted)
+      choices = ClarifyingQuestions::Choices.call(question: posted)
+      return question.except(:choices, :choice_type) unless choices
+
+      question.merge(
+        choices: choices[:options].map { |option| { label: option[:label], detail: option[:text] } },
+        choice_type: choices[:type].to_s
+      )
+    end
+
+    def question_labels(questions)
+      question_contracts(questions).map { |contract| contract[:question] }
     end
 
     def question_contracts(questions)

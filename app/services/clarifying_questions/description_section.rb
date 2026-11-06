@@ -156,13 +156,16 @@ module ClarifyingQuestions
       [ response, new_body ]
     end
 
-    # Computes the stable question-set digest for a list of normalized
-    # question strings. The digest is what links a questions section to its
-    # matching answers section without relying on `comment.created_at`
-    # timestamps (#4236, `QUIET-MODE-011`). The exact shape is private;
-    # callers should treat it as an opaque token.
+    # Computes the stable question-set digest for a list of questions. The
+    # digest is what links a questions section to its matching answers
+    # section without relying on `comment.created_at` timestamps (#4236,
+    # `QUIET-MODE-011`). Structured records and their label-only renderings
+    # must produce the same digest — the inbox form answers from the
+    # structured label while the description section carries the posted
+    # marker lines — so the input normalizes through submission text. The
+    # exact shape is private; callers should treat it as an opaque token.
     def digest_for(questions)
-      joined = Array(questions).map { |question| question.to_s.strip }.join("\n")
+      joined = ClarifyingQuestions::QuestionPayload.submission_texts(questions).join("\n")
       Digest::SHA256.hexdigest(joined)[0, 16]
     end
 

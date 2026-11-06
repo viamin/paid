@@ -69,6 +69,69 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
   end
 
   describe ".call" do
+    context "when a quiet-mode description section carries the posted marker lines" do
+      before do
+        allow(project).to receive(:quiet_mode?).and_return(true)
+      end
+
+      let(:structured_question) { structured_scope_question }
+      let(:digest) { ClarifyingQuestions::DescriptionSection.digest_for([ "Which scope should ship first?" ]) }
+      let(:issue_body) do
+        <<~BODY
+          Original issue body
+
+          <!-- paid:clarifying-questions -->
+          ## Clarifying questions
+
+          <!-- paid:clarifying-questions-digest:#{digest} -->
+          1. Which scope should ship first?
+             - ( ) API) Ship the API first
+             - ( ) UI) Ship the UI first
+          <!-- /paid:clarifying-questions -->
+        BODY
+      end
+      let(:issue) do
+        double(
+          id: 42,
+          body: issue_body,
+          github_number: 1964,
+          github_updated_at: 2.minutes.ago,
+          needs_input_questions: [ structured_question ],
+          needs_input?: true
+        )
+      end
+
+      # @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+      it "reconciles the description channel with the stored structured payload" do
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ structured_question ])
+      end
+
+      it "treats a body answer to the structured set as complete and ingests it" do
+        answered_body = issue_body + <<~BODY
+
+          <!-- paid:clarifying-answers -->
+          ## Clarifying question answers
+
+          <!-- paid:clarifying-answers-digest:#{digest} -->
+          **Q1: Which scope should ship first?**
+          **A1:** API
+          <!-- /paid:clarifying-answers -->
+        BODY
+        allow(issue).to receive(:body).and_return(answered_body)
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(true)
+        expect(ClarifyingQuestions::ClearNeedsInput).to receive(:call).with(project: project, issue: issue)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+        expect(ClarifyingQuestions::IngestAnswers).to have_received(:call).with(
+          project: project,
+          issue: issue,
+          issue_body: answered_body
+        )
+      end
+    end
+
     context "when the issue body already contains clarifying questions" do
       let(:issue_body) do
         <<~COMMENT

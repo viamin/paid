@@ -73,9 +73,15 @@ module ClarifyingQuestions
       section = DescriptionSection.parse_answers(@issue_body)
       return empty_result unless section
 
-      current_questions = DescriptionSection.parse_questions(@issue_body).questions
-      current_questions = Array(issue.respond_to?(:needs_input_questions) ? issue.needs_input_questions : []) if current_questions.empty?
-      current_questions = current_questions.presence || []
+      # The description channel parses the posted marker lines back into
+      # folded strings while the answers reference the structured labels the
+      # form rendered — reconcile with the stored records (identity-guarded)
+      # so the pairs match, exactly like the read path.
+      # @spec OPERATOR-INBOX-025
+      current_questions = QuestionPayload.reconcile(
+        comment_questions: DescriptionSection.parse_questions(@issue_body).questions,
+        stored_questions: stored_questions
+      ).presence || stored_questions
       parsed_pairs = AnswerPairs.parse(section[:inner].to_s)
       return empty_result unless AnswerPairs.questions_match?(current_questions, parsed_pairs)
 
@@ -83,6 +89,12 @@ module ClarifyingQuestions
         qa_pairs: pair_qa(current_questions, parsed_pairs),
         answer_comment: nil
       )
+    end
+
+    def stored_questions
+      return [] unless issue.respond_to?(:needs_input_questions)
+
+      Array(issue.needs_input_questions)
     end
 
     def empty_result

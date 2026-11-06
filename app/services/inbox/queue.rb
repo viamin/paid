@@ -317,13 +317,20 @@ module Inbox
     # of every queue consumer until reconciliation clears the stale state.
     # @spec INBOX-FOUNDATION-010
     def self.questions_for(issue)
+      stored = Array(issue.needs_input_questions)
       questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
-      return questions if questions.any?
+      # The body channel (quiet-mode descriptions, #4236) parses posted marker
+      # lines into folded strings; reconcile with the stored structured
+      # contract — identity-guarded, so the stored records only win when the
+      # question labels match — or the inbox would render raw marker text
+      # instead of the structured payload.
+      # @spec OPERATOR-INBOX-025
+      return ClarifyingQuestions::QuestionPayload.reconcile(comment_questions: questions, stored_questions: stored) if questions.any?
 
       # create_feature runs persist their clarifying questions locally when
       # the needs-input comment is posted, so the dashboard renders without a
       # per-issue GitHub API round-trip (RDR-053).
-      Array(issue.needs_input_questions)
+      stored
     end
 
     # Shared lane computation so the queue list and the nav badge count can

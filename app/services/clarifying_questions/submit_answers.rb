@@ -94,10 +94,29 @@ module ClarifyingQuestions
     # caller from clearing the newer set's needs-input state.
     # @spec QUIET-MODE-010 @spec QUIET-MODE-011
     def ensure_questions_are_current!(body, digest)
-      remote_questions = DescriptionSection.parse_questions(body).questions
+      remote_questions = reconciled_remote_questions(body)
       return if remote_questions.any? && DescriptionSection.digest_for(remote_questions) == digest
 
       raise StaleQuestionsError, "Clarifying questions changed. Please reload and try again."
+    end
+
+    # The description section carries the posted marker lines as folded
+    # strings while the inbox form renders the stored structured payload's
+    # labels (#4865). Reconcile the remote section against the stored
+    # records — the same identity-guarded reconciliation the read path uses
+    # — so a structured form passes the staleness digest and only a
+    # genuinely changed question set is rejected.
+    def reconciled_remote_questions(body)
+      QuestionPayload.reconcile(
+        comment_questions: DescriptionSection.parse_questions(body).questions,
+        stored_questions: stored_questions
+      )
+    end
+
+    def stored_questions
+      return [] unless issue.respond_to?(:needs_input_questions)
+
+      Array(issue.needs_input_questions)
     end
 
     # Mirror the body edit onto the local Issue row so subsequent

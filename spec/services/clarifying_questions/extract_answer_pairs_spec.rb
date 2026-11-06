@@ -61,19 +61,47 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     COMMENT
   end
 
+  def structured_cache_question
+    {
+      "question" => "Which cache should exports use?",
+      "choices" => [
+        { "label" => "Redis", "detail" => "Shared cache" },
+        { "label" => "Postgres", "detail" => "Persistent rows" }
+      ]
+    }
+  end
+
   def structured_cache_issue
+    build_stubbed(:issue, body: "Original issue body", needs_input_questions: [ structured_cache_question ])
+  end
+
+  # A quiet-mode description section: the posted marker lines ride under the
+  # numbered label while the structured record is persisted locally.
+  def sectioned_cache_issue
+    digest = ClarifyingQuestions::DescriptionSection.digest_for([ structured_cache_question["question"] ])
     build_stubbed(
       :issue,
-      body: "Original issue body",
-      needs_input_questions: [
-        {
-          "question" => "Which cache should exports use?",
-          "choices" => [
-            { "label" => "Redis", "detail" => "Shared cache" },
-            { "label" => "Postgres", "detail" => "Persistent rows" }
-          ]
-        }
-      ]
+      body: <<~BODY,
+        Original issue body
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        <!-- paid:clarifying-questions-digest:#{digest} -->
+        1. #{structured_cache_question["question"]}
+           - ( ) Redis) Shared cache
+           - ( ) Postgres) Persistent rows
+        <!-- /paid:clarifying-questions -->
+      BODY
+      needs_input_questions: [ structured_cache_question ]
+    )
+  end
+
+  def cache_answer_comment
+    comment(
+      body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which cache should exports use?**\n**A1:** Redis",
+      created_at: Time.current,
+      login: trusted_login
     )
   end
 
@@ -218,6 +246,13 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
 
       expect(result.qa_pairs).to eq([])
       expect(result.answer_comment).to be_nil
+    end
+
+    # @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+    it "reconciles a marked description section with the persisted structured payload" do
+      result = described_class.call(project:, issue: sectioned_cache_issue, issue_comments: [ cache_answer_comment ])
+
+      expect(result.qa_pairs).to eq([ { question: "Which cache should exports use?", answer: "Redis" } ])
     end
   end
 
