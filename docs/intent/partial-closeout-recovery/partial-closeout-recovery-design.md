@@ -230,11 +230,24 @@ current submission and never stores raw model output.
 An identical retry preserves the recorded disposition and does not schedule a
 second validation; an operator submits changed evidence to request a new
 assessment.
+When a supported built-in evaluation freezes its durable report, it submits
+that report against the typed originating prerequisite through this same
+pipeline. The report is assessed as evidence for the exact current occurrence;
+it is not an automatic acceptance decision, so missing production measures or
+the limited assurance of a sole reference judge remain visible to the
+assessment. A changed originating source revision makes that report stale.
 Active notifications created before occurrence-level metadata are represented as
 one compatible occurrence using their persisted aggregate identity, references,
 and operator guidance. A valid submission atomically upgrades that occurrence
 with the current source revision; rendering this compatibility view does not
 mutate the blocker.
+
+Notification dismissal is a personal scheduling action: it removes the active
+notification from the continuation guard, but records neither a sufficient
+evidence disposition nor an accepted closeout. Inbox copy discloses that
+effect. Reconciliation releases the guard only with its explicit
+`reconciled_evidence` marker after every current occurrence is sufficient;
+neither route attests whole-issue completion.
 
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating

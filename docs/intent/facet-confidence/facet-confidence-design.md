@@ -186,3 +186,10 @@ evaluation's sole judge gets a view-only action and no judgment controls. Other
 Action Required notifications retain their generic remediation presentation;
 presentation selection never infers a workflow from free-form notification
 text.
+
+When the reference set freezes, its report is submitted to the typed
+originating prerequisite as a durable internal artifact. The partial-closeout
+evidence assessor judges the report against the exact current criterion before
+it can release that occurrence. This preserves the report's missing production
+measures and the limited assurance of its sole judge rather than treating a
+frozen set as acceptance.

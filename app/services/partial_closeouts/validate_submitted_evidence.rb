@@ -54,7 +54,9 @@ module PartialCloseouts
     end
 
     def assess(snapshot)
-      artifact = FetchEvidenceArtifact.call(snapshot.dig("submission", "evidence_url"))
+      artifact = artifact_for(snapshot)
+      return [ UNAVAILABLE_REASON, "unavailable" ] if snapshot.dig("submission", "evidence_kind").present? && artifact.blank?
+
       response = Llm::Request.call(prompt: prompt_for(snapshot, artifact), project: notification.subject.project, timeout: TIMEOUT)
       return [ UNAVAILABLE_REASON, "unavailable" ] unless response.respond_to?(:success?) && response.success?
 
@@ -72,6 +74,21 @@ module PartialCloseouts
       return [ INVALID_REASON, "unavailable" ] unless valid_payload?(payload)
 
       [ payload.fetch("reason").strip, payload.fetch("outcome") ]
+    end
+
+    def artifact_for(snapshot)
+      submission = snapshot.fetch("submission")
+      return FetchEvidenceArtifact.call(submission.fetch("evidence_url")) unless submission["evidence_kind"]
+
+      built_in_artifact(submission)
+    end
+
+    def built_in_artifact(submission)
+      return "" unless submission["evidence_kind"] == FacetConfidence::CloseoutEvaluation::AttachReportEvidence::EVIDENCE_KIND
+
+      evaluation = FacetConfidenceEvaluation.find_by(id: submission["evidence_id"], project: notification.subject.project,
+        issue: notification.subject)
+      evaluation&.frozen? ? evaluation.report_markdown.to_s : ""
     end
 
     def valid_payload?(payload)

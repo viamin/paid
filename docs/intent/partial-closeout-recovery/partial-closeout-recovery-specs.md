@@ -730,10 +730,11 @@
   a compatible occurrence and atomically upgrade it with the current source
   revision before recording the submission. The unresolved notification remains
   active until a current, sufficient assessment resolves that occurrence; the
-  occurrence-only release path SHALL require a matching pending submission and
-  SHALL release the parent scheduling guard only after every current occurrence
-  is reconciled as sufficient. Dismissal and generic notification resolution
-  SHALL not release that guard.
+  occurrence-only reconciliation path SHALL require a matching pending
+  submission and SHALL mark the parent prerequisite satisfied only after every
+  current occurrence is reconciled as sufficient. Dismissal and generic
+  notification resolution remove the notification from the scheduling guard,
+  but SHALL not record evidence satisfaction or acceptance.
   *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
   `app/services/partial_closeouts/assess_evidence.rb`,
   `app/services/partial_closeouts/reconcile_evidence.rb`,
@@ -760,10 +761,12 @@
   *Code:* `app/jobs/partial_closeouts/validate_submitted_evidence_job.rb`,
   `app/services/partial_closeouts/fetch_evidence_artifact.rb`,
   `app/services/partial_closeouts/validate_submitted_evidence.rb`,
-  `app/services/partial_closeouts/submit_evidence.rb`.
+  `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/services/facet_confidence/closeout_evaluation/attach_report_evidence.rb`.
   *Test:* `spec/services/partial_closeouts/fetch_evidence_artifact_spec.rb`,
   `spec/services/partial_closeouts/validate_submitted_evidence_spec.rb`,
-  `spec/services/partial_closeouts/submit_evidence_spec.rb`.
+  `spec/services/partial_closeouts/submit_evidence_spec.rb`,
+  `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-038** — When a partial-closeout prerequisite is
   external work, Paid SHALL persist its owner/repository/issue identity

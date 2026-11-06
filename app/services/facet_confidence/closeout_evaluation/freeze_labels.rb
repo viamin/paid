@@ -58,6 +58,7 @@ module FacetConfidence
 
         @evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
         CompileReport.call(evaluation: @evaluation)
+        AttachReportEvidence.call(evaluation: @evaluation)
         Result.new(success: true, error: nil, evaluation: @evaluation)
       end
 

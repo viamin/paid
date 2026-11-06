@@ -338,6 +338,7 @@
             what the run should do with the evidence.
           </p>
           <p class="text-xs text-amber-800">Evidence is submitted for validation; it does not dismiss this blocker, attest acceptance, or retry work.</p>
+          <p class="text-xs text-amber-800">Dismissing the notification removes its scheduling hold, but it does not verify this evidence or mark the closeout accepted.</p>
           <% if policy(entry.project).run_agent? %>
             <% PartialCloseouts::PrerequisiteOccurrences.for(human_prerequisite).each do |prerequisite| %>
               <% identity = prerequisite.fetch("identity") %>

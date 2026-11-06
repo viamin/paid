@@ -65,6 +65,30 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(evaluation.report_markdown).to include("FC-CORPUS-01").and include("80/80")
   end
 
+  it "submits its frozen report to the originating typed prerequisite for validation" do # @spec FACET-CONFIDENCE-021 PARTIAL-CLOSEOUT-036
+    source_revision = PartialCloseouts::Assessment.source_revision_for(issue)
+    evaluation.update!(source_revision: source_revision)
+    notification = create(:notification, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
+      metadata: {
+        "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+        "prerequisites" => [ { "identity" => "evaluation-report", "criterion" => "Independent evaluation",
+                                 "source_revision" => source_revision } ]
+      })
+    label_all!
+
+    expect { described_class.call(evaluation: evaluation, actor: owner) }
+      .to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob)
+
+    submission = notification.reload.metadata.fetch("evidence_submissions").sole
+    expect(submission).to include(
+      "prerequisite_identity" => "evaluation-report",
+      "evidence_kind" => "facet_confidence_evaluation_report",
+      "evidence_id" => evaluation.id,
+      "outcome" => "pending_validation"
+    )
+  end
+
   it "measures divergences and citation violations instead of hiding them" do
     evaluation.corpus.cases.each do |corpus_case|
       case_id = corpus_case.fetch("id")

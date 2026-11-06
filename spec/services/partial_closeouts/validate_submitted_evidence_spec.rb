@@ -124,6 +124,28 @@ RSpec.describe PartialCloseouts::ValidateSubmittedEvidence do
     expect(Llm::Request).not_to have_received(:call)
   end
 
+  it "assesses a frozen built-in evaluation report without making a remote read" do # @spec PARTIAL-CLOSEOUT-036 FACET-CONFIDENCE-021
+    evaluation = FacetConfidenceEvaluation.create!(project:, issue:, status: "frozen",
+      corpus_path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH,
+      corpus_digest: FacetConfidence::Corpus.new(path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH).content_digest,
+      corpus_version: "facet-confidence-corpus-v1", rubric_version: "facet-confidence-v1",
+      model_version: "model", source_revision: "source-v1", created_by: create(:user, account: project.account),
+      report_markdown: "The frozen report records the independent evaluation.")
+    notification.metadata["evidence_submissions"].sole.merge!(
+      "evidence_kind" => FacetConfidence::CloseoutEvaluation::AttachReportEvidence::EVIDENCE_KIND,
+      "evidence_id" => evaluation.id
+    )
+    notification.save!
+
+    result = described_class.call(notification:, prerequisite_identity: identity, submission_id: "submission-a")
+
+    expect(result.outcome).to eq("sufficient")
+    expect(AgentRuns::Research::HttpClient).not_to have_received(:fetch)
+    expect(Llm::Request).to have_received(:call).with(
+      prompt: a_string_including("frozen report records the independent evaluation"), project:, timeout: described_class::TIMEOUT
+    )
+  end
+
   it "resolves the notification when every current occurrence is sufficient" do # @spec PARTIAL-CLOSEOUT-033 PARTIAL-CLOSEOUT-036
     described_class.call(notification:, prerequisite_identity: identity, submission_id: "submission-a")
 

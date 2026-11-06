@@ -16,12 +16,16 @@ module PartialCloseouts
 
     def self.call(...) = new(...).call
 
-    def initialize(notification:, actor:, prerequisite_identity:, evidence_url:, explanation:)
+    def initialize(notification:, actor:, prerequisite_identity:, evidence_url:, explanation:, evidence_kind: nil, evidence_id: nil,
+                   source_revision: nil)
       @notification = notification
       @actor = actor
       @prerequisite_identity = prerequisite_identity.to_s
       @evidence_url = evidence_url.to_s.strip
       @explanation = explanation.to_s.strip
+      @evidence_kind = evidence_kind.to_s.presence
+      @evidence_id = evidence_id
+      @source_revision = source_revision
     end
 
     def call
@@ -36,13 +40,14 @@ module PartialCloseouts
 
     private
 
-    attr_reader :actor, :evidence_url, :explanation, :notification, :prerequisite_identity
+    attr_reader :actor, :evidence_url, :explanation, :notification, :prerequisite_identity, :evidence_kind, :evidence_id,
+      :source_revision
 
     def validate!
       raise ArgumentError, "notification is not a partial-closeout prerequisite" unless notification.source == PREREQUISITE_NOTIFICATION_SOURCE
       raise ArgumentError, "notification is no longer active" unless notification.active?
       raise ArgumentError, "prerequisite identity is required" if prerequisite_identity.blank?
-      raise ArgumentError, "evidence must be an HTTP(S) URL" unless valid_evidence_url?
+      raise ArgumentError, "evidence must be an HTTP(S) URL" unless valid_evidence?
       raise ArgumentError, "explanation is required" if explanation.blank?
       raise ArgumentError, "prerequisite occurrence is no longer current" unless occurrence
     end
@@ -55,7 +60,9 @@ module PartialCloseouts
 
       entry = { "submission_id" => SecureRandom.uuid, "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url,
                 "explanation" => explanation, "actor_id" => actor.id, "submitted_at" => Time.current.iso8601,
-                "source_revision" => occurrence.fetch("source_revision", nil), "outcome" => outcome, "reason" => reason }
+                "source_revision" => submission_source_revision, "outcome" => outcome, "reason" => reason }
+      entry["evidence_kind"] = evidence_kind if evidence_kind
+      entry["evidence_id"] = evidence_id if evidence_kind
       notification.update!(metadata: notification.metadata.merge("evidence_submissions" => submissions + [ entry ]))
       result_for(entry, new_submission: true)
     end
@@ -81,7 +88,10 @@ module PartialCloseouts
     end
 
     def entry_identity
-      { "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url, "explanation" => explanation }
+      { "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url, "explanation" => explanation }.tap do |identity|
+        identity["evidence_kind"] = evidence_kind if evidence_kind
+        identity["evidence_id"] = evidence_id if evidence_kind
+      end
     end
 
     # A link proves neither its contents nor applicability. Keep it pending for
@@ -97,10 +107,23 @@ module PartialCloseouts
 
     def source_revision_current?
       expected = occurrence.fetch("source_revision", nil)
-      expected.blank? || expected == current_source_revision
+      expected.blank? || (expected == current_source_revision && submission_source_revision == expected)
     end
 
+    def submission_source_revision = source_revision || occurrence.fetch("source_revision", nil)
+
     def current_source_revision = @current_source_revision ||= PartialCloseouts::Assessment.source_revision_for(notification.subject)
+
+    def valid_evidence?
+      return valid_built_in_evidence? if evidence_kind
+
+      valid_evidence_url?
+    end
+
+    def valid_built_in_evidence?
+      evidence_kind == FacetConfidence::CloseoutEvaluation::AttachReportEvidence::EVIDENCE_KIND &&
+        evidence_id.present? && evidence_url.start_with?("/")
+    end
 
     def valid_evidence_url?
       uri = URI.parse(evidence_url)

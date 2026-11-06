@@ -234,6 +234,29 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).not_to include("Execute reviewer")
   end
 
+  it "reconciles a frozen report from the originating Inbox item through prerequisite validation" do # @spec FACET-CONFIDENCE-021 PARTIAL-CLOSEOUT-036
+    source_revision = PartialCloseouts::Assessment.source_revision_for(issue)
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Independent evaluation needed", metadata: {
+        "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+        "prerequisites" => [ { "identity" => "evaluation-report", "criterion" => "Independent evaluation",
+                                 "source_revision" => source_revision } ]
+      })
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"outcome":"sufficient","reason":"The current frozen report addresses the typed prerequisite."}')
+    allow(Llm::Request).to receive(:call).and_return(response)
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+
+    perform_enqueued_jobs { post freeze_project_facet_confidence_evaluation_path(project, evaluation) }
+
+    expect(notification.reload).not_to be_active
+    expect(notification.metadata.fetch("evidence_submissions").sole).to include(
+      "evidence_kind" => "facet_confidence_evaluation_report", "outcome" => "sufficient"
+    )
+  end
+
   it "lets the sole judge append and inspect post-freeze corrections from the report" do
     evaluation = start_evaluation!
     label_all!(evaluation)
