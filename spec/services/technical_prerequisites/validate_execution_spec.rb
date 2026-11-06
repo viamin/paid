@@ -137,6 +137,25 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(evidence.dig("performance_measurement", "comparison")).to include("status" => "unknown")
   end
 
+  # @spec PARTIAL-CLOSEOUT-041
+  it "holds a recipe that requires a browser-visible environment unavailable instead of measuring it in the isolated container" do
+    agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
+      "source_run_id" => source_run.id, "performance_measurement" => {
+        "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,
+        "metrics" => [ "wall_ms" ], "samples" => 2, "environment" => "browser-visible",
+        "budget_seconds" => 60, "requires_browser" => true
+      }
+    } })
+    allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([ "remote" ]))
+    allow(agent_run).to receive(:provision_execution_environment)
+
+    result = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:)
+
+    expect(result.status).to eq("unavailable")
+    expect(result.setup_action).to include("browser-visible environment")
+    expect(agent_run).not_to have_received(:provision_execution_environment)
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "does not provision when the running validation is cancelled during capability inspection" do
     agent_run.update!(status: "running")

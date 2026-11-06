@@ -39,7 +39,17 @@ module TechnicalPrerequisites
         workload_complete? && Array(payload["metrics"]).all? { |metric| metric.is_a?(String) && metric.present? } &&
         Array(payload["metrics"]).any? && payload["samples"].to_i.between?(2, 50) &&
         payload["environment"].is_a?(String) && payload["environment"].present? &&
-        payload["budget_seconds"].to_i.between?(1, MAX_BUDGET_SECONDS) && artifact_contract_complete?
+        payload["budget_seconds"].to_i.between?(1, MAX_BUDGET_SECONDS) && artifact_contract_complete? &&
+        requires_browser_valid?
+    end
+
+    # Optional attestation: the isolated runner never provisions a browser
+    # sidecar for a performance measurement, so a recipe that explicitly
+    # declares this need is accepted here (its provenance is still valid) but
+    # is held unavailable at capability inspection instead of being silently
+    # measured in an environment that cannot satisfy it.
+    def requires_browser_valid?
+      payload["requires_browser"].nil? || [ true, false ].include?(payload["requires_browser"])
     end
 
     def workload_complete?

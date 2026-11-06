@@ -12,8 +12,9 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, scheduler: Containers::BackendScheduler)
+    def initialize(agent_run:, performance_recipe: nil, scheduler: Containers::BackendScheduler)
       @agent_run = agent_run
+      @performance_recipe = performance_recipe
       @scheduler = scheduler
     end
 
@@ -32,18 +33,33 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :agent_run, :scheduler
+    attr_reader :agent_run, :performance_recipe, :scheduler
 
     def tool_sidecars_enabled?
       FeatureFlags.enabled?(:marketplace_tool_sidecars, project: agent_run.project)
     end
 
+    # The recipe's declared environment is reviewed provenance, not proof: this
+    # validation path only ever provisions the run's bare isolated container
+    # plus attached tool sidecars, so a recipe that explicitly attests it needs
+    # a browser-visible environment can never be satisfied here. Blocking it at
+    # inspection, the same way an unauthorized tool sidecar is blocked, keeps
+    # the requested label from being recorded as satisfied provenance.
     def setup_action_for(schedule)
       return "Resolve execution requirements: #{schedule.requirements_error}" if schedule.requirements_error.present?
       return "Configure or restore a compatible execution backend for this project." if schedule.candidate_hosts.empty?
+      return browser_environment_unavailable_action if requires_browser?
       return unless agent_run.tool_sidecar_snapshot.any? && !tool_sidecars_enabled?
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project; execution capability does not authorize the rollout."
+    end
+
+    def requires_browser?
+      performance_recipe.present? && ActiveModel::Type::Boolean.new.cast(performance_recipe["requires_browser"])
+    end
+
+    def browser_environment_unavailable_action
+      "This validation path provisions an isolated container only; it cannot satisfy a recipe that requires a browser-visible environment."
     end
   end
 end

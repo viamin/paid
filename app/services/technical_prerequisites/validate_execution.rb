@@ -30,7 +30,7 @@ module TechnicalPrerequisites
     end
 
     def call
-      inspection = CapabilityInspection.call(agent_run:)
+      inspection = CapabilityInspection.call(agent_run:, performance_recipe:)
       return persist_unavailable(inspection) unless inspection.runnable?
 
       execute_validation(inspection)
