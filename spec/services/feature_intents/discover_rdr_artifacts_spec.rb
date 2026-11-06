@@ -32,6 +32,26 @@ RSpec.describe FeatureIntents::DiscoverRdrArtifacts do
     expect(discovery.artifacts).to contain_exactly(have_attributes(path: entry.path, revision: "a" * 40, body: "Implements #101"))
   end
 
+  # @spec DESIGN-RECONCILIATION-004
+  it "fetches only one page of bodies while retaining the complete path set" do
+    entries = %w[RDR-001.md RDR-002.md RDR-003.md].map do |name|
+      Struct.new(:path, :type).new("docs/rdrs/#{name}", "blob")
+    end
+    client = instance_double(GithubClient)
+    project = project_for(client:)
+    allow(client).to receive(:tree).with("viamin/color_matching", "a" * 40, recursive: true)
+      .and_return(tree(entries))
+    allow(client).to receive(:file_content).and_return("Body")
+
+    discovery = described_class.call(project:, revision: "a" * 40,
+      after_path: entries.first.path, limit: 1)
+
+    expect(discovery.artifacts.map(&:path)).to eq([ entries.second.path ])
+    expect(discovery.matching_paths).to eq(entries.map(&:path))
+    expect(client).to have_received(:file_content).once
+      .with("viamin/color_matching", path: entries.second.path, ref: "a" * 40)
+  end
+
   it "returns unavailable coverage when the repository cannot be accessed" do
     client = instance_double(GithubClient)
     project = project_for(client:)

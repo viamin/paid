@@ -27,6 +27,24 @@ the system that actually shipped.
 
 ## Shipped Behavior
 
+GoodJob knowledge collection for one project commit runs one registered
+collector per continuation. Initial requests are limited to one unfinished
+chain per project commit and skip when a continuation is already pending;
+continuation jobs can enqueue despite that limit and share an execution key with
+legacy full collection. A queued batch stops when its branch has advanced to a
+newer commit, allowing the current commit's chain to use the knowledge worker.
+Each collector releases its container before the
+next starts; Ruby heap memory remains subject to garbage collection. The
+tree-sitter collector scans at most 25 source files per continuation, carrying
+the last processed relative path forward. It marks its collector run complete
+only after the final page; direct full collection still uses its existing
+single-call behavior. A retried
+continuation replays a collector left `running` by process interruption, using
+idempotent artifact writes. The final continuation checks every collector's
+persisted status before marking older artifacts stale and the project ready;
+skipped collectors that preserve existing artifacts remain exempt from staling.
+Direct collector-runner calls used by Temporal retain their existing contract.
+
 ### Knowledge credential selection
 
 Embeddings resolve the effective owner's saved embedding credential binding

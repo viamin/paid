@@ -69,6 +69,7 @@ RSpec.describe ApplicationJob, :no_db do
         QueueMonitorJob
         RemediationDecisionOutcomeJob
         RecoverMissingPullRequestLabelsJob
+        FeatureIntents::ReconcileDesignArtifactsPageJob
         RevertRemediationDecisionJob
         RunnerQuotaBalanceJob
         ScreenshotCleanupJob
@@ -92,6 +93,8 @@ RSpec.describe ApplicationJob, :no_db do
         EnqueueKnowledgeCollectionJob
         KnowledgeEvolutionJob
         RunCollectorsJob
+        RunCollectorBatchJob
+        RunCollectorContinuationJob
         StyleGuideCompressionJob
         StyleGuideExtractionJob
       ],

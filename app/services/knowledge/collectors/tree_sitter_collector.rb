@@ -92,6 +92,7 @@ module Knowledge
       }.freeze
 
       MAX_FALLBACK_FILE_BYTES = 512_000
+      FILES_PER_PAGE = 25
 
       def collect
         ast_artifacts = collect_ast_artifacts
@@ -111,6 +112,35 @@ module Knowledge
         end
       end
 
+      # Each page is a separate GoodJob perform. Enumerating paths is cheap;
+      # parsing and storing the matching source files is the bounded work.
+      # @spec KNOWLEDGE-014
+      def collect_page(cursor: nil)
+        page, has_more = source_page(cursor:)
+        next_cursor = has_more ? page.last : nil
+        return [ [], nil ] if page.empty?
+
+        ast_artifacts = LANGUAGE_CONFIG.flat_map do |language, config|
+          matching = page.select { |path| matching_extension?(path, config[:extensions]) }
+          next [] if matching.empty?
+
+          collect_language(language, config, paths: matching.map { |path| File.join(scan_path, path) })
+        end
+        existing_paths = ast_artifacts.map { |artifact| artifact[:scope_path] }.to_set
+        fallback_artifacts = page.filter_map do |path|
+          next if existing_paths.include?(path)
+          language = fallback_language_for(path)
+          next unless language
+
+          absolute = File.join(host_repo_path, path)
+          next unless File.file?(absolute) && File.size(absolute) <= MAX_FALLBACK_FILE_BYTES && text_file?(absolute)
+
+          build_file_artifact({ relative_path: path, content: File.read(absolute) }, language)
+        end
+
+        [ deduplicate_by_content(ast_artifacts + fallback_artifacts), next_cursor ]
+      end
+
       def collector_type
         "tree_sitter"
       end
@@ -127,11 +157,12 @@ module Knowledge
         end
       end
 
-      def collect_language(language, config)
+      def collect_language(language, config, paths: nil)
         results = []
 
         config[:patterns].each_value do |pattern_config|
-          matches = run_ast_grep(pattern_config[:pattern], config[:lang])
+          matches = paths ? run_ast_grep(pattern_config[:pattern], config[:lang], paths: paths) :
+            run_ast_grep(pattern_config[:pattern], config[:lang])
           matches.each do |match|
             file_path = relative_path(match["file"])
             next unless matching_extension?(file_path, config[:extensions])
@@ -330,6 +361,38 @@ module Knowledge
         end
 
         results
+      end
+
+      def source_page(cursor:)
+        root = host_repo_path
+        skip!("repository path not available", preserve_existing_artifacts: true) if root.blank?
+
+        require "find"
+        paths = []
+        after_cursor = cursor.nil?
+        catch(:page_full) do
+          Find.find(root) do |path|
+            relative = Pathname.new(path).relative_path_from(Pathname.new(root)).to_s
+            if File.directory?(path)
+              Find.prune if relative != "." && ignored_path?(relative)
+              next
+            end
+
+            next if ignored_path?(relative) || !fallback_language_for(relative)
+            unless after_cursor
+              after_cursor = true if relative == cursor
+              next
+            end
+
+            paths << relative
+            throw :page_full if paths.size > FILES_PER_PAGE
+          rescue Errno::ENOENT, Errno::EACCES
+            next
+          end
+        end
+        raise ArgumentError, "collector cursor no longer exists: #{cursor}" unless after_cursor
+
+        [ paths.first(FILES_PER_PAGE), paths.size > FILES_PER_PAGE ]
       end
 
       def ignored_path?(relative_path)

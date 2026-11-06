@@ -24,8 +24,19 @@ RSpec.describe AgentRunResourceProfileRefreshJob, :no_db do
     it "refreshes profiles within system access" do
       described_class.perform_now(123)
 
-      expect(AgentRunResourceProfiles::RefreshForRun).to have_received(:call).with(agent_run: agent_run)
+      expect(AgentRunResourceProfiles::RefreshForRun).to have_received(:call)
+        .with(agent_run: agent_run, profile_level: "specific")
       expect(refresh_call_depth.fetch(0)).to eq(2)
+    end
+
+    # @spec RAILS-CONTROL-PLANE-012
+    it "continues with the next profile level after one refresh" do
+      allow(described_class).to receive(:perform_later)
+
+      described_class.perform_now(123)
+
+      expect(described_class).to have_received(:perform_later)
+        .with(123, profile_level: "runner_goal")
     end
 
     it "skips refresh when the run no longer exists" do

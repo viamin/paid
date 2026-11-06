@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 # @spec DESIGN-RECONCILIATION-001
 RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
@@ -9,11 +10,66 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
    }
 
-  def discovery(artifacts, complete: true)
+  def discovery(artifacts, complete: true, matching_paths: nil)
     FeatureIntents::DiscoverRdrArtifacts::Discovery.new(
       artifacts:, revision: "a" * 40, coverage_complete: complete,
-      directory_status: complete ? :matching_files : :unavailable
+      directory_status: complete ? :matching_files : :unavailable, matching_paths:
     )
+  end
+
+  def stub_branch_revision(sha)
+    client = instance_double(GithubClient)
+    allow(GithubClient).to receive(:new).and_return(client)
+    allow(client).to receive(:ref).and_return(OpenStruct.new(object: OpenStruct.new(sha:)))
+  end
+
+  let(:project) { create(:project, owner: "acme", repo: "widget") }
+  let(:feature_intent) { create(:feature_intent, project:) }
+  let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
+
+  # @spec DESIGN-RECONCILIATION-004
+  it "continues a large RDR project without retiring findings before the last page" do
+    stub_const("FeatureIntents::ReconcileDesignArtifactsJob::ARTIFACT_BATCH_SIZE", 1)
+    stub_branch_revision("a" * 40)
+    first = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-001.md", revision: "a" * 40, body: "# First")
+    second = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-002.md", revision: "a" * 40, body: "# Second")
+    paths = [ first.path, second.path ]
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call)
+      .and_return(discovery([ first ], matching_paths: paths), discovery([ second ], matching_paths: paths))
+    allow(FeatureIntents::ReconcileDesignArtifactsPageJob).to receive(:perform_later)
+    stale = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs/RDR-removed.md", revision: "old")
+
+    described_class.perform_now(project.id)
+
+    expect(stale.reload.status).to eq("open")
+    expect(FeatureIntents::ReconcileDesignArtifactsPageJob).to have_received(:perform_later)
+      .with(project.id, after_path: first.path, revision: "a" * 40)
+
+    FeatureIntents::ReconcileDesignArtifactsPageJob.perform_now(project.id,
+      after_path: first.path, revision: "a" * 40)
+
+    expect(stale.reload.status).to eq("resolved")
+  end
+
+  # @spec DESIGN-RECONCILIATION-004
+  it "keeps findings and queues a fresh sweep when the branch moves during pagination" do
+    stub_branch_revision("b" * 40)
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-001.md", revision: "a" * 40, body: "# First")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call)
+      .and_return(discovery([ artifact ], matching_paths: [ artifact.path ]))
+    allow(described_class).to receive(:enqueue_for)
+    stale = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs/RDR-removed.md", revision: "old")
+
+    FeatureIntents::ReconcileDesignArtifactsPageJob.perform_now(project.id,
+      after_path: "docs/rdrs/RDR-000.md", revision: "a" * 40)
+
+    expect(stale.reload.status).to eq("open")
+    expect(described_class).to have_received(:enqueue_for).with(project.id)
   end
 
   def capture_query_events
@@ -23,11 +79,6 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
     events
   end
-
-  let(:project) { create(:project, owner: "acme", repo: "widget") }
-  let(:feature_intent) { create(:feature_intent, project:) }
-  let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
-
 
   # @spec DESIGN-RECONCILIATION-002
   describe "coalescing", :good_job do
@@ -188,7 +239,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
         revision: status.downcase,
         body: "- **Status**: #{status}"
       )
-      allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+      allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
       described_class.perform_now(project.id)
 
@@ -231,7 +282,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       )
     end
     artifacts.each { |artifact| create(:issue, project:, github_number: artifact.path[/\d+/].to_i) }
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery(artifacts))
     queries = []
     subscriber = ->(event) { queries << event.payload[:sql] }
 
@@ -246,7 +297,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
 
   # @spec DESIGN-RECONCILIATION-003
   it "does not load issue coverage when a project sweep has no design artifacts" do
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([]))
     create(:issue, project:, github_number: 101, body: "Large synchronized issue body")
     queries = []
     subscriber = ->(event) { queries << event.payload[:sql] }
@@ -270,7 +321,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       path: "docs/rdrs/RDR-102-external.md", revision: "b" * 40,
       body: "## Related Issues\n- acme/external#201\n"
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ linkless, external ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ linkless, external ]))
     allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     response = instance_double(AgentHarness::Response, success?: true,
       output: '{"issue_identity":"acme/external#201","explanation":"It implements this design."}')
@@ -295,7 +346,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40,
       body: "## Related Issues\n- acme/one#101\n- other/two#101\n"
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
     query_events = capture_query_events { described_class.perform_now(project.id) }
 
     issue_query = query_events.find { |event| event[:sql].include?("FROM \"issues\"") }
@@ -314,7 +365,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40,
       body: "## Related Issues\n- acme/external#201\n"
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     expect { described_class.perform_now(project.id) }.not_to raise_error
 
@@ -338,7 +389,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     linked_issue = create(:issue, project: external_project, github_number: 101)
     create(:feature_intent_issue, feature_intent:, issue: linked_issue)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([]))
 
     described_class.perform_now(project.id)
 
@@ -357,7 +408,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     )
     feature_intent.update!(design_document_paths: [ artifact.path ])
     create(:feature_intent_issue, feature_intent:, issue: linked_issue)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -375,7 +426,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     feature_intent.update!(design_document_paths: [ artifact.path ])
     linked_issue = create(:issue, project:, github_number: 101, github_creator_login: "untrusted-author")
     create(:feature_intent_issue, feature_intent:, issue: linked_issue)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -403,7 +454,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       body: "### Related Issues\n\n- #216\n"
     )
     create(:issue, project:, github_number: 216)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -425,7 +476,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
         | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4255), #4256, viamin/Forager-iOS#4258, https://github.com/viamin/Forager-iOS/issues/4325 |
       MARKDOWN
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -449,7 +500,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
         | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4255), #4256 |
       MARKDOWN
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -477,7 +528,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
         | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4325), #4256, docs/rdrs/RDR-074.md, https://example.com/spec#3 |
       MARKDOWN
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -494,7 +545,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
       body: "## Ownership\n\n| Owner | Issue |\n| --- | --- |\n| docs/rdrs.md | #4255 |"
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -510,7 +561,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
       body: "The issue owner mentioned viamin/Forager-iOS#4255 during discussion."
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -533,7 +584,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       MARKDOWN
     )
     create(:issue, project:, github_number: 216)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -546,7 +597,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
       path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
       body: "## Ownership\n\n| Owner | Issue |\n| --- | --- |\n| denied/mobile | #4255 |"
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -561,7 +612,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     )
     create(:issue, project:, github_number: 216,
       body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -581,7 +632,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     other_project = create(:project, account: project.account, owner: "acme", repo: "other-widget")
     create(:issue, project: other_project, github_number: 216,
       body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -599,7 +650,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     )
     create(:issue, project:, github_number: 216, github_creator_login: "attacker",
       body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -617,7 +668,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     )
     create(:issue, project:, github_number: 216,
       body: "We discussed `docs/rdrs/RDR-020-service-container-architecture.md` last week.")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -660,7 +711,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
   it "resolves RDR findings removed from a successfully discovered directory" do
     finding = create(:design_artifact_finding, project:, account: project.account,
       artifact_path: "docs/rdrs/RDR-063-removed.md", revision: "a" * 40)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([]))
 
     described_class.perform_now(project.id)
 
@@ -671,7 +722,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     finding = create(:design_artifact_finding, project:, account: project.account,
       artifact_path: "docs/rdrs/RDR-063-unknown.md", revision: "a" * 40)
     unavailable = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(path: "docs/rdrs", revision: "main", body: nil)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ unavailable ], complete: false))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ unavailable ], complete: false))
 
     described_class.perform_now(project.id)
 
@@ -681,7 +732,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
   it "resolves the stale directory-level unavailable sentinel after successful empty discovery" do
     sentinel = create(:design_artifact_finding, project:, account: project.account,
       artifact_path: "docs/rdrs", revision: "main", state: "unverifiable")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([]))
 
     described_class.perform_now(project.id)
 
@@ -694,7 +745,7 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     unavailable = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: finding.artifact_path, revision: "b" * 40, body: nil
     )
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ unavailable ]))
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:, after_path: nil, limit: described_class::ARTIFACT_BATCH_SIZE, revision: nil).and_return(discovery([ unavailable ]))
 
     described_class.perform_now(project.id)
 
