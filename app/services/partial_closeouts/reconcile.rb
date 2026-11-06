@@ -15,6 +15,26 @@ module PartialCloseouts
       new(...).call
     end
 
+    # Gap states are keyed by assessment gap index; only indices inside the
+    # assessment being reconciled describe the current pass. A retry with a
+    # shorter, fresh assessment leaves deeper states behind as history, so
+    # status and reassessment decisions must read the index-bounded view.
+    def self.gap_states(assessment_gaps, reconciliation)
+      states = reconciliation.to_h.fetch("gaps", {})
+      Array(assessment_gaps).each_index.map { |index| states.fetch(index.to_s, {}) }
+    end
+
+    # The persisted status vocabulary, shared by finalize! and
+    # PartialCloseouts::ConfirmSync so a confirmed sync repair cannot
+    # relabel an unattributed prerequisite as ordinary operator work.
+    def self.reconciliation_status(gap_states)
+      statuses = gap_states.filter_map { |state| state["status"] }
+      return "reassessment_required" if statuses.include?("attribution_unknown")
+      return "awaiting_operator" if statuses.any? { |status| status.in?(%w[awaiting_operator awaiting_external]) }
+
+      "reconciled"
+    end
+
     def initialize(agent_run:, assessment:)
       @agent_run = agent_run
       @assessment = assessment.to_h.deep_stringify_keys
@@ -25,6 +45,7 @@ module PartialCloseouts
       prerequisites_by_owner = reconcile_gaps
       publish_operator_prerequisites!(prerequisites_by_owner)
       reconcile_misplaced_prerequisite!(prerequisites_by_owner)
+      publish_reassessment_requirement!
       publish_parent_dependencies!
       finalize!
     rescue GithubClient::Error => e
@@ -267,10 +288,15 @@ module PartialCloseouts
     end
 
     # A notification can move only when this run previously published it and
-    # the new assessment establishes a different owner. Older unproven rows
-    # are deliberately retained for operator review rather than deleted.
+    # the new assessment establishes attribution to a different owner. A
+    # parent that still owns prerequisites keeps its notification, and an
+    # empty map means no owner was established at all — unknown attribution
+    # proves nothing about where the work belongs, so releasing on it would
+    # waive a genuine human gate (#4893). Older unproven rows are
+    # deliberately retained for operator review rather than deleted.
+    # @spec PARTIAL-CLOSEOUT-041
     def reconcile_misplaced_prerequisite!(prerequisites_by_owner)
-      return if prerequisites_by_owner.key?(agent_run.issue)
+      return if prerequisites_by_owner.key?(agent_run.issue) || prerequisites_by_owner.empty?
 
       notification = existing_prerequisite_notification(agent_run.issue)
       return unless notification&.active?
@@ -279,6 +305,52 @@ module PartialCloseouts
       notification.update!(resolved_at: Time.current, metadata: notification.metadata.merge(
         "released_by" => "reconciled_attribution", "released_at" => Time.current.iso8601
       ))
+    end
+
+    # Unknown attribution records a bounded reassessment requirement instead
+    # of fabricating an Action Required human task: a non-blocking error
+    # notification keeps the state visible on the issue (the closeout is
+    # halted, and the next bounded assessment can self-resolve it — never
+    # `blocking`, which would fabricate the human task the design forbids)
+    # while the legacy sweep's bounded retry or an operator-requested fresh
+    # audit re-attempts ownership. A later reconciliation that establishes
+    # every attribution resolves the notice.
+    # @spec PARTIAL-CLOSEOUT-041
+    def publish_reassessment_requirement!
+      unknowns = current_gap_states.select { |state| state["status"] == "attribution_unknown" }
+      return resolve_reassessment_requirement if unknowns.empty?
+
+      Notifications::Publish.call(
+        account: agent_run.project.account, subject: agent_run.issue,
+        source: REASSESSMENT_NOTIFICATION_SOURCE, severity: :error, blocking: false,
+        title: reassessment_title(unknowns),
+        description: unknowns.map { |state| reassessment_step(state) }.join("\n"),
+        metadata: reassessment_metadata(unknowns)
+      )
+    end
+
+    def resolve_reassessment_requirement
+      Notifications::Resolve.call(
+        account: agent_run.project.account, subject: agent_run.issue, source: REASSESSMENT_NOTIFICATION_SOURCE
+      )
+    end
+
+    def reassessment_metadata(unknowns)
+      { "origin_agent_run_id" => agent_run.id,
+        "unknown_attribution" => unknowns.map { |state| { "criterion" => state["criterion"], "reason" => state["attribution_reason"] } },
+        "recommended_action" => "Identify the issue that owns each unattributed prerequisite criterion, then request a fresh acceptance audit." }
+    end
+
+    def reassessment_title(unknowns)
+      if unknowns.one?
+        "A closeout prerequisite needs ownership reassessment"
+      else
+        "#{unknowns.size} closeout prerequisites need ownership reassessment"
+      end
+    end
+
+    def reassessment_step(state)
+      "#{state.fetch("criterion")}: #{state.fetch("attribution_reason", "The owning issue could not be established.").to_s.truncate(280)} Identify the owning issue, then request a fresh acceptance audit."
     end
 
     def publish_prerequisite_notification!(owner_issue, attributed_gaps, previous:)
@@ -454,17 +526,15 @@ module PartialCloseouts
     def finalize!
       return if reconciliation.fetch("status", nil) == "pending_sync"
 
-      states = reconciliation.fetch("gaps", {}).values
-      unknown = states.count { |gap| gap["status"] == "attribution_unknown" }
-      status = if unknown.positive?
-        "reassessment_required"
-      elsif states.any? { |gap| gap["status"].in?(%w[awaiting_operator awaiting_external]) }
-        "awaiting_operator"
-      else
-        "reconciled"
-      end
-      agent_run.update!(reconciliation: reconciliation.merge("status" => status,
+      states = current_gap_states
+      unknown = states.count { |state| state["status"] == "attribution_unknown" }
+      agent_run.update!(reconciliation: reconciliation.merge(
+        "status" => self.class.reconciliation_status(states),
         "unknown_attribution_count" => unknown, "reconciled_at" => Time.current.iso8601))
+    end
+
+    def current_gap_states
+      self.class.gap_states(gaps, reconciliation)
     end
 
     def record_failure!(error)

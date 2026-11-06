@@ -93,7 +93,25 @@ an Action Required item. This preserves genuine independent evidence on its
 owner while agent-actionable work and external dependencies continue through
 their existing follow-up and wait paths. Reconciliation can resolve or replace
 only an occurrence it can prove was produced for the same source/run; it never
-closes an issue, waives a human gate, or lifts an unrelated hold.
+closes an issue, waives a human gate, or lifts an unrelated hold. A prior
+prerequisite notification is released only when the same run published it and
+the new assessment establishes attribution to a different owner — unknown
+attribution establishes nothing, so the prior gate is retained.
+
+The reassessment requirement is visible and bounded. Reconciliation publishes
+a non-blocking `partial_closeout.reassessment` notification on the run's issue
+(error severity — the closeout is halted — but never `blocking`, which would
+fabricate the human task this path exists to avoid), and a later assessment
+that establishes every attribution resolves it. The legacy sweep treats
+`reassessment_required` as a rerunnable outcome rather than a terminal one:
+while attempts remain and no recorded gap state carries an owner/marker link
+(the same index-mislink discipline as failure persistence), each pass
+regenerates a fresh paid assessment and clears the unlinked gap states;
+exhaustion of the attempt bound or a linked gap state halts the sweep and
+leaves the Inbox item as the operator's focused investigation path, with an
+operator-requested fresh acceptance audit as the human continuation. A
+confirmed sync repair restores the same status vocabulary, so a pending body
+repair cannot relabel an unattributed prerequisite as ordinary operator work.
 
 ### Visibility: the `partial_closeout` Inbox lane
 
@@ -436,8 +454,8 @@ machinery the workflow uses:
   an operator-paced loop. Its concurrency control reserves two queued positions
   while permitting one performer, so an overlapping cron enqueue cannot consume
   the cursor-carrying continuation's slot. Structured completion logs expose scanned,
-  reconciled, awaiting-operator, retryable-failure, skipped, lock, and cursor
-  outcomes; each reconciled run continues to expose its assessment in the
+  reconciled, awaiting-operator, retryable-failure, reassessment, skipped, lock,
+  and cursor outcomes; each reconciled run continues to expose its assessment in the
   existing partial-closeout Inbox lane. An
   account-scoped advisory-lock contention returns a distinct result and the
   rake task and scheduled sweep preserve the cursor rather than presenting a

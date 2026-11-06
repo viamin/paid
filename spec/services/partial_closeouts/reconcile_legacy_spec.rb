@@ -98,6 +98,23 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
     }
   end
 
+  # A run whose prior pass could not attribute its human prerequisite: the
+  # stored assessment and the recorded gap state both carry the unknown
+  # attribution, with no owner/marker linkage for a regeneration to mislink.
+  def reassessment_reconciliation
+    assessment = { "gaps" => [ { "criterion" => "Reference judgments", "kind" => "human",
+      "next_step" => "Record the judgments.",
+      "attribution" => { "coverage" => "unknown", "reason" => "The owning issue could not be established." } } ] }
+    {
+      "status" => "reassessment_required",
+      "unknown_attribution_count" => 1,
+      "gaps" => { "0" => { "status" => "attribution_unknown", "criterion" => "Reference judgments",
+        "kind" => "human", "attribution_reason" => "The owning issue could not be established.",
+        "next_step" => "Record the judgments." } },
+      "assessment" => assessment
+    }
+  end
+
   def stub_github_create_issue_failure
     allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(dispatch_assessment)
     allow(client).to receive(:create_issue).and_raise(GithubClient::Error, "github unavailable")
@@ -197,6 +214,77 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(notification).to be_present
       expect(notification.blocking).to be(true)
       expect(notification.title).to eq("macOS acceptance needs operator action")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-041 — `reassessment_required` is a rerunnable
+    # outcome: the stored assessment proved it cannot attribute the remaining
+    # human prerequisite, so the next pass regenerates a fresh assessment
+    # instead of replaying the same unknown result forever.
+    it "regenerates a fresh assessment for a rerunnable reassessment run" do
+      merged_pr(number: 21, parent_issue: parent)
+      owner = create(:issue, :in_progress, project: project, github_state: "open", github_number: 4662)
+      run = legacy_run(issue: parent, pull_request_number: 21, reconciliation: reassessment_reconciliation)
+      reassessed = { "gaps" => [ { "criterion" => "Reference judgments", "kind" => "human",
+        "next_step" => "Record the judgments.",
+        "attribution" => { "coverage" => "established", "source_issue_number" => owner.github_number,
+          "owner_issue_number" => owner.github_number, "criterion" => "Reference judgments" } } ] }
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(reassessed)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.awaiting_operator).to eq(1)
+      expect(Llm::AnalyzePartialCloseout).to have_received(:call).with(agent_run: run)
+      expect(run.reload.reconciliation).to include("status" => "awaiting_operator")
+      expect(run.reconciliation.dig("reassessment", "attempts")).to eq(1)
+      expect(Notification.find_by!(subject: owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).to be_active
+    end
+
+    it "counts a still-unattributed reassessment pass without re-filing owner work" do # @spec PARTIAL-CLOSEOUT-041
+      merged_pr(number: 22, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 22, reconciliation: reassessment_reconciliation)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(reassessment_reconciliation.fetch("assessment"))
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.reassessment).to eq(1)
+      expect(run.reload.reconciliation).to include("status" => "reassessment_required")
+      expect(run.reconciliation.dig("reassessment", "attempts")).to eq(1)
+      expect(Notification.where(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).not_to exist
+      expect(Notification.find_by!(subject: parent, source: PartialCloseouts::REASSESSMENT_NOTIFICATION_SOURCE)).not_to be_blocking
+    end
+
+    it "halts reassessment at the attempt bound without re-invoking the analyzer" do # @spec PARTIAL-CLOSEOUT-041
+      merged_pr(number: 23, parent_issue: parent)
+      reconciliation = reassessment_reconciliation.merge(
+        "reassessment" => { "attempts" => PartialCloseouts::ReconcileLegacy::MAX_REASSESSMENT_ATTEMPTS }
+      )
+      run = legacy_run(issue: parent, pull_request_number: 23, reconciliation: reconciliation)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.skipped).to eq(1)
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+      expect(run.reload.reconciliation).to include("status" => "reassessment_required")
+      expect(run.reconciliation.dig("reassessment", "attempts")).to eq(PartialCloseouts::ReconcileLegacy::MAX_REASSESSMENT_ATTEMPTS)
+    end
+
+    it "halts reassessment when a recorded owner link makes regeneration unsafe" do # @spec PARTIAL-CLOSEOUT-041
+      merged_pr(number: 24, parent_issue: parent)
+      owner = create(:issue, :in_progress, project: project, github_state: "open")
+      reconciliation = reassessment_reconciliation.merge(
+        "gaps" => reassessment_reconciliation.fetch("gaps").merge(
+          "1" => { "status" => "awaiting_operator", "owner_issue_id" => owner.id }
+        )
+      )
+      run = legacy_run(issue: parent, pull_request_number: 24, reconciliation: reconciliation)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.skipped).to eq(1)
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+      expect(run.reload.reconciliation).to include("status" => "reassessment_required")
     end
 
     # @spec PARTIAL-CLOSEOUT-028 — an enhancement/manual-review hold remains

@@ -834,8 +834,22 @@
   bounded reassessment requirement without fabricating a human task. Repeated
   reconciliation SHALL preserve current owner evidence and replace only a
   notification it can prove belongs to the reconciled occurrence; external
-  prerequisites remain on their existing external wait path.
+  prerequisites remain on their existing external wait path. A prior
+  prerequisite notification SHALL be released only when the same run
+  published it and a later assessment establishes attribution to a different
+  owner; unknown attribution alone SHALL retain the prior gate. The
+  reassessment requirement SHALL surface as a non-blocking Inbox notification
+  on the run's issue and SHALL resolve once a later assessment establishes
+  every attribution; the legacy sweep SHALL re-run one bounded fresh
+  assessment per pass for rerunnable `reassessment_required` runs and SHALL
+  stop at the attempt bound or when a recorded owner/marker link makes
+  regeneration unsafe. A confirmed sync repair SHALL restore the same status
+  vocabulary instead of relabeling an unattributed prerequisite.
   *Code:* `app/services/llm/analyze_partial_closeout.rb`,
-  `app/services/partial_closeouts/reconcile.rb`.
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/confirm_sync.rb`.
   *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
-  `spec/services/partial_closeouts/reconcile_spec.rb`.
+  `spec/services/partial_closeouts/reconcile_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
+  `spec/services/partial_closeouts/confirm_sync_spec.rb`.

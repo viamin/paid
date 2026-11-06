@@ -74,17 +74,61 @@ RSpec.describe PartialCloseouts::Reconcile do
   end
 
   it "records unknown attribution without fabricating an Inbox human task" do # @spec PARTIAL-CLOSEOUT-041
-    described_class.call(agent_run: run, assessment: gaps([ {
-      "criterion" => "Independent RDR-070 reference judgments", "kind" => "human",
-      "next_step" => "Record the independent judgments.",
-      "attribution" => { "coverage" => "unknown", "reason" => "The owner criterion could not be established." }
-    } ]))
+    described_class.call(agent_run: run, assessment: gaps([ unattributed_gap("Independent RDR-070 reference judgments") ]))
 
     expect(Notification.where(source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).not_to exist
     expect(run.reload.reconciliation).to include(
       "status" => "reassessment_required",
       "unknown_attribution_count" => 1
     )
+  end
+
+  it "records unknown attribution as a bounded reassessment when the attributed owner is unavailable" do # @spec PARTIAL-CLOSEOUT-041
+    closed_owner = create(:issue, :in_progress, project:, github_state: "closed")
+
+    described_class.call(agent_run: run, assessment: gaps([ human_gap("Reference judgments", source: closed_owner) ]))
+
+    expect(Notification.where(source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).not_to exist
+    expect(run.reload.reconciliation).to include("status" => "reassessment_required", "unknown_attribution_count" => 1)
+  end
+
+  it "surfaces the reassessment requirement as a non-blocking Inbox item" do # @spec PARTIAL-CLOSEOUT-041
+    described_class.call(agent_run: run, assessment: gaps([
+      unattributed_gap("Independent RDR-070 reference judgments", reason: "The owning criterion could not be matched.")
+    ]))
+
+    item = Notification.find_by!(subject: parent, source: PartialCloseouts::REASSESSMENT_NOTIFICATION_SOURCE)
+    expect(item).not_to be_blocking
+    expect(item.severity).to eq("error")
+    expect(item.title).to eq("A closeout prerequisite needs ownership reassessment")
+    expect(item.description).to include("Independent RDR-070 reference judgments: The owning criterion could not be matched.")
+    expect(item.metadata).to include("origin_agent_run_id" => run.id)
+    expect(item.metadata.fetch("unknown_attribution")).to contain_exactly(
+      include("criterion" => "Independent RDR-070 reference judgments", "reason" => "The owning criterion could not be matched.")
+    )
+  end
+
+  it "resolves the reassessment item once a later assessment establishes ownership" do # @spec PARTIAL-CLOSEOUT-041
+    described_class.call(agent_run: run, assessment: gaps([ unattributed_gap("Reference judgments") ]))
+    item = Notification.find_by!(subject: parent, source: PartialCloseouts::REASSESSMENT_NOTIFICATION_SOURCE)
+    owner = create(:issue, :in_progress, project:, github_state: "open")
+
+    described_class.call(agent_run: run, assessment: gaps([ human_gap("Reference judgments", source: owner) ]))
+
+    expect(item.reload.resolved_at).to be_present
+    expect(Notification.find_by!(subject: owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).to be_active
+    expect(run.reload.reconciliation).to include("status" => "awaiting_operator", "unknown_attribution_count" => 0)
+  end
+
+  it "preserves a prior operator gate when the later assessment cannot attribute the prerequisite" do # @spec PARTIAL-CLOSEOUT-041
+    described_class.call(agent_run: run, assessment: gaps([ human_gap("Reference judgments") ]))
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+
+    described_class.call(agent_run: run, assessment: gaps([ unattributed_gap("Reference judgments") ]))
+
+    expect(notification.reload).to be_active
+    expect(notification.metadata).not_to include("released_by")
+    expect(run.reload.reconciliation).to include("status" => "reassessment_required", "unknown_attribution_count" => 1)
   end
 
   it "reconciles a proven misplaced child occurrence without releasing its true owner" do # @spec PARTIAL-CLOSEOUT-041
@@ -498,6 +542,11 @@ RSpec.describe PartialCloseouts::Reconcile do
   def human_gap(criterion, source: parent, next_step: "Run the pilot.")
     { "criterion" => criterion, "kind" => "human", "next_step" => next_step,
       "attribution" => attributed_to(source, criterion) }
+  end
+
+  def unattributed_gap(criterion, reason: "The owning issue could not be established.")
+    { "criterion" => criterion, "kind" => "human", "next_step" => "Record the independent judgments.",
+      "attribution" => { "coverage" => "unknown", "reason" => reason } }
   end
 
   def attributed_to(source, criterion = "Independent evaluation")
