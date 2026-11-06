@@ -856,7 +856,11 @@ upsert_global_prompt.call(
     A recommendation is an aid, never a confirmed product decision.
     For each choice question, set `choice_type` to `single` when exactly one
     answer applies or `multi` when several answers may apply. It MUST match
-    the marker family used in the comment body.
+    the marker family used in the comment body. Each structured `choices`
+    entry MUST repeat its comment marker's Label and description byte-for-byte.
+    A structured choice label must not contain the `)` character. Keep the
+    complete comment_body to no more than 50,000 characters so publication
+    does not truncate any numbered question or choice marker.
 
     Choice questions. When — and only when — a question has a short, enumerable
     set of answers, put the answers in a sub-list under the numbered question

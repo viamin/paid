@@ -197,11 +197,17 @@
   support it, and SHALL remain an aid rather than a confirmed decision.
   A choice payload SHALL set `choice_type` to `single` or `multi` consistently
   with its comment markers so persisted questions retain their answer semantics.
+  Structured choice labels and details SHALL repeat their comment marker label
+  and description byte-for-byte, structured labels SHALL exclude `)`, and the
+  generated comment body SHALL remain within the publication limit so the
+  validated question list is not truncated before posting.
   *Tests:* `spec/services/clarifying_questions/question_payload_spec.rb`,
-  `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  `spec/temporal/activities/enhance_issue_activity_spec.rb`,
+  `spec/migrations/sync_enhance_issue_structured_questions_prompt_spec.rb`.
   *Code:* `app/temporal/activities/run_agent_activity.rb`,
   `app/temporal/activities/enhance_issue_activity.rb`,
-  `app/services/clarifying_questions/question_payload.rb`.
+  `app/services/clarifying_questions/question_payload.rb`,
+  `db/migrate/*_sync_enhance_issue_structured_questions_prompt.rb`.
 
 - [x] **ISSUE-ENHANCEMENT-018** — When a clarifying question has a short,
   enumerable set of answers, the `goal.enhance_issue` prompt SHALL instruct

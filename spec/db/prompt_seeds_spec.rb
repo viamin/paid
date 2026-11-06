@@ -406,6 +406,9 @@ RSpec.describe Prompt, type: :model do
       expect(seed_template).to include('"choice_type": "single"')
       expect(seed_template).to include("Keep background, reasons")
       expect(seed_template).to include("recommendation is an aid")
+      expect(seed_template).to include("byte-for-byte")
+      expect(seed_template).to include("must not contain the `)` character")
+      expect(seed_template).to include("no more than 50,000 characters")
     end
 
     it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT requires structured standalone questions", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
@@ -415,6 +418,9 @@ RSpec.describe Prompt, type: :model do
       expect(fallback_template).to include('"choice_type": "single"')
       expect(fallback_template).to include("Keep background, reasons")
       expect(fallback_template).to include("recommendation is an aid")
+      expect(fallback_template).to include("byte-for-byte")
+      expect(fallback_template).to include("must not contain the `)` character")
+      expect(fallback_template).to include("no more than 50,000 characters")
     end
 
     # QuestionPayload#structured_choices drops a choices array with fewer than
