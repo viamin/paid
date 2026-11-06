@@ -865,3 +865,85 @@
   `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/services/partial_closeouts/confirm_sync_spec.rb`,
   `spec/models/notification_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-042** — When a source-closure assessment fails, Paid
+  SHALL classify the failure into a bounded category that distinguishes a
+  runner timeout, a transport failure, an unsuccessful response, an invalid
+  response, an authentication failure, and a configuration failure; it SHALL
+  persist no provider payload or credential with that category. Transient
+  categories SHALL be retried with a bounded retry policy whose backoff is
+  materially longer than the default three attempts separated by roughly one to
+  two seconds; authentication and configuration failures SHALL fail fast with
+  their exact recovery action instead of consuming the retry budget.
+  *Code:* `app/services/llm/partial_closeout_failure.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`.
+  *Test:* `spec/services/llm/partial_closeout_failure_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/assess_source_closure_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-043** — When the source-closure assessment cannot
+  complete after the agent's coding work and branch push succeeded, Paid
+  SHALL retain durable recovery state naming the failed step, the pushed
+  branch and commit, the attempt count, the sanitized failure category, and
+  the next retry or operator action; it SHALL NOT mark the completed coding
+  work as a terminal execution failure; it SHALL keep the run's issue and pull
+  request slot occupied while the assessment waits; and the state SHALL
+  survive worker restarts and container cleanup.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery_state.rb`,
+  `app/temporal/activities/record_source_closure_recovery_activity.rb`,
+  `app/models/agent_run.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_state_spec.rb`,
+  `spec/temporal/activities/record_source_closure_recovery_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-044** — When a closeout assessment recovery runs, Paid
+  SHALL resume against the exact pushed revision: it SHALL verify that the
+  pushed branch still exists and still points at the recorded commit, and it
+  SHALL refuse a moved or deleted branch instead of publishing a pull request
+  for other content. It SHALL re-assess the current source intent and policy,
+  SHALL refuse a cancelled run, SHALL claim the recovery atomically so a
+  concurrent or replayed retry cannot publish twice, and SHALL preserve tenant
+  authorization, execution budgets, and project holds.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/services/partial_closeouts/pushed_revision.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/services/partial_closeouts/source_closure_recovery_state_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-045** — When a closeout assessment recovery succeeds,
+  Paid SHALL continue from the assessment and the already pushed revision
+  without re-running coding and without creating a replacement AgentRun.
+  Pull-request publication SHALL remain gated on a successful current
+  assessment: the recovery SHALL NOT fabricate acceptance, close an issue
+  early, or publish a duplicate pull request. An authorized operator SHALL be
+  able to retry the failed post-processing step from the run, and a whole-run
+  retry SHALL be refused while the assessment is waiting.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/policies/agent_run_policy.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/requests/projects/agent_runs_source_closure_recovery_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-046** — The agent run detail SHALL show the waiting,
+  retrying, or recovered closeout assessment state with the failed step, the
+  pushed revision, the attempts, the sanitized failure category, and the next
+  retry or operator action, and SHALL offer the authorized recovery action;
+  the same recovery SHALL be reachable through the supported operator API and
+  tool surface.
+  *Code:* `app/views/agent_runs/_detail.html.erb`,
+  `app/views/agent_runs/_detail_actions.html.erb`,
+  `app/controllers/projects/agent_runs_controller.rb`.
+  *Test:* `spec/requests/projects/agent_runs_source_closure_recovery_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-047** — While a closeout assessment waits for
+  recovery, Paid SHALL release the run's idle execution resources and SHALL
+  NOT require an indefinitely live container; when the assessment runs again,
+  it SHALL restore the isolated assessment environment when the configured
+  runner requires isolation, and it SHALL NOT execute untrusted repository
+  code on the host.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.

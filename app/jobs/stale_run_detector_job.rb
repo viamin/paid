@@ -253,12 +253,15 @@ class StaleRunDetectorJob < ApplicationJob
 
   # Runs stuck in "paused" whose pause timestamp is before the threshold.
   # A create_feature run awaiting clarification is intentionally paused and is
-  # resumed only by the answer flow, not stale recovery.
-  # @spec TEMPORAL-ORCHESTRATION-006
+  # resumed only by the answer flow, not stale recovery. A run parked for a
+  # closeout assessment recovery is likewise resumed by the recovery flow:
+  # re-queueing it would repeat the agent work that is already pushed.
+  # @spec TEMPORAL-ORCHESTRATION-006 @spec PARTIAL-CLOSEOUT-043
   def stale_paused_runs(threshold)
     AgentRun.paused
       .where("paused_at < ?", threshold)
       .where.not(id: AgentRun.awaiting_human_clarification.select(:id))
+      .where.not(id: AgentRun.awaiting_source_closure_recovery.select(:id))
   end
 
   # Runs parked in "rate_limited" (runner unavailable / transient infra) whose

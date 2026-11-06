@@ -453,6 +453,15 @@ class AgentRun < ApplicationRecord
   scope :awaiting_completion_verification, -> {
     running.where("external_metadata->>? IS NOT NULL", COMPLETION_VERIFICATION_WITHHELD_METADATA_KEY)
   }
+  # A run parked because its source-closure assessment could not complete is
+  # waiting for recovery, not stalled execution: the pushed revision is
+  # preserved and a recovery sweep retries the assessment in place.
+  # @spec PARTIAL-CLOSEOUT-043
+  scope :awaiting_source_closure_recovery, -> {
+    where("reconciliation -> ? ->> 'status' IN (?)",
+      PartialCloseouts::SourceClosureRecoveryState::KEY,
+      PartialCloseouts::SourceClosureRecoveryState::OPEN_STATUSES)
+  }
   scope :rate_limited, -> { where(status: "rate_limited") }
   # Rate-limited runs whose recovery window has elapsed and are therefore due to
   # be re-queued in place. StaleRunDetectorJob reactivates these — without it,
@@ -2445,6 +2454,29 @@ class AgentRun < ApplicationRecord
 
   def paused?
     status == "paused"
+  end
+
+  # Parks a run whose closeout assessment is waiting for recovery.
+  #
+  # The agent's coding work and its pushed revision are preserved, so the run
+  # is not failed: it is held in the durable recovery state until the
+  # assessment completes or an operator acts.
+  # @spec PARTIAL-CLOSEOUT-043
+  def pause_for_source_closure_recovery!
+    with_lock do
+      reload
+      return false if finished?
+
+      update!(status: "paused", paused_at: Time.current)
+      log!("system", "Closeout assessment is waiting for recovery; the pushed revision is preserved.")
+      true
+    end
+  end
+
+  # Durable recovery state for this run's source-closure assessment.
+  # @spec PARTIAL-CLOSEOUT-043
+  def source_closure_recovery_state
+    PartialCloseouts::SourceClosureRecoveryState.state(self)
   end
 
   def resume!(decision_point: "agent_run.resume")

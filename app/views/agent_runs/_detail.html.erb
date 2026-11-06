@@ -385,7 +385,47 @@
     </div>
   <% end %>
 
-<% if agent_run.paused? %>
+<% recovery_state = agent_run.source_closure_recovery_state %>
+<% if recovery_state["status"].present? %>
+  <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
+    <div class="flex items-center justify-between gap-4">
+      <h2 class="text-sm font-semibold text-amber-800 dark:text-amber-200">Closeout Assessment Recovery</h2>
+      <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+        <%= recovery_state["status"].to_s.humanize %>
+      </span>
+    </div>
+    <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">
+      <% if recovery_state["status"] == "recovered" %>
+        The closeout assessment completed and the pull request was published from the recovered revision.
+      <% else %>
+        The closeout assessment could not complete, so the pushed revision is waiting for recovery.
+        The agent's coding work was not repeated.
+      <% end %>
+    </p>
+    <dl class="mt-3 divide-y divide-amber-200 dark:divide-amber-800/60">
+      <% {
+        "Failed step" => recovery_state["step"],
+        "Pushed branch" => recovery_state["branch"],
+        "Pushed commit" => recovery_state["commit_sha"],
+        "Attempts" => recovery_state["attempts"],
+        "Failure category" => recovery_state["failure_category"].to_s.humanize,
+        "Next action" => recovery_state["next_action"].to_s.humanize,
+        "Next retry" => (PartialCloseouts::SourceClosureRecoveryState.next_retry_at(agent_run)&.then { |time| local_time(time) })
+      }.each do |label, value| %>
+        <% next if value.blank? %>
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-amber-700 dark:text-amber-300"><%= label %></dt>
+          <dd class="text-sm font-medium text-amber-900 dark:text-amber-100"><%= value %></dd>
+        </div>
+      <% end %>
+    </dl>
+    <% if recovery_state["failure_message"].present? %>
+      <p class="mt-2 text-xs text-amber-700 dark:text-amber-300"><%= recovery_state["failure_message"] %></p>
+    <% end %>
+  </div>
+<% end %>
+
+<% if agent_run.paused? && recovery_state["status"].blank? %>
   <%
     violation_label = guardrail_violation_label_for(agent_run)
     violation_detail = guardrail_violation_detail_for(agent_run)

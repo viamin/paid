@@ -35,6 +35,21 @@ module Workflows
       max_attempts: 5
     )
 
+    # The source-closure assessment is post-processing on top of work that is
+    # already pushed, so a transient runner timeout must not cost the run its
+    # result. It gets a bounded budget with a materially longer backoff than
+    # the default policy (three attempts, 1-2s apart): five attempts, 30s
+    # apart, doubling up to ten minutes. Authentication and configuration
+    # failures are marked non-retryable by the activity itself, so they fail
+    # fast with their actionable message instead of burning the budget.
+    # @spec PARTIAL-CLOSEOUT-042
+    SOURCE_CLOSURE_RETRY_POLICY = Temporalio::RetryPolicy.new(
+      initial_interval: 30,
+      max_interval: 600,
+      backoff_coefficient: 2,
+      max_attempts: 5
+    )
+
     # The proxy health check activity performs a single HTTP check per
     # invocation and raises a retryable error when unhealthy. Temporal
     # manages backoff/retry via this policy (5s initial → 30s cap), freeing
@@ -468,8 +483,15 @@ module Workflows
           else
             # @spec PARTIAL-CLOSEOUT-029
             if Temporalio::Workflow.patched("source-closure-disposition-v1")
-              run_activity(Activities::AssessSourceClosureActivity,
-                { agent_run_id: agent_run_id }, timeout: 120)
+              assessment_outcome = assess_source_closure(agent_run_id: agent_run_id)
+              # A closeout assessment that cannot complete is recoverable
+              # post-processing: the pushed revision is preserved, the run is
+              # parked in a durable recovery state, and no pull request is
+              # published from an unassessed revision.
+              # @spec PARTIAL-CLOSEOUT-043
+              if assessment_outcome == "awaiting_recovery"
+                return { success: true, agent_run_id: agent_run_id, status: assessment_outcome }
+              end
             end
 
             # Step 6: Create PR
@@ -815,6 +837,44 @@ module Workflows
     def pre_runner_infra_error?(error_message)
       msg = error_message.to_s.downcase
       PRE_RUNNER_INFRA_PATTERNS.any? { |pattern| msg.include?(pattern.downcase) }
+    end
+
+    # Runs the source-closure assessment with a bounded, longer-backoff retry
+    # policy. When the assessment cannot complete, the run is parked in a
+    # durable recovery state instead of failing: the agent's coding work and
+    # its pushed revision are already good, and the assessment is recoverable
+    # post-processing.
+    #
+    # The new retry policy and the parking branch sit behind a patch guard so
+    # workflows that started before this change replay the recorded activity
+    # command and keep their original failure handling.
+    # @spec PARTIAL-CLOSEOUT-042 @spec PARTIAL-CLOSEOUT-043
+    def assess_source_closure(agent_run_id:)
+      recovery_enabled = Temporalio::Workflow.patched("source-closure-assessment-recovery-v1")
+      if recovery_enabled
+        run_activity(Activities::AssessSourceClosureActivity,
+          { agent_run_id: agent_run_id }, timeout: 120, retry_policy: SOURCE_CLOSURE_RETRY_POLICY)
+      else
+        run_activity(Activities::AssessSourceClosureActivity,
+          { agent_run_id: agent_run_id }, timeout: 120)
+      end
+      "assessed"
+    rescue => e
+      raise_if_canceled!(e)
+      raise unless recovery_enabled
+      raise unless source_closure_failure?(e)
+
+      run_activity(Activities::RecordSourceClosureRecoveryActivity,
+        { agent_run_id: agent_run_id }, timeout: 30)
+      "awaiting_recovery"
+    end
+
+    # True when the failure came from the closeout assessment itself, so the
+    # workflow parks the run for recovery instead of failing it.
+    def source_closure_failure?(error)
+      cause = error.respond_to?(:cause) ? error.cause : nil
+      cause.is_a?(Temporalio::Error::ApplicationError) &&
+        cause.type == Activities::AssessSourceClosureActivity::FAILURE_TYPE
     end
 
     def stale_pull_request_error?(error)

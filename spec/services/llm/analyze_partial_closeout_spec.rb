@@ -98,6 +98,17 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         end
     end
 
+    # @spec PARTIAL-CLOSEOUT-042
+    it "classifies a runner timeout distinctly from a generic transport failure, so it can be retried" do
+      allow(provider).to receive(:send_message).and_raise(AgentHarness::TimeoutError, "Timed out after 60s")
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /timed out waiting for the runner/) do |error|
+          expect(error.diagnostic).to include(category: "timeout", provider: "codex")
+          expect(error.retryable?).to be true
+        end
+    end
+
     # @spec PARTIAL-CLOSEOUT-031
     it "uses the effective Codex runner and its configured model in the container" do
       stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "unrelated-key"))

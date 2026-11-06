@@ -12,7 +12,8 @@ module Projects
 
     before_action :set_project
     before_action :set_agent_run, only: [
-      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary
+      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary,
+      :retry_assessment
     ]
 
     def index
@@ -695,6 +696,16 @@ module Projects
         return
       end
 
+      # A run parked for a closeout assessment recovery resumes its
+      # post-processing, not its coding: the agent work and the pushed
+      # revision are already good, so re-queueing the run would repeat work
+      # that is already published.
+      # @spec PARTIAL-CLOSEOUT-045
+      if PartialCloseouts::SourceClosureRecoveryState.pending?(@agent_run)
+        queue_source_closure_recovery(redirect_target)
+        return
+      end
+
       begin
         cancel_in_flight_execution_for_resume!
       rescue StandardError => e
@@ -773,6 +784,16 @@ module Projects
     # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
     def retry
       authorize @agent_run
+
+      # A run waiting for a closeout assessment recovery must not be retried
+      # as a whole: a new run would repeat the coding that is already pushed
+      # and could publish a second pull request for the same work.
+      # @spec PARTIAL-CLOSEOUT-045
+      if PartialCloseouts::SourceClosureRecoveryState.pending?(@agent_run)
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "This run is waiting for a closeout assessment recovery. Retry the assessment instead of starting a new run."
+        return
+      end
 
       if @agent_run.bootstrap_readiness_goal?
         redirect_to inbox_path,
@@ -988,7 +1009,37 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end
 
+    # Retries a closeout assessment that could not complete after the agent's
+    # work was pushed.
+    #
+    # It continues the run's post-processing against the pushed revision: no
+    # coding is re-run and no replacement AgentRun is created.
+    # @spec PARTIAL-CLOSEOUT-045
+    def retry_assessment
+      authorize @agent_run, :retry_assessment?
+
+      unless PartialCloseouts::SourceClosureRecoveryState.pending?(@agent_run)
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "This run is not waiting for a closeout assessment recovery."
+        return
+      end
+
+      queue_source_closure_recovery(project_agent_run_path(@project, @agent_run))
+    end
+
     private
+
+    # Queues the durable recovery for a parked closeout assessment. The
+    # recovery claims the run atomically, so repeated clicks and a concurrent
+    # automatic sweep cannot publish twice.
+    def queue_source_closure_recovery(redirect_target)
+      RecoverSourceClosureAssessmentJob.perform_later(@agent_run.id)
+      audit_event("agent_run.source_closure_recovery_requested",
+        metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
+
+      redirect_to redirect_target,
+        notice: "Closeout assessment recovery queued for run ##{@agent_run.id}."
+    end
 
     def layered_verification_budget_params
       params.fetch(:budget, ActionController::Parameters.new).permit(:max_minutes).to_h

@@ -471,6 +471,65 @@ machinery the workflow uses:
   rake task and scheduled sweep preserve the cursor rather than presenting a
   zero-row sweep as a completed backlog.
 
+### Assessment transport recovery
+
+A source-closure assessment is post-processing on top of work that is already
+pushed. When the runner times out or its transport fails, the coding result is
+still good: the branch is on the remote and the commit is recorded. Failing
+the whole run at that point discards that result and forces a repeat of work
+that is already published.
+
+The assessment therefore has its own recovery contract:
+
+- **Bounded retry with a longer backoff.** `AssessSourceClosureActivity`
+  raises a typed `SourceClosureAssessmentFailed` application error.
+  `Llm::PartialCloseoutFailure` classifies the failure into a bounded
+  category (timeout, transport error, unsuccessful response, invalid
+  response, authentication, configuration) and marks only the transient
+  categories retryable. The workflow runs the assessment under
+  `SOURCE_CLOSURE_RETRY_POLICY` (five attempts, thirty seconds apart,
+  doubling to ten minutes) instead of the default three attempts one to two
+  seconds apart. Authentication and configuration failures are non-retryable:
+  they name their exact operator action instead of consuming the retry
+  budget.
+- **Durable recovery state.** Every failed attempt records the failed step,
+  the pushed branch and commit, the attempt count, the sanitized failure
+  category, and the next retry or operator action on the run's
+  `reconciliation` payload. When the retry budget is exhausted the workflow
+  records the waiting state and parks the run instead of failing it, so the
+  run keeps its issue and pull request slot and no duplicate run can be
+  minted for the same issue. The state is durable: it survives worker
+  restarts, container cleanup, and workflow completion.
+- **Recovery against the pushed revision.**
+  `PartialCloseouts::SourceClosureRecovery` claims the recovery atomically,
+  so a replayed sweep, a manual retry, and a concurrent sweep cannot publish
+  twice. It verifies that the pushed branch still exists and still points at
+  the recorded commit, and refuses a moved or deleted branch instead of
+  publishing a pull request for other content. It re-assesses the current
+  source intent and policy, so a changed issue or a changed policy produces a
+  current assessment rather than a stale one. It honours the guards that gate
+  new execution: a cancelled run is skipped, and an explicit operator pause
+  or an exhausted execution budget holds the recovery until a human resolves
+  it.
+- **Continuation, not repetition.** On success the recovery continues with
+  pull-request publication, closeout reconciliation, and the issue update —
+  the steps the original workflow would have run after the assessment. It
+  never re-runs the agent, never re-pushes the branch, and never creates a
+  replacement AgentRun. Pull-request publication stays gated on the
+  successful current assessment, so the recovery cannot fabricate acceptance,
+  close an issue early, or publish a duplicate pull request.
+- **Automatic and operator-triggered recovery.**
+  `SourceClosureRecoverySweepJob` retries the pending recoveries whose
+  backoff window elapsed, and an authorized operator can retry the failed
+  post-processing step from the run detail. A whole-run retry is refused
+  while the assessment waits: it would repeat the coding that is already
+  pushed.
+- **Resources.** The parked run releases its execution environment with the
+  workflow's cleanup, so a waiting recovery does not hold a container. The
+  recovery restores the isolated assessment environment when the configured
+  runner requires isolation and releases it again afterwards; untrusted
+  repository code never runs on the host.
+
 ### Automatic advancement after investigation (#4223)
 
 After the shared reconciler persists a current assessment, `PartialCloseouts::Advance`
@@ -697,6 +756,13 @@ those revisions change.
   it is the chosen direction for the lane's request-path cost, and it
   supersedes only the live-evaluation part of the derived-lane decision, never
   the admission authority.
+
+- *Failing the run when the closeout assessment cannot complete*: rejected —
+  the coding result is already pushed, so failing the run discards completed
+  work and forces a repeat that can publish a second pull request.
+- *Recovering by starting a replacement agent run*: rejected — a replacement
+  run repeats the coding and the push instead of continuing from the pushed
+  revision.
 
 ## Open Questions & Future Decisions
 

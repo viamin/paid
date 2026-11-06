@@ -14,6 +14,18 @@ module Llm
         @diagnostic = diagnostic.freeze
         super(message)
       end
+
+      # Bounded failure category, used to decide whether the assessment is
+      # retried with backoff or parked for an operator.
+      # @spec PARTIAL-CLOSEOUT-042
+      def category
+        diagnostic[:category].to_s
+      end
+
+      # @spec PARTIAL-CLOSEOUT-042
+      def retryable?
+        Llm::PartialCloseoutFailure.retryable?(category)
+      end
     end
 
     # CLI-backed subscriptions need startup and reasoning time. Keep this below
@@ -110,6 +122,8 @@ module Llm
       raise assessment_failure("authentication_unavailable")
     rescue AgentHarness::ConfigurationError
       raise
+    rescue AgentHarness::TimeoutError
+      raise assessment_failure("timeout")
     rescue AgentHarness::Error
       raise assessment_failure("transport_error")
     end
@@ -272,6 +286,8 @@ module Llm
         "partial closeout assessment failed: returned invalid JSON. Retry the assessment."
       when "invalid_assessment"
         "partial closeout assessment failed: returned invalid fields. Retry the assessment."
+      when "timeout"
+        "Partial closeout assessment timed out waiting for the runner. Retry after runner recovery."
       else
         "Partial closeout assessment transport failed. Retry after runner recovery."
       end

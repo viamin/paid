@@ -2517,4 +2517,182 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
           any_args)
     end
   end
+
+  # @spec PARTIAL-CLOSEOUT-042 @spec PARTIAL-CLOSEOUT-043
+  describe "source closure assessment recovery" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    def build_activity_error(cause)
+      activity_error = Temporalio::Error::ActivityError.new(
+        "Activity task failed",
+        scheduled_event_id: 1,
+        started_event_id: 2,
+        identity: "",
+        activity_type: "AssessSourceClosure",
+        activity_id: "1",
+        retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+      )
+      begin
+        begin
+          raise cause
+        rescue
+          raise activity_error
+        end
+      rescue Temporalio::Error
+      end
+      activity_error
+    end
+
+    def assessment_failure_error
+      build_activity_error(
+        Temporalio::Error::ApplicationError.new(
+          "Partial closeout assessment transport failed. Retry after runner recovery.",
+          type: Activities::AssessSourceClosureActivity::FAILURE_TYPE
+        )
+      )
+    end
+
+    def stub_assessment_activities(assessment_error: nil)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::AssessSourceClosureActivity"
+          raise assessment_error if assessment_error
+
+          { agent_run_id: 42, disposition: "track" }
+        when "Activities::RecordSourceClosureRecoveryActivity" then { agent_run_id: 42, status: "waiting" }
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    # Emulates Temporal's server-side activity retry: the workflow observes
+    # only the final outcome of the attempt budget, so a transient failure
+    # inside the budget never reaches the workflow.
+    def stub_assessment_with_retry_budget(failures:)
+      budget = described_class::SOURCE_CLOSURE_RETRY_POLICY.max_attempts
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: true }
+        when "Activities::PushBranchActivity" then {}
+        when "Activities::AssessSourceClosureActivity"
+          raise assessment_failure_error if failures >= budget
+
+          { agent_run_id: 42, disposition: "track" }
+        when "Activities::CreatePullRequestActivity"
+          { pull_request_url: "https://github.com/o/r/pull/99", pull_request_number: 99 }
+        when "Activities::ReconcilePartialCloseoutActivity"
+          { agent_run_id: 42, status: "reconciled", gaps_remain: false }
+        when "Activities::UpdateIssueWithPrActivity" then {}
+        when "Activities::CleanupContainerActivity" then {}
+        when "Activities::CleanupServicesActivity" then {}
+        when "Activities::CleanupWorktreeActivity" then {}
+        when "Activities::EnqueueJanitorActivity" then {}
+        else {}
+        end
+      end
+    end
+
+    it "gives the assessment a bounded retry policy with a longer backoff than the default" do
+      policy = described_class::SOURCE_CLOSURE_RETRY_POLICY
+
+      expect(policy.max_attempts).to be > Workflows::BaseWorkflow::DEFAULT_RETRY_POLICY.max_attempts
+      expect(policy.initial_interval).to be > Workflows::BaseWorkflow::DEFAULT_RETRY_POLICY.initial_interval
+      expect(policy.max_attempts).to be <= 10
+    end
+
+    it "assesses the source closure with the longer-backoff retry policy" do
+      stub_assessment_activities
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::AssessSourceClosureActivity, { agent_run_id: 42 }, timeout: 120,
+              retry_policy: described_class::SOURCE_CLOSURE_RETRY_POLICY)
+    end
+
+    it "parks the run for recovery instead of failing it when the assessment cannot complete" do
+      stub_assessment_activities(assessment_error: assessment_failure_error)
+
+      result = workflow.execute(input)
+
+      expect(result[:status]).to eq("awaiting_recovery")
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordSourceClosureRecoveryActivity, { agent_run_id: 42 }, timeout: 30)
+    end
+
+    it "does not publish a pull request from an unassessed revision" do
+      stub_assessment_activities(assessment_error: assessment_failure_error)
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreatePullRequestActivity, anything, any_args)
+    end
+
+    it "does not mark the run failed when only the closeout assessment failed" do
+      stub_assessment_activities(assessment_error: assessment_failure_error)
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity, anything, any_args)
+    end
+
+    it "still fails the run when the failure is not a closeout assessment failure" do
+      other_error = build_activity_error(
+        Temporalio::Error::ApplicationError.new("Container not provisioned", type: "ContainerNotProvisioned")
+      )
+      stub_assessment_activities(assessment_error: other_error)
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ActivityError)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity, anything, any_args)
+    end
+
+    it "keeps the recorded failure handling for workflows started before the recovery guard" do
+      allow(Temporalio::Workflow).to receive(:patched) { |name| name != "source-closure-assessment-recovery-v1" }
+      stub_assessment_activities(assessment_error: assessment_failure_error)
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ActivityError)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordSourceClosureRecoveryActivity, anything, any_args)
+    end
+
+    it "publishes the pull request when a transient assessment failure clears inside the retry budget" do
+      stub_assessment_with_retry_budget(failures: 1)
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CreatePullRequestActivity, anything, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordSourceClosureRecoveryActivity, anything, any_args)
+    end
+
+    it "parks the run when the assessment exhausts the retry budget" do
+      stub_assessment_with_retry_budget(failures: described_class::SOURCE_CLOSURE_RETRY_POLICY.max_attempts)
+
+      result = workflow.execute(input)
+
+      expect(result[:status]).to eq("awaiting_recovery")
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreatePullRequestActivity, anything, any_args)
+    end
+  end
 end

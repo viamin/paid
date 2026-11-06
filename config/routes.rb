@@ -320,6 +320,7 @@ Rails.application.routes.draw do
       post :link_prerequisite, on: :collection
       post :cancel, on: :member
       post :retry, on: :member
+      post :retry_assessment, on: :member
       post :refresh_auth, on: :member
       post :diagnose_error, on: :member
       post :resume, on: :member

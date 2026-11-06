@@ -203,6 +203,12 @@ Rails.application.configure do
       class: "PartialCloseoutAcceptanceAuditSweepJob",
       description: "Queue one report-only audit per eligible merged closeout evidence generation"
     },
+    source_closure_recovery_sweep: {
+      cron: "13-59/15 * * * *",
+      class: "SourceClosureRecoverySweepJob",
+      queue: "maintenance",
+      description: "Retry closeout assessments that could not complete after the agent's work was pushed"
+    },
     analyze_issue_followup_backfill: {
       cron: "15 * * * *",
       class: "AnalyzeIssueFollowupBackfillJob",

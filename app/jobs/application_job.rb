@@ -189,6 +189,7 @@ class ApplicationJob < ActiveJob::Base
       FailureRecoveryDecisionJob,
       HumanFeedbackCollectionJob,
       QualityMetricsCollectionJob,
+      RecoverSourceClosureAssessmentJob,
       RetryFailedManualRunJob,
       RetryTimedOutIssueGoalJob,
       TechnicalPrerequisiteValidationJob

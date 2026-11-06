@@ -27,6 +27,13 @@ class AgentRunPolicy < ApplicationPolicy
     run_agent?
   end
 
+  # Retrying a failed closeout assessment continues the run's post-processing
+  # against its pushed revision; it never mints a replacement run.
+  # @spec PARTIAL-CLOSEOUT-045
+  def retry_assessment?
+    run_agent?
+  end
+
   def refresh_auth?
     run_agent?
   end
