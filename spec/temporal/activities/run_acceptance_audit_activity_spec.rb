@@ -27,7 +27,9 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     issue.update!(paid_state: "in_progress")
     allow(Llm::AnalyzePartialCloseout).to receive(:call).with(agent_run: run).and_return(
       "gaps" => [ { "criterion" => "macOS acceptance", "kind" => "human",
-        "next_step" => "Run the approved macOS pilot." } ]
+        "next_step" => "Run the approved macOS pilot.",
+        "attribution" => { "coverage" => "established", "source_issue_number" => issue.github_number,
+          "owner_issue_number" => issue.github_number, "criterion" => "macOS acceptance" } } ]
     )
 
     described_class.new.execute(agent_run_id: run.id)

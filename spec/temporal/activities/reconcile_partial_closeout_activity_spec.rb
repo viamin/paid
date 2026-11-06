@@ -67,7 +67,9 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
     # @spec NO-OUTPUT-ISSUE-007
     it "signals remaining operator prerequisites so the workflow keeps the parent issue incomplete" do
       assessment = { "gaps" => [ { "criterion" => "macOS acceptance", "kind" => "human",
-        "next_step" => "Run the approved macOS pilot." } ] }
+        "next_step" => "Run the approved macOS pilot.",
+        "attribution" => { "coverage" => "established", "source_issue_number" => parent.github_number,
+          "owner_issue_number" => parent.github_number, "criterion" => "macOS acceptance" } } ] }
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(assessment)
 
       result = activity.execute(agent_run_id: run.id)

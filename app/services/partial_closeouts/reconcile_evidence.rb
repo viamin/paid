@@ -73,7 +73,7 @@ module PartialCloseouts
       expected = occurrence.fetch("source_revision", nil)
       return false unless expected == submission.fetch("source_revision", nil)
 
-      expected.blank? || expected == PartialCloseouts::Assessment.source_revision_for(notification.subject)
+      expected.blank? || expected == PrerequisiteOccurrences.current_source_revision(notification, occurrence)
     end
 
     def reconciled_outcome

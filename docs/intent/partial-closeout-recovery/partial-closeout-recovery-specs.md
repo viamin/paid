@@ -820,3 +820,48 @@
   `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/services/partial_closeouts/confirm_sync_spec.rb`,
   `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-041** — Before Paid creates or retains a
+  `partial_closeout.prerequisite` occurrence for human evidence, the
+  `agent_harness` assessment SHALL identify the current source issue, exact
+  acceptance criterion, and owning evidence/work item. Deterministic code
+  SHALL validate those stable identifiers in the same tenant and bind the
+  occurrence to the source issue's current source and intent revisions. An
+  established independent-human prerequisite SHALL be surfaced only on that
+  source owner; an implementation child that merely mentions it SHALL not
+  receive an Action Required item. When the assessment cannot establish the
+  owner/criterion relationship, Paid SHALL persist unknown attribution and a
+  bounded reassessment requirement without fabricating a human task. Repeated
+  reconciliation SHALL preserve current owner evidence and replace only a
+  notification it can prove belongs to the reconciled occurrence; external
+  prerequisites remain on their existing external wait path. A prior
+  prerequisite notification SHALL be released only when the same run
+  published it and a later assessment establishes attribution to a different
+  owner; unknown attribution alone SHALL retain the prior gate. A shared
+  owner's prerequisite notification SHALL aggregate occurrences attributed by
+  distinct runs, keyed per occurrence by its originating run; a republishing
+  run SHALL NOT drop or release another run's live occurrence, SHALL NOT
+  resurrect occurrences from a resolved notification, and when removing its
+  own proven-misplaced occurrences SHALL keep the occurrences other runs
+  still own active on that owner. When attribution reconciliation releases a
+  child's sole misplaced occurrence, Paid SHALL refresh that child's normal
+  auto-pick eligibility without releasing the true owner's notification or an
+  independent hold. The reassessment requirement SHALL surface
+  as a non-blocking Inbox notification
+  on the run's issue and SHALL resolve once a later assessment establishes
+  every attribution; the legacy sweep SHALL re-run one bounded fresh
+  assessment per pass for rerunnable `reassessment_required` runs and SHALL
+  stop at the attempt bound or when a recorded owner/marker link makes
+  regeneration unsafe. A confirmed sync repair SHALL restore the same status
+  vocabulary instead of relabeling an unattributed prerequisite.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/confirm_sync.rb`,
+  `app/models/notification.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
+  `spec/services/partial_closeouts/confirm_sync_spec.rb`,
+  `spec/models/notification_spec.rb`.

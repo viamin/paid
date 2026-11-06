@@ -49,7 +49,11 @@ module PartialCloseouts
     end
 
     def resolve(run, reconciliation, sync)
-      status = Array(reconciliation.dig("assessment", "gaps")).any? { |gap| gap["kind"] == "human" || gap["kind"] == "external" } ? "awaiting_operator" : "reconciled"
+      # Shared with Reconcile#finalize! so a confirmed repair cannot relabel
+      # an unattributed human prerequisite as ordinary operator work.
+      # @spec PARTIAL-CLOSEOUT-041
+      states = PartialCloseouts::Reconcile.gap_states(reconciliation.dig("assessment", "gaps"), reconciliation)
+      status = PartialCloseouts::Reconcile.reconciliation_status(states)
       update(run, reconciliation, sync.merge("status" => "confirmed", "confirmed_at" => Time.current.iso8601), status)
       :confirmed
     end
