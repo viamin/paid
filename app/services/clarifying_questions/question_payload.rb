@@ -16,6 +16,25 @@ module ClarifyingQuestions
       call(question:).fetch(:question)
     end
 
+    def self.submission_texts(questions)
+      Array(questions).map { |question| submission_text(question) }
+    end
+
+    def self.reconcile(comment_questions:, stored_questions:)
+      stored = Array(stored_questions).select { |question| submission_text(question).present? }
+      return Array(comment_questions) unless stored.any? && identities(comment_questions) == identities(stored)
+
+      stored
+    end
+
+    def self.identities(questions)
+      Array(questions).map do |question|
+        label = submission_text(question).to_s.split(Choices::ANY_MARKER, 2).first
+        AnswerPairs.normalize_question(label)
+      end
+    end
+    private_class_method :identities
+
     def initialize(question:)
       @question = question
     end

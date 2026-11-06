@@ -163,7 +163,7 @@ module ClarifyingQuestions
     def latest_questions(body_questions:, enhancement_comment:)
       if enhancement_comment.present?
         questions = Parse.call(comment_body: comment_body(enhancement_comment))
-        return questions if questions.any?
+        return QuestionPayload.reconcile(comment_questions: questions, stored_questions: stored_questions) if questions.any?
       end
 
       body_questions
@@ -181,24 +181,8 @@ module ClarifyingQuestions
 
       questions = Parse.call(comment_body: comment_body(enhancement_comment)).presence
       return unless questions
-      return stored_questions if same_question_text?(questions, stored_questions)
 
-      questions
-    end
-
-    def same_question_text?(left, right)
-      right.any? && question_labels(left) == question_labels(right)
-    end
-
-    # The enhancement comment repeats strict choice markers under its concise
-    # question label, while the structured payload persists that label alone.
-    # Reconciliation compares only those labels so a reload retains the richer
-    # persisted payload without changing answer-submission identity.
-    def question_labels(questions)
-      Array(questions).map do |question|
-        label = QuestionPayload.submission_text(question).split(Choices::ANY_MARKER, 2).first
-        AnswerPairs.normalize_question(label)
-      end
+      QuestionPayload.reconcile(comment_questions: questions, stored_questions: stored_questions)
     end
 
     def marked_description_questions?

@@ -48,7 +48,9 @@ module Tools
       ClarifyingQuestions::SubmitAnswers.call(
         project: issue.project,
         issue: issue,
-        questions_and_answers: questions.zip(answers).map { |question, answer| { question:, answer: } }
+        questions_and_answers: questions.zip(answers).map do |question, answer|
+          { question: ClarifyingQuestions::QuestionPayload.submission_text(question), answer: }
+        end
       )
       { posted: true, issue_id: issue.id, issue_number: issue.github_number }
     end

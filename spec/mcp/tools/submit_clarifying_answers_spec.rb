@@ -123,6 +123,26 @@ RSpec.describe Tools::SubmitClarifyingAnswers do
       expect(result).to eq(posted: true, issue_id: issue.id, issue_number: issue.github_number)
     end
 
+    it "posts a structured question using its concise submission text" do # @spec OPERATOR-INBOX-025
+      issue.update!(needs_input_questions: [
+        {
+          "question" => "Which cache should exports use?",
+          "choices" => [
+            { "label" => "Redis", "detail" => "Shared cache" },
+            { "label" => "Postgres", "detail" => "Persistent rows" }
+          ]
+        }
+      ])
+
+      tool.call(answers: [ "Redis" ], confirmed: true)
+
+      expect(github_client).to have_received(:add_comment).with(
+        project.full_name,
+        issue.github_number,
+        a_string_including("**Q1: Which cache should exports use?**")
+      )
+    end
+
   # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-013
   it "keeps unrelated question progress when final answers clear this issue" do
     other_issue = create(:issue, :needs_input, project:, needs_input_questions: [ "Other question?" ])

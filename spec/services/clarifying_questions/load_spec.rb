@@ -226,6 +226,32 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
         )
         expect(github_client).to have_received(:issue_comments).once
       end
+
+      it "reconciles posted choice markers before recognizing a structured question answer" do # @spec OPERATOR-INBOX-025
+        structured_question = structured_scope_question
+        allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
+        enhancement_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:enhance-issue -->
+
+            ## Clarifying questions
+            1. Which scope should ship first?
+               - ( ) API) Ship the API first
+               - ( ) UI) Ship the UI first
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        answers_comment = double(
+          body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which scope should ship first?**\n**A1:** API",
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
+
+        expect(described_class.call(project:, issue:)).to eq([])
+        expect(ClarifyingQuestions::IngestAnswers).to have_received(:call)
+      end
     end
 
     context "when matching answers predate repeated clarifying questions" do

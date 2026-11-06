@@ -90,7 +90,8 @@ module Api
       # escalated_pr's blocker counters) that only `entry.record` holds.
       def kind_payload
         case entry.kind
-        when Inbox::Queue::CLARIFYING_QUESTIONS_KIND then { questions: entry.questions }
+        when Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+          { questions: question_texts }
         when Inbox::Queue::PLAN_REVIEW_KIND then { tasks: entry.tasks }
         when Inbox::Queue::MERGE_APPROVAL_KIND then merge_approval_payload
         when Inbox::Queue::ACTION_REQUIRED_KIND then { remediation_steps: entry.tasks }
@@ -193,11 +194,15 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        { questions: question_texts, comment_url: entry.manual_review_comment_url }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: question_texts }
+      end
+
+      def question_texts
+        ClarifyingQuestions::QuestionPayload.submission_texts(entry.questions)
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

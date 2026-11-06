@@ -62,7 +62,12 @@ module ClarifyingQuestions
     # treats as stale (because the body questions changed after they were posted)
     # would still be injected into the agent prompt.
     def current_questions(enhancement_comment)
-      return Parse.call(comment_body: enhancement_comment.body.to_s) if enhancement_comment
+      if enhancement_comment
+        return QuestionPayload.reconcile(
+          comment_questions: Parse.call(comment_body: enhancement_comment.body.to_s),
+          stored_questions: issue.respond_to?(:needs_input_questions) ? issue.needs_input_questions : []
+        )
+      end
 
       questions = Parse.call(comment_body: issue&.body.to_s)
       return questions if questions.any?

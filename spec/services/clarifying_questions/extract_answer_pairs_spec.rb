@@ -52,6 +52,31 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     OpenStruct.new(body: body, created_at: created_at, user: OpenStruct.new(login: login))
   end
 
+  def structured_cache_comment
+    <<~COMMENT
+      ## Clarifying questions
+      1. Which cache should exports use?
+         - ( ) Redis) Shared cache
+         - ( ) Postgres) Persistent rows
+    COMMENT
+  end
+
+  def structured_cache_issue
+    build_stubbed(
+      :issue,
+      body: "Original issue body",
+      needs_input_questions: [
+        {
+          "question" => "Which cache should exports use?",
+          "choices" => [
+            { "label" => "Redis", "detail" => "Shared cache" },
+            { "label" => "Postgres", "detail" => "Persistent rows" }
+          ]
+        }
+      ]
+    )
+  end
+
   it "returns paired questions and answers from the admitted comment flow" do
     result = described_class.call(project: project, issue_comments: [ enhancement_comment, answer_comment ], issue: issue)
 
@@ -218,6 +243,24 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     )
 
     result = described_class.call(project:, issue: structured_issue, issue_comments: [ answer ])
+
+    expect(result.qa_pairs).to eq([ { question: "Which cache should exports use?", answer: "Redis" } ])
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "reconciles a posted choice question with its persisted structured payload" do
+    enhancement = comment(
+      body: "<!-- paid:enhance-issue -->\n\n#{structured_cache_comment}",
+      created_at: 2.minutes.ago,
+      login: bot_login
+    )
+    answer = comment(
+      body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which cache should exports use?**\n**A1:** Redis",
+      created_at: 1.minute.ago,
+      login: trusted_login
+    )
+
+    result = described_class.call(project:, issue: structured_cache_issue, issue_comments: [ enhancement, answer ])
 
     expect(result.qa_pairs).to eq([ { question: "Which cache should exports use?", answer: "Redis" } ])
   end

@@ -346,7 +346,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
     end
 
     # @spec ISSUE-ENHANCEMENT-020
-    it "rejects structured choices that differ from the posted question" do
+    it "falls back to posted questions when structured choices differ" do
       question = structured_cache_question
       question[:choices].first[:detail] = "Per-process cache"
       log_agent_stdout({
@@ -355,13 +355,21 @@ RSpec.describe Activities::EnhanceIssueActivity do
         questions: [ question ]
       }.to_json)
 
-      expect {
-        activity.execute(agent_run_id: agent_run.id)
-      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
-        expect(error.type).to eq("EnhanceIssueUnparseableOutput")
-      }
+      allow(Rails.logger).to receive(:warn)
 
-      expect(issue.reload.needs_input_questions).to be_nil
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.needs_input_questions).to eq([
+        "Which cache should exports use? - ( ) Redis) Shared cache - ( ) Postgres) Persistent rows"
+      ])
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "agent_execution.structured_questions_mismatch",
+          agent_run_id: agent_run.id,
+          structured_question_count: 1,
+          posted_question_count: 1
+        )
+      )
     end
 
     # @spec AUTOMATION-PHASES-008

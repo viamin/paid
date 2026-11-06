@@ -94,7 +94,7 @@ module Activities
       parsed = stop_after_max_rounds(parsed, project, issue, agent_run)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
       comment_body = comment_body_for(issue, parsed, draft)
-      validate_structured_questions!(agent_run, parsed, comment_body)
+      reconcile_structured_questions!(agent_run, parsed, comment_body)
       questions = needs_input_questions(parsed, comment_body)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
@@ -753,13 +753,19 @@ module Activities
       end
     end
 
-    def validate_structured_questions!(agent_run, parsed, comment_body)
+    def reconcile_structured_questions!(agent_run, parsed, comment_body)
       return if parsed[:sufficient_context] || !structured_questions?(parsed[:questions])
 
       posted_questions = ClarifyingQuestions::Parse.call(comment_body: comment_body)
       return if question_contracts(parsed[:questions]) == question_contracts(posted_questions)
 
-      raise_parse_error!(agent_run, "structured questions do not match comment_body")
+      logger.warn(
+        message: "agent_execution.structured_questions_mismatch",
+        agent_run_id: agent_run.id,
+        structured_question_count: parsed[:questions].size,
+        posted_question_count: posted_questions.size
+      )
+      parsed[:questions] = posted_questions
     end
 
     def question_contracts(questions)
