@@ -22,6 +22,7 @@ require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on
 require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_recursion")
 require Rails.root.join("db/migrate/20260730190357_make_projects_github_token_optional_in_rls")
 require Rails.root.join("db/migrate/20261029221250_create_inbox_history_events")
+require Rails.root.join("db/migrate/20261105195000_create_bounded_delegated_actions")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -68,6 +69,31 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       described_class.with(account_a) do
         expect(AgentRun.all).to contain_exactly(run_a)
       end
+    end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-001 POSTGRESQL-PERSISTENCE-006 BOUNDED-PHASE-AUTHORIZATION-010
+  it "isolates bounded delegated actions and rejects cross-tenant scope references" do
+    action_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      create(:bounded_delegated_action, account: account_a, project:, issue: create(:issue, project:))
+    end
+    project_b, issue_b, user_b = described_class.with_system_access do
+      project = create(:project, account: account_b)
+      issue = create(:issue, project:)
+      create(:bounded_delegated_action, account: account_b, project:, issue:)
+      [ project, issue, create(:user, account: account_b) ]
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(BoundedDelegatedAction.all).to contain_exactly(action_a)
+        expect_rls_rejection { insert_bounded_delegated_action(account_a, project_b, issue_b) }
+        expect_rls_rejection { insert_bounded_delegated_action(account_a, action_a.project, issue_b) }
+        expect_rls_rejection { insert_bounded_delegated_action(account_a, action_a.project, action_a.issue, user_b) }
+      end
+      described_class.clear!
+      expect(BoundedDelegatedAction.all).to be_empty
     end
   end
 
@@ -271,6 +297,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
+      CreateBoundedDelegatedActions.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -321,9 +348,11 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
+      CreateBoundedDelegatedActions.new.disable_tenant_rls
       EnableTenantRowLevelSecurity.new.down
 
       EnableTenantRowLevelSecurity.new.up
+      CreateBoundedDelegatedActions.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -525,6 +554,19 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       ) VALUES (
         #{account.id}, #{project.id}, 'issue:#{project.id}:1', 'test', CURRENT_TIMESTAMP,
         'Paid', 'paid', 'completed', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_bounded_delegated_action(account, project, issue, created_by = nil)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO bounded_delegated_actions (
+        account_id, project_id, issue_id, created_by_id, action, status,
+        evidence, expires_at, created_at, updated_at
+      ) VALUES (
+        #{account.id}, #{project.id}, #{issue.id}, #{sql_value(created_by&.id)}, 'review', 'active',
+        '{"intent_digest":"rls","acceptance_refs":["AC-1"]}'::jsonb,
+        CURRENT_TIMESTAMP + INTERVAL '1 hour', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
     SQL
   end
