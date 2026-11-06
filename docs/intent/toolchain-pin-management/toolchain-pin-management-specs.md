@@ -116,6 +116,18 @@
   *Tests:* `spec/services/screenshots/seed_data/paid_spec.rb`.
   *Code:* `Screenshots::SeedData::Paid`.
 
+- [x] **TOOLCHAIN-PIN-028** — When a GitHub-hosted job installs the PostgreSQL
+  client, it SHALL verify the PGDG signing key before trusting the repository,
+  SHALL drop the repository when that key cannot be verified, SHALL bound and
+  retry every apt command, and SHALL install the same major client package
+  from the runner image's own archive when the repository is unusable, so a
+  transient network failure cannot fail the job before its tests run.
+  *Tests:* `spec/config/system_workflow_file_spec.rb`,
+  `spec/config/ci_database_workflow_file_spec.rb`.
+  *Code:* `.github/workflows/system_tests.yml`, `.github/workflows/ci.yml`,
+  `.github/workflows/test_prof.yml`, `.github/workflows/pr-screenshots.yml`,
+  `.github/workflows/ephemeral_tests.yml`.
+
 ## Contract-Owned Agent CLI Versions
 
 - [x] **TOOLCHAIN-PIN-030** — `bin/update` SHALL NOT write agent CLI versions

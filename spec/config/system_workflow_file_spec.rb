@@ -46,13 +46,24 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
   end
 
+  # The PGDG signing key download flakes on GitHub runners. Publishing the key
+  # without verifying it leaves apt with an unsigned repository, so every later
+  # apt-get update fails with "The repository ... is not signed" and takes the
+  # whole job down before a single system spec runs.
+  # @spec TOOLCHAIN-PIN-028
   it "retries transient PostgreSQL client package setup failures" do
     install_step = system_step("Install PostgreSQL client")
+    run = install_step.fetch("run")
 
-    expect(install_step.fetch("run")).to include(
+    expect(run).to include(
       'for attempt in 1 2 3; do',
-      'sudo apt-get update && sudo apt-get install -y postgresql-client-16'
+      'curl -fsSL --retry 3 --retry-delay 5 --max-time 60',
+      'grep -q "BEGIN PGP PUBLIC KEY BLOCK"',
+      'timeout 5m apt-get',
+      'apt_with_retry install -y postgresql-client-16'
     )
+    expect(run).not_to include("| sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc")
+    expect(run).to include('sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"')
   end
 
   it "installs a pinned Chrome binary for explicit browser specs" do

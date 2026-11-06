@@ -109,16 +109,62 @@ jobs:
           yarn install --frozen-lockfile && bin/yarn-postinstall
 
       - name: Install PostgreSQL client
+        # @spec TOOLCHAIN-PIN-028
         run: |
+          # The PGDG signing key download flakes on GitHub runners. Publishing an
+          # unverified key makes every later apt-get update fail with "The repository
+          # ... is not signed" and takes the whole job down, so fetch the key with
+          # retries, verify it, and only then trust the repository. Without a usable
+          # key the same major client is installed from the runner image's own archive.
+          keyring=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          key_download="$(mktemp)"
           sudo install -d /usr/share/postgresql-common/pgdg
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          key_ready=false
+          for attempt in 1 2 3; do
+            if curl -fsSL --retry 3 --retry-delay 5 --max-time 60 \
+              https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key_download" \
+              && grep -q "BEGIN PGP PUBLIC KEY BLOCK" "$key_download"; then
+              sudo mv "$key_download" "$keyring"
+              key_ready=true
+              break
+            fi
+            echo "::warning::PGDG signing key download failed (attempt $attempt/3); retrying"
+            rm -f "$key_download"
+            sleep "$((attempt * 5))"
+          done
+          rm -f "$key_download"
           . /etc/os-release
-          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: %s\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" "$keyring" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
           # GitHub's Ubuntu runners sometimes ship unrelated Microsoft sources
           # that transiently 403 and break apt-get update before PGDG installs.
           sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client-16
+          # Bound each apt command and retry so a stalled mirror costs minutes
+          # instead of the job dying at its overall timeout.
+          apt_with_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if sudo timeout 5m apt-get \
+                -o Acquire::http::Timeout=30 \
+                -o Acquire::https::Timeout=30 \
+                -o Acquire::Retries=3 "$@"; then
+                return 0
+              fi
+              echo "::warning::apt-get $* timed out or failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          if [ "$key_ready" != true ]; then
+            echo "::warning::PGDG signing key unavailable; installing postgresql-client-16 from the runner image archive"
+            sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"
+          fi
+          if ! apt_with_retry update; then
+            echo "::warning::apt-get update failed; retrying without the PGDG repository"
+            sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"
+            apt_with_retry update
+          fi
+          apt_with_retry install -y postgresql-client-16
+          psql --version
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
