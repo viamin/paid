@@ -95,8 +95,13 @@ module PartialCloseouts
       submissions = Array(notification.metadata["evidence_submissions"])
       index = submissions.index(original)
       submissions[index] = original.merge("outcome" => outcome, "reason" => reason, "validated_at" => Time.current.iso8601)
-      attributes = { metadata: notification.metadata.merge("evidence_submissions" => submissions) }
-      attributes[:resolved_at] = Time.current if all_current_occurrences_sufficient?(submissions)
+      metadata = notification.metadata.merge("evidence_submissions" => submissions)
+      attributes = { metadata: }
+      if all_current_occurrences_sufficient?(submissions)
+        released_at = Time.current
+        attributes[:resolved_at] = released_at
+        attributes[:metadata] = metadata.merge("released_by" => "reconciled_evidence", "released_at" => released_at.iso8601)
+      end
       notification.update!(attributes)
     end
 
@@ -108,8 +113,9 @@ module PartialCloseouts
     end
 
     def current_revision?(snapshot)
-      revision = snapshot.dig("occurrence", "source_revision")
-      revision.blank? || revision == PartialCloseouts::Assessment.source_revision_for(notification.subject)
+      occurrence = snapshot.fetch("occurrence")
+      revision = occurrence["source_revision"]
+      revision.blank? || revision == PrerequisiteOccurrences.current_source_revision(notification, occurrence)
     end
 
     def prompt_for(snapshot, artifact)

@@ -58,7 +58,8 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
   end
 
-  it "keeps the #4678, #4675, and #4790 child patterns out of Action Required while their RDR-070 owners remain actionable" do # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-041
+  it "keeps the #4678, #4675, and #4790 child patterns out of Action Required while their RDR-070 owners remain actionable" do
     cases = [ [ 4678, 4662 ], [ 4675, 4661 ], [ 4790, 4323 ] ].map do |child_number, owner_number|
       child = create(:issue, :in_progress, project:, github_number: child_number, github_state: "open")
       owner = create(:issue, :in_progress, project:, github_number: owner_number, github_state: "open")
