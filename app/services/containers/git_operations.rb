@@ -347,6 +347,17 @@ module Containers
       base_commit_sha
     end
 
+    # Re-points an already-established clone at another pinned commit, fetching
+    # it when the shallow clone does not already contain it. Used to move the
+    # working tree between pinned revisions (e.g. baseline vs current in a
+    # performance comparison) after clone_and_checkout_pinned_commit.
+    def checkout_commit(commit_sha)
+      raise Error, "A pinned commit is required to restore the checkout" if commit_sha.blank?
+
+      checkout_pinned_commit(commit_sha)
+      commit_sha
+    end
+
     # Pushes the agent's branch to the remote.
     #
     # Uses --force-with-lease for existing PR branches to safely handle

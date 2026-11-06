@@ -24,6 +24,7 @@ module TechnicalPrerequisites
       return failure("Select the original implementation run, not a prior validation.") if source_run.technical_prerequisite_validation_goal?
       return failure("Select an enabled validation recipe for this project.") unless allowed_requirement?
       return failure("The selected validation recipe has an invalid command.") unless reviewed_command
+      return failure("Select a completed implementation run with a produced revision to measure.") if performance_requirement? && current_commit_sha.blank?
       return failure(performance_recipe.error) if performance_requirement? && !performance_recipe.valid?
 
       return existing_result if existing_run
@@ -61,7 +62,7 @@ module TechnicalPrerequisites
         # for, and the admission revision would replace the pinned checkout.
         goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL,
         custom_prompt: "Validate technical prerequisite with #{requirement.name}",
-        trigger_type: "manual", status: "queued", base_commit_sha: source_run.base_commit_sha,
+        trigger_type: "manual", status: "queued", base_commit_sha: validation_base_commit_sha,
         branch_name: "prerequisite-validation-#{SecureRandom.hex(6)}",
         external_metadata: validation_metadata
       )
@@ -105,7 +106,24 @@ module TechnicalPrerequisites
     def performance_requirement? = requirement.check_type == "performance_measurement"
 
     def performance_recipe
-      @performance_recipe ||= PerformanceRecipe.call(requirement:, current_commit_sha: source_run.base_commit_sha)
+      @performance_recipe ||= PerformanceRecipe.call(requirement:, current_commit_sha:)
+    end
+
+    # The revision produced by the source implementation run is the "current"
+    # side of every before/after comparison, mirroring the base/result
+    # distinction used by AgentRuns::ApplicationDiagnostics and
+    # VerificationResultRecorder. A completed run's base_commit_sha is the
+    # pre-change checkout, so measuring it as current would exclude the very
+    # changes under review.
+    def current_commit_sha
+      @current_commit_sha ||= source_run.result_commit_sha.presence
+    end
+
+    # A performance validation re-checks out the produced revision as its
+    # current side, so its clone must start from that revision rather than the
+    # pre-change base.
+    def validation_base_commit_sha
+      performance_requirement? ? current_commit_sha : source_run.base_commit_sha
     end
 
     def existing_run

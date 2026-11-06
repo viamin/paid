@@ -108,7 +108,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
   # @spec PARTIAL-CLOSEOUT-041
   it "queues one deduplicated, pinned performance comparison with its reviewed recipe contract" do
     project = create(:project)
-    source_run = create(:agent_run, :completed, project:, base_commit_sha: "c" * 40)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
     requirement = create(:pre_commit_requirement, project:, account: project.account,
       check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
           "baseline_commit_sha" => "b" * 40, "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
@@ -123,8 +123,28 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(first).to be_success
     expect(second).to be_success
     expect(second.agent_run).to eq(first.agent_run)
+    expect(first.agent_run.base_commit_sha).to eq("c" * 40)
     expect(first.agent_run.external_metadata.dig("technical_prerequisite_validation", "performance_measurement"))
       .to include("baseline_commit_sha" => "b" * 40, "current_commit_sha" => "c" * 40, "samples" => 3)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-041
+  it "refuses a performance comparison when the source run produced no revision to measure" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: nil)
+    requirement = create(:pre_commit_requirement, project:, account: project.account,
+      check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
+          "baseline_commit_sha" => "b" * 40, "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
+          "metrics" => [ "wall_ms" ], "samples" => 3,
+          "environment" => "isolated-linux", "budget_seconds" => 60,
+          "artifact_contract" => [ "raw_samples", "comparison" ]
+      })
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+
+    expect(result).not_to be_success
+    expect(result.agent_run).to be_nil
+    expect(result.message).to include("produced revision")
   end
 
   # @spec PARTIAL-CLOSEOUT-041

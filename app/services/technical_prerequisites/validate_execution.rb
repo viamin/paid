@@ -127,6 +127,7 @@ module TechnicalPrerequisites
     # stdout is retained as bounded raw evidence; only numeric JSON fields named
     # by the reviewed recipe enter the mechanical comparison.
     def execute_performance_measurement
+      @measurement_deadline = monotonic_now + performance_recipe.fetch("budget_seconds").to_f
       baseline = measure_revision(performance_recipe.fetch("baseline_commit_sha"))
       current = measure_revision(performance_recipe.fetch("current_commit_sha"))
       comparison = compare_measurements(baseline:, current:)
@@ -139,19 +140,34 @@ module TechnicalPrerequisites
 
     def measure_revision(revision)
       checkout_revision(revision)
-      samples = performance_recipe.fetch("samples").times.map do |sample|
-        capture(native_command, env: command_environment.merge(
+      { "revision" => revision, "samples" => collect_samples(revision) }
+    end
+
+    # Both revisions draw from one shared measurement budget. Sampling stops as
+    # soon as that deadline is exhausted so the whole comparison stays within
+    # the job's perform_timeout; a comparison left short simply remains unknown
+    # evidence that execute_performance_measurement still persists.
+    def collect_samples(revision)
+      performance_recipe.fetch("samples").times.each_with_object([]) do |sample, collected|
+        break collected unless budget_remaining.positive?
+
+        collected << capture(native_command, timeout: sample_timeout, env: command_environment.merge(
           "PAID_MEASUREMENT_REVISION" => revision, "PAID_MEASUREMENT_SAMPLE" => (sample + 1).to_s
         ))
       end
-      { "revision" => revision, "samples" => samples }
     end
+
+    def sample_timeout = [ budget_remaining.seconds, COMMAND_TIMEOUT ].min
+
+    def budget_remaining = @measurement_deadline - monotonic_now
+
+    def monotonic_now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     def checkout_revision(revision)
       execution_environment = Containers::Provision.reconnect(
         agent_run:, container_id: agent_run.container_id, worktree_path: agent_run.worktree_path
       )
-      Containers::GitOperations.new(container_service: execution_environment, agent_run:).checkout_pinned_commit(revision)
+      Containers::GitOperations.new(container_service: execution_environment, agent_run:).checkout_commit(revision)
     end
 
     def compare_measurements(baseline:, current:)
@@ -176,9 +192,11 @@ module TechnicalPrerequisites
       end
     end
 
-    def numeric(value) = Float(value)
-  rescue ArgumentError, TypeError
-    nil
+    def numeric(value)
+      Float(value)
+    rescue ArgumentError, TypeError
+      nil
+    end
 
     def percentiles(values)
       sorted = values.sort
@@ -195,17 +213,11 @@ module TechnicalPrerequisites
       @execution_runner ||= ExecutionRunners.resolve_for(agent_run)
     end
 
-    def capture(command, env:)
-      result = agent_run.execute_in_execution_environment(command, timeout: command_timeout, stream: false, env:)
+    def capture(command, env:, timeout: COMMAND_TIMEOUT)
+      result = agent_run.execute_in_execution_environment(command, timeout:, stream: false, env:)
       output(result[:stdout], result[:stderr], result[:exit_code])
     rescue Containers::Provision::ExecutionError => error
       output(error.stdout, error.stderr, error.exit_code)
-    end
-
-    def command_timeout
-      return COMMAND_TIMEOUT unless performance_measurement?
-
-      [ performance_recipe.fetch("budget_seconds").to_i.seconds, COMMAND_TIMEOUT ].min
     end
 
     def output(stdout, stderr, exit_code)
