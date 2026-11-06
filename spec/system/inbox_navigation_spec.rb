@@ -16,8 +16,14 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
   let(:questions_body) do
     "<!-- paid:enhance-issue -->\n\n## Clarifying questions\n1. What behavior is expected?\n"
   end
-  let!(:first_issue) { create(:issue, :needs_input, project:, title: "First question", body: questions_body) }
-  let!(:second_issue) { create(:issue, :needs_input, project:, title: "Second question", body: questions_body) }
+  let!(:first_issue) do
+    create(:issue, :needs_input, project:, title: "First question", body: questions_body,
+      needs_input_since: 2.hours.ago)
+  end
+  let!(:second_issue) do
+    create(:issue, :needs_input, project:, title: "Second question", body: questions_body,
+      needs_input_since: 1.hour.ago)
+  end
   let(:github_client) { instance_double(GithubClient, issue_comments: []) }
 
   before do
