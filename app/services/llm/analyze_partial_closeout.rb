@@ -354,7 +354,7 @@ module Llm
         Enabled reviewed validation recipes: #{validation_recipe_lines}
         Attached tool sidecars: #{agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") }.to_json}
         Reuse owner_issue_number only when one of the currently open issues listed below directly owns the still-unmet criterion; closed historical work is not an owner.
-        Issue: #{agent_run.issue.title}\nEvidence: #{agent_run.agent_summary_with_stderr_fallback(limit: 200)}
+        Current source issue: ##{agent_run.issue.github_number} #{agent_run.issue.title}\nEvidence: #{agent_run.agent_summary_with_stderr_fallback(limit: 200)}
         Technical prerequisite validation evidence: #{TechnicalPrerequisites::Evidence.records_for(agent_run.issue).to_json}
         Open issues eligible for ownership:\n#{open_issue_lines}
       PROMPT
