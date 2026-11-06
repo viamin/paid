@@ -77,6 +77,24 @@ free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
 
+### Human prerequisite attribution (#4893)
+
+Human prerequisites are attributed before Inbox publication. The closeout
+assessor makes the semantic decision through `agent_harness`, identifying the
+actual source issue, exact acceptance criterion, and owning evidence/work item.
+The reconciler validates only the returned stable identifiers, tenant scope, and
+current revisions, then writes the occurrence on the true source owner rather
+than the PR-producing implementation child. Its occurrence stores the owner's
+source and intent revisions, so later evidence cannot release a changed scope.
+
+An assessor that cannot establish a criterion-to-owner relationship records
+unknown attribution with a bounded reassessment requirement. It does not create
+an Action Required item. This preserves genuine independent evidence on its
+owner while agent-actionable work and external dependencies continue through
+their existing follow-up and wait paths. Reconciliation can resolve or replace
+only an occurrence it can prove was produced for the same source/run; it never
+closes an issue, waives a human gate, or lifts an unrelated hold.
+
 ### Visibility: the `partial_closeout` Inbox lane
 
 Derived lane (like `retry_limited`), not persisted state. An open, non-PR

@@ -185,7 +185,9 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       merged_pr(number: 13, parent_issue: parent)
       legacy_run(issue: parent, pull_request_number: 13)
       assessment = { "gaps" => [ { "criterion" => "macOS acceptance", "kind" => "human",
-        "next_step" => "Run the approved macOS pilot." } ] }
+        "next_step" => "Run the approved macOS pilot.",
+        "attribution" => { "coverage" => "established", "source_issue_number" => parent.github_number,
+          "owner_issue_number" => parent.github_number, "criterion" => "macOS acceptance" } } ] }
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(assessment)
 
       result = described_class.call(account_id: account.id)
@@ -207,7 +209,9 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       run = legacy_run(issue: parent, pull_request_number: 131)
       assessment = {
         "gaps" => [ { "criterion" => "production pilot", "kind" => "human",
-          "next_step" => "An operator must attach the production pilot result." } ]
+          "next_step" => "An operator must attach the production pilot result.",
+          "attribution" => { "coverage" => "established", "source_issue_number" => parent.github_number,
+            "owner_issue_number" => parent.github_number, "criterion" => "production pilot" } } ]
       }
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(assessment)
 

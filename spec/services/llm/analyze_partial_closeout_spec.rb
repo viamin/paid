@@ -270,7 +270,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     # @spec NO-OUTPUT-ISSUE-007
     it "accepts a human gap that carries its exact next step" do
       allow(llm_response).to receive(:output)
-        .and_return({ gaps: [ { criterion: "macOS acceptance", kind: "human", next_step: "Run the approved macOS pilot." } ] }.to_json)
+        .and_return({ gaps: [ human_gap("macOS acceptance") ] }.to_json)
 
       result = described_class.call(agent_run: agent_run)
 
@@ -289,11 +289,10 @@ RSpec.describe Llm::AnalyzePartialCloseout do
 
     it "accepts durable policy references and an explicit replacement-policy action" do # @spec PARTIAL-CLOSEOUT-031
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
-      gap = {
-        criterion: "review policy", kind: "human", next_step: "Record the selected policy and evidence.",
+      gap = human_gap("review policy", next_step: "Record the selected policy and evidence.").merge(
         references: [ { kind: "policy", key: "team-review", revision: "v2", label: "Team review v2" } ],
         policy_selection: { required: true, next_step: "Select an approved team policy." }
-      }
+      )
       allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
 
       result = described_class.call(agent_run: agent_run)
@@ -317,13 +316,31 @@ RSpec.describe Llm::AnalyzePartialCloseout do
 
     it "rejects replacement-policy requirements without an explicit action" do # @spec PARTIAL-CLOSEOUT-031
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
-      gap = {
-        criterion: "review policy", kind: "human", next_step: "Replace the stale policy.",
+      gap = human_gap("review policy", next_step: "Replace the stale policy.").merge(
         policy_selection: { required: true }
-      }
+      )
       allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
 
       expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    it "rejects a human prerequisite whose owner criterion is not established" do # @spec PARTIAL-CLOSEOUT-041
+      allow(llm_response).to receive(:output).and_return({ gaps: [ {
+        criterion: "Independent judgments", kind: "human", next_step: "Record each judgment.",
+        attribution: { coverage: "established", source_issue_number: issue.github_number,
+          owner_issue_number: issue.github_number, criterion: "A different criterion" }
+      } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /assessment failed/)
+    end
+
+    it "accepts an unknown human attribution for bounded reassessment without inventing an owner" do # @spec PARTIAL-CLOSEOUT-041
+      allow(llm_response).to receive(:output).and_return({ gaps: [ {
+        criterion: "Independent judgments", kind: "human", next_step: "Record each judgment.",
+        attribution: { coverage: "unknown", reason: "No current issue owns this criterion." }
+      } ] }.to_json)
+
+      expect(described_class.call(agent_run: agent_run).dig("gaps", 0, "attribution", "coverage")).to eq("unknown")
     end
 
     it "requires an advertised policy-selection action when selection is required" do # @spec PARTIAL-CLOSEOUT-031
@@ -411,5 +428,11 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         expect(result.dig("next_action", "kind")).to eq("fresh_audit")
       end
     end
+  end
+
+  def human_gap(criterion, next_step: "Run the approved macOS pilot.")
+    { criterion:, kind: "human", next_step:,
+      attribution: { coverage: "established", source_issue_number: issue.github_number,
+        owner_issue_number: issue.github_number, criterion: } }
   end
 end

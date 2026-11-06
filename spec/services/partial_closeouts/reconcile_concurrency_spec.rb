@@ -10,7 +10,9 @@ RSpec.describe PartialCloseouts::Reconcile do
   let(:run) { create(:agent_run, :completed, project:, issue: parent, pull_request_number: 99) }
   let(:actor) { create(:user, account: project.account) }
   let(:gap) do
-    { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
+    { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot.",
+      "attribution" => { "coverage" => "established", "source_issue_number" => parent.github_number,
+        "owner_issue_number" => parent.github_number, "criterion" => "macOS acceptance" } }
   end
 
   after do

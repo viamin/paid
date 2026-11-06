@@ -41,11 +41,62 @@ RSpec.describe PartialCloseouts::Reconcile do
   end
 
   # @spec NO-OUTPUT-ISSUE-007
-  it "routes a human prerequisite to the Inbox without retrying an agent" do
-    described_class.call(agent_run: run, assessment: gaps([ { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the approved macOS pilot." } ]))
+  it "routes a human prerequisite to its attributed evidence owner rather than the implementation child" do # @spec PARTIAL-CLOSEOUT-041
+    evidence_owner = create(:issue, :in_progress, project:, github_number: 4662, github_state: "open")
+    parent.update!(github_number: 4678)
+    gap = human_gap("Independent RDR-070 reference judgments", source: evidence_owner)
 
-    expect(Notification.where(subject: parent, blocking: true)).to exist
+    described_class.call(agent_run: run, assessment: gaps([ gap ]))
+
+    notification = Notification.find_by!(subject: evidence_owner, blocking: true)
+    expect(notification.metadata.fetch("prerequisites").sole).to include(
+      "source_issue_number" => 4662, "owner_issue_number" => 4662,
+      "source_revision" => PartialCloseouts::Assessment.source_revision_for(evidence_owner),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(evidence_owner)
+    )
+    expect(Notification.where(subject: parent, blocking: true)).not_to exist
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
+  end
+
+  it "keeps the #4678, #4675, and #4790 child patterns out of Action Required while their RDR-070 owners remain actionable" do # @spec PARTIAL-CLOSEOUT-041
+    cases = [ [ 4678, 4662 ], [ 4675, 4661 ], [ 4790, 4323 ] ].map do |child_number, owner_number|
+      child = create(:issue, :in_progress, project:, github_number: child_number, github_state: "open")
+      owner = create(:issue, :in_progress, project:, github_number: owner_number, github_state: "open")
+      child_run = create(:agent_run, :completed, project:, issue: child, pull_request_number: child_number + 100)
+      [ child, owner, child_run ]
+    end
+
+    cases.each do |child, owner, child_run|
+      described_class.call(agent_run: child_run, assessment: gaps([ human_gap("Independent RDR-070 judgment #{owner.github_number}", source: owner) ]))
+      expect(Notification.where(subject: child, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).not_to exist
+      expect(Notification.find_by!(subject: owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).to be_active
+    end
+  end
+
+  it "records unknown attribution without fabricating an Inbox human task" do # @spec PARTIAL-CLOSEOUT-041
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "Independent RDR-070 reference judgments", "kind" => "human",
+      "next_step" => "Record the independent judgments.",
+      "attribution" => { "coverage" => "unknown", "reason" => "The owner criterion could not be established." }
+    } ]))
+
+    expect(Notification.where(source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).not_to exist
+    expect(run.reload.reconciliation).to include(
+      "status" => "reassessment_required",
+      "unknown_attribution_count" => 1
+    )
+  end
+
+  it "reconciles a proven misplaced child occurrence without releasing its true owner" do # @spec PARTIAL-CLOSEOUT-041
+    evidence_owner = create(:issue, :in_progress, project:, github_number: 4662, github_state: "open")
+    described_class.call(agent_run: run, assessment: gaps([ human_gap("Reference judgments") ]))
+    child_notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+
+    described_class.call(agent_run: run, assessment: gaps([ human_gap("Reference judgments", source: evidence_owner) ]))
+
+    expect(child_notification.reload).not_to be_active
+    expect(child_notification.metadata).to include("released_by" => "reconciled_attribution")
+    expect(Notification.find_by!(subject: evidence_owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).to be_active
   end
 
   it "persists external work separately from human prerequisite evidence" do # @spec PARTIAL-CLOSEOUT-038
@@ -80,6 +131,7 @@ RSpec.describe PartialCloseouts::Reconcile do
   it "marks a dedicated facet-confidence evaluation prerequisite for its typed Inbox workflow" do # @spec FACET-CONFIDENCE-022
     described_class.call(agent_run: run, assessment: gaps([ {
       "criterion" => "Independent evaluation", "kind" => "human", "next_step" => "Record each judgment.",
+      "attribution" => attributed_to(parent),
       "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW
     } ]))
 
@@ -89,8 +141,7 @@ RSpec.describe PartialCloseouts::Reconcile do
 
   it "publishes a stable identity for each human prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
     described_class.call(agent_run: run, assessment: gaps([
-      { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." },
-      { "criterion" => "Accessibility sign-off", "kind" => "human", "next_step" => "Record the review." }
+      human_gap("macOS acceptance"), human_gap("Accessibility sign-off")
     ]))
 
     occurrences = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
@@ -99,23 +150,23 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(occurrences.map { |occurrence| occurrence.fetch("criterion") }).to contain_exactly("macOS acceptance", "Accessibility sign-off")
   end
 
-  it "uses the reconciled assessment source revision for every human prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
-    expected_revision = "assessment-a-revision"
+  it "uses the attributed source's current revision for every human prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-041
+    expected_revision = PartialCloseouts::Assessment.source_revision_for(parent)
     create(:agent_run, :completed, project:, issue: parent,
       reconciliation: { "assessment" => { "source_revision" => "newer-assessment-b-revision" } })
 
     described_class.call(agent_run: run, assessment: gaps([
-      { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." },
-      { "criterion" => "Accessibility sign-off", "kind" => "human", "next_step" => "Record the review." }
+      human_gap("macOS acceptance"), human_gap("Accessibility sign-off")
     ]).merge("source_revision" => expected_revision))
 
     occurrences = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
       .metadata.fetch("prerequisites")
-    expect(occurrences).to all(include("source_revision" => expected_revision))
+    expect(occurrences).to all(include("source_revision" => expected_revision,
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(parent)))
   end
 
   it "preserves submitted evidence when reconciling the prerequisite again" do # @spec PARTIAL-CLOSEOUT-033
-    gap = { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
+    gap = human_gap("macOS acceptance")
     described_class.call(agent_run: run, assessment: gaps([ gap ]))
     notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
     occurrence = notification.metadata.fetch("prerequisites").sole
@@ -130,7 +181,7 @@ RSpec.describe PartialCloseouts::Reconcile do
   end
 
   it "marks submitted evidence stale when reconciliation changes its source revision" do # @spec PARTIAL-CLOSEOUT-033
-    gap = { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
+    gap = human_gap("macOS acceptance")
     source_revision = Issues::CloseoutEvidence.call(parent).digest
     run.update!(reconciliation: { "assessment" => { "source_revision" => source_revision } })
     described_class.call(agent_run: run, assessment: gaps([ gap ]).merge("source_revision" => source_revision))
@@ -152,7 +203,7 @@ RSpec.describe PartialCloseouts::Reconcile do
 
   it "marks submitted evidence stale when the occurrence identity changes at the same source revision" do # @spec PARTIAL-CLOSEOUT-033
     source_revision = "unchanged-source-revision"
-    gap = { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
+    gap = human_gap("macOS acceptance")
     described_class.call(agent_run: run, assessment: gaps([ gap ]).merge("source_revision" => source_revision))
     notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
     occurrence = notification.metadata.fetch("prerequisites").sole
@@ -264,8 +315,8 @@ RSpec.describe PartialCloseouts::Reconcile do
 
   it "publishes one aggregated notification covering every human prerequisite" do
     described_class.call(agent_run: run, assessment: gaps([
-      { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the approved macOS pilot." },
-      { "criterion" => "security sign-off", "kind" => "human", "next_step" => "Approve the audit in the portal." }
+      human_gap("macOS acceptance", next_step: "Run the approved macOS pilot."),
+      human_gap("security sign-off", next_step: "Approve the audit in the portal.")
     ]))
 
     notifications = Notification.where(subject: parent, blocking: true)
@@ -438,10 +489,19 @@ RSpec.describe PartialCloseouts::Reconcile do
   end
 
   def policy_gap(revision:, next_step:)
-    {
-      "criterion" => "review policy", "kind" => "human", "next_step" => next_step,
+    human_gap("review policy", next_step:).merge(
       "references" => [ { "kind" => "policy", "key" => "team-review", "revision" => revision,
         "label" => "Team review #{revision}", "url" => "https://example.test/policies/team-review/#{revision}" } ]
-    }
+    )
+  end
+
+  def human_gap(criterion, source: parent, next_step: "Run the pilot.")
+    { "criterion" => criterion, "kind" => "human", "next_step" => next_step,
+      "attribution" => attributed_to(source, criterion) }
+  end
+
+  def attributed_to(source, criterion = "Independent evaluation")
+    { "coverage" => "established", "source_issue_number" => source.github_number,
+      "owner_issue_number" => source.github_number, "criterion" => criterion }
   end
 end

@@ -5,6 +5,7 @@ require "digest"
 module PartialCloseouts
   # Turns a validated semantic assessment into durable, replay-safe work owners.
   class Reconcile
+    Attribution = Data.define(:source_issue, :owner_issue)
     MAX_GAPS = 10
     MAX_SYNC_CONFIRMATION_ATTEMPTS = 3
     VALID_REFERENCE_KINDS = %w[policy evidence].freeze
@@ -19,9 +20,11 @@ module PartialCloseouts
       @assessment = assessment.to_h.deep_stringify_keys
     end
 
-    def call # @spec NO-OUTPUT-ISSUE-007
+    def call # @spec NO-OUTPUT-ISSUE-007 PARTIAL-CLOSEOUT-041
       validate!
-      publish_operator_prerequisites!(reconcile_gaps)
+      prerequisites_by_owner = reconcile_gaps
+      publish_operator_prerequisites!(prerequisites_by_owner)
+      reconcile_misplaced_prerequisite!(prerequisites_by_owner)
       publish_parent_dependencies!
       finalize!
     rescue GithubClient::Error => e
@@ -47,6 +50,7 @@ module PartialCloseouts
         raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
         validate_external_dependency!(gap) if external_gap?(gap)
         validate_human_references!(gap) if human_gap?(gap)
+        validate_human_attribution!(gap) if human_gap?(gap)
         raise ArgumentError, "human gap workflow is invalid" if human_gap?(gap) && gap["workflow"].present? && !gap["workflow"].in?(VALID_WORKFLOWS)
       end
     end
@@ -68,6 +72,21 @@ module PartialCloseouts
       raise ArgumentError, "replacement policy next_step is required"
     end
 
+    # Attribution is semantic evidence supplied by the assessor. Ruby only
+    # validates its stable identifiers and later verifies the referenced issue
+    # still exists in this tenant; it never decides whether two prose criteria
+    # mean the same thing.
+    def validate_human_attribution!(gap)
+      attribution = gap["attribution"]
+      return if attribution.is_a?(Hash) && attribution["coverage"] == "unknown" && attribution["reason"].to_s.strip.present?
+
+      valid = attribution.is_a?(Hash) && attribution["coverage"] == "established" &&
+        attribution["source_issue_number"].is_a?(Integer) && attribution["source_issue_number"].positive? &&
+        attribution["owner_issue_number"].is_a?(Integer) && attribution["owner_issue_number"].positive? &&
+        attribution["criterion"].to_s.strip == gap["criterion"].to_s.strip
+      raise ArgumentError, "human gap attribution is invalid" unless valid
+    end
+
     def validate_external_dependency!(gap)
       dependency = gap["external_dependency"]
       valid = dependency.is_a?(Hash) && dependency["owner"].to_s.strip.present? &&
@@ -83,19 +102,36 @@ module PartialCloseouts
     # notification: per-gap publishes dedup onto the same row and would
     # overwrite all but the last prerequisite.
     def reconcile_gaps
-      prerequisites = []
+      prerequisites_by_owner = Hash.new { |hash, key| hash[key] = [] }
       gaps.each_with_index do |gap, index|
         if human_gap?(gap)
-          record_gap!(index, gap, status: "awaiting_operator")
-          prerequisites << gap
+          attribution = attributed_source(gap)
+          if attribution
+            record_gap!(index, gap, status: "awaiting_operator", source_issue_id: attribution.source_issue.id,
+              owner_issue_id: attribution.owner_issue.id)
+            prerequisites_by_owner[attribution.owner_issue] << [ gap, attribution.source_issue ]
+          else
+            record_gap!(index, gap, status: "attribution_unknown", attribution_reason: gap.dig("attribution", "reason") || "The attributed source issue is unavailable.")
+          end
         elsif external_gap?(gap)
           reconcile_external_gap(gap, index)
-          prerequisites << gap
+          prerequisites_by_owner[agent_run.issue] << [ gap, agent_run.issue ]
         else
           reconcile_agent_gap(gap, index)
         end
       end
-      prerequisites
+      prerequisites_by_owner
+    end
+
+    def attributed_source(gap)
+      attribution = gap.fetch("attribution")
+      return if attribution["coverage"] == "unknown"
+
+      source = agent_run.project.issues.find_by(github_number: attribution.fetch("source_issue_number"))
+      owner = agent_run.project.issues.find_by(github_number: attribution.fetch("owner_issue_number"))
+      return unless source && owner && source.github_state == "open" && owner.github_state == "open"
+
+      Attribution.new(source, owner)
     end
 
     def reconcile_external_gap(gap, index)
@@ -217,37 +253,54 @@ module PartialCloseouts
     end
 
     # @spec PARTIAL-CLOSEOUT-033
-    def publish_operator_prerequisites!(prerequisites)
-      return if prerequisites.empty?
-
-      agent_run.issue.with_lock do
-        previous = existing_prerequisite_notification
-        if previous
-          previous.with_lock { publish_prerequisite_notification!(prerequisites, previous:) }
-        else
-          publish_prerequisite_notification!(prerequisites, previous: nil)
+    def publish_operator_prerequisites!(prerequisites_by_owner)
+      prerequisites_by_owner.each do |owner_issue, attributed_gaps|
+        owner_issue.with_lock do
+          previous = existing_prerequisite_notification(owner_issue)
+          if previous
+            previous.with_lock { publish_prerequisite_notification!(owner_issue, attributed_gaps, previous:) }
+          else
+            publish_prerequisite_notification!(owner_issue, attributed_gaps, previous: nil)
+          end
         end
       end
     end
 
-    def publish_prerequisite_notification!(prerequisites, previous:)
+    # A notification can move only when this run previously published it and
+    # the new assessment establishes a different owner. Older unproven rows
+    # are deliberately retained for operator review rather than deleted.
+    def reconcile_misplaced_prerequisite!(prerequisites_by_owner)
+      return if prerequisites_by_owner.key?(agent_run.issue)
+
+      notification = existing_prerequisite_notification(agent_run.issue)
+      return unless notification&.active?
+      return unless notification.metadata["origin_agent_run_id"] == agent_run.id
+
+      notification.update!(resolved_at: Time.current, metadata: notification.metadata.merge(
+        "released_by" => "reconciled_attribution", "released_at" => Time.current.iso8601
+      ))
+    end
+
+    def publish_prerequisite_notification!(owner_issue, attributed_gaps, previous:)
+      prerequisites = attributed_gaps.map(&:first)
       notification = Notifications::Publish.call(
-        account: agent_run.project.account, subject: agent_run.issue,
+        account: agent_run.project.account, subject: owner_issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(prerequisites),
         description: prerequisites.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
-        metadata: prerequisite_metadata(prerequisites, previous:)
+        metadata: prerequisite_metadata(attributed_gaps, previous:)
       )
       ExternalPrerequisites.recheck(notification) if prerequisites.any? { |gap| external_gap?(gap) }
     end
 
     # @spec PARTIAL-CLOSEOUT-031
-    def prerequisite_metadata(prerequisites, previous:)
+    def prerequisite_metadata(attributed_gaps, previous:)
+      prerequisites = attributed_gaps.map(&:first)
       references = prerequisites.flat_map { |gap| Array(gap["references"]) }
       identities = prerequisites.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
-      metadata = { "prerequisite_identity" => identity, "references" => references,
-                   "prerequisites" => prerequisites.map { |gap| prerequisite_occurrence(gap) } }
+      metadata = { "origin_agent_run_id" => agent_run.id, "prerequisite_identity" => identity, "references" => references,
+                   "prerequisites" => attributed_gaps.map { |gap, source_issue| prerequisite_occurrence(gap, source_issue) } }
       workflow = workflow_for(prerequisites)
       metadata["workflow"] = workflow if workflow
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
@@ -285,17 +338,20 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "kind", "next_step", "policy_selection", "workflow", "external_dependency"))
+      identity = canonicalize(gap.slice("criterion", "kind", "next_step", "policy_selection", "workflow", "external_dependency", "attribution"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
       identity
     end
 
-    def prerequisite_occurrence(gap)
+    def prerequisite_occurrence(gap, source_issue)
       occurrence = { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
         "criterion" => gap["criterion"], "kind" => gap["kind"], "references" => Array(gap["references"]),
-        "source_revision" => source_revision }
+        "source_revision" => Assessment.source_revision_for(source_issue),
+        "intent_revision" => Assessment.intent_revision_for(source_issue),
+        "source_issue_number" => source_issue.github_number,
+        "owner_issue_number" => gap.dig("attribution", "owner_issue_number") || source_issue.github_number }
       occurrence["external_dependency"] = external_dependency(gap) if external_gap?(gap)
       occurrence
     end
@@ -329,9 +385,9 @@ module PartialCloseouts
       workflows.sole if workflows.one? && human_gaps.all? { |gap| gap["workflow"] == workflows.sole }
     end
 
-    def existing_prerequisite_notification
+    def existing_prerequisite_notification(source_issue)
       Notification.find_by(
-        account: agent_run.project.account, subject: agent_run.issue,
+        account: agent_run.project.account, subject: source_issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE
       )
     end
@@ -398,8 +454,17 @@ module PartialCloseouts
     def finalize!
       return if reconciliation.fetch("status", nil) == "pending_sync"
 
-      status = reconciliation.fetch("gaps", {}).values.any? { |gap| gap["status"].in?(%w[awaiting_operator awaiting_external]) } ? "awaiting_operator" : "reconciled"
-      agent_run.update!(reconciliation: reconciliation.merge("status" => status, "reconciled_at" => Time.current.iso8601))
+      states = reconciliation.fetch("gaps", {}).values
+      unknown = states.count { |gap| gap["status"] == "attribution_unknown" }
+      status = if unknown.positive?
+        "reassessment_required"
+      elsif states.any? { |gap| gap["status"].in?(%w[awaiting_operator awaiting_external]) }
+        "awaiting_operator"
+      else
+        "reconciled"
+      end
+      agent_run.update!(reconciliation: reconciliation.merge("status" => status,
+        "unknown_attribution_count" => unknown, "reconciled_at" => Time.current.iso8601))
     end
 
     def record_failure!(error)

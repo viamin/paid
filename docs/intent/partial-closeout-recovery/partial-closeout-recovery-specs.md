@@ -820,3 +820,22 @@
   `app/temporal/activities/fetch_issues_activity.rb`.
   *Test:* `spec/services/partial_closeouts/confirm_sync_spec.rb`,
   `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-041** — Before Paid creates or retains a
+  `partial_closeout.prerequisite` occurrence for human evidence, the
+  `agent_harness` assessment SHALL identify the current source issue, exact
+  acceptance criterion, and owning evidence/work item. Deterministic code
+  SHALL validate those stable identifiers in the same tenant and bind the
+  occurrence to the source issue's current source and intent revisions. An
+  established independent-human prerequisite SHALL be surfaced only on that
+  source owner; an implementation child that merely mentions it SHALL not
+  receive an Action Required item. When the assessment cannot establish the
+  owner/criterion relationship, Paid SHALL persist unknown attribution and a
+  bounded reassessment requirement without fabricating a human task. Repeated
+  reconciliation SHALL preserve current owner evidence and replace only a
+  notification it can prove belongs to the reconciled occurrence; external
+  prerequisites remain on their existing external wait path.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
