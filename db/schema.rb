@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_06_120001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3610,6 +3610,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
   end
 
+  create_table "project_delegation_checkpoints", force: :cascade do |t|
+    t.string "acceptance_revision", null: false
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.string "design_revision", null: false
+    t.jsonb "groups", default: [], null: false
+    t.bigint "issue_id"
+    t.bigint "project_id", null: false
+    t.string "status", default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_project_delegation_checkpoints_on_account_id"
+    t.index ["issue_id"], name: "index_project_delegation_checkpoints_on_issue_id"
+    t.index ["project_id", "design_revision", "acceptance_revision"], name: "index_delegation_checkpoints_on_project_revisions"
+    t.index ["project_id", "issue_id", "status"], name: "index_delegation_checkpoints_on_project_issue_status"
+    t.index ["project_id"], name: "index_project_delegation_checkpoints_on_project_id"
+  end
+
+  create_table "project_delegation_settlements", force: :cascade do |t|
+    t.string "acceptance_revision", null: false
+    t.bigint "account_id", null: false
+    t.jsonb "answers", default: [], null: false
+    t.bigint "checkpoint_id", null: false
+    t.datetime "created_at", null: false
+    t.string "decision", null: false
+    t.string "design_revision", null: false
+    t.bigint "project_id", null: false
+    t.bigint "settled_by_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_project_delegation_settlements_on_account_id"
+    t.index ["checkpoint_id", "id"], name: "index_delegation_settlements_on_checkpoint_and_id"
+    t.index ["checkpoint_id"], name: "index_project_delegation_settlements_on_checkpoint_id"
+    t.index ["project_id"], name: "index_project_delegation_settlements_on_project_id"
+    t.index ["settled_by_id"], name: "index_project_delegation_settlements_on_settled_by_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -5095,6 +5130,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
   add_foreign_key "project_convention_recommendations", "projects"
   add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
   add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
+  add_foreign_key "project_delegation_checkpoints", "accounts"
+  add_foreign_key "project_delegation_checkpoints", "issues"
+  add_foreign_key "project_delegation_checkpoints", "projects"
+  add_foreign_key "project_delegation_settlements", "accounts"
+  add_foreign_key "project_delegation_settlements", "project_delegation_checkpoints", column: "checkpoint_id"
+  add_foreign_key "project_delegation_settlements", "projects"
+  add_foreign_key "project_delegation_settlements", "users", column: "settled_by_id"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"

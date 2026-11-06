@@ -13,7 +13,7 @@ Status markers: `[ ]` planned implementation gap.
   human reviews, and SHALL record the actor, project, revision, enabled action
   classes, and audit event.
 
-- [ ] **PROJECT-DELEGATION-002** — When material product questions are known
+- [x] **PROJECT-DELEGATION-002** — When material product questions are known
   before downstream work, the system SHALL group related questions, show a
   recommendation and consequences, and bind a human's settled answers to the
   immutable design and acceptance revision; it SHALL NOT ask again downstream

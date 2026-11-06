@@ -55,6 +55,16 @@ class ProjectPolicy < ApplicationPolicy
     end
   end
 
+  # Settling a material intent checkpoint is the human decision that binds
+  # downstream delegation to one immutable design/acceptance revision. It
+  # stays with account and project collaborators.
+  # @spec PROJECT-DELEGATION-002
+  def settle_intent_checkpoint?
+    return false unless user_in_account?
+
+    has_any_account_role?(:owner, :admin, :member) || has_project_role?
+  end
+
   def manage_apple_verifications?
     return false unless user_in_account?
 

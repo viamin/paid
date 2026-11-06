@@ -23,6 +23,8 @@ require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_r
 require Rails.root.join("db/migrate/20260730190357_make_projects_github_token_optional_in_rls")
 require Rails.root.join("db/migrate/20261029221250_create_inbox_history_events")
 require Rails.root.join("db/migrate/20261105195000_create_bounded_delegated_actions")
+require Rails.root.join("db/migrate/20261106120000_create_project_delegation_checkpoints")
+require Rails.root.join("db/migrate/20261106120001_create_project_delegation_settlements")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -94,6 +96,29 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       end
       described_class.clear!
       expect(BoundedDelegatedAction.all).to be_empty
+    end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-001 POSTGRESQL-PERSISTENCE-006 PROJECT-DELEGATION-002
+  it "isolates project delegation checkpoints and settlements and rejects cross-tenant scope references" do
+    checkpoint_a, settlement_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      checkpoint = create(:project_delegation_checkpoint, account: account_a, project:,
+        issue: create(:issue, project:))
+      [ checkpoint, create(:project_delegation_settlement, checkpoint:) ]
+    end
+    checkpoint_b, project_b, issue_b, user_b = tenant_b_delegation_records
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ProjectDelegation::Checkpoint.all).to contain_exactly(checkpoint_a)
+        expect(ProjectDelegation::Settlement.all).to contain_exactly(settlement_a)
+        expect_rls_rejection { insert_project_delegation_checkpoint(account_a, project_b, issue_b) }
+        expect_rls_rejection { insert_project_delegation_settlement(account_a, checkpoint_b, user_b) }
+      end
+      described_class.clear!
+      expect(ProjectDelegation::Checkpoint.all).to be_empty
+      expect(ProjectDelegation::Settlement.all).to be_empty
     end
   end
 
@@ -298,6 +323,8 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
+      CreateProjectDelegationCheckpoints.new.enable_tenant_rls
+      CreateProjectDelegationSettlements.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -349,10 +376,14 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
       CreateBoundedDelegatedActions.new.disable_tenant_rls
+      CreateProjectDelegationSettlements.new.disable_tenant_rls
+      CreateProjectDelegationCheckpoints.new.disable_tenant_rls
       EnableTenantRowLevelSecurity.new.down
 
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
+      CreateProjectDelegationCheckpoints.new.enable_tenant_rls
+      CreateProjectDelegationSettlements.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -567,6 +598,43 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
         #{account.id}, #{project.id}, #{issue.id}, #{sql_value(created_by&.id)}, 'review', 'active',
         '{"intent_digest":"rls","acceptance_refs":["AC-1"]}'::jsonb,
         CURRENT_TIMESTAMP + INTERVAL '1 hour', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def tenant_b_delegation_records
+    described_class.with_system_access do
+      project = create(:project, account: account_b)
+      checkpoint = create(:project_delegation_checkpoint, account: account_b, project:,
+        issue: create(:issue, project:))
+      [ checkpoint, project, checkpoint.issue, create(:user, account: account_b) ]
+    end
+  end
+
+  def insert_project_delegation_checkpoint(account, project, issue)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_delegation_checkpoints (
+        account_id, project_id, issue_id, design_revision, acceptance_revision,
+        status, groups, created_at, updated_at
+      ) VALUES (
+        #{account.id}, #{project.id}, #{issue.id}, '#{'a' * 40}', 'acceptance-rls',
+        'open', '[{"key":"retention","topic":"t","question":"q","recommendation":"r",
+        "alternatives":[{"label":"a"}],"consequences":"c","affected_scope":["s"],
+        "evidence":["e"]}]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_project_delegation_settlement(account, checkpoint, settled_by)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_delegation_settlements (
+        checkpoint_id, account_id, project_id, settled_by_id, decision, answers,
+        design_revision, acceptance_revision, created_at, updated_at
+      ) VALUES (
+        #{checkpoint.id}, #{account.id}, #{checkpoint.project_id}, #{settled_by.id}, 'settled',
+        '[{"key":"retention","choice":"30 days"}]'::jsonb,
+        '#{checkpoint.design_revision}', '#{checkpoint.acceptance_revision}',
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
     SQL
   end
