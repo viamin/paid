@@ -276,7 +276,7 @@ RSpec.describe ToolchainPins, :no_db do
       package_json = JSON.parse(Rails.root.join("package.json").read)
       dependencies = package_json.fetch("dependencies")
 
-      expect(dependencies).to include("@tailwindcss/cli" => "4.3.3")
+      expect(dependencies).to include("@tailwindcss/cli" => "4.3.4")
       expect(dependencies).not_to have_key("tailwindcss")
     end
   end

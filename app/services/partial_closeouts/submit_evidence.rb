@@ -100,7 +100,9 @@ module PartialCloseouts
       expected.blank? || expected == current_source_revision
     end
 
-    def current_source_revision = @current_source_revision ||= PartialCloseouts::Assessment.source_revision_for(notification.subject)
+    def current_source_revision
+      @current_source_revision ||= PrerequisiteOccurrences.current_source_revision(notification, occurrence)
+    end
 
     def valid_evidence_url?
       uri = URI.parse(evidence_url)

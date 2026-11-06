@@ -58,6 +58,19 @@ own route-based mobile flow (`OPERATOR-INBOX-003`) and its own
 `inbox-master-detail` Stimulus controller; only the layout rules move to the
 shared pattern.
 
+## Selected-entry links
+
+Each selected detail exposes a visible, keyboard-accessible **Copy link to
+this item** action. It copies the canonical Inbox member URL for the selected
+entry, preserving the active list filters but never using a Turbo-frame,
+supplement, or history URL. This makes the asynchronously selected first entry
+shareable even while the collection route remains in the address bar. Selecting
+a different row promotes its member navigation into browser history while
+preserving the split-pane list and its scroll position where Turbo supports
+that restoration. A copied member URL remains subject to the entry's normal
+tenant and owner visibility checks; an unavailable entry follows the existing
+safe fallback to the filtered collection rather than rendering its detail.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the

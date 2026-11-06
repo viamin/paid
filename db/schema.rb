@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -737,6 +737,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_120000) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "active"], name: "index_billing_plans_on_account_id_and_active"
     t.index ["account_id"], name: "index_billing_plans_on_account_id"
+  end
+
+  create_table "bounded_delegated_actions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "action", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "expires_at", null: false
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.datetime "revoked_at"
+    t.bigint "revoked_by_id"
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_bounded_delegated_actions_on_account_id"
+    t.index ["created_by_id"], name: "index_bounded_delegated_actions_on_created_by_id"
+    t.index ["issue_id"], name: "index_bounded_delegated_actions_on_issue_id"
+    t.index ["project_id", "issue_id", "action"], name: "index_bounded_actions_on_project_issue_action"
+    t.index ["project_id"], name: "index_bounded_delegated_actions_on_project_id"
+    t.index ["revoked_by_id"], name: "index_bounded_delegated_actions_on_revoked_by_id"
+    t.index ["status", "expires_at"], name: "index_bounded_actions_on_status_and_expiry"
   end
 
   create_table "bundle_outcomes", comment: "Measured results from using a configuration bundle on an agent run", force: :cascade do |t|
@@ -4773,6 +4795,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_120000) do
   add_foreign_key "billing_periods", "accounts"
   add_foreign_key "billing_periods", "billing_plans"
   add_foreign_key "billing_plans", "accounts"
+  add_foreign_key "bounded_delegated_actions", "accounts"
+  add_foreign_key "bounded_delegated_actions", "issues"
+  add_foreign_key "bounded_delegated_actions", "projects"
+  add_foreign_key "bounded_delegated_actions", "users", column: "created_by_id"
+  add_foreign_key "bounded_delegated_actions", "users", column: "revoked_by_id"
   add_foreign_key "bundle_outcomes", "agent_runs", on_delete: :cascade
   add_foreign_key "bundle_outcomes", "configuration_bundles", on_delete: :cascade
   add_foreign_key "change_intents", "change_intents", column: "superseded_by_id", on_delete: :nullify

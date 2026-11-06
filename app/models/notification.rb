@@ -104,12 +104,12 @@ class Notification < ApplicationRecord
     Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
   end
 
-  def partial_closeout_prerequisite_released?
+  def partial_closeout_prerequisite_released? # @spec PARTIAL-CLOSEOUT-041
     return false unless source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
     return false unless subject.is_a?(Issue)
 
     resolved_now = saved_change_to_resolved_at? && attribute_before_last_save("resolved_at").nil?
-    resolved_now && metadata["released_by"].in?(%w[reconciled_evidence external_prerequisite])
+    resolved_now && metadata["released_by"].in?(%w[reconciled_attribution reconciled_evidence external_prerequisite])
   end
 
   def enqueue_partial_closeout_subject_on_release

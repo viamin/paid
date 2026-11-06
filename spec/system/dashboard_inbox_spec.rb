@@ -66,6 +66,14 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     expect(form).to have_field("inbox_kind", type: :hidden, with: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
     expect(form).to have_css("textarea[name='answers[]']", count: 2)
     expect(form).to have_button("Submit Answers")
+
+    # @spec OPERATOR-INBOX-026
+    copy_link = page.find_button("Copy link to this item")
+    expect(copy_link["aria-describedby"]).to eq("inbox-copy-link-status")
+    expect(copy_link["data-inbox-master-detail-copy-link-url"]).to eq(
+      inbox_entry_path("clarifying_questions:#{issue.id}", project_id: project.id,
+        kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+    )
   end
 
   # @spec LIST-DETAIL-007

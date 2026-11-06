@@ -10,7 +10,7 @@ import { Controller } from "@hotwired/stimulus"
 // tweak to the shared active-row treatment lives in one place.
 // @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-003A @spec LIST-DETAIL-003
 export default class extends Controller {
-  static targets = ["list", "detailSection", "row"]
+  static targets = ["list", "detailSection", "row", "copyStatus"]
   static values = { detailOpen: Boolean }
 
   // @spec OPERATOR-INBOX-003A
@@ -44,6 +44,27 @@ export default class extends Controller {
     if (placeholder) placeholder.textContent = "Loading item…"
     this.highlightRow(event.currentTarget)
     this.detailOpenValue = true
+  }
+
+  // @spec OPERATOR-INBOX-026
+  async copyLink(event) {
+    const path = event.currentTarget.dataset.inboxMasterDetailCopyLinkUrl
+    if (!path) return
+
+    const url = new URL(path, window.location.origin).toString()
+
+    try {
+      await window.navigator.clipboard.writeText(url)
+      this.announceCopyResult("Link copied.")
+    } catch (clipboardError) {
+      try {
+        this.copyWithSelection(url)
+        this.announceCopyResult("Link copied.")
+      } catch (fallbackError) {
+        this.reportCopyFailure(clipboardError, fallbackError)
+        this.announceCopyResult("Copy failed.")
+      }
+    }
   }
 
   close() {
@@ -89,6 +110,34 @@ export default class extends Controller {
       // gray hover affordance and the just-deselected row doesn't lose it.
       row.classList.toggle("hover:bg-gray-50", !selected)
     })
+  }
+
+  copyWithSelection(url) {
+    const selection = document.createElement("textarea")
+    selection.value = url
+    selection.setAttribute("readonly", "")
+    selection.classList.add("sr-only")
+    const previouslyFocused = document.activeElement
+    document.body.append(selection)
+    selection.select()
+
+    try {
+      if (document.execCommand("copy") !== true) throw new Error("Clipboard copy failed")
+    } finally {
+      selection.remove()
+      previouslyFocused?.focus()
+    }
+  }
+
+  announceCopyResult(message) {
+    if (this.hasCopyStatusTarget) this.copyStatusTarget.textContent = message
+  }
+
+  reportCopyFailure(clipboardError, fallbackError) {
+    window.console?.warn(
+      "inbox-master-detail#copyLink: clipboard write failed",
+      { clipboardError, fallbackError }
+    )
   }
 
   show(element) {

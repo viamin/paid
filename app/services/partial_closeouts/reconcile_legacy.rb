@@ -44,6 +44,13 @@ module PartialCloseouts
     # durable state instead of restarting from scratch (which would re-file
     # owner issues from the assessment).
     TERMINAL_STATUSES = %w[reconciled awaiting_operator].freeze
+    # `reassessment_required` is rerunnable rather than terminal: the stored
+    # assessment proved it cannot attribute the remaining human prerequisite,
+    # so each pass regenerates a fresh assessment (below). This bounds those
+    # paid reassessment attempts per run; exhaustion leaves the run to the
+    # operator's reassessment Inbox item instead of looping the analyzer
+    # forever (#4893).
+    MAX_REASSESSMENT_ATTEMPTS = 3
     # The merge grace window used elsewhere to disambiguate PR numbers
     # that have not yet synced as local Issue rows. We inherit it so a
     # legacy sweep that runs an hour after a slug-deployed merge still
@@ -102,11 +109,11 @@ module PartialCloseouts
     SQL
 
     Result = Struct.new(
-      :scanned, :reconciled, :awaiting_operator, :retryable_failure, :skipped, :next_cursor, :lock_held,
+      :scanned, :reconciled, :awaiting_operator, :retryable_failure, :reassessment, :skipped, :next_cursor, :lock_held,
       keyword_init: true
     ) do
-      def initialize(lock_held: false, **attributes)
-        super(**attributes, lock_held:)
+      def initialize(reassessment: 0, lock_held: false, **attributes)
+        super(**attributes, reassessment:, lock_held:)
       end
 
       def to_h
@@ -115,6 +122,7 @@ module PartialCloseouts
           reconciled: reconciled,
           awaiting_operator: awaiting_operator,
           retryable_failure: retryable_failure,
+          reassessment: reassessment,
           skipped: skipped,
           next_cursor: next_cursor,
           lock_held: lock_held
@@ -171,6 +179,7 @@ module PartialCloseouts
         reconciled = 0
         awaiting_operator = 0
         retryable_failure = 0
+        reassessment = 0
         skipped = 0
         next_cursor = nil
 
@@ -183,6 +192,7 @@ module PartialCloseouts
             when :reconciled then reconciled += 1
             when :awaiting_operator then awaiting_operator += 1
             when :retryable_failure then retryable_failure += 1
+            when :reassessment then reassessment += 1
             when :skipped then skipped += 1
             end
           end
@@ -193,6 +203,7 @@ module PartialCloseouts
           reconciled: reconciled,
           awaiting_operator: awaiting_operator,
           retryable_failure: retryable_failure,
+          reassessment: reassessment,
           skipped: skipped,
           next_cursor: next_cursor,
           lock_held: false
@@ -293,6 +304,7 @@ module PartialCloseouts
       case status
       when "reconciled" then :reconciled
       when "awaiting_operator" then :awaiting_operator
+      when "reassessment_required" then :reassessment
       when "pending_sync" then :skipped
       when "retryable_failure"
         Rails.logger.warn(
@@ -378,11 +390,16 @@ module PartialCloseouts
     #    the sweep skips the run this pass. A stale `retryable_failure`
     #    (older than one day) is resumable, so a worker that crashed
     #    before reaching GitHub does not strand a real attempt.
+    # `reassessment_required` is neither: it stays rerunnable (a bounded
+    # fresh assessment in `persisted_assessment`) until
+    # `reassessment_halted?` says otherwise.
+    # @spec PARTIAL-CLOSEOUT-041
     def legacy_reconciliation_already_done?(agent_run)
       reconciliation = agent_run.reconciliation.to_h
       status = reconciliation["status"]
       return false if status.blank?
       return true if TERMINAL_STATUSES.include?(status)
+      return reassessment_halted?(reconciliation) if status == "reassessment_required"
       return false unless status == "retryable_failure"
 
       failed_at = reconciliation["failed_at"]
@@ -391,6 +408,20 @@ module PartialCloseouts
       Time.parse(failed_at) >= 1.day.ago
     rescue ArgumentError
       false
+    end
+
+    # The sweep stops re-running a `reassessment_required` run once the
+    # attempt bound is exhausted, or once any recorded gap state carries an
+    # owner/marker link — regenerating an assessment beside index-keyed
+    # owner state is the same mislink hazard `persist_retryable_failure!`
+    # guards against, because the fresh gap order need not match the old
+    # indices. Halted runs keep their reassessment Inbox item as the
+    # operator's focused investigation path (#4893).
+    def reassessment_halted?(reconciliation)
+      reconciliation.dig("reassessment", "attempts").to_i >= MAX_REASSESSMENT_ATTEMPTS ||
+        reconciliation.fetch("gaps", {}).values.any? do |state|
+          state["owner_issue_id"].present? || state["owner_issue_number"].present? || state["marker"].present?
+        end
     end
 
     # The LLM is the only non-deterministic step in the sweep; persisting its
@@ -406,9 +437,31 @@ module PartialCloseouts
     # next pass (after the 1-day `retryable_failure` window) replays the same
     # gap set through the marker-based recovery path (#4187).
     def persisted_assessment(agent_run)
+      return reassess!(agent_run) if agent_run.reconciliation.to_h["status"] == "reassessment_required"
+
       agent_run.reconciliation["assessment"] || Llm::AnalyzePartialCloseout.call(agent_run: agent_run).then do |result|
         Assessment.snapshot(agent_run, result).tap do |assessment|
           agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => assessment))
+        end
+      end
+    end
+
+    # Reached only for a rerunnable `reassessment_required` run — the
+    # already-done gate above halted the exhausted and owner-linked ones.
+    # The stored assessment proved it cannot attribute the remaining human
+    # prerequisite, so replaying it would return the same unknown result
+    # forever; regenerate a fresh one and clear the unlinked gap states a
+    # shorter replacement would otherwise leave behind as stale indices
+    # (#4893).
+    # @spec PARTIAL-CLOSEOUT-041
+    def reassess!(agent_run)
+      attempts = agent_run.reconciliation.to_h.dig("reassessment", "attempts").to_i + 1
+      Llm::AnalyzePartialCloseout.call(agent_run: agent_run).then do |result|
+        Assessment.snapshot(agent_run, result).tap do |assessment|
+          agent_run.update!(reconciliation: agent_run.reconciliation.merge(
+            "assessment" => assessment, "gaps" => {},
+            "reassessment" => { "attempts" => attempts, "last_attempted_at" => Time.current.iso8601 }
+          ))
         end
       end
     end

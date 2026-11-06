@@ -22,6 +22,17 @@ module PartialCloseouts
       notification.update!(metadata: notification.metadata.merge("prerequisites" => [ occurrence ]))
     end
 
+    # @spec PARTIAL-CLOSEOUT-041
+    def self.current_source_revision(notification, occurrence)
+      issue_number = occurrence["source_issue_number"]
+      source_issue = if issue_number.present?
+        notification.subject.project.issues.find_by(github_number: issue_number)
+      else
+        notification.subject
+      end
+      Assessment.source_revision_for(source_issue) if source_issue
+    end
+
     def self.legacy_occurrence(notification)
       identity = notification.metadata["prerequisite_identity"].to_s
       return if identity.blank?

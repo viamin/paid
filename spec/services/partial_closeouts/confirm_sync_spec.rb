@@ -25,6 +25,22 @@ RSpec.describe PartialCloseouts::ConfirmSync do
     expect(run.reconciliation.dig("sync_confirmation", "status")).to eq("confirmed")
   end
 
+  # @spec PARTIAL-CLOSEOUT-041 — a confirmed repair cannot relabel an
+  # unattributed human prerequisite as ordinary operator work.
+  it "restores reassessment_required for an unattributed human prerequisite" do
+    run.update!(reconciliation: run.reconciliation.deep_merge(
+      "assessment" => { "gaps" => [ { "criterion" => "Reference judgments", "kind" => "human",
+        "next_step" => "Record the judgments.",
+        "attribution" => { "coverage" => "unknown", "reason" => "The owning issue could not be established." } } ] },
+      "gaps" => { "0" => { "status" => "attribution_unknown" } }
+    ))
+
+    described_class.call(project:, synced_issue_ids: [ issue.id ])
+
+    expect(run.reload.reconciliation).to include("status" => "reassessment_required")
+    expect(run.reconciliation.dig("sync_confirmation", "status")).to eq("confirmed")
+  end
+
   # @spec PARTIAL-CLOSEOUT-040
   it "bounds mismatches and records an explicit manual resolution" do
     run

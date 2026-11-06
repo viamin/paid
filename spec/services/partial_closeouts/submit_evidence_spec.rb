@@ -180,6 +180,25 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     )
   end
 
+  it "releases evidence attributed from a different source issue" do # @spec PARTIAL-CLOSEOUT-041
+    source_issue = create(:issue, project:, github_state: "open")
+    create(:issue, :pull_request, project:, parent_issue: issue, github_state: "closed", pr_review_phase: "merged")
+    source_revision = PartialCloseouts::Assessment.source_revision_for(source_issue)
+    notification.update!(metadata: { "prerequisites" => [ {
+      "identity" => identity, "source_issue_number" => source_issue.github_number,
+      "owner_issue_number" => issue.github_number, "source_revision" => source_revision
+    } ] })
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+
+    submission = described_class.call(**attributes)
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(submission.outcome).to eq("pending_validation")
+    expect(result).to be_sufficient
+    expect(notification.reload.metadata.fetch("released_by")).to eq("reconciled_evidence")
+  end
+
   it "treats a duplicate validator completion after resolution as a no-op" do # @spec PARTIAL-CLOSEOUT-033
     attributes = { notification:, actor:, prerequisite_identity: identity,
                    evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }

@@ -140,6 +140,7 @@ namespace :issues do
     puts "  reconciled:          #{result.reconciled}"
     puts "  awaiting_operator:   #{result.awaiting_operator}"
     puts "  retryable_failure:   #{result.retryable_failure}"
+    puts "  reassessment:        #{result.reassessment}"
     puts "  skipped:             #{result.skipped}"
     puts "  next_cursor:         #{result.next_cursor}"
     if result.scanned == batch_size

@@ -128,6 +128,27 @@ RSpec.describe PartialCloseouts::ValidateSubmittedEvidence do
     described_class.call(notification:, prerequisite_identity: identity, submission_id: "submission-a")
 
     expect(notification.reload.resolved_at).to be_present
+    expect(notification.metadata.fetch("released_by")).to eq("reconciled_evidence")
+  end
+
+  it "submits, validates, and releases an occurrence whose source differs from its owner" do # @spec PARTIAL-CLOSEOUT-041
+    source_issue = create(:issue, project:, github_state: "open")
+    allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("owner-v1")
+    allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(source_issue).and_return("source-v1")
+    notification.update!(metadata: { "prerequisites" => [ {
+      "identity" => identity, "criterion" => "Pilot results are independently reviewed",
+      "source_issue_number" => source_issue.github_number, "owner_issue_number" => issue.github_number,
+      "source_revision" => "source-v1"
+    } ] })
+    actor = create(:user, account: project.account)
+
+    submission = PartialCloseouts::SubmitEvidence.call(notification:, actor:, prerequisite_identity: identity,
+      evidence_url: "https://evidence.example.test/report", explanation: "The independent review is attached.")
+    result = described_class.call(notification:, prerequisite_identity: identity, submission_id: submission.submission_id)
+
+    expect(submission.outcome).to eq("pending_validation")
+    expect(result.outcome).to eq("sufficient")
+    expect(notification.reload.metadata).to include("released_by" => "reconciled_evidence")
   end
 
   it "keeps the notification active until every current occurrence is sufficient" do # @spec PARTIAL-CLOSEOUT-033 PARTIAL-CLOSEOUT-036

@@ -1,4 +1,4 @@
-<%# @spec OPERATOR-INBOX-006 @spec LIST-DETAIL-003 %>
+<%# @spec OPERATOR-INBOX-006 @spec OPERATOR-INBOX-026 @spec LIST-DETAIL-003 %>
 <div class="border-b border-gray-200 px-4 py-4 sm:px-6">
   <div class="flex items-start justify-between gap-4">
     <div>
@@ -23,16 +23,26 @@
       <p class="mt-1 text-sm text-gray-500"><%= entry.project.full_name %></p>
     </div>
 
-    <%= link_to inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)),
-          data: {
-            turbo_frame: "_top",
-            action: "click->inbox-master-detail#close"
-          },
-          class: "inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 lg:hidden" do %>
-      <span aria-hidden="true">&larr;</span>
-      <span class="ml-1">Back to queue</span>
-    <% end %>
+    <div class="flex items-center gap-2">
+      <button type="button"
+          data-action="click->inbox-master-detail#copyLink"
+          data-inbox-master-detail-copy-link-url="<%= inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)) %>"
+          aria-describedby="inbox-copy-link-status"
+          class="inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+        Copy link to this item
+      </button>
+      <%= link_to inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)),
+            data: {
+              turbo_frame: "_top",
+              action: "click->inbox-master-detail#close"
+            },
+            class: "inline-flex rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 lg:hidden" do %>
+        <span aria-hidden="true">&larr;</span>
+        <span class="ml-1">Back to queue</span>
+      <% end %>
+    </div>
   </div>
+  <p id="inbox-copy-link-status" data-inbox-master-detail-target="copyStatus" class="sr-only" role="status" aria-live="polite"></p>
 </div>
 
 <div class="px-4 py-5 sm:px-6">
