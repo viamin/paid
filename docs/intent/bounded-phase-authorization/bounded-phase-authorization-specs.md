@@ -59,7 +59,13 @@ claims remain proposed until their admission and reassessment paths land.
   actor policy, authorization lifecycle, expiry, lineage, stop boundary,
   current policy signature, and deterministic repository controls; a revoked,
   completed, expired, or invalid authorization SHALL start no new action.
-  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`.
+  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
+  `spec/services/automation/delegated_action_admission_spec.rb`, the
+  delegated-work contexts of
+  `spec/temporal/activities/queue_agent_run_activity_spec.rb` and
+  `spec/jobs/process_run_queue_job_spec.rb` (queue, follow-up-tagged queue,
+  and dequeue boundaries — retry-minted runs pass through the same dequeue
+  recheck), and `spec/services/automation/focused_decision_spec.rb`.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-005** — When pinned intent/acceptance
   expands, policy or permissions change, a new risk appears, or repair-to-scope

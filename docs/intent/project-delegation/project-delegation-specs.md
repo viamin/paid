@@ -35,7 +35,14 @@ Status markers: `[ ]` planned implementation gap.
   repository controls; ambiguity, changed scope, conflicting evidence, new
   material risk, explicit holds, or unavailable assessment SHALL route to a
   focused human decision.
-  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`.
+  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
+  `spec/services/automation/delegated_action_admission_spec.rb`, the
+  delegated-work contexts of `spec/temporal/activities/queue_agent_run_activity_spec.rb`
+  (create/queue and follow-up-tagged boundaries),
+  `spec/temporal/activities/merge_pull_request_activity_spec.rb` (closeout
+  boundary), `spec/jobs/process_run_queue_job_spec.rb` (dequeue boundary, which
+  every queued retry must pass), and
+  `spec/services/automation/focused_decision_spec.rb` (dedup and refresh).
 
 - [ ] **PROJECT-DELEGATION-005** — UI, API, MCP, queue, dequeue, retries, and
   background jobs SHALL use `Automation::EffectivePolicy` and the same
@@ -49,7 +56,11 @@ Status markers: `[ ]` planned implementation gap.
   or when a hold, expiry, revocation, or bounded stop occurs, the system SHALL
   prevent the next action while preserving audit/evidence history and exposing
   a recovery decision.
-  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`.
+  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
+  `spec/services/automation/delegated_action_admission_spec.rb` (posture
+  change and revocation rechecks), and
+  `spec/services/automation/focused_decision_spec.rb` (one recovery decision
+  whose metadata tracks the current failure).
 
 - [ ] **PROJECT-DELEGATION-007** — For each opted-in project, the system SHALL
   record revision-aware human Inbox decisions per completed issue, decision

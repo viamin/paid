@@ -66,13 +66,29 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     expect(first).to be_blocked
     expect(first.reasons).to include(:intent_revision)
     expect(second).to be_blocked
+    expect(second.reasons).to include(:posture_signature)
     expect(Notification.where(source: described_class::NOTIFICATION_SOURCE).count).to eq(1)
-    expect(Notification.last.metadata).to include("boundary" => "retry")
+    # The reused decision represents the latest failure, so the operator is
+    # never pointed at an authorization, boundary, or reason that no longer
+    # blocks the work.
+    expect(Notification.last.metadata).to include(
+      "authorization_id" => authorization.id,
+      "boundary" => "retry",
+      "reasons" => [ "posture_signature" ]
+    )
   end
 
   it "checks phase and bounded stop policy before starting another action" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-003
     expect(recheck(phase: "merge")).to be_blocked
     expect(recheck(bounded_stop: "coding")).to be_blocked
+  end
+
+  it "fails closed when the current phase policy cannot be resolved" do # @spec BOUNDED-PHASE-AUTHORIZATION-004
+    result = recheck(phase_policy: nil)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:phase_policy)
+    expect(Notification.last.metadata["reasons"]).to include("phase_policy")
   end
 
   it "fails closed for tenant, trust, budget, repository, or assessment failures" do # @spec PROJECT-DELEGATION-004

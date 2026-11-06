@@ -128,6 +128,18 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # Delegated-work boundary recheck at dequeue: a bounded
+        # authorization that was revoked, expired, or made stale after this
+        # run was queued must not begin a new action. The queued run is
+        # cancelled (freeing its unique active-run slot) and the failure is
+        # routed to one focused Inbox decision. Runs queued by any path —
+        # retries included — pass through here before starting.
+        # @spec PROJECT-DELEGATION-004 @spec BOUNDED-PHASE-AUTHORIZATION-004
+        if delegated_boundary_blocked?(next_run)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
         if (github_state = unavailable_github_state(next_run.project.github_health_endpoint))
           blocked_project_ids.add(next_run.project_id)
           log_github_unavailable(github_state, project_id: next_run.project_id)
@@ -631,6 +643,49 @@ class ProcessRunQueueJob < ApplicationJob
     }
     payload[:project_id] = project_id if project_id
     Rails.logger.info(payload)
+  end
+
+  # Delegated-work boundary recheck at dequeue. Returns true when the run's
+  # governing bounded authorization failed its recheck and the run must not
+  # start; nil/permitted results (not delegated work, or still current)
+  # proceed normally.
+  def delegated_boundary_blocked?(agent_run)
+    result = Automation::DelegatedActionAdmission.call(
+      project: agent_run.project,
+      issue: agent_run.issue,
+      pull_request_number: agent_run.source_pull_request_number,
+      goal: agent_run.goal,
+      boundary: :dequeue,
+      trigger: agent_run.trigger_type
+    )
+    return false if result.nil? || result.permitted?
+
+    cancel_run_for_delegated_boundary(agent_run, result)
+    true
+  end
+
+  # Cancel only a queued, unclaimed run: a run another pass already claimed
+  # is beginning its current atomic unit and keeps it. Cancelling (rather
+  # than skipping) frees the unique active-run slot so the work item is not
+  # wedged once the focused decision resolves the authorization.
+  def cancel_run_for_delegated_boundary(agent_run, result)
+    cancelled = agent_run.with_lock do
+      next false unless agent_run.status == "queued" && agent_run.temporal_workflow_id.nil?
+
+      agent_run.cancel!(
+        error: "Delegated authorization failed its boundary recheck before start " \
+               "(#{result.reasons.join(", ")}). A focused Inbox decision is waiting."
+      )
+    end
+    Rails.logger.info(
+      message: "process_run_queue.delegated_boundary_blocked",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      issue_id: agent_run.issue_id,
+      boundary: result.boundary,
+      reasons: result.reasons.map(&:to_s),
+      cancelled: cancelled
+    )
   end
 
   # Late-binding could not resolve any runnable runner for the queued

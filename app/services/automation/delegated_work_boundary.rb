@@ -85,10 +85,11 @@ module Automation
       stop.present? && snapshot[:phase].to_s != stop.to_s && snapshot[:bounded_stop].to_s == stop.to_s
     end
 
+    # Fail closed: a caller that could not resolve the current phase policy
+    # supplies nil, and nil is never an implicit permit. The check reports
+    # :phase_policy so the focused decision says the policy was unavailable.
     def policy_allows?(policy)
-      return true if policy.nil?
-
-      allowed?(policy)
+      policy.present? && allowed?(policy) == true
     end
 
     def tenant_matches?

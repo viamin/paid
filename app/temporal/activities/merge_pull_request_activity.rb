@@ -48,6 +48,37 @@ module Activities
 
       return held_for_review_result(project, issue, pr_number) if issue.held_for_review?
 
+      # Delegated merge boundary: merging is how delegated delivery work
+      # closes. A bounded merge authorization that fails its recheck must
+      # not execute; the failure routes to one focused Inbox decision.
+      # @spec PROJECT-DELEGATION-004
+      merge_recheck = Automation::DelegatedActionAdmission.call(
+        project: project,
+        issue: issue,
+        action: "merge",
+        boundary: :closeout,
+        trigger: :automatic
+      )
+      if merge_recheck&.blocked?
+        logger.info(
+          message: "pr_review.delegated_boundary_blocked",
+          project_id: project.id,
+          pr_number: pr_number,
+          boundary: merge_recheck.boundary,
+          reasons: merge_recheck.reasons.map(&:to_s)
+        )
+        record_attempt(
+          project,
+          issue,
+          status: "blocked",
+          reason_code: AutoMergeAttempts::Record::REASON_DELEGATED_BOUNDARY_BLOCKED,
+          message: "Delegated merge authorization failed its boundary recheck " \
+                   "(#{merge_recheck.reasons.join(", ")}); a focused Inbox decision is waiting.",
+          credential_mode: AutoMergeAttempt.primary_credential_mode(project)
+        )
+        return { merged: false, skipped: true, pr_number: pr_number }
+      end
+
       provider = Automation::Providers::Resolver.repository_for(project)
       repo = project.full_name
 

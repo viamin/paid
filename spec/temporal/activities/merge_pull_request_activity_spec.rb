@@ -20,9 +20,93 @@ RSpec.describe Activities::MergePullRequestActivity do
     allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
-  describe "#execute" do
-    # @spec AUTOMATION-PHASES-002
-    it "does not merge when the merge phase is disabled but auto-merge remains enabled" do
+    describe "#execute" do
+      # Delegated merge boundary: merging is how delegated delivery work
+      # closes, so the bounded merge authorization is rechecked before the
+      # merge executes.
+      context "with delegated-work boundary rechecks" do
+        let(:delegated_project) do
+          create(:project, :with_github_installation, merge_method: "squash", auto_merge_mode: "all")
+        end
+        let(:delegated_pr) do
+          create(:issue, :pull_request, project: delegated_project, github_number: 42,
+            github_state: "open", pr_review_phase: "ready")
+        end
+        let(:pr_data) do
+          Automation::Providers::Data::PullRequest.new(
+            number: 42, title: "Test", body: nil, state: :open, draft: false,
+            merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+            base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+            updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+            raw_state: "open"
+          )
+        end
+        let(:delegated_provider) { instance_double(Automation::Providers::Github::RepositoryProvider) }
+
+        before do
+          allow(Automation::Providers::Resolver).to receive(:repository_for)
+            .with(delegated_project)
+            .and_return(delegated_provider)
+        end
+
+        def record_current_assessment
+          assessment_run = create(:agent_run, :completed, project: delegated_project, issue: delegated_pr)
+          assessment_run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(
+            assessment_run, { "criteria" => [], "gaps" => [] }
+          ) })
+        end
+
+        def authorize_delegated_merge
+          create(:bounded_delegated_action,
+            project: delegated_project,
+            issue: delegated_pr,
+            action: "merge",
+            evidence: Automation::DelegatedActionAdmission.admission_evidence(
+              work_item: delegated_pr, action: "merge", acceptance_refs: [ "AC-1" ],
+              stop_before_phase: "release_deployment"
+            ))
+        end
+
+        it "refuses the merge when the delegated merge authorization was revoked" do # @spec PROJECT-DELEGATION-004
+          record_current_assessment
+          authorization = authorize_delegated_merge
+          authorization.update!(status: "revoked")
+
+          result = activity.execute(project_id: delegated_project.id, pr_number: 42, issue_id: delegated_pr.id)
+
+          expect(result).to include(merged: false, skipped: true)
+          expect(Automation::Providers::Resolver).not_to have_received(:repository_for).with(delegated_project)
+          expect(delegated_project.auto_merge_attempts.recent.first).to have_attributes(
+            issue: delegated_pr,
+            status: "blocked",
+            reason_code: AutoMergeAttempts::Record::REASON_DELEGATED_BOUNDARY_BLOCKED
+          )
+          notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
+          expect(notification.metadata).to include("boundary" => "closeout")
+          expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+        end
+
+        it "merges when the delegated merge authorization is still current" do # @spec PROJECT-DELEGATION-004
+          record_current_assessment
+          authorize_delegated_merge
+          allow(delegated_provider).to receive_messages(
+            fetch_pull_request: pr_data,
+            merge_pull_request: Automation::Providers::Data::MergeResult.new(
+              merged: true, sha: "def456", message: "Merged"
+            ),
+            add_labels: nil,
+            add_comment: nil
+          )
+
+          result = activity.execute(project_id: delegated_project.id, pr_number: 42, issue_id: delegated_pr.id)
+
+          expect(result).to include(merged: true)
+          expect(delegated_provider).to have_received(:merge_pull_request)
+        end
+      end
+
+      # @spec AUTOMATION-PHASES-002
+      it "does not merge when the merge phase is disabled but auto-merge remains enabled" do
       FeatureFlags.enable!(:automation_phases, project:)
       project.update!(automation_phase_settings: {
         "phases" => { "merge" => false }, "release" => false, "deployment" => false
