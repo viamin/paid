@@ -113,6 +113,30 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       .to include("attempted" => true, "completed" => true)
   end
 
+  # @spec PARTIAL-CLOSEOUT-041
+  it "persists a partial baseline/current record as unknown when a revision checkout is unreachable" do
+    agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
+      "source_run_id" => source_run.id, "performance_measurement" => {
+        "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,
+        "metrics" => [ "wall_ms" ], "samples" => 2, "environment" => "isolated-linux",
+        "budget_seconds" => 60
+      }
+    } })
+    stub_compatible_host
+    stub_provisioning
+    allow(agent_run).to receive(:execute_in_execution_environment)
+      .and_return({ stdout: '{"wall_ms":20}', stderr: "", exit_code: 0 }, { stdout: '{"wall_ms":22}', stderr: "", exit_code: 0 })
+    allow(git_operations).to receive(:checkout_commit).with("b" * 40)
+    allow(git_operations).to receive(:checkout_commit).with("a" * 40).and_raise(Containers::GitOperations::Error, "unreachable")
+
+    evidence = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:).evidence
+
+    expect(evidence.dig("performance_measurement", "baseline", "samples").size).to eq(2)
+    expect(evidence.dig("performance_measurement", "current"))
+      .to include("revision" => "a" * 40, "samples" => [], "error" => "unreachable")
+    expect(evidence.dig("performance_measurement", "comparison")).to include("status" => "unknown")
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "does not provision when the running validation is cancelled during capability inspection" do
     agent_run.update!(status: "running")

@@ -138,9 +138,15 @@ module TechnicalPrerequisites
       })
     end
 
+    # A checkout/fetch failure for one revision must not abort the whole
+    # measurement: the other revision's samples (and this revision's
+    # provenance) remain durable evidence that compare_measurements resolves
+    # to an "unknown" comparison rather than losing the record entirely.
     def measure_revision(revision)
       checkout_revision(revision)
       { "revision" => revision, "samples" => collect_samples(revision) }
+    rescue Containers::GitOperations::Error => error
+      { "revision" => revision, "samples" => [], "error" => error.message }
     end
 
     # Both revisions draw from one shared measurement budget. Sampling stops as
