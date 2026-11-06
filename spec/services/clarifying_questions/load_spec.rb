@@ -3,6 +3,18 @@
 require "rails_helper"
 
 RSpec.describe ClarifyingQuestions::Load, :no_db do
+  def structured_scope_question(choice_type: nil)
+    {
+      "question" => "Which scope should ship first?",
+      "choices" => [
+        { "label" => "API", "detail" => "Ship the API first" },
+        { "label" => "UI", "detail" => "Ship the UI first" }
+      ],
+      "recommendation" => "API",
+      "evidence_references" => [ "app/controllers/api_controller.rb:1" ]
+    }.tap { |question| question["choice_type"] = choice_type if choice_type }
+  end
+
   let(:trusted_login) { "viamin" }
   let(:issue_body) { "Original issue body" }
   let(:github_client) { instance_double(GithubClient) }
@@ -148,15 +160,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
       # @spec OPERATOR-INBOX-025
       it "preserves a structured payload when its question text matches the GitHub comment" do
-        structured_question = {
-          "question" => "Which scope should ship first?",
-          "choices" => [
-            { "label" => "API", "detail" => "Ship the API first" },
-            { "label" => "UI", "detail" => "Ship the UI first" }
-          ],
-          "recommendation" => "API",
-          "evidence_references" => [ "app/controllers/api_controller.rb:1" ]
-        }
+        structured_question = structured_scope_question
         allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
         comment = double(
           body: "<!-- paid:enhance-issue -->\n\n## Clarifying questions\n1. Which scope should ship first?",
@@ -168,6 +172,26 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
         questions = described_class.call(project: project, issue: issue)
 
         expect(questions).to eq([ structured_question ])
+      end
+
+      it "preserves a structured choice payload when the GitHub comment includes its markers" do # @spec OPERATOR-INBOX-025
+        structured_question = structured_scope_question(choice_type: "multi")
+        allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
+        comment = double(
+          body: <<~COMMENT,
+            <!-- paid:enhance-issue -->
+
+            ## Clarifying questions
+            1. Which scope should ship first?
+               - [ ] API) Ship the API first
+               - [ ] UI) Ship the UI first
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
+        expect(described_class.call(project: project, issue: issue)).to eq([ structured_question ])
       end
     end
 

@@ -632,6 +632,8 @@
   collapsed native disclosure. The existing answer submission, freeform path,
   issue/PR support, trusted-comment admission, progress, and reassessment
   contracts SHALL retain their current question-text identity.
+  A structured payload's `choice_type` SHALL determine its answer-control and
+  validation semantics without relying on a comment reload.
   *Tests:* `spec/services/clarifying_questions/question_payload_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
   *Code:* `app/services/clarifying_questions/question_payload.rb`,

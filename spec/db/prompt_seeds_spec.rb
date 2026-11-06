@@ -403,6 +403,7 @@ RSpec.describe Prompt, type: :model do
       expect(seed_template).to include("concise and standalone")
       expect(seed_template).to include('"questions"')
       expect(seed_template).to include('"evidence_references"')
+      expect(seed_template).to include('"choice_type": "single"')
       expect(seed_template).to include("Keep background, reasons")
       expect(seed_template).to include("recommendation is an aid")
     end
@@ -411,6 +412,7 @@ RSpec.describe Prompt, type: :model do
       expect(fallback_template).to include("concise and standalone")
       expect(fallback_template).to include('"questions"')
       expect(fallback_template).to include('"evidence_references"')
+      expect(fallback_template).to include('"choice_type": "single"')
       expect(fallback_template).to include("Keep background, reasons")
       expect(fallback_template).to include("recommendation is an aid")
     end

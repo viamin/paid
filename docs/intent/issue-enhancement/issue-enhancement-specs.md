@@ -190,11 +190,13 @@
 
 - [x] **ISSUE-ENHANCEMENT-020** — When issue enhancement requests human input,
   the agent output SHALL provide a structured question payload with distinct
-  `question`, `choices`, `recommendation`, `rationale`, `examples`, and
+  `question`, `choices`, `choice_type`, `recommendation`, `rationale`, `examples`, and
   `evidence_references` fields. The question label SHALL be concise and
   standalone; supporting explanation SHALL not be embedded in it. A
   recommendation SHALL be omitted unless its evidence references directly
   support it, and SHALL remain an aid rather than a confirmed decision.
+  A choice payload SHALL set `choice_type` to `single` or `multi` consistently
+  with its comment markers so persisted questions retain their answer semantics.
   *Tests:* `spec/services/clarifying_questions/question_payload_spec.rb`,
   `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/run_agent_activity.rb`,

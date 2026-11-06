@@ -6,7 +6,7 @@ module ClarifyingQuestions
   # into a product decision after it has already been stored or posted.
   # @spec OPERATOR-INBOX-025
   class QuestionPayload
-    FIELDS = %w[question choices recommendation rationale examples evidence_references].freeze
+    FIELDS = %w[question choices choice_type recommendation rationale examples evidence_references].freeze
 
     def self.call(...)
       new(...).call
@@ -62,7 +62,12 @@ module ClarifyingQuestions
       end
       return if options.size < 2
 
-      { type: :single, options: options }
+      { type: structured_choice_type, options: options }
+    end
+
+    def structured_choice_type
+      choice_type = value_for("choice_type")&.to_sym
+      choice_type.in?([ :single, :multi ]) ? choice_type : :single
     end
 
     def strings_for(key)

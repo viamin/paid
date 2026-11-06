@@ -226,8 +226,10 @@ existing `View Issue` / `View PR` link remains so the operator can still
 read the comment directly on GitHub.
 
 Clarifying-question payloads normalize both legacy strings and structured
-records. A structured record has `question`, `choices`, `recommendation`,
-`rationale`, `examples`, and `evidence_references` fields. The Inbox never
+records. A structured record has `question`, `choices`, `choice_type`,
+`recommendation`, `rationale`, `examples`, and `evidence_references` fields.
+`choice_type` retains the single- or multi-answer semantics represented by the
+enhancement comment markers. The Inbox never
 derives a recommendation from a legacy string: only an explicitly supplied
 recommendation accompanied by evidence references is shown. Rationale,
 examples, and references stay in a collapsed disclosure; the short question,

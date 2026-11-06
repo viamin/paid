@@ -4072,6 +4072,7 @@ module Activities
               { "label": "Option A", "detail": "Short consequence" },
               { "label": "Option B", "detail": "Alternative consequence" }
             ],
+            "choice_type": "single",
             "recommendation": "Option A",
             "rationale": "Why this is a recommendation",
             "examples": ["Concrete example"],
@@ -4104,6 +4105,9 @@ module Activities
       options the question is not a choice question. Supply `recommendation`
       only when `evidence_references` directly support it; otherwise omit it.
       A recommendation is an aid, never a confirmed product decision.
+      For each choice question, set `choice_type` to `single` when exactly one
+      answer applies or `multi` when several answers may apply. It MUST match
+      the marker family used in the comment body.
 
       Choice questions. When — and only when — a question has a short, enumerable
       set of answers, put the answers in a sub-list under the numbered question

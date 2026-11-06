@@ -92,6 +92,17 @@ RSpec.describe Activities::EnhanceIssueActivity do
     )
   end
 
+  def structured_cache_question
+    {
+      question: "Which cache should exports use?",
+      choices: [ { label: "Redis", detail: "Shared cache" }, { label: "Postgres", detail: "Persistent rows" } ],
+      recommendation: "Redis",
+      rationale: "Existing workers already use it.",
+      examples: [ "Nightly exports" ],
+      evidence_references: [ "app/jobs/export_job.rb:12" ]
+    }
+  end
+
   def park_issue_with_manual_review_reason(reason:)
     issue.update!(
       paid_state: "manual_review",
@@ -290,14 +301,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
 
     # @spec ISSUE-ENHANCEMENT-020
     it "persists the structured question payload for the inbox" do
-      question = {
-        question: "Which cache should exports use?",
-        choices: [ { label: "Redis", detail: "Shared cache" }, { label: "Postgres", detail: "Persistent rows" } ],
-        recommendation: "Redis",
-        rationale: "Existing workers already use it.",
-        examples: [ "Nightly exports" ],
-        evidence_references: [ "app/jobs/export_job.rb:12" ]
-      }
+      question = structured_cache_question
       log_agent_stdout({
         sufficient_context: false,
         comment_body: "## Clarifying questions\n1. Which cache should exports use?",
@@ -316,14 +320,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
         posted_body = body
         posted_comment
       end
-      question = {
-        question: "Which cache should exports use?",
-        choices: [ { label: "Redis", detail: "Shared cache" }, { label: "Postgres", detail: "Persistent rows" } ],
-        recommendation: "Redis",
-        rationale: "Existing workers already use it.",
-        examples: [ "Nightly exports" ],
-        evidence_references: [ "app/jobs/export_job.rb:12" ]
-      }
+      question = structured_cache_question
       log_agent_stdout({
         sufficient_context: false,
         comment_body: "## Clarifying questions\n1. Which cache should exports use?",

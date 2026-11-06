@@ -31,6 +31,16 @@ RSpec.describe ClarifyingQuestions::QuestionPayload do
       expect(payload[:choices][:options]).to contain_exactly({ label: "Redis", text: "Shared cache" }, { label: "Postgres", text: "Persistent rows" })
     end
 
+    it "preserves multi-answer choice semantics from a structured payload" do # @spec ISSUE-ENHANCEMENT-018
+      payload = described_class.call(question: {
+        "question" => "Which browsers should the export support?",
+        "choice_type" => "multi",
+        "choices" => [ { "label" => "Chrome", "detail" => "Primary browser" }, { "label" => "Firefox", "detail" => "Support team requirement" } ]
+      })
+
+      expect(payload[:choices][:type]).to eq(:multi)
+    end
+
     it "omits an unsupported structured recommendation" do # @spec OPERATOR-INBOX-025
       payload = described_class.call(question: { "question" => "Which cache should exports use?", "recommendation" => "Redis" })
 
