@@ -488,12 +488,13 @@ module Automation
           # occurrence reconciliation service stamps a sufficient release,
           # so dismissal and generic resolution cannot re-pick the parent
           # ahead of the prerequisite the notification names.
-          def partial_closeout_prerequisite_block_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
+          def partial_closeout_prerequisite_block_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007 PARTIAL-CLOSEOUT-041
             Notification.where(
               account_id: project.account_id,
               source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
               subject_type: "Issue"
-            ).where.not("resolved_at IS NOT NULL AND COALESCE(metadata->>'released_by', '') = ?", "reconciled_evidence")
+            ).where.not("resolved_at IS NOT NULL AND COALESCE(metadata->>'released_by', '') IN (?)",
+              %w[reconciled_attribution reconciled_evidence external_prerequisite])
               .where("subject_id IN (?)", project.issues.select(:id))
               .pluck(:subject_id)
           end

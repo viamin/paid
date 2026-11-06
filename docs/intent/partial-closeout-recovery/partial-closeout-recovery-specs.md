@@ -843,7 +843,10 @@
   run SHALL NOT drop or release another run's live occurrence, SHALL NOT
   resurrect occurrences from a resolved notification, and when removing its
   own proven-misplaced occurrences SHALL keep the occurrences other runs
-  still own active on that owner. The reassessment requirement SHALL surface
+  still own active on that owner. When attribution reconciliation releases a
+  child's sole misplaced occurrence, Paid SHALL refresh that child's normal
+  auto-pick eligibility without releasing the true owner's notification or an
+  independent hold. The reassessment requirement SHALL surface
   as a non-blocking Inbox notification
   on the run's issue and SHALL resolve once a later assessment establishes
   every attribution; the legacy sweep SHALL re-run one bounded fresh
@@ -854,8 +857,11 @@
   *Code:* `app/services/llm/analyze_partial_closeout.rb`,
   `app/services/partial_closeouts/reconcile.rb`,
   `app/services/partial_closeouts/reconcile_legacy.rb`,
-  `app/services/partial_closeouts/confirm_sync.rb`.
+  `app/services/partial_closeouts/confirm_sync.rb`,
+  `app/models/notification.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
   *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
   `spec/services/partial_closeouts/reconcile_spec.rb`,
   `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
-  `spec/services/partial_closeouts/confirm_sync_spec.rb`.
+  `spec/services/partial_closeouts/confirm_sync_spec.rb`,
+  `spec/models/notification_spec.rb`.

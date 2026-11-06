@@ -247,6 +247,18 @@ RSpec.describe Notification do
         .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
     end
 
+    it "re-enqueues an eligible child when attribution reconciliation releases its sole prerequisite" do # @spec PARTIAL-CLOSEOUT-041
+      notification = create(:notification, :error, account: account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      continuation_run.update!(status: "cancelled")
+
+      expect {
+        notification.update!(resolved_at: Time.current, metadata: notification.metadata.merge(
+          "released_by" => "reconciled_attribution", "released_at" => Time.current.iso8601
+        ))
+      }.to change { AgentRun.where(project: project, issue: parent, status: "queued").count }.from(0).to(1)
+    end
+
     it "ignores dismissals of unrelated notification sources" do # @spec NO-OUTPUT-ISSUE-007
       notification = create(:notification, :error, account: account, subject: parent,
         source: "some_other_source", blocking: true)

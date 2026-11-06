@@ -104,7 +104,9 @@ notification instead of overwriting them (Notifications::Publish replaces
 metadata wholesale), never resurrects occurrences from a resolved
 notification, and removes only its own proven-misplaced occurrences —
 occurrences another run still owns keep the notification active on that
-owner.
+owner. When correction releases a child's sole misplaced notification, the
+normal auto-pick eligibility path is refreshed for that child; the release does
+not affect the true owner's active notification or unrelated holds.
 
 The reassessment requirement is visible and bounded. Reconciliation publishes
 a non-blocking `partial_closeout.reassessment` notification on the run's issue
