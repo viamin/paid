@@ -1,7 +1,7 @@
 # EARS Specs: Unified Work Items
 
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
-> Tracking issue: #4854. Rollout decision: [RDR-079](../../rdrs/RDR-079-unified-tracker-work-items.md).
+> Tracking issue: #4854. Rollout decision: [RDR-079](../../rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md).
 
 - [x] **UNIFIED-WORK-ITEMS-001** — The system SHALL represent a provider work
   item with an explicit provider/resource identity, normalized lifecycle and

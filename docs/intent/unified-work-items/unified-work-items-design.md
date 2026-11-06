@@ -206,7 +206,7 @@ account settings. While it is disabled, those surfaces continue existing
 GitHub issue behavior and do not expose unified-ticket behavior. Disabling it
 preserves imported records, audit data, and explicit overrides; it does not
 silently delete or revert migrated data. The flag remains until the
-[RDR-079](../../rdrs/RDR-079-unified-tracker-work-items.md) closeout audit
+[RDR-079](../../rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md) closeout audit
 passes with synchronization, migration, trust, conflict, relationship,
 rollback, and regression evidence.
 

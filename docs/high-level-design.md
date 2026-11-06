@@ -346,7 +346,7 @@ rollout guard: project entry points evaluate their project context, while the
 account ticket browser, Linear connection, and account trust defaults evaluate
 the account tenant override without a project. This keeps every unified
 surface guarded until synchronization, migration, conflict, and trust evidence
-supports cutover. [RDR-079](rdrs/RDR-079-unified-tracker-work-items.md) and
+supports cutover. [RDR-079](rdrs/RDR-079-unified-tracker-work-items-linear-github-migration.md) and
 `docs/intent/unified-work-items/` define the planned contract.
 
 Apple verification workers extend the execution boundary without becoming agent

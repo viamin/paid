@@ -112,7 +112,6 @@ cycles.
 |-----|-------|--------|----------|
 | [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Partially Implemented | High |
 | [RDR-030](RDR-030-github-app-bot-account.md) | GitHub App Bot Account for Repository Actions | Partially Implemented | High |
-| [RDR-079](RDR-079-unified-tracker-work-items.md) | Unified Tracker Work Items | Draft | P2 |
 
 ### Service Infrastructure
 
@@ -216,6 +215,7 @@ Scaling & Distribution above).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
+| [RDR-079](RDR-079-unified-tracker-work-items-linear-github-migration.md) | Unified Tracker Work Items with Linear Integration and GitHub Issue Migration | Draft | P1 |
 | [RDR-053](RDR-053-new-feature-creation.md) | New Feature Creation — RDR-Driven Issue Trees with LID Support | Implemented | P1 |
 | [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) | Feature Intent and Approval Lifecycle | Partially Implemented | P1 |
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
