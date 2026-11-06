@@ -94,6 +94,7 @@ module Activities
       parsed = stop_after_max_rounds(parsed, project, issue, agent_run)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
       comment_body = comment_body_for(issue, parsed, draft)
+      validate_structured_questions!(agent_run, parsed, comment_body)
       questions = needs_input_questions(parsed, comment_body)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
@@ -749,6 +750,24 @@ module Activities
     def structured_questions?(questions)
       Array(questions).any? && Array(questions).all? do |question|
         question.is_a?(Hash) && ClarifyingQuestions::QuestionPayload.submission_text(question).present?
+      end
+    end
+
+    def validate_structured_questions!(agent_run, parsed, comment_body)
+      return if parsed[:sufficient_context] || !structured_questions?(parsed[:questions])
+
+      posted_questions = ClarifyingQuestions::Parse.call(comment_body: comment_body)
+      return if question_contracts(parsed[:questions]) == question_contracts(posted_questions)
+
+      raise_parse_error!(agent_run, "structured questions do not match comment_body")
+    end
+
+    def question_contracts(questions)
+      Array(questions).map do |question|
+        choices = ClarifyingQuestions::Choices.call(question: question)
+        text = ClarifyingQuestions::QuestionPayload.submission_text(question)
+        text = text.split(ClarifyingQuestions::Choices::ANY_MARKER).first if choices && !question.is_a?(Hash)
+        { question: text.gsub(/\s+/, " ").strip, choices: choices }
       end
     end
 

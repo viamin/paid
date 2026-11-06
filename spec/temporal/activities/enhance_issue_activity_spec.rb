@@ -103,6 +103,15 @@ RSpec.describe Activities::EnhanceIssueActivity do
     }
   end
 
+  def structured_cache_comment
+    <<~MARKDOWN.strip
+      ## Clarifying questions
+      1. Which cache should exports use?
+         - ( ) Redis) Shared cache
+         - ( ) Postgres) Persistent rows
+    MARKDOWN
+  end
+
   def park_issue_with_manual_review_reason(reason:)
     issue.update!(
       paid_state: "manual_review",
@@ -304,7 +313,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       question = structured_cache_question
       log_agent_stdout({
         sufficient_context: false,
-        comment_body: "## Clarifying questions\n1. Which cache should exports use?",
+        comment_body: structured_cache_comment,
         questions: [ question ]
       }.to_json)
 
@@ -323,7 +332,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       question = structured_cache_question
       log_agent_stdout({
         sufficient_context: false,
-        comment_body: "## Clarifying questions\n1. Which cache should exports use?",
+        comment_body: structured_cache_comment,
         questions: [ question ]
       }.to_json)
 
@@ -334,6 +343,25 @@ RSpec.describe Activities::EnhanceIssueActivity do
       allow(client).to receive(:issue_comments).and_return([ enhancement_comment ])
 
       expect(ClarifyingQuestions::Load.call(project:, issue: issue.reload)).to eq([ question.deep_stringify_keys ])
+    end
+
+    # @spec ISSUE-ENHANCEMENT-020
+    it "rejects structured choices that differ from the posted question" do
+      question = structured_cache_question
+      question[:choices].first[:detail] = "Per-process cache"
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: structured_cache_comment,
+        questions: [ question ]
+      }.to_json)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+        expect(error.type).to eq("EnhanceIssueUnparseableOutput")
+      }
+
+      expect(issue.reload.needs_input_questions).to be_nil
     end
 
     # @spec AUTOMATION-PHASES-008

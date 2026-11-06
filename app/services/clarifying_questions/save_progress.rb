@@ -9,7 +9,8 @@ module ClarifyingQuestions
   # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-013
   class SaveProgress
     def self.question_digest(questions)
-      Digest::SHA256.hexdigest(AnswerPairs.normalize_questions(questions).join("\n"))
+      identities = Array(questions).map { |question| AnswerPairs.progress_identity(question) }
+      Digest::SHA256.hexdigest(identities.join("\n"))
     end
 
     def self.call(...)
