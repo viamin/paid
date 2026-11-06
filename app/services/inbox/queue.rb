@@ -321,9 +321,10 @@ module Inbox
       questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
       # The body channel (quiet-mode descriptions, #4236) parses posted marker
       # lines into folded strings; reconcile with the stored structured
-      # contract — identity-guarded, so the stored records only win when the
-      # question labels match — or the inbox would render raw marker text
-      # instead of the structured payload.
+      # contract — identity-guarded on labels and choice contracts, so the
+      # stored records only win when the posted text still offers the same
+      # choices — or the inbox would render raw marker text instead of the
+      # structured payload, or stale choices after a human body edit.
       # @spec OPERATOR-INBOX-025
       return ClarifyingQuestions::QuestionPayload.reconcile(comment_questions: questions, stored_questions: stored) if questions.any?
 

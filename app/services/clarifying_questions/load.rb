@@ -99,8 +99,10 @@ module ClarifyingQuestions
     # needs_input_questions. Reconcile the two exactly like the comment
     # channel (latest_comment_questions) so a quiet-mode project renders the
     # structured record — recommendation, rationale, examples, evidence —
-    # instead of the raw marker text. Reconcile is identity-guarded: the
-    # stored records only win when the question labels match.
+    # instead of the raw marker text. Reconcile is identity-guarded on labels
+    # AND choice contracts: the stored records only win when the posted text
+    # still offers the same choices, so a human edit to the description's
+    # markers is served instead of the cached choices.
     # @spec OPERATOR-INBOX-025
     def reconciled_description_questions
       QuestionPayload.reconcile(

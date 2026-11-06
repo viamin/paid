@@ -105,7 +105,11 @@ module ClarifyingQuestions
     # labels (#4865). Reconcile the remote section against the stored
     # records — the same identity-guarded reconciliation the read path uses
     # — so a structured form passes the staleness digest and only a
-    # genuinely changed question set is rejected.
+    # genuinely changed question set is rejected. The guard covers choice
+    # contracts too: a human edit that changes or removes a description
+    # choice marker while leaving labels untouched makes the reconciled
+    # digest differ, so the stale form is rejected instead of submitting an
+    # option the description no longer offers.
     def reconciled_remote_questions(body)
       QuestionPayload.reconcile(
         comment_questions: DescriptionSection.parse_questions(body).questions,

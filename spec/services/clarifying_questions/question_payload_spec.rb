@@ -47,4 +47,50 @@ RSpec.describe ClarifyingQuestions::QuestionPayload do
       expect(payload[:recommendation]).to be_nil
     end
   end
+
+  describe ".reconcile" do
+    let(:stored_question) do
+      {
+        "question" => "Which scope should ship first?",
+        "choices" => [
+          { "label" => "API", "detail" => "Ship the API first" },
+          { "label" => "UI", "detail" => "Ship the UI first" }
+        ]
+      }
+    end
+    let(:posted) { "Which scope should ship first? - ( ) API) Ship the API first - ( ) UI) Ship the UI first" }
+
+    it "keeps the stored structured payload when the posted markers match its choices" do # @spec OPERATOR-INBOX-025
+      expect(described_class.reconcile(comment_questions: [ posted ], stored_questions: [ stored_question ]))
+        .to eq([ stored_question ])
+    end
+
+    it "falls back to the posted question when a choice edit leaves the label unchanged" do # @spec QUIET-MODE-011
+      edited = "Which scope should ship first? - ( ) API) Ship the API first - ( ) CLI) Ship the CLI first"
+
+      expect(described_class.reconcile(comment_questions: [ edited ], stored_questions: [ stored_question ]))
+        .to eq([ edited ])
+    end
+
+    it "falls back to the posted question when every choice marker was removed" do # @spec QUIET-MODE-011
+      edited = "Which scope should ship first?"
+
+      expect(described_class.reconcile(comment_questions: [ edited ], stored_questions: [ stored_question ]))
+        .to eq([ edited ])
+    end
+
+    it "falls back to the posted question when markers were added to a stored freeform question" do # @spec QUIET-MODE-011
+      stored = { "question" => "Which scope should ship first?" }
+
+      expect(described_class.reconcile(comment_questions: [ posted ], stored_questions: [ stored ]))
+        .to eq([ posted ])
+    end
+
+    it "keeps the stored payload when neither side carries choices" do # @spec OPERATOR-INBOX-025
+      stored = { "question" => "Which scope should ship first?" }
+
+      expect(described_class.reconcile(comment_questions: [ "Which scope should ship first?" ], stored_questions: [ stored ]))
+        .to eq([ stored ])
+    end
+  end
 end

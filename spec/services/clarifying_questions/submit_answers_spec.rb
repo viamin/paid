@@ -316,6 +316,27 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
             body: a_string_including("**Q1: Which cache should exports use?**", "**A1:** Redis")
           )
         end
+
+        # @spec QUIET-MODE-010 @spec QUIET-MODE-011
+        # The description is the editable questions channel: a human edit that
+        # swaps a choice marker while leaving the question label untouched must
+        # not let a stale form submit an option that is no longer offered.
+        it "rejects answers when a human edited the description's choice markers" do
+          edited_folded = "#{structured_label} - ( ) Redis) Shared cache - ( ) Memory) Ephemeral cache"
+          allow(github_client).to receive(:issue)
+            .and_return(Struct.new(:body).new(remote_body("Human-written issue context", [ edited_folded ])))
+
+          expect {
+            described_class.call(
+              project: project,
+              issue: pending_issue,
+              questions_and_answers: [ { question: structured_label, answer: "Postgres" } ]
+            )
+          }.to raise_error(ClarifyingQuestions::SubmitAnswers::StaleQuestionsError, /changed/)
+
+          expect(github_client).not_to have_received(:update_issue)
+          expect(pending_issue).not_to have_received(:update!)
+        end
       end
     end
 

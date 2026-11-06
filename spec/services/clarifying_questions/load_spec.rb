@@ -108,6 +108,20 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
         expect(questions).to eq([ structured_question ])
       end
 
+      # @spec QUIET-MODE-011
+      # The description is the editable questions channel in quiet mode: a
+      # human edit that changes a choice marker while leaving the question
+      # label untouched must render the edited choices, not the cached
+      # structured record's.
+      it "serves the description's edited choices when the labels are unchanged" do
+        edited_body = issue_body.sub("- ( ) UI) Ship the UI first", "- ( ) CLI) Ship the CLI first")
+        allow(issue).to receive(:body).and_return(edited_body)
+
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ "Which scope should ship first? - ( ) API) Ship the API first - ( ) CLI) Ship the CLI first" ])
+      end
+
       it "treats a body answer to the structured set as complete and ingests it" do
         answered_body = issue_body + <<~BODY
 
@@ -222,7 +236,11 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
 
       # @spec OPERATOR-INBOX-025
-      it "preserves a structured payload when its question text matches the GitHub comment" do
+      # The posted text is the contract: when the comment no longer carries
+      # the stored payload's choice markers (a human edit removed them), the
+      # posted text wins over the cached structured record so the inbox
+      # cannot keep offering the removed choices.
+      it "serves the comment text when its choice markers were removed" do
         structured_question = structured_scope_question
         allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
         comment = double(
@@ -234,7 +252,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
         questions = described_class.call(project: project, issue: issue)
 
-        expect(questions).to eq([ structured_question ])
+        expect(questions).to eq([ "Which scope should ship first?" ])
       end
 
       it "preserves a structured choice payload when the GitHub comment includes its markers" do # @spec OPERATOR-INBOX-025
