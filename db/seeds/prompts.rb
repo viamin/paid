@@ -817,7 +817,10 @@ upsert_global_prompt.call(
       "questions": [
         {
           "question": "One short standalone question?",
-          "choices": [{ "label": "Option A", "detail": "Short consequence" }],
+          "choices": [
+            { "label": "Option A", "detail": "Short consequence" },
+            { "label": "Option B", "detail": "Alternative consequence" }
+          ],
           "recommendation": "Option A",
           "rationale": "Why this is a recommendation",
           "examples": ["Concrete example"],
@@ -846,9 +849,10 @@ upsert_global_prompt.call(
     Each `question` must be concise and standalone. Keep background, reasons,
     examples, references, and roadmap context out of its label. Put those facts
     in `rationale`, `examples`, and `evidence_references` instead. Supply
-    `choices` only for a short enumerable set. Supply `recommendation` only
-    when `evidence_references` directly support it; otherwise omit it. A
-    recommendation is an aid, never a confirmed product decision.
+    `choices` only for an enumerable set of at least two options; with fewer
+    options the question is not a choice question. Supply `recommendation`
+    only when `evidence_references` directly support it; otherwise omit it.
+    A recommendation is an aid, never a confirmed product decision.
 
     Choice questions. When — and only when — a question has a short, enumerable
     set of answers, put the answers in a sub-list under the numbered question

@@ -415,6 +415,21 @@ RSpec.describe Prompt, type: :model do
       expect(fallback_template).to include("recommendation is an aid")
     end
 
+    # QuestionPayload#structured_choices drops a choices array with fewer than
+    # two options, so a one-option exemplar would teach the agent to emit
+    # payloads the Inbox silently renders as free text.
+    it "seeded template exemplar offers at least two choices", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
+      exemplar_choices = seed_template[/"choices": (\[[^\]]*\])/m, 1].to_s
+      expect(exemplar_choices).to be_present
+      expect(exemplar_choices.scan(/"label"/).count).to be >= 2
+    end
+
+    it "FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT exemplar offers at least two choices", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-020
+      exemplar_choices = fallback_template[/"choices": (\[[^\]]*\])/m, 1].to_s
+      expect(exemplar_choices).to be_present
+      expect(exemplar_choices.scan(/"label"/).count).to be >= 2
+    end
+
     it "seeded template matches the code fallback template exactly" do
       expect(seed_template.strip).to eq(fallback_template.strip)
     end
