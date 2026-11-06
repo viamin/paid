@@ -65,6 +65,52 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(evaluation.report_markdown).to include("FC-CORPUS-01").and include("80/80")
   end
 
+  it "reconciles only the current typed prerequisite after retaining the report" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-042
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: {
+        "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+        "prerequisites" => [ {
+          "identity" => "facet-evaluation-1", "criterion" => "Independent evaluation",
+          "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+          "source_revision" => "intent-sha", "source_issue_number" => issue.github_number
+        } ]
+      })
+    allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("intent-sha")
+    label_all!
+
+    result = described_class.call(evaluation:, actor: owner)
+
+    expect(result).to be_success
+    submission = notification.reload.metadata.fetch("evidence_submissions").sole
+    expect(submission).to include("prerequisite_identity" => "facet-evaluation-1", "outcome" => "sufficient",
+      "evaluation_id" => evaluation.id, "source_revision" => "intent-sha")
+    expect(notification.resolved_at).to be_present
+    expect(notification.metadata.fetch("released_by")).to eq("facet_confidence_evaluation")
+    expect(evaluation.reload.report.dig("originating_closeout", "source_revision")).to eq("intent-sha")
+  end
+
+  it "keeps the typed prerequisite held when its source revision changed" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-042
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: {
+        "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+        "prerequisites" => [ {
+          "identity" => "facet-evaluation-1", "criterion" => "Independent evaluation",
+          "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+          "source_revision" => "intent-sha", "source_issue_number" => issue.github_number
+        } ]
+      })
+    allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("changed-sha")
+    label_all!
+
+    expect(described_class.call(evaluation:, actor: owner)).to be_success
+
+    submission = notification.reload.metadata.fetch("evidence_submissions").sole
+    expect(submission).to include("outcome" => "stale", "source_revision" => "intent-sha")
+    expect(notification).to be_active
+  end
+
   it "measures divergences and citation violations instead of hiding them" do
     evaluation.corpus.cases.each do |corpus_case|
       case_id = corpus_case.fetch("id")

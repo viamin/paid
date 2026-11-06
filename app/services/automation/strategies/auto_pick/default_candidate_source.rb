@@ -494,7 +494,7 @@ module Automation
               source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
               subject_type: "Issue"
             ).where.not("resolved_at IS NOT NULL AND COALESCE(metadata->>'released_by', '') IN (?)",
-              %w[reconciled_attribution reconciled_evidence external_prerequisite])
+              %w[reconciled_attribution reconciled_evidence external_prerequisite facet_confidence_evaluation])
               .where("subject_id IN (?)", project.issues.select(:id))
               .pluck(:subject_id)
           end

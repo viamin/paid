@@ -186,3 +186,12 @@ evaluation's sole judge gets a view-only action and no judgment controls. Other
 Action Required notifications retain their generic remediation presentation;
 presentation selection never infers a workflow from free-form notification
 text.
+
+When that typed evaluation freezes its complete report, the system records the
+report digest, sole judge, and pinned source revision against only matching
+prerequisite occurrences. It releases the notification only if every current
+occurrence is sufficient at that revision; a changed revision records stale
+evidence and retains the scheduling guard. This uses the established
+occurrence-level reconciliation path, refreshes its normal Inbox and
+eligibility readers, and neither attests whole-issue acceptance nor enables
+delivery.
