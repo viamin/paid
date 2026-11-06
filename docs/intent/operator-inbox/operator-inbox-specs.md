@@ -503,6 +503,25 @@
   *Code:* `app/javascript/controllers/inbox_master_detail_controller.js`.
   *Test:* `spec/system/inbox_chat_popup_spec.rb`.
 
+- [x] **OPERATOR-INBOX-026** — When an operator selects an Inbox row, the
+  browser SHALL advance to that row's canonical member URL while retaining the
+  list DOM and scroll position where Turbo supports it. Browser Back and
+  Forward SHALL restore the selected-entry route and detail consistently with
+  active filters and the desktop/mobile master-detail layout. Every selected
+  detail, including the asynchronously selected first entry whose collection
+  URL remains visible, SHALL provide a visible, accessible **Copy link to this
+  item** action that copies the canonical member URL, not a frame,
+  supplement, or history URL. A direct copied URL SHALL resolve only through
+  the existing tenant/owner visibility and actionable-entry checks; a resolved,
+  removed, malformed, or unauthorized entry SHALL use the existing safe
+  filtered-Inbox fallback.
+  *Code:* `app/views/dashboard/_inbox_list.html.erb`,
+  `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_master_detail_controller.js`.
+  *Test:* `spec/system/inbox_navigation_spec.rb`,
+  `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
   workflow through the existing Temporal bridge and SHALL redirect back to the
