@@ -58,7 +58,8 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(run).to include(
       'for attempt in 1 2 3; do',
       'curl -fsSL --retry 3 --retry-delay 5 --max-time 60',
-      'grep -q "BEGIN PGP PUBLIC KEY BLOCK"',
+      'gpg --batch --with-colons --show-keys',
+      'B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8',
       'timeout 5m apt-get',
       'apt_with_retry install -y postgresql-client-16'
     )

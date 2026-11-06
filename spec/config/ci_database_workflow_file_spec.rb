@@ -140,7 +140,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
           run = install_step.fetch("run")
 
-          expect(run).to include('grep -q "BEGIN PGP PUBLIC KEY BLOCK"')
+          expect(run).to include('gpg --batch --with-colons --show-keys')
+          expect(run).to include('B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8')
           expect(run).to include('sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"')
           expect(run).not_to include("| sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc")
         end

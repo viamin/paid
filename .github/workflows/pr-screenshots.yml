@@ -187,7 +187,7 @@ jobs:
           for attempt in 1 2 3; do
             if curl -fsSL --retry 3 --retry-delay 5 --max-time 60 \
               https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key_download" \
-              && grep -q "BEGIN PGP PUBLIC KEY BLOCK" "$key_download"; then
+              && gpg --batch --with-colons --show-keys "$key_download" | awk -F: '$1 == "fpr" { valid = ($10 == "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"); exit } END { exit(valid ? 0 : 1) }'; then
               sudo mv "$key_download" "$keyring"
               key_ready=true
               break
