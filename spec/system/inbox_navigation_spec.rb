@@ -52,7 +52,7 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
   end
 
   it "keeps the first collection selection shareable and advances subsequent selection through browser history" do
-    page.driver.resize(1440, 1000)
+    page.current_window.resize_to(1440, 1000)
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
 
     expect(page).to have_css("#inbox-detail h2", text: "First question")
@@ -91,7 +91,7 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     create_legacy_issue_dependency(issue: second, depends_on_issue: first)
     cycle_entry = Inbox::Queue.call(user:, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND).sole
 
-    page.driver.resize(390, 844)
+    page.current_window.resize_to(390, 844)
     visit inbox_path(kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
     expect(page).to have_no_css("#inbox-detail-pane", visible: true)
 
