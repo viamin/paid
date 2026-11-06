@@ -96,7 +96,15 @@ only an occurrence it can prove was produced for the same source/run; it never
 closes an issue, waives a human gate, or lifts an unrelated hold. A prior
 prerequisite notification is released only when the same run published it and
 the new assessment establishes attribution to a different owner — unknown
-attribution establishes nothing, so the prior gate is retained.
+attribution establishes nothing, so the prior gate is retained. Because
+several runs can attribute to the same evidence owner, an owner's
+notification aggregates occurrences tagged with their originating run: a
+republishing run merges the occurrences other runs still own back into the
+notification instead of overwriting them (Notifications::Publish replaces
+metadata wholesale), never resurrects occurrences from a resolved
+notification, and removes only its own proven-misplaced occurrences —
+occurrences another run still owns keep the notification active on that
+owner.
 
 The reassessment requirement is visible and bounded. Reconciliation publishes
 a non-blocking `partial_closeout.reassessment` notification on the run's issue

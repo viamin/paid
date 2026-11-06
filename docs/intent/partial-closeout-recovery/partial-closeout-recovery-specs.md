@@ -837,8 +837,14 @@
   prerequisites remain on their existing external wait path. A prior
   prerequisite notification SHALL be released only when the same run
   published it and a later assessment establishes attribution to a different
-  owner; unknown attribution alone SHALL retain the prior gate. The
-  reassessment requirement SHALL surface as a non-blocking Inbox notification
+  owner; unknown attribution alone SHALL retain the prior gate. A shared
+  owner's prerequisite notification SHALL aggregate occurrences attributed by
+  distinct runs, keyed per occurrence by its originating run; a republishing
+  run SHALL NOT drop or release another run's live occurrence, SHALL NOT
+  resurrect occurrences from a resolved notification, and when removing its
+  own proven-misplaced occurrences SHALL keep the occurrences other runs
+  still own active on that owner. The reassessment requirement SHALL surface
+  as a non-blocking Inbox notification
   on the run's issue and SHALL resolve once a later assessment establishes
   every attribution; the legacy sweep SHALL re-run one bounded fresh
   assessment per pass for rerunnable `reassessment_required` runs and SHALL

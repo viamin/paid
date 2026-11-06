@@ -73,6 +73,99 @@ RSpec.describe PartialCloseouts::Reconcile do
     end
   end
 
+  it "merges prerequisites attributed by separate child runs onto the same evidence owner" do # @spec PARTIAL-CLOSEOUT-041
+    evidence_owner = create(:issue, :in_progress, project:, github_state: "open")
+    child_a = create(:issue, :in_progress, project:, github_state: "open")
+    child_b = create(:issue, :in_progress, project:, github_state: "open")
+    run_a = create(:agent_run, :completed, project:, issue: child_a, pull_request_number: 201)
+    run_b = create(:agent_run, :completed, project:, issue: child_b, pull_request_number: 202)
+
+    described_class.call(agent_run: run_a, assessment: gaps([ human_gap("Independent RDR-070 judgments", source: evidence_owner) ]))
+    described_class.call(agent_run: run_b, assessment: gaps([
+      human_gap("Accessibility sign-off", source: evidence_owner, next_step: "Record the sign-off.")
+    ]))
+
+    notification = Notification.find_by!(subject: evidence_owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    occurrences = notification.metadata.fetch("prerequisites")
+    expect(occurrences.map { |occurrence| occurrence.fetch("origin_agent_run_id") }).to contain_exactly(run_a.id, run_b.id)
+    expect(notification.title).to eq("2 partial-closeout prerequisites need operator action")
+    expect(notification.description).to include("Independent RDR-070 judgments: Run the pilot.")
+    expect(notification.description).to include("Accessibility sign-off: Record the sign-off.")
+    expect(run_a.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
+    expect(run_b.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
+  end
+
+  it "replaces an earlier run's identical prerequisite with the fresh attribution" do # @spec PARTIAL-CLOSEOUT-041
+    evidence_owner = create(:issue, :in_progress, project:, github_state: "open")
+    earlier_run = create(:agent_run, :completed, project:, issue: parent, pull_request_number: 211)
+    later_run = create(:agent_run, :completed, project:, issue: parent, pull_request_number: 212)
+    gap = human_gap("Independent evaluation", source: evidence_owner)
+
+    described_class.call(agent_run: earlier_run, assessment: gaps([ gap ]))
+    described_class.call(agent_run: later_run, assessment: gaps([ gap ]))
+
+    notification = Notification.find_by!(subject: evidence_owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    occurrences = notification.metadata.fetch("prerequisites")
+    expect(occurrences.size).to eq(1)
+    expect(occurrences.sole).to include("origin_agent_run_id" => later_run.id)
+    expect(notification.title).to eq("Independent evaluation needs operator action")
+  end
+
+  it "removes only this run's misplaced occurrence when another run still gates the same owner" do # @spec PARTIAL-CLOSEOUT-041
+    evidence_owner = create(:issue, :in_progress, project:, github_number: 4662, github_state: "open")
+    child = create(:issue, :in_progress, project:, github_state: "open")
+    child_run = create(:agent_run, :completed, project:, issue: child, pull_request_number: 221)
+    described_class.call(agent_run: run, assessment: gaps([ human_gap("Reference judgments") ]))
+    parent_notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+
+    described_class.call(agent_run: child_run, assessment: gaps([ human_gap("Accessibility sign-off", source: parent) ]))
+    described_class.call(agent_run: AgentRun.find(run.id), assessment: gaps([ human_gap("Reference judgments", source: evidence_owner) ]))
+
+    expect(parent_notification.reload).to be_active
+    expect(parent_notification.metadata.fetch("prerequisites").sole).to include(
+      "criterion" => "Accessibility sign-off", "origin_agent_run_id" => child_run.id)
+    expect(parent_notification.description).to include("Accessibility sign-off")
+    expect(parent_notification.description).not_to include("Reference judgments")
+    expect(Notification.find_by!(subject: evidence_owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)).to be_active
+    expect(child_run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
+  end
+
+  it "does not resurrect satisfied occurrences from a resolved owner notification" do # @spec PARTIAL-CLOSEOUT-041
+    evidence_owner = create(:issue, :in_progress, project:, github_state: "open")
+    earlier_run = create(:agent_run, :completed, project:, issue: parent, pull_request_number: 231)
+    described_class.call(agent_run: earlier_run, assessment: gaps([ human_gap("Reference judgments", source: evidence_owner) ]))
+    notification = Notification.find_by!(subject: evidence_owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    notification.update!(resolved_at: Time.current, metadata: notification.metadata.merge(
+      "released_by" => "reconciled_evidence", "released_at" => Time.current.iso8601))
+    later_run = create(:agent_run, :completed, project:, issue: parent, pull_request_number: 232)
+
+    described_class.call(agent_run: later_run, assessment: gaps([ human_gap("Accessibility sign-off", source: evidence_owner) ]))
+
+    occurrences = notification.reload.metadata.fetch("prerequisites")
+    expect(occurrences.size).to eq(1)
+    expect(occurrences.sole).to include("criterion" => "Accessibility sign-off", "origin_agent_run_id" => later_run.id)
+    expect(notification).to be_active
+  end
+
+  it "keeps a typed workflow prerequisite merged from another run" do # @spec PARTIAL-CLOSEOUT-041
+    evidence_owner = create(:issue, :in_progress, project:, github_state: "open")
+    earlier_run = create(:agent_run, :completed, project:, issue: parent, pull_request_number: 241)
+    later_run = create(:agent_run, :completed, project:, issue: parent, pull_request_number: 242)
+    workflow = FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW
+
+    described_class.call(agent_run: earlier_run, assessment: gaps([
+      human_gap("Independent evaluation", source: evidence_owner).merge("workflow" => workflow)
+    ]))
+    described_class.call(agent_run: later_run, assessment: gaps([
+      human_gap("Accessibility sign-off", source: evidence_owner).merge("workflow" => workflow)
+    ]))
+
+    notification = Notification.find_by!(subject: evidence_owner, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata).to include("workflow" => workflow)
+    expect(notification.metadata.fetch("prerequisites").map { |occurrence| occurrence.fetch("criterion") })
+      .to contain_exactly("Independent evaluation", "Accessibility sign-off")
+  end
+
   it "records unknown attribution without fabricating an Inbox human task" do # @spec PARTIAL-CLOSEOUT-041
     described_class.call(agent_run: run, assessment: gaps([ unattributed_gap("Independent RDR-070 reference judgments") ]))
 

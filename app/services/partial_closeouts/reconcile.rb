@@ -293,18 +293,42 @@ module PartialCloseouts
     # empty map means no owner was established at all — unknown attribution
     # proves nothing about where the work belongs, so releasing on it would
     # waive a genuine human gate (#4893). Older unproven rows are
-    # deliberately retained for operator review rather than deleted.
+    # deliberately retained for operator review rather than deleted. A
+    # shared owner's notification aggregates occurrences from several runs,
+    # so only the occurrences this run published may move; any occurrence
+    # another run still owns keeps the notification active.
     # @spec PARTIAL-CLOSEOUT-041
     def reconcile_misplaced_prerequisite!(prerequisites_by_owner)
       return if prerequisites_by_owner.key?(agent_run.issue) || prerequisites_by_owner.empty?
 
       notification = existing_prerequisite_notification(agent_run.issue)
       return unless notification&.active?
-      return unless notification.metadata["origin_agent_run_id"] == agent_run.id
 
-      notification.update!(resolved_at: Time.current, metadata: notification.metadata.merge(
-        "released_by" => "reconciled_attribution", "released_at" => Time.current.iso8601
-      ))
+      owned, foreign = PrerequisiteOccurrences.for(notification)
+        .partition { |occurrence| occurrence_origin(occurrence, notification) == agent_run.id }
+      return if owned.empty?
+
+      if foreign.empty?
+        notification.update!(resolved_at: Time.current, metadata: notification.metadata.merge(
+          "released_by" => "reconciled_attribution", "released_at" => Time.current.iso8601
+        ))
+      else
+        prune_owned_prerequisites!(notification, foreign)
+      end
+    end
+
+    # The proven-misplaced occurrences belong to this run alone; occurrences
+    # other runs attributed to this owner keep their Action Required item.
+    # Operator-facing fields are rebuilt from the retained set so no stale
+    # criterion stays visible, and dropped references/evidence follow the
+    # same supersede rules as a regular publish.
+    # @spec PARTIAL-CLOSEOUT-041
+    def prune_owned_prerequisites!(notification, retained)
+      notification.update!(
+        title: operator_prerequisite_title(retained),
+        description: retained.map { |occurrence| operator_prerequisite_step(occurrence) }.join("\n"),
+        metadata: prerequisite_metadata(retained, previous: notification)
+      )
     end
 
     # Unknown attribution records a bounded reassessment requirement instead
@@ -354,51 +378,91 @@ module PartialCloseouts
     end
 
     def publish_prerequisite_notification!(owner_issue, attributed_gaps, previous:)
-      prerequisites = attributed_gaps.map(&:first)
+      occurrences = merged_prerequisite_occurrences(attributed_gaps, previous)
       notification = Notifications::Publish.call(
         account: agent_run.project.account, subject: owner_issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
-        title: operator_prerequisite_title(prerequisites),
-        description: prerequisites.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
-        metadata: prerequisite_metadata(attributed_gaps, previous:)
+        title: operator_prerequisite_title(occurrences),
+        description: occurrences.map { |occurrence| operator_prerequisite_step(occurrence) }.join("\n"),
+        metadata: prerequisite_metadata(occurrences, previous:)
       )
-      ExternalPrerequisites.recheck(notification) if prerequisites.any? { |gap| external_gap?(gap) }
+      ExternalPrerequisites.recheck(notification) if occurrences.any? { |occurrence| occurrence["kind"] == "external" }
+    end
+
+    # One owner's notification can carry prerequisites attributed by several
+    # different runs — separate implementation children can each require the
+    # same evidence owner — and Notifications::Publish replaces metadata
+    # wholesale. Publishing only this run's subset would silently delete a
+    # live operator gate another run recorded as awaiting_operator, so an
+    # active prior notification's foreign occurrences are merged back in. A
+    # resolved row is never resurrected: its occurrences were satisfied,
+    # proven misplaced, or cleared by the owner's closure. An identity match
+    # keeps the fresh revision this run just attributed either way.
+    # @spec PARTIAL-CLOSEOUT-041
+    def merged_prerequisite_occurrences(attributed_gaps, previous)
+      current = attributed_gaps.map { |gap, source_issue| prerequisite_occurrence(gap, source_issue) }
+      identities = current.map { |occurrence| occurrence.fetch("identity") }
+      current + (previous&.active? ? foreign_prerequisite_occurrences(previous, identities) : [])
+    end
+
+    def foreign_prerequisite_occurrences(previous, retained_identities)
+      PrerequisiteOccurrences.for(previous).reject do |occurrence|
+        occurrence["identity"].in?(retained_identities) || occurrence_origin(occurrence, previous) == agent_run.id
+      end
+    end
+
+    # Occurrences carry their originating run; rows persisted before
+    # occurrence-level origin exist only as the notification's own origin.
+    def occurrence_origin(occurrence, notification)
+      occurrence["origin_agent_run_id"] || notification.metadata["origin_agent_run_id"]
     end
 
     # @spec PARTIAL-CLOSEOUT-031
-    def prerequisite_metadata(attributed_gaps, previous:)
-      prerequisites = attributed_gaps.map(&:first)
-      references = prerequisites.flat_map { |gap| Array(gap["references"]) }
-      identities = prerequisites.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
+    def prerequisite_metadata(occurrences, previous:)
+      references = occurrences.flat_map { |occurrence| Array(occurrence["references"]) }
+      identities = occurrences.map { |occurrence| occurrence.fetch("identity") }.sort
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "origin_agent_run_id" => agent_run.id, "prerequisite_identity" => identity, "references" => references,
-                   "prerequisites" => attributed_gaps.map { |gap, source_issue| prerequisite_occurrence(gap, source_issue) } }
-      workflow = workflow_for(prerequisites)
+                   "prerequisites" => occurrences }
+      workflow = workflow_for(occurrences)
       metadata["workflow"] = workflow if workflow
-      submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
+      submissions = reconciled_evidence_submissions(previous, occurrences)
       metadata["evidence_submissions"] = submissions if submissions.any?
-      policy_selection = replacement_policy_action(prerequisites)
+      policy_selection = replacement_policy_action(occurrences)
       metadata["policy_selection"] = policy_selection if policy_selection
 
-      superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
-      if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
-        superseded = Array(previous&.metadata&.fetch("references", nil)) + superseded
-      end
-      metadata["superseded_references"] = superseded.uniq if superseded.any?
+      superseded = superseded_references(previous, occurrences)
+      metadata["superseded_references"] = superseded if superseded.any?
       metadata
     end
 
+    # Only occurrences that actually dropped off the owner's notification
+    # surrender their references; a publish that gained another run's
+    # prerequisite must not supersede references that are still current.
+    def superseded_references(previous, occurrences)
+      retained = occurrences.map { |occurrence| occurrence["identity"] }
+      dropped = prior_occurrences(previous).reject { |occurrence| occurrence["identity"].in?(retained) }
+      (dropped.flat_map { |occurrence| Array(occurrence["references"]) } +
+        Array(previous&.metadata&.fetch("superseded_references", nil))).uniq
+    end
+
+    def prior_occurrences(notification)
+      return [] unless notification
+
+      PrerequisiteOccurrences.for(notification)
+    end
+
     def reconciled_evidence_submissions(previous, occurrences)
-      prior_occurrences = Array(previous&.metadata&.fetch("prerequisites", nil)).index_by { |occurrence| occurrence["identity"] }
-      current_occurrences = occurrences.index_by { |occurrence| occurrence["identity"] }
+      prior_by_identity = prior_occurrences(previous).index_by { |occurrence| occurrence["identity"] }
+      current_by_identity = occurrences.index_by { |occurrence| occurrence["identity"] }
       Array(previous&.metadata&.fetch("evidence_submissions", nil)).map do |submission|
-        reconcile_evidence_submission(submission, prior_occurrences, current_occurrences)
+        reconcile_evidence_submission(submission, prior_by_identity, current_by_identity)
       end
     end
 
-    def reconcile_evidence_submission(submission, prior_occurrences, current_occurrences)
-      source_revision = submission["source_revision"] || prior_occurrences.dig(submission["prerequisite_identity"], "source_revision")
-      current_occurrence = current_occurrences[submission["prerequisite_identity"]]
+    def reconcile_evidence_submission(submission, prior_by_identity, current_by_identity)
+      source_revision = submission["source_revision"] || prior_by_identity.dig(submission["prerequisite_identity"], "source_revision")
+      current_occurrence = current_by_identity[submission["prerequisite_identity"]]
       revision_current = source_revision.blank? || current_occurrence&.fetch("source_revision", nil) == source_revision
       return submission if current_occurrence && revision_current
 
@@ -417,14 +481,23 @@ module PartialCloseouts
       identity
     end
 
+    # The occurrence is self-describing so a later run can merge it back
+    # into the owner's notification: it carries the originating run, the
+    # operator step, and the typed workflow / replacement-policy guidance
+    # recorded at attribution time.
     def prerequisite_occurrence(gap, source_issue)
       occurrence = { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
-        "criterion" => gap["criterion"], "kind" => gap["kind"], "references" => Array(gap["references"]),
+        "origin_agent_run_id" => agent_run.id,
+        "criterion" => gap["criterion"], "kind" => gap["kind"], "next_step" => gap["next_step"].to_s.strip,
+        "references" => Array(gap["references"]),
         "source_revision" => Assessment.source_revision_for(source_issue),
         "intent_revision" => Assessment.intent_revision_for(source_issue),
         "source_issue_number" => source_issue.github_number,
         "owner_issue_number" => gap.dig("attribution", "owner_issue_number") || source_issue.github_number }
       occurrence["external_dependency"] = external_dependency(gap) if external_gap?(gap)
+      occurrence["workflow"] = gap["workflow"] if gap["workflow"].present?
+      selection = gap["policy_selection"]
+      occurrence["policy_selection"] = selection if selection.is_a?(Hash) && selection["required"]
       occurrence
     end
 
@@ -445,16 +518,16 @@ module PartialCloseouts
       end
     end
 
-    def replacement_policy_action(human_gaps)
-      steps = human_gaps.filter_map do |gap|
-        gap.dig("policy_selection", "next_step") if gap.dig("policy_selection", "required")
+    def replacement_policy_action(occurrences)
+      steps = occurrences.filter_map do |occurrence|
+        occurrence.dig("policy_selection", "next_step") if occurrence.dig("policy_selection", "required")
       end.uniq
       { "required" => true, "next_step" => steps.join(" ") } if steps.any?
     end
 
-    def workflow_for(human_gaps)
-      workflows = human_gaps.filter_map { |gap| gap["workflow"].presence }.uniq
-      workflows.sole if workflows.one? && human_gaps.all? { |gap| gap["workflow"] == workflows.sole }
+    def workflow_for(occurrences)
+      workflows = occurrences.filter_map { |occurrence| occurrence["workflow"].presence }.uniq
+      workflows.sole if workflows.one? && occurrences.all? { |occurrence| occurrence["workflow"] == workflows.sole }
     end
 
     def existing_prerequisite_notification(source_issue)
@@ -464,10 +537,10 @@ module PartialCloseouts
       )
     end
 
-    def operator_prerequisite_title(prerequisites)
-      return "External prerequisite work is pending" if prerequisites.all? { |gap| external_gap?(gap) }
+    def operator_prerequisite_title(occurrences)
+      return "External prerequisite work is pending" if occurrences.all? { |occurrence| occurrence["kind"] == "external" }
 
-      criteria = prerequisites.map { |gap| gap["criterion"] }
+      criteria = occurrences.map { |occurrence| occurrence["criterion"] }
       if criteria.one?
         "#{criteria.first} needs operator action"
       else
@@ -477,15 +550,19 @@ module PartialCloseouts
 
     # validate! guarantees a nonblank exact step for every human gap, so the
     # Inbox item always tells the operator what to do — never a generic
-    # "review the prerequisite" placeholder (#4119).
-    def operator_prerequisite_step(gap)
-      if external_gap?(gap)
-        dependency = external_dependency(gap)
+    # "review the prerequisite" placeholder (#4119). Merged occurrences
+    # carry their recorded step; legacy rows without one fall back to the
+    # criterion alone rather than a fabricated instruction.
+    def operator_prerequisite_step(occurrence)
+      criterion = occurrence.fetch("criterion")
+      step = occurrence["next_step"].to_s.strip
+      dependency = occurrence["external_dependency"]
+      if dependency
         reference = [ dependency.fetch("owner"), dependency.fetch("repo") ].join("/") + "#" + dependency.fetch("number").to_s
-        return "#{gap["criterion"]}: #{gap["next_step"].to_s.strip} Track #{reference}; Paid rechecks after its next sync."
+        "#{criterion}: #{step} Track #{reference}; Paid rechecks after its next sync."
+      else
+        step.present? ? "#{criterion}: #{step}" : criterion
       end
-
-      "#{gap["criterion"]}: #{gap["next_step"].to_s.strip}"
     end
 
     def publish_parent_dependencies!
