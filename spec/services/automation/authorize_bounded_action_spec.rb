@@ -8,7 +8,8 @@ RSpec.describe Automation::AuthorizeBoundedAction do
   let(:project) { create(:project, account:) }
   let(:issue) { create(:issue, project:) }
   let(:user) { create(:user, :member, account:) }
-  let(:evidence) { { "intent_digest" => "sha256:abc", "acceptance_refs" => [ "AC-1" ] } }
+  let(:intent_digest) { "sha256:#{Digest::SHA256.hexdigest('intent')}" }
+  let(:evidence) { { "intent_digest" => intent_digest, "acceptance_refs" => [ "AC-1" ] } }
 
   it "creates a bounded action with inspectable evidence and audit" do
     action = described_class.call(project:, issue:, user:, action: "repair", evidence:)
@@ -63,9 +64,23 @@ RSpec.describe Automation::AuthorizeBoundedAction do
     }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence, /intent_digest/)
   end
 
+  it "rejects a truthy intent digest that is not a sha256 digest" do
+    expect {
+      described_class.call(project:, issue:, user:, action: "repair",
+        evidence: { intent_digest: true, acceptance_refs: [ "AC-1" ] })
+    }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence, /intent_digest/)
+  end
+
+  it "rejects an intent digest with a malformed sha256 form" do
+    expect {
+      described_class.call(project:, issue:, user:, action: "repair",
+        evidence: { "intent_digest" => "sha256:abc", "acceptance_refs" => [ "AC-1" ] })
+    }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence, /intent_digest/)
+  end
+
   it "rejects evidence without acceptance references with a typed domain error" do
     expect {
-      described_class.call(project:, issue:, user:, action: "repair", evidence: { "intent_digest" => "sha256:abc" })
+      described_class.call(project:, issue:, user:, action: "repair", evidence: { "intent_digest" => intent_digest })
     }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence, /acceptance_refs/)
   end
 end

@@ -78,13 +78,22 @@ module Automation
     def ensure_evidence!
       raise InvalidEvidence, "Evidence must be an object." unless evidence.is_a?(Hash)
 
-      missing_evidence_fields = []
-      missing_evidence_fields << "intent_digest" if evidence_value("intent_digest").blank?
-      acceptance_references = evidence_value("acceptance_refs")
-      missing_evidence_fields << "acceptance_refs" unless acceptance_references.is_a?(Array) && acceptance_references.any?(&:present?)
-      return if missing_evidence_fields.empty?
+      ensure_intent_digest!
+      ensure_acceptance_refs!
+    end
 
-      raise InvalidEvidence, "Evidence must include #{missing_evidence_fields.join(" and ")}."
+    def ensure_intent_digest!
+      digest = evidence_value("intent_digest")
+      return if digest.is_a?(String) && digest.match?(BoundedDelegatedAction::INTENT_DIGEST_FORMAT)
+
+      raise InvalidEvidence, "Evidence must include intent_digest as a sha256:<64 hex characters> digest."
+    end
+
+    def ensure_acceptance_refs!
+      acceptance_references = evidence_value("acceptance_refs")
+      return if acceptance_references.is_a?(Array) && acceptance_references.any?(&:present?)
+
+      raise InvalidEvidence, "Evidence must include acceptance_refs."
     end
 
     def evidence_value(key)

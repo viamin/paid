@@ -13,10 +13,13 @@ claims remain proposed until their admission and reassessment paths land.
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-010** — When an authorized actor delegates a
   bounded delivery action, the system SHALL require an identified issue in the
-  same project and account, a pinned intent digest, and acceptance evidence;
-  it SHALL persist the actor, action, expiry, and evidence and record an audit
-  event in the same transaction.
-  *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb`.
+  same project and account, a pinned sha256 intent digest, and acceptance
+  evidence; it SHALL persist the actor, action, expiry, and evidence and record
+  an audit event in the same transaction. Revocation SHALL record a
+  `bounded_action.revoked` account activity event in the same transaction as
+  the status change.
+  *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb` and
+  `spec/models/bounded_delegated_action_spec.rb`.
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-011** — The system SHALL authorize review and
   repair using the existing run permission and SHALL require the stronger

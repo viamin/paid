@@ -11,6 +11,7 @@ class BoundedDelegatedAction < ApplicationRecord
     product_decision feature_approval release deployment setting_enablement
   ].freeze
   STATUSES = %w[active revoked completed].freeze
+  INTENT_DIGEST_FORMAT = /\Asha256:[a-f0-9]{64}\z/
 
   belongs_to :account
   belongs_to :project
@@ -43,18 +44,39 @@ class BoundedDelegatedAction < ApplicationRecord
   def revoke!(user:)
     return false unless status == "active"
 
-    update!(status: "revoked", revoked_at: Time.current, revoked_by: user)
+    self.class.transaction do
+      update!(status: "revoked", revoked_at: Time.current, revoked_by: user)
+      Audit::RecordEvent.call(
+        action: "bounded_action.revoked",
+        actor: user,
+        subject: self,
+        metadata: { "action" => action }
+      )
+    end
+    true
   end
 
   private
 
   def evidence_is_bounded
     errors.add(:evidence, "must be an object") unless evidence.is_a?(Hash)
-    errors.add(:evidence, "must include an intent_digest") if evidence.is_a?(Hash) && evidence["intent_digest"].blank?
     return unless evidence.is_a?(Hash)
+
+    validate_intent_digest
     return if evidence["acceptance_refs"].is_a?(Array) && evidence["acceptance_refs"].any?(&:present?)
 
     errors.add(:evidence, "must include acceptance_refs")
+  end
+
+  def validate_intent_digest
+    digest = evidence["intent_digest"]
+    return if digest.is_a?(String) && digest.match?(INTENT_DIGEST_FORMAT)
+
+    if digest.blank?
+      errors.add(:evidence, "must include an intent_digest")
+    else
+      errors.add(:evidence, "intent_digest must be a sha256:<64 hex characters> digest")
+    end
   end
 
   def account_matches_scope

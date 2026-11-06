@@ -8,7 +8,7 @@ FactoryBot.define do
     issue { association :issue, project: }
     created_by { association :user, account: }
     action { "repair" }
-    evidence { { "intent_digest" => "sha256:bounded", "acceptance_refs" => [ "AC-1" ] } }
+    evidence { { "intent_digest" => "sha256:#{Digest::SHA256.hexdigest("bounded")}", "acceptance_refs" => [ "AC-1" ] } }
     status { "active" }
     expires_at { 24.hours.from_now }
   end
