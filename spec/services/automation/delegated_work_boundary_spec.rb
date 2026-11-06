@@ -1,0 +1,98 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Automation::DelegatedWorkBoundary do
+  let(:account) { create(:account) }
+  let(:project) { create(:project, account:) }
+  let(:issue) { create(:issue, project:, github_creator_login: "trusted-user") }
+  let(:authorization) do
+    create(:bounded_delegated_action, account:, project:, issue:, evidence: evidence)
+  end
+  let(:evidence) do
+    {
+      "intent_digest" => "sha256:#{Digest::SHA256.hexdigest("intent")}",
+      "acceptance_refs" => [ "AC-1" ],
+      "intent_revision" => "intent-7",
+      "acceptance_revision" => "acceptance-3",
+      "evidence_revision" => "evidence-9",
+      "posture_signature" => "posture:4",
+      "phase" => "coding",
+      "stop_before_phase" => "merge"
+    }
+  end
+  let(:snapshot) do
+    {
+      intent_revision: "intent-7",
+      acceptance_revision: "acceptance-3",
+      evidence_revision: "evidence-9",
+      posture_signature: "posture:4",
+      phase: "coding",
+      phase_policy: true,
+      bounded_stop: "merge",
+      account_id: account.id,
+      project_id: project.id,
+      issue_id: issue.id,
+      trust: true,
+      budget: true,
+      repository_controls: true,
+      assessment_available: true
+    }
+  end
+
+  def recheck(overrides = {})
+    described_class.call(
+      authorization:,
+      boundary: :retry,
+      snapshot: snapshot.merge(overrides)
+    )
+  end
+
+  it "permits a delegated action when every boundary input is current" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-004
+    expect(recheck).to be_permitted
+    expect(Notification.count).to eq(0)
+  end
+
+  it "applies the same recheck contract to every delegated-work boundary" do # @spec PROJECT-DELEGATION-004
+    Automation::DelegatedWorkBoundary::BOUNDARIES.each do |boundary|
+      expect(described_class.call(authorization:, boundary:, snapshot:)).to be_permitted
+    end
+  end
+
+  it "routes stale revisions and posture changes to one focused decision" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-006
+    first = recheck(intent_revision: "intent-8")
+    second = recheck(posture_signature: "posture:5")
+
+    expect(first).to be_blocked
+    expect(first.reasons).to include(:intent_revision)
+    expect(second).to be_blocked
+    expect(Notification.where(source: described_class::NOTIFICATION_SOURCE).count).to eq(1)
+    expect(Notification.last.metadata).to include("boundary" => "retry")
+  end
+
+  it "checks phase and bounded stop policy before starting another action" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-003
+    expect(recheck(phase: "merge")).to be_blocked
+    expect(recheck(bounded_stop: "coding")).to be_blocked
+  end
+
+  it "fails closed for tenant, trust, budget, repository, or assessment failures" do # @spec PROJECT-DELEGATION-004
+    %i[account_id project_id trust budget repository_controls assessment_available].each do |key|
+      result = recheck(key => key == :account_id ? account.id + 1 : false)
+
+      expect(result).to be_blocked, "expected #{key} to block"
+      expected_reason = if key.in?(%i[account_id project_id])
+        :tenant
+      elsif key == :assessment_available
+        :assessment_availability
+      else
+        key
+      end
+      expect(result.reasons).to include(expected_reason)
+    end
+  end
+
+  it "rejects unsupported boundaries" do
+    expect { described_class.call(authorization:, boundary: :execute, snapshot:) }
+      .to raise_error(ArgumentError, /unsupported delegated-work boundary/)
+  end
+end

@@ -54,12 +54,12 @@ claims remain proposed until their admission and reassessment paths land.
   SHALL retain their current non-stopping behavior.
   *Planned tests:* effective-policy and queue specs.
 
-- [ ] **BOUNDED-PHASE-AUTHORIZATION-004** — Before creating, dequeuing,
+- [x] **BOUNDED-PHASE-AUTHORIZATION-004** — Before creating, dequeuing,
   retrying, or scheduling a follow-up action, the system SHALL recheck tenant,
   actor policy, authorization lifecycle, expiry, lineage, stop boundary,
   current policy signature, and deterministic repository controls; a revoked,
   completed, expired, or invalid authorization SHALL start no new action.
-  *Planned tests:* admission, dequeue, retry, and follow-up specs.
+  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-005** — When pinned intent/acceptance
   expands, policy or permissions change, a new risk appears, or repair-to-scope
