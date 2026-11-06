@@ -159,4 +159,47 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result).not_to be_success
     expect(result.message).to include("reviewed performance recipe")
   end
+
+  # @spec PARTIAL-CLOSEOUT-041
+  it "refuses a performance recipe whose baseline is the produced revision itself" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: "c" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account,
+      check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
+          "baseline_commit_sha" => "C" * 40, "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
+          "metrics" => [ "wall_ms" ], "samples" => 3,
+          "environment" => "isolated-linux", "budget_seconds" => 60,
+          "artifact_contract" => [ "raw_samples", "comparison" ]
+      })
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by)
+
+    expect(result).not_to be_success
+    expect(result.message).to include("reviewed performance recipe")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-041
+  it "refuses recipe values that only coerce, because execution consumes them strictly" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: "c" * 40)
+    complete_recipe = {
+      "baseline_commit_sha" => "b" * 40, "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
+      "metrics" => [ "wall_ms" ], "samples" => 3,
+      "environment" => "isolated-linux", "budget_seconds" => 60,
+      "artifact_contract" => [ "raw_samples", "comparison" ]
+    }
+
+    aggregate_failures do
+      { "metrics" => "wall_ms", "samples" => "3", "budget_seconds" => "1e3" }.each do |key, value|
+        requirement = create(:pre_commit_requirement, project:, account: project.account,
+          check_type: "performance_measurement", command: "bin/measure",
+          measurement_recipe: complete_recipe.merge(key => value))
+
+        result = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+
+        expect(result).not_to be_success
+        expect(result.message).to include("reviewed performance recipe")
+      end
+    end
+  end
 end

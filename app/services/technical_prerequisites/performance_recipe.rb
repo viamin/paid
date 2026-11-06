@@ -32,15 +32,47 @@ module TechnicalPrerequisites
 
     attr_reader :requirement, :current_commit_sha
 
-    def payload = requirement.measurement_recipe.to_h.deep_stringify_keys
+    def payload = @payload ||= requirement.measurement_recipe.to_h.deep_stringify_keys
 
     def complete?
-      current_commit_sha.to_s.match?(SHA) && payload["baseline_commit_sha"].to_s.match?(SHA) &&
-        workload_complete? && Array(payload["metrics"]).all? { |metric| metric.is_a?(String) && metric.present? } &&
-        Array(payload["metrics"]).any? && payload["samples"].to_i.between?(2, 50) &&
-        payload["environment"].is_a?(String) && payload["environment"].present? &&
-        payload["budget_seconds"].to_i.between?(1, MAX_BUDGET_SECONDS) && artifact_contract_complete? &&
+      revisions_pinned? && revisions_distinct? && workload_complete? && metrics_complete? &&
+        samples_complete? && environment_complete? && budget_complete? && artifact_contract_complete? &&
         requires_browser_valid?
+    end
+
+    # Validation is strict, not coercive: the persisted payload is consumed
+    # as-is by ValidateExecution (`samples` gets `.times`, `metrics` gets
+    # `.to_h`), so a string that survives `"3".to_i` here would crash sampling
+    # after the budget was spent. Only exact types admit a recipe.
+    def metrics_complete?
+      metrics = payload["metrics"]
+      metrics.is_a?(Array) && metrics.any? && metrics.all? { |metric| metric.is_a?(String) && metric.present? }
+    end
+
+    def samples_complete?
+      samples = payload["samples"]
+      samples.is_a?(Integer) && samples.between?(2, 50)
+    end
+
+    def budget_complete?
+      budget = payload["budget_seconds"]
+      budget.is_a?(Numeric) && budget.to_f.between?(1, MAX_BUDGET_SECONDS)
+    end
+
+    def environment_complete?
+      payload["environment"].is_a?(String) && payload["environment"].present?
+    end
+
+    # A baseline pinned to the produced revision — a copy/paste slip or a
+    # case variant, since a SHA is case-insensitive — is a self-comparison:
+    # both sample sets would collapse onto one revision and present identical
+    # percentiles as a complete before/after result.
+    def revisions_distinct?
+      payload["baseline_commit_sha"].to_s.downcase != current_commit_sha.to_s.downcase
+    end
+
+    def revisions_pinned?
+      current_commit_sha.to_s.match?(SHA) && payload["baseline_commit_sha"].to_s.match?(SHA)
     end
 
     # Optional attestation: the isolated runner never provisions a browser

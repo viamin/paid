@@ -42,6 +42,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   end
 
   def finish!(agent_run, result)
+    audit_issue = nil
     agent_run.with_lock do
       agent_run.reload
       return if agent_run.finished?
@@ -49,10 +50,12 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
       status = result.status == "completed" ? "completed" : "failed"
       agent_run.update!(status:, completed_at: Time.current, error_message: terminal_message(result))
       measurement = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
-      if agent_run.issue && result.status != "cancelled" && measurement.present?
-        PartialCloseouts::AutoAudit.call(issue: agent_run.issue)
-      end
+      audit_issue = agent_run.issue if result.status != "cancelled" && measurement.present?
     end
+    # Scheduled outside the run lock: audit admission takes the issue lock and
+    # creates continuation/agent-run rows, so a scheduling failure here must
+    # not roll back the terminal status of the finished measurement run.
+    PartialCloseouts::AutoAudit.call(issue: audit_issue) if audit_issue
   end
 
   def fail!(agent_run, error)

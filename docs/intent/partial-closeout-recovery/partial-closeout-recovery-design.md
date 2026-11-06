@@ -47,26 +47,6 @@ generation.
 
 ### Source-closure publication
 
-### Reviewed performance measurements (#4894)
-
-A performance prerequisite is a distinct reviewed recipe, not an inference
-from issue prose or a general pre-commit command. Its persisted contract names
-the baseline commit, the current pinned run commit, representative workload
-identity and provenance, metric keys, sample count, isolated environment
-identity, time budget, and raw-artifact contract. The Inbox exposes the same
-prepared action as other criterion-specific validations; project authorization,
-tenant scoping, pause and normal isolated-run admission remain authoritative.
-
-The validation run clones and measures both pinned revisions in the approved
-isolated environment, retains bounded raw output for every sample, and derives
-only mechanical p50/p95 values for the reviewed metric keys. It deduplicates
-the issue, criterion, revisions, recipe, and workload identity. Any unavailable
-baseline/environment/metric, nonrepresentative workload, changed head, or
-partial sample is durable `unknown` evidence, never an improvement claim.
-Terminal measurement evidence schedules the normal report-only acceptance
-audit; semantic interpretation remains in `agent_harness`, and no measurement
-can close the issue.
-
 Closeout assessment uses the run's effective configured runner through
 `Llm::Request` and `agent_harness`, with its tier model resolved through
 the existing runner model policy and its credentials in the isolated execution
@@ -96,6 +76,26 @@ reference — becomes `Tracks` unless the persisted disposition is `close`;
 free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
+
+### Reviewed performance measurements (#4894)
+
+A performance prerequisite is a distinct reviewed recipe, not an inference
+from issue prose or a general pre-commit command. Its persisted contract names
+the baseline commit, the current pinned run commit, representative workload
+identity and provenance, metric keys, sample count, isolated environment
+identity, time budget, and raw-artifact contract. The Inbox exposes the same
+prepared action as other criterion-specific validations; project authorization,
+tenant scoping, pause and normal isolated-run admission remain authoritative.
+
+The validation run clones and measures both pinned revisions in the approved
+isolated environment, retains bounded raw output for every sample, and derives
+only mechanical p50/p95 values for the reviewed metric keys. It deduplicates
+the issue, criterion, revisions, recipe, and workload identity. Any unavailable
+baseline/environment/metric, nonrepresentative workload, changed head, or
+partial sample is durable `unknown` evidence, never an improvement claim.
+Terminal measurement evidence schedules the normal report-only acceptance
+audit; semantic interpretation remains in `agent_harness`, and no measurement
+can close the issue.
 
 ### Human prerequisite attribution (#4893)
 
