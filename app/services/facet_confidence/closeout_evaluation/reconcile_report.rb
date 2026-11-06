@@ -58,14 +58,17 @@ module FacetConfidence
       end
 
       def record(notification, occurrence)
-        current = current_revision?(notification, occurrence)
+        current = current_for_this_evaluation?(notification, occurrence)
         outcome = current ? "sufficient" : "stale"
         submission = submission_for(occurrence, outcome)
         update_submission(notification, submission)
         outcome.to_sym
       end
 
-      def current_revision?(notification, occurrence)
+      # The evaluation-revision comparison belongs only to the occurrences
+      # this evaluation assessed: their recorded revision and their source
+      # issue's current revision must both equal the revision it judged.
+      def current_for_this_evaluation?(notification, occurrence)
         occurrence["source_revision"] == evaluation.source_revision &&
           PartialCloseouts::PrerequisiteOccurrences.current_source_revision(notification, occurrence) == evaluation.source_revision
       end
@@ -101,12 +104,23 @@ module FacetConfidence
           metadata: notification.metadata.merge("released_by" => RELEASED_BY, "released_at" => Time.current.iso8601))
       end
 
+      # One notification can merge prerequisites attributed by several runs
+      # (PartialCloseouts::Reconcile preserves foreign occurrences), so a
+      # sufficient submission recorded by another source issue's evaluation
+      # legitimately sits at a revision other than this evaluation's. Each
+      # occurrence is therefore validated against its own current source
+      # revision, never this evaluation's.
       def sufficient_current_submission?(notification, occurrence)
         submission = Array(notification.metadata["evidence_submissions"]).reverse.find do |item|
           item["prerequisite_identity"] == occurrence["identity"]
         end
         submission&.fetch("outcome", nil) == "sufficient" &&
-          submission["source_revision"] == occurrence["source_revision"] && current_revision?(notification, occurrence)
+          submission["source_revision"] == occurrence["source_revision"] && occurrence_revision_current?(notification, occurrence)
+      end
+
+      def occurrence_revision_current?(notification, occurrence)
+        occurrence["source_revision"].present? &&
+          PartialCloseouts::PrerequisiteOccurrences.current_source_revision(notification, occurrence) == occurrence["source_revision"]
       end
     end
   end

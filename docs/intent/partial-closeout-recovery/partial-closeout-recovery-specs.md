@@ -811,7 +811,8 @@
   *Code:* `app/services/facet_confidence/closeout_evaluation/reconcile_report.rb`,
   `app/models/notification.rb`,
   `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
-  *Test:* `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`.
+  *Test:* `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`,
+  `spec/services/facet_confidence/closeout_evaluation/reconcile_report_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body
