@@ -800,6 +800,25 @@
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
   `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-041** — When a current partial-closeout criterion
+  names a reproducible performance comparison, Paid SHALL offer a reviewed
+  performance-measurement recipe only when it records a pinned baseline and
+  current revision, representative workload identity and provenance, metric
+  definitions, sample count, isolated environment identity, time budget, and
+  raw-artifact contract. It SHALL execute those samples only through the
+  capability-aware isolated runner, deduplicate an equivalent issue/criterion/
+  revisions/recipe/workload attempt, and retain bounded raw samples plus a
+  mechanical p50/p95 comparison. Missing baseline or metrics, nonrepresentative
+  workload, unavailable environment, changed head, and partial samples SHALL
+  remain unknown and SHALL not claim an improvement. A terminal comparison
+  SHALL re-enter the normal evidence-bound acceptance audit; it SHALL not close
+  the issue or semantically interpret the result.
+  *Code:* `app/services/technical_prerequisites/performance_recipe.rb`,
+  `app/services/technical_prerequisites/start_validation.rb`,
+  `app/services/technical_prerequisites/validate_execution.rb`.
+  *Test:* `spec/services/technical_prerequisites/start_validation_spec.rb`,
+  `spec/services/technical_prerequisites/validate_execution_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body
   digest as `pending_sync` and SHALL not report the repair as reconciled until

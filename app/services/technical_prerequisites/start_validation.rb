@@ -24,6 +24,9 @@ module TechnicalPrerequisites
       return failure("Select the original implementation run, not a prior validation.") if source_run.technical_prerequisite_validation_goal?
       return failure("Select an enabled validation recipe for this project.") unless allowed_requirement?
       return failure("The selected validation recipe has an invalid command.") unless reviewed_command
+      return failure(performance_recipe.error) if performance_requirement? && !performance_recipe.valid?
+
+      return existing_result if existing_run
 
       run = create_validation_run!
       # Enqueued after the run is committed: the job claims the run by id, and
@@ -72,7 +75,8 @@ module TechnicalPrerequisites
           "command" => reviewed_command,
           "criterion" => criterion,
           "tool_name" => tool_name,
-          "source_run_id" => source_run.id
+          "source_run_id" => source_run.id,
+          "performance_measurement" => performance_recipe.recipe
         }
       )
     end
@@ -96,6 +100,27 @@ module TechnicalPrerequisites
     # validation follows the same `sh -c` execution path as pre-commit checks.
     def reviewed_command
       @reviewed_command ||= requirement.command if requirement.command.is_a?(String) && requirement.command.present?
+    end
+
+    def performance_requirement? = requirement.check_type == "performance_measurement"
+
+    def performance_recipe
+      @performance_recipe ||= PerformanceRecipe.call(requirement:, current_commit_sha: source_run.base_commit_sha)
+    end
+
+    def existing_run
+      return unless performance_requirement?
+
+      source_run.project.agent_runs.where(issue: source_run.issue, goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL)
+        .order(created_at: :desc).detect do |run|
+          run.status.in?(%w[queued running completed]) &&
+            run.external_metadata.dig(RECIPE_KEY, "criterion") == criterion &&
+            run.external_metadata.dig(RECIPE_KEY, "performance_measurement") == performance_recipe.recipe
+        end
+    end
+
+    def existing_result
+      Result.new(status: :queued, agent_run: existing_run, message: "Equivalent performance measurement already exists; opening it.")
     end
 
     def failure(message)

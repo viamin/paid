@@ -48,6 +48,10 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
 
       status = result.status == "completed" ? "completed" : "failed"
       agent_run.update!(status:, completed_at: Time.current, error_message: terminal_message(result))
+      measurement = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
+      if agent_run.issue && result.status != "cancelled" && measurement.present?
+        PartialCloseouts::AutoAudit.call(issue: agent_run.issue)
+      end
     end
   end
 

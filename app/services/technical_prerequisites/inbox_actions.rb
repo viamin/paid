@@ -23,7 +23,7 @@ module TechnicalPrerequisites
 
       assessment.criteria.filter_map do |criterion|
         next unless criterion["state"].in?(%w[unmet unknown])
-        next unless criterion["validation_kind"].in?(%w[native tool_sidecar])
+        next unless criterion["validation_kind"].in?(%w[native tool_sidecar performance_measurement])
 
         requirement = requirements[criterion["validation_requirement_id"].to_i]
         Action.new(criterion: criterion, requirement: requirement,
@@ -42,6 +42,7 @@ module TechnicalPrerequisites
     def setup_action(criterion, requirement)
       return "Prepare a reviewed validation recipe for this criterion, then run a fresh acceptance audit." unless requirement
       return "Select an implementation run with a pinned checkout before validating this criterion." unless source_run&.base_commit_sha.present?
+      return "Configure a complete representative performance recipe for this criterion." if criterion["validation_kind"] == "performance_measurement" && requirement&.check_type != "performance_measurement"
       return unless criterion["validation_kind"] == "tool_sidecar"
       attached = source_run.tool_sidecar_snapshot.any? do |tool|
         tool["name"] == criterion["validation_tool_name"] && criterion["validation_tool_name"].present?

@@ -2,7 +2,7 @@
 
 class PreCommitRequirement < ApplicationRecord
   has_logidze
-  CHECK_TYPES = %w[shell_command test_suite coverage security_scan mutation_test].freeze
+  CHECK_TYPES = %w[shell_command test_suite coverage security_scan mutation_test performance_measurement].freeze
   MUTATION_TEST_DEFAULT_COMMAND = "bundle exec mutant run --results-dir .mutant/results --since HEAD~1 --use rspec --jobs 1".freeze
   WARDEN_DEFAULT_COMMAND = "warden-scan".freeze
   FAILURE_BEHAVIORS = %w[block warn auto_fix].freeze
@@ -29,6 +29,7 @@ class PreCommitRequirement < ApplicationRecord
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
   validate :user_belongs_to_account, if: -> { user.present? && account.present? }
   validate :fix_command_requires_auto_fix
+  validate :performance_recipe_only_for_measurement
 
   scope :enabled, -> { where(enabled: true) }
   scope :ordered, -> { order(:position, :name) }
@@ -126,5 +127,11 @@ class PreCommitRequirement < ApplicationRecord
     return unless fix_command.present? && failure_behavior != "auto_fix"
 
     errors.add(:fix_command, "can only be set when failure behavior is auto_fix")
+  end
+
+  def performance_recipe_only_for_measurement
+    return if measurement_recipe.blank? || check_type == "performance_measurement"
+
+    errors.add(:measurement_recipe, "is only supported by performance measurements")
   end
 end

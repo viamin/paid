@@ -15,7 +15,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   let(:execution_runner) { instance_double(ExecutionRunners::Base, provision_mcp_servers: {}, cleanup_mcp_servers: nil) }
   let(:execution_environment) { instance_double(Containers::Provision) }
   let(:git_operations) do
-    instance_double(Containers::GitOperations, clone_and_checkout_pinned_commit: "a" * 40, head_sha: "b" * 40)
+    instance_double(Containers::GitOperations, clone_and_checkout_pinned_commit: "a" * 40, checkout_pinned_commit: nil, head_sha: "b" * 40)
   end
   let(:sidecar_endpoints) { [ { "name" => "analyzer", "url" => "http://analyzer:8080" } ] }
 
@@ -64,6 +64,29 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup")).to include("completed" => true)
     expect(source_run.reload.reconciliation.dig("technical_prerequisite_evidence", "validation_run_id")).to eq(agent_run.id)
     expect(source_run.reconciliation.dig("technical_prerequisite_evidence", "cleanup")).to include("completed" => true)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-041
+  it "records raw baseline/current samples and a mechanical comparison without claiming an improvement" do
+    agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
+      "source_run_id" => source_run.id, "performance_measurement" => {
+        "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,
+        "metrics" => [ "wall_ms" ], "samples" => 2, "environment" => "isolated-linux"
+      }
+    } })
+    stub_compatible_host
+    stub_provisioning
+    allow(agent_run).to receive(:execute_in_execution_environment)
+      .and_return({ stdout: '{"wall_ms":20}', stderr: "", exit_code: 0 }, { stdout: '{"wall_ms":22}', stderr: "", exit_code: 0 },
+        { stdout: '{"wall_ms":12}', stderr: "", exit_code: 0 }, { stdout: '{"wall_ms":14}', stderr: "", exit_code: 0 })
+
+    result = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:)
+
+    comparison = result.evidence.dig("performance_measurement", "comparison")
+    expect(result).to be_success
+    expect(comparison).to include("status" => "complete")
+    expect(comparison.dig("metrics", "wall_ms", "baseline", "p50")).to eq(22.0)
+    expect(comparison).not_to have_key("improvement")
   end
 
   # @spec PARTIAL-CLOSEOUT-032
