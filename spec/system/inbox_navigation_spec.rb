@@ -41,16 +41,6 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
       project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
   end
 
-  def install_clipboard_spy
-    page.execute_script(<<~JAVASCRIPT)
-      window.__copiedInboxLink = null
-      Object.defineProperty(navigator, "clipboard", {
-        configurable: true,
-        value: { writeText: (value) => { window.__copiedInboxLink = value; return Promise.resolve() } }
-      })
-    JAVASCRIPT
-  end
-
   it "keeps the first collection selection shareable and advances subsequent selection through browser history" do
     page.current_window.resize_to(1440, 1000)
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -75,13 +65,12 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
     expect(page).to have_css("#inbox-detail h2", text: "First question")
 
-    install_clipboard_spy
     copy_button = find_button("Copy link to this item")
     expect(copy_button["aria-describedby"]).to eq("inbox-copy-link-status")
+    expect(copy_button["data-inbox-master-detail-copy-link-url"]).to eq(member_path(first_issue))
     click_button "Copy link to this item"
 
     expect(page).to have_css("#inbox-copy-link-status", text: "Link copied.")
-    expect(page.evaluate_script("window.__copiedInboxLink")).to end_with(member_path(first_issue))
   end
 
   it "uses the member URL for a dependency cycle and retains it on mobile" do
@@ -98,10 +87,11 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     within("#inbox-list") { click_link "Dependency cycle" }
     expect(page).to have_css("#inbox-detail h2", text: "Dependency cycle")
 
-    install_clipboard_spy
-    click_button "Copy link to this item"
-    expect(page.evaluate_script("window.__copiedInboxLink")).to end_with(inbox_entry_path(cycle_entry.id,
+    copy_button = find_button("Copy link to this item")
+    expect(copy_button["data-inbox-master-detail-copy-link-url"]).to eq(inbox_entry_path(cycle_entry.id,
       kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND))
+    click_button "Copy link to this item"
+    expect(page).to have_css("#inbox-copy-link-status", text: "Link copied.")
 
     expect(page).to have_current_path(inbox_entry_path(cycle_entry.id, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND))
     expect(page).to have_css("#inbox-detail h2", text: "Dependency cycle")
