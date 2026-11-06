@@ -131,6 +131,21 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(install_step.fetch("run")).to include("postgresql-client-16")
         end
 
+        # A signing key that was downloaded but never verified leaves apt with
+        # an unsigned repository, and every later apt-get update then fails
+        # with "The repository ... is not signed" instead of a usable client.
+        # @spec TOOLCHAIN-PIN-028
+        it "verifies the PGDG signing key before trusting the repository for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+          install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
+          run = install_step.fetch("run")
+
+          expect(run).to include('gpg --batch --with-colons --show-keys')
+          expect(run).to include('B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8')
+          expect(run).to include('sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"')
+          expect(run).not_to include("| sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc")
+        end
+
         it "installs JavaScript dependencies with workspace-backed temp and cache directories for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           install_step = job.fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }

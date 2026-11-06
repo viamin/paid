@@ -307,6 +307,7 @@ class Project < ApplicationRecord
   has_many :agent_runs, dependent: :destroy
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
+  has_many :bounded_delegated_actions, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy

@@ -38,6 +38,23 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)
   end
 
+  # Bounded delivery is action-specific. Review and repair follow the existing
+  # run permission; merge remains reserved to project automation owners. The
+  # caller must still provide an identified work item and evidence.
+  # @spec BOUNDED-PHASE-AUTHORIZATION-011
+  def delegate_bounded_action?(action)
+    return false unless user_in_account?
+
+    case action.to_s
+    when "review", "repair"
+      run_agent?
+    when "merge"
+      delegate_merge?
+    else
+      false
+    end
+  end
+
   def manage_apple_verifications?
     return false unless user_in_account?
 

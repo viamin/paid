@@ -117,6 +117,18 @@ release landing after the server image does. That looseness is safe precisely
 because the binding constraint is a major-version one; it is what keeps CI
 independent of the publication ordering the images must wait on.
 
+That looseness needs one guard. The PGDG signing key is fetched at run time,
+and a runner whose download fails must not publish an unverified key: apt then
+treats the repository as unsigned, every later package operation fails with
+"The repository ... is not signed", and the job dies before it runs a single
+test. The installers therefore retry the key download, verify the key before
+trusting the repository, and bound every apt command so a stalled mirror costs
+minutes instead of the whole run. When the key cannot be verified, or the
+repository itself is unusable, the repository is dropped and the same major
+client is installed from the runner image's own archive. The major-version
+constraint still holds, and a transient network failure no longer decides the
+outcome of a CI run.
+
 Updates stay within the pinned major version. A major upgrade changes the
 client package name and requires a data migration, so it remains a human
 decision; `bin/update` reports that newer majors exist and stops there.
