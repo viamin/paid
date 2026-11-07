@@ -12,7 +12,8 @@ module Projects
 
     before_action :set_project
     before_action :set_agent_run, only: [
-      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary
+      :show, :cancel, :retry, :retry_source_closure, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance,
+      :promote_session_summary
     ]
 
     def index
@@ -725,6 +726,22 @@ module Projects
     rescue ActiveRecord::RecordNotUnique
       redirect_to redirect_target,
         alert: "Another agent run is already queued or in progress for this target."
+    end
+
+    def retry_source_closure # @spec PARTIAL-CLOSEOUT-045
+      authorize @agent_run, :retry?
+      unless @agent_run.waiting_recovery?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not waiting for source-closure recovery."
+        return
+      end
+
+      job = SourceClosureRecoveryJob.perform_later(@agent_run.id)
+      unless job.successfully_enqueued?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "Source-closure recovery could not be queued. Please try again."
+        return
+      end
+      audit_event("agent_run.source_closure_recovery_requested", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
+      redirect_to project_agent_run_path(@project, @agent_run), notice: "Source-closure recovery was queued without rerunning coding."
     end
 
     def terminate

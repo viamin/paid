@@ -48,6 +48,22 @@
     <% end %>
   </div>
 
+  <% if (recovery = agent_run.reconciliation.to_h["source_closure_recovery"]).present? %>
+    <% recovery_state = if agent_run.waiting_recovery?
+                          recovery["claimed_at"].present? ? "Retrying" : "Waiting for recovery"
+                        else
+                          "Recovered"
+                        end %>
+    <div class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/30">
+      <h2 class="text-sm font-semibold text-amber-900 dark:text-amber-200"><%= recovery_state %>: source-closure assessment</h2>
+      <dl class="mt-2 grid gap-2 text-sm text-amber-800 dark:text-amber-300 sm:grid-cols-3">
+        <div><dt class="font-medium">Failed step</dt><dd><%= recovery["failed_step"].to_s.humanize %></dd></div>
+        <div><dt class="font-medium">Category</dt><dd><%= recovery["failure_category"].to_s.humanize %></dd></div>
+        <div><dt class="font-medium"><%= agent_run.waiting_recovery? ? "Next retry" : "Recovery" %></dt><dd><%= agent_run.waiting_recovery? && recovery["next_retry_at"].present? ? local_time(Time.zone.parse(recovery["next_retry_at"])) : "Completed" %></dd></div>
+      </dl>
+    </div>
+  <% end %>
+
   <div class="mt-6">
     <dl class="grid grid-cols-1 gap-5 sm:grid-cols-4">
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 dark:bg-gray-800">

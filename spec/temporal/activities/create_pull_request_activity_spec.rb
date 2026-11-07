@@ -104,6 +104,29 @@ allow(GithubClient).to receive(:new).and_return(github_client)
 
 
   describe "#execute" do
+    # @spec PARTIAL-CLOSEOUT-045
+    it "refuses to publish when the recovery branch was force-pushed" do
+      remote_ref = OpenStruct.new(object: OpenStruct.new(sha: "b" * 40))
+      allow(github_client).to receive(:ref).and_return(remote_ref)
+
+      result = activity.execute(agent_run_id: agent_run.id, expected_head_sha: "a" * 40)
+
+      expect(result).to include(agent_run_id: agent_run.id, revision_mismatch: true)
+      expect(github_client).not_to have_received(:pull_requests)
+      expect(github_client).not_to have_received(:create_pull_request)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-045
+    it "fails closed when recovery has no pinned revision" do
+      remote_ref = OpenStruct.new(object: OpenStruct.new(sha: "b" * 40))
+      allow(github_client).to receive(:ref).and_return(remote_ref)
+
+      result = activity.execute(agent_run_id: agent_run.id, expected_head_sha: nil)
+
+      expect(result).to include(revision_mismatch: true)
+      expect(github_client).not_to have_received(:create_pull_request)
+    end
+
     # @spec FEATURE-APPROVAL-015
     it "records the GitHub API head SHA when attaching a create-feature design PR" do
       agent_run.update!(goal: "create_feature")

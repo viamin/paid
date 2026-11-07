@@ -53,6 +53,7 @@ module ApplicationHelper
     "queued" => { bg: "bg-indigo-100", text: "text-indigo-700", label: "Queued" },
     "running" => { bg: "bg-blue-100", text: "text-blue-700", label: "Running" },
     "paused" => { bg: "bg-yellow-100", text: "text-yellow-800", label: "Paused" },
+    "waiting_recovery" => { bg: "bg-amber-100", text: "text-amber-800", label: "Waiting Recovery" },
     "completed" => { bg: "bg-green-100", text: "text-green-700", label: "Completed" },
     "no_output" => { bg: "bg-slate-100", text: "text-slate-600", label: "No Output" },
     "failed" => { bg: "bg-red-100", text: "text-red-700", label: "Failed" },

@@ -45,7 +45,7 @@
                 </span>
               <% end %>
               <% if bd.eligible.positive? && bd.diagnostic_state != :runnable_not_seeded %>
-                <span class="inline-flex items-center gap-1 text-green-700" title="Eligible work has not yet been claimed by queued, running, or paused work.">
+                <span class="inline-flex items-center gap-1 text-green-700" title="Eligible work has not yet been claimed by unfinished work.">
                   <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
                   <%= bd.unseeded.positive? ? "#{bd.unseeded} eligible but not queued" : "#{bd.eligible} eligible" %>
                 </span>

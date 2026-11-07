@@ -268,7 +268,7 @@ class StaleRunDetectorJob < ApplicationJob
     AgentRun.rate_limited_due
   end
 
-  # True when another active (queued/running/paused) run already holds either of
+  # True when another unfinished run, including parked recovery, holds either of
   # this run's unique slots. Mirrors both idx_agent_runs_unique_active_issue and
   # idx_agent_runs_unique_active_pr — a run can carry both an issue_id and a
   # source_pull_request_number, so check each present slot independently rather

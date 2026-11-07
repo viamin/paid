@@ -4856,8 +4856,9 @@ RSpec.describe AgentRun do
   end
 
   describe "constants" do
+    # @spec PARTIAL-CLOSEOUT-044
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued running paused completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited])
+      expect(described_class::STATUSES).to eq(%w[queued running paused waiting_recovery completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited])
     end
 
     it "counts running and claimed queued runs in capacity_inflight scope" do

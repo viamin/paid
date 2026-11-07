@@ -61,6 +61,17 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(breakdown.diagnostic_state).to eq(:active_work)
     end
 
+    # @spec QUEUE-HANDOFF-002
+    it "reports source-closure recovery as active work" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "in_progress")
+      create(:agent_run, project: project, issue: issue, status: "waiting_recovery")
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.active).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:active_work)
+    end
+
     it "returns an empty array when user has no auto-pick projects" do
       project.update!(auto_pick_enabled: false)
 
