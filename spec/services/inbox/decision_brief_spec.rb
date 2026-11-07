@@ -30,6 +30,16 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "bounds the list summary so long agent questions keep list rows scannable" do
+    long_question = ("Which cache should exports use for the reporting pipeline? " * 5).strip
+    brief = described_class.call(entry: entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, questions: [ long_question ]))
+
+    expect(brief.list_summary.length).to eq(220)
+    expect(brief.list_summary).to start_with("Which cache should exports use")
+    expect(brief.list_summary).to end_with("...")
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "uses cited evidence when a grounded recommendation has no recorded rationale" do
     brief = described_class.call(entry: entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
       questions: [ { "question" => "Which cache should exports use?", "recommendation" => "Redis",

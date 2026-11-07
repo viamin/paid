@@ -15,7 +15,7 @@ module Inbox
       end
 
       def list_summary
-        [ decision, changed ].compact.uniq.join(" — ")
+        [ decision, changed ].compact.uniq.join(" — ").truncate(220)
       end
     end
 
