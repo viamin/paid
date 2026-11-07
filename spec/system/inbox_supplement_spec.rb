@@ -33,13 +33,15 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
 
   after { Warden.test_reset! }
 
-  it "loads context beside the form and replaces it when another entry is selected" do
+  # @spec OPERATOR-INBOX-025
+  it "loads collapsed context after the answer form and replaces it when another entry is selected" do
     page.driver.resize(1440, 1000)
     visit inbox_path(kind: "clarifying_questions")
 
     expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
     expect(page).to have_button("Submit Answers")
-    expect(page.evaluate_script("getComputedStyle(document.querySelector('[data-testid=inbox-question-layout]')).display")).to eq("grid")
+    expect(page.evaluate_script("getComputedStyle(document.querySelector('[data-testid=inbox-question-layout]')).display")).not_to eq("grid")
+    expect(page.evaluate_script("document.querySelector('[data-testid=inbox-clarifying-context]').open")).to be(false)
 
     within("#inbox-list") { click_link "Second question", exact: false }
 
