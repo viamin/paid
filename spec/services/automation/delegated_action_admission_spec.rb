@@ -12,6 +12,10 @@ RSpec.describe Automation::DelegatedActionAdmission do
   end
 
   before do
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+    ProjectDelegation::Posture.select(project: project, user: user, level: "bounded_delivery")
+
     # Delegated work requires a current recorded assessment so rechecks are
     # otherwise current.
     [ issue, pull_request ].each do |work_item|
@@ -160,6 +164,73 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(result.reasons).to include(:posture_signature)
   end
 
+  it "binds admissions to the posture record revision and blocks in-flight broadening" do # @spec PROJECT-DELEGATION-006
+    authorize(action: "review")
+    posture = project.project_delegation_posture
+    pinned = posture.revision
+    posture.select!(level: "bounded_delivery", user: user) # any posture write bumps the revision
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:posture_revision)
+    expect(posture.revision).to be > pinned
+  end
+
+  it "applies a broadened posture only to a new admission" do # @spec PROJECT-DELEGATION-006
+    authorize(action: "review")
+    project.project_delegation_posture.select!(level: "bounded_delivery", user: user)
+
+    expect(recheck(goal: "review")).to be_blocked
+
+    authorize(action: "review")
+    expect(recheck(goal: "review")).to be_permitted
+  end
+
+  it "blocks the next boundary while the delegation posture is held" do # @spec PROJECT-DELEGATION-006
+    authorize(action: "review")
+    project.project_delegation_posture.hold!(user: user, reason: "incident review")
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:posture_delegation)
+  end
+
+  it "blocks delegated boundaries while either rollout guard is disabled" do # @spec PROJECT-DELEGATION-006
+    authorize(action: "review")
+    FeatureFlags.disable!(:project_delegation, project:)
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:posture_delegation)
+  end
+
+  it "blocks delegated boundaries for a conservative posture even at a pinned revision" do # @spec PROJECT-DELEGATION-006
+    project.project_delegation_posture.update!(level: "conservative")
+    authorize(action: "review")
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to contain_exactly(:posture_delegation)
+  end
+
+  it "blocks and routes a focused decision when the authorization expired" do # @spec PROJECT-DELEGATION-006
+    authorization = authorize(action: "review")
+    authorization.update!(expires_at: 1.minute.ago)
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:authorization_lifecycle)
+    notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
+    expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+    # Expired authorizations keep their evidence and audit history.
+    expect(authorization.reload.evidence).to include("posture_revision", "posture_level")
+  end
+
   it "blocks when a hard-stop budget is exceeded" do # @spec PROJECT-DELEGATION-004
     authorize(action: "review")
     create(:cost_budget, project: project, budget_type: "monthly", limit_cents: 100,
@@ -203,6 +274,7 @@ RSpec.describe Automation::DelegatedActionAdmission do
   end
 
   it "checks merge execution at the closeout boundary against the merge stop" do # @spec PROJECT-DELEGATION-004
+    project.update!(automation_phase_settings: { "phases" => { "merge" => true } })
     authorize(action: "merge", work_item: pull_request, stop_before_phase: "release_deployment")
 
     expect(recheck(action: "merge", boundary: :closeout, work_item: pull_request)).to be_permitted

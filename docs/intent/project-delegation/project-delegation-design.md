@@ -17,8 +17,13 @@ controls. It supplies one normalized input to `Automation::EffectivePolicy`.
 The durable posture record has project/account scope, an authorized actor,
 selected level, policy revision/signature, enabled action classes, timestamps,
 and immutable audit events. `conservative` is the default. An admission stores
-the posture signature plus the design, acceptance, and evidence revisions it
-relied on; a later broadening never changes that admission.
+the posture level plus the posture record's monotonic revision and the design,
+acceptance, and evidence revisions it relied on; because every posture write
+(select, hold, release, rollback) bumps that revision, a later broadening or
+narrowing never changes an in-flight admission — the next boundary recheck
+fails on the pinned revision instead. A held or guard-disabled posture
+resolves to the conservative fallback, so the next delegated boundary blocks
+even when the stored level is unchanged.
 
 ## Checkpoint and action plan
 
@@ -71,9 +76,13 @@ conditions remain planned until that reassessment path lands.
 The implementation is behind the existing `automation_phases` flag and a
 default-off project `project_delegation` gate. Rolling back selects
 `conservative`, preserves evidence/audit history, blocks future delegated
-boundaries, and creates focused recovery requests. Metric events are revision
-aware and measure decision volume/time, completion, and later reversals for
-the bounded pilot defined by RDR-080.
+boundaries, and creates focused recovery requests — one per in-flight
+authorization admitted under a delegating posture — without deleting or
+rewriting any authorization, evidence, or audit row. An explicit hold is the
+reversible narrowing: it blocks the next delegated boundary while the posture
+level stays recorded, and releasing it is a broadening that reaches only new
+admissions. Metric events are revision aware and measure decision volume/time,
+completion, and later reversals for the bounded pilot defined by RDR-080.
 
 ## Decisions & alternatives
 

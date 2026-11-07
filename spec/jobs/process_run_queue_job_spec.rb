@@ -1614,6 +1614,9 @@ RSpec.describe ProcessRunQueueJob do
         end
 
         def authorize_delegated_review(work_item)
+          FeatureFlags.enable!(:automation_phases, project: work_item.project)
+          FeatureFlags.enable!(:project_delegation, project: work_item.project)
+          create(:project_delegation_posture, project: work_item.project)
           create(:bounded_delegated_action,
             project: work_item.project,
             issue: work_item,

@@ -35,6 +35,9 @@ RSpec.describe Automation::AuthorizeBoundedAction do
   end
 
   it "persists canonical evidence that passes the delegated-work boundary" do # @spec BOUNDED-PHASE-AUTHORIZATION-004 PROJECT-DELEGATION-004
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+    create(:project_delegation_posture, project: project)
     assessment_run = create(:agent_run, :completed, project:, issue:)
     assessment_run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(
       assessment_run, { "criteria" => [], "gaps" => [] }

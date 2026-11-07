@@ -55,6 +55,16 @@ class ProjectPolicy < ApplicationPolicy
     end
   end
 
+  # Selecting or changing a project's delegation posture (RDR-080) is
+  # reserved to the roles that already own project automation settings; a
+  # plain member may neither broaden nor narrow it.
+  # @spec PROJECT-DELEGATION-001
+  def select_delegation_posture?
+    return false unless user_in_account?
+
+    has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)
+  end
+
   def manage_apple_verifications?
     return false unless user_in_account?
 

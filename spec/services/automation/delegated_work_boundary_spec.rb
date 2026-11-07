@@ -17,6 +17,8 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       "acceptance_revision" => "acceptance-3",
       "evidence_revision" => "evidence-9",
       "posture_signature" => "posture:4",
+      "posture_revision" => "6",
+      "posture_level" => "bounded_delivery",
       "phase" => "coding",
       "stop_before_phase" => "merge"
     }
@@ -27,6 +29,8 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       acceptance_revision: "acceptance-3",
       evidence_revision: "evidence-9",
       posture_signature: "posture:4",
+      posture_revision: "6",
+      posture_delegates: true,
       phase: "coding",
       phase_policy: true,
       account_id: account.id,
@@ -75,6 +79,30 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       "boundary" => "retry",
       "reasons" => [ "posture_signature" ]
     )
+  end
+
+  it "blocks the next action when the posture revision changed since admission" do # @spec PROJECT-DELEGATION-006
+    result = recheck(posture_revision: "7")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to contain_exactly(:posture_revision)
+  end
+
+  it "blocks the next action when the posture no longer delegates (hold, rollback, guard off)" do # @spec PROJECT-DELEGATION-006
+    result = recheck(posture_delegates: false)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to contain_exactly(:posture_delegation)
+    expect(Notification.last.metadata["reasons"]).to eq([ "posture_delegation" ])
+  end
+
+  it "fails closed when a legacy admission pinned no posture revision" do # @spec PROJECT-DELEGATION-006
+    authorization.update!(evidence: evidence.except("posture_revision", "posture_level"))
+
+    result = recheck
+
+    expect(result).to be_blocked
+    expect(result.reasons).to contain_exactly(:posture_revision)
   end
 
   it "checks phase and bounded stop policy before starting another action" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-003

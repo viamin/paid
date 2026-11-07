@@ -86,13 +86,19 @@ module Automation
     # The canonical bounded evidence an authorization for this work item and
     # action must pin so every later boundary recheck can re-derive and match
     # it. Admission surfaces build their evidence through this helper so the
-    # admission and recheck sides of the contract cannot drift.
+    # admission and recheck sides of the contract cannot drift. The pinned
+    # posture level and revision bind the admission to the posture record it
+    # was admitted under: a later broadening or narrowing bumps the revision
+    # and reaches only new admissions.
     def self.admission_evidence(work_item:, action:, acceptance_refs:, stop_before_phase:)
+      posture = ProjectDelegation::Posture.resolve(work_item.project)
       {
         "intent_digest" => "sha256:#{PartialCloseouts::Assessment.intent_revision_for(work_item)}",
         "acceptance_refs" => acceptance_refs,
         **revision_tokens(issue: work_item),
         "posture_signature" => posture_signature_for(project: work_item.project, action: action),
+        "posture_revision" => posture.revision&.to_s,
+        "posture_level" => posture.level,
         "phase" => ACTION_PHASES.fetch(action),
         "stop_before_phase" => stop_before_phase
       }
@@ -146,12 +152,15 @@ module Automation
 
     def snapshot
       current_assessment = assessment
+      posture_state = ProjectDelegation::Posture.resolve(project)
       {
         account_id: project.account_id,
         project_id: project.id,
         issue_id: work_item.id,
         **self.class.revision_tokens(issue: work_item, assessment: current_assessment).transform_keys(&:to_sym),
         posture_signature: self.class.posture_signature_for(project:, action:),
+        posture_revision: posture_state.revision&.to_s,
+        posture_delegates: posture_state.delegates?,
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
           work_item:, trigger: :automatic),

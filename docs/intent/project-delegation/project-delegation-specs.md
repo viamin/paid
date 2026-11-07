@@ -7,11 +7,17 @@ prefix: PROJECT-DELEGATION
 
 Status markers: `[ ]` planned implementation gap.
 
-- [ ] **PROJECT-DELEGATION-001** — When an authorized owner or project admin
+- [x] **PROJECT-DELEGATION-001** — When an authorized owner or project admin
   selects a project delegation posture, the system SHALL default every project
   to `conservative`, SHALL show the effective posture and remaining required
   human reviews, and SHALL record the actor, project, revision, enabled action
   classes, and audit event.
+  *Verified by:* `spec/models/project_delegation_posture_spec.rb` (one
+  tenant-isolated row per project, default `conservative`, monotonic revision,
+  immutable audit events on every lifecycle write) and
+  `spec/services/project_delegation/posture_spec.rb` (guarded selection,
+  effective-posture resolution with default/selected/guard-disabled states,
+  and the remaining required human reviews each state exposes).
 
 - [ ] **PROJECT-DELEGATION-002** — When material product questions are known
   before downstream work, the system SHALL group related questions, show a
@@ -37,8 +43,9 @@ Status markers: `[ ]` planned implementation gap.
   *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb`
   (canonical admission evidence),
   `spec/services/automation/delegated_work_boundary_spec.rb`,
-  `spec/services/automation/delegated_action_admission_spec.rb`, the
-  delegated-work contexts of `spec/temporal/activities/queue_agent_run_activity_spec.rb`
+  `spec/services/automation/delegated_action_admission_spec.rb` (revision,
+  posture, and assessment rechecks),
+  the delegated-work contexts of `spec/temporal/activities/queue_agent_run_activity_spec.rb`
   (create/queue and follow-up-tagged boundaries),
   `spec/temporal/activities/merge_pull_request_activity_spec.rb` (closeout
   boundary), `spec/jobs/process_run_queue_job_spec.rb` (dequeue boundary, which
@@ -67,12 +74,17 @@ Status markers: `[ ]` planned implementation gap.
 - [x] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
   authority, the system SHALL apply the broader posture only to new admissions
   and SHALL NOT silently broaden an in-flight authorization; when a project
-  setting narrows delegated authority, or when expiry, revocation, or a bounded
-  stop occurs, the system SHALL prevent the next action while preserving
-  audit/evidence history and exposing a recovery decision.
+  setting narrows delegated authority, or when expiry, revocation, an explicit
+  hold, or a bounded stop occurs, the system SHALL prevent the next action
+  while preserving audit/evidence history and exposing a recovery decision.
   *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
   `spec/services/automation/delegated_action_admission_spec.rb` (posture
-  change and revocation rechecks), and
+  broadening, hold, expiry, and revocation rechecks),
+  `spec/services/project_delegation/posture_spec.rb` (hold and release with
+  audit retention), `spec/services/project_delegation/rollback_spec.rb`
+  (conservative rollback that blocks the next delegated boundary, preserves
+  authorizations/evidence and audit history, and routes one focused recovery
+  decision per in-flight delegated authorization), and
   `spec/services/automation/focused_decision_spec.rb` (one recovery decision
   whose metadata tracks the current failure).
 

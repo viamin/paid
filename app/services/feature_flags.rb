@@ -110,8 +110,8 @@ class FeatureFlags
     project_delegation: Definition.new(
       name: :project_delegation,
       owner: "project-delegation",
-      intent: "Gate shared project-delegation read surfaces while the effective-policy projection is validated.",
-      rollout_plan: "Default-off; enable selected projects only after the delegation projection and all settings, Inbox, API, and MCP consumers are verified together.",
+      intent: "Gate project-delegation posture surfaces and the delegated admission boundary while the effective-policy projection is validated.",
+      rollout_plan: "Default-off; enable selected projects only after the delegation projection, admission posture binding, rollback and hold recovery, and all settings, Inbox, API, and MCP consumers are verified together.",
       cleanup_criteria: "Remove after the project-delegation pilot validates surface parity and rollback behavior."
     ),
     layered_verification_add_on: Definition.new(

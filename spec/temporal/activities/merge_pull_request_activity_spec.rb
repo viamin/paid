@@ -57,6 +57,9 @@ RSpec.describe Activities::MergePullRequestActivity do
         end
 
         def authorize_delegated_merge
+          FeatureFlags.enable!(:automation_phases, project: delegated_project)
+          FeatureFlags.enable!(:project_delegation, project: delegated_project)
+          create(:project_delegation_posture, project: delegated_project)
           create(:bounded_delegated_action,
             project: delegated_project,
             issue: delegated_pr,

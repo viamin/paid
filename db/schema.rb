@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3611,6 +3611,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
     t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
   end
 
+  create_table "project_delegation_postures", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "enabled_action_classes", default: [], null: false
+    t.datetime "held_at"
+    t.bigint "held_by_id"
+    t.text "hold_reason"
+    t.string "level", default: "conservative", null: false
+    t.string "policy_signature", default: "", null: false
+    t.bigint "project_id", null: false
+    t.integer "revision", default: 1, null: false
+    t.datetime "selected_at"
+    t.bigint "selected_by_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "level"], name: "index_project_delegation_postures_on_account_and_level"
+    t.index ["account_id"], name: "index_project_delegation_postures_on_account_id"
+    t.index ["held_by_id"], name: "index_project_delegation_postures_on_held_by_id"
+    t.index ["project_id"], name: "index_project_delegation_postures_on_project", unique: true
+    t.index ["selected_by_id"], name: "index_project_delegation_postures_on_selected_by_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -5119,6 +5140,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
   add_foreign_key "project_convention_recommendations", "projects"
   add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
   add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
+  add_foreign_key "project_delegation_postures", "accounts"
+  add_foreign_key "project_delegation_postures", "projects"
+  add_foreign_key "project_delegation_postures", "users", column: "held_by_id"
+  add_foreign_key "project_delegation_postures", "users", column: "selected_by_id"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"

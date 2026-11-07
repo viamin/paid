@@ -763,6 +763,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
       end
 
       def authorize_delegated_review
+        enable_delegated_posture(delegated_project)
         create(:bounded_delegated_action,
           project: delegated_project,
           issue: pull_request,
@@ -770,6 +771,12 @@ RSpec.describe Activities::QueueAgentRunActivity do
           evidence: Automation::DelegatedActionAdmission.admission_evidence(
             work_item: pull_request, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
           ))
+      end
+
+      def enable_delegated_posture(project)
+        FeatureFlags.enable!(:automation_phases, project:)
+        FeatureFlags.enable!(:project_delegation, project:)
+        create(:project_delegation_posture, project: project)
       end
 
       it "skips queueing when the governing authorization was revoked" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-004

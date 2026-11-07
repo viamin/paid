@@ -308,6 +308,9 @@ class Project < ApplicationRecord
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
   has_many :bounded_delegated_actions, dependent: :destroy
+  # RDR-080: one delegation posture row per project. Rollback and hold only
+  # mutate it; nothing in the delegation lifecycle deletes it.
+  has_one :project_delegation_posture, dependent: :destroy
   has_many :trusted_measurement_attempts, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy

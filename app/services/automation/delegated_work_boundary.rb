@@ -58,6 +58,8 @@ module Automation
         acceptance_revision: revision_matches?(:acceptance_revision),
         evidence_revision: revision_matches?(:evidence_revision),
         posture_signature: revision_matches?(:posture_signature),
+        posture_revision: revision_matches?(:posture_revision),
+        posture_delegation: truthy?(snapshot[:posture_delegates]),
         phase: phase_matches?,
         phase_policy: policy_allows?(snapshot[:phase_policy]),
         bounded_stop: bounded_stop_allows?,
