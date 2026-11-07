@@ -83,6 +83,19 @@ The occurrence remains until a subsequent
 synchronization observes an acyclic persisted graph. A failed reconciliation is
 logged as unavailable; it is not treated as proof that no cycles exist.
 
+The periodic backstop is paged. One execution reconciles a bounded number of
+accounts and hands the next page a stable account-id cursor together with the
+cycle's captured end — the highest account id present when the cycle started.
+The cursor advances monotonically, so a cycle reconciles each account at most
+once and never skips one, and the captured end keeps the cycle's membership
+stable while accounts are created. The cycle stops at its captured end; the
+next cron tick captures a new end, which is where accounts created during the
+cycle enter. An account whose reconciliation raises is retried by the next page
+before the cursor advances past it, and the cycle only moves past an account
+whose retries are exhausted, so one failing account cannot stall the sweep.
+Each page records its duration and allocation cost, so the sweep's cost per
+page stays visible as the account fleet grows.
+
 An authorized operator may start a cycle repair run from that Inbox
 occurrence. The analysis snapshots the occurrence and effective-graph revision,
 all members of the strongly connected group, and every effective internal edge;

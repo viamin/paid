@@ -213,6 +213,21 @@
   *Tests:* `spec/services/cycle_analyses/repair_spec.rb`,
   `spec/mcp/tools/repair_cycle_analysis_spec.rb`.
 
+- [x] **AUTO-PICK-QUEUE-023** — The periodic dependency-cycle reconciliation
+  backstop SHALL reconcile accounts in bounded pages instead of traversing the
+  whole account fleet in one execution. Each page SHALL carry a stable
+  account-id cursor and the cycle's captured end, so one cycle reconciles
+  every account at most once and never skips one, and an account created
+  after the captured end SHALL be reconciled in a later cycle. An account
+  whose reconciliation fails SHALL be retried before the cycle advances past
+  it, and the cycle SHALL advance past an account whose retries are
+  exhausted. A reconciliation failure SHALL be reported as unavailable rather
+  than as zero cycles, dashboard cache invalidation SHALL happen only after a
+  successful reconciliation, and each page SHALL record its duration and
+  allocation cost.
+  *Tests:* `spec/jobs/dependency_cycle_reconciliation_job_spec.rb`.
+  *Code:* `DependencyCycleReconciliationJob`, `Issues::DependencyCycles`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label
