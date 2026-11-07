@@ -356,6 +356,11 @@ Rails.application.routes.draw do
         controller: "projects/clarifying_questions"
       post "clarifying_questions/chat", to: "projects/clarifying_questions#chat", as: :clarifying_questions_chat
     end
+    resources :intent_checkpoints, only: [], controller: "projects/intent_checkpoints" do
+      member do
+        post :settle
+      end
+    end
     resources :change_intents, only: [ :show ], controller: "projects/change_intents" do
       member do
         post :approve

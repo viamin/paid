@@ -24,12 +24,37 @@ relied on; a later broadening never changes that admission.
 
 `ProjectDelegation::IntentCheckpoint::Plan` groups related material questions
 and returns the recommendation, alternatives, consequences, evidence,
-affected scope, and proposed revision. A human settlement produces immutable
-answers linked to the design/acceptance revision. `ActionPlan` then resolves a
-requested downstream action against those revisions and returns permit, block,
-or a focused decision request. It allows only explicit technical choices,
-one deduplicated follow-up record, classified technical recovery,
-evidence-gated closeout, and bounded cycle repair.
+affected scope, and proposed revision. The grouping reuses recorded material
+only — RDR-066 open feature decisions (`FeatureIntentDecision`, grouped under
+their recorded design claim) and the RDR-071 lane clarifying questions
+persisted on the work item (`needs_input_questions`, presented through the
+structured question payload) — so the checkpoint never duplicates feature
+approval or confidence assessment. `IntentCheckpoint::Revisions` binds each
+checkpoint to the revision tokens delegated admission compares: the feature's
+approved design revision (or the work item's intent-revision digest when no
+feature owns it) plus the canonical acceptance and evidence revision digests.
+
+A work item's pending checkpoint is one `DelegationIntentCheckpoint` row; its
+revisions and grouped questions are read-only after creation, and a changed
+revision supersedes the pending row in favor of a fresh one. The human
+settlement is a `DelegationIntentSettlement` row — append-only at the database
+layer — recording actor, time, disposition (`settled`, `rejected`, or
+`amended`), per-group answers or amendments, and copies of the design and
+acceptance revisions the answers bind. `IntentCheckpoint::Settle` enforces
+project-member settlement authority, records the audit event, and resolves the
+checkpoint's Inbox request. `IntentCheckpoint::Gate` owns focused re-decision
+routing: it permits delegated work while a settlement's bound revisions stay
+current, blocks on a pending or rejected checkpoint, and — when new evidence
+changes a bound revision — routes exactly one focused Inbox decision naming
+the smallest affected question set, its recommendation and consequences, the
+revision delta, evidence, and next action, without reopening unrelated
+settled questions. `Automation::DelegatedActionAdmission` consults the Gate
+before an admitted lineage begins a new delegated action.
+
+`ActionPlan` then resolves a requested downstream action against those
+revisions and returns permit, block, or a focused decision request. It allows
+only explicit technical choices, one deduplicated follow-up record, classified
+technical recovery, evidence-gated closeout, and bounded cycle repair.
 
 `ActionPlan` answers whether a decision class is delegated or needs a human; it
 never supplies execution authority. That stays with the RDR-077 phase policy

@@ -1,0 +1,4 @@
+CREATE TRIGGER prevent_delegation_intent_settlement_delete
+BEFORE DELETE ON public.delegation_intent_settlements
+FOR EACH ROW
+EXECUTE FUNCTION prevent_delegation_intent_settlement_mutation();

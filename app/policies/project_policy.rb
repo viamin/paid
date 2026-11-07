@@ -61,6 +61,14 @@ class ProjectPolicy < ApplicationPolicy
     user.has_role?(:project_admin, record)
   end
 
+  # RDR-080 intent-checkpoint settlement is a material product decision, so
+  # it follows the RDR-066 threshold — any project member who may manage
+  # issue comments may settle, reject, or amend the grouped questions.
+  # @spec PROJECT-DELEGATION-002
+  def settle_intent_checkpoint?
+    manage_issues?
+  end
+
   # Shared exploration transcripts contain project-scoped issue context. They
   # are visible to account owners/admins and explicit project collaborators,
   # but never merely by virtue of an account-level member role.

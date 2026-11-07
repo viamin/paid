@@ -297,6 +297,7 @@ class Project < ApplicationRecord
   has_many :project_memberships, dependent: :destroy
   has_many :members, through: :project_memberships, source: :user
   has_many :issues, dependent: :destroy
+  has_many :delegation_intent_checkpoints, dependent: :destroy
   has_many :intent_conformance_shadow_evaluations, dependent: :destroy
   has_many :facet_confidence_evaluations, dependent: :destroy
   has_many :design_artifact_findings, dependent: :destroy

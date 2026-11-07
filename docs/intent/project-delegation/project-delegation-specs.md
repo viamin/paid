@@ -13,11 +13,35 @@ Status markers: `[ ]` planned implementation gap.
   human reviews, and SHALL record the actor, project, revision, enabled action
   classes, and audit event.
 
-- [ ] **PROJECT-DELEGATION-002** — When material product questions are known
+- [x] **PROJECT-DELEGATION-002** — When material product questions are known
   before downstream work, the system SHALL group related questions, show a
   recommendation and consequences, and bind a human's settled answers to the
   immutable design and acceptance revision; it SHALL NOT ask again downstream
   unless new evidence conflicts with, invalidates, or materially expands it.
+  *Tests:* `spec/services/project_delegation/intent_checkpoint/plan_spec.rb`
+  (grouping, presentation, revision tokens),
+  `spec/services/project_delegation/intent_checkpoint/open_spec.rb`
+  (one pending checkpoint per work item, supersede on revision change, one
+  Inbox request), `spec/services/project_delegation/intent_checkpoint/settle_spec.rb`
+  (settle/reject/amend, authority, audit, immutable binding),
+  `spec/services/project_delegation/intent_checkpoint/gate_spec.rb`
+  (no re-ask while current; one focused re-decision on revision delta),
+  `spec/models/delegation_intent_checkpoint_spec.rb`,
+  `spec/models/delegation_intent_settlement_spec.rb` (append-only rows),
+  `spec/requests/projects/intent_checkpoints_spec.rb` (authorized human
+  settlement over HTTP), and the checkpoint-boundary examples of
+  `spec/services/automation/delegated_action_admission_spec.rb`.
+  *Code:* `app/services/project_delegation/intent_checkpoint/plan.rb`,
+  `app/services/project_delegation/intent_checkpoint/revisions.rb`,
+  `app/services/project_delegation/intent_checkpoint/open.rb`,
+  `app/services/project_delegation/intent_checkpoint/settle.rb`,
+  `app/services/project_delegation/intent_checkpoint/gate.rb`,
+  `app/models/delegation_intent_checkpoint.rb`,
+  `app/models/delegation_intent_settlement.rb`,
+  `app/controllers/projects/intent_checkpoints_controller.rb`,
+  `app/policies/project_policy.rb` (`settle_intent_checkpoint?`),
+  `app/services/automation/delegated_action_admission.rb` (Gate consult),
+  migration `db/migrate/20261107090000_create_delegation_intent_checkpoints.rb`.
 
 - [ ] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
   system SHALL delegate only bounded implementation choices, focused follow-up

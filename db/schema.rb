@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1393,6 +1393,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
     t.index ["project_id", "created_at"], name: "index_decomposition_decisions_on_project_id_and_created_at"
     t.index ["project_id"], name: "index_decomposition_decisions_on_project_id"
     t.index ["workflow_id", "decision_type"], name: "index_decomposition_decisions_on_workflow_id_and_decision_type"
+  end
+
+  create_table "delegation_intent_checkpoints", comment: "RDR-080 settled-intent checkpoint: one reviewable group of material product questions for a work item, bound to the design and acceptance revisions used for delegated admission.", force: :cascade do |t|
+    t.string "acceptance_revision", null: false, comment: "Acceptance criteria digest the checkpoint binds; matches the delegated-admission acceptance token."
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.string "design_revision", null: false, comment: "Design revision the checkpoint binds: the feature's approved design revision, or the work item's intent-revision digest."
+    t.string "evidence_revision", comment: "Closeout-evidence digest the checkpoint was planned against."
+    t.bigint "feature_intent_id"
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "question_groups", default: [], null: false, comment: "Grouped material questions with question, recommendation, alternatives, consequences, affected scope, and evidence."
+    t.string "question_set_digest", null: false, comment: "Digest of the grouped question identities; changes open a fresh checkpoint."
+    t.string "status", default: "pending", null: false, comment: "pending, settled, rejected, superseded."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_delegation_intent_checkpoints_on_account_id"
+    t.index ["created_by_id"], name: "index_delegation_intent_checkpoints_on_created_by_id"
+    t.index ["feature_intent_id"], name: "index_delegation_intent_checkpoints_on_feature_intent_id"
+    t.index ["issue_id", "status", "question_set_digest", "design_revision", "acceptance_revision"], name: "index_delegation_intent_checkpoints_identity", unique: true
+    t.index ["issue_id"], name: "index_delegation_intent_checkpoints_on_issue_id"
+    t.index ["issue_id"], name: "index_delegation_intent_checkpoints_one_pending_per_issue", unique: true, where: "((status)::text = 'pending'::text)"
+    t.index ["project_id"], name: "index_delegation_intent_checkpoints_on_project_id"
+  end
+
+  create_table "delegation_intent_settlements", comment: "Immutable RDR-080 intent-checkpoint settlement: the human's settled answers or rejection, bound to the design and acceptance revisions.", force: :cascade do |t|
+    t.string "acceptance_revision", null: false, comment: "Acceptance revision copied from the checkpoint at settlement; append-only."
+    t.jsonb "answers", default: [], null: false, comment: "Per-group answers or amendments: group_key, answer, and optional amendment note."
+    t.datetime "created_at", null: false
+    t.bigint "delegation_intent_checkpoint_id", null: false
+    t.string "design_revision", null: false, comment: "Design revision copied from the checkpoint at settlement; append-only."
+    t.string "disposition", null: false, comment: "settled, rejected, or amended."
+    t.datetime "settled_at", null: false, comment: "When the authorized human settled, rejected, or amended the group."
+    t.bigint "settled_by_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["delegation_intent_checkpoint_id"], name: "idx_on_delegation_intent_checkpoint_id_1d9bd6d1cd"
+    t.index ["delegation_intent_checkpoint_id"], name: "index_delegation_intent_settlements_one_per_checkpoint", unique: true
+    t.index ["settled_by_id"], name: "index_delegation_intent_settlements_on_settled_by_id"
   end
 
   create_table "dependabot_alert_coverages", comment: "Durable alert-level Dependabot remediation coverage and escalation evidence.", force: :cascade do |t|
@@ -4898,6 +4936,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
   add_foreign_key "decision_records", "projects", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "issues", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
+  add_foreign_key "delegation_intent_checkpoints", "accounts"
+  add_foreign_key "delegation_intent_checkpoints", "feature_intents"
+  add_foreign_key "delegation_intent_checkpoints", "issues"
+  add_foreign_key "delegation_intent_checkpoints", "projects"
+  add_foreign_key "delegation_intent_checkpoints", "users", column: "created_by_id"
+  add_foreign_key "delegation_intent_settlements", "delegation_intent_checkpoints"
+  add_foreign_key "delegation_intent_settlements", "users", column: "settled_by_id"
   add_foreign_key "dependabot_alert_coverages", "accounts"
   add_foreign_key "dependabot_alert_coverages", "projects"
   add_foreign_key "dependabot_alert_coverages", "users", column: "accepted_by_id"
@@ -6035,6 +6080,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
       $function$
   SQL
 
+  create_function :prevent_delegation_intent_settlement_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_delegation_intent_settlement_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'delegation_intent_settlements is append-only; UPDATE and DELETE are rejected at the database layer (PROJECT-DELEGATION-002)';
+      END;
+      $function$
+  SQL
+
   create_trigger :logidze_on_account_memberships, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_account_memberships BEFORE INSERT OR UPDATE ON public.account_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -6193,5 +6249,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :prevent_delegation_intent_settlement_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_delegation_intent_settlement_update BEFORE UPDATE ON public.delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_delegation_intent_settlement_delete BEFORE DELETE ON public.delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_delegation_intent_settlement_mutation()
   SQL
 end

@@ -207,4 +207,50 @@ RSpec.describe Automation::DelegatedActionAdmission do
 
     expect(recheck(action: "merge", boundary: :closeout, work_item: pull_request)).to be_permitted
   end
+
+  describe "settled-intent checkpoint gate" do
+    it "blocks delegated work while material intent questions are unsettled" do # @spec PROJECT-DELEGATION-002
+      issue.update!(needs_input_questions: [ "What should the default window be?" ])
+      authorize(action: "review")
+
+      result = recheck(goal: "review")
+
+      expect(result).to be_blocked
+      expect(result.reasons).to contain_exactly("intent_checkpoint_pending")
+      expect(issue.delegation_intent_checkpoints.pending).to exist
+      expect(Notification.find_by(source: ProjectDelegation::IntentCheckpoint::Open::NOTIFICATION_SOURCE)).to be_blocking
+    end
+
+    it "permits delegated work whose settled checkpoint is current" do # @spec PROJECT-DELEGATION-002
+      issue.update!(needs_input_questions: [ "What should the default window be?" ])
+      checkpoint = ProjectDelegation::IntentCheckpoint::Open.call(project: project, issue: issue, actor: user)
+      ProjectDelegation::IntentCheckpoint::Settle.call(
+        checkpoint: checkpoint, actor: user, disposition: "settled",
+        answers: [ { "group_key" => checkpoint.question_groups.first.fetch("key"), "answer" => "7 days." } ]
+      )
+      authorize(action: "review")
+
+      expect(recheck(goal: "review")).to be_permitted
+    end
+
+    it "routes one focused re-decision when new evidence expands the settled question set" do # @spec PROJECT-DELEGATION-002
+      issue.update!(needs_input_questions: [ "What should the default window be?" ])
+      checkpoint = ProjectDelegation::IntentCheckpoint::Open.call(project: project, issue: issue, actor: user)
+      ProjectDelegation::IntentCheckpoint::Settle.call(
+        checkpoint: checkpoint, actor: user, disposition: "settled",
+        answers: [ { "group_key" => checkpoint.question_groups.first.fetch("key"), "answer" => "7 days." } ]
+      )
+      authorize(action: "review")
+      issue.update!(needs_input_questions: [ "What should the default window be?", "What is the retention policy?" ])
+
+      result = recheck(goal: "review")
+
+      expect(result).to be_blocked
+      expect(result.reasons).to contain_exactly("intent_checkpoint_revision_delta")
+      notification = Notification.find_by(source: ProjectDelegation::IntentCheckpoint::Gate::REDECISION_SOURCE)
+      expect(notification.metadata).to include(
+        "affected_groups" => contain_exactly(hash_including("question" => "What is the retention policy?"))
+      )
+    end
+  end
 end

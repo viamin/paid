@@ -16,6 +16,7 @@ module Automation
   # where stale delegation must stop.
   #
   # @spec PROJECT-DELEGATION-004 @spec PROJECT-DELEGATION-006
+  # @spec PROJECT-DELEGATION-002 — settled-intent checkpoint gate
   # @spec BOUNDED-PHASE-AUTHORIZATION-004
   class DelegatedActionAdmission
     # Run goals whose delegated action class is bounded by a
@@ -118,6 +119,11 @@ module Automation
     # not governed by a bounded authorization for this action.
     def call
       return nil if authorization.nil?
+
+      checkpoint_gate = ProjectDelegation::IntentCheckpoint::Gate.call(project: project, issue: work_item, assessment: assessment)
+      if checkpoint_gate.blocked?
+        return ProjectDelegation::IntentCheckpoint::Gate.boundary_result(checkpoint_gate, boundary)
+      end
 
       authorization.with_lock do
         DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
