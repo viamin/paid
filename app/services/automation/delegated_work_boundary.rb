@@ -82,7 +82,7 @@ module Automation
 
     def bounded_stop_allows?
       stop = authorization.evidence.to_h["stop_before_phase"]
-      stop.present? && snapshot[:phase].to_s != stop.to_s && snapshot[:bounded_stop].to_s == stop.to_s
+      stop.present? && snapshot[:phase].to_s != stop.to_s
     end
 
     # Fail closed: a caller that could not resolve the current phase policy

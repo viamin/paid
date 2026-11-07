@@ -56,8 +56,8 @@ claims remain proposed until their admission and reassessment paths land.
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-004** — Before creating, dequeuing,
   retrying, or scheduling a follow-up action, the system SHALL recheck tenant,
-  actor policy, authorization lifecycle, expiry, lineage, stop boundary,
-  current policy signature, and deterministic repository controls; a revoked,
+  authorization lifecycle, expiry, stop boundary, current phase policy and
+  policy signature, and deterministic repository controls; a revoked,
   completed, expired, or invalid authorization SHALL start no new action.
   *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb`
   (canonical admission evidence),

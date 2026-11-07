@@ -32,9 +32,8 @@ Status markers: `[ ]` planned implementation gap.
   retrying, following up, repairing, or closing delegated work, the system
   SHALL recheck current intent, acceptance, and evidence revisions; posture
   signature; applicable RDR-077/RDR-078 policy; tenant, trust, budget, and
-  repository controls; ambiguity, changed scope, conflicting evidence, new
-  material risk, explicit holds, or unavailable assessment SHALL route to a
-  focused human decision.
+  repository controls; any mismatch or unavailable assessment SHALL route to
+  a focused human decision.
   *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb`
   (canonical admission evidence),
   `spec/services/automation/delegated_work_boundary_spec.rb`,
@@ -54,10 +53,9 @@ Status markers: `[ ]` planned implementation gap.
 - [x] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
   authority, the system SHALL apply the broader posture only to new admissions
   and SHALL NOT silently broaden an in-flight authorization; when a project
-  setting narrows delegated authority, including rollback to `conservative`,
-  or when a hold, expiry, revocation, or bounded stop occurs, the system SHALL
-  prevent the next action while preserving audit/evidence history and exposing
-  a recovery decision.
+  setting narrows delegated authority, or when expiry, revocation, or a bounded
+  stop occurs, the system SHALL prevent the next action while preserving
+  audit/evidence history and exposing a recovery decision.
   *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
   `spec/services/automation/delegated_action_admission_spec.rb` (posture
   change and revocation rechecks), and

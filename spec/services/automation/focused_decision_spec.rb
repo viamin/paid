@@ -31,6 +31,7 @@ RSpec.describe Automation::FocusedDecision do
     expect(notification).to be_blocking
     expect(notification.severity).to eq("error")
     expect(notification.metadata).to include("boundary" => "queue", "reasons" => [ "trust" ])
+    expect(notification.action_url).to eq("/inbox/action_required:#{notification.id}")
   end
 
   it "reuses the existing notification for an equivalent decision identity" do
@@ -53,7 +54,8 @@ RSpec.describe Automation::FocusedDecision do
   end
 
   it "refreshes the active notification when a later failure has a different identity" do
-    call(metadata: metadata(authorization_id: 1, boundary: "queue", reasons: [ "trust" ]))
+    original = call(metadata: metadata(authorization_id: 1, boundary: "queue", reasons: [ "trust" ]))
+    original.update!(read_at: Time.current)
 
     refreshed = call(
       metadata: metadata(authorization_id: 2, boundary: "dequeue", reasons: [ "budget" ]),
@@ -65,6 +67,7 @@ RSpec.describe Automation::FocusedDecision do
       "authorization_id" => 2, "boundary" => "dequeue", "reasons" => [ "budget" ]
     )
     expect(refreshed.title).to eq("Updated title")
+    expect(refreshed.read_at).to be_nil
   end
 
   it "revives a dismissed notification when a different failure needs representation" do

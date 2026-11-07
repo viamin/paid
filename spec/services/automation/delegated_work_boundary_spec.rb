@@ -29,7 +29,6 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       posture_signature: "posture:4",
       phase: "coding",
       phase_policy: true,
-      bounded_stop: "merge",
       account_id: account.id,
       project_id: project.id,
       issue_id: issue.id,
@@ -79,8 +78,10 @@ RSpec.describe Automation::DelegatedWorkBoundary do
   end
 
   it "checks phase and bounded stop policy before starting another action" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-003
-    expect(recheck(phase: "merge")).to be_blocked
-    expect(recheck(bounded_stop: "coding")).to be_blocked
+    result = recheck(phase: "merge")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:phase, :bounded_stop)
   end
 
   it "fails closed when the current phase policy cannot be resolved" do # @spec BOUNDED-PHASE-AUTHORIZATION-004

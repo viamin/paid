@@ -58,17 +58,16 @@ module Automation
     # - intent: the work item's title/body digest
     # - acceptance: the current recorded assessment's criteria digest
     # - evidence: the closeout-evidence and technical-prerequisite digest
-    def self.revision_tokens(issue:)
+    def self.revision_tokens(issue:, assessment: PartialCloseouts::Assessment.call(issue))
       {
         "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
-        "acceptance_revision" => acceptance_revision_for(issue),
-        "evidence_revision" => PartialCloseouts::Assessment.source_revision_for(issue)
+        "acceptance_revision" => acceptance_revision_for(assessment),
+        "evidence_revision" => assessment.current_source_revision
       }
     end
 
-    def self.acceptance_revision_for(issue)
-      criteria = PartialCloseouts::Assessment.call(issue).criteria
-      "criteria:#{Digest::SHA256.hexdigest(criteria.to_json)}"
+    def self.acceptance_revision_for(assessment)
+      "criteria:#{Digest::SHA256.hexdigest(assessment.criteria.to_json)}"
     end
 
     # Posture signature: digest of the project's current phase-policy
@@ -120,7 +119,9 @@ module Automation
     def call
       return nil if authorization.nil?
 
-      DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+      authorization.with_lock do
+        DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+      end
     end
 
     private
@@ -144,28 +145,25 @@ module Automation
     end
 
     def snapshot
+      current_assessment = assessment
       {
         account_id: project.account_id,
         project_id: project.id,
         issue_id: work_item.id,
-        **self.class.revision_tokens(issue: work_item).transform_keys(&:to_sym),
+        **self.class.revision_tokens(issue: work_item, assessment: current_assessment).transform_keys(&:to_sym),
         posture_signature: self.class.posture_signature_for(project:, action:),
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
           work_item:, trigger: :automatic),
-        bounded_stop: authorization.evidence.to_h["stop_before_phase"],
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
-        assessment_available: assessment_available?
+        assessment_available: !current_assessment.stale?
       }
     end
 
-    # The recorded closeout assessment must exist and be current for the
-    # work item's present intent and evidence. A missing or stale assessment
-    # is an unavailable assessment and fails closed.
-    def assessment_available?
-      !PartialCloseouts::Assessment.call(work_item).stale?
+    def assessment
+      @assessment ||= PartialCloseouts::Assessment.call(work_item)
     end
   end
 end

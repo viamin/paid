@@ -14,31 +14,32 @@ module Automation
     IDENTITY_KEYS = %w[authorization_id boundary reasons].freeze
 
     def self.call(account:, subject:, source:, title:, description:, metadata:)
-      notification = Notification.find_or_initialize_by(account:, source:, subject:)
-      return notification if notification.persisted? && same_identity?(notification.metadata, metadata)
+      notification = Notification.find_by(account:, source:, subject:)
+      return notification if notification&.persisted? && same_identity?(notification.metadata, metadata)
 
-      refresh!(notification, title:, description:, metadata:)
+      publish(account:, subject:, source:, title:, description:, metadata:)
     rescue ActiveRecord::RecordNotUnique
       # Concurrent rechecks can both initialize a row; the account-wide
       # dedup index (user_id IS NULL) admits only one. Reload the winner and
       # refresh it so the latest failure is represented exactly once.
       notification = Notification.find_by(account:, source:, subject:)
-      refresh!(notification, title:, description:, metadata:) if notification
+      return notification if notification && same_identity?(notification.metadata, metadata)
+
+      publish(account:, subject:, source:, title:, description:, metadata:)
     end
 
-    def self.refresh!(notification, title:, description:, metadata:)
-      notification.assign_attributes(
+    def self.publish(account:, subject:, source:, title:, description:, metadata:)
+      Notifications::Publish.call(
+        account:,
+        subject:,
+        source:,
         severity: :error,
         blocking: true,
         nav_section: "projects",
         title:,
         description:,
-        dismissed_at: nil,
-        resolved_at: nil,
         metadata:
       )
-      notification.save!
-      notification
     end
 
     def self.same_identity?(current, fresh)
@@ -49,6 +50,6 @@ module Automation
       metadata.to_h.slice(*IDENTITY_KEYS)
     end
 
-    private_class_method :same_identity?, :identity
+    private_class_method :publish, :same_identity?, :identity
   end
 end

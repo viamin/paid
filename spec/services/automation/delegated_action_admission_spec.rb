@@ -52,6 +52,33 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(Notification.count).to eq(0)
   end
 
+  it "loads the governing authorization under its lifecycle lock" do # @spec BOUNDED-PHASE-AUTHORIZATION-004
+    authorize(action: "review")
+    statements = []
+    subscriber = lambda { |_name, _start, _finish, _id, payload| statements << payload[:sql] }
+
+    result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      recheck(goal: "review")
+    end
+
+    expect(result).to be_permitted
+    expect(statements).to include(match(/bounded_delegated_actions.*FOR UPDATE/i))
+  end
+
+  it "builds the closeout assessment once per boundary recheck" do # @spec PROJECT-DELEGATION-004
+    authorize(action: "review")
+    statements = []
+    subscriber = lambda { |_name, _start, _finish, _id, payload| statements << payload[:sql] }
+
+    result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      recheck(goal: "review")
+    end
+
+    assessment_queries = statements.grep(/agent_runs.*reconciliation.*assessment/i)
+    expect(result).to be_permitted
+    expect(assessment_queries.size).to eq(1)
+  end
+
   it "returns nil for work with no bounded authorization" do # @spec PROJECT-DELEGATION-004
     expect(recheck(goal: "review")).to be_nil
   end
