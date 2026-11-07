@@ -158,21 +158,23 @@ inside collapsed technical detail. A manual repair action names the exact
 declaration it would remove and the source issue or comment carrying it,
 shows a reviewable before/after of that single declaration, and requires an
 explicit confirmation naming the declaration; submission keeps the live
-authority, occurrence, and graph rechecks above. The cycle itself appears
-once as a readable path with per-edge declaration links and diagnostic
-identifiers (occurrence, fingerprint, edge ids) in expandable detail, the
-affected-work count stays visible, and the path stays readable on narrow
-screens.
+authority, occurrence, and graph rechecks above. The complete strongly
+connected cycle group appears once: every affected issue is listed once and
+every effective dependency declaration is nested under its source issue, so
+overlapping cycles cannot hide work or declarations behind a single witness
+path. Per-edge declaration links and diagnostic identifiers (occurrence,
+fingerprint, edge ids) remain in expandable detail, the affected-work count
+stays visible, and the group stays readable on narrow screens.
 
-Each path node also carries its own title, current labels, and (when a parent
-issue is linked and its project is within the viewer's authorized project set)
-the linked umbrella issue's number and title — all read from already-synced
-local issue data, so judging which declaration is wrong never requires opening
-every linked issue on GitHub first. An unlinked or not-yet-authorized parent
-simply omits umbrella context rather than failing the detail. The Mobile API
-cycle payload (`Api::V1::InboxEntrySerializer`) exposes the identical path,
-edge, and umbrella context so API and agent clients can inspect the same
-cycle the web Inbox renders.
+Each cycle-group issue also carries its own title, current labels, and (when a
+parent issue is linked and its project is within the viewer's authorized
+project set) the linked umbrella issue's number and title — all read from
+already-synced local issue data, so judging which declaration is wrong never
+requires opening every linked issue on GitHub first. An unlinked or
+not-yet-authorized parent simply omits umbrella context rather than failing the
+detail. The Mobile API cycle payload (`Api::V1::InboxEntrySerializer`) exposes
+the witness path, edge, and umbrella context so API and agent clients can
+inspect the same underlying cycle group the web Inbox renders.
 
 ## Tier-infeasibility gating
 

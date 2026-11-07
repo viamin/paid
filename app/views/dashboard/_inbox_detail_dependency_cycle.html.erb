@@ -3,11 +3,13 @@
 <% analysis_run = cycle.project.agent_runs.for_cycle_analysis_fingerprint(cycle.fingerprint).where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).first %>
 <% view_state = CycleAnalyses::OperatorView.new(cycle:, run: analysis_run) %>
 <% status = view_state.status %>
+<% cycle_issues = cycle.issues.index_by(&:id) %>
+<% edges_by_source = cycle.effective_edges.group_by(&:from_id) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-red-200 bg-red-50 p-4" data-testid="cycle-blocked-work">
     <h3 class="text-sm font-semibold text-red-900">Dependency cycle blocks automatic work</h3>
     <p class="mt-1 text-sm text-red-800">
-      <%= cycle.path.uniq.size %> issues wait on each other in a closed loop, holding
+      <%= cycle.issues.size %> issues wait on each other in a closed loop, holding
       <%= pluralize(cycle.downstream_issues.size, "downstream open issue") %>.
       Paid keeps this work held until a later synchronization confirms an acyclic graph.
     </p>
@@ -95,10 +97,10 @@
   <% end %>
 
   <div>
-    <h3 class="text-sm font-semibold text-gray-900">The cycle</h3>
+    <h3 class="text-sm font-semibold text-gray-900">The cycle group</h3>
     <ol class="mt-2 space-y-3">
-      <% cycle.path.each_with_index do |issue, index| %>
-        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="cycle-path-step">
+      <% cycle.issues.each_with_index do |issue, index| %>
+        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="cycle-group-issue" data-issue-id="<%= issue.id %>">
           <div class="flex min-w-0 items-start gap-2">
             <span class="mt-0.5 shrink-0 text-xs font-semibold text-gray-400"><%= index + 1 %></span>
             <div class="min-w-0 flex-1">
@@ -107,11 +109,12 @@
               <%= dependency_cycle_umbrella_link(cycle, issue) %>
             </div>
           </div>
-          <% if index < cycle.path.length - 1 %>
-            <% edge = cycle.path_edges[index] %>
-            <p class="mt-2 text-xs font-medium text-gray-400" aria-hidden="true">&darr; blocked by</p>
-            <details class="mt-1 text-xs" data-testid="cycle-declaration-detail">
-              <summary class="cursor-pointer text-gray-500">Declaration details</summary>
+          <% edges_by_source.fetch(issue.id, []).each do |edge| %>
+            <% target = cycle_issues.fetch(edge.to_id) %>
+            <details class="mt-2 text-xs" data-testid="cycle-declaration-detail" data-edge-id="<%= edge.id %>">
+              <summary class="cursor-pointer text-gray-600">
+                Blocked by <span class="font-medium"><%= target.project.full_name %>#<%= target.github_number %></span>
+              </summary>
               <p class="mt-1">
                 <% if edge.declaration_url.present? %>
                   <%= link_to edge.declaration_source == "issue_comment" ? "view declaring comment" : "view issue declaration",

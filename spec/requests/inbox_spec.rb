@@ -114,16 +114,41 @@ RSpec.describe "Inbox" do
   end
 
   # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-024
-  it "shows the multi-edge cycle once as a single readable path with declaration links in expandable detail" do
+  it "shows the multi-edge cycle once with declaration links in expandable detail" do
     _issues, cycle, = cycle_analysis_run
 
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
     document = Nokogiri::HTML(response.body)
-    expect(document.css("[data-testid='cycle-path-step']").size).to eq(4)
+    expect(document.css("[data-testid='cycle-group-issue']").size).to eq(3)
     expect(document.css("details[data-testid='cycle-declaration-detail']").size).to eq(3)
     expect(document.css("a[href='https://github.com/acme/alpha/issues/1#issuecomment-42']")).to be_present
+  end
+
+  # @spec AUTO-PICK-QUEUE-023 AUTO-PICK-QUEUE-024
+  it "shows every issue and declaration in a strongly connected group with overlapping cycles" do
+    issues = Array.new(3) { create(:issue, project:, github_state: "open") }
+    edges = [
+      create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1]),
+      create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[0]),
+      create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2]),
+      create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[1])
+    ]
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    blocked_work = document.at_css("[data-testid='cycle-blocked-work']").text
+    expect(blocked_work).to include("3 issues wait on each other")
+    issue_rows = document.css("[data-testid='cycle-group-issue']")
+    expect(issue_rows.size).to eq(3)
+    expect(issue_rows.map { |row| row["data-issue-id"].to_i }).to match_array(issues.map(&:id))
+    declaration_rows = document.css("[data-testid='cycle-declaration-detail']")
+    expect(declaration_rows.size).to eq(4)
+    expect(declaration_rows.map { |row| row["data-edge-id"].to_i }).to match_array(edges.map(&:id))
   end
 
   # @spec AUTO-PICK-QUEUE-023
@@ -388,7 +413,7 @@ RSpec.describe "Inbox" do
   end
 
   # @spec AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-024
-  it "keeps the cycle path and status actions readable on narrow screens" do
+  it "keeps the cycle group and status actions readable on narrow screens" do
     _issues, cycle, = cycle_analysis_run
 
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }

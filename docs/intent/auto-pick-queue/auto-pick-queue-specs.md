@@ -246,9 +246,11 @@
   present a reviewable before/after of that single declaration, and require
   an explicit confirmation naming the declaration; submission SHALL keep the
   existing live authority, occurrence, and graph rechecks. The detail SHALL
-  present the cycle once as a readable path, keep the affected-work count
-  visible, keep the path readable on narrow screens, and place individual
-  declaration links and diagnostic identifiers in expandable detail.
+  present the complete strongly connected cycle group once, including every
+  affected issue and effective dependency declaration even when cycles
+  overlap, keep the affected-work count visible, keep the group readable on
+  narrow screens, and place individual declaration links and diagnostic
+  identifiers in expandable detail.
   *Tests:* `spec/requests/inbox_spec.rb`,
   `spec/services/cycle_analyses/operator_view_spec.rb`.
   *Code:* `CycleAnalyses::OperatorView`,
