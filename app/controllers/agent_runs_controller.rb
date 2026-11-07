@@ -11,7 +11,8 @@ class AgentRunsController < ApplicationController
     # Synthetic operational runs (e.g. live-preview provisioning) reuse the
     # agent-run lifecycle but never execute a real agent. They are excluded from
     # this account-wide view for consistency with the project-scoped run list.
-    base_scope = policy_scope(AgentRun).excluding_synthetic.includes(:runner, project: [ :created_by, :account ], issue: :project)
+    base_scope = policy_scope(AgentRun).excluding_synthetic.excluding_list_payload
+      .includes(:runner, project: [ :created_by, :account ], issue: :project)
     @q = base_scope.ransack(params[:q])
     queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
 

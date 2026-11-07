@@ -43,10 +43,10 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       expect(project.reload.knowledge_status).to eq("collecting")
     end
 
-    it "enqueues RunCollectorsJob with the HEAD SHA" do
+    it "enqueues RunCollectorBatchJob with the HEAD SHA" do
       expect {
         described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorsJob).with(project.id, commit_sha, branch: "main")
+      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "main")
     end
 
     it "runs import-time convention detection before enqueuing full collection" do
@@ -80,7 +80,7 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
 
       expect {
         described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorsJob).with(project.id, commit_sha, branch: "develop")
+      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "develop")
     end
 
     it "does not overwrite terminal knowledge_status" do
@@ -97,7 +97,7 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
 
       expect {
         described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorsJob).with(project.id, commit_sha, branch: "main")
+      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "main")
 
       expect(Rails.logger).to have_received(:error).with(
         hash_including(
@@ -114,7 +114,7 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
 
       expect {
         described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorsJob).with(project.id, commit_sha, branch: "main")
+      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "main")
 
       expect(Rails.logger).to have_received(:error).with(
         hash_including(

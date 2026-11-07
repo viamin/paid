@@ -4,6 +4,13 @@
 > `[x]` implemented · `[ ]` active gap · `[D]` deferred. Each ID is a grep
 > target across specs, tests, and code (`grep -r PR-LABEL-RECOVERY-001`).
 
+- [x] **PR-LABEL-RECOVERY-004** — When more than 50 distinct terminal runs
+  qualify for label recovery, each perform SHALL process no more than 50 and
+  enqueue a continuation after its last run ID, stopping at the cycle's initial
+  maximum ID so all earlier candidates are eventually considered.
+  *Code:* `RecoverMissingPullRequestLabelsJob#candidate_page`.
+  *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.
+
 - [x] **PR-LABEL-RECOVERY-001** — While a terminal `create_pr` agent run has a
   completion timestamp, or an update timestamp when completion is missing,
   within the last 30 days and created a pull request, the recovery job SHALL

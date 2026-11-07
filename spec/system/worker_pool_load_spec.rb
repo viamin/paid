@@ -68,6 +68,8 @@ RSpec.describe "Worker pool load behavior" do
       AgentRunResourceJanitorJob => "maintenance",
       ServiceContainerReconciliationJob => "maintenance",
       RecoverMissingPullRequestLabelsJob => "maintenance",
+      PartialCloseoutAcceptanceAuditSweepJob => "maintenance",
+      FeatureIntents::ReconcileDesignArtifactsPageJob => "maintenance",
       KnowledgeAuditRetentionJob => "maintenance",
       ContainerMetricsCollectionJob => "metrics",
       ServiceContainerMetricsCollectionJob => "metrics",
@@ -77,6 +79,8 @@ RSpec.describe "Worker pool load behavior" do
       EmbedChunksJob => "knowledge",
       EnqueueKnowledgeCollectionJob => "knowledge",
       RunCollectorsJob => "knowledge",
+      RunCollectorBatchJob => "knowledge",
+      RunCollectorContinuationJob => "knowledge",
       StyleGuideExtractionJob => "knowledge",
       StyleGuideCompressionJob => "knowledge",
       DashboardBroadcastJob => "low_priority",
@@ -139,7 +143,6 @@ RSpec.describe "Worker pool load behavior" do
       AutoPickEligibilitySweepJob,
       AutoPickQueueBackfillJob,
       DockerOrphanCleanupJob,
-      RecoverMissingPullRequestLabelsJob,
       ServiceContainerReconciliationJob,
       StaleRunDetectorJob,
       PollWorkflowHealthCheckJob,
@@ -151,6 +154,14 @@ RSpec.describe "Worker pool load behavior" do
           "#{job_class} should have total_limit: 1"
         expect(config[:enqueue_limit]).to eq(1),
           "#{job_class} should have enqueue_limit: 1"
+      end
+    end
+
+    [ RecoverMissingPullRequestLabelsJob, PartialCloseoutAcceptanceAuditSweepJob ].each do |job_class|
+      it "serializes #{job_class} while allowing a queued page" do
+        config = job_class.good_job_concurrency_config
+        expect(config).to include(enqueue_limit: 2, perform_limit: 1)
+        expect(config).not_to have_key(:total_limit)
       end
     end
 
@@ -169,6 +180,12 @@ RSpec.describe "Worker pool load behavior" do
         expect(config[:key]).to be_a(Proc),
           "#{job_class} should have a dynamic concurrency key"
       end
+    end
+
+    it "serializes collector batches with legacy full collection" do
+      expect(RunCollectorBatchJob.good_job_concurrency_config).to include(total_limit: 1, perform_limit: 1)
+      expect(RunCollectorBatchJob.new(1, "a" * 40).good_job_concurrency_key)
+        .to eq(RunCollectorsJob.new(1, "a" * 40).good_job_concurrency_key)
     end
   end
 

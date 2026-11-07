@@ -517,10 +517,16 @@ guards permit it. It records at most one automatic audit attempt per issue and
 closeout-evidence digest, including terminal attempts, so a failed audit does
 not loop. A later merged PR or no-code outcome creates a new evidence digest
 and can earn one new audit. The existing auto-pick control governs this work;
-the GitHub-sync repair places merged non-closing source PRs in this lane rather
-than treating their premerge source-closure disposition as final acceptance.
-there is no separate audit setting. Operator-requested audits use the same
+there is no separate audit setting. The GitHub-sync repair places merged
+non-closing source PRs in this lane rather than treating their premerge
+source-closure disposition as final acceptance. Operator-requested audits use the same
 durable request and count toward the one-attempt limit for that generation.
+
+The acceptance-audit sweep processes one project and at most 50 candidate
+issues per job. Continuations carry stable project and issue IDs, with a
+captured end ID for the cycle, while retaining the limit of three new audits
+per project. Candidates left after that limit are reconsidered on the next
+scheduled sweep.
 
 It only operates while `Issues::AutoPickProjectGate` is open and delegates all
 remaining admission to `Issues::RequestContinuation` / `CloseoutStatus`; explicit

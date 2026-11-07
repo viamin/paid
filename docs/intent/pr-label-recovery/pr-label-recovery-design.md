@@ -31,6 +31,10 @@ failed, timed out, or were cancelled after GitHub accepted the PR:
   do not re-add.
 - **Priority inheritance**: missing priority labels are backfilled even when
   auto-add labels is disabled.
+- **Bounded execution**: each job processes at most 50 distinct candidate runs.
+  A continuation carries the last processed run ID and the cycle's maximum ID;
+  later runs wait for the next hourly sweep. Association preloading and synced
+  PR lookup apply only to the current page.
 
 ## Code
 

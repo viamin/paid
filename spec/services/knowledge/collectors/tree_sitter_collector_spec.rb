@@ -368,4 +368,30 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
       end
     end
   end
+
+  # @spec KNOWLEDGE-014
+  describe "#collect_page" do
+    it "visits each eligible file once in bounded pages" do
+      stub_const("Knowledge::Collectors::TreeSitterCollector::FILES_PER_PAGE", 1)
+      cursors = []
+      all_artifacts = []
+      cursor = nil
+
+      loop do
+        artifacts, next_cursor = collector.collect_page(cursor: cursor)
+        all_artifacts.concat(artifacts)
+        break unless next_cursor
+
+        expect(cursors).not_to include(next_cursor)
+        cursors << next_cursor
+        cursor = next_cursor
+      end
+
+      expect(cursors).not_to be_empty
+      expect(all_artifacts.map { |artifact| artifact[:scope_path] }.uniq).to include("sample.rb")
+      expect(all_artifacts.size).to be > 0
+      expect(all_artifacts.map { |artifact| Digest::SHA256.hexdigest(artifact[:content]) }.uniq)
+        .to match_array(collector.collect.map { |artifact| Digest::SHA256.hexdigest(artifact[:content]) })
+    end
+  end
 end

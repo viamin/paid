@@ -219,6 +219,18 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `FeatureIntents::ReconcileDesignArtifactsJob`, `Issues::UpsertFromGithub`.
 
+- [x] **DESIGN-RECONCILIATION-004** — When a repository contains more than ten
+  matching RDR artifacts, each reconciliation perform SHALL fetch and process
+  at most ten artifact bodies, continue after the last path at the same pinned
+  revision, and resolve removed-artifact findings only after the final
+  complete-discovery page succeeds. If the branch revision changed during the
+  page chain, the final page SHALL preserve removed-artifact findings and
+  enqueue a fresh sweep.
+  *Code:* `FeatureIntents::DiscoverRdrArtifacts`,
+  `FeatureIntents::ReconcileDesignArtifactsJob`.
+  *Test:* `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`,
+  `spec/services/feature_intents/discover_rdr_artifacts_spec.rb`.
+
 - [x] **DESIGN-RECONCILIATION-001** — When a bounded repository reconciliation
   examines RDR artifacts using the project's configured `rdr_convention`
   directory and filename pattern (defaulting to `docs/rdrs/RDR-*.md`) or open design PRs at

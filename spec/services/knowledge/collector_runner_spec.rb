@@ -96,6 +96,47 @@ RSpec.describe Knowledge::CollectorRunner do
       end
     end
 
+    # @spec KNOWLEDGE-014
+    it "replays an interrupted batch collector without duplicating stored artifacts" do
+      version = create(:project_version, project:, commit_sha:)
+      run = create(:collector_run, :running, project_version: version, collector_type: "test_collector")
+      collector = test_collector_class.new(project:, project_version: version, collector_run: run, options: {})
+      Knowledge::ArtifactStore.new(project:, collector_run: run).store_all(collector.collect)
+
+      result = described_class.call(project:, commit_sha:,
+        options: { collector_types: [ "test_collector" ], partial_collection: true, resume_interrupted: true })
+
+      expect(result[:results]).to contain_exactly(hash_including(status: "completed", artifacts_count: 1))
+      expect(run.reload.status).to eq("completed")
+      expect(KnowledgeArtifact.where(collector_run: run).count).to eq(1)
+    end
+
+    # @spec KNOWLEDGE-014
+    it "keeps a paged collector running until its final page is stored" do
+      paged_collector = Class.new(Knowledge::BaseCollector) do
+        def collect_page(cursor: nil)
+          value = cursor ? "second" : "first"
+          artifact = { artifact_type: "structure", scope_path: "#{value}.rb", identifier: value,
+            content: value, metadata: {}, chunks: [] }
+          [ [ artifact ], cursor ? nil : "first.rb" ]
+        end
+      end
+      described_class.register("paged", paged_collector)
+      options = { collector_types: [ "paged" ], partial_collection: true, resume_interrupted: true }
+
+      first = described_class.call(project:, commit_sha:, options: options)
+      expect(first[:results]).to contain_exactly(hash_including(status: "in_progress", cursor: "first.rb"))
+      expect(CollectorRun.find_by!(collector_type: "paged").status).to eq("running")
+
+      replay = described_class.call(project:, commit_sha:, options: options)
+      expect(replay[:results]).to contain_exactly(hash_including(status: "in_progress", cursor: "first.rb"))
+      expect(KnowledgeArtifact.where(collector_type: "paged").count).to eq(1)
+
+      second = described_class.call(project:, commit_sha:, options: options.merge(collector_cursor: "first.rb"))
+      expect(second[:results]).to contain_exactly(hash_including(status: "completed", artifacts_count: 2))
+      expect(KnowledgeArtifact.where(collector_type: "paged").count).to eq(2)
+    end
+
     context "when advancing to a new commit" do
       let(:new_commit_sha) { "b" * 40 }
       let(:old_committed_at) { 2.hours.ago }

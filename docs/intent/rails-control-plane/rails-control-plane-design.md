@@ -47,6 +47,12 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
+Resource profile refreshes read only the run fields needed for memory samples
+and load metric limits for the current bounded database batch. The five
+fallback profile levels execute as a
+continuation chain, one level per GoodJob perform, so a refresh does not retain
+all five levels' working sets in one job.
+
 Development code reload must complete even when an Action Cable broadcast is
 pending. Solid Cable 4.1 batches broadcasts through a Rails executor worker, so
 its shutdown is deferred only while the Rails unload lock is held. Outside code

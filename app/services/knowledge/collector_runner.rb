@@ -32,6 +32,24 @@ module Knowledge
       @registry = {}
     end
 
+    # Finalize a successful collector chain without running collectors again.
+    # @spec KNOWLEDGE-014
+    def self.finalize_collection(project:, commit_sha:, collector_types:, preserved_collector_types: [])
+      new(project:, commit_sha:).finalize_collection(collector_types:, preserved_collector_types:)
+    end
+
+    def finalize_collection(collector_types:, preserved_collector_types:)
+      project_version = ProjectVersion.find_by(project:, commit_sha:)
+      return false unless project_version
+
+      statuses = project_version.collector_runs.where(collector_type: collector_types)
+        .pluck(:collector_type, :status).to_h
+      return false unless collector_types.all? { |type| %w[completed skipped].include?(statuses[type]) }
+
+      mark_stale_artifacts(project_version, preserved_collector_types)
+      true
+    end
+
     def run
       project_version = resolve_project_version
       results = run_collectors(project_version)
@@ -75,7 +93,7 @@ module Knowledge
           return { collector_type: collector_type, status: "completed", cached: true }
         end
 
-        if collector_run.status == "running"
+        if collector_run.status == "running" && !options[:resume_interrupted]
           return { collector_type: collector_type, status: "in_progress" }
         end
 
@@ -91,9 +109,16 @@ module Knowledge
       tool_version = collector.tool_version
       collector_run.update!(tool_version: tool_version) if tool_version
 
-      artifact_data = collector.collect
+      artifact_data, next_cursor = if options[:partial_collection] && collector.respond_to?(:collect_page)
+        collector.collect_page(cursor: options[:collector_cursor])
+      else
+        [ collector.collect, nil ]
+      end
       store = ArtifactStore.new(project: project, collector_run: collector_run)
       count = store.store_all(artifact_data)
+      return { collector_type: collector_type, status: "in_progress", cursor: next_cursor } if next_cursor
+
+      count = collector_run.knowledge_artifacts.active.count if collector.respond_to?(:collect_page) && options[:partial_collection]
       collector_run.mark_completed!(count: count)
 
       { collector_type: collector_type, status: "completed", artifacts_count: count }
@@ -202,6 +227,8 @@ module Knowledge
     end
 
     def full_collection_run?
+      return false if options[:partial_collection]
+
       requested_types = Array(options[:collector_types]).map(&:to_s).uniq
       requested_types.empty? || requested_types.sort == self.class.registry.keys.sort
     end

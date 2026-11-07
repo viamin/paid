@@ -30,6 +30,8 @@ module Tools
       "Tools::CloneProject",
       "Tools::RecordChangeIntent",
       "Tools::GetInboxChatContext",
+      "Tools::ListInboxEntries",
+      "Tools::GetInboxEntry",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
       "Tools::SubmitClarifyingAnswers",
