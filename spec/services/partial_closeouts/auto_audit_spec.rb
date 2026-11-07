@@ -66,6 +66,21 @@ RSpec.describe PartialCloseouts::AutoAudit do
       .not_to eq(first.agent_run.continuation_request.evidence_digest)
   end
 
+  # @spec PARTIAL-CLOSEOUT-041
+  it "allows one new audit when completed performance evidence changes the source revision" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "completed", completed_at: Time.current)
+    first.agent_run.update!(reconciliation: {
+      "technical_prerequisite_evidence" => { "recorded_at" => Time.current.iso8601, "status" => "completed" }
+    })
+
+    second = described_class.call(issue:)
+
+    expect(second).to be_scheduled
+    expect(second.agent_run.continuation_request.evidence_digest)
+      .not_to eq(first.agent_run.continuation_request.evidence_digest)
+  end
+
   # @spec PARTIAL-CLOSEOUT-037
   it "keeps a dependency-held closeout for an operator" do
     dependency = create(:issue, project:, github_state: "open", paid_state: "new")

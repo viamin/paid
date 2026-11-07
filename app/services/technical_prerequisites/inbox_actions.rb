@@ -42,7 +42,7 @@ module TechnicalPrerequisites
     def setup_action(criterion, requirement)
       return "Prepare a reviewed validation recipe for this criterion, then run a fresh acceptance audit." unless requirement
       return "Select an implementation run with a pinned checkout before validating this criterion." unless source_run&.base_commit_sha.present?
-      return "Configure a complete representative performance recipe for this criterion." if criterion["validation_kind"] == "performance_measurement" && requirement&.check_type != "performance_measurement"
+      return performance_setup_action(requirement) if criterion["validation_kind"] == "performance_measurement"
       return unless criterion["validation_kind"] == "tool_sidecar"
       attached = source_run.tool_sidecar_snapshot.any? do |tool|
         tool["name"] == criterion["validation_tool_name"] && criterion["validation_tool_name"].present?
@@ -56,6 +56,15 @@ module TechnicalPrerequisites
       return if FeatureFlags.enabled?(:marketplace_tool_sidecars, project:)
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project."
+    end
+
+    # @spec PARTIAL-CLOSEOUT-041
+    def performance_setup_action(requirement)
+      return "Configure a complete representative performance recipe for this criterion." unless requirement.check_type == "performance_measurement"
+      return "Select an implementation run with a produced revision before validating this criterion." unless source_run.result_commit_sha.present?
+      return if PerformanceRecipe.call(requirement:, current_commit_sha: source_run.result_commit_sha).valid?
+
+      "Configure a complete representative performance recipe for this criterion."
     end
   end
 end

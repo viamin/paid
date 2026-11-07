@@ -815,9 +815,14 @@
   the issue or semantically interpret the result.
   *Code:* `app/services/technical_prerequisites/performance_recipe.rb`,
   `app/services/technical_prerequisites/start_validation.rb`,
-  `app/services/technical_prerequisites/validate_execution.rb`.
+  `app/services/technical_prerequisites/validate_execution.rb`,
+  `app/services/technical_prerequisites/inbox_actions.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`,
+  `app/services/issues/request_continuation.rb`.
   *Test:* `spec/services/technical_prerequisites/start_validation_spec.rb`,
-  `spec/services/technical_prerequisites/validate_execution_spec.rb`.
+  `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+  `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body

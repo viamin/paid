@@ -183,11 +183,17 @@ module TechnicalPrerequisites
       metrics = performance_recipe.fetch("metrics").to_h do |metric|
         baseline_values = parsed.fetch(baseline.fetch("revision")).filter_map { |sample| numeric(sample[metric]) }
         current_values = parsed.fetch(current.fetch("revision")).filter_map { |sample| numeric(sample[metric]) }
-        return { "status" => "unknown", "reason" => "Metric #{metric} was unavailable from a complete sample set." } unless baseline_values.size == current_values.size && baseline_values.any?
+        return { "status" => "unknown", "reason" => "Metric #{metric} was unavailable from a complete sample set." } unless complete_metric_samples?(baseline_values, current_values)
 
         [ metric, { "baseline" => percentiles(baseline_values), "current" => percentiles(current_values) } ]
       end
       { "status" => "complete", "metrics" => metrics }
+    end
+
+    # @spec PARTIAL-CLOSEOUT-041
+    def complete_metric_samples?(baseline_values, current_values)
+      expected_samples = performance_recipe.fetch("samples")
+      baseline_values.size == expected_samples && current_values.size == expected_samples
     end
 
     def parsed_samples(measurement)

@@ -32,7 +32,7 @@ module TechnicalPrerequisites
 
     attr_reader :requirement, :current_commit_sha
 
-    def payload = @payload ||= requirement.measurement_recipe.to_h.deep_stringify_keys
+    def payload = @payload ||= (requirement.measurement_recipe.is_a?(Hash) ? requirement.measurement_recipe : {}).deep_stringify_keys
 
     def complete?
       revisions_pinned? && revisions_distinct? && workload_complete? && metrics_complete? &&

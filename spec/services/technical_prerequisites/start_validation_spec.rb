@@ -161,6 +161,20 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
   end
 
   # @spec PARTIAL-CLOSEOUT-041
+  it "refuses a persisted non-object performance recipe without raising" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: "c" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account,
+      check_type: "performance_measurement", command: "bin/measure")
+    requirement.update_column(:measurement_recipe, "not-a-json-object")
+
+    result = described_class.call(source_run:, requirement: requirement.reload, actor: project.created_by)
+
+    expect(result).not_to be_success
+    expect(result.message).to include("reviewed performance recipe")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-041
   it "refuses a performance recipe whose baseline is the produced revision itself" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: "c" * 40)
