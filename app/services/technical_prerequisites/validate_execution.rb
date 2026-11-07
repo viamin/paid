@@ -232,7 +232,12 @@ module TechnicalPrerequisites
       { "p50" => percentile(sorted, 0.5), "p95" => percentile(sorted, 0.95) }
     end
 
-    def percentile(sorted, fraction) = sorted[(fraction * (sorted.length - 1)).round]
+    def percentile(sorted, fraction)
+      index = fraction * (sorted.length - 1)
+      lower = sorted[index.floor]
+      upper = sorted[index.ceil]
+      lower + ((upper - lower) * (index - index.floor))
+    end
 
     def runtime_environment
       { "container_host" => agent_run.container_host, "image" => base_evidence["image"], "identity" => performance_recipe["environment"] }

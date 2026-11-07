@@ -46,6 +46,9 @@ module TechnicalPrerequisites
     def setup_action_for(schedule)
       return "Resolve execution requirements: #{schedule.requirements_error}" if schedule.requirements_error.present?
       return "Configure or restore a compatible execution backend for this project." if schedule.candidate_hosts.empty?
+      if performance_recipe&.fetch("requires_browser", false) && !agent_run.project.verification_enabled?
+        return "Enable browser verification for this project before running browser-visible measurements."
+      end
       return unless agent_run.tool_sidecar_snapshot.any? && !tool_sidecars_enabled?
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project; execution capability does not authorize the rollout."

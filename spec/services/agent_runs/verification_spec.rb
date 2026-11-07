@@ -41,6 +41,24 @@ RSpec.describe AgentRuns::Verification do
         expect(result.cdp_url).to eq(AgentRuns::Verification::CDP_URL)
       end
 
+      it "provisions through the backend that owns the agent run host" do
+        remote_backend = instance_double(Containers::Backends::RemoteDocker)
+        agent_run.update_columns(container_host: "remote")
+        allow(Containers).to receive(:backend_for).with("remote").and_return(remote_backend)
+        allow(remote_backend).to receive(:get_container).with(browser_container_name)
+          .and_raise(Docker::Error::NotFoundError)
+        allow(remote_backend).to receive(:pull_image)
+        allow(remote_backend).to receive(:create_container).and_return(docker_container)
+        allow(remote_backend).to receive(:start_container)
+
+        provisioner.call
+
+        expect(Containers::Provision).to have_received(:ensure_network!).with(network: network, backend: remote_backend)
+        expect(remote_backend).to have_received(:pull_image).with("fromImage" => AgentRuns::Verification::BROWSER_IMAGE)
+        expect(remote_backend).to have_received(:create_container)
+        expect(remote_backend).to have_received(:start_container).with(docker_container)
+      end
+
       it "tracks the container id on the agent run's mcp_sidecar_container_ids" do
         provisioner.call
 

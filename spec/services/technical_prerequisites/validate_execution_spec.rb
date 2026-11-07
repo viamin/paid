@@ -88,7 +88,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
 
     comparison = result.evidence.dig("performance_measurement", "comparison")
     expect([ result.status, comparison["status"] ]).to eq(%w[completed complete])
-    expect(comparison.dig("metrics", "wall_ms", "baseline", "p50")).to eq(22.0)
+    expect(comparison.dig("metrics", "wall_ms", "baseline", "p50")).to eq(21.0)
     expect(comparison).not_to have_key("improvement")
     projected = source_run.reload.reconciliation.dig("technical_prerequisite_evidence", "performance_measurement")
     expect(projected.dig("baseline", "samples")).to be_nil
@@ -231,6 +231,19 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       "bin/measure", timeout: kind_of(ActiveSupport::Duration), stream: false,
       env: hash_including("PAID_BROWSER_CDP_URL" => "ws://paid-screenshot-browser:3000")
     ).at_least(:once)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "keeps browser-visible measurement unavailable when project verification is disabled" do
+    stub_browser_measurement
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+
+    result = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:)
+
+    expect(result.status).to eq("unavailable")
+    expect(result.setup_action).to include("Enable browser verification")
+    expect(execution_runner).not_to have_received(:provision_browser_container)
+    expect(agent_run).not_to have_received(:provision_execution_environment)
   end
 
   # @spec PARTIAL-CLOSEOUT-032
@@ -437,6 +450,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   def stub_browser_measurement
+    project.update!(screenshot_settings: { "verification_enabled" => true })
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
       "source_run_id" => source_run.id, "performance_measurement" => {
         "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,

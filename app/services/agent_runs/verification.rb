@@ -110,10 +110,10 @@ module AgentRuns
     end
 
     def provision_browser_container!
-      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend)
+      Containers::Provision.ensure_network!(network: @network, backend: backend)
 
       container = adopt_or_create_browser
-      Containers.backend.start_container(container) unless container_running?(container)
+      backend.start_container(container) unless container_running?(container)
       track_sidecar_id(container.id)
       wait_for_health!(container)
 
@@ -163,7 +163,7 @@ module AgentRuns
     def create_browser
       pull_browser_image
 
-      Containers.backend.create_container(
+      backend.create_container(
         "Image" => BROWSER_IMAGE,
         "name" => browser_container_name,
         "ExposedPorts" => { "#{BROWSER_CDP_PORT}/tcp" => {} },
@@ -192,7 +192,7 @@ module AgentRuns
     end
 
     def pull_browser_image
-      Containers.backend.pull_image("fromImage" => BROWSER_IMAGE)
+      backend.pull_image("fromImage" => BROWSER_IMAGE)
     rescue Docker::Error::NotFoundError
       raise Error, "Verification browser image not found: #{BROWSER_IMAGE}"
     rescue Docker::Error::DockerError => e
@@ -204,7 +204,7 @@ module AgentRuns
 
       loop do
         return if Containers::TcpHealthProbe.open?(
-          backend: Containers.backend,
+          backend: backend,
           container: container,
           host: BROWSER_HOSTNAME,
           port: BROWSER_CDP_PORT
@@ -254,7 +254,7 @@ module AgentRuns
     end
 
     def adopt_or_create_browser
-      container = Containers.backend.get_container(browser_container_name)
+      container = backend.get_container(browser_container_name)
       return container if browser_container_matches_run?(container)
 
       remove_browser(container)
@@ -264,12 +264,12 @@ module AgentRuns
     end
 
     def remove_browser(container)
-      Containers.backend.stop_container(container, timeout: 10)
+      backend.stop_container(container, timeout: 10)
     rescue Docker::Error::NotFoundError, Docker::Error::ClientError, Docker::Error::ServerError
       # Already stopped, gone, or a transient daemon error — proceed to force-delete.
     ensure
       begin
-        Containers.backend.delete_container(container, force: true, v: true)
+        backend.delete_container(container, force: true, v: true)
       rescue Docker::Error::NotFoundError
         # Already removed.
       rescue Docker::Error::DockerError => e
@@ -279,6 +279,10 @@ module AgentRuns
 
     def log_info(message, **metadata)
       @logger.info(message: message, **metadata)
+    end
+
+    def backend
+      @backend ||= Containers.backend_for(@agent_run.container_host)
     end
   end
 end

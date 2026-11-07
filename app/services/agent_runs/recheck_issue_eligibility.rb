@@ -183,7 +183,10 @@ module AgentRuns
     def acceptance_audit_source_changed?(request)
       return false unless request.evidence["continuation_mode"] == "acceptance_audit"
 
-      request.evidence["source_revision"] != PartialCloseouts::Assessment.source_revision_for(issue)
+      source_revision = request.evidence["source_revision"]
+      return false if source_revision.blank?
+
+      source_revision != PartialCloseouts::Assessment.source_revision_for(issue)
     end
 
     def cancel_continuation(reason)
