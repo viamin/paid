@@ -83,8 +83,13 @@
       report returns here as closeout evidence.
       @spec FACET-CONFIDENCE-020 @spec FACET-CONFIDENCE-021 %>
   <% facet_evaluation = FacetConfidence::CloseoutEvaluationPacket.call(issue:, status:) %>
+  <%# Current generation only: the row Start would resume for this corpus
+      digest and the closeout's currently recorded source revision. A moved
+      revision shows the Start control for the new generation instead of
+      linking only the stale frozen report. %>
   <% facet_closeout_evaluation = issue.facet_confidence_evaluations
-        .where(corpus_digest: facet_evaluation.corpus_digest).latest_first.first %>
+        .where(corpus_digest: facet_evaluation.corpus_digest, source_revision: facet_evaluation.source_revision)
+        .latest_first.first %>
   <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-evaluation-inbox>
     <div>
       <h3 class="text-sm font-semibold text-indigo-900">Review readiness judgments</h3>

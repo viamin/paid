@@ -63,6 +63,22 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     evaluation.corpus.cases.each { |corpus_case| label!(evaluation, corpus_case) }
   end
 
+  def typed_evaluation_notification!
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Remediation Required", description: "Internal closeout prose.",
+      metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW })
+  end
+
+  # A reassessed closeout records its assessment snapshot — and with it the
+  # closeout's current source revision — on a completed run.
+  def record_closeout_assessment!
+    run = create(:agent_run, :completed, project: project, issue: issue)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run,
+      { "classification" => "complete", "criteria" => [], "gaps" => [] }) })
+    run.reconciliation.dig("assessment", "source_revision")
+  end
+
   it "starts from the Inbox entry point and resumes the same evaluation on repeated clicks" do
     evaluation = start_evaluation!
 
@@ -72,6 +88,15 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
 
     expect(issue.facet_confidence_evaluations.count).to eq(1)
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
+  end
+
+  it "shows the current-generation banner on the start screen while the recorded revision holds" do
+    evaluation = start_evaluation!
+
+    get new_project_facet_confidence_evaluation_path(project, issue_id: issue.id)
+
+    expect(response.body).to include("A review is already in progress", "Continue review",
+      project_facet_confidence_evaluation_path(project, evaluation))
   end
 
   it "starts from a typed Action Required escalation while preserving Inbox context" do
@@ -120,11 +145,7 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
   end
 
   it "starts the current corpus generation when the latest evaluation uses an older digest" do
-    notification = create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
-      title: "Remediation Required", description: "Internal closeout prose.",
-      metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW })
-    action_entry_id = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    action_entry_id = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, typed_evaluation_notification!)
     historical = start_evaluation!
     historical.update!(corpus_digest: "older-corpus-digest")
 
@@ -144,6 +165,36 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(current.corpus_digest).to eq(FacetConfidence::Corpus.new(
       path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH
     ).content_digest)
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, current))
+  end
+
+  # The stale-reconciliation recovery route: once the closeout's recorded
+  # source revision moves, the typed Inbox entry offers Start for a new
+  # evaluation generation instead of linking only the stale frozen report.
+  it "starts a new evaluation generation after the recorded source revision moved" do # @spec FACET-CONFIDENCE-023
+    action_entry_id = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, typed_evaluation_notification!)
+    stale = start_evaluation!
+    label_all!(stale)
+    post freeze_project_facet_confidence_evaluation_path(project, stale)
+
+    get inbox_entry_path(action_entry_id, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response.body).to include("View completed evaluation")
+
+    recorded_revision = record_closeout_assessment!
+
+    get inbox_entry_path(action_entry_id, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response.body).to include("Start evaluation")
+    expect(response.body).not_to include("View completed evaluation")
+
+    get new_project_facet_confidence_evaluation_path(project, issue_id: issue.id)
+    expect(response.body).to include("Start review")
+    expect(response.body).not_to include("A review is already in progress")
+
+    post project_facet_confidence_evaluations_path(project), params: { issue_id: issue.id }
+
+    current = issue.facet_confidence_evaluations.where.not(id: stale.id).sole
+    expect(current.source_revision).to eq(recorded_revision)
+    expect(stale.reload).to be_frozen
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, current))
   end
 
