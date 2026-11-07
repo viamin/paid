@@ -96,7 +96,7 @@ RSpec.describe InboxMasterDetailControllerNodeHarness do
       global.window = { setTimeout(callback) { deferredNavigation = callback } }
       const link = { click() { clicks += 1 } }
       const frame = {
-        hasAttribute(name) { return name === "busy" },
+        complete: false,
         addEventListener(_name, callback) { deferredLoad = callback }
       }
       const controller = Object.create(InboxController.prototype)
@@ -138,7 +138,7 @@ RSpec.describe InboxMasterDetailControllerNodeHarness do
   end
 
   # @spec OPERATOR-INBOX-025
-  it "defers a row navigation while the detail frame is loading" do
+  it "defers navigation before Turbo marks the incomplete frame busy" do
     result = run_detail_navigation_harness
 
     expect(result.fetch("beforeLoad")).to eq("clicks" => 0, "prevented" => true)

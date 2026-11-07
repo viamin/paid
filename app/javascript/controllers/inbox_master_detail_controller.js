@@ -53,7 +53,7 @@ export default class extends Controller {
   // @spec OPERATOR-INBOX-025
   deferWhileDetailLoads(event) {
     const frame = this.detailSectionTarget.querySelector("turbo-frame#inbox-detail")
-    if (!frame?.hasAttribute("busy")) return
+    if (!frame || frame.complete) return
 
     event.preventDefault()
     this.pendingDetailLink = event.currentTarget
