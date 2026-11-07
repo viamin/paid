@@ -4,6 +4,8 @@
 # recorded source revision as well as the frozen corpus digest, so a changed
 # revision can start a new generation (the recovery route a stale
 # reconciliation points to) instead of stranding the operator on a frozen row.
+# Rolling back is only viable while no closeout holds multiple generations;
+# down refuses rather than failing mid-rollback on the tighter legacy index.
 # @spec FACET-CONFIDENCE-020 @spec FACET-CONFIDENCE-023
 class AddSourceRevisionToFacetConfidenceEvaluationGenerationIndex < ActiveRecord::Migration[8.1]
   INDEX_NAME = "idx_facet_confidence_evaluations_one_per_closeout_generation"
@@ -29,6 +31,8 @@ class AddSourceRevisionToFacetConfidenceEvaluationGenerationIndex < ActiveRecord
   end
 
   def down
+    assert_rollback_viable!
+
     change_column_comment :facet_confidence_evaluations, :source_revision,
       from: COLUMN_COMMENT, to: LEGACY_COLUMN_COMMENT
     change_table_comment :facet_confidence_evaluations, from: TABLE_COMMENT, to: LEGACY_TABLE_COMMENT
@@ -36,6 +40,33 @@ class AddSourceRevisionToFacetConfidenceEvaluationGenerationIndex < ActiveRecord
   end
 
   private
+
+  # Must run before any down DDL: this migration is not transactional, so a
+  # collision discovered while rebuilding the legacy index would leave the
+  # schema half-rolled-back.
+  def assert_rollback_viable!
+    return unless duplicate_generations_exist?
+
+    raise ActiveRecord::IrreversibleMigration,
+      "Cannot restore the legacy one-per-(issue_id, corpus_digest) generation index while multiple " \
+      "revision-aware evaluation generations exist for a closeout. Resolve the duplicates first " \
+      "(keep one evaluation per issue_id and corpus_digest), then roll back."
+  end
+
+  def duplicate_generations_exist?
+    # RLS is forced on this table even for the migrating role, so the duplicate
+    # scan runs under a transaction-scoped tenant bypass.
+    ActiveRecord::Base.transaction do
+      safety_assured { execute("SET LOCAL paid.bypass_tenant_rls = 'true'") }
+      select_value(<<~SQL.squish).present?
+        SELECT 1
+        FROM facet_confidence_evaluations
+        GROUP BY issue_id, corpus_digest
+        HAVING COUNT(*) > 1
+        LIMIT 1
+      SQL
+    end
+  end
 
   def recreate_generation_index(columns, nulls_not_distinct:, comment:)
     current = generation_index
