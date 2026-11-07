@@ -258,6 +258,7 @@ Rails.application.routes.draw do
   # Projects management
   resources :projects do
     resources :closeout_evidence, only: :create, controller: "projects/closeout_evidence"
+    resources :post_deploy_measurements, only: :create, controller: "projects/post_deploy_measurements"
     resource :apple_verification, only: [ :show, :update ], controller: "projects/apple_verifications" do
       get :compare
       get :artifact

@@ -167,6 +167,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily bounded reconciliation of legacy partial closeouts"
     },
+    post_deploy_measurement_sweep: {
+      cron: "9-59/15 * * * *",
+      class: "PostDeployMeasurementSweepJob",
+      queue: "maintenance",
+      description: "Run due trusted post-deploy measurements and refresh stale deployment generations"
+    },
     design_artifact_reconciliation_sweep: {
       cron: "0 6 * * *",
       class: "FeatureIntents::DesignArtifactReconciliationSweepJob",

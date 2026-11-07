@@ -259,6 +259,18 @@ RSpec.describe Notification do
       }.to change { AgentRun.where(project: project, issue: parent, status: "queued").count }.from(0).to(1)
     end
 
+    it "re-enqueues and lifts the auto-pick gate when a post-deploy measurement releases the prerequisite" do # @spec POST-DEPLOY-008
+      notification = create(:notification, :error, account: account, subject: parent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+      continuation_run.update!(status: "cancelled")
+
+      expect {
+        notification.update!(resolved_at: Time.current, metadata: notification.metadata.merge(
+          "released_by" => "post_deploy_measurement", "released_at" => Time.current.iso8601
+        ))
+      }.to change { AgentRun.where(project: project, issue: parent, status: "queued").count }.from(0).to(1)
+    end
+
     it "ignores dismissals of unrelated notification sources" do # @spec NO-OUTPUT-ISSUE-007
       notification = create(:notification, :error, account: account, subject: parent,
         source: "some_other_source", blocking: true)

@@ -612,6 +612,20 @@ RSpec.describe "Inbox" do
       expect(response.body).to include(partial_closeout_guide_path)
     end
 
+    # @spec POST-DEPLOY-007
+    it "surfaces trusted post-deploy measurements as progress, not Action Required" do
+      create(:post_deploy_measurement, issue: guided_issue, project: project,
+        check_key: "planning_hold_notifications_actionable", status: "awaiting_deployment")
+
+      render_guided_pane
+
+      expect(response.body).to include("Post-deploy measurements")
+      expect(response.body).to include("planning_hold_notifications_actionable v1")
+      expect(response.body).to include("awaiting deployment")
+      expect(response.body).to include("Request a trusted post-deploy measurement")
+      expect(response.body).to include(project_post_deploy_measurements_path(project))
+    end
+
     it "hides the GitHub closure action while an acceptance audit is pending" do
       render_guided_pane
 

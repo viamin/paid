@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3435,6 +3435,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
   end
 
+  create_table "post_deploy_measurements", comment: "Trusted, allowlisted, read-only post-deploy checks recorded as closeout evidence (#4907).", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "check_key", null: false, comment: "Registry key of the allowlisted check."
+    t.integer "check_version", default: 1, null: false, comment: "Check semantics revision; evidence is only current for the registry's version."
+    t.jsonb "counts", default: {}, null: false, comment: "Measured counts, including the totals that make a zero interpretable."
+    t.datetime "created_at", null: false
+    t.text "criterion", null: false, comment: "Exact acceptance criterion the measurement evidences."
+    t.datetime "deployed_at"
+    t.integer "deployed_pr_number"
+    t.string "deployed_revision", default: "", null: false, comment: "Deployment generation measured; empty until the target revision is deployed."
+    t.jsonb "details", default: {}, null: false, comment: "Scope, baseline, target, deployment provenance, and next action."
+    t.integer "duration_ms"
+    t.datetime "executed_at"
+    t.text "failure_reason"
+    t.bigint "issue_id", null: false
+    t.string "prerequisite_identity", comment: "Prerequisite occurrence identity this measurement may release."
+    t.bigint "project_id", null: false
+    t.datetime "released_at", comment: "When the bound prerequisite was released from this evidence."
+    t.bigint "requested_by_id"
+    t.string "status", default: "pending", null: false, comment: "pending, running, awaiting_deployment, passed, failed, or unknown."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_post_deploy_measurements_on_account_id"
+    t.index ["issue_id", "check_key", "check_version", "deployed_revision"], name: "index_post_deploy_measurements_on_idempotency_key", unique: true
+    t.index ["issue_id"], name: "index_post_deploy_measurements_on_issue_id"
+    t.index ["project_id"], name: "index_post_deploy_measurements_on_project_id"
+    t.index ["requested_by_id"], name: "index_post_deploy_measurements_on_requested_by_id"
+    t.index ["status", "attempts"], name: "index_post_deploy_measurements_on_status_and_attempts"
+    t.check_constraint "attempts >= 0", name: "chk_post_deploy_measurements_attempts"
+    t.check_constraint "check_version > 0", name: "chk_post_deploy_measurements_version"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'running'::character varying::text, 'awaiting_deployment'::character varying::text, 'passed'::character varying::text, 'failed'::character varying::text, 'unknown'::character varying::text])", name: "chk_post_deploy_measurements_status"
+  end
+
   create_table "pr_templates", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "body", null: false
@@ -5077,6 +5110,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"
+  add_foreign_key "post_deploy_measurements", "accounts"
+  add_foreign_key "post_deploy_measurements", "issues"
+  add_foreign_key "post_deploy_measurements", "projects"
+  add_foreign_key "post_deploy_measurements", "users", column: "requested_by_id"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade

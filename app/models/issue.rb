@@ -90,6 +90,7 @@ class Issue < ApplicationRecord
   has_many :agent_runs, dependent: :nullify
   has_many :bounded_delegated_actions, dependent: :destroy
   has_many :agent_planning_holds, dependent: :destroy
+  has_many :post_deploy_measurements, dependent: :destroy
   has_many :code_scanning_remediation_attempts, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :change_intents, dependent: :nullify

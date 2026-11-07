@@ -253,6 +253,72 @@
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Prerequisites</h3>
+    <%# Trusted, allowlisted post-deploy measurements are collected by Paid
+        itself once the target revision deploys; routine states stay on this
+        progress surface rather than Action Required.
+        @spec POST-DEPLOY-007 %>
+    <% post_deploy_measurements = issue.post_deploy_measurements.order(:id) %>
+    <% if policy(entry.project).run_agent? && PostDeployMeasurements::Registry.all.any? %>
+      <div class="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3" data-post-deploy-measurement-request>
+        <h4 class="text-sm font-semibold text-sky-900">Request a trusted post-deploy measurement</h4>
+        <p class="text-xs text-sky-800">
+          Paid runs the allowlisted, read-only check itself once the implementing PR is marked deployed —
+          the operator only names the check, never supplies SQL or records the count. Routine progress
+          stays here; only an unrecoverable or contradictory result escalates.
+        </p>
+        <% PostDeployMeasurements::Registry.all.each do |registry_check| %>
+          <%= form_with url: project_post_deploy_measurements_path(entry.project), data: { turbo_frame: "_top" }, class: "mt-1" do |form| %>
+            <%= form.hidden_field :issue_id, value: issue.id %>
+            <%= form.hidden_field :check_key, value: registry_check.key %>
+            <%= form.hidden_field :inbox_entry_id, value: entry.id %>
+            <% if human_prerequisite.present? %>
+              <% bound_identity = PartialCloseouts::PrerequisiteOccurrences.for(human_prerequisite)
+                   .find { |occurrence| occurrence["criterion"] == registry_check.criterion }&.fetch("identity") %>
+              <%= form.hidden_field :prerequisite_identity, value: bound_identity if bound_identity %>
+            <% end %>
+            <div class="flex flex-wrap items-center gap-2">
+              <%= form.submit "Run #{registry_check.key} v#{registry_check.version} after deployment",
+                    class: "rounded bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-600",
+                    data: { turbo_confirm: "Request the trusted #{registry_check.key} measurement for ##{issue.github_number}? It runs automatically once the target revision is deployed." } %>
+              <span class="text-xs text-sky-800">target <%= registry_check.target %> · baseline <%= registry_check.baseline %></span>
+            </div>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+    <% if post_deploy_measurements.any? %>
+      <div class="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3" data-post-deploy-measurements>
+        <h4 class="text-sm font-semibold text-sky-900">Post-deploy measurements</h4>
+        <% post_deploy_measurements.each do |measurement| %>
+          <div class="rounded border border-sky-200 bg-white p-2 text-xs text-sky-900">
+            <p class="font-medium"><%= measurement.check_key %> v<%= measurement.check_version %> —
+              <span class="font-semibold"><%= measurement.status.tr("_", " ") %></span></p>
+            <p><%= measurement.criterion %></p>
+            <% if measurement.executed_at.present? %>
+              <p>
+                Deployment <code><%= measurement.deployed_revision %></code> ·
+                counted <%= measurement.counts["actionable_closed_source"] %> actionable
+                (target <%= measurement.details.dig("comparison", "target") %>,
+                baseline <%= measurement.details.dig("comparison", "baseline") %>,
+                active total <%= measurement.counts["active_total"] %>) ·
+                scope <%= measurement.details.dig("scope", "project") || entry.project.full_name %> ·
+                measured <%= time_ago_in_words(measurement.executed_at) %> ago.
+              </p>
+            <% end %>
+            <% if measurement.failure_reason.present? %>
+              <p class="whitespace-pre-line"><%= measurement.failure_reason %></p>
+            <% end %>
+            <% if measurement.details["next_action"].present? %>
+              <p><%= measurement.details["next_action"] %></p>
+            <% end %>
+          </div>
+        <% end %>
+        <p class="text-xs text-sky-800">
+          Measurements run read-only against the live dataset after the recorded deployment; a passing
+          measurement releases only its matching prerequisite and never attests issue completion.
+        </p>
+      </div>
+    <% end %>
     <% if technical_validation %>
       <div class="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3" data-technical-prerequisite-validation>
         <h4 class="text-sm font-semibold text-indigo-900">Latest technical prerequisite validation</h4>
@@ -343,6 +409,23 @@
               <% identity = prerequisite.fetch("identity") %>
               <% scope = "prerequisite_#{identity}" %>
               <% submissions = Array(human_prerequisite.metadata["evidence_submissions"]).select { |submission| submission["prerequisite_identity"] == identity } %>
+              <% if policy(entry.project).run_agent? && PostDeployMeasurements::Registry.all.any? %>
+                <% PostDeployMeasurements::Registry.all.each do |check| %>
+                  <%= form_with url: project_post_deploy_measurements_path(entry.project), data: { turbo_frame: "_top" }, class: "space-y-1" do |form| %>
+                    <%= hidden_field_tag :issue_id, issue.id, id: "issue_id_pd_#{identity}_#{check.key}" %>
+                    <%= hidden_field_tag :check_key, check.key, id: "check_key_pd_#{identity}_#{check.key}" %>
+                    <%= hidden_field_tag :prerequisite_identity, identity, id: "prerequisite_identity_pd_#{identity}_#{check.key}" %>
+                    <%= hidden_field_tag :inbox_entry_id, entry.id, id: "inbox_entry_id_pd_#{identity}_#{check.key}" %>
+                    <p class="text-xs text-amber-800">
+                      Collect trusted post-deploy measurement <code><%= check.key %></code> v<%= check.version %>
+                      for this prerequisite (baseline <%= check.baseline %>, target <%= check.target %>).
+                      Paid runs it read-only after the deployment and records the evidence itself.
+                    </p>
+                    <%= form.submit "Collect post-deploy measurement",
+                          class: "rounded bg-amber-700 px-3 py-2 text-xs font-semibold text-white" %>
+                  <% end %>
+                <% end %>
+              <% end %>
               <%= form_with url: project_closeout_evidence_index_path(entry.project), method: :post, scope:, class: "space-y-2" do |form| %>
                 <%= hidden_field_tag :notification_id, human_prerequisite.id, id: "notification_id_#{identity}" %>
                 <%= hidden_field_tag :prerequisite_identity, identity, id: "prerequisite_identity_#{identity}" %>
@@ -356,9 +439,11 @@
               <% end %>
               <% submissions.each do |submission| %>
                 <div class="rounded border border-amber-200 bg-white p-2 text-xs text-amber-900">
-                  <p><%= link_to submission["evidence_url"], submission["evidence_url"], target: "_blank", rel: "noopener noreferrer", class: "underline" %></p>
+                  <% if submission["evidence_url"].present? %>
+                    <p><%= link_to submission["evidence_url"], submission["evidence_url"], target: "_blank", rel: "noopener noreferrer", class: "underline" %></p>
+                  <% end %>
                   <p class="whitespace-pre-line"><%= submission["explanation"] %></p>
-                  <p>Submitted by user #<%= submission["actor_id"] %> at <%= submission["submitted_at"] %> — <%= submission["outcome"] %></p>
+                  <p>Submitted by user #<%= submission["actor_id"] || "Paid" %> at <%= submission["validated_at"] || submission["submitted_at"] %> — <%= submission["outcome"] %></p>
                   <p><%= submission["reason"] %></p>
                 </div>
               <% end %>
