@@ -149,13 +149,14 @@ module Issues
       request = nil
       run = nil
       ActiveRecord::Base.transaction do
+        evidence = evidence_snapshot(status).merge("continuation_mode" => continuation_mode)
         request = IssueContinuationRequest.create!(
           issue: issue,
           project: issue.project,
           requested_by: actor,
           reason: reason,
-          evidence: evidence_snapshot(status).merge("continuation_mode" => continuation_mode),
-          evidence_digest: status.evidence.digest
+          evidence: evidence,
+          evidence_digest: request_evidence_digest(status)
         )
         runner_id, agent_type = AgentRuns::RunnerResolver.call(project: issue.project, goal: goal)
         run = AgentRun.create!(
@@ -210,6 +211,14 @@ module Issues
       snapshot.merge("source_revision" => PartialCloseouts::Assessment.source_revision_for(
         issue, closeout_evidence: evidence, technical_evidence: status.technical_evidence
       ))
+    end
+
+    def request_evidence_digest(status)
+      return status.evidence.digest unless continuation_mode == "acceptance_audit"
+
+      PartialCloseouts::Assessment.source_revision_for(
+        issue, closeout_evidence: status.evidence, technical_evidence: []
+      )
     end
 
     def success(request, agent_run) = Result.new(request: request, agent_run: agent_run)

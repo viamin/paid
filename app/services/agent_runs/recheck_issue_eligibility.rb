@@ -156,7 +156,7 @@ module AgentRuns
       if issue.closeout_closing?
         return cancel_continuation("Continuation superseded: GitHub closure is in progress.")
       end
-      return cancel_continuation("Continuation evidence generation changed.") unless Issues::CloseoutEvidence.call(issue).digest == request.evidence_digest
+      return cancel_continuation("Continuation evidence generation changed.") unless continuation_evidence_digest(request) == request.evidence_digest
       if acceptance_audit_source_changed?(request)
         return cancel_continuation("Continuation technical evidence changed.")
       end
@@ -173,20 +173,26 @@ module AgentRuns
       false
     end
 
-    def continuation_eligible?(request)
-      Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_for_dequeue?(
-        agent_run.project, agent_run.issue_id, excluding_run_id: agent_run.id,
-        continuation_authorized_issue_ids: [ request.issue_id ]
-      )
+    def continuation_evidence_digest(request)
+      if request.evidence["continuation_mode"] == "acceptance_audit"
+        return PartialCloseouts::Assessment.source_revision_for(issue, technical_evidence: [])
+      end
+
+      Issues::CloseoutEvidence.call(issue).digest
     end
 
     def acceptance_audit_source_changed?(request)
       return false unless request.evidence["continuation_mode"] == "acceptance_audit"
 
       source_revision = request.evidence["source_revision"]
-      return false if source_revision.blank?
+      source_revision.present? && source_revision != PartialCloseouts::Assessment.source_revision_for(issue)
+    end
 
-      source_revision != PartialCloseouts::Assessment.source_revision_for(issue)
+    def continuation_eligible?(request)
+      Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_for_dequeue?(
+        agent_run.project, agent_run.issue_id, excluding_run_id: agent_run.id,
+        continuation_authorized_issue_ids: [ request.issue_id ]
+      )
     end
 
     def cancel_continuation(reason)
