@@ -62,8 +62,10 @@ module ProjectDelegation
     # The one effective-policy answer for a phase. Read surfaces call this
     # instead of re-deriving authority from settings, grants, or labels.
     def phase_decision(phase)
-      Automation::EffectivePolicy.call(
-        project: project, phase: phase.to_s, work_item: work_item, trigger: :automatic
+      phase = phase.to_s
+      @phase_decisions ||= {}
+      @phase_decisions[phase] ||= Automation::EffectivePolicy.call(
+        project: project, phase: phase, work_item: work_item, trigger: :automatic
       )
     end
 
@@ -92,7 +94,11 @@ module ProjectDelegation
     # The same posture signature the admission contract pins, so read
     # surfaces and boundary rechecks cannot disagree about posture.
     def posture_signature(action:)
-      Automation::DelegatedActionAdmission.posture_signature_for(project: project, action: action.to_s)
+      action = action.to_s
+      @posture_signatures ||= {}
+      @posture_signatures[action] ||= Automation::DelegatedActionAdmission.posture_signature_for(
+        project: project, action: action
+      )
     end
 
     # One serializable payload shared by the API and MCP surfaces.
@@ -116,6 +122,8 @@ module ProjectDelegation
     private
 
     def latest_records
+      return [] if work_item && work_issue.nil?
+
       scope = work_issue ? work_issue.bounded_delegated_actions.order(id: :desc) : recent_project_authorizations
       grouped = scope.each_with_object({}) do |record, latest|
         key = [ record.issue_id, record.action ]

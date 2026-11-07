@@ -29,7 +29,7 @@ module Tools
     # @spec PROJECT-DELEGATION-005
     def perform(project_id:, issue_id: nil)
       project = project_for(project_id)
-      work_item = project.issues.find_by(id: issue_id) if issue_id
+      work_item = project.issues.find(issue_id) if issue_id
 
       if work_item
         ProjectDelegation::Projection.for_work_item(project: project, work_item: work_item).to_h

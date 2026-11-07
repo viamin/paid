@@ -138,6 +138,25 @@ RSpec.describe ProjectDelegation::Projection do
     expect(state.id).to eq(authorization.id)
   end
 
+  it "does not widen an unresolved agent-run work item to project authority" do
+    authorize_review
+    run = create(:agent_run, :with_custom_prompt, project: project)
+
+    states = described_class.for_work_item(project: project, work_item: run).authorizations
+
+    expect(states).to be_empty
+  end
+
+  it "reuses effective-policy decisions and posture signatures within one projection" do
+    projection = described_class.for_work_item(project: project, work_item: issue)
+
+    coding_decision = projection.phase_decision("coding")
+    review_signature = projection.posture_signature(action: "review")
+
+    expect(projection.phase_decision(:coding)).to equal(coding_decision)
+    expect(projection.posture_signature(action: :review)).to equal(review_signature)
+  end
+
   it "exposes continuation grants through the shared chain lookup" do
     grant = create(:work_item_continuation_grant, project: project, issue: issue,
       start_phase: "coding", endpoint: "merge")

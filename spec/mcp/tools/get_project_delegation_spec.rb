@@ -44,6 +44,13 @@ RSpec.describe Tools::GetProjectDelegation do
     expect(result.fetch(:authorizations)).to be_empty
   end
 
+  it "raises when the requested work item is outside the project" do
+    other_item = create(:issue)
+
+    expect { tool.call(project_id: project.id, issue_id: other_item.id) }
+      .to raise_error(ActiveRecord::RecordNotFound)
+  end
+
   it "raises for projects outside the user's account" do
     other_project = create(:project)
 
