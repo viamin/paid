@@ -37,7 +37,7 @@ module PartialCloseouts
     def claim!
       agent_run.with_lock do
         agent_run.reload
-        return false unless agent_run.waiting_recovery? && state["claimed_at"].blank?
+        return false unless agent_run.waiting_recovery? && claim_available?
 
         agent_run.update!(reconciliation: agent_run.reconciliation.merge(KEY => state.merge(
           "claimed_at" => now.iso8601,
@@ -63,5 +63,11 @@ module PartialCloseouts
 
     def state = agent_run.reconciliation.to_h.fetch(KEY, {})
     def attempts = @attempts || state.fetch("attempts", 0).to_i + 1
+
+    def claim_available?
+      state["claimed_at"].blank? || Time.zone.parse(state.fetch("claimed_at")) <= now - RETRY_DELAY
+    rescue ArgumentError
+      true
+    end
   end
 end

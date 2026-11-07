@@ -20,7 +20,7 @@ RSpec.describe SourceClosureRecoveryJob do
 
     expect(client).to have_received(:start_workflow).with(
       Workflows::SourceClosureRecoveryWorkflow,
-      { agent_run_id: run.id, project_id: run.project_id, recovery_attempt: 1 },
+      { agent_run_id: run.id, project_id: run.project_id, recovery_attempt: 1, goal: run.goal },
       id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
     )
   end
@@ -33,6 +33,21 @@ RSpec.describe SourceClosureRecoveryJob do
     allow(client).to receive(:start_workflow).and_raise(error)
 
     expect { described_class.perform_now(run.id) }.to raise_error(Temporalio::Error::RPCError)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "releases the persisted claim when loading its attempt fails" do
+    reloads = 0
+    allow(AgentRun).to receive(:find_by).and_return(run)
+    allow(run).to receive(:reload).and_wrap_original do |original|
+      reloads += 1
+      raise ActiveRecord::ConnectionNotEstablished, "connection lost" if reloads == 2
+
+      original.call
+    end
+
+    expect { described_class.perform_now(run.id) }.to raise_error(ActiveRecord::ConnectionNotEstablished)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
   end
 end

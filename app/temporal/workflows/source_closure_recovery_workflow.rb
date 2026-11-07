@@ -11,11 +11,12 @@ module Workflows
       agent_run_id = input.fetch(:agent_run_id)
       project_id = input.fetch(:project_id)
       recovery_attempt = input.fetch(:recovery_attempt)
+      goal = input.fetch(:goal, "create_pr")
       run_activity(Activities::ProvisionContainerActivity, { agent_run_id: }, timeout: 60)
       return { agent_run_id:, waiting: true } unless assess_source_closure_or_park(agent_run_id)
 
       pr_result = run_activity(Activities::CreatePullRequestActivity, { agent_run_id: }, timeout: 120)
-      finish_closeout(agent_run_id, project_id, pr_result) unless pr_result[:skipped] || pr_result[:pull_request_url].blank?
+      finish_closeout(agent_run_id, project_id, pr_result, goal) unless pr_result[:skipped] || pr_result[:pull_request_url].blank?
       { agent_run_id:, recovered: true }
     rescue => e
       raise_if_canceled!(e)
@@ -46,11 +47,12 @@ module Workflows
       false
     end
 
-    def finish_closeout(agent_run_id, project_id, pr_result)
+    def finish_closeout(agent_run_id, project_id, pr_result, goal)
       reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity, { agent_run_id: }, timeout: 120)
       run_activity(Activities::AdvancePartialCloseoutActivity, { agent_run_id: }, timeout: 30)
       publish_issue_result(agent_run_id, pr_result[:pull_request_url], reconcile_result[:gaps_remain])
       request_review(project_id, pr_result[:pull_request_number])
+      run_post_pr_steps(agent_run_id, pr_result, goal) if Temporalio::Workflow.patched("source-closure-recovery-post-pr-v1")
     end
 
     def publish_issue_result(agent_run_id, pull_request_url, gaps_remain)
@@ -65,6 +67,27 @@ module Workflows
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "agent_execution.review_bot_request_failed", project_id:, pr_number:, error: e.message
+      )
+    end
+
+    def run_post_pr_steps(agent_run_id, pr_result, goal)
+      best_effort_activity(Activities::CaptureScreenshotsActivity, { agent_run_id: }, timeout: 900,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
+      best_effort_activity(Activities::DraftDecisionRecordActivity, { agent_run_id: }, timeout: 60)
+      return unless goal == "create_feature"
+
+      plan_doc_source = pr_result[:pull_request_url] || "PR ##{pr_result[:pull_request_number]}"
+      best_effort_activity(Activities::ChainLidPlanningActivity, { agent_run_id:, plan_doc_source: }, timeout: 30)
+    end
+
+    def best_effort_activity(activity, input, **options)
+      run_activity(activity, input, **options, retry_policy: AgentExecutionWorkflow::NO_RETRY)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "source_closure_recovery.post_pr_step_failed", agent_run_id: input[:agent_run_id],
+        activity: activity.name, error_class: e.class.name, error: e.message
       )
     end
   end

@@ -4,10 +4,22 @@ require "rails_helper"
 
 RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
   let(:workflow) { described_class.new }
-  let(:input) { { agent_run_id: 42, project_id: 7, recovery_attempt: 1 } }
+  let(:input) { { agent_run_id: 42, project_id: 7, recovery_attempt: 1, goal: "create_feature" } }
+  let(:post_closeout_activities) do
+    [
+      Activities::ReconcilePartialCloseoutActivity,
+      Activities::AdvancePartialCloseoutActivity,
+      Activities::UpdateIssueWithPrActivity,
+      Activities::RequestReviewActivity,
+      Activities::CaptureScreenshotsActivity,
+      Activities::DraftDecisionRecordActivity,
+      Activities::ChainLidPlanningActivity
+    ]
+  end
 
   before do
     allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-post-pr-v1").and_return(true)
   end
 
   # @spec PARTIAL-CLOSEOUT-045
@@ -27,12 +39,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     allow(workflow).to receive(:run_cleanup_activity)
 
     expect(workflow.execute(input)).to include(recovered: true)
-    expect(calls).to include(
-      Activities::ReconcilePartialCloseoutActivity,
-      Activities::AdvancePartialCloseoutActivity,
-      Activities::UpdateIssueWithPrActivity,
-      Activities::RequestReviewActivity
-    )
+    expect(calls).to include(*post_closeout_activities)
   end
 
   # @spec PARTIAL-CLOSEOUT-045
