@@ -90,10 +90,9 @@ module ProjectDelegation
       # The smallest affected question set: groups in the settled checkpoint
       # whose question changed or disappeared, and groups new to the current
       # plan. Unchanged groups stay settled and are never reopened.
-      def self.affected_groups(checkpoint)
+      def self.affected_groups(checkpoint, plan)
         settled = Array(checkpoint.question_groups).index_by { |group| group["key"] }
-        current = Plan.call(project: checkpoint.project, issue: checkpoint.issue).groups
-        current.filter_map do |group|
+        plan.groups.filter_map do |group|
           next nil if settled[group.key] && Plan.normalize_question(settled[group.key]["question"]) == Plan.normalize_question(group.question)
 
           group.to_h.transform_keys(&:to_s)
