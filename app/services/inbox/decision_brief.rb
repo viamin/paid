@@ -58,7 +58,7 @@ module Inbox
     end
 
     def recommendation
-      question_payload&.fetch(:recommendation) || guidance_value(:instruction) || notification_recommendation
+      raw_recommendation if evidence_state == "current"
     end
 
     def rationale
@@ -93,22 +93,34 @@ module Inbox
 
     def evidence_state
       return "stale" if guidance_value(:stale_approval)
-      return "current" if recommendation.present?
+      return structured_evidence_state if structured_evidence_state
+      return "current" if raw_recommendation.present?
 
       "unknown"
     end
 
     def uncertainty
-      return "The recorded approval is stale for the current revision." if evidence_state == "stale"
-      return unless evidence_state == "unknown"
-
-      "Paid has no evidence-backed recommendation."
+      {
+        "stale" => "The recorded approval is stale for the current revision.",
+        "unavailable" => "The evidence needed to recommend an action is unavailable.",
+        "conflicting" => "Paid has conflicting evidence and cannot recommend an action.",
+        "unknown" => "Paid has no evidence-backed recommendation."
+      }[evidence_state]
     end
 
     def focused_question
-      return unless evidence_state == "unknown"
+      return if evidence_state == "current"
 
       question_payload&.fetch(:question) || "What outcome should Paid pursue next?"
+    end
+
+    def raw_recommendation
+      question_payload&.fetch(:recommendation) || guidance_value(:instruction) || notification_recommendation
+    end
+
+    def structured_evidence_state
+      state = guidance_value(:evidence_state).to_s
+      state if %w[stale unavailable conflicting].include?(state)
     end
 
     def question_payload

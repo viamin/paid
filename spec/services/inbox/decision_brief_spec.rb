@@ -51,9 +51,21 @@ RSpec.describe Inbox::DecisionBrief do
       guidance: { instruction: "Review the current changes on GitHub.", heading: "Approval is stale", stale_approval: true }))
 
     expect(brief.to_h).to include(
-      recommendation: "Review the current changes on GitHub.",
+      recommendation: nil,
       evidence_state: "stale",
       uncertainty: "The recorded approval is stale for the current revision."
+    )
+  end
+
+  it "withholds conflicting guidance and asks one focused question" do
+    brief = described_class.call(entry: entry(kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      guidance: { instruction: "Rotate the credential.", evidence_state: "conflicting" }))
+
+    expect(brief.to_h).to include(
+      recommendation: nil,
+      evidence_state: "conflicting",
+      uncertainty: "Paid has conflicting evidence and cannot recommend an action.",
+      focused_question: "What outcome should Paid pursue next?"
     )
   end
 end
