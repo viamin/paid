@@ -83,6 +83,19 @@ The occurrence remains until a subsequent
 synchronization observes an acyclic persisted graph. A failed reconciliation is
 logged as unavailable; it is not treated as proof that no cycles exist.
 
+The periodic backstop pages through accounts the same way
+`AutoPickEligibilitySweepJob` pages through projects: an immutable-ID cursor
+and a bounded per-job page size, with the cycle's upper account-id bound
+snapshotted on the cycle's first page and threaded through every durable
+continuation so an account created mid-cycle is deferred to the next cron
+tick rather than extending the running cycle. A page failure isolates to its
+account — reconciliation of the rest of the page continues, the failed
+account retries from its own cursor up to a bounded attempt count before the
+cycle advances past it, and it remains eligible again on the next cron tick
+regardless. Cache invalidation stays scoped per account and only follows a
+successful reconciliation for that account. Each page logs its account
+count, duration, and allocation counters.
+
 An authorized operator may start a cycle repair run from that Inbox
 occurrence. The analysis snapshots the occurrence and effective-graph revision,
 all members of the strongly connected group, and every effective internal edge;

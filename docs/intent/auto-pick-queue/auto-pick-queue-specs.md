@@ -98,8 +98,21 @@
   it after dependency changes and through a bounded periodic backstop. The
   graph SHALL include resolved cross-project references and apply the existing
   open-state and contextual parent-reference exclusions. A reconciliation
-  failure SHALL be reported as unavailable rather than as zero cycles.
-  *Tests:* `spec/services/issues/dependency_cycles_spec.rb`.
+  failure SHALL be reported as unavailable rather than as zero cycles. The
+  periodic backstop SHALL page through accounts using a stable, immutable-ID
+  cursor and a bounded per-job account limit, snapshotting the cycle's upper
+  account-id bound on its first page so no account already present at cycle
+  start is skipped or reconciled twice within that cycle and an account
+  created mid-cycle is deferred to a later cycle. A failed account SHALL NOT
+  block reconciliation of the remaining accounts in its page; it SHALL be
+  retried from its own cursor within the current cycle up to a bounded
+  attempt count before the cycle advances past it, and in all cases remains
+  eligible for reconciliation on the next cron tick. Dashboard cache
+  invalidation for an account SHALL happen only after that account's
+  reconciliation succeeds. Each page SHALL be instrumented with its account
+  count, duration, and allocation counters.
+  *Tests:* `spec/services/issues/dependency_cycles_spec.rb`,
+  `spec/jobs/dependency_cycle_reconciliation_job_spec.rb`.
   *Code:* `Issues::DependencyCycles`, `DependencyCycleReconciliationJob`.
 
 - [x] **AUTO-PICK-QUEUE-015** — When reconciliation finds an effective cycle,
