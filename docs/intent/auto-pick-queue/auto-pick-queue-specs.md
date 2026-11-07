@@ -213,6 +213,42 @@
   *Tests:* `spec/services/cycle_analyses/repair_spec.rb`,
   `spec/mcp/tools/repair_cycle_analysis_spec.rb`.
 
+- [x] **AUTO-PICK-QUEUE-023** — Before any analysis exists for a visible
+  dependency-cycle Inbox occurrence, the detail SHALL name the blocked work
+  (issues in the loop and the downstream held-work count), state that Paid
+  recommends one bounded repair analysis, and state that a qualifying
+  analysis run may edit one verified GitHub dependency declaration; the start
+  action and its confirmation SHALL state that same possibility. While an
+  analysis is queued or running, the primary next action SHALL only navigate
+  to the run's status. A pending-sync confirmation SHALL state that it
+  re-checks the synchronized graph without editing GitHub. Each repair state
+  the detail can present — queued or running, safe repair awaiting
+  synchronization, confirmed repair, ambiguous recommendation, stale analysis
+  graph, failed analysis, and unavailable evidence coverage — SHALL carry
+  distinct status and next-action copy.
+  *Tests:* `spec/requests/inbox_spec.rb`,
+  `spec/services/cycle_analyses/operator_view_spec.rb`.
+  *Code:* `CycleAnalyses::OperatorView`,
+  `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
+
+- [x] **AUTO-PICK-QUEUE-024** — A completed, current cycle analysis SHALL
+  render as readable fields — recommendation summary, each proposed source →
+  target declaration change with its declaration source, supporting evidence,
+  tradeoffs, missing or conflicting intent, and the expected resulting graph —
+  and the raw recommendation and coverage objects SHALL appear only inside
+  collapsed technical detail. A manual repair action SHALL name the exact
+  declaration it would remove and the source issue or comment carrying it,
+  present a reviewable before/after of that single declaration, and require
+  an explicit confirmation naming the declaration; submission SHALL keep the
+  existing live authority, occurrence, and graph rechecks. The detail SHALL
+  present the cycle once as a readable path, keep the affected-work count
+  visible, keep the path readable on narrow screens, and place individual
+  declaration links and diagnostic identifiers in expandable detail.
+  *Tests:* `spec/requests/inbox_spec.rb`,
+  `spec/services/cycle_analyses/operator_view_spec.rb`.
+  *Code:* `CycleAnalyses::OperatorView`,
+  `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label

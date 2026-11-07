@@ -1,101 +1,104 @@
-<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 %>
+<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-023 AUTO-PICK-QUEUE-024 %>
 <% cycle = entry.record %>
+<% analysis_run = cycle.project.agent_runs.for_cycle_analysis_fingerprint(cycle.fingerprint).where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).first %>
+<% view_state = CycleAnalyses::OperatorView.new(cycle:, run: analysis_run) %>
+<% status = view_state.status %>
 <div class="space-y-6">
-  <div class="rounded-xl border border-red-200 bg-red-50 p-4">
+  <div class="rounded-xl border border-red-200 bg-red-50 p-4" data-testid="cycle-blocked-work">
     <h3 class="text-sm font-semibold text-red-900">Dependency cycle blocks automatic work</h3>
-    <p class="mt-1 text-sm text-red-800">Paid keeps this work held until a bounded repair is confirmed by GitHub synchronization.</p>
+    <p class="mt-1 text-sm text-red-800">
+      <%= cycle.path.uniq.size %> issues wait on each other in a closed loop, holding
+      <%= pluralize(cycle.downstream_issues.size, "downstream open issue") %>.
+      Paid keeps this work held until a later synchronization confirms an acyclic graph.
+    </p>
   </div>
 
-  <% analysis_run = cycle.project.agent_runs.for_cycle_analysis_fingerprint(cycle.fingerprint).where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).first %>
-  <% analysis_stale = analysis_run && analysis_run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") != cycle.occurrence %>
-  <% pending_sync = analysis_run&.verification_result&.dig(CycleAnalyses::RESULT_KEY, "repair", "status") == "pending_sync" %>
-  <% analysis_failed = analysis_run && AgentRun::TERMINAL_FAILURE_STATUSES.include?(analysis_run.status) %>
-  <% analysis_retryable = analysis_run.nil? || analysis_stale || pending_sync || analysis_failed %>
-  <% analysis_action_label = if pending_sync
-       "Confirm cycle repair"
-     elsif analysis_failed
-       "Retry cycle analysis"
-     else
-       "Start cycle analysis"
-     end %>
   <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
-    <h3 class="text-sm font-semibold text-indigo-900">Cycle repair</h3>
-    <% if analysis_run %>
-      <p class="mt-1 text-sm text-indigo-800">Analysis <%= analysis_run.status %>: <%= link_to "view run", project_agent_run_path(analysis_run.project, analysis_run), data: { turbo_frame: "_top" }, class: "font-medium underline" %>.</p>
-      <% if analysis_stale %>
-        <p class="mt-1 text-sm font-medium text-amber-800">This analysis is stale because the effective dependency graph changed.</p>
+    <div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+      <h3 class="text-sm font-semibold text-indigo-900">Cycle repair</h3>
+      <p class="text-sm font-semibold text-indigo-900" data-testid="cycle-repair-status"><%= status.title %></p>
+    </div>
+    <p class="mt-1 text-sm text-indigo-800"><%= status.description %></p>
+    <p class="mt-1 text-sm font-medium text-indigo-900">Next: <%= status.next_action %></p>
+    <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <% if status.button %>
+        <%= form_with url: dashboard_cycle_analyses_path, data: { turbo_frame: "_top", turbo_confirm: status.button.confirm } do |form| %>
+          <%= form.hidden_field :occurrence, value: cycle.occurrence %>
+          <%= form.submit status.button.label, class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
+        <% end %>
       <% end %>
-      <% if analysis_run.successful? %>
-        <% analysis_result = analysis_run.verification_result.fetch(CycleAnalyses::RESULT_KEY, {}) %>
-        <pre class="mt-2 whitespace-pre-wrap text-xs text-indigo-900"><%= JSON.pretty_generate(analysis_result["recommendation"]) %></pre>
-        <% recommendation = analysis_result["recommendation"] %>
-        <% candidates = recommendation.is_a?(Hash) ? recommendation.fetch("candidates", []) : [] %>
-        <% candidates.each_with_index do |candidate, index| %>
-          <% changes = candidate["declaration_changes"] if candidate.is_a?(Hash) %>
-          <% if candidate.is_a?(Hash) && candidate["acyclic"] == true && changes&.one? && changes.first.is_a?(Hash) && changes.first["action"] == "remove" && !analysis_stale %>
-            <%= form_with url: dashboard_cycle_analysis_repairs_path, class: "mt-2", data: { turbo_frame: "_top" } do |form| %>
-              <%= form.hidden_field :agent_run_id, value: analysis_run.id %>
-              <%= form.hidden_field :candidate_index, value: index %>
-              <%= form.submit "Apply candidate #{index + 1} declaration removal", class: "rounded bg-red-700 px-3 py-2 text-sm font-medium text-white" %>
-            <% end %>
+      <% if analysis_run %>
+        <%= link_to "Check analysis status", project_agent_run_path(analysis_run.project, analysis_run),
+              data: { turbo_frame: "_top" }, class: "font-medium text-indigo-700 underline" %>
+      <% end %>
+    </div>
+  </div>
+
+  <% if view_state.evidence_warning %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4" data-testid="evidence-warning">
+      <h4 class="text-sm font-semibold text-amber-900"><%= view_state.evidence_warning.title %></h4>
+      <p class="mt-1 text-sm text-amber-800"><%= view_state.evidence_warning.description %></p>
+      <p class="mt-1 text-sm font-medium text-amber-900">Next: <%= view_state.evidence_warning.next_action %></p>
+    </div>
+  <% end %>
+
+  <% if view_state.render_recommendation? %>
+    <div data-testid="cycle-recommendation">
+      <h3 class="text-sm font-semibold text-gray-900">Analysis recommendation</h3>
+      <% if view_state.recommendation_summary.present? %>
+        <p class="mt-2 text-sm text-gray-700"><%= view_state.recommendation_summary %></p>
+      <% end %>
+      <% view_state.candidates.each do |candidate| %>
+        <div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+          <h4 class="font-semibold text-gray-900">Candidate <%= candidate.index + 1 %></h4>
+          <% candidate.changes.each do |change| %>
+            <p class="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-1 gap-y-1 break-words">
+              <span class="shrink-0 font-medium text-gray-900">Proposed change:</span>
+              <span class="min-w-0"><%= change.readable_description %></span>
+            </p>
           <% end %>
-        <% end %>
-        <% coverage = analysis_result["coverage"] %>
-        <% repair = analysis_result["repair"] %>
-        <% if repair.present? %>
-          <p class="mt-2 text-sm font-medium text-indigo-900">Repair: <%= repair["status"].to_s.humanize %> (<%= repair["reason"].to_s.humanize %>).</p>
-        <% end %>
-        <% if coverage.present? %>
-          <div class="mt-3 rounded-lg border border-indigo-200 bg-white p-3 text-xs text-indigo-900">
-            <h4 class="font-semibold"><%= coverage.values.any?(&:present?) ? "Unavailable evidence coverage" : "Evidence coverage complete" %></h4>
-            <% if coverage["unavailable_provenance_edge_ids"].present? %>
-              <p class="mt-1">Edge IDs without declaration provenance: <%= coverage["unavailable_provenance_edge_ids"].join(", ") %></p>
-            <% end %>
-            <% if coverage["unavailable_content_issue_ids"].present? %>
-              <p class="mt-1">Issue IDs with unavailable trusted content: <%= coverage["unavailable_content_issue_ids"].join(", ") %></p>
+          <% if candidate.evidence.any? %>
+            <p class="mt-2 font-medium text-gray-900">Evidence</p>
+            <ul class="mt-1 list-disc space-y-1 pl-5">
+              <% candidate.evidence.each do |item| %><li><%= item %></li><% end %>
+            </ul>
+          <% end %>
+          <% if candidate.tradeoffs.any? %>
+            <p class="mt-2 font-medium text-gray-900">Tradeoffs</p>
+            <ul class="mt-1 list-disc space-y-1 pl-5">
+              <% candidate.tradeoffs.each do |item| %><li><%= item %></li><% end %>
+            </ul>
+          <% end %>
+          <p class="mt-2 font-medium text-gray-900">Missing or conflicting intent</p>
+          <% if candidate.missing_or_conflicting_intent.any? %>
+            <ul class="mt-1 list-disc space-y-1 pl-5">
+              <% candidate.missing_or_conflicting_intent.each do |item| %><li><%= item %></li><% end %>
+            </ul>
+          <% else %>
+            <p class="mt-1">None recorded.</p>
+          <% end %>
+          <p class="mt-2 break-words"><span class="font-medium text-gray-900">Expected result:</span> <%= candidate.expected_result %></p>
+        </div>
+        <% if view_state.manual_repair_candidates.include?(candidate) %>
+          <div class="mt-2 rounded-lg border border-red-200 bg-white p-4 text-sm text-gray-700" data-testid="manual-repair">
+            <p class="break-words"><span class="font-medium text-gray-900">Before:</span> <%= candidate.before_description %></p>
+            <p class="mt-1 break-words"><span class="font-medium text-gray-900">After:</span> <%= candidate.after_description %></p>
+            <%= form_with url: dashboard_cycle_analysis_repairs_path, data: { turbo_frame: "_top", turbo_confirm: candidate.repair_confirmation } do |form| %>
+              <%= form.hidden_field :agent_run_id, value: analysis_run.id %>
+              <%= form.hidden_field :candidate_index, value: candidate.index %>
+              <%= form.submit candidate.repair_button_label, class: "mt-3 rounded bg-red-700 px-3 py-2 text-sm font-medium text-white" %>
             <% end %>
           </div>
         <% end %>
       <% end %>
-    <% end %>
-    <% if analysis_retryable %>
-      <%= form_with url: dashboard_cycle_analyses_path, class: "mt-3", data: { turbo_frame: "_top" } do |form| %>
-        <%= form.hidden_field :occurrence, value: cycle.occurrence %>
-        <%= form.submit analysis_action_label, class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
-      <% end %>
-    <% end %>
-  </div>
+    </div>
+  <% end %>
 
   <div>
-    <h3 class="text-sm font-semibold text-gray-900">Declarations to review</h3>
-    <ul class="mt-2 space-y-2 text-sm text-gray-700">
-      <% cycle.path_edges.each_with_index do |edge, index| %>
-        <% from = cycle.path[index] %>
-        <% to = cycle.path[index + 1] %>
-        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <div class="flex min-w-0 flex-wrap items-baseline gap-x-1 gap-y-1">
-            <span class="min-w-0 max-w-full"><%= dependency_cycle_issue_link(from) %></span>
-            <span class="shrink-0 text-gray-500">declares</span>
-            <span class="min-w-0 max-w-full"><%= dependency_cycle_issue_link(to) %></span>
-            <span class="shrink-0 text-gray-500">as a dependency</span>
-          </div>
-          <p class="mt-1">
-            <% if edge.declaration_url.present? %>
-              <%= link_to edge.declaration_source == "issue_comment" ? "view declaring comment" : "view issue declaration", edge.declaration_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
-            <% else %>
-              declaration source unavailable; review the issue body and trusted comments
-            <% end %>
-          </p>
-        </li>
-      <% end %>
-    </ul>
-  </div>
-
-  <div>
-    <h3 class="text-sm font-semibold text-gray-900">Cycle path</h3>
-    <ul class="mt-2 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">The cycle</h3>
+    <ol class="mt-2 space-y-3">
       <% cycle.path.each_with_index do |issue, index| %>
-        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="cycle-path-step">
           <div class="flex min-w-0 items-start gap-2">
             <span class="mt-0.5 shrink-0 text-xs font-semibold text-gray-400"><%= index + 1 %></span>
             <div class="min-w-0 flex-1">
@@ -105,19 +108,48 @@
             </div>
           </div>
           <% if index < cycle.path.length - 1 %>
+            <% edge = cycle.path_edges[index] %>
             <p class="mt-2 text-xs font-medium text-gray-400" aria-hidden="true">&darr; blocked by</p>
+            <details class="mt-1 text-xs" data-testid="cycle-declaration-detail">
+              <summary class="cursor-pointer text-gray-500">Declaration details</summary>
+              <p class="mt-1">
+                <% if edge.declaration_url.present? %>
+                  <%= link_to edge.declaration_source == "issue_comment" ? "view declaring comment" : "view issue declaration",
+                        edge.declaration_url, target: "_blank", rel: "noopener noreferrer",
+                        class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <% else %>
+                  declaration source unavailable; review the issue body and trusted comments
+                <% end %>
+              </p>
+            </details>
           <% end %>
         </li>
       <% end %>
-    </ul>
-  </div>
-
-  <div>
-    <h3 class="text-sm font-semibold text-gray-900">Affected work</h3>
-    <p class="mt-1 text-sm text-gray-600"><%= cycle.downstream_issues.size %> downstream open issue(s) are held by this cycle.</p>
+    </ol>
   </div>
 
   <div class="text-sm text-gray-700">
-    Open the linked issues’ <strong>Dependencies</strong> declarations on GitHub, confirm intent with the owners, then edit the declaration(s) that should not block. This occurrence clears only after a later synchronization persists an acyclic effective graph.
+    Prefer a human edit? Open the linked issues’ <strong>Dependencies</strong> declarations on GitHub, confirm intent with the owners, then edit the declaration that should not block. This occurrence clears only after a later synchronization persists an acyclic effective graph.
   </div>
+
+  <details class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600" data-testid="cycle-technical-details">
+    <summary class="cursor-pointer font-medium">Technical details</summary>
+    <dl class="mt-2 space-y-1">
+      <% view_state.diagnostics.each do |label, value| %>
+        <div class="flex flex-wrap gap-x-2">
+          <dt class="font-medium"><%= label %>:</dt>
+          <dd class="break-all"><%= value %></dd>
+        </div>
+      <% end %>
+    </dl>
+    <% if view_state.coverage_provenance_edge_ids.any? %>
+      <p class="mt-2 break-all">Declarations without recorded provenance (edge ids): <%= view_state.coverage_provenance_edge_ids.join(", ") %></p>
+    <% end %>
+    <% if view_state.coverage_unavailable_content_issue_ids.any? %>
+      <p class="mt-1 break-all">Issues with unavailable trusted content (issue ids): <%= view_state.coverage_unavailable_content_issue_ids.join(", ") %></p>
+    <% end %>
+    <% if analysis_run %>
+      <pre class="mt-2 whitespace-pre-wrap"><%= view_state.raw_recommendation_json %></pre>
+    <% end %>
+  </details>
 </div>

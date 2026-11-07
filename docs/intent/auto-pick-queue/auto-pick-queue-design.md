@@ -128,6 +128,32 @@ Missing, ambiguous, or changed declarations stop for operator action; later
 synchronization remains the authoritative confirmation that the cycle is
 resolved.
 
+The Inbox occurrence explains itself before it offers an action. Its header
+names the blocked work — how many issues wait on each other in the loop and
+how much downstream open work is held — and, before any analysis exists, it
+states Paid's recommendation (one bounded repair analysis) and that a
+qualifying analysis run may edit one verified GitHub dependency declaration.
+Every action says what it does: a status check only navigates to the run;
+starting an analysis may change GitHub (the start action and its confirmation
+both say so); confirming a pending repair only re-checks the synchronized
+graph and never edits GitHub. Each repair state the detail can present —
+queued or running, safe repair awaiting synchronization, confirmed repair,
+ambiguous recommendation, stale analysis graph, failed run, and unavailable
+evidence coverage — carries its own status line and next action. After a
+completed analysis the recommendation renders as readable fields: summary,
+each proposed source → target declaration change with its declaration
+source, supporting evidence, tradeoffs, missing or conflicting intent, and
+the expected resulting graph; the raw analysis and coverage objects stay
+inside collapsed technical detail. A manual repair action names the exact
+declaration it would remove and the source issue or comment carrying it,
+shows a reviewable before/after of that single declaration, and requires an
+explicit confirmation naming the declaration; submission keeps the live
+authority, occurrence, and graph rechecks above. The cycle itself appears
+once as a readable path with per-edge declaration links and diagnostic
+identifiers (occurrence, fingerprint, edge ids) in expandable detail, the
+affected-work count stays visible, and the path stays readable on narrow
+screens.
+
 Each path node also carries its own title, current labels, and (when a parent
 issue is linked and its project is within the viewer's authorized project set)
 the linked umbrella issue's number and title — all read from already-synced

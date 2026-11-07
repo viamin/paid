@@ -666,7 +666,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       assert_navigation_intent!(fragment, kind: "dependency_cycle")
     end
 
-    # A completed analysis run surfaces the "view run" link
+    # A completed analysis run surfaces the "Check analysis status" link
     # (`_inbox_detail_dependency_cycle.html.erb`); the example above never
     # exercises that branch because no AgentRun matches the cycle's
     # fingerprint. Regression coverage for #4823: that link must carry
@@ -681,7 +681,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "dependency_cycle")
 
-      view_run_link = fragment.css("a").find { |anchor| anchor.text.strip == "view run" }
+      view_run_link = fragment.css("a").find { |anchor| anchor.text.strip == "Check analysis status" }
       expect(view_run_link).to be_present
       expect(view_run_link["data-turbo-frame"]).to eq("_top")
     end
