@@ -437,6 +437,37 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  # @spec PARTIAL-CLOSEOUT-032
+  describe "#checkout_commit" do
+    let(:pinned_sha) { "abc123def456789012345678901234567890abcd" }
+
+    before do
+      allow(container_service).to receive(:execute).and_return(success_result)
+    end
+
+    it "removes tracked, untracked, and ignored state before measuring the revision" do
+      expect(container_service).to receive(:execute)
+        .with([ "git", "reset", "--hard", pinned_sha ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+      expect(container_service).to receive(:execute)
+        .with([ "git", "clean", "-ffdx" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(git_ops.checkout_commit(pinned_sha)).to eq(pinned_sha)
+    end
+
+    it "raises when generated files cannot be removed" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "clean", "-ffdx" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect { git_ops.checkout_commit(pinned_sha) }
+        .to raise_error(described_class::Error, /Failed to clean pinned checkout/)
+    end
+  end
+
   describe "#clone_and_checkout_branch" do
     let(:head_sha) { "abc123def456789012345678901234567890abcd" }
     let(:merge_base_sha) { "fff000fff000fff000fff000fff000fff000fff0" }

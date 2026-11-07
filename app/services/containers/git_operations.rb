@@ -347,14 +347,16 @@ module Containers
       base_commit_sha
     end
 
-    # Re-points an already-established clone at another pinned commit, fetching
-    # it when the shallow clone does not already contain it. Used to move the
-    # working tree between pinned revisions (e.g. baseline vs current in a
-    # performance comparison) after clone_and_checkout_pinned_commit.
+    # Restores an already-established ephemeral clone to a clean pinned commit.
+    # Performance commands may modify tracked files or create ignored caches,
+    # so both forms of generated state must be removed between revisions.
+    # @spec PARTIAL-CLOSEOUT-032
     def checkout_commit(commit_sha)
       raise Error, "A pinned commit is required to restore the checkout" if commit_sha.blank?
 
-      checkout_pinned_commit(commit_sha)
+      fetch_pinned_commit(commit_sha) unless commit_present?(commit_sha)
+      reset_pinned_checkout(commit_sha)
+      clean_pinned_checkout
       commit_sha
     end
 
@@ -1086,6 +1088,16 @@ module Containers
 
       result = execute_git("checkout", base_commit_sha)
       raise Error, "Base commit checkout failed: #{error_with_stderr(result)}" if result.failure?
+    end
+
+    def reset_pinned_checkout(commit_sha)
+      result = execute_git("reset", "--hard", commit_sha)
+      raise Error, "Failed to reset pinned checkout: #{error_with_stderr(result)}" if result.failure?
+    end
+
+    def clean_pinned_checkout
+      result = execute_git("clean", "-ffdx")
+      raise Error, "Failed to clean pinned checkout: #{error_with_stderr(result)}" if result.failure?
     end
 
     def checkout_new_branch(branch_name)
