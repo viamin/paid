@@ -917,7 +917,7 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include(discard_project_change_intent_path(project, change_intent))
   end
 
-  # @spec OPERATOR-INBOX-025
+  # @spec OPERATOR-INBOX-025 OPERATOR-INBOX-026
   it "returns the collection before fetching its first detail" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
@@ -927,7 +927,9 @@ RSpec.describe "Inbox" do
     document = Nokogiri::HTML(response.body)
     frame = document.at_css("turbo-frame#inbox-detail")
     master_detail = document.at_css("[data-controller~='inbox-master-detail']")
+    cache_control = document.at_css('meta[name="turbo-cache-control"]')
 
+    expect(cache_control["content"]).to eq("no-cache")
     expect(frame["src"]).to eq(inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue),
       project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
     expect(frame["loading"]).to eq("eager")
