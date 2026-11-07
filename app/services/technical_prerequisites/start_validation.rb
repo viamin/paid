@@ -22,6 +22,7 @@ module TechnicalPrerequisites
     def call
       return failure("Select a run with a pinned checkout.") if source_run.base_commit_sha.blank?
       return failure("Select the original implementation run, not a prior validation.") if source_run.technical_prerequisite_validation_goal?
+      return failure("Project scheduling is paused; resume it before running prerequisite validation.") if scheduling_paused?
       return failure("Select an enabled validation recipe for this project.") unless allowed_requirement?
       return failure("The selected validation recipe has an invalid command.") unless reviewed_command
       return failure("Select a completed implementation run with a produced revision to measure.") if performance_requirement? && current_commit_sha.blank?
@@ -50,6 +51,13 @@ module TechnicalPrerequisites
 
     def allowed_requirement?
       PreCommitRequirement.resolve(project: source_run.project, user: actor).any? { |candidate| candidate.id == requirement.id }
+    end
+
+    # A report-only measurement still consumes an isolated execution slot and
+    # its reviewed time budget. Scheduler pauses are therefore an admission
+    # boundary even though this run never enters the normal agent-work queue.
+    def scheduling_paused?
+      source_run.project.scheduler_paused? || source_run.project.account.scheduler_paused?
     end
 
     def create_validation_run!
