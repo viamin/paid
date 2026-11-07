@@ -92,6 +92,44 @@ RSpec.describe Activities::EnhanceIssueActivity do
     )
   end
 
+  def structured_cache_question
+    {
+      question: "Which cache should exports use?",
+      choices: [ { label: "Redis", detail: "Shared cache" }, { label: "Postgres", detail: "Persistent rows" } ],
+      recommendation: "Redis",
+      rationale: "Existing workers already use it.",
+      examples: [ "Nightly exports" ],
+      evidence_references: [ "app/jobs/export_job.rb:12" ]
+    }
+  end
+
+  def structured_cache_comment
+    <<~MARKDOWN.strip
+      ## Clarifying questions
+      1. Which cache should exports use?
+         - ( ) Redis) Shared cache
+         - ( ) Postgres) Persistent rows
+    MARKDOWN
+  end
+
+  # The reconciled payload when only the structured choice details drifted
+  # from the posted markers: posted markers supply the choices (and their
+  # single/multi family), the structured metadata survives intact.
+  def merged_cache_question
+    structured_cache_question.merge(choice_type: "single").deep_stringify_keys
+  end
+
+  def expect_structured_mismatch_warned(agent_run)
+    expect(Rails.logger).to have_received(:warn).with(
+      hash_including(
+        message: "agent_execution.structured_questions_mismatch",
+        agent_run_id: agent_run.id,
+        structured_question_count: 1,
+        posted_question_count: 1
+      )
+    )
+  end
+
   def park_issue_with_manual_review_reason(reason:)
     issue.update!(
       paid_state: "manual_review",
@@ -286,6 +324,86 @@ RSpec.describe Activities::EnhanceIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
 
       expect(issue.reload.last_analyzer_sufficient_context).to be(false)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-020
+    it "persists the structured question payload for the inbox" do
+      question = structured_cache_question
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: structured_cache_comment,
+        questions: [ question ]
+      }.to_json)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.needs_input_questions).to eq([ question.deep_stringify_keys ])
+    end
+
+    # @spec ISSUE-ENHANCEMENT-020 @spec OPERATOR-INBOX-025
+    it "keeps the structured payload when the credentialed inbox reloads the posted question" do
+      posted_body = nil
+      allow(client).to receive(:add_comment) do |_repository, _number, body|
+        posted_body = body
+        posted_comment
+      end
+      question = structured_cache_question
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: structured_cache_comment,
+        questions: [ question ]
+      }.to_json)
+
+      activity.execute(agent_run_id: agent_run.id)
+      enhancement_comment = OpenStruct.new(
+        body: posted_body, user: OpenStruct.new(login: "viamin"), created_at: Time.current
+      )
+      allow(client).to receive(:issue_comments).and_return([ enhancement_comment ])
+
+      expect(ClarifyingQuestions::Load.call(project:, issue: issue.reload)).to eq([ question.deep_stringify_keys ])
+    end
+
+    # @spec ISSUE-ENHANCEMENT-020 @spec OPERATOR-INBOX-025
+    # The agent writes `choices[].detail` and the comment marker line
+    # independently, so a one-character drift between them is the common
+    # divergence. The posted markers win for the answer options, but the
+    # recommendation, rationale, examples, and evidence_references — all
+    # independent of the option details — must survive the reconciliation.
+    it "keeps structured metadata and takes the choices from the posted markers when only options differ" do
+      question = structured_cache_question
+      question[:choices].first[:detail] = "Per-process cache"
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: structured_cache_comment,
+        questions: [ question ]
+      }.to_json)
+
+      allow(Rails.logger).to receive(:warn)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.needs_input_questions).to eq([ merged_cache_question ])
+      expect_structured_mismatch_warned(agent_run)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-020
+    it "falls back to posted questions when the structured question labels differ" do
+      question = structured_cache_question
+      question[:question] = "Which cache should the nightly export use?"
+      log_agent_stdout({
+        sufficient_context: false,
+        comment_body: structured_cache_comment,
+        questions: [ question ]
+      }.to_json)
+
+      allow(Rails.logger).to receive(:warn)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(issue.reload.needs_input_questions).to eq([
+        "Which cache should exports use? - ( ) Redis) Shared cache - ( ) Postgres) Persistent rows"
+      ])
+      expect_structured_mismatch_warned(agent_run)
     end
 
     # @spec AUTOMATION-PHASES-008

@@ -3,6 +3,18 @@
 require "rails_helper"
 
 RSpec.describe ClarifyingQuestions::Load, :no_db do
+  def structured_scope_question(choice_type: nil)
+    {
+      "question" => "Which scope should ship first?",
+      "choices" => [
+        { "label" => "API", "detail" => "Ship the API first" },
+        { "label" => "UI", "detail" => "Ship the UI first" }
+      ],
+      "recommendation" => "API",
+      "evidence_references" => [ "app/controllers/api_controller.rb:1" ]
+    }.tap { |question| question["choice_type"] = choice_type if choice_type }
+  end
+
   let(:trusted_login) { "viamin" }
   let(:issue_body) { "Original issue body" }
   let(:github_client) { instance_double(GithubClient) }
@@ -57,6 +69,83 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
   end
 
   describe ".call" do
+    context "when a quiet-mode description section carries the posted marker lines" do
+      before do
+        allow(project).to receive(:quiet_mode?).and_return(true)
+      end
+
+      let(:structured_question) { structured_scope_question }
+      let(:digest) { ClarifyingQuestions::DescriptionSection.digest_for([ "Which scope should ship first?" ]) }
+      let(:issue_body) do
+        <<~BODY
+          Original issue body
+
+          <!-- paid:clarifying-questions -->
+          ## Clarifying questions
+
+          <!-- paid:clarifying-questions-digest:#{digest} -->
+          1. Which scope should ship first?
+             - ( ) API) Ship the API first
+             - ( ) UI) Ship the UI first
+          <!-- /paid:clarifying-questions -->
+        BODY
+      end
+      let(:issue) do
+        double(
+          id: 42,
+          body: issue_body,
+          github_number: 1964,
+          github_updated_at: 2.minutes.ago,
+          needs_input_questions: [ structured_question ],
+          needs_input?: true
+        )
+      end
+
+      # @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+      it "reconciles the description channel with the stored structured payload" do
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ structured_question ])
+      end
+
+      # @spec QUIET-MODE-011
+      # The description is the editable questions channel in quiet mode: a
+      # human edit that changes a choice marker while leaving the question
+      # label untouched must render the edited choices, not the cached
+      # structured record's.
+      it "serves the description's edited choices when the labels are unchanged" do
+        edited_body = issue_body.sub("- ( ) UI) Ship the UI first", "- ( ) CLI) Ship the CLI first")
+        allow(issue).to receive(:body).and_return(edited_body)
+
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ "Which scope should ship first? - ( ) API) Ship the API first - ( ) CLI) Ship the CLI first" ])
+      end
+
+      it "treats a body answer to the structured set as complete and ingests it" do
+        answered_body = issue_body + <<~BODY
+
+          <!-- paid:clarifying-answers -->
+          ## Clarifying question answers
+
+          <!-- paid:clarifying-answers-digest:#{digest} -->
+          **Q1: Which scope should ship first?**
+          **A1:** API
+          <!-- /paid:clarifying-answers -->
+        BODY
+        allow(issue).to receive(:body).and_return(answered_body)
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(true)
+        expect(ClarifyingQuestions::ClearNeedsInput).to receive(:call).with(project: project, issue: issue)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+        expect(ClarifyingQuestions::IngestAnswers).to have_received(:call).with(
+          project: project,
+          issue: issue,
+          issue_body: answered_body
+        )
+      end
+    end
+
     context "when the issue body already contains clarifying questions" do
       let(:issue_body) do
         <<~COMMENT
@@ -145,6 +234,46 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           "Should this be behind a flag?"
         ])
       end
+
+      # @spec OPERATOR-INBOX-025
+      # The posted text is the contract: when the comment no longer carries
+      # the stored payload's choice markers (a human edit removed them), the
+      # posted text wins over the cached structured record so the inbox
+      # cannot keep offering the removed choices.
+      it "serves the comment text when its choice markers were removed" do
+        structured_question = structured_scope_question
+        allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
+        comment = double(
+          body: "<!-- paid:enhance-issue -->\n\n## Clarifying questions\n1. Which scope should ship first?",
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
+        questions = described_class.call(project: project, issue: issue)
+
+        expect(questions).to eq([ "Which scope should ship first?" ])
+      end
+
+      it "preserves a structured choice payload when the GitHub comment includes its markers" do # @spec OPERATOR-INBOX-025
+        structured_question = structured_scope_question(choice_type: "multi")
+        allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
+        comment = double(
+          body: <<~COMMENT,
+            <!-- paid:enhance-issue -->
+
+            ## Clarifying questions
+            1. Which scope should ship first?
+               - [ ] API) Ship the API first
+               - [ ] UI) Ship the UI first
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ comment ])
+
+        expect(described_class.call(project: project, issue: issue)).to eq([ structured_question ])
+      end
     end
 
     context "when the latest clarifying questions were already answered" do
@@ -177,6 +306,32 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           issue_comments: kind_of(Array)
         )
         expect(github_client).to have_received(:issue_comments).once
+      end
+
+      it "reconciles posted choice markers before recognizing a structured question answer" do # @spec OPERATOR-INBOX-025
+        structured_question = structured_scope_question
+        allow(issue).to receive(:needs_input_questions).and_return([ structured_question ])
+        enhancement_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:enhance-issue -->
+
+            ## Clarifying questions
+            1. Which scope should ship first?
+               - ( ) API) Ship the API first
+               - ( ) UI) Ship the UI first
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        answers_comment = double(
+          body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which scope should ship first?**\n**A1:** API",
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
+
+        expect(described_class.call(project:, issue:)).to eq([])
+        expect(ClarifyingQuestions::IngestAnswers).to have_received(:call)
       end
     end
 

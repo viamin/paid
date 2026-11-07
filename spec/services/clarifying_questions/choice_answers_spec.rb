@@ -57,6 +57,20 @@ RSpec.describe ClarifyingQuestions::ChoiceAnswers, :no_db do
   end
 
   describe ".error_for" do
+    it "accepts multiple selections for a structured multi-choice question" do # @spec ISSUE-ENHANCEMENT-018
+      question = {
+        "question" => "Which browsers should the export support?",
+        "choice_type" => "multi",
+        "choices" => [
+          { "label" => "Chrome", "detail" => "Primary browser" },
+          { "label" => "Firefox", "detail" => "Support team requirement" }
+        ]
+      }
+      answer = "Chrome (Primary browser)\nFirefox (Support team requirement)"
+
+      expect(described_class.error_for(question: question, answer: answer)).to be_nil
+    end
+
     it "accepts a single selection for a single-choice question" do
       expect(described_class.error_for(question: single_question, answer: "SQLite (local file, zero setup)")).to be_nil
     end

@@ -114,16 +114,17 @@ module Projects
     def build_questions_and_answers(questions:)
       answers = Array(params[:answers])
       submitted_questions = Array(params[:questions]).map { |question| question.to_s.strip }
+      question_texts = questions.map { |question| ClarifyingQuestions::QuestionPayload.submission_text(question) }
 
       raise ArgumentError, "No clarifying questions found for this issue." if questions.empty?
-      unless submitted_questions == questions
+      unless submitted_questions == question_texts
         raise ArgumentError, "Clarifying questions changed. Please reload and try again."
       end
 
       questions.each_with_index.map do |question, i|
         answer = answers[i].to_s.strip
         validate_choice_answer!(question: question, answer: answer, position: i + 1)
-        { question: question, answer: answer }
+        { question: question_texts[i], answer: answer }
       end
     end
 
@@ -150,7 +151,7 @@ module Projects
     # questions and let the operator repost them against prompts that no
     # longer match.
     def pending_answers_apply_to_current_questions?
-      Array(params[:questions]).map { |question| question.to_s.strip } == current_questions
+      Array(params[:questions]).map { |question| question.to_s.strip } == current_questions.map { |question| ClarifyingQuestions::QuestionPayload.submission_text(question) }
     end
 
     def queue_mode?

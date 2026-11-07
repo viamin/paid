@@ -1442,7 +1442,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("Do not stack jargon.")
     end
 
-    it "requires each clarifying question to stand on its own", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
+    it "requires concise standalone questions with supporting context stored separately", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014 @spec ISSUE-ENHANCEMENT-020
       base_prompt = "Enhance this issue with implementation context."
       allow(Knowledge::ContextBundle::Build).to receive(:call)
         .with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
@@ -1450,15 +1450,18 @@ RSpec.describe Activities::RunAgentActivity do
 
       prompt = activity.send(:augment_prompt_for_enhance_issue_goal, agent_run, base_prompt)
 
-      # Pin the self-contained question instruction (#3841): each clarifying
-      # question must carry the background, references, named options, and
-      # roadmap context a reader without deep project knowledge needs in
-      # order to answer it.
-      expect(prompt).to include("stands on its own")
-      expect(prompt).to match(/why you are asking and what\s+you found in the repository/)
-      expect(prompt).to include("Reference the relevant code, issue, or doc")
-      expect(prompt).to include("name the options")
-      expect(prompt).to include("where the issue sits in the roadmap")
+      # Pin the structured standalone-question contract (#4865): the question
+      # label stays concise and answerable without project context, while
+      # background, rationale, examples, and evidence move into their own
+      # payload fields instead of the question label.
+      expect(prompt).to include("concise and standalone")
+      expect(prompt).to include("Keep background, reasons")
+      expect(prompt).to include("`rationale`, `examples`, and `evidence_references`")
+      expect(prompt).to include("recommendation is an aid")
+      # Choices below two options are dropped by
+      # ClarifyingQuestions::QuestionPayload#structured_choices, so the prompt
+      # must only request choices for enumerable sets of at least two options.
+      expect(prompt).to include("at least two options")
     end
 
     it "instructs the agent to mark enumerable choice questions with strict option markers", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-018

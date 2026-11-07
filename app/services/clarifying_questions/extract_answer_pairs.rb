@@ -60,14 +60,32 @@ module ClarifyingQuestions
     # the latest enhancement comment wins when present, otherwise the questions
     # embedded in the issue body. Without the body fallback, answers that Load
     # treats as stale (because the body questions changed after they were posted)
-    # would still be injected into the agent prompt.
+    # would still be injected into the agent prompt. Both channels reconcile
+    # with the stored structured records — the body channel parses folded
+    # marker strings while the answers reference the structured labels the
+    # form rendered (#4865).
+    # @spec OPERATOR-INBOX-025
     def current_questions(enhancement_comment)
-      return Parse.call(comment_body: enhancement_comment.body.to_s) if enhancement_comment
+      if enhancement_comment
+        return QuestionPayload.reconcile(
+          comment_questions: Parse.call(comment_body: enhancement_comment.body.to_s),
+          stored_questions: stored_questions
+        )
+      end
 
-      questions = Parse.call(comment_body: issue&.body.to_s)
+      questions = QuestionPayload.reconcile(
+        comment_questions: Parse.call(comment_body: issue&.body.to_s),
+        stored_questions: stored_questions
+      )
       return questions if questions.any?
 
-      issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions) : []
+      stored_questions
+    end
+
+    def stored_questions
+      return [] unless issue.respond_to?(:needs_input_questions)
+
+      Array(issue.needs_input_questions)
     end
 
     def answer_satisfies_latest_questions?(answer_comment:, enhancement_comment:)
@@ -81,7 +99,7 @@ module ClarifyingQuestions
         answer = parsed_pairs[index]&.fetch(:answer, nil)
         next if answer.blank?
 
-        { question: question, answer: answer }
+        { question: QuestionPayload.submission_text(question), answer: answer }
       end
     end
   end

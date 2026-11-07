@@ -36,17 +36,20 @@ no LID-specific jargon. The questions should narrow the change along six axes:
 6. how a human will know the work is done.
 
 Each question must also stand on its own — the reader cannot be assumed to
-know the project, the issue history, or the roadmap (#3841). A question
-therefore carries its own context:
+know the project, the issue history, or the roadmap (#3841). The question
+label stays concise and answerable on its own; the supporting context that
+used to be folded into the question prose (#3841) now lives in separate,
+structured channels (#4865):
 
-- one or two sentences of background: why the agent is asking and what it
-  found in the repository that raised the question,
-- a reference to the relevant code, issue, or doc when one exists (file path
-  and symbol, issue number, design doc),
-- the options being asked about, named explicitly, when the question could be
-  read more than one way ("Option A vs Option B"),
-- where the issue fits in the roadmap (dependencies, follow-up work) when it
-  affects the answer.
+- shared background and roadmap notes go in the comment's `## Current
+  context` section,
+- the reasons behind a question go in its structured `rationale`,
+- concrete illustrations go in `examples`,
+- references to the relevant code, issue, or doc (file path and symbol,
+  issue number, design doc) go in `evidence_references`,
+- the options for an enumerable choice question are named explicitly in the
+  structured `choices` and repeated as strict comment markers
+  (ISSUE-ENHANCEMENT-018), never buried in the question prose.
 
 The enhancement comment and its questions are written in simplified technical
 English: short sentences with one idea per sentence, plain technical words, no

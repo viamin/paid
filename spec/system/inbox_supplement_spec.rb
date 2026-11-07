@@ -33,18 +33,24 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
 
   after { Warden.test_reset! }
 
-  it "loads context beside the form and replaces it when another entry is selected" do
+  # @spec OPERATOR-INBOX-025
+  it "loads collapsed context after the answer form and replaces it when another entry is selected" do
     page.driver.resize(1440, 1000)
     visit inbox_path(kind: "clarifying_questions")
 
-    expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
+    expect(page).to have_css("[data-testid='inbox-clarifying-context']")
     expect(page).to have_button("Submit Answers")
-    expect(page.evaluate_script("getComputedStyle(document.querySelector('[data-testid=inbox-question-layout]')).display")).to eq("grid")
+    expect(page.evaluate_script("getComputedStyle(document.querySelector('[data-testid=inbox-question-layout]')).display")).not_to eq("grid")
+    expect(page.evaluate_script("document.querySelector('[data-testid=inbox-clarifying-context]').open")).to be(false)
+    find("[data-testid='inbox-clarifying-context'] summary").click
+    expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
 
     within("#inbox-list") { click_link "Second question", exact: false }
 
     within("#inbox-detail") do
       expect(page).to have_css("h2", text: "Second question")
+      expect(page).to have_css("[data-testid='inbox-clarifying-context']", count: 1)
+      find("[data-testid='inbox-clarifying-context'] summary").click
       expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.", count: 1)
     end
   end
@@ -59,6 +65,9 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
     within("#inbox-list") { click_link "Second question", exact: false }
 
     expect(page).to have_css("#inbox-detail h2", text: "Second question")
+    expect(page).to have_css("[data-testid='inbox-clarifying-context']")
+    expect(page.evaluate_script("document.querySelector('[data-testid=inbox-clarifying-context]').open")).to be(false)
+    find("[data-testid='inbox-clarifying-context'] summary").click
     expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
     expect(page).to have_button("Submit Answers")
     click_link "Back to queue"

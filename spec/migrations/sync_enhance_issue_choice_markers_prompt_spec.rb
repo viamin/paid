@@ -60,8 +60,16 @@ RSpec.describe SyncEnhanceIssueChoiceMarkersPrompt, :aggregate_failures do
   end
 
   # @spec ISSUE-ENHANCEMENT-018
-  it "carries the same template as the code fallback" do
-    expect(described_class::TEMPLATE.strip)
-      .to eq(Activities::RunAgentActivity::FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT.strip)
+  it "keeps the choice-marker contract in the code fallback after later prompt syncs" do
+    # The structured-questions prompt sync (20261105120000) superseded this
+    # migration's snapshot, so the templates no longer match byte-for-byte.
+    # The fallback must still carry the choice-marker contract this migration
+    # introduced, or fallback runs would lose the strict option markers.
+    fallback = Activities::RunAgentActivity::FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT
+    expect(fallback).to include("Choice questions")
+    expect(fallback).to include("- ( ) SQLite) local file, zero setup")
+    expect(fallback).to include("`- ( ) Label) description` lines when exactly one answer applies")
+    expect(fallback).to include("`- [ ] Label) description` lines when several answers may apply")
+    expect(fallback).to match(/Provide at least two\s+option lines/)
   end
 end
