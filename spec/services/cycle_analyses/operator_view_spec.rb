@@ -137,6 +137,62 @@ RSpec.describe CycleAnalyses::OperatorView do
   end
 
   # @spec AUTO-PICK-QUEUE-023
+  it "does not offer a start action for a stopped repair, because the completed run for this occurrence blocks a duplicate" do
+    reason_phrases = {
+      "unauthorized" => "authority for every project in this cycle",
+      "graph_changed" => "changed before the write",
+      "edge_changed" => "changed on GitHub before the write",
+      "live_declaration_missing" => "could not find the declaration on live GitHub"
+    }
+    reason_phrases.each do |reason, phrase|
+      run = completed_run(repair: { "status" => "needs_operator_action", "reason" => reason })
+
+      status = view_for(run).status
+
+      expect(status.key).to eq(:stopped)
+      expect(status.title).to eq("Automatic repair stopped")
+      expect(status.description).to include(phrase)
+      expect(status.button).to be_nil
+      expect(status.next_action).to include("Edit the declaration on GitHub yourself")
+      expect(status.next_action).to include("only after synchronization changes this cycle")
+    end
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "offers the read-only confirmation only when Start can resume the pending-sync run" do
+    resumable = completed_run(repair: { "status" => "pending_sync",
+      "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } })
+    expect(view_for(resumable).status.button).to have_attributes(kind: :confirm_repair)
+
+    stale = completed_run(repair: { "status" => "pending_sync",
+      "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } })
+    reoccurred = cycle.with(occurrence: "#{cycle.occurrence}:redeclared")
+    stale_status = view_for(stale, reoccurred).status
+    expect(stale_status.key).to eq(:stale)
+    expect(stale_status.button).to have_attributes(kind: :start_analysis)
+
+    failed = completed_run(status: "failed", error_message: "confirmation crashed", repair: { "status" => "pending_sync",
+      "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } })
+    failed_status = view_for(failed).status
+    expect(failed_status.key).to eq(:failed)
+    expect(failed_status.button).to have_attributes(kind: :retry_analysis)
+    expect(failed_status.button.confirm).not_to include("does not edit GitHub")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "keeps a cancelled pending-sync repair read-only and waits for synchronization instead of a fresh editing run" do
+    run = completed_run(status: "cancelled", repair: { "status" => "pending_sync",
+      "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } })
+
+    status = view_for(run).status
+
+    expect(status.key).to eq(:pending_sync)
+    expect(status.title).to eq("Safe repair made, awaiting synchronization")
+    expect(status.next_action).to include("Wait for the next GitHub synchronization")
+    expect(status.button).to be_nil
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
   it "explains unavailable evidence coverage with its own next action" do
     run = completed_run(coverage: { "unavailable_provenance_edge_ids" => [ edges[1].id ],
                                      "unavailable_content_issue_ids" => [ issues[2].id ] })

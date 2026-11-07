@@ -221,11 +221,16 @@
   action and its confirmation SHALL state that same possibility. While an
   analysis is queued or running, the primary next action SHALL only navigate
   to the run's status. A pending-sync confirmation SHALL state that it
-  re-checks the synchronized graph without editing GitHub. Each repair state
-  the detail can present — queued or running, safe repair awaiting
-  synchronization, confirmed repair, ambiguous recommendation, stale analysis
-  graph, failed analysis, and unavailable evidence coverage — SHALL carry
-  distinct status and next-action copy.
+  re-checks the synchronized graph without editing GitHub, and SHALL be
+  offered only when the recorded run can be resumed for that read-only
+  confirmation; a cancelled or stale pending-sync run SHALL NOT offer it.
+  Each repair state the detail can present — queued or running, safe repair
+  awaiting synchronization (with or without a resumable confirmation),
+  confirmed repair, ambiguous recommendation, stopped automatic repair,
+  stale analysis graph, failed analysis, and unavailable evidence coverage —
+  SHALL carry distinct status and next-action copy, and no state SHALL offer
+  an action the analysis service would refuse or that contradicts its
+  confirmation copy.
   *Tests:* `spec/requests/inbox_spec.rb`,
   `spec/services/cycle_analyses/operator_view_spec.rb`.
   *Code:* `CycleAnalyses::OperatorView`,

@@ -226,6 +226,62 @@ RSpec.describe "Inbox" do
   end
 
   # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-023
+  it "keeps a cancelled pending-sync repair off the manual confirm action, which would start a fresh editing run" do
+    issues, cycle, run, = cycle_analysis_run(status: "cancelled")
+    result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY)
+    result["repair"] = { "status" => "pending_sync", "reason" => "awaiting_github_synchronization",
+                         "changed_edge_ids" => [ 41 ],
+                         "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } }
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => result })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Safe repair made, awaiting synchronization")
+    expect(response.body).to include("Wait for the next GitHub synchronization")
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("form[action='#{dashboard_cycle_analyses_path}']")).to be_nil
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-023
+  it "does not promise a read-only confirmation for a re-occurred cycle found by fingerprint" do
+    issues, cycle, run, = cycle_analysis_run
+    result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY)
+    result["repair"] = { "status" => "pending_sync", "reason" => "awaiting_github_synchronization",
+                         "changed_edge_ids" => [ 41 ],
+                         "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } }
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => result })
+    metadata = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY =>
+      metadata.merge("occurrence" => "#{metadata.fetch("occurrence")}:redeclared") })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Stale analysis")
+    expect(response.body).not_to include("Confirm cycle repair")
+    document = Nokogiri::HTML(response.body)
+    start_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
+    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Start fresh analysis")
+    expect(start_form["data-turbo-confirm"]).to include("may edit one verified GitHub dependency declaration")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-023
+  it "explains a stopped repair without offering an analysis start the queue would refuse as a duplicate" do
+    _issues, cycle, = cycle_analysis_run(repair: { "status" => "needs_operator_action", "reason" => "unauthorized" })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Automatic repair stopped")
+    expect(response.body).to include("authority for every project in this cycle")
+    expect(response.body).to include("Edit the declaration on GitHub yourself")
+    expect(response.body).not_to include("Start fresh analysis")
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("form[action='#{dashboard_cycle_analyses_path}']")).to be_nil
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-023
   it "reports a confirmed repair" do
     _issues, cycle, = cycle_analysis_run(repair: { "status" => "resolved", "reason" => "synchronization_confirmed",
                                                    "changed_edge_ids" => [] })

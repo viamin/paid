@@ -86,7 +86,6 @@ module CycleAnalyses
       "github_write_failed" => "GitHub rejected the repair write.",
       "github_comment_write_suppressed" => "The declaration lives in a comment this environment is configured not to edit."
     }.freeze
-    FRESH_ANALYSIS_REASONS = %w[graph_changed resulting_graph_changed edge_changed unauthorized].freeze
 
     def initialize(cycle:, run:)
       @cycle = cycle
@@ -98,9 +97,9 @@ module CycleAnalyses
       return no_analysis_status if run.nil?
       return in_flight_status(:queued) if run.status == "queued"
       return in_flight_status(:running) if run.status == "running"
-      return pending_sync_status if repair_status == "pending_sync"
-      return failed_status unless run.successful?
+      return failed_status unless run.successful? || cancelled_pending_sync?
       return stale_status if stale?
+      return pending_sync_status(confirmable: run.successful?) if repair_status == "pending_sync"
       return confirmed_status if repair_status == "resolved"
       return ambiguous? ? ambiguous_status : stopped_status if repair_status == "needs_operator_action"
 
@@ -199,6 +198,12 @@ module CycleAnalyses
       run.external_metadata.dig(METADATA_KEY, "occurrence") != cycle.occurrence
     end
 
+    # CycleAnalysisJob keeps an applied repair on a cancelled run; the run is
+    # not successful, yet a GitHub declaration was written and awaits sync.
+    def cancelled_pending_sync?
+      run.status == "cancelled" && repair_status == "pending_sync"
+    end
+
     def no_analysis_status
       Status.new(key: :no_analysis, title: "No analysis yet",
         description: "Paid recommends one bounded repair analysis: it reviews every declaration in the cycle and, " \
@@ -215,12 +220,25 @@ module CycleAnalyses
         button: nil)
     end
 
-    def pending_sync_status
+    # The confirm action is offered only for a completed, current run that
+    # CycleAnalyses::Start resumes for the read-only confirmation. A cancelled
+    # run keeps the applied repair, but Start would replace it with a fresh
+    # analysis that may edit GitHub, so the operator only waits for the
+    # synchronization that requeues the confirmation automatically.
+    def pending_sync_status(confirmable:)
       Status.new(key: :pending_sync, title: "Safe repair made, awaiting synchronization",
         description: "Paid removed one dependency declaration on #{repaired_declaration_ref || 'GitHub'}. " \
                      "Nothing else changed. The next GitHub synchronization confirms whether the cycle is gone.",
-        next_action: "Confirm the repair by re-checking the synchronized graph, or wait for the next synchronization.",
-        button: Button.new(:confirm_repair, "Confirm cycle repair", CONFIRM_REPAIR_CONFIRMATION))
+        next_action: pending_sync_next_action(confirmable),
+        button: confirmable ? Button.new(:confirm_repair, "Confirm cycle repair", CONFIRM_REPAIR_CONFIRMATION) : nil)
+    end
+
+    def pending_sync_next_action(confirmable)
+      if confirmable
+        "Confirm the repair by re-checking the synchronized graph, or wait for the next synchronization."
+      else
+        "Wait for the next GitHub synchronization to confirm the repair."
+      end
     end
 
     def confirmed_status
@@ -239,11 +257,15 @@ module CycleAnalyses
         button: nil)
     end
 
+    # No start action: this completed run still covers the unchanged
+    # occurrence, so CycleAnalyses::Start refuses a duplicate and the operator
+    # must edit GitHub (or wait for the graph to change) before a fresh
+    # analysis can be queued.
     def stopped_status
       Status.new(key: :stopped, title: "Automatic repair stopped",
         description: stopped_description,
         next_action: stopped_next_action,
-        button: FRESH_ANALYSIS_REASONS.include?(repair["reason"]) ? fresh_analysis_button : nil)
+        button: nil)
     end
 
     def stopped_description
@@ -253,9 +275,7 @@ module CycleAnalyses
     end
 
     def stopped_next_action
-      return "Start a fresh analysis of the current graph." if repair["reason"].in?(FRESH_ANALYSIS_REASONS)
-
-      "Edit the declaration on GitHub yourself, or start a fresh analysis after the next synchronization."
+      "Edit the declaration on GitHub yourself; a fresh analysis can start only after synchronization changes this cycle."
     end
 
     def stale_status

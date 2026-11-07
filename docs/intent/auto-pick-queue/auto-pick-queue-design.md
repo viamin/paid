@@ -133,13 +133,23 @@ names the blocked work — how many issues wait on each other in the loop and
 how much downstream open work is held — and, before any analysis exists, it
 states Paid's recommendation (one bounded repair analysis) and that a
 qualifying analysis run may edit one verified GitHub dependency declaration.
-Every action says what it does: a status check only navigates to the run;
-starting an analysis may change GitHub (the start action and its confirmation
-both say so); confirming a pending repair only re-checks the synchronized
-graph and never edits GitHub. Each repair state the detail can present —
+Every action says what it does and appears only when the backend will
+perform it as described: a status check only navigates to the run; starting
+an analysis may change GitHub (the start action and its confirmation both
+say so); confirming a pending repair only re-checks the synchronized graph
+and never edits GitHub, and that confirm action appears only when the
+recorded completed run for the current occurrence can be resumed for the
+read-only confirmation — a cancelled run with an applied repair instead
+waits for the synchronization that requeues the confirmation automatically,
+and a run left stale by a re-occurred cycle falls back to the fresh-analysis
+path. A stopped automatic repair offers no start action, because the
+completed analysis for the unchanged occurrence blocks queueing a duplicate;
+its next action directs the operator to a manual GitHub edit until
+synchronization changes the cycle. Each repair state the detail can present —
 queued or running, safe repair awaiting synchronization, confirmed repair,
-ambiguous recommendation, stale analysis graph, failed run, and unavailable
-evidence coverage — carries its own status line and next action. After a
+ambiguous recommendation, stopped automatic repair, stale analysis graph,
+failed run, and unavailable evidence coverage — carries its own status line
+and next action. After a
 completed analysis the recommendation renders as readable fields: summary,
 each proposed source → target declaration change with its declaration
 source, supporting evidence, tradeoffs, missing or conflicting intent, and
