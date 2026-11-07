@@ -53,7 +53,8 @@ module FacetConfidence
 
       def applicable_occurrences(notification)
         PartialCloseouts::PrerequisiteOccurrences.for(notification).select do |occurrence|
-          occurrence["workflow"] == InboxEscalation::WORKFLOW && occurrence["source_issue_number"].to_i == evaluation.issue.github_number
+          occurrence["kind"] != "external" && occurrence["workflow"] == InboxEscalation::WORKFLOW &&
+            occurrence["source_issue_number"].to_i == evaluation.issue.github_number
         end
       end
 
@@ -98,10 +99,25 @@ module FacetConfidence
 
       def resolve_if_complete(notification)
         occurrences = PartialCloseouts::PrerequisiteOccurrences.for(notification)
-        return if occurrences.empty? || occurrences.any? { |occurrence| !sufficient_current_submission?(notification, occurrence) }
+        return if occurrences.empty?
+        return unless external_occurrences_resolved?(notification)
+        return if human_occurrences(occurrences).any? { |occurrence| !sufficient_current_submission?(notification, occurrence) }
 
         notification.update!(resolved_at: Time.current,
           metadata: notification.metadata.merge("released_by" => RELEASED_BY, "released_at" => Time.current.iso8601))
+      end
+
+      # Human evidence cannot stand in for an external dependency transition.
+      # Keep this check aligned with ExternalPrerequisites, which is the
+      # authority for account-scoped external target state.
+      def external_occurrences_resolved?(notification)
+        PartialCloseouts::ExternalPrerequisites.states_for(notification).all? do |state|
+          state.fetch("state") == "resolved"
+        end
+      end
+
+      def human_occurrences(occurrences)
+        occurrences.reject { |occurrence| occurrence["kind"] == "external" }
       end
 
       # One notification can merge prerequisites attributed by several runs

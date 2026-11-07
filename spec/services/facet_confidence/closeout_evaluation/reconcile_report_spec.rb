@@ -91,4 +91,26 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::ReconcileReport do
     expect(notification).to be_active
     expect(notification.resolved_at).to be_nil
   end
+
+  it "retains the hold when an open external occurrence has matching evidence" do
+    target_project = create(:project, account:, owner: "upstream", repo: "dependency")
+    create(:issue, project: target_project, github_number: 91, github_state: "open", paid_state: "in_progress")
+    external_occurrence = { "identity" => "external-identity", "criterion" => "Upstream completion",
+      "kind" => "external", "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+      "source_revision" => "own-sha", "source_issue_number" => issue.github_number,
+      "external_dependency" => { "owner" => "upstream", "repo" => "dependency", "number" => 91 } }
+    external_submission = { "submission_id" => "external-evidence", "prerequisite_identity" => "external-identity",
+      "source_revision" => "own-sha", "outcome" => "sufficient" }
+    notification.update!(metadata: notification.metadata.merge(
+      "prerequisites" => [ own_occurrence, external_occurrence ], "evidence_submissions" => [ external_submission ]
+    ))
+
+    result = described_class.call(evaluation:)
+
+    expect(result.reconciled).to eq(1)
+    expect(notification.reload.metadata.fetch("evidence_submissions").find { |submission| submission["submission_id"] == "external-evidence" })
+      .to eq(external_submission)
+    expect(notification).to be_active
+    expect(notification.resolved_at).to be_nil
+  end
 end
