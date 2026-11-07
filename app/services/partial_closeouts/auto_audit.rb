@@ -26,7 +26,7 @@ module PartialCloseouts
         return result(:assessment_current) unless Assessment.call(
           issue, evidence: status.evidence, technical_evidence: status.technical_evidence
         ).stale?
-        return result(:already_audited) if prior_audit?(status.evidence.digest)
+        return result(:already_audited) if prior_audit?(source_revision(status))
 
         request = Issues::RequestAcceptanceAudit.call(issue:, actor: issue.project.effective_owner, origin: :automatic)
         Result.new(agent_run: request.agent_run, code: request.code)
@@ -37,9 +37,17 @@ module PartialCloseouts
 
     attr_reader :issue
 
-    def prior_audit?(digest)
-      IssueContinuationRequest.where(issue:, evidence_digest: digest)
+    def prior_audit?(source_revision)
+      IssueContinuationRequest.where(issue:)
+        .where("evidence->>'source_revision' = ?", source_revision)
         .where("evidence->>'continuation_mode' = ?", "acceptance_audit").exists?
+    end
+
+    # @spec PARTIAL-CLOSEOUT-042
+    def source_revision(status)
+      Assessment.source_revision_for(
+        issue, closeout_evidence: status.evidence, technical_evidence: status.technical_evidence
+      )
     end
 
     def result(code) = Result.new(agent_run: nil, code:)

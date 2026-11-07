@@ -10,6 +10,7 @@ class Avo::Resources::PreCommitRequirement < Avo::BaseResource
     field :name, as: :text, sortable: true
     field :check_type, as: :select, options: PreCommitRequirement::CHECK_TYPES.index_with(&:itself), sortable: true
     field :command, as: :textarea
+    field :measurement_recipe, as: :code, language: "json", pretty_generated: true
     field :failure_behavior, as: :select, options: PreCommitRequirement::FAILURE_BEHAVIORS.index_with(&:itself), sortable: true
     field :enabled, as: :boolean, sortable: true
     field :position, as: :number, sortable: true

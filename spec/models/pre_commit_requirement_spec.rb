@@ -88,6 +88,16 @@ RSpec.describe PreCommitRequirement do # @spec QUALITY-LOOPS-001
       expect(req).to be_valid
     end
 
+    # @spec PARTIAL-CLOSEOUT-042
+    it "rejects non-object performance measurement recipes" do
+      [ "not-a-json-object", [ "not-a-json-object" ] ].each do |measurement_recipe|
+        requirement = build(:pre_commit_requirement, check_type: "performance_measurement", measurement_recipe:)
+
+        expect(requirement).not_to be_valid
+        expect(requirement.errors[:measurement_recipe]).to include("must be a JSON object")
+      end
+    end
+
     it "rejects both project and user being set" do
       account = create(:account)
       project = create(:project, account: account)

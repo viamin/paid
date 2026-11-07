@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_06_214108) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3469,6 +3469,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.string "failure_behavior", limit: 50, default: "block", null: false
     t.text "fix_command"
     t.jsonb "log_data"
+    t.jsonb "measurement_recipe"
     t.string "name", limit: 255, null: false
     t.integer "position", default: 0, null: false
     t.bigint "project_id"

@@ -18,6 +18,7 @@ RSpec.describe SpecHelperCoverage, :no_db do
         SimpleCov.minimum_coverage 0
       end
       puts Object.const_defined?(:SimpleCov)
+      puts SimpleCov.merge_timeout if Object.const_defined?(:SimpleCov)
     RUBY
 
     probe_env = { "FPROF" => nil, "FDOC" => nil, "EVENT_PROF" => nil }.merge(env)
@@ -56,6 +57,7 @@ RSpec.describe SpecHelperCoverage, :no_db do
 
   # Integration contract: requiring spec_helper.rb actually applies the
   # decision. Kept as a single subprocess assertion (not one per matrix case).
+  # @spec TEST-SUITE-004 @spec TEST-SUITE-005
   it "wires SpecCoverageDecision into spec_helper (explicit request enables SimpleCov)" do
     stdout, stderr, status = run_spec_helper_probe(
       "ALLOW_DBLESS_SPECS" => "true",
@@ -65,5 +67,6 @@ RSpec.describe SpecHelperCoverage, :no_db do
     expect(status.success?).to be(true), stderr
     expect(stderr).not_to include("SimpleCov.add_filter")
     expect(stdout.lines.first.to_s.strip).to eq("true")
+    expect(stdout.lines.second.to_s.strip).to eq((2 * 60 * 60).to_s)
   end
 end
