@@ -87,14 +87,12 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     result = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:)
 
     comparison = result.evidence.dig("performance_measurement", "comparison")
-    expect(result).to be_success
-    expect(comparison).to include("status" => "complete")
+    expect([ result.status, comparison["status"] ]).to eq(%w[completed complete])
     expect(comparison.dig("metrics", "wall_ms", "baseline", "p50")).to eq(22.0)
     expect(comparison).not_to have_key("improvement")
     projected = source_run.reload.reconciliation.dig("technical_prerequisite_evidence", "performance_measurement")
     expect(projected.dig("baseline", "samples")).to be_nil
-    expect(projected.dig("baseline", "sample_count")).to eq(2)
-    expect(projected.dig("baseline", "samples_digest")).to match(/\A[0-9a-f]{64}\z/)
+    expect(projected.fetch("baseline")).to include("sample_count" => 2, "samples_digest" => /\A[0-9a-f]{64}\z/)
   end
 
   # @spec PARTIAL-CLOSEOUT-042
