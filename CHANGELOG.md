@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.15.0](https://github.com/viamin/paid/compare/v1.14.0...v1.15.0) (2026-11-07)
+
+
+### Features
+
+* [P1] knowledge: ActiveRecord::ConnectionNotEstablished ([#4910](https://github.com/viamin/paid/issues/4910)) ([b8c4bfc](https://github.com/viamin/paid/commit/b8c4bfc8755f960d502581b2b3ce33d212362f2d))
+* [RDR-079] Phase 1: define unified work-item domain and provider contracts ([#4873](https://github.com/viamin/paid/issues/4873)) ([d65f914](https://github.com/viamin/paid/commit/d65f914c00c19fe788cba99f932dc7a7e74d0b03))
+* Add MCP parity for dependency-cycle repairs ([#4837](https://github.com/viamin/paid/issues/4837)) ([f124a28](https://github.com/viamin/paid/commit/f124a288045971900b332ed6e8d33a370f944cbd))
+* Add RDR-075 dependency-cycle regression fixture ([#4834](https://github.com/viamin/paid/issues/4834)) ([b647407](https://github.com/viamin/paid/commit/b647407288b10384b928bdea04b8148dd0be7025))
+* Batch auto-pick eligibility sweeps by project and issue ([#4914](https://github.com/viamin/paid/issues/4914)) ([777e4f5](https://github.com/viamin/paid/commit/777e4f5899f3e6264e46f01486b576106c1b8e27))
+* **closeout:** collect repeatable performance evidence before escalating ([#4900](https://github.com/viamin/paid/issues/4900)) ([b97b32b](https://github.com/viamin/paid/commit/b97b32b12beff15f3f2ee42f7005def17a817ba5))
+* **closeout:** collect repeatable performance evidence before escalating ([#4916](https://github.com/viamin/paid/issues/4916)) ([8a03d2d](https://github.com/viamin/paid/commit/8a03d2d77b42cb30588923c9dbb16199872a400e))
+* **closeout:** collect trusted live post-deploy measurements before Inbox escalation ([#4913](https://github.com/viamin/paid/issues/4913)) ([ad3bee0](https://github.com/viamin/paid/commit/ad3bee07157a34c253686a9131c968f887ec7ceb))
+* Collect focused validation evidence for unexpected-analysis cooldown behavior ([#4820](https://github.com/viamin/paid/issues/4820)) ([e08f9b6](https://github.com/viamin/paid/commit/e08f9b6edce43ab44b6a2c13e7179b0ca3a189b5))
+* Complete sync-confirmed repair resolution ([#4833](https://github.com/viamin/paid/issues/4833)) ([f0b9bfb](https://github.com/viamin/paid/commit/f0b9bfb7fcefb3efe9e73df7f7184a8c8cf4188c))
+* Cover admitted-comment dependency mutations ([#4831](https://github.com/viamin/paid/issues/4831)) ([e4b0bb4](https://github.com/viamin/paid/commit/e4b0bb419aaea08db8f1ab2ccff37391ea560dfb))
+* **dependencies:** add reviewable cycle breaker agent analysis ([#4807](https://github.com/viamin/paid/issues/4807)) ([36d7048](https://github.com/viamin/paid/commit/36d7048a82c50bad301cbae59624564c8db443a1))
+* **dependencies:** let cycle agent runs repair obvious dependency cycles ([#4826](https://github.com/viamin/paid/issues/4826)) ([1ef2e89](https://github.com/viamin/paid/commit/1ef2e8996defb88266a4b82abd919b6e87261793))
+* design(automation): define project delegation after intent is settled ([#4874](https://github.com/viamin/paid/issues/4874)) ([eebd0e6](https://github.com/viamin/paid/commit/eebd0e65c09d7aa0172aa38461550128b72788f1))
+* Implement bounded delegated action contract ([#4887](https://github.com/viamin/paid/issues/4887)) ([e0be86a](https://github.com/viamin/paid/commit/e0be86ab220f4b4955dc944e7456251784b4ca20))
+* Implement delegated-work boundary rechecks ([#4903](https://github.com/viamin/paid/issues/4903)) ([cae016c](https://github.com/viamin/paid/commit/cae016cb14d7ce690bc9c9a0dd9ee68d4411f69a))
+* **inbox:** separate clarifying questions from context and recommendations ([#4889](https://github.com/viamin/paid/issues/4889)) ([aa63c47](https://github.com/viamin/paid/commit/aa63c472120511c602fece949157f856ff352c61))
+* **inbox:** show titles, labels, and umbrella context for dependency cycles ([#4806](https://github.com/viamin/paid/issues/4806)) ([7644eda](https://github.com/viamin/paid/commit/7644eda9e70d554f870c5c78935146c59aa9d101))
+* Issue analysis should select a standalone-capable runner credential ([#4817](https://github.com/viamin/paid/issues/4817)) ([a934108](https://github.com/viamin/paid/commit/a9341083b20009948376d133057806a53676a10f))
+* **mcp:** list and inspect authorized Inbox entries ([#4908](https://github.com/viamin/paid/issues/4908)) ([78fb18b](https://github.com/viamin/paid/commit/78fb18bc4ebbfc7b8e341f93f3b498f45788ebba))
+* **projects:** provision GitHub labels only after project settings opt-in ([#4850](https://github.com/viamin/paid/issues/4850)) ([fe611b3](https://github.com/viamin/paid/commit/fe611b373fedd9f9900d467cfc8578ef72752fb1))
+* RDR-076: Phase 2: manual audit runs, reports and Inbox decisions ([#4805](https://github.com/viamin/paid/issues/4805)) ([955a13d](https://github.com/viamin/paid/commit/955a13d490ea7e3b65082a1a01406091be1a6723))
+* Rerun mutation validation with a safe PostgreSQL role ([#4838](https://github.com/viamin/paid/issues/4838)) ([1ea0d26](https://github.com/viamin/paid/commit/1ea0d26764ab6624e6a9b5e8aa4ba7fa0e0344fa))
+* Run mutation validation for admitted-comment dependency changes ([#4835](https://github.com/viamin/paid/issues/4835)) ([3b853f2](https://github.com/viamin/paid/commit/3b853f2c449dbf03b07ef9d86826a565a7e4aad3))
+* Run mutation validation for admitted-comment dependency changes ([#4839](https://github.com/viamin/paid/issues/4839)) ([14ac672](https://github.com/viamin/paid/commit/14ac67209e4ef2b821f03b73e44ccca3f18d8914))
+* **ux:** use plain-language copy and progressive disclosure across Paid ([#4885](https://github.com/viamin/paid/issues/4885)) ([4109c8e](https://github.com/viamin/paid/commit/4109c8e45b030e4d28b7440a8c86405ef16f1b2d))
+
+
+### Bug Fixes
+
+* back off unexpected issue analysis errors ([#4818](https://github.com/viamin/paid/issues/4818)) ([867ac78](https://github.com/viamin/paid/commit/867ac785c159d75ead114bf3b06355c40f5c3631))
+* **ci:** remove stray ephemeral test files from main ([#4733](https://github.com/viamin/paid/issues/4733)) ([1e04f9a](https://github.com/viamin/paid/commit/1e04f9a2f67e362168fa0ce7ec8f182a4dd0e1e9))
+* **closeout:** recover assessment timeouts without discarding completed agent work ([#4915](https://github.com/viamin/paid/issues/4915)) ([1f5d80b](https://github.com/viamin/paid/commit/1f5d80bc36228d7266062cea8620da3f9acf154d))
+* **closeout:** verify human-prerequisite ownership before Inbox escalation ([#4895](https://github.com/viamin/paid/issues/4895)) ([0e060aa](https://github.com/viamin/paid/commit/0e060aa8ef750ec1cef12ee0e476a96e696ac511))
+* **dependencies:** ignore quoted and foreign issue declarations ([#4844](https://github.com/viamin/paid/issues/4844)) ([0e370ff](https://github.com/viamin/paid/commit/0e370ff254adf24643b071594e1e4ca65324886e))
+* Dependency cycle Inbox “View run” link shows Turbo “Content missing” after analysis run completes ([#4825](https://github.com/viamin/paid/issues/4825)) ([0135e11](https://github.com/viamin/paid/commit/0135e11c3b6531b4478d916c31c2a09103df14d4))
+* **inbox:** make selected items shareable and keep navigation URL in sync ([#4888](https://github.com/viamin/paid/issues/4888)) ([5fb655e](https://github.com/viamin/paid/commit/5fb655e40fb66078ddbb3685963692ede2c23761))
+* **inbox:** retire planning-hold requests for closed issues ([#4816](https://github.com/viamin/paid/issues/4816)) ([7b3be7e](https://github.com/viamin/paid/commit/7b3be7e676419856434cea2c8ab608c0303793e1))
+* **llm:** pass request hash to harness chat transport ([#4815](https://github.com/viamin/paid/issues/4815)) ([92a6728](https://github.com/viamin/paid/commit/92a6728e2d1d4ac4a9d11566de910b8610b54255))
+* **performance:** bound maintenance and knowledge collection jobs ([#4905](https://github.com/viamin/paid/issues/4905)) ([2d8440f](https://github.com/viamin/paid/commit/2d8440ffd574a5ef6881a06861240421e977d400))
+* **prompt-assembly:** record unavailable trusted comments ([#4809](https://github.com/viamin/paid/issues/4809)) ([1d3c865](https://github.com/viamin/paid/commit/1d3c865c34c6dd0528d6370396354867c9443b8a))
+* stop ColorMatching TDD retry loops ([#4882](https://github.com/viamin/paid/issues/4882)) ([5f74a52](https://github.com/viamin/paid/commit/5f74a520abdd030bd29f2ad27ca299e651404515))
+
+
+### Performance Improvements
+
+* **inbox:** load detail asynchronously and cache item history ([#4848](https://github.com/viamin/paid/issues/4848)) ([e11879d](https://github.com/viamin/paid/commit/e11879dc5513614e761f682e50aa9dc99e912f56))
+
 ## [1.14.0](https://github.com/viamin/paid/compare/v1.13.0...v1.14.0) (2026-10-30)
 
 
