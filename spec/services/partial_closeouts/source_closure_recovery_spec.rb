@@ -24,4 +24,14 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
     expect(described_class.claim!(agent_run: run.reload)).to be(false)
     expect(run.reload.id).to eq(run.id)
   end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "releases only the matching workflow-start claim" do
+    described_class.park!(agent_run: run, category: "transport_error", attempts: 3)
+    described_class.claim!(agent_run: run)
+
+    expect(described_class.release_claim!(agent_run: run, attempts: 2)).to be(false)
+    expect(described_class.release_claim!(agent_run: run, attempts: 1)).to be(true)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
+  end
 end

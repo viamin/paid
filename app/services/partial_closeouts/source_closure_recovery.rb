@@ -9,6 +9,7 @@ module PartialCloseouts
 
     def self.park!(...) = new(...).park!
     def self.claim!(...) = new(...).claim!
+    def self.release_claim!(...) = new(...).release_claim!
 
     def initialize(agent_run:, category: nil, attempts: nil, now: Time.current)
       @agent_run = agent_run
@@ -42,6 +43,16 @@ module PartialCloseouts
           "claimed_at" => now.iso8601,
           "recovery_attempt" => state.fetch("recovery_attempt", 0).to_i + 1
         )))
+        true
+      end
+    end
+
+    def release_claim!
+      agent_run.with_lock do
+        agent_run.reload
+        return false unless state["recovery_attempt"].to_i == @attempts.to_i
+
+        agent_run.update!(reconciliation: agent_run.reconciliation.merge(KEY => state.merge("claimed_at" => nil)))
         true
       end
     end

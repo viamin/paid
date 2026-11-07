@@ -11,8 +11,10 @@
   it SHALL release its idle execution environment and SHALL NOT mark the coding
   result terminally failed solely for that transport outage.
   *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`,
   `app/temporal/workflows/agent_execution_workflow.rb`.
-  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/temporal/activities/assess_source_closure_activity_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-045** — When a waiting source-closure recovery is due
   or authorized by an operator, Paid SHALL claim it once, restore only the
@@ -22,7 +24,10 @@
   *Code:* `app/jobs/source_closure_recovery_job.rb`,
   `app/temporal/workflows/source_closure_recovery_workflow.rb`,
   `app/controllers/projects/agent_runs_controller.rb`.
-  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_spec.rb`,
+  `spec/requests/projects/source_closure_recovery_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted

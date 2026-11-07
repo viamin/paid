@@ -8,13 +8,14 @@ import { Controller } from "@hotwired/stimulus"
 // action sections accordingly:
 //
 //   data-when-active       — visible while the run is active (running)
-//   data-when-unfinished   — visible while the run is unfinished (queued/running/paused)
+//   data-when-unfinished   — visible while the run is unfinished
+//   data-when-waiting-recovery — visible only while source-closure recovery is waiting
 //   data-when-paused       — visible only when the run is paused
 //   data-when-finished     — visible once the run has finished (any terminal status)
 //   data-when-auth-expired — visible when the run's status is auth_expired
 //   data-when-error        — visible when the run has an error message
 const ACTIVE_STATUSES = ["running"]
-const UNFINISHED_STATUSES = ["queued", "running", "paused"]
+const UNFINISHED_STATUSES = ["queued", "running", "paused", "waiting_recovery"]
 const FINISHED_STATUSES = [
   "completed",
   "no_output",
@@ -75,6 +76,12 @@ export default class extends Controller {
     this.actionsTarget.querySelectorAll("[data-when-paused]").forEach((el) => {
       el.hidden = !paused
     })
+    const waitingRecovery = status === "waiting_recovery"
+    this.actionsTarget
+      .querySelectorAll("[data-when-waiting-recovery]")
+      .forEach((el) => {
+        el.hidden = !waitingRecovery
+      })
     const finished = FINISHED_STATUSES.includes(status)
     this.actionsTarget.querySelectorAll("[data-when-finished]").forEach((el) => {
       el.hidden = !finished

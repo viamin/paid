@@ -111,6 +111,13 @@ module Workflows
         RETRY_EXHAUSTED_RETRY_STATES.include?(error.retry_state)
     end
 
+    def activity_failure_category(error)
+      application_error = error.respond_to?(:cause) ? error.cause : nil
+      return unless application_error.is_a?(Temporalio::Error::ApplicationError)
+
+      application_error.details.first.to_h["category"]
+    end
+
     def record_swallowed_non_critical_activity_failure(project_id:, helper:, error:, pr_number: nil)
       return unless retry_exhausted_activity_error?(error)
 

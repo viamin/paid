@@ -803,8 +803,11 @@ module Workflows
       raise_if_canceled!(e)
       raise unless retry_exhausted_activity_error?(e)
 
+      category = activity_failure_category(e)
+      raise unless category.in?(%w[timeout transport_error])
+
       run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: agent_run_id, category: "timeout", attempts: SOURCE_CLOSURE_RETRY_POLICY.max_attempts }, timeout: 30)
+        { agent_run_id: agent_run_id, category: category, attempts: SOURCE_CLOSURE_RETRY_POLICY.max_attempts }, timeout: 30)
       { waiting: true }
     end
 

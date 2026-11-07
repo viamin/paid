@@ -13,6 +13,8 @@ RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
       def auth_expired? = false
 
       def auth_provider = nil
+
+      def waiting_recovery? = status == "waiting_recovery"
     end.new(
       id: 123,
       project: project,
@@ -50,5 +52,18 @@ RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
     expect(rendered).to include("Anthropic Claude CLI (current)")
     expect(runner_values).to include("cursor")
     expect(runner_values).to include("claude")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "pre-renders the recovery action with a live status visibility hook" do
+    agent_run.status = "waiting_recovery"
+    allow(view).to receive(:retry_source_closure_project_agent_run_path).and_return("/projects/1/agent_runs/123/retry_source_closure")
+
+    render partial: "agent_runs/detail_actions", locals: { agent_run:, show_retry: true }
+
+    fragment = Nokogiri::HTML.fragment(rendered)
+    action = fragment.at_css("[data-when-waiting-recovery]")
+    expect(action).to be_present
+    expect(action).not_to have_attribute("hidden")
   end
 end
