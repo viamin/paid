@@ -16,6 +16,7 @@ module TrustedMeasurements
   # row instead of accumulating duplicates. A new deployed revision earns a
   # new row, so a stale revision's result is never silently reinterpreted as
   # current.
+  # @spec TRUSTED-MEASUREMENTS-003 TRUSTED-MEASUREMENTS-004 TRUSTED-MEASUREMENTS-006
   class RunCheck
     def self.call(...) = new(...).call
 
@@ -59,11 +60,15 @@ module TrustedMeasurements
       # lock therefore also serializes missing-revision requests, preserving
       # idempotency for duplicate deploy events before a signal is configured.
       project.with_lock do
-        TrustedMeasurementAttempt.find_or_create_by!(
+        attempt = TrustedMeasurementAttempt.find_or_create_by!(
           project: project, check_key: check_key, check_version: version, deployed_revision: revision,
-          criterion_key: criterion_key, external_issue_number: external_issue_number,
-          issue: source_issue
-        ) { |record| record.account = project.account }
+          criterion_key: criterion_key, external_issue_number: external_issue_number
+        ) do |record|
+          record.account = project.account
+          record.issue = source_issue
+        end
+        attempt.update!(issue: source_issue) if attempt.issue.nil? && source_issue
+        attempt
       end
     end
 

@@ -155,7 +155,7 @@ module Issues
           requested_by: actor,
           reason: reason,
           evidence: evidence_snapshot(status.evidence).merge("continuation_mode" => continuation_mode),
-          evidence_digest: status.evidence.digest
+          evidence_digest: request_evidence_digest(status)
         )
         runner_id, agent_type = AgentRuns::RunnerResolver.call(project: issue.project, goal: goal)
         run = AgentRun.create!(
@@ -204,6 +204,12 @@ module Issues
         "merged_prs" => evidence.merged_prs.map { |pr| { "number" => pr.number, "url" => pr.url, "run_id" => pr.run_id } },
         "no_code_required_at" => evidence.no_code_required_at&.utc&.iso8601
       }
+    end
+
+    def request_evidence_digest(status)
+      return PartialCloseouts::Assessment.source_revision_for(issue) if continuation_mode == "acceptance_audit"
+
+      status.evidence.digest
     end
 
     def success(request, agent_run) = Result.new(request: request, agent_run: agent_run)

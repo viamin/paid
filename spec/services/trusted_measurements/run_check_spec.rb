@@ -54,6 +54,18 @@ RSpec.describe TrustedMeasurements::RunCheck do
     expect(attempt).to have_attributes(status: "unknown", failure_reason: "source_issue_not_available", issue: nil)
   end
 
+  it "attaches a source issue synchronized after the initial attempt" do
+    ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
+    first = call(number: 999_999)
+    synchronized_issue = create(:issue, :closed, project:, github_number: 999_999)
+
+    retried = call(number: 999_999)
+
+    expect(retried.id).to eq(first.id)
+    expect(retried).to have_attributes(status: "succeeded", issue: synchronized_issue)
+    expect(TrustedMeasurementAttempt.count).to eq(1)
+  end
+
   it "is idempotent for repeated calls against the same deployed revision" do
     ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
 
