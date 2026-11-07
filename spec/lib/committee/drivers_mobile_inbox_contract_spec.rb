@@ -48,6 +48,18 @@ RSpec.describe Committee::Drivers do
     end
   end
 
+  # @spec OPERATOR-INBOX-027 MOBILE-API-016
+  it "documents the shared inbox decision brief" do
+    decision_brief = schema.dig("components", "schemas", "InboxEntryBase", "properties", "decision_brief")
+
+    expect(decision_brief.fetch("required")).to match_array(
+      %w[goal changed decision waiting_work primary_action next_state]
+    )
+    expect(decision_brief.fetch("properties").keys).to match_array(
+      %w[goal changed decision recommendation recommendation_reason waiting_work primary_action next_state unknown]
+    )
+  end
+
   # @spec CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-021
   it "documents feature-decision delivery policy and human action payloads" do
     feature_decision = schema.dig("components", "schemas", "FeatureDecisionEntry")

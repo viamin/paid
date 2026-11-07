@@ -107,7 +107,7 @@ module TrustedMeasurements
       attempt
     rescue StandardError => error
       attempt.update!(
-        status: "failed", failure_reason: error.message.to_s.truncate(500), executed_at: Time.current,
+        status: "failed", result: {}, failure_reason: error.message.to_s.truncate(500), executed_at: Time.current,
         consecutive_failure_count: attempt.consecutive_failure_count + 1
       )
       raise

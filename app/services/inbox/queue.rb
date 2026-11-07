@@ -907,7 +907,9 @@ module Inbox
     # prerequisites, and the authorized recovery actions (#4120).
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
     def partial_closeout_entries
-      Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id).map do |pair|
+      pairs = Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id)
+      preload_partial_closeout_dependencies(pairs)
+      pairs.map do |pair|
         status = pair.status
         Entry.new(
           id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",
@@ -924,6 +926,12 @@ module Inbox
           action_url: nil
         )
       end
+    end
+
+    def preload_partial_closeout_dependencies(pairs)
+      ActiveRecord::Associations::Preloader.new(
+        records: pairs.map(&:issue), associations: { issue_dependencies: :depends_on_issue }
+      ).call
     end
 
     # A TDD test-review-gated draft PR is parked solely on a human verdict at

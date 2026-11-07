@@ -58,6 +58,18 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("delegation")).to eq({})
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "retrieves the same concise decision brief on demand" do
+    issue.update!(paid_state: "needs_input", needs_input_questions: [ { "question" => "Which cache should exports use?", "recommendation" => "Redis",
+      "rationale" => "Existing workers use it.", "evidence_references" => [ "worker configuration" ] } ])
+
+    context = described_class.call(chat_session:, user:, sections: [ :decision_brief ])
+
+    expect(context.fetch("decision_brief")).to include(
+      decision: "Which cache should exports use?", recommendation: "Redis", primary_action: "Answer the question"
+    )
+  end
+
   it "rejects context access after comment permission is removed" do
     # @spec QUESTION-EXPLORATION-014
     chat_session

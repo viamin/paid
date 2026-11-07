@@ -43,7 +43,8 @@ module Api
           project: project,
           title: entry.title,
           summary: entry.summary,
-          action_url: entry.action_url
+          action_url: entry.action_url,
+          decision_brief: Inbox::DecisionBrief.call(entry:).to_h
         }
       end
 
