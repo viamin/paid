@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1028,6 +1028,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
     t.integer "duration_ms"
     t.text "error_message"
     t.jsonb "metadata", default: {}
+    t.string "progress_cursor"
     t.bigint "project_version_id", null: false
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false

@@ -116,29 +116,22 @@ module Knowledge
       # parsing and storing the matching source files is the bounded work.
       # @spec KNOWLEDGE-014
       def collect_page(cursor: nil)
+        artifacts, next_cursor = each_page(cursor:)
+        [ deduplicate_by_content(artifacts.to_a), next_cursor ]
+      end
+
+      # @spec KNOWLEDGE-014
+      def each_page(cursor: nil)
         page, has_more = source_page(cursor:)
         next_cursor = has_more ? page.last : nil
-        return [ [], nil ] if page.empty?
+        return [ [].each, nil ] if page.empty?
 
-        ast_artifacts = LANGUAGE_CONFIG.flat_map do |language, config|
-          matching = page.select { |path| matching_extension?(path, config[:extensions]) }
-          next [] if matching.empty?
-
-          collect_language(language, config, paths: matching.map { |path| File.join(scan_path, path) })
+        artifacts = Enumerator.new do |yielder|
+          page.each do |path|
+            artifacts_for_path(path).each { |artifact| yielder << artifact }
+          end
         end
-        existing_paths = ast_artifacts.map { |artifact| artifact[:scope_path] }.to_set
-        fallback_artifacts = page.filter_map do |path|
-          next if existing_paths.include?(path)
-          language = fallback_language_for(path)
-          next unless language
-
-          absolute = File.join(host_repo_path, path)
-          next unless File.file?(absolute) && File.size(absolute) <= MAX_FALLBACK_FILE_BYTES && text_file?(absolute)
-
-          build_file_artifact({ relative_path: path, content: File.read(absolute) }, language)
-        end
-
-        [ deduplicate_by_content(ast_artifacts + fallback_artifacts), next_cursor ]
+        [ artifacts, next_cursor ]
       end
 
       def collector_type
@@ -297,6 +290,28 @@ module Knowledge
         end
       end
 
+      def artifacts_for_path(path)
+        language, config = LANGUAGE_CONFIG.find do |_name, candidate|
+          matching_extension?(path, candidate[:extensions])
+        end
+        if config
+          artifacts = collect_language(language, config, paths: [ File.join(scan_path, path) ])
+          return artifacts if artifacts.any?
+        end
+
+        fallback_artifact_for_path(path)
+      end
+
+      def fallback_artifact_for_path(path)
+        language = fallback_language_for(path)
+        return [] unless language
+
+        absolute = File.join(host_repo_path, path)
+        return [] unless File.file?(absolute) && File.size(absolute) <= MAX_FALLBACK_FILE_BYTES && text_file?(absolute)
+
+        [ build_file_artifact({ relative_path: path, content: File.read(absolute) }, language) ]
+      end
+
       def build_file_artifact(repo_file, language)
         line_count = repo_file[:content].lines.count
 
@@ -369,9 +384,7 @@ module Knowledge
 
         require "find"
         paths = []
-        after_cursor = cursor.nil?
-        catch(:page_full) do
-          Find.find(root) do |path|
+        Find.find(root) do |path|
             relative = Pathname.new(path).relative_path_from(Pathname.new(root)).to_s
             if File.directory?(path)
               Find.prune if relative != "." && ignored_path?(relative)
@@ -379,18 +392,14 @@ module Knowledge
             end
 
             next if ignored_path?(relative) || !fallback_language_for(relative)
-            unless after_cursor
-              after_cursor = true if relative == cursor
-              next
-            end
+            next if cursor && relative <= cursor
 
             paths << relative
-            throw :page_full if paths.size > FILES_PER_PAGE
+            paths.sort!
+            paths.pop if paths.size > FILES_PER_PAGE + 1
           rescue Errno::ENOENT, Errno::EACCES
             next
           end
-        end
-        raise ArgumentError, "collector cursor no longer exists: #{cursor}" unless after_cursor
 
         [ paths.first(FILES_PER_PAGE), paths.size > FILES_PER_PAGE ]
       end

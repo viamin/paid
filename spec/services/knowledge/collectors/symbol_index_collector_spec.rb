@@ -136,4 +136,25 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
       end
     end
   end
+
+  # @spec KNOWLEDGE-014
+  describe "#each_page" do
+    it "uses a stable cursor and yields bounded file artifacts" do
+      stub_const("Knowledge::Collectors::SymbolIndexCollector::FILES_PER_PAGE", 1)
+      cursor = nil
+      paths = []
+
+      loop do
+        artifacts, next_cursor = collector.each_page(cursor: cursor)
+        paths.concat(artifacts.map { |artifact| artifact[:scope_path] })
+        break unless next_cursor
+
+        expect(next_cursor).to be > cursor.to_s unless cursor.nil?
+        cursor = next_cursor
+      end
+
+      expect(paths).to all(end_with(".rb"))
+      expect(paths).to include("sample.rb")
+    end
+  end
 end

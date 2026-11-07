@@ -34,7 +34,8 @@ class CollectorRun < ApplicationRecord
       completed_at: now,
       duration_ms: started_at ? ((now - started_at) * 1000).to_i : nil,
       artifacts_count: count,
-      error_message: nil
+      error_message: nil,
+      progress_cursor: nil
     )
   end
 
