@@ -35,7 +35,8 @@ module TechnicalPrerequisites
 
       execute_validation(inspection)
     rescue Containers::Provision::Error, Containers::GitOperations::Error,
-      ExecutionRunners::Error, Containers::McpProvisioner::Error => error
+      ExecutionRunners::Error, Containers::McpProvisioner::Error,
+      AgentRuns::Verification::Error => error
       return cancelled_result if cancelled?
 
       persist_terminal("failed", error: error.message)
@@ -61,6 +62,7 @@ module TechnicalPrerequisites
       evidence["checkout"] = prepare_checkout
       return cancelled_result if cancelled?
 
+      provision_browser
       provision_sidecars
       record_tool_evidence
       return cancelled_result if cancelled?
@@ -104,6 +106,18 @@ module TechnicalPrerequisites
       )
     end
 
+    # @spec PARTIAL-CLOSEOUT-042
+    def provision_browser
+      return unless performance_recipe&.fetch("requires_browser", false)
+
+      result = execution_runner.provision_browser_container(
+        agent_run:,
+        network: Containers::Provision.network_for(agent_run:),
+        logger: Rails.logger
+      )
+      evidence["browser"] = { "container_id" => result.container_id, "cdp_url" => result.cdp_url }
+    end
+
     def record_tool_evidence
       agent_run.reload
       evidence["tool_endpoints"] = agent_run.tool_sidecar_endpoints
@@ -112,9 +126,10 @@ module TechnicalPrerequisites
 
     def command_environment
       endpoints = agent_run.tool_sidecar_endpoints
-      return {} if endpoints.blank?
-
-      { "PAID_TOOL_SIDECAR_ENDPOINTS" => endpoints.to_json }
+      environment = {}
+      environment["PAID_TOOL_SIDECAR_ENDPOINTS"] = endpoints.to_json if endpoints.present?
+      environment["PAID_BROWSER_CDP_URL"] = evidence.dig("browser", "cdp_url") if evidence["browser"]
+      environment
     end
 
     def performance_measurement? = performance_recipe.present?
@@ -190,7 +205,7 @@ module TechnicalPrerequisites
       { "status" => "complete", "metrics" => metrics }
     end
 
-    # @spec PARTIAL-CLOSEOUT-041
+    # @spec PARTIAL-CLOSEOUT-042
     def complete_metric_samples?(baseline_values, current_values)
       expected_samples = performance_recipe.fetch("samples")
       baseline_values.size == expected_samples && current_values.size == expected_samples

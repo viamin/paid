@@ -105,7 +105,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.message).to include("original implementation run")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "queues one deduplicated, pinned performance comparison with its reviewed recipe contract" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
@@ -128,7 +128,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
       .to include("baseline_commit_sha" => "b" * 40, "current_commit_sha" => "c" * 40, "samples" => 3)
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "refuses a performance comparison when the source run produced no revision to measure" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: nil)
@@ -147,7 +147,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.message).to include("produced revision")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "refuses an incomplete or nonrepresentative performance recipe" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
@@ -160,7 +160,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.message).to include("reviewed performance recipe")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "refuses a persisted non-object performance recipe without raising" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: "c" * 40)
@@ -174,7 +174,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.message).to include("reviewed performance recipe")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "refuses a performance recipe whose baseline is the produced revision itself" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: "c" * 40)
@@ -192,7 +192,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.message).to include("reviewed performance recipe")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "refuses recipe values that only coerce, because execution consumes them strictly" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: "c" * 40)

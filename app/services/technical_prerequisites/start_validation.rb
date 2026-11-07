@@ -26,19 +26,26 @@ module TechnicalPrerequisites
       return failure("The selected validation recipe has an invalid command.") unless reviewed_command
       return failure("Select a completed implementation run with a produced revision to measure.") if performance_requirement? && current_commit_sha.blank?
       return failure(performance_recipe.error) if performance_requirement? && !performance_recipe.valid?
+      return failure("Select an implementation run linked to an issue to measure.") if performance_requirement? && source_run.issue.nil?
 
-      return existing_result if existing_run
-
-      run = create_validation_run!
+      run, created = admit_validation_run
       # Enqueued after the run is committed: the job claims the run by id, and
       # a job that starts before the commit would not find it.
-      TechnicalPrerequisiteValidationJob.perform_later(run.id)
-      Result.new(status: :queued, agent_run: run, message: "Prerequisite validation queued.")
+      TechnicalPrerequisiteValidationJob.perform_later(run.id) if created
+      message = created ? "Prerequisite validation queued." : "Equivalent performance measurement already exists; opening it."
+      Result.new(status: :queued, agent_run: run, message:)
     end
 
     private
 
     attr_reader :actor, :requirement, :source_run, :criterion, :tool_name
+
+    def admit_validation_run
+      return [ create_validation_run!, true ] unless performance_requirement?
+      source_run.issue.with_lock do
+        existing_run ? [ existing_run, false ] : [ create_validation_run!, true ]
+      end
+    end
 
     def allowed_requirement?
       PreCommitRequirement.resolve(project: source_run.project, user: actor).any? { |candidate| candidate.id == requirement.id }
@@ -135,10 +142,6 @@ module TechnicalPrerequisites
             run.external_metadata.dig(RECIPE_KEY, "criterion") == criterion &&
             run.external_metadata.dig(RECIPE_KEY, "performance_measurement") == performance_recipe.recipe
         end
-    end
-
-    def existing_result
-      Result.new(status: :queued, agent_run: existing_run, message: "Equivalent performance measurement already exists; opening it.")
     end
 
     def failure(message)

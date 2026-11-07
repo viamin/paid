@@ -3,7 +3,7 @@
 module TechnicalPrerequisites
   # Validates the reviewed, structured contract that makes a performance
   # comparison repeatable. Repository prose never becomes executable input.
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   class PerformanceRecipe
     SHA = /\A[0-9a-f]{40}\z/i
     # TechnicalPrerequisiteValidationJob terminates at a 20-minute

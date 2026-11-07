@@ -43,7 +43,7 @@ module PartialCloseouts
         .where("evidence->>'continuation_mode' = ?", "acceptance_audit").exists?
     end
 
-    # @spec PARTIAL-CLOSEOUT-041
+    # @spec PARTIAL-CLOSEOUT-042
     def source_revision(status)
       Assessment.source_revision_for(
         issue, closeout_evidence: status.evidence, technical_evidence: status.technical_evidence

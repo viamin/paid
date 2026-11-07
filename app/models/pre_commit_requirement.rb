@@ -136,7 +136,7 @@ class PreCommitRequirement < ApplicationRecord
     errors.add(:measurement_recipe, "is only supported by performance measurements")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   def performance_recipe_must_be_an_object
     return unless check_type == "performance_measurement" && measurement_recipe.present?
     return if measurement_recipe.is_a?(Hash)

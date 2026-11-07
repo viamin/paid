@@ -17,7 +17,7 @@ RSpec.describe TechnicalPrerequisites::InboxActions do
       measurement_recipe: { "samples" => 3 })
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "holds an incomplete performance recipe instead of offering a run" do
     action = described_class.call(project:, actor: project.created_by, assessment:, source_run:).sole
 
@@ -25,7 +25,7 @@ RSpec.describe TechnicalPrerequisites::InboxActions do
     expect(action.setup_action).to eq("Configure a complete representative performance recipe for this criterion.")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "explains when a performance measurement source run has no produced revision" do
     source_run.update!(result_commit_sha: nil)
 
@@ -35,8 +35,8 @@ RSpec.describe TechnicalPrerequisites::InboxActions do
     expect(action.setup_action).to eq("Select an implementation run with a produced revision before validating this criterion.")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
-  it "explains when a performance recipe requires a browser-visible environment" do
+  # @spec PARTIAL-CLOSEOUT-042
+  it "offers a reviewed browser-visible performance recipe" do
     requirement.update!(measurement_recipe: {
       "baseline_commit_sha" => "b" * 40,
       "workload" => { "identity" => "browser-chat", "provenance" => "reviewed fixture v1", "representative" => true },
@@ -47,9 +47,7 @@ RSpec.describe TechnicalPrerequisites::InboxActions do
 
     action = described_class.call(project:, actor: project.created_by, assessment:, source_run:).sole
 
-    expect(action).not_to be_ready
-    expect(action.setup_action).to eq(
-      "This validation path provisions an isolated container only; it cannot satisfy a recipe that requires a browser-visible environment."
-    )
+    expect(action).to be_ready
+    expect(action.setup_action).to be_nil
   end
 end

@@ -37,7 +37,7 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(result.request.evidence).to include("continuation_mode" => "acceptance_audit")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "keeps the closeout digest while snapshotting technical evidence freshness" do
     merged_partial_pr
     source_run = create(:agent_run, :completed, project:, issue:, goal: "analyze_issue",

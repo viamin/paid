@@ -26,7 +26,7 @@ module PreCommitRequirements
       new(...).call
     end
 
-    def call # @spec QUALITY-LOOPS-002 PARTIAL-CLOSEOUT-041
+    def call # @spec QUALITY-LOOPS-002 PARTIAL-CLOSEOUT-042
       requirements = PreCommitRequirement.resolve(
         project: agent_run.project,
         user: agent_run.settings_user

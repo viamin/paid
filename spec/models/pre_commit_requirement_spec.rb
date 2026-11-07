@@ -88,7 +88,7 @@ RSpec.describe PreCommitRequirement do # @spec QUALITY-LOOPS-001
       expect(req).to be_valid
     end
 
-    # @spec PARTIAL-CLOSEOUT-041
+    # @spec PARTIAL-CLOSEOUT-042
     it "rejects non-object performance measurement recipes" do
       [ "not-a-json-object", [ "not-a-json-object" ] ].each do |measurement_recipe|
         requirement = build(:pre_commit_requirement, check_type: "performance_measurement", measurement_recipe:)

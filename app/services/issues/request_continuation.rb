@@ -16,7 +16,7 @@ module Issues
   # skip labels, and active-run uniqueness all still apply, with the blocker
   # explained to the user.
   # @spec PARTIAL-CLOSEOUT-003 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
-  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037 @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037 @spec PARTIAL-CLOSEOUT-042
   class RequestContinuation
     Result = Struct.new(:request, :agent_run, :code, :message, keyword_init: true) do
       def success? = code.nil?

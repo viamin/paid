@@ -68,7 +68,7 @@ RSpec.describe PartialCloseouts::AutoAudit do
       .not_to eq(first.agent_run.continuation_request.evidence["source_revision"])
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "allows one new audit when completed performance evidence changes the source revision" do
     first = described_class.call(issue:)
     first.agent_run.update!(status: "completed", completed_at: Time.current)

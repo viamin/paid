@@ -80,7 +80,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(agent_run.error_message).to eq("no container provisioned")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "schedules the acceptance audit after a terminal performance measurement" do
     issue = create(:issue, project:)
     agent_run.update!(issue:, external_metadata: {
@@ -98,7 +98,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "keeps the terminal measurement status when audit scheduling fails" do
     issue = create(:issue, project:)
     agent_run.update!(issue:, external_metadata: {

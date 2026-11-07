@@ -4,23 +4,13 @@ module TechnicalPrerequisites
   # Projects the existing placement and rollout decisions into an actionable
   # Inbox-ready result. A missing Docker socket in the browser/control-plane
   # process is intentionally not an input to this decision.
-  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
   class CapabilityInspection
-    BROWSER_ENVIRONMENT_UNAVAILABLE_ACTION = "This validation path provisions an isolated container only; " \
-      "it cannot satisfy a recipe that requires a browser-visible environment."
-
     Result = Data.define(:host, :compatible_hosts, :failures, :requirements_error, :tool_sidecars_enabled, :setup_action) do
       def runnable? = compatible_hosts.any? && setup_action.nil?
     end
 
     def self.call(...) = new(...).call
-
-    def self.browser_setup_action_for(performance_recipe)
-      return unless performance_recipe.present?
-      return unless ActiveModel::Type::Boolean.new.cast(performance_recipe["requires_browser"])
-
-      BROWSER_ENVIRONMENT_UNAVAILABLE_ACTION
-    end
 
     def initialize(agent_run:, performance_recipe: nil, scheduler: Containers::BackendScheduler)
       @agent_run = agent_run
@@ -29,7 +19,7 @@ module TechnicalPrerequisites
     end
 
     def call
-      schedule = scheduler.call(agent_run:)
+      schedule = scheduler.call(agent_run:, additional_capabilities:)
       hosts = schedule.candidate_hosts
       Result.new(
         host: hosts.first,
@@ -45,27 +35,20 @@ module TechnicalPrerequisites
 
     attr_reader :agent_run, :performance_recipe, :scheduler
 
+    def additional_capabilities
+      performance_recipe&.fetch("requires_browser", false) ? [ :browser_sidecar ] : []
+    end
+
     def tool_sidecars_enabled?
       FeatureFlags.enabled?(:marketplace_tool_sidecars, project: agent_run.project)
     end
 
-    # The recipe's declared environment is reviewed provenance, not proof: this
-    # validation path only ever provisions the run's bare isolated container
-    # plus attached tool sidecars, so a recipe that explicitly attests it needs
-    # a browser-visible environment can never be satisfied here. Blocking it at
-    # inspection, the same way an unauthorized tool sidecar is blocked, keeps
-    # the requested label from being recorded as satisfied provenance.
     def setup_action_for(schedule)
       return "Resolve execution requirements: #{schedule.requirements_error}" if schedule.requirements_error.present?
       return "Configure or restore a compatible execution backend for this project." if schedule.candidate_hosts.empty?
-      return self.class.browser_setup_action_for(performance_recipe) if requires_browser?
       return unless agent_run.tool_sidecar_snapshot.any? && !tool_sidecars_enabled?
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project; execution capability does not authorize the rollout."
-    end
-
-    def requires_browser?
-      performance_recipe.present? && ActiveModel::Type::Boolean.new.cast(performance_recipe["requires_browser"])
     end
   end
 end

@@ -102,7 +102,7 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
         allow(agent_run).to receive(:execute_in_execution_environment)
       end
 
-      # @spec PARTIAL-CLOSEOUT-041
+      # @spec PARTIAL-CLOSEOUT-042
       it "does not execute the recipe as a pre-commit check" do
         result = described_class.call(agent_run: agent_run)
 

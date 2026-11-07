@@ -58,14 +58,12 @@ module TechnicalPrerequisites
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project."
     end
 
-    # @spec PARTIAL-CLOSEOUT-041
+    # @spec PARTIAL-CLOSEOUT-042
     def performance_setup_action(requirement)
       return "Configure a complete representative performance recipe for this criterion." unless requirement.check_type == "performance_measurement"
       return "Select an implementation run with a produced revision before validating this criterion." unless source_run.result_commit_sha.present?
       recipe = PerformanceRecipe.call(requirement:, current_commit_sha: source_run.result_commit_sha)
-      return "Configure a complete representative performance recipe for this criterion." unless recipe.valid?
-
-      CapabilityInspection.browser_setup_action_for(recipe.recipe)
+      "Configure a complete representative performance recipe for this criterion." unless recipe.valid?
     end
   end
 end

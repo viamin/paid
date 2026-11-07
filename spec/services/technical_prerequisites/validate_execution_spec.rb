@@ -12,7 +12,10 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
         TechnicalPrerequisites::RECIPE_KEY => { "source_run_id" => source_run.id }
       })
   end
-  let(:execution_runner) { instance_double(ExecutionRunners::Base, provision_mcp_servers: {}, cleanup_mcp_servers: nil) }
+  let(:execution_runner) do
+    instance_double(ExecutionRunners::Base,
+      provision_mcp_servers: {}, cleanup_mcp_servers: nil, provision_browser_container: nil)
+  end
   let(:execution_environment) { instance_double(Containers::Provision) }
   let(:git_operations) do
     instance_double(Containers::GitOperations, clone_and_checkout_pinned_commit: "a" * 40, checkout_commit: nil, head_sha: "b" * 40)
@@ -66,7 +69,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(source_run.reconciliation.dig("technical_prerequisite_evidence", "cleanup")).to include("completed" => true)
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "records raw baseline/current samples and a mechanical comparison without claiming an improvement" do
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
       "source_run_id" => source_run.id, "performance_measurement" => {
@@ -90,7 +93,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(comparison).not_to have_key("improvement")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "stops sampling when the shared measurement budget is exhausted and persists the partial result as unknown" do
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
       "source_run_id" => source_run.id, "performance_measurement" => {
@@ -113,7 +116,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       .to include("attempted" => true, "completed" => true)
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "keeps a metric missing from one otherwise successful sample unknown" do
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
       "source_run_id" => source_run.id, "performance_measurement" => {
@@ -136,7 +139,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       .to include("status" => "unknown", "reason" => "Metric wall_ms was unavailable from a complete sample set.")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
+  # @spec PARTIAL-CLOSEOUT-042
   it "persists a partial baseline/current record as unknown when a revision checkout is unreachable" do
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
       "source_run_id" => source_run.id, "performance_measurement" => {
@@ -160,23 +163,26 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(evidence.dig("performance_measurement", "comparison")).to include("status" => "unknown")
   end
 
-  # @spec PARTIAL-CLOSEOUT-041
-  it "holds a recipe that requires a browser-visible environment unavailable instead of measuring it in the isolated container" do
-    agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
-      "source_run_id" => source_run.id, "performance_measurement" => {
-        "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,
-        "metrics" => [ "wall_ms" ], "samples" => 2, "environment" => "browser-visible",
-        "budget_seconds" => 60, "requires_browser" => true
-      }
-    } })
-    allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([ "remote" ]))
-    allow(agent_run).to receive(:provision_execution_environment)
+  # @spec PARTIAL-CLOSEOUT-042
+  it "provisions the isolated browser sidecar for a browser-visible measurement" do
+    stub_browser_measurement
 
     result = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:)
 
-    expect(result.status).to eq("unavailable")
-    expect(result.setup_action).to include("browser-visible environment")
-    expect(agent_run).not_to have_received(:provision_execution_environment)
+    expect(result).to be_success
+    expect(Containers::BackendScheduler).to have_received(:call).with(
+      agent_run:, additional_capabilities: [ :browser_sidecar ]
+    )
+    expect(execution_runner).to have_received(:provision_browser_container).with(
+      agent_run:, network: Containers::Provision.network_for(agent_run:), logger: Rails.logger
+    )
+    expect(result.evidence.fetch("browser")).to include(
+      "container_id" => "browser-1", "cdp_url" => "ws://paid-screenshot-browser:3000"
+    )
+    expect(agent_run).to have_received(:execute_in_execution_environment).with(
+      "bin/measure", timeout: kind_of(ActiveSupport::Duration), stream: false,
+      env: hash_including("PAID_BROWSER_CDP_URL" => "ws://paid-screenshot-browser:3000")
+    ).at_least(:once)
   end
 
   # @spec PARTIAL-CLOSEOUT-032
@@ -380,6 +386,24 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   def stub_compatible_host(hosts = [ "remote" ])
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result(hosts))
     FeatureFlags.enable!(:marketplace_tool_sidecars, project:)
+  end
+
+  def stub_browser_measurement
+    agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
+      "source_run_id" => source_run.id, "performance_measurement" => {
+        "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,
+        "metrics" => [ "wall_ms" ], "samples" => 2, "environment" => "browser-visible",
+        "budget_seconds" => 60, "requires_browser" => true
+      }
+    } })
+    stub_compatible_host
+    stub_provisioning
+    browser = instance_double(AgentRuns::Verification::Result,
+      container_id: "browser-1", cdp_url: "ws://paid-screenshot-browser:3000")
+    allow(execution_runner).to receive(:provision_browser_container).and_return(browser)
+    allow(agent_run).to receive(:execute_in_execution_environment)
+      .and_return({ stdout: '{"wall_ms":20}', stderr: "", exit_code: 0 }, { stdout: '{"wall_ms":22}', stderr: "", exit_code: 0 },
+        { stdout: '{"wall_ms":12}', stderr: "", exit_code: 0 }, { stdout: '{"wall_ms":14}', stderr: "", exit_code: 0 })
   end
 
   def stub_command_execution(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
