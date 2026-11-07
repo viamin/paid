@@ -14,6 +14,11 @@ module Activities
         issue = agent_run.issue
 
         client = pull_request_client(project)
+        expected_head_sha = input[:expected_head_sha]
+        if input.key?(:expected_head_sha) && !branch_at_revision?(client, project, agent_run, expected_head_sha)
+          return { agent_run_id: agent_run_id, revision_mismatch: true }
+        end
+
         # Pre-run guard: verify the branch exists on GitHub and check for
         # an existing open PR. This eliminates orphan branches (#1125) by
         # ensuring a PR is always created when the branch is present.
@@ -143,6 +148,20 @@ module Activities
     end
 
     private
+
+    def branch_at_revision?(client, project, agent_run, expected_head_sha)
+      remote_head_sha = client.ref(project.full_name, "heads/#{agent_run.branch_name}").object.sha.to_s
+      return true if ActiveSupport::SecurityUtils.secure_compare(remote_head_sha, expected_head_sha.to_s)
+
+      logger.warn(
+        message: "agent_execution.source_closure_revision_mismatch",
+        agent_run_id: agent_run.id,
+        branch: agent_run.branch_name
+      )
+      false
+    rescue GithubClient::NotFoundError
+      false
+    end
 
     # @spec FEATURE-APPROVAL-015 — wire the PR opened by this run to the
     # FeatureIntent the agent run is attached to. The kind is `rdr` for

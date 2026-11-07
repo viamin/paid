@@ -20,7 +20,8 @@ RSpec.describe SourceClosureRecoveryJob do
 
     expect(client).to have_received(:start_workflow).with(
       Workflows::SourceClosureRecoveryWorkflow,
-      { agent_run_id: run.id, project_id: run.project_id, recovery_attempt: 1, goal: run.goal },
+      { agent_run_id: run.id, project_id: run.project_id, recovery_attempt: 1, goal: run.goal,
+        commit_sha: "a" * 40 },
       id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
     )
   end

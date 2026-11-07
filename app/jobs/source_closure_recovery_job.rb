@@ -14,9 +14,10 @@ class SourceClosureRecoveryJob < ApplicationJob
     return unless agent_run && PartialCloseouts::SourceClosureRecovery.claim!(agent_run: agent_run)
 
     recovery_attempt = agent_run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")
+    commit_sha = agent_run.reconciliation.dig("source_closure_recovery", "commit_sha")
     Paid.temporal_client.start_workflow(Workflows::SourceClosureRecoveryWorkflow,
       { agent_run_id: agent_run.id, project_id: agent_run.project_id,
-        recovery_attempt: recovery_attempt, goal: agent_run.goal },
+        recovery_attempt: recovery_attempt, goal: agent_run.goal, commit_sha: commit_sha },
       id: "source-closure-recovery-#{agent_run.id}-#{recovery_attempt}", task_queue: Paid.agent_task_queue)
   rescue Temporalio::Error::WorkflowAlreadyStartedError
     # A replayed job observes the already-running recovery workflow.

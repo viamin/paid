@@ -15,7 +15,13 @@ module Workflows
       run_activity(Activities::ProvisionContainerActivity, { agent_run_id: }, timeout: 60)
       return { agent_run_id:, waiting: true } unless assess_source_closure_or_park(agent_run_id)
 
-      pr_result = run_activity(Activities::CreatePullRequestActivity, { agent_run_id: }, timeout: 120)
+      pr_input = { agent_run_id: }
+      if Temporalio::Workflow.patched("source-closure-recovery-pinned-revision-v1")
+        pr_input[:expected_head_sha] = input.fetch(:commit_sha)
+      end
+      pr_result = run_activity(Activities::CreatePullRequestActivity, pr_input, timeout: 120)
+      return park_branch_mismatch(agent_run_id) if pr_result[:revision_mismatch]
+
       finish_closeout(agent_run_id, project_id, pr_result, goal) unless pr_result[:skipped] || pr_result[:pull_request_url].blank?
       { agent_run_id:, recovered: true }
     rescue => e
@@ -32,6 +38,12 @@ module Workflows
     end
 
     private
+
+    def park_branch_mismatch(agent_run_id)
+      run_activity(Activities::ParkSourceClosureRecoveryActivity,
+        { agent_run_id:, category: "branch_mismatch", attempts: ASSESSMENT_RETRY_POLICY.max_attempts }, timeout: 30)
+      { agent_run_id:, waiting: true }
+    end
 
     def assess_source_closure_or_park(agent_run_id)
       run_activity(Activities::AssessSourceClosureActivity, { agent_run_id: }, timeout: 120,

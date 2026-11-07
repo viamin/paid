@@ -4,7 +4,9 @@ require "rails_helper"
 
 RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
   let(:workflow) { described_class.new }
-  let(:input) { { agent_run_id: 42, project_id: 7, recovery_attempt: 1, goal: "create_feature" } }
+  let(:input) do
+    { agent_run_id: 42, project_id: 7, recovery_attempt: 1, goal: "create_feature", commit_sha: "a" * 40 }
+  end
   let(:post_closeout_activities) do
     [
       Activities::ReconcilePartialCloseoutActivity,
@@ -20,6 +22,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
   before do
     allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
     allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-post-pr-v1").and_return(true)
+    allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-pinned-revision-v1").and_return(true)
   end
 
   # @spec PARTIAL-CLOSEOUT-045
@@ -40,6 +43,32 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
 
     expect(workflow.execute(input)).to include(recovered: true)
     expect(calls).to include(*post_closeout_activities)
+    expect(workflow).to have_received(:run_activity).with(
+      Activities::CreatePullRequestActivity,
+      { agent_run_id: 42, expected_head_sha: "a" * 40 },
+      timeout: 120
+    )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "returns a force-pushed branch to visible recovery without publishing a PR" do
+    allow(workflow).to receive(:run_activity) do |activity, _input, **_options|
+      case activity.name
+      when "Activities::CreatePullRequestActivity"
+        { revision_mismatch: true }
+      else
+        {}
+      end
+    end
+    allow(workflow).to receive(:run_cleanup_activity)
+
+    expect(workflow.execute(input)).to include(waiting: true)
+    expect(workflow).to have_received(:run_activity).with(
+      Activities::ParkSourceClosureRecoveryActivity,
+      { agent_run_id: 42, category: "branch_mismatch", attempts: 3 },
+      timeout: 30
+    )
+    expect(workflow).not_to have_received(:run_activity).with(Activities::ReconcilePartialCloseoutActivity, any_args)
   end
 
   # @spec PARTIAL-CLOSEOUT-045

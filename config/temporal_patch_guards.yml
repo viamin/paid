@@ -40,6 +40,8 @@ workflows:
   Workflows::SourceClosureRecoveryWorkflow:
     source-closure-recovery-post-pr-v1:
       introduced_on: "2026-11-07"
+    source-closure-recovery-pinned-revision-v1:
+      introduced_on: "2026-11-07"
   Workflows::ParallelAgentExecutionWorkflow:
     parallel-agent-execution-remove-pr-aggregation-v1:
       introduced_on: "2026-09-03"
