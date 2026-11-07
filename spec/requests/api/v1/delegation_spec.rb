@@ -42,6 +42,21 @@ RSpec.describe "Project delegation API" do
     expect(payload).to include("signature")
   end
 
+  # @spec PROJECT-DELEGATION-001
+  it "returns the effective posture with its revision and remaining reviews" do
+    get "/api/v1/projects/#{project.id}/delegation", headers: headers
+
+    posture = response.parsed_body.fetch("posture")
+    expect(posture).to include(
+      "level" => "conservative",
+      "source" => "default",
+      "revision" => 0,
+      "enabled_action_classes" => []
+    )
+    expect(posture.fetch("remaining_reviews")).to be_an(Array)
+    expect(posture).to include("policy_signature")
+  end
+
   it "matches the projection the settings surface renders" do
     projection = ProjectDelegation::Projection.for_project(project).to_h
 

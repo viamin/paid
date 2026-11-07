@@ -57,6 +57,7 @@ class AccountActivityEvent < ApplicationRecord
     "feature_intent.released" => "approval",
     "bounded_action.authorized" => "approval",
     "bounded_action.revoked" => "approval",
+    "project_delegation.posture_selected" => "project",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
     "egress_allowlist.account_entry_created" => "egress_allowlist",
@@ -186,6 +187,9 @@ class AccountActivityEvent < ApplicationRecord
       "Proposed pull request ##{metadata_value('pull_request_number')}"
     when "search_issues.executed"
       "Searched #{metadata_value('project_name')} issues for duplicates"
+    when "project_delegation.posture_selected"
+      "Selected the #{metadata_value('level').humanize.downcase} delegation posture for " \
+        "#{metadata_value('project_name')} (revision #{metadata_value('revision')})"
     when "prompt_version.approved"
       "Approved prompt #{metadata_value('prompt_slug')} v#{metadata_value('version')}"
     when "prompt_version.rejected"
@@ -245,6 +249,9 @@ class AccountActivityEvent < ApplicationRecord
       detail = +"Query: #{metadata_value('query')}"
       detail << " (state: #{metadata_value('state')})" if metadata.to_h["state"].present?
       [ detail ]
+    when "project_delegation.posture_selected"
+      [ "Previous posture: #{metadata_value('previous_level').humanize.downcase}",
+        "Enabled action classes: #{Array(metadata.to_h['enabled_action_classes']).join(', ').presence || 'none'}" ]
     when "prompt_version.approved"
       Array(metadata.to_h["notes"]).compact.map { |n| "Notes: #{n}" }
     when "prompt_version.rejected"

@@ -59,6 +59,13 @@ module ProjectDelegation
 
     attr_reader :project, :work_item
 
+    # The effective project posture (RDR-080), shared with the selection
+    # write path so read surfaces and settings cannot disagree.
+    # @spec PROJECT-DELEGATION-001
+    def posture
+      @posture ||= ProjectDelegation::Posture.resolve(project)
+    end
+
     # The one effective-policy answer for a phase. Read surfaces call this
     # instead of re-deriving authority from settings, grants, or labels.
     def phase_decision(phase)
@@ -108,6 +115,7 @@ module ProjectDelegation
       payload = {
         project_id: project.id,
         work_item_id: work_issue&.id,
+        posture: posture.to_h,
         authorizations: authorizations.map(&:to_h),
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] },
         signature: signature
@@ -215,6 +223,7 @@ module ProjectDelegation
 
     def signature_source
       {
+        posture: { level: posture.level, revision: posture.revision, policy_signature: posture.policy_signature },
         authorizations: authorizations.map(&:to_h),
         phase_authority: work_issue ? serialized_phase_authority : nil,
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] }

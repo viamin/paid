@@ -39,6 +39,15 @@ RSpec.describe Tools::GetProjectDelegation do
     expect(result).not_to include(:phase_authority)
   end
 
+  # @spec PROJECT-DELEGATION-001
+  it "returns the effective project posture" do
+    result = tool.call(project_id: project.id)
+
+    expect(result.fetch(:posture)).to include(
+      level: "conservative", source: "default", revision: 0, enabled_action_classes: []
+    )
+  end
+
   it "scopes the projection to a requested work item" do
     work_item = create(:issue, project: project)
     other_item = create(:issue, project: project)
