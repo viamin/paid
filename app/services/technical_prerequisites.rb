@@ -9,4 +9,10 @@ module TechnicalPrerequisites
   RECIPE_KEY = "technical_prerequisite_validation"
   # @spec PARTIAL-CLOSEOUT-032
   EVIDENCE_KEY = "technical_prerequisite_validation"
+
+  # @spec PARTIAL-CLOSEOUT-042
+  def self.scheduler_pause_message(project)
+    return "Project scheduling is paused; resume it before running performance measurement." if project.scheduler_paused?
+    "Account scheduling is paused; resume it before running performance measurement." if project.account.scheduler_paused?
+  end
 end

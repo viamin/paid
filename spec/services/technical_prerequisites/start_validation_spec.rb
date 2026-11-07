@@ -50,6 +50,63 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.agent_run).to be_nil
   end
 
+  # @spec PARTIAL-CLOSEOUT-042
+  it "does not queue a reviewed performance comparison while project scheduling is paused" do
+    project = create(:project, scheduler_paused_at: Time.current)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
+    create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+      last_scanned_head_sha: source_run.result_commit_sha)
+    requirement = create(:pre_commit_requirement, project:, account: project.account,
+      check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
+        "baseline_commit_sha" => "b" * 40,
+        "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
+        "metrics" => [ "wall_ms" ], "samples" => 3, "environment" => "isolated-linux",
+        "budget_seconds" => 60, "artifact_contract" => [ "raw_samples", "comparison" ]
+      })
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+
+    expect(result).not_to be_success
+    expect(result.agent_run).to be_nil
+    expect(result.message).to eq("Project scheduling is paused; resume it before running performance measurement.")
+    expect(TechnicalPrerequisiteValidationJob).not_to have_been_enqueued
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "does not queue a reviewed performance comparison while account scheduling is paused" do
+    project = create(:project)
+    project.account.update!(scheduler_paused_at: Time.current)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
+    create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+      last_scanned_head_sha: source_run.result_commit_sha)
+    requirement = create(:pre_commit_requirement, project:, account: project.account,
+      check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
+        "baseline_commit_sha" => "b" * 40,
+        "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
+        "metrics" => [ "wall_ms" ], "samples" => 3, "environment" => "isolated-linux",
+        "budget_seconds" => 60, "artifact_contract" => [ "raw_samples", "comparison" ]
+      })
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+
+    expect(result).not_to be_success
+    expect(result.agent_run).to be_nil
+    expect(result.message).to eq("Account scheduling is paused; resume it before running performance measurement.")
+    expect(TechnicalPrerequisiteValidationJob).not_to have_been_enqueued
+  end
+
+  # @spec PARTIAL-CLOSEOUT-032
+  it "queues a non-performance validation while project scheduling is paused" do
+    project = create(:project, scheduler_paused_at: Time.current)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account, command: "bin/audit --quick")
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by)
+
+    expect(result).to be_success
+    expect(TechnicalPrerequisiteValidationJob).to have_been_enqueued.with(result.agent_run.id)
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "preserves reviewed recipe shell syntax for the isolated execution environment" do
     project = create(:project)
@@ -120,6 +177,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
       })
 
     first = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+    project.update!(scheduler_paused_at: Time.current)
     second = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
 
     expect(first).to be_success

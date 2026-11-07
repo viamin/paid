@@ -3,7 +3,7 @@
 module TechnicalPrerequisites
   # Creates the fresh, pinned operational run used by an authorized Inbox
   # validation. Commands come only from persisted reviewed requirements.
-  # @spec PARTIAL-CLOSEOUT-032
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
   class StartValidation
     Result = Data.define(:status, :agent_run, :message) do
       def success? = status == :queued
@@ -29,7 +29,8 @@ module TechnicalPrerequisites
       return failure("Select an implementation run linked to an issue to measure.") if performance_requirement? && source_run.issue.nil?
       return failure("The linked pull request head changed or is unavailable; performance evidence remains unknown.") if performance_requirement? && !current_revision?
 
-      run, created = admit_validation_run
+      run, created, pause_message = admit_validation_run
+      return failure(pause_message) if pause_message
       # Enqueued after the run is committed: the job claims the run by id, and
       # a job that starts before the commit would not find it.
       TechnicalPrerequisiteValidationJob.perform_later(run.id) if created
@@ -42,9 +43,16 @@ module TechnicalPrerequisites
     attr_reader :actor, :requirement, :source_run, :criterion, :tool_name
 
     def admit_validation_run
-      return [ create_validation_run!, true ] unless performance_requirement?
+      return [ create_validation_run!, true, nil ] unless performance_requirement?
+
       source_run.issue.with_lock do
-        existing_run ? [ existing_run, false ] : [ create_validation_run!, true ]
+        existing = existing_run
+        return [ existing, false, nil ] if existing
+
+        pause_message = TechnicalPrerequisites.scheduler_pause_message(source_run.project)
+        return [ nil, false, pause_message ] if pause_message
+
+        [ create_validation_run!, true, nil ]
       end
     end
 

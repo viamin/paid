@@ -9,7 +9,9 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
-    return handoff_terminal_measurement(agent_run) unless start!(agent_run)
+    start_result = start!(agent_run)
+    return if start_result == :paused
+    return handoff_terminal_measurement(agent_run) unless start_result == :started
 
     result = TechnicalPrerequisites::ValidateExecution.call(
       agent_run:, native_command: recipe(agent_run).fetch("command")
@@ -34,11 +36,23 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   # re-executed.
   def start!(agent_run)
     agent_run.with_lock do
-      return false unless agent_run.status == "queued"
+      return :terminal unless agent_run.status == "queued"
+
+      pause_message = paused_performance_measurement_message(agent_run)
+      if pause_message
+        agent_run.update!(status: "failed", completed_at: Time.current, error_message: pause_message)
+        return :paused
+      end
 
       agent_run.update!(status: "running", started_at: Time.current)
     end
-    true
+    :started
+  end
+
+  def paused_performance_measurement_message(agent_run)
+    return unless recipe(agent_run)["performance_measurement"].present?
+
+    TechnicalPrerequisites.scheduler_pause_message(agent_run.project)
   end
 
   def finish!(agent_run, result)
