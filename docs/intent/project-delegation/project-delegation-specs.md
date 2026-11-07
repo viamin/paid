@@ -35,7 +35,9 @@ Status markers: `[ ]` planned implementation gap.
   repository controls; ambiguity, changed scope, conflicting evidence, new
   material risk, explicit holds, or unavailable assessment SHALL route to a
   focused human decision.
-  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
+  *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb`
+  (canonical admission evidence),
+  `spec/services/automation/delegated_work_boundary_spec.rb`,
   `spec/services/automation/delegated_action_admission_spec.rb`, the
   delegated-work contexts of `spec/temporal/activities/queue_agent_run_activity_spec.rb`
   (create/queue and follow-up-tagged boundaries),

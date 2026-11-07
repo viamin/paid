@@ -35,6 +35,12 @@ module Automation
       "merge" => Automation::Phases::MERGE
     }.freeze
 
+    STOP_BEFORE_PHASES = {
+      "review" => Automation::Phases::MERGE,
+      "repair" => Automation::Phases::MERGE,
+      "merge" => "release_deployment"
+    }.freeze
+
     # The work item for a run: its issue when issue-scoped, otherwise the
     # project's PR row for a PR-scoped run (review goals).
     def self.work_item_for(project:, issue_id: nil, pull_request_number: nil)

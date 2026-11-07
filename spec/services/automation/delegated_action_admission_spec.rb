@@ -56,6 +56,22 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(recheck(goal: "review")).to be_nil
   end
 
+  it "fails closed for a legacy authorization without canonical admission evidence" do # @spec BOUNDED-PHASE-AUTHORIZATION-004
+    create(:bounded_delegated_action, project:, issue:, action: "review")
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(
+      :intent_revision,
+      :acceptance_revision,
+      :evidence_revision,
+      :posture_signature,
+      :phase,
+      :bounded_stop
+    )
+  end
+
   it "returns nil for goals with no delegable bounded action" do
     authorize(action: "review")
 
