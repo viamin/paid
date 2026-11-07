@@ -43,6 +43,8 @@ RSpec.describe Issues::UpsertFromGithub do
     # @spec DESIGN-RECONCILIATION-002
     it "delays repository reconciliation so a burst of PR syncs can share a sweep" do
       freeze_time do
+        allow(ActiveRecord).to receive(:after_all_transactions_commit).and_yield
+
         expect { described_class.call(project:, github_issue:) }
           .to have_enqueued_job(FeatureIntents::ReconcileDesignArtifactsJob)
           .with(project.id).at(30.seconds.from_now)

@@ -33,7 +33,10 @@ gate.
   recreate queued runs after the operator turns the feature off.
 - **`Issues::BulkEnqueueEligible`** — iterates the eligible scope in batches
   (`find_each`) and delegates to `EnqueueEligible` per issue. No bulk SQL
-  upsert; correctness and auditability over throughput.
+  upsert; correctness and auditability over throughput. Its maintenance-page
+  mode bounds candidates by immutable issue IDs and returns the last examined
+  ID, so a continuation can re-read live eligibility without offset-pagination
+  skips as runs are created or candidates change.
 
 ## Seeding triggers (reactive, not tick-based)
 
@@ -52,6 +55,36 @@ PR-attention seeding limit (`max_auto_pick_open_prs` /
 `deferred_by_pr_attention_limit?`) were removed: `max_concurrent_runs` is
 the single concurrency control, and `AgentRun::QUEUE_ORDER` (with its
 project/user fair-stride keys) decides dispatch order.
+
+## Periodic eligibility sweep pages
+
+`AutoPickEligibilitySweepJob` is a maintenance backstop, not a replacement for
+the reactive triggers above. A sweep snapshots the highest eligible project ID
+at cycle start and advances a durable Active Job cursor through bounded project
+pages. The snapshot means projects added while a cycle is running wait for the
+next cycle instead of extending the current one indefinitely; projects already
+inside the snapshot therefore cannot starve.
+
+For each selected project, the job snapshots the highest eligible issue ID and
+uses `BulkEnqueueEligible`'s ID-bounded page mode. It records the last examined
+issue ID in the continuation arguments. The next page always re-evaluates the
+live eligibility scope and uses `id > cursor`, rather than an offset or the
+priority ordering, so removing, queuing, or reprioritising an earlier candidate
+cannot shift and skip a later candidate. A candidate that becomes eligible
+behind the cursor is reconsidered on the next sweep cycle. The normal
+single-issue eligibility recheck and unique active-run index remain the
+idempotency authority.
+
+A project page failure retains that project's prior issue cursor for one retry
+in the next continuation while failures remain isolated from other projects.
+If that retry also fails, the project is deferred to the next scheduled cycle
+so one persistently failing project cannot keep the cycle or its concurrency
+key alive forever. Continuations also retain the original project-page boundary
+while pending projects finish, so completed projects are not swept twice. The
+confidence-delivery and planning-hold reconcilers run only on the first issue
+page for a project; later issue pages perform only bounded eligibility work.
+Every page logs project and candidate counts, newly-enqueued runs, duration,
+object allocations, and peak RSS for operational capacity review.
 
 ## Dequeue-time eligibility recheck
 

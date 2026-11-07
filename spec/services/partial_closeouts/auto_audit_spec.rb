@@ -64,6 +64,25 @@ RSpec.describe PartialCloseouts::AutoAudit do
     expect(second.agent_run.id).not_to eq(first.agent_run.id)
     expect(second.agent_run.continuation_request.evidence_digest)
       .not_to eq(first.agent_run.continuation_request.evidence_digest)
+    expect(second.agent_run.continuation_request.evidence["source_revision"])
+      .not_to eq(first.agent_run.continuation_request.evidence["source_revision"])
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "allows one new audit when completed performance evidence changes the source revision" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "completed", completed_at: Time.current)
+    first.agent_run.update!(reconciliation: {
+      "technical_prerequisite_evidence" => { "recorded_at" => Time.current.iso8601, "status" => "completed" }
+    })
+
+    second = described_class.call(issue:)
+
+    expect(second).to be_scheduled
+    expect(second.agent_run.continuation_request.evidence_digest)
+      .to eq(first.agent_run.continuation_request.evidence_digest)
+    expect(second.agent_run.continuation_request.evidence["source_revision"])
+      .not_to eq(first.agent_run.continuation_request.evidence["source_revision"])
   end
 
   # @spec TRUSTED-MEASUREMENTS-006

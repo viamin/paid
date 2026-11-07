@@ -95,6 +95,22 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
       end
     end
 
+    context "with a reviewed performance measurement recipe" do
+      before do
+        create(:pre_commit_requirement, account: account, name: "inbox timing",
+          check_type: "performance_measurement", command: "bin/measure")
+        allow(agent_run).to receive(:execute_in_execution_environment)
+      end
+
+      # @spec PARTIAL-CLOSEOUT-042
+      it "does not execute the recipe as a pre-commit check" do
+        result = described_class.call(agent_run: agent_run)
+
+        expect(result).to eq(passed: true, results: [], blocking: false)
+        expect(agent_run).not_to have_received(:execute_in_execution_environment)
+      end
+    end
+
     context "with a failing blocking check" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint", failure_behavior: "block")

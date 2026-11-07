@@ -34,9 +34,10 @@ module Containers
       end
     end
 
-    def initialize(agent_run:, registry: Containers.host_registry)
+    def initialize(agent_run:, registry: Containers.host_registry, additional_capabilities: [])
       @agent_run = agent_run
       @registry = registry
+      @additional_capabilities = additional_capabilities
     end
 
     def call
@@ -71,7 +72,7 @@ module Containers
 
     private
 
-    attr_reader :agent_run, :registry, :compatibility_requirements_error
+    attr_reader :additional_capabilities, :agent_run, :registry, :compatibility_requirements_error
 
     def requested_host_and_source
       selection = agent_run.container_host_selection
@@ -185,12 +186,17 @@ module Containers
       requested_resources = Capacity::RequestedResources.for_agent_run(agent_run)
       service_declarations = Containers::ServiceProvisioner.new.service_declarations(agent_run)
 
-      ExecutionRunners::CapabilityRequirements.from_agent_run(
+      requirements = ExecutionRunners::CapabilityRequirements.from_agent_run(
         agent_run,
         worktree_path: requested_worktree_path,
         service_declarations: service_declarations,
         requested_resources: requested_resources,
         architecture: ExecutionRunners::RunSpec.resolve_architecture(agent_run)
+      )
+      return requirements if additional_capabilities.empty?
+
+      ExecutionRunners::CapabilityRequirements.new(
+        capabilities: requirements.capabilities + additional_capabilities
       )
     rescue Containers::ImageResolver::Error, Containers::RuntimeImageCatalog::Error => e
       @compatibility_requirements_error = e
