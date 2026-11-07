@@ -102,6 +102,17 @@ class Project < ApplicationRecord
     sync_labels_to_github
     screenshot_settings
   ].freeze
+  # Project-level delegation posture (RDR-080). "conservative" is the default
+  # and only allows current behavior; "bounded_delivery" enables delegated
+  # technical choices, focused follow-ups, technical recovery, and closeout.
+  # @spec PROJECT-DELEGATION-001
+  DELEGATION_POSTURES = %w[conservative bounded_delivery].freeze
+  DEFAULT_DELEGATION_POSTURE = "conservative".freeze
+  DELEGATION_POSTURE_LABELS = {
+    "conservative" => "Conservative (default)",
+    "bounded_delivery" => "Bounded Delivery"
+  }.freeze
+  DELEGATION_POSTURE_OPTIONS = DELEGATION_POSTURES.map { |p| [ DELEGATION_POSTURE_LABELS[p], p ] }.freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
     "driver" => "playwright",
@@ -308,6 +319,11 @@ class Project < ApplicationRecord
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
   has_many :bounded_delegated_actions, dependent: :destroy
+  # RDR-080: project delegation posture and audit events
+  # @spec PROJECT-DELEGATION-001
+  has_many :project_delegation_events, dependent: :destroy
+  belongs_to :delegation_posture_selected_by, class_name: "User", optional: true,
+    inverse_of: :selected_project_delegation_postures
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy
@@ -401,6 +417,8 @@ class Project < ApplicationRecord
   # @spec FEATURE-APPROVAL-001
   validates :operating_mode, inclusion: { in: OPERATING_MODES }
   validates :new_feature_delivery_policy, inclusion: { in: FEATURE_DELIVERY_POLICIES }
+  # @spec PROJECT-DELEGATION-001
+  validates :delegation_posture, inclusion: { in: DELEGATION_POSTURES }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true

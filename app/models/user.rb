@@ -47,6 +47,11 @@ class User < ApplicationRecord
     foreign_key: :created_by_id, dependent: :nullify, inverse_of: :created_by
   has_many :revoked_bounded_delegated_actions, class_name: "BoundedDelegatedAction",
     foreign_key: :revoked_by_id, dependent: :nullify, inverse_of: :revoked_by
+  has_many :selected_project_delegation_postures, class_name: "Project",
+    foreign_key: :delegation_posture_selected_by_id, dependent: :nullify,
+    inverse_of: :delegation_posture_selected_by
+  has_many :project_delegation_events, foreign_key: :actor_id, dependent: :nullify,
+    inverse_of: :actor
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
