@@ -2,10 +2,8 @@
     Shared clarifying-questions answer form used by both the clarifying_questions
     and manual_review inbox detail panes: same submit endpoint
     (ClarifyingQuestionsController#create), same inbox redirect contract. The
-    two-column lg+ layout puts the agent-authored context beside the answer
-    form (sticky sidebar) when the supplementary frame loads context
-    (clarifying_questions entries only); manual_review entries render the
-    questions alone. %>
+    clarifying_questions entries render agent-authored context after the
+    questions; manual_review entries render the questions alone. %>
 <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
 <% pending_freeform_note = flash[:inbox_pending_freeform_notes]&.dig(entry.record.id.to_s) %>
 <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),

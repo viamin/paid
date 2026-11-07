@@ -65,6 +65,9 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
     within("#inbox-list") { click_link "Second question", exact: false }
 
     expect(page).to have_css("#inbox-detail h2", text: "Second question")
+    expect(page).to have_css("[data-testid='inbox-clarifying-context']")
+    expect(page.evaluate_script("document.querySelector('[data-testid=inbox-clarifying-context]').open")).to be(false)
+    find("[data-testid='inbox-clarifying-context'] summary").click
     expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
     expect(page).to have_button("Submit Answers")
     click_link "Back to queue"
