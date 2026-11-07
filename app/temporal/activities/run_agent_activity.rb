@@ -4017,7 +4017,7 @@ module Activities
     # @spec ISSUE-ENHANCEMENT-001
     # @spec ISSUE-ENHANCEMENT-008
     # @spec ISSUE-ENHANCEMENT-009
-    # @spec ISSUE-ENHANCEMENT-014
+    # @spec ISSUE-ENHANCEMENT-014 @spec ISSUE-ENHANCEMENT-020
     # @spec ISSUE-ENHANCEMENT-018
     FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT = <<~'AUGMENTED'
       {{base_prompt}}
@@ -4064,7 +4064,21 @@ module Activities
       paid-enhance-issue-output
       {
         "sufficient_context": true or false,
-        "comment_body": "Markdown comment with implementation context or clarifying questions"
+        "comment_body": "Markdown comment with implementation context or concise numbered questions",
+        "questions": [
+          {
+            "question": "One short standalone question?",
+            "choices": [
+              { "label": "Option A", "detail": "Short consequence" },
+              { "label": "Option B", "detail": "Alternative consequence" }
+            ],
+            "choice_type": "single",
+            "recommendation": "Option A",
+            "rationale": "Why this is a recommendation",
+            "examples": ["Concrete example"],
+            "evidence_references": ["app/path.rb:12"]
+          }
+        ]
       }
       paid-enhance-issue-output
 
@@ -4077,27 +4091,27 @@ module Activities
       ### Suggested approach
       - ...
 
-      If sufficient_context is false, the comment_body should include:
+      If sufficient_context is false, include a non-empty `questions` array and
+      make comment_body include the same concise numbered question labels:
       ## Clarifying questions
       1. ...
       ## Current context
       - ...
 
-      Write each clarifying question so it stands on its own: the reader cannot be
-      assumed to know the project, the issue history, or the roadmap. For each
-      numbered question:
-      - Open with one or two sentences of background: why you are asking and what
-        you found in the repository that raised the question.
-      - Reference the relevant code, issue, or doc when one exists (file path and
-        symbol, issue number such as #123, or design doc).
-      - When the question could be read two ways, name the options you are asking
-        about. When the answers form a short, enumerable set, mark the question as
-        a choice question with the option-marker syntax in "Choice questions"
-        below instead of naming the options in prose.
-      - When the answer depends on where the issue sits in the roadmap, say so —
-        dependencies on other issues, or follow-up work this issue enables.
-      Keep each question a single numbered item with its context sentences inline,
-      then the question itself, so the question list stays machine-parseable.
+      Each `question` must be concise and standalone. Keep background, reasons,
+      examples, references, and roadmap context out of its label. Put those facts
+      in `rationale`, `examples`, and `evidence_references` instead. Supply
+      `choices` only for an enumerable set of at least two options; with fewer
+      options the question is not a choice question. Supply `recommendation`
+      only when `evidence_references` directly support it; otherwise omit it.
+      A recommendation is an aid, never a confirmed product decision.
+      For each choice question, set `choice_type` to `single` when exactly one
+      answer applies or `multi` when several answers may apply. It MUST match
+      the marker family used in the comment body. Each structured `choices`
+      entry MUST repeat its comment marker's Label and description byte-for-byte.
+      A structured choice label must not contain the `)` character. Keep the
+      complete comment_body to no more than 50,000 characters so publication
+      does not truncate any numbered question or choice marker.
 
       Choice questions. When — and only when — a question has a short, enumerable
       set of answers, put the answers in a sub-list under the numbered question

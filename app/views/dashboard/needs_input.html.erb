@@ -44,7 +44,7 @@
                     <p class="mt-2 text-sm text-gray-600">
                       <% if entry.questions.any? %>
                         Pending:
-                        <%= entry.questions.first(2).join(" ").truncate(220) %>
+                        <%= ClarifyingQuestions::QuestionPayload.submission_texts(entry.questions.first(2)).join(" ").truncate(220) %>
                       <% else %>
                         Pending questions are still attached to the issue, but no summary is available locally.
                       <% end %>

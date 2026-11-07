@@ -2,10 +2,8 @@
     Shared clarifying-questions answer form used by both the clarifying_questions
     and manual_review inbox detail panes: same submit endpoint
     (ClarifyingQuestionsController#create), same inbox redirect contract. The
-    two-column lg+ layout puts the agent-authored context beside the answer
-    form (sticky sidebar) when the supplementary frame loads context
-    (clarifying_questions entries only); manual_review entries render the
-    questions alone. %>
+    clarifying_questions entries render agent-authored context after the
+    questions; manual_review entries render the questions alone. %>
 <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
 <% pending_freeform_note = flash[:inbox_pending_freeform_notes]&.dig(entry.record.id.to_s) %>
 <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
@@ -22,32 +20,45 @@
     <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
   <% end %>
 
-  <div class="space-y-4 lg:has-[[data-testid=inbox-clarifying-context]]:grid lg:has-[[data-testid=inbox-clarifying-context]]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:has-[[data-testid=inbox-clarifying-context]]:items-start lg:has-[[data-testid=inbox-clarifying-context]]:gap-6 lg:has-[[data-testid=inbox-clarifying-context]]:space-y-0"
+  <div class="space-y-4"
        data-testid="inbox-question-layout">
-    <% if entry.clarifying_questions? %>
-      <div class="block min-h-px lg:sticky lg:top-4">
-        <%= render "inbox/supplement_content", entry: entry %>
-      </div>
-    <% end %>
-
     <div class="space-y-4">
       <h3 class="text-sm font-semibold text-gray-900">Clarifying Questions</h3>
       <% entry.questions.each_with_index do |question, index| %>
+        <% payload = ClarifyingQuestions::QuestionPayload.call(question: question) %>
         <div class="rounded-lg bg-gray-50 px-4 py-3">
           <label for="<%= dom_id(entry.record, "answer_#{index}") %>" class="block text-sm font-medium text-gray-700">
             <span class="mr-2 font-semibold text-gray-500"><%= index + 1 %>.</span>
-            <%= render "shared/markdown_text", content: question %>
+            <%= render "shared/markdown_text", content: payload[:question] %>
           </label>
-          <%= hidden_field_tag "questions[]", question, id: dom_id(entry.record, "question_#{index}") %>
+          <% if payload[:recommendation].present? %>
+            <p class="mt-2 text-sm text-indigo-700" data-testid="inbox-question-recommendation">
+              Paid recommends: <%= payload[:recommendation] %>
+            </p>
+          <% end %>
+          <%= hidden_field_tag "questions[]", payload[:question], id: dom_id(entry.record, "question_#{index}") %>
           <%# @spec OPERATOR-INBOX-012 %>
           <%= render "projects/clarifying_questions/answer_field",
                 question: question,
+                choices: payload[:choices],
                 field_id: dom_id(entry.record, "answer_#{index}"),
                 label: nil,
                 pending_answer: pending_answers&.at(index),
                 field_class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm",
                 answer_data: { testid: "inbox-answer-#{index}" } %>
+          <% if payload[:rationale].present? || payload[:examples].any? || payload[:evidence_references].any? %>
+            <details class="mt-3 text-sm text-gray-600" data-testid="inbox-question-details">
+              <summary class="cursor-pointer font-medium text-gray-700">Why Paid is asking</summary>
+              <% if payload[:rationale].present? %><p class="mt-2"><%= payload[:rationale] %></p><% end %>
+              <% if payload[:examples].any? %><p class="mt-2">Examples: <%= payload[:examples].join(", ") %></p><% end %>
+              <% if payload[:evidence_references].any? %><p class="mt-2">Sources: <%= payload[:evidence_references].join(", ") %></p><% end %>
+            </details>
+          <% end %>
         </div>
+      <% end %>
+
+      <% if entry.clarifying_questions? %>
+        <%= render "inbox/supplement_content", entry: entry %>
       <% end %>
 
       <%# @spec OPERATOR-INBOX-013

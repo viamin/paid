@@ -2355,7 +2355,7 @@ RSpec.describe AgentRun do
         expect(agent_run.send(:prompt_for_enhance_issue)).to be_nil
       end
 
-      it "requires each clarifying question to stand on its own", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014
+      it "requires concise standalone questions with supporting context stored separately", :aggregate_failures do # @spec ISSUE-ENHANCEMENT-014 @spec ISSUE-ENHANCEMENT-020
         project = create(:project)
         issue = create(:issue, project: project, github_number: 9)
         agent_run = build(:agent_run, :enhance_issue_goal, project: project, issue: issue)
@@ -2364,13 +2364,14 @@ RSpec.describe AgentRun do
 
         expect(prompt).to include("Enhance issue ##{issue.github_number} in #{project.full_name}")
         # A reader without deep project knowledge must be able to answer each
-        # question: the prompt has to demand background, references, named
-        # options, and roadmap context instead of assuming them known.
-        expect(prompt).to include("stands on its own")
-        expect(prompt).to include("why you are asking and what you found in the repository")
-        expect(prompt).to include("reference the relevant code, issue, or doc")
+        # question from its label alone: the prompt has to demand a concise
+        # standalone question and move background, references, and roadmap
+        # context into the structured payload fields and the comment's
+        # context section instead of the question label.
+        expect(prompt).to include("concise standalone question")
+        expect(prompt).to include("Keep background, reasons, examples, references, and roadmap context out of the question label")
+        expect(prompt).to include("rationale, examples, and evidence_references")
         expect(prompt).to include("could be read two ways")
-        expect(prompt).to include("roadmap")
       end
     end
 

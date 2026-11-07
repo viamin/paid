@@ -88,12 +88,13 @@ module Activities
     end
 
     # Build comment, post, apply labels, complete run.
-    # @spec ISSUE-ENHANCEMENT-006 @spec ISSUE-ENHANCEMENT-019
+    # @spec ISSUE-ENHANCEMENT-006 @spec ISSUE-ENHANCEMENT-019 @spec ISSUE-ENHANCEMENT-020
     def finish_enhance_issue(agent_run, project, issue, client, parsed)
       max_rounds_reached = !parsed[:sufficient_context] && max_rounds_reached?(project, issue, agent_run)
       parsed = stop_after_max_rounds(parsed, project, issue, agent_run)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
       comment_body = comment_body_for(issue, parsed, draft)
+      reconcile_structured_questions!(agent_run, parsed, comment_body)
       questions = needs_input_questions(parsed, comment_body)
       raise_parse_error!(agent_run, "sufficient_context false without clarifying questions") if needs_questions?(parsed, max_rounds_reached) && questions.empty?
 
@@ -733,6 +734,8 @@ module Activities
     def needs_input_questions(parsed, comment_body)
       return [] if parsed[:sufficient_context]
 
+      return parsed[:questions] if structured_questions?(parsed[:questions])
+
       ClarifyingQuestions::Parse.call(comment_body:)
     end
 
@@ -742,6 +745,67 @@ module Activities
 
     def sync_needs_input_questions(issue, questions)
       issue.update!(needs_input_questions: questions.presence)
+    end
+
+    def structured_questions?(questions)
+      Array(questions).any? && Array(questions).all? do |question|
+        question.is_a?(Hash) && ClarifyingQuestions::QuestionPayload.submission_text(question).present?
+      end
+    end
+
+    def reconcile_structured_questions!(agent_run, parsed, comment_body)
+      return if parsed[:sufficient_context] || !structured_questions?(parsed[:questions])
+
+      posted_questions = ClarifyingQuestions::Parse.call(comment_body: comment_body)
+      return if question_contracts(parsed[:questions]) == question_contracts(posted_questions)
+
+      logger.warn(
+        message: "agent_execution.structured_questions_mismatch",
+        agent_run_id: agent_run.id,
+        structured_question_count: parsed[:questions].size,
+        posted_question_count: posted_questions.size
+      )
+      parsed[:questions] = reconciled_questions(parsed[:questions], posted_questions)
+    end
+
+    # The posted comment is the contract the inbox answers against, so a
+    # structured payload that disagrees with it cannot be stored verbatim.
+    # But the usual disagreement is confined to the choice options — the same
+    # agent writes `choices[].detail` and the comment marker line
+    # independently, and a one-character drift must not discard the
+    # recommendation, rationale, examples, and evidence_references, which are
+    # independent of the option details. When the question labels line up,
+    # keep the structured records and let the posted markers supply the
+    # answer options; only a label-level mismatch (different questions,
+    # order, or count) discards the payload wholesale.
+    # @spec ISSUE-ENHANCEMENT-020
+    def reconciled_questions(structured_questions, posted_questions)
+      return posted_questions unless question_labels(structured_questions) == question_labels(posted_questions)
+
+      structured_questions.zip(posted_questions).map { |question, posted| merge_posted_choices(question, posted) }
+    end
+
+    def merge_posted_choices(question, posted)
+      choices = ClarifyingQuestions::Choices.call(question: posted)
+      return question.except(:choices, :choice_type) unless choices
+
+      question.merge(
+        choices: choices[:options].map { |option| { label: option[:label], detail: option[:text] } },
+        choice_type: choices[:type].to_s
+      )
+    end
+
+    def question_labels(questions)
+      question_contracts(questions).map { |contract| contract[:question] }
+    end
+
+    def question_contracts(questions)
+      Array(questions).map do |question|
+        choices = ClarifyingQuestions::Choices.call(question: question)
+        text = ClarifyingQuestions::QuestionPayload.submission_text(question)
+        text = text.split(ClarifyingQuestions::Choices::ANY_MARKER).first if choices && !question.is_a?(Hash)
+        { question: text.gsub(/\s+/, " ").strip, choices: choices }
+      end
     end
 
     # The round cap bounds *automatic* re-evaluation (ISSUE-ENHANCEMENT-011).

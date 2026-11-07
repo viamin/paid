@@ -43,6 +43,29 @@ RSpec.describe ClarifyingQuestions::OpenChat do
       expect(system_message.content).to include("submit_clarifying_answers")
     end
 
+    # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-016
+    it "opens, renders, and saves progress for a structured clarification" do
+      structured_question = {
+        "question" => "Which cache should exports use?",
+        "choices" => [
+          { "label" => "Redis", "detail" => "Shared cache" },
+          { "label" => "Postgres", "detail" => "Persistent rows" }
+        ]
+      }
+      issue.update!(needs_input_questions: [ structured_question ])
+
+      chat = described_class.call(issue: issue, user: user)
+      progress = ClarifyingQuestions::SaveProgress.call(
+        chat_session: chat, position: 1, answer: "Redis", actor: user
+      )
+
+      expect(chat.metadata["clarifying_questions"]).to eq([ structured_question ])
+      expect(chat.messages.find_by(role: "system").content).to include(
+        "1. Which cache should exports use?", "- Redis (Shared cache)", "- Postgres (Persistent rows)"
+      )
+      expect(progress).to have_attributes(question: "Which cache should exports use?", answer: "Redis")
+    end
+
     it "resolves the questions before the insert so no GitHub call runs inside the open transaction" do
       load_open_transactions = nil
       allow(ClarifyingQuestions::Load).to receive(:call) do |**|

@@ -1,6 +1,11 @@
 <% content_for(:title) { "Inbox - Paid" } %>
 <%# @spec OPERATOR-INBOX-015 %>
 <% turbo_page_requires_reload if turbo_frame_request_id == "inbox-detail" %>
+<%# @spec OPERATOR-INBOX-026
+    A row selection advances the URL after replacing the detail frame. Exempt
+    the collection page from Turbo's snapshot cache so browser Back reloads
+    its canonical first selection instead of restoring the later frame body. %>
+<% turbo_exempts_page_from_cache if action_name == "index" %>
 
 <%# @spec OPERATOR-INBOX-003 @spec LIST-DETAIL-001 @spec LIST-DETAIL-005 @spec INBOX-FOUNDATION-009 %>
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"

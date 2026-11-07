@@ -41,10 +41,13 @@ module ClarifyingQuestions
     end
 
     def initialize(question:)
-      @question = question.to_s
+      @structured_choices = question.is_a?(Hash) ? QuestionPayload.call(question: question)[:choices] : nil
+      @question = question.is_a?(Hash) ? QuestionPayload.submission_text(question) : question.to_s
     end
 
     def call
+      return structured_choices if structured_choices
+
       types = marker_types.uniq
       options = option_contents.map { |content| build_option(content) }
       return nil if types.size != 1
@@ -55,7 +58,7 @@ module ClarifyingQuestions
 
     private
 
-    attr_reader :question
+    attr_reader :question, :structured_choices
 
     def marker_types
       question.scan(ANY_MARKER).map { |marker| marker == SINGLE_MARKER_TEXT ? :single : :multi }

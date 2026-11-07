@@ -54,6 +54,58 @@ RSpec.describe ClarifyingQuestions::IngestAnswers do
       end
     end
 
+    # @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+    # The description section carries folded marker strings while the
+    # answers reference the structured labels the inbox form rendered; the
+    # body channel must reconcile against the stored payload or every
+    # structured answer would be dropped as a mismatch.
+    context "when a quiet-mode description body carries structured answers" do
+      let(:label) { "Which cache should exports use?" }
+      let(:digest) { ClarifyingQuestions::DescriptionSection.digest_for([ label ]) }
+      let(:structured_question) do
+        {
+          "question" => label,
+          "choices" => [
+            { "label" => "Redis", "detail" => "Shared cache" },
+            { "label" => "Postgres", "detail" => "Persistent rows" }
+          ]
+        }
+      end
+      let(:issue_body) do
+        <<~BODY
+          Original issue body
+
+          <!-- paid:clarifying-questions -->
+          ## Clarifying questions
+
+          <!-- paid:clarifying-questions-digest:#{digest} -->
+          1. #{label}
+             - ( ) Redis) Shared cache
+             - ( ) Postgres) Persistent rows
+          <!-- /paid:clarifying-questions -->
+
+          <!-- paid:clarifying-answers -->
+          ## Clarifying question answers
+
+          <!-- paid:clarifying-answers-digest:#{digest} -->
+          **Q1: #{label}**
+          **A1:** Redis
+          <!-- /paid:clarifying-answers -->
+        BODY
+      end
+
+      it "ingests the answer pair against the reconciled structured payload" do
+        issue.update!(needs_input_questions: [ structured_question ])
+
+        described_class.call(project: project, issue: issue, issue_body: issue_body)
+
+        chunks = KnowledgeChunk.where(project: project, chunk_type: "qa_pair")
+        expect(chunks.count).to eq(1)
+        expect(chunks.first.content).to include("Q: #{label}")
+        expect(chunks.first.content).not_to include("( ) Redis")
+      end
+    end
+
     context "when a trusted user posts answers" do
       before do
         enhancement = trusted_comment(body: enhancement_body, created_at: 5.minutes.ago)

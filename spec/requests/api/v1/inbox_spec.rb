@@ -49,6 +49,23 @@ RSpec.describe "Mobile inbox API" do
     end
   end
 
+  it "serializes structured clarifying questions as submission text" do # @spec OPERATOR-INBOX-025
+    issue.update!(needs_input_questions: [
+      {
+        "question" => "Which cache should exports use?",
+        "choices" => [
+          { "label" => "Redis", "detail" => "Shared cache" },
+          { "label" => "Postgres", "detail" => "Persistent rows" }
+        ]
+      }
+    ])
+
+    get "/api/v1/inbox/entries/clarifying_questions:#{issue.id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "questions")).to eq([ "Which cache should exports use?" ])
+  end
+
   # @spec AUTO-PICK-QUEUE-015 MOBILE-API-006
   it "does not serialize dependency cycles that cross another owner's project" do
     other_user = create(:user, account:)

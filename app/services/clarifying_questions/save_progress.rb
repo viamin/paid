@@ -9,7 +9,8 @@ module ClarifyingQuestions
   # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-013
   class SaveProgress
     def self.question_digest(questions)
-      Digest::SHA256.hexdigest(AnswerPairs.normalize_questions(questions).join("\n"))
+      identities = Array(questions).map { |question| AnswerPairs.progress_identity(question) }
+      Digest::SHA256.hexdigest(identities.join("\n"))
     end
 
     def self.call(...)
@@ -63,7 +64,12 @@ module ClarifyingQuestions
       progress = ClarifyingQuestionProgress.find_or_initialize_by(issue:, question_digest:, position:)
       return progress if progress.persisted?
 
-      progress.assign_attributes(account: issue.project.account, project: issue.project, chat_session:, question:)
+      progress.assign_attributes(
+        account: issue.project.account,
+        project: issue.project,
+        chat_session:,
+        question: QuestionPayload.submission_text(question)
+      )
       progress.save!
       progress
     rescue ActiveRecord::RecordNotUnique
