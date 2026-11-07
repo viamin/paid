@@ -307,7 +307,8 @@ paths:
                 properties:
                   project_id: {type: integer}
                   work_item_id:
-                    type: [integer, 'null']
+                    type: integer
+                    nullable: true
                     description: Present when the projection is scoped to one work item.
                   authorizations:
                     type: array
@@ -323,18 +324,19 @@ paths:
                         status: {type: string, enum: [active, revoked, completed]}
                         in_force: {type: boolean}
                         expires_at:
-                          type: [string, 'null']
+                          type: string
                           format: date-time
+                          nullable: true
                         authority:
                           type: object
                           description: Effective-policy decision scoped to this authorization's work item.
                           required: [permitted]
                           properties:
                             permitted: {type: boolean}
-                            source: {type: [string, 'null']}
-                            reason: {type: [string, 'null']}
-                            phase: {type: [string, 'null']}
-                            grant_id: {type: [integer, 'null']}
+                            source: {type: string, nullable: true}
+                            reason: {type: string, nullable: true}
+                            phase: {type: string, nullable: true}
+                            grant_id: {type: integer, nullable: true}
                   phase_authority:
                     type: object
                     description: Effective-policy decisions present only on a single-work-item projection.
@@ -343,10 +345,10 @@ paths:
                       required: [permitted]
                       properties:
                         permitted: {type: boolean}
-                        source: {type: [string, 'null']}
-                        reason: {type: [string, 'null']}
-                        phase: {type: [string, 'null']}
-                        grant_id: {type: [integer, 'null']}
+                        source: {type: string, nullable: true}
+                        reason: {type: string, nullable: true}
+                        phase: {type: string, nullable: true}
+                        grant_id: {type: integer, nullable: true}
                   posture_signatures:
                     type: object
                     description: The posture signature pinned by boundary rechecks, per action.
