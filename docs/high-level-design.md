@@ -155,7 +155,8 @@ audit event. See `docs/intent/feature-approval/`.
 Selected Inbox detail views expose a read-only progress projection from these
 authoritative records. It distinguishes design, strict-TDD test review, code
 review, owner approval, and merge gates; binds decisions to current revisions;
-and uses the same contract for web, API, and contextual chat. Queue listings
+and uses the same contract for web, scoped bearer-token API, in-app MCP tools,
+and contextual chat. Queue listings
 and badges remain cheap local projections and do not construct this detail
 evidence. See `docs/intent/operator-inbox/`.
 

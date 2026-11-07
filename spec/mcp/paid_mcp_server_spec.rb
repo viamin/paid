@@ -154,7 +154,8 @@ RSpec.describe PaidMcpServer do
         "list_projects", "get_project", "get_project_issues",
         "get_project_pull_requests", "get_agent_run", "list_agent_runs",
         "get_issue_details", "get_pull_request_details", "search_code",
-        "list_account_memberships", "get_user_settings", "list_provider_api_keys"
+        "list_account_memberships", "get_user_settings", "list_provider_api_keys",
+        "list_inbox_entries", "get_inbox_entry"
       )
       expect(names).not_to include("trigger_agent_run", "cancel_agent_run")
     end

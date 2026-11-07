@@ -376,6 +376,24 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "list_inbox_entries",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, :inbox, :index?, policy_class: InboxPolicy)
+          Inbox::Queue.call(user: user)
+        }
+      },
+      {
+        tool_name: "get_inbox_entry",
+        denied_user: -> { nil },
+        arguments: -> { { entry_id: "clarifying_questions:#{issue.id}" } },
+        ui_call: ->(user) {
+          authorize_record!(user, :inbox, :show?, policy_class: InboxPolicy)
+          Inbox::FindEntry.call(user: user, entry_id: "clarifying_questions:#{issue.id}")
+        }
+      },
+      {
         tool_name: "search_code",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, query: "agent run" } },
