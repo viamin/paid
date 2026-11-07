@@ -35,18 +35,23 @@ module PartialCloseouts
       Digest::SHA256.hexdigest([ issue.title, issue.body ].map(&:to_s).join("\0"))
     end
 
-    def self.source_revision_for(issue, closeout_evidence: Issues::CloseoutEvidence.call(issue), technical_evidence: nil)
+    def self.source_revision_for(issue, closeout_evidence: Issues::CloseoutEvidence.call(issue), technical_evidence: nil,
+      trusted_measurement_evidence: nil)
       prerequisite_revision = TechnicalPrerequisites::Evidence.revision_for(issue, records: technical_evidence)
-      return closeout_evidence.digest if prerequisite_revision.blank?
+      measurement_revision = TrustedMeasurements::Evidence.revision_for(issue, records: trusted_measurement_evidence)
+      revisions = [ closeout_evidence.digest, prerequisite_revision, measurement_revision ].compact
 
-      Digest::SHA256.hexdigest([ closeout_evidence.digest, prerequisite_revision ].join("\0"))
+      return closeout_evidence.digest if revisions.one?
+
+      Digest::SHA256.hexdigest(revisions.join("\0"))
     end
 
     # @spec OPERATOR-INBOX-016
-    def initialize(issue, evidence: nil, technical_evidence: nil)
+    def initialize(issue, evidence: nil, technical_evidence: nil, trusted_measurement_evidence: nil)
       @issue = issue
       @evidence = evidence
       @technical_evidence = technical_evidence
+      @trusted_measurement_evidence = trusted_measurement_evidence
     end
 
     def call
@@ -123,7 +128,10 @@ module PartialCloseouts
 
     def current_source_revision
       @current_source_revision ||= self.class.source_revision_for(
-        issue, closeout_evidence: @evidence || Issues::CloseoutEvidence.call(issue), technical_evidence: @technical_evidence
+        issue,
+        closeout_evidence: @evidence || Issues::CloseoutEvidence.call(issue),
+        technical_evidence: @technical_evidence,
+        trusted_measurement_evidence: @trusted_measurement_evidence
       )
     end
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4572,6 +4572,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
   end
 
+  create_table "trusted_measurement_attempts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "check_key", null: false
+    t.integer "check_version", default: 1, null: false
+    t.integer "consecutive_failure_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.string "criterion_key", null: false
+    t.string "deployed_revision"
+    t.datetime "executed_at"
+    t.integer "external_issue_number", null: false
+    t.string "failure_reason"
+    t.bigint "issue_id"
+    t.bigint "project_id", null: false
+    t.jsonb "result", default: {}, null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_trusted_measurement_attempts_on_account_id"
+    t.index ["issue_id"], name: "index_trusted_measurement_attempts_on_issue_id"
+    t.index ["project_id", "check_key", "check_version", "deployed_revision", "criterion_key", "external_issue_number"], name: "index_trusted_measurement_attempts_on_identity", unique: true
+    t.index ["project_id", "status"], name: "index_trusted_measurement_attempts_on_project_id_and_status"
+    t.index ["project_id"], name: "index_trusted_measurement_attempts_on_project_id"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
     t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
@@ -5190,6 +5213,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"
   add_foreign_key "tracker_configurations", "users", column: "created_by_id"
+  add_foreign_key "trusted_measurement_attempts", "accounts"
+  add_foreign_key "trusted_measurement_attempts", "issues"
+  add_foreign_key "trusted_measurement_attempts", "projects"
   add_foreign_key "user_settings", "provider_api_keys", column: "kb_chat_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "provider_api_keys", column: "kb_embedding_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "users"
