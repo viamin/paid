@@ -41,7 +41,7 @@ module Knowledge
         existing = find_existing_artifact(data, content_hash)
 
         if existing
-          reassign_to_current_run(existing)
+          reassign_to_current_run(existing, data)
         else
           begin
             replace_artifact(data, content_hash)
@@ -84,8 +84,7 @@ module Knowledge
     def find_by_run_and_hash(content_hash)
       KnowledgeArtifact.find_by(
         collector_run: collector_run,
-        content_hash: content_hash,
-        status: "active"
+        content_hash: content_hash
       )
     end
 
@@ -102,38 +101,51 @@ module Knowledge
 
     def recover_conflicted_artifact(data, content_hash)
       matching_artifact = find_existing_artifact(data, content_hash)
-      return reassign_to_current_run(matching_artifact) if matching_artifact
+      return reassign_to_current_run(matching_artifact, data) if matching_artifact
 
       active_artifact = find_active_artifact(data)
       return replace_artifact(data, content_hash) if active_artifact
 
       run_hash_artifact = find_by_run_and_hash(content_hash)
-      return reassign_to_current_run(run_hash_artifact) if run_hash_artifact
+      return reuse_conflicted_artifact(run_hash_artifact, data) if run_hash_artifact
 
       raise ActiveRecord::RecordNotUnique, "Could not recover conflicting knowledge artifact insert"
     rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
       raise unless unique_conflict?(e)
 
       matching_artifact = find_existing_artifact(data, content_hash)
-      return reassign_to_current_run(matching_artifact) if matching_artifact
+      return reassign_to_current_run(matching_artifact, data) if matching_artifact
 
       run_hash_artifact = find_by_run_and_hash(content_hash)
-      return reassign_to_current_run(run_hash_artifact) if run_hash_artifact
+      return reuse_conflicted_artifact(run_hash_artifact, data) if run_hash_artifact
 
       raise
     end
 
-    def reassign_to_current_run(artifact)
+    def reuse_conflicted_artifact(artifact, data)
+      return artifact if artifact.status.in?(%w[active deleted])
+
+      KnowledgeArtifact.transaction do
+        mark_prior_stale(data)
+        artifact.update!(status: "active", artifact_type: data[:artifact_type], scope_path: data[:scope_path],
+          identifier: data[:identifier], content: data[:content], metadata: data[:metadata] || {})
+        artifact.knowledge_chunks.update_all(status: "stale", updated_at: Time.current)
+        create_chunks(artifact, data[:chunks] || [])
+      end
+      artifact
+    end
+
+    def reassign_to_current_run(artifact, data)
+      return artifact if artifact.collector_run_id == collector_run.id
+
       artifact.update!(collector_run: collector_run)
-    rescue ActiveRecord::RecordNotUnique
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => error
+      raise unless unique_conflict?(error)
+
       # Another artifact in this collector_run already has the same content_hash.
       # Refetch the existing artifact instead.
-      KnowledgeArtifact.find_by(
-        project: project,
-        collector_run: collector_run,
-        content_hash: artifact.content_hash,
-        status: "active"
-      ) || raise
+      conflicting = find_by_run_and_hash(artifact.content_hash)
+      conflicting ? reuse_conflicted_artifact(conflicting, data) : raise
     end
 
     def mark_prior_stale(data)

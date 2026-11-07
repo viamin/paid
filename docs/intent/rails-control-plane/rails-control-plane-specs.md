@@ -44,6 +44,22 @@
 
 ## Background Work
 
+- [x] **RAILS-CONTROL-PLANE-011** — When a resource profile refresh samples
+  finished agent runs, it SHALL read only fields needed for the memory sample
+  and use bounded database batches for every profile level, including metric
+  limits for only the runs in the current batch.
+  *Tests:* `spec/services/agent_run_resource_profiles/refresh_for_run_spec.rb`.
+  *Code:* `AgentRunResourceProfiles::RefreshForRun#source_runs_for`,
+  `AgentRunResourceProfiles::RefreshForRun#summarize_samples`.
+
+- [x] **RAILS-CONTROL-PLANE-012** — When a finished run triggers a resource
+  profile refresh, each GoodJob perform SHALL calculate one fallback level and
+  enqueue the next level only after success, until all five levels are updated.
+  *Tests:* `spec/jobs/agent_run_resource_profile_refresh_job_spec.rb`,
+  `spec/services/agent_run_resource_profiles/refresh_for_run_spec.rb`.
+  *Code:* `AgentRunResourceProfileRefreshJob`,
+  `AgentRunResourceProfiles::RefreshForRun`.
+
 - [x] **RAILS-CONTROL-PLANE-003** — The control plane SHALL use GoodJob as its
   lightweight Rails background executor with `async_server` as the default
   execution mode and a declared cron schedule for recurring maintenance and

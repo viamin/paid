@@ -105,6 +105,36 @@ RSpec.describe AgentRunResourceProfiles::RefreshForRun do
       expect(specific_profile.recommended_memory_limit_bytes).to be >= specific_profile.max_memory_bytes
     end
 
+    # @spec RAILS-CONTROL-PLANE-012
+    it "can refresh one profile level without retaining all five rollups in one job" do
+      run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at)
+
+      expect {
+        described_class.call(agent_run: run, profile_level: "specific")
+      }.to change(AgentRunResourceProfile, :count).by(1)
+
+      expect(specific_profile.sample_count).to eq(1)
+    end
+
+    # @spec RAILS-CONTROL-PLANE-011
+    it "loads metric limits only for the current sample batch" do
+      stub_const("AgentRunResourceProfiles::RefreshForRun::SAMPLE_BATCH_SIZE", 1)
+      create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at - 1.day)
+      latest_run = create_sample_run(memory_bytes: 2.gigabytes, completed_at:)
+      metric_queries = []
+      subscriber = lambda do |event|
+        sql = event.payload[:sql]
+        metric_queries << sql if sql.include?("MAX") && sql.include?("container_metrics")
+      end
+
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        described_class.call(agent_run: latest_run, profile_level: "specific")
+      end
+
+      expect(specific_profile.sample_count).to eq(2)
+      expect(metric_queries.size).to eq(2)
+    end
+
     it "uses the memory limit as the effective sample when an OOM caps observed usage" do
       run = create(:agent_run,
         :failed,

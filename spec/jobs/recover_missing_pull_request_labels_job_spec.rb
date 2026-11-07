@@ -28,6 +28,47 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       )
     end
 
+    # @spec PR-LABEL-RECOVERY-004
+    it "continues after a bounded page without skipping the remaining runs" do
+      stub_const("RecoverMissingPullRequestLabelsJob::BATCH_SIZE", 1)
+      runs = [ 416, 417 ].map do |number|
+        create(:agent_run, :completed, project: project, issue: nil, custom_prompt: "Create PR", goal: "create_pr",
+          pull_request_number: number, pull_request_url: "https://github.com/viamin/paid/pull/#{number}")
+      end
+      runs.each do |run|
+        create(:issue, :pull_request, project: project, github_number: run.pull_request_number, labels: [])
+      end
+      allow(described_class).to receive(:perform_later)
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:add_labels_to_issue).once
+      expect(described_class).to have_received(:perform_later)
+        .with(after_id: runs.first.id, through_id: runs.last.id)
+
+      described_class.perform_now(after_id: runs.first.id, through_id: runs.last.id)
+
+      expect(github_client).to have_received(:add_labels_to_issue).twice
+    end
+
+    # @spec PR-LABEL-RECOVERY-004
+    it "keeps the original candidate when a newer run appears during the sweep" do
+      stub_const("RecoverMissingPullRequestLabelsJob::BATCH_SIZE", 1)
+      runs = [ 416, 417 ].map do |number|
+        create(:agent_run, :completed, project:, issue: nil, custom_prompt: "Create PR", goal: "create_pr",
+          pull_request_number: number, pull_request_url: "https://github.com/viamin/paid/pull/#{number}")
+      end
+      runs.each { |run| create(:issue, :pull_request, project:, github_number: run.pull_request_number, labels: []) }
+      allow(described_class).to receive(:perform_later)
+
+      described_class.perform_now
+      create(:agent_run, :completed, project:, issue: nil, custom_prompt: "Create PR", goal: "create_pr",
+        pull_request_number: 417, pull_request_url: "https://github.com/viamin/paid/pull/417")
+      described_class.perform_now(after_id: runs.first.id, through_id: runs.last.id)
+
+      expect(github_client).to have_received(:add_labels_to_issue).twice
+    end
+
     it "reapplies the generated and automation labels when both are missing" do
       create(:agent_run, :completed,
         project: project,

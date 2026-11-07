@@ -23,6 +23,19 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Agent Runs")
       end
 
+      # @spec AGENT-RUNS-INDEX-003
+      it "does not load large execution payloads for listed runs" do
+        create(:agent_run, project: project, streaming_turns_data: [ { "turn" => 1 } ])
+
+        queries = capture_queries { get agent_runs_path }
+        run_page_query = queries.find { |sql| sql.match?(/FROM "agent_runs".*ORDER BY.*LIMIT/m) }
+
+        expect(response).to have_http_status(:ok)
+        expect(run_page_query).to be_present
+        expect(run_page_query).to include('"agent_runs"."id"')
+        expect(run_page_query).not_to include('"agent_runs"."streaming_turns_data"')
+      end
+
       it "shows agent runs across all projects" do
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
         get agent_runs_path

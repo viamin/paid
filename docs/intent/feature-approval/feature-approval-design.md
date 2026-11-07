@@ -82,22 +82,28 @@ Issue coverage preloads shared project records in a separate query rather than
 joining full project rows into the issue result. Project audit history must not
 be repeated for every issue: PostgreSQL results and their Ruby string copies
 would otherwise multiply that history by the synchronized issue count. One
-reconciliation sweep builds a bounded, job-scoped plain issue-fact snapshot for
+reconciliation page builds a bounded, job-scoped plain issue-fact snapshot for
 each authorized project selected by its exact owner/repository pair and reuses
-it for every artifact at that sweep's pinned
-revisions. A sweep with no artifacts does not construct issue coverage. Each
+it for up to ten artifacts at that page's pinned revision. The page cursor is
+the last artifact path, and the complete tree supplies the path set used to
+retire removed findings only after the final page. A page with no artifacts
+does not construct issue coverage. Each
 artifact receives only facts from its own referenced or
 associated projects, even when another artifact expands the sweep's authorized
 project set. The snapshot selects only reconciliation fields and batches
 canonical-manifest and exact-backlink evidence; it never retains issue ORM
-graphs or carries the snapshot into another sweep or revision.
+graphs or carries the snapshot into another page or revision.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization
 transaction commits, so an existing job cannot consume stale evidence while
 the update loses its follow-up. Rolled-back syncs do not schedule work.
-PostgreSQL-backed GoodJob concurrency permits one queued
-invocation and one running invocation per project and reconciliation scope.
+PostgreSQL-backed GoodJob concurrency keeps one queued sync follow-up alongside
+one running project invocation. Page continuations use a separate job class
+with the same project sweep execution key, so pages and new sweeps do not
+overlap. A page can enqueue its successor while the current page runs. Before
+the final page retires removed findings, it checks the current branch revision;
+if the branch moved, it queues a fresh sweep and leaves those findings intact.
 Repeated syncs share the queued invocation; a sync during execution may enqueue
 one follow-up that reads the latest synchronized state. The window is not
 extended by subsequent syncs, so continuous activity cannot starve coverage.

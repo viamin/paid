@@ -24,6 +24,27 @@
   `spec/services/knowledge/artifact_store_spec.rb`,
   `spec/jobs/run_collectors_job_spec.rb`.
 
+- [x] **KNOWLEDGE-014** — When GoodJob collects knowledge for a project commit,
+  each perform SHALL execute at most one collector type and enqueue the next
+  type only after success. After all types complete or skip, the chain SHALL
+  verify persisted collector statuses before staling older artifacts and
+  marking the project ready. If a perform is interrupted while a collector is
+  marked running, its retry SHALL replay idempotent artifact writes and finish
+  the collector without reviving explicitly deleted artifacts. A batch
+  collector SHALL serialize with a legacy full collector job for the same
+  project commit, and its continuation SHALL enqueue even when initial
+  collection requests occupy their enqueue slots. A batch for a commit no
+  longer at the target branch head SHALL skip collection. The tree-sitter
+  collector SHALL process a bounded page of source files per perform and
+  resume from its last processed path until all files are covered.
+  *Code:* `app/jobs/run_collector_batch_job.rb`,
+  `app/jobs/run_collector_continuation_job.rb`,
+  `app/services/knowledge/collector_runner.rb`,
+  `app/services/knowledge/artifact_store.rb`.
+  *Test:* `spec/jobs/run_collector_batch_job_spec.rb`,
+  `spec/services/knowledge/collector_runner_spec.rb`,
+  `spec/services/knowledge/artifact_store_spec.rb`.
+
 - [x] **KNOWLEDGE-CREDENTIAL-001** — When a knowledge owner selects a saved
   credential for embeddings, Paid SHALL persist a binding
   to that existing credential, resolve it ahead of platform fallback in direct

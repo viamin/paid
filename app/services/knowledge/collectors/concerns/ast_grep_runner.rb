@@ -12,13 +12,13 @@ module Knowledge
       module AstGrepRunner
         private
 
-        def run_ast_grep(pattern, language)
+        def run_ast_grep(pattern, language, paths: nil)
           cmd = [
             "ast-grep", "run",
             "--pattern", pattern,
             "--lang", language,
             "--json",
-            scan_path
+            *(paths || [ scan_path ])
           ]
 
           output = execute_ast_grep(cmd)

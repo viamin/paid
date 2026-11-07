@@ -15,21 +15,25 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   queue_as :maintenance
 
   good_job_control_concurrency_with(
-    total_limit: 1,
-    enqueue_limit: 1,
+    enqueue_limit: 2,
+    perform_limit: 1,
     key: "recover_missing_pull_request_labels"
   )
 
   CANDIDATE_WINDOW = 30.days
   IDENTITY_RECOVERY_BACKOFF = 24.hours
+  BATCH_SIZE = 50
 
-  def perform
+  def perform(after_id: nil, through_id: nil)
     recovered = 0
     skipped = 0
     failed = 0
     not_synced = 0
 
-    runs = candidate_runs.to_a
+    through_id ||= AgentRun.maximum(:id)
+    return unless through_id
+
+    runs = candidate_page(after_id:, through_id:)
     synced_prs = prefetch_synced_prs(runs)
 
     runs.each do |agent_run|
@@ -87,11 +91,28 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       recovered: recovered,
       skipped: skipped,
       failed: failed,
-      not_synced: not_synced
+      not_synced: not_synced,
+      after_id: after_id,
+      through_id: through_id
     )
+
+    self.class.perform_later(after_id: runs.last.id, through_id: through_id) if runs.size == BATCH_SIZE
   end
 
   private
+
+  # DISTINCT ON chooses one run per PR/branch identity. Page the result by
+  # immutable run ID so processing a candidate cannot shift the next page.
+  # @spec PR-LABEL-RECOVERY-004
+  def candidate_page(after_id:, through_id:)
+    snapshot = candidate_runs.where("agent_runs.id <= ?", through_id)
+    AgentRun.from("(#{snapshot.to_sql}) agent_runs")
+      .where("agent_runs.id > ?", after_id.to_i)
+      .order(:id)
+      .limit(BATCH_SIZE)
+      .preload(:issue, project: :github_token)
+      .to_a
+  end
 
   # Returns one AgentRun per recorded PR or branch identity. Terminal runs may
   # fail after GitHub accepts a PR but before its identity is persisted, so a
@@ -115,7 +136,6 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       .where.not(projects: { pr_target: "upstream" })
       .select("DISTINCT ON (project_id, COALESCE(pull_request_number, 0), COALESCE(branch_name, '')) agent_runs.*")
       .order(Arel.sql("project_id, COALESCE(pull_request_number, 0), COALESCE(branch_name, ''), id DESC"))
-      .preload(:issue, project: :github_token)
   end
 
   # Batch-loads synced Issue records for all candidate runs, keyed by

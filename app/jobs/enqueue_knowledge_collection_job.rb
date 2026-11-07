@@ -37,7 +37,7 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
 
     detect_import_conventions(project, commit_sha)
 
-    RunCollectorsJob.perform_later(
+    RunCollectorBatchJob.perform_later(
       project.id,
       commit_sha,
       branch: project.default_branch

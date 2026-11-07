@@ -800,6 +800,13 @@
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
   `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-041** — When the automatic acceptance-audit sweep has
+  more than one project or more than 50 candidate issues in a project, each
+  perform SHALL examine at most one project and 50 issues, carry a stable
+  continuation cursor, and preserve the per-project new-audit limit.
+  *Code:* `app/jobs/partial_closeout_acceptance_audit_sweep_job.rb`.
+  *Test:* `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-042** — When a built-in, typed closeout evaluation
   retains a report for its originating Inbox prerequisite, the system SHALL
   record the report as revision-bound evidence for only the matching current
