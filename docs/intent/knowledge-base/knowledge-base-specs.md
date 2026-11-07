@@ -52,6 +52,21 @@
   `spec/services/knowledge/collector_runner_spec.rb`,
   `spec/services/knowledge/artifact_store_spec.rb`.
 
+- [x] **KNOWLEDGE-016** — When a batch collector perform runs the symbol-index
+  collector type with `partial_collection` enabled, the collector SHALL
+  process a bounded page of source files (`SymbolIndexCollector::FILES_PER_PAGE`),
+  scope its ast-grep invocations to only that page's files, carry the last
+  processed relative path forward as the next page's cursor, and compute each
+  page's fully-qualified symbol names from only that page's own per-file
+  results so chunking a repository into pages does not change the identifiers
+  or content a full, unpaged collection would have produced. The generic
+  collector-run completion, content-hash deduplication, and stale-artifact
+  finalization guarantees of KNOWLEDGE-014 apply unchanged because they are
+  implemented against the `collect_page` contract, not specific to any one
+  collector type.
+  *Code:* `app/services/knowledge/collectors/symbol_index_collector.rb`.
+  *Test:* `spec/services/knowledge/collectors/symbol_index_collector_spec.rb`.
+
 - [x] **KNOWLEDGE-CREDENTIAL-001** — When a knowledge owner selects a saved
   credential for embeddings, Paid SHALL persist a binding
   to that existing credential, resolve it ahead of platform fallback in direct

@@ -136,4 +136,46 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
       end
     end
   end
+
+  # @spec KNOWLEDGE-016
+  describe "#collect_page" do
+    context "when ast-grep is not installed" do
+      before { skip "ast-grep not installed; skipping integration specs" if collector.tool_version.nil? }
+
+      it "visits each eligible file once in bounded pages" do
+        stub_const("Knowledge::Collectors::SymbolIndexCollector::FILES_PER_PAGE", 1)
+        cursors = []
+        all_artifacts = []
+        cursor = nil
+
+        loop do
+          artifacts, next_cursor = collector.collect_page(cursor: cursor)
+          all_artifacts.concat(artifacts)
+          break unless next_cursor
+
+          expect(cursors).not_to include(next_cursor)
+          cursors << next_cursor
+          cursor = next_cursor
+        end
+
+        expect(cursors).not_to be_empty
+        expect(all_artifacts.map { |artifact| artifact[:scope_path] }.uniq).to include("sample.rb")
+        expect(all_artifacts.map { |artifact| artifact[:identifier] }.uniq)
+          .to match_array(collector.collect.map { |artifact| artifact[:identifier] }.uniq)
+      end
+
+      it "returns an empty page with no cursor once every file is covered" do
+        stub_const("Knowledge::Collectors::SymbolIndexCollector::FILES_PER_PAGE", 1_000)
+
+        artifacts, next_cursor = collector.collect_page(cursor: nil)
+
+        expect(next_cursor).to be_nil
+        expect(artifacts).not_to be_empty
+      end
+
+      it "raises when a cursor no longer matches any current file" do
+        expect { collector.collect_page(cursor: "does/not/exist.rb") }.to raise_error(ArgumentError)
+      end
+    end
+  end
 end

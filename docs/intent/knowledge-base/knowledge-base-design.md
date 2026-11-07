@@ -37,10 +37,12 @@ The import-time enqueue job retries transient worktree and PostgreSQL connection
 failures with bounded backoff; it reports the failure only when that retry
 policy is exhausted. Each collector releases its container before the
 next starts; Ruby heap memory remains subject to garbage collection. The
-tree-sitter collector scans at most 25 source files per continuation, carrying
-the last processed relative path forward. It marks its collector run complete
-only after the final page; direct full collection still uses its existing
-single-call behavior. A retried
+tree-sitter and symbol-index collectors each scan at most 25 source files per
+continuation, carrying the last processed relative path forward and scoping
+their ast-grep invocations to that page's files so neither materializes
+matches, results, or artifacts for the whole repository in one perform. Each
+marks its collector run complete only after the final page; direct full
+collection still uses its existing single-call behavior. A retried
 continuation replays a collector left `running` by process interruption, using
 idempotent artifact writes. The final continuation checks every collector's
 persisted status before marking older artifacts stale and the project ready;
