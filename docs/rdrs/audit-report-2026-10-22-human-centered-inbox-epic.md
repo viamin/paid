@@ -66,6 +66,27 @@ not present the full CI wrapper as passing. No destructive database recovery
 was attempted; the focused suite above is the executable evidence for this
 audit.
 
+### Follow-up: full CI with PostgreSQL available ([#4904](https://github.com/viamin/paid/issues/4904))
+
+On 2026-11-07 the CI wrapper was re-run verbatim against a live PostgreSQL
+16.13 service provided through `DATABASE_URL`. With `DATABASE_URL` pinned,
+`bin/ensure-worktree-databases` skipped automatic worktree database creation
+by design, and `bin/rails db:prepare` — invoked by the Setup step — migrated
+the complete schema into the run database (213 relations in `public`), so the
+database phase that failed above now passes. Complete result:
+
+| Step | Result | Notes |
+| --- | --- | --- |
+| Setup (`bin/setup --skip-server`) | Failed (11.24s) | Git hooks, dependency install, database preparation against the provided PostgreSQL, and the non-fatal Qdrant/workspace checks completed; the step aborted at the agent container image build because the sandbox provides no Docker CLI or daemon (`docker: command not found` from `scripts/build-agent-image.sh`). The abort skipped only cosmetic trailing sub-steps (log/tempfile cleanup). |
+| Lint (`bin/lint`) | Passed (1m58.49s) | RuboCop, ESLint, markdownlint, instruction navigation, ShellCheck, and Herb all clean. |
+| Security audit (`bin/audit`) | Passed (48.11s) | Gitleaks secret scan (no leaks), Brakeman (0 warnings, 0 errors), bundler-audit (0 vulnerabilities; advisory DB dated 2026-11-04), yarn audit (0 advisories, 0 allowlisted). |
+
+The overall wrapper exits non-zero (2m57.85s) solely because of the
+Docker-dependent image build. Hosted CI builds that image in the dedicated
+`Agent Image` workflow (`.github/workflows/agent-image.yml`), so this is an
+environment limitation of the agent sandbox, not a PostgreSQL gap and not a
+code defect. The scanner summaries above are quoted verbatim from the run.
+
 ## Rollout guards and closure disposition
 
 RDR-069's project-level exploration setting remains the gate for the
