@@ -6,6 +6,13 @@ require "rails_helper"
 RSpec.describe TrustedMeasurements::RunCheckJob do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, :closed, project:, github_number: 4812) }
+  let(:job_arguments) do
+    {
+      check_key: "agent_planning_hold_reconciliation_closed_count",
+      external_issue_number: issue.github_number,
+      criterion_key: "closed_planning_hold_notifications_cleared"
+    }
+  end
 
   around do |example|
     previous = ENV["PAID_DEPLOYED_REVISION"]
@@ -38,5 +45,32 @@ RSpec.describe TrustedMeasurements::RunCheckJob do
     )
 
     expect(observed_account_id).to eq(project.account_id)
+  end
+
+  it "retries a transient statement failure while attempts remain" do
+    notifier = instance_double(Paid::ExceptionNotifier, call: nil)
+    allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+    allow(TrustedMeasurements::RunCheck).to receive(:call)
+      .and_raise(ActiveRecord::StatementInvalid, "query timed out")
+    job = described_class.new(project.id, **job_arguments)
+    job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid]" => 0 }
+
+    expect { job.perform_now }.not_to raise_error
+    expect(notifier).not_to have_received(:call)
+  end
+
+  it "raises a statement failure after exhausting retries" do
+    notifier = instance_double(Paid::ExceptionNotifier, call: nil)
+    allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+    allow(TrustedMeasurements::RunCheck).to receive(:call)
+      .and_raise(ActiveRecord::StatementInvalid, "query timed out")
+    job = described_class.new(project.id, **job_arguments)
+    job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid]" => 4 }
+
+    expect { job.perform_now }.to raise_error(ActiveRecord::StatementInvalid)
+    expect(notifier).to have_received(:call).with(
+      an_instance_of(ActiveRecord::StatementInvalid),
+      data: hash_including(subsystem: "trusted_measurements", project_id: project.id)
+    )
   end
 end

@@ -46,6 +46,23 @@ RSpec.describe TrustedMeasurements::Evidence do
       expect(records.first.dig("result", "active_closed_issue_count")).to eq(0)
     end
 
+    # @spec TRUSTED-MEASUREMENTS-005
+    it "prefers freshly recollected evidence for the current revision after a rollback" do
+      ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
+      current = create(:trusted_measurement_attempt, :succeeded, project:, issue:, deployed_revision: "rev-1",
+        executed_at: 2.days.ago, result: { "active_closed_issue_count" => 5 })
+      create(:trusted_measurement_attempt, :succeeded, project:, issue:, deployed_revision: "rev-2",
+        executed_at: 1.day.ago, result: { "active_closed_issue_count" => 0 })
+      current.update!(executed_at: Time.current, result: { "active_closed_issue_count" => 0 })
+
+      records = described_class.records_for(issue)
+
+      expect(records).to contain_exactly(hash_including(
+        "deployed_revision" => "rev-1", "current" => true,
+        "result" => hash_including("active_closed_issue_count" => 0)
+      ))
+    end
+
     it "returns an empty array for an issue with no trusted measurement evidence" do
       expect(described_class.records_for(issue)).to eq([])
     end

@@ -10,6 +10,7 @@ module TrustedMeasurements
   # but flagged +current: false+ so the assessment never treats it as live
   # evidence — the prompt is told explicitly, rather than silently
   # dropping the row and leaving the gap unexplained.
+  # @spec TRUSTED-MEASUREMENTS-005
   class Evidence
     def self.records_for(issue)
       records_for_issues([ issue ]).fetch(issue.id, [])
@@ -50,7 +51,8 @@ module TrustedMeasurements
 
     def self.latest_per_check(records)
       records.transform_values do |attempts|
-        attempts.group_by { |record| [ record["check_key"], record["criterion_key"] ] }.values.map(&:last)
+        attempts.group_by { |record| [ record["check_key"], record["criterion_key"] ] }
+          .values.map { |group| group.find { |record| record["current"] } || group.last }
       end
     end
     private_class_method :latest_per_check
