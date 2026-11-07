@@ -68,6 +68,16 @@ through a bounded maintenance sweep. The effective graph includes resolved
 cross-project references and follows the same open-state and child-to-parent
 contextual-reference exclusions as readiness.
 
+The maintenance sweep pages accounts by immutable account ID. A root invocation
+captures the highest account ID as its cycle boundary; each continuation keeps
+that boundary and resumes after its last successfully reconciled account. This
+prevents inserts during a cycle from shifting the page, so every account in the
+captured range is visited once and accounts created later wait for the next
+cron cycle. If coverage is unavailable for an account, the continuation keeps
+the prior cursor and retries that account before advancing. Cache versions are
+bumped only after that account's reconciliation succeeds. Each page logs its
+account count, duration, and object allocations for fleet-capacity monitoring.
+
 Each strongly connected group produces one deterministic Inbox request keyed by
 its members. Its occurrence is derived from the persisted dependency rows, so a
 group that becomes acyclic and later recurs is a fresh occurrence even when its

@@ -96,10 +96,16 @@
 - [x] **AUTO-PICK-QUEUE-014** — When an account-scoped effective blocking
   dependency graph contains a strongly connected group, Paid SHALL reconcile
   it after dependency changes and through a bounded periodic backstop. The
+  backstop SHALL page accounts by stable ID through a cycle boundary captured
+  at its start, SHALL retry an unavailable account before advancing its cursor,
+  and SHALL defer accounts created after that boundary to the next cycle. The
   graph SHALL include resolved cross-project references and apply the existing
   open-state and contextual parent-reference exclusions. A reconciliation
-  failure SHALL be reported as unavailable rather than as zero cycles.
-  *Tests:* `spec/services/issues/dependency_cycles_spec.rb`.
+  failure SHALL be reported as unavailable rather than as zero cycles; cache
+  invalidation SHALL occur only after successful reconciliation; and each page
+  SHALL log duration and allocations. *Tests:*
+  `spec/services/issues/dependency_cycles_spec.rb`,
+  `spec/jobs/dependency_cycle_reconciliation_job_spec.rb`.
   *Code:* `Issues::DependencyCycles`, `DependencyCycleReconciliationJob`.
 
 - [x] **AUTO-PICK-QUEUE-015** — When reconciliation finds an effective cycle,
