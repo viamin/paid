@@ -927,12 +927,14 @@ RSpec.describe "Inbox" do
     document = Nokogiri::HTML(response.body)
     frame = document.at_css("turbo-frame#inbox-detail")
     master_detail = document.at_css("[data-controller~='inbox-master-detail']")
+    cache_control = document.at_css("meta[name='turbo-cache-control']")
 
     expect(frame["src"]).to eq(inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue),
       project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
     expect(frame["loading"]).to eq("eager")
     expect(frame.at_css("form")).to be_nil
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("false")
+    expect(cache_control["content"]).to eq("no-cache")
   end
 
   it "opens the current user's canonical interactive chat with one targeted queue lookup" do
