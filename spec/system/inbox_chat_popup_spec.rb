@@ -103,10 +103,10 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
     expect(page).to have_css("[data-inbox-master-detail-target='list']", visible: :visible)
     expect(page).to have_css("[data-inbox-master-detail-target='detailSection']", visible: :hidden)
     # The eager detail frame begins loading with the index response. Wait for
-    # that request before selecting another row: a second frame navigation
-    # intentionally aborts the first request, which Cuprite correctly reports
-    # as a JavaScript error while the initial frame is still in flight.
-    expect(page).to have_no_css("[data-inbox-detail-placeholder]")
+    # its rendered content before selecting another row: a second frame
+    # navigation intentionally aborts the first request, which Cuprite
+    # correctly reports as a JavaScript error while that request is in flight.
+    expect(page).to have_css("turbo-frame#inbox-detail h2", text: "#1 Alpha question")
 
     page.find("[data-inbox-master-detail-target='row']", match: :first).click
 
