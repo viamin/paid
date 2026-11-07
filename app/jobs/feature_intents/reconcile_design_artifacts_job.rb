@@ -18,6 +18,7 @@ module FeatureIntents
     BARE_ISSUE_PATTERN = %r{(?<![\w./-])#(\d+)}
     FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,4}\z/i
     COALESCING_WINDOW = 30.seconds
+    ARTIFACT_BATCH_SIZE = 10
 
     queue_as :maintenance
 
@@ -37,9 +38,9 @@ module FeatureIntents
       end
     end
 
-    def perform(project_id, pull_request_number = nil)
+    def perform(project_id, pull_request_number = nil, after_path: nil, revision: nil)
       @project = Project.find(project_id)
-      return reconcile_project_artifacts unless pull_request_number
+      return reconcile_project_artifacts(after_path:, revision:) unless pull_request_number
 
       design_pr = design_pull_request(pull_request_number)
       reconcile(artifact_for(design_pr), revision: design_pr.head_sha) if design_pr
@@ -113,14 +114,39 @@ module FeatureIntents
       )
     end
 
-    def reconcile_project_artifacts
-      discovery = DiscoverRdrArtifacts.call(project:)
+    # @spec DESIGN-RECONCILIATION-004
+    def reconcile_project_artifacts(after_path:, revision:)
+      discovery = DiscoverRdrArtifacts.call(project:, after_path:, limit: ARTIFACT_BATCH_SIZE, revision:)
       artifacts = discovery.artifacts.map { |artifact| [ rdr_artifact(artifact), artifact.revision, discovery.complete? && !artifact.body.nil? ] }
-      open_design_pull_requests.find_each do |design_pr|
-        artifacts << [ artifact_for(design_pr), design_pr.head_sha, true ]
+      if after_path.nil?
+        open_design_pull_requests.find_each do |design_pr|
+          artifacts << [ artifact_for(design_pr), design_pr.head_sha, true ]
+        end
       end
       reconcile_artifacts(artifacts)
-      resolve_removed_rdr_findings(discovery.artifacts) if discovery.complete?
+      return unless discovery.complete?
+
+      matching_paths = discovery.matching_paths || discovery.artifacts.map(&:path)
+      last_path = discovery.artifacts.last&.path
+      if last_path && matching_paths.any? { |path| path > last_path }
+        ReconcileDesignArtifactsPageJob.perform_later(project.id, after_path: last_path, revision: discovery.revision)
+      else
+        if after_path && current_branch_revision != discovery.revision
+          ReconcileDesignArtifactsJob.enqueue_for(project.id)
+          return
+        end
+
+        all_artifacts = matching_paths.map do |path|
+          DiscoverRdrArtifacts::Artifact.new(path:, revision: discovery.revision, body: nil)
+        end
+        resolve_removed_rdr_findings(all_artifacts)
+      end
+    end
+
+    def current_branch_revision
+      project.client.ref(project.full_name, "heads/#{project.default_branch}").object.sha
+    rescue GithubClient::Error, Faraday::Error
+      nil
     end
 
     def open_design_pull_requests

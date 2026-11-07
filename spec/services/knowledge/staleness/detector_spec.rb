@@ -72,7 +72,7 @@ RSpec.describe Knowledge::Staleness::Detector do
 
     context "when no previous collection exists" do
       it "enqueues initial collection" do
-        expect(RunCollectorsJob).to receive(:perform_later)
+        expect(RunCollectorBatchJob).to receive(:perform_later)
           .with(project.id, new_sha, branch: project.default_branch)
 
         result = detector.call
@@ -87,7 +87,7 @@ RSpec.describe Knowledge::Staleness::Detector do
         end
 
         it "enqueues collection since no collector has run" do
-          expect(RunCollectorsJob).to receive(:perform_later)
+          expect(RunCollectorBatchJob).to receive(:perform_later)
             .with(project.id, new_sha, branch: project.default_branch)
 
           result = detector.call
@@ -104,7 +104,7 @@ RSpec.describe Knowledge::Staleness::Detector do
         end
 
         it "does not enqueue duplicate collection" do
-          expect(RunCollectorsJob).not_to receive(:perform_later)
+          expect(RunCollectorBatchJob).not_to receive(:perform_later)
 
           result = detector.call
           expect(result[:collection_enqueued]).to be false
@@ -121,7 +121,7 @@ RSpec.describe Knowledge::Staleness::Detector do
         end
 
         it "enqueues collection so missing collectors can run" do
-          expect(RunCollectorsJob).to receive(:perform_later)
+          expect(RunCollectorBatchJob).to receive(:perform_later)
             .with(project.id, new_sha, branch: project.default_branch)
 
           result = detector.call
@@ -153,7 +153,7 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "enqueues re-collection for the failed collector" do
-        expect(RunCollectorsJob).to receive(:perform_later)
+        expect(RunCollectorBatchJob).to receive(:perform_later)
           .with(project.id, new_sha, branch: project.default_branch)
 
         result = detector.call
@@ -180,7 +180,7 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "detects staleness" do
-        expect(RunCollectorsJob).to receive(:perform_later)
+        expect(RunCollectorBatchJob).to receive(:perform_later)
           .with(project.id, new_sha, branch: project.default_branch)
 
         result = detector.call
@@ -202,7 +202,7 @@ RSpec.describe Knowledge::Staleness::Detector do
           collector_run: completed_run, project: project,
           scope_path: "app/models/post.rb")
 
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
 
         result = detector.call
 
@@ -218,7 +218,7 @@ RSpec.describe Knowledge::Staleness::Detector do
         chunk = create(:knowledge_chunk,
           knowledge_artifact: artifact, status: "active")
 
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
         detector.call
 
         expect(chunk.reload.status).to eq("stale")
@@ -237,7 +237,7 @@ RSpec.describe Knowledge::Staleness::Detector do
           collector_run: in_progress_run, project: project,
           scope_path: "app/models/user.rb")
 
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
 
         detector.call
 
@@ -250,7 +250,7 @@ RSpec.describe Knowledge::Staleness::Detector do
           collector_run: completed_run, project: project,
           scope_path: "app/models/user.rb")
 
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
 
         result = detector.call
         expect(result[:stale_artifacts_count]).to eq(0)
@@ -271,7 +271,7 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "detects staleness when SHAs differ but commit distance is zero" do
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
 
         result = detector.call
         expect(result[:stale]).to be true
@@ -302,7 +302,7 @@ RSpec.describe Knowledge::Staleness::Detector do
         allow(worktree_service).to receive(:run_repo_command)
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_return("app/models/user.rb\n")
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
 
         result = detector.call
         expect(result[:stale]).to be true
@@ -324,7 +324,7 @@ RSpec.describe Knowledge::Staleness::Detector do
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_return("")
 
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
 
         result = detector.call
         expect(result[:stale]).to be true
@@ -338,7 +338,7 @@ RSpec.describe Knowledge::Staleness::Detector do
           .with("diff", "--name-only", "#{old_sha}..#{new_sha}")
           .and_raise(WorktreeService::Error, "git failed")
 
-        allow(RunCollectorsJob).to receive(:perform_later)
+        allow(RunCollectorBatchJob).to receive(:perform_later)
 
         result = detector.call
         expect(result[:stale]).to be true
@@ -365,7 +365,7 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "does not enqueue duplicate collection for same version" do
-        expect(RunCollectorsJob).not_to receive(:perform_later)
+        expect(RunCollectorBatchJob).not_to receive(:perform_later)
 
         result = detector.call
         expect(result[:stale]).to be true
@@ -391,7 +391,7 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "enqueues re-collection so the failed collector can be retried" do
-        expect(RunCollectorsJob).to receive(:perform_later)
+        expect(RunCollectorBatchJob).to receive(:perform_later)
           .with(project.id, new_sha, branch: project.default_branch)
 
         result = detector.call
@@ -420,7 +420,7 @@ RSpec.describe Knowledge::Staleness::Detector do
       end
 
       it "enqueues re-collection so the failed attempt can be retried" do
-        expect(RunCollectorsJob).to receive(:perform_later)
+        expect(RunCollectorBatchJob).to receive(:perform_later)
           .with(project.id, new_sha, branch: project.default_branch)
 
         result = detector.call

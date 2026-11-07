@@ -141,7 +141,7 @@ module Knowledge
       def enqueue_recollection(current_sha)
         return false if recently_collected?(current_sha)
 
-        RunCollectorsJob.perform_later(
+        RunCollectorBatchJob.perform_later(
           project.id,
           current_sha,
           branch: project.default_branch

@@ -51,6 +51,17 @@ RSpec.describe Knowledge::ArtifactStore do
         expect(KnowledgeArtifact.count).to eq(1)
         expect(KnowledgeArtifact.first.collector_run).to eq(new_run)
       end
+
+      it "does not update an artifact already assigned to this run" do
+        store.store_all([ artifact_data ])
+        artifact = KnowledgeArtifact.first
+        artifact.update_columns(updated_at: 1.day.ago)
+        prior_updated_at = artifact.reload.updated_at
+
+        store.store_all([ artifact_data ])
+
+        expect(artifact.reload.updated_at).to eq(prior_updated_at)
+      end
     end
 
     context "when two artifacts have the same content but different scope_path" do
@@ -68,6 +79,54 @@ RSpec.describe Knowledge::ArtifactStore do
       it "stores only one artifact (content_hash is unique per run)" do
         store.store_all([ artifact_data, duplicate_data ])
         expect(KnowledgeArtifact.count).to eq(1)
+      end
+
+      # @spec KNOWLEDGE-014
+      it "replays an old artifact when the current run already has its content hash" do
+        old_run = create(:collector_run, project_version: create(:project_version, project:), collector_type: "test")
+        described_class.new(project:, collector_run: old_run).store_all([ artifact_data ])
+        store.store_all([ duplicate_data ])
+
+        expect { store.store_all([ artifact_data ]) }.not_to raise_error
+        expect(KnowledgeArtifact.where(collector_run:).count).to eq(1)
+      end
+
+      # @spec KNOWLEDGE-014
+      it "revives a stale current-run hash during replay" do
+        store.store_all([ duplicate_data ])
+        stale = KnowledgeArtifact.find_by!(collector_run:)
+        stale.update!(status: "stale")
+        stale.knowledge_chunks.update_all(status: "stale")
+
+        expect { store.store_all([ artifact_data ]) }.not_to raise_error
+        expect(stale.reload.status).to eq("active")
+        expect(stale.identifier).to eq(artifact_data[:identifier])
+        expect(stale.knowledge_chunks.active.count).to eq(1)
+      end
+
+      # @spec KNOWLEDGE-014
+      it "does not revive a deleted current-run artifact during replay" do
+        store.store_all([ duplicate_data ])
+        deleted = KnowledgeArtifact.find_by!(collector_run:)
+        deleted.update!(status: "deleted")
+        deleted.knowledge_chunks.update_all(status: "deleted")
+
+        expect { store.store_all([ artifact_data ]) }.not_to raise_error
+        expect(deleted.reload.status).to eq("deleted")
+        expect(deleted.knowledge_chunks.active).to be_empty
+      end
+
+      # @spec KNOWLEDGE-014
+      it "reuses a stale current-run hash when an older active row is reassigned" do
+        old_run = create(:collector_run, project_version: create(:project_version, project:), collector_type: "test")
+        described_class.new(project:, collector_run: old_run).store_all([ artifact_data ])
+        store.store_all([ duplicate_data ])
+        stale = KnowledgeArtifact.find_by!(collector_run:)
+        stale.update!(status: "stale")
+
+        expect { store.store_all([ artifact_data ]) }.not_to raise_error
+        expect(stale.reload).to have_attributes(status: "active", identifier: artifact_data[:identifier])
+        expect(KnowledgeArtifact.where(collector_run:).count).to eq(1)
       end
     end
 

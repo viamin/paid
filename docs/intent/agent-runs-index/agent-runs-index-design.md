@@ -11,3 +11,7 @@ operator opens it, keeping the page consistent with the Inbox filter surface.
 Filter values are cached independently for account-wide and project-scoped
 views. Agent Run changes that affect the available values invalidate both
 corresponding entries.
+
+The account-wide run list selects only columns needed by its table. Large
+structured execution payloads are omitted from each paginated page; the
+custom prompt remains available for runs without an issue or PR context.

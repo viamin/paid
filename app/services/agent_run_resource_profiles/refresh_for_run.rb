@@ -3,26 +3,30 @@
 module AgentRunResourceProfiles
   class RefreshForRun
     LOOKBACK_WINDOW = 90.days
+    SAMPLE_BATCH_SIZE = 500
+    PROFILE_LEVELS = %w[specific runner_goal project account global].freeze
 
     def self.call(...)
       new(...).call
     end
 
-    def initialize(agent_run:)
+    def initialize(agent_run:, profile_level: nil)
       @agent_run = agent_run
+      @profile_level = profile_level
     end
 
     def call
       return unless refreshable?
 
-      profile_definitions.each do |definition|
+      definitions = profile_level ? profile_definitions.select { |definition| definition[:profile_level] == profile_level } : profile_definitions
+      definitions.each do |definition|
         refresh_profile(definition)
       end
     end
 
     private
 
-    attr_reader :agent_run
+    attr_reader :agent_run, :profile_level
 
     def refreshable?
       agent_run.finished? && agent_run.project.present? && agent_run.resource_profile_runner_key.present?
@@ -89,7 +93,14 @@ module AgentRunResourceProfiles
 
     def summarize_samples(definition)
       runs = source_runs_for(definition)
-      samples = runs.filter_map { |run| sample_for(run, metric_limit_for(run.id)) }
+      samples = []
+      runs.find_in_batches(batch_size: SAMPLE_BATCH_SIZE) do |batch|
+        limits = ContainerMetric.where(agent_run_id: batch.map(&:id)).group(:agent_run_id).maximum(:memory_limit_bytes)
+        batch.each do |run|
+          sample = sample_for(run, limits[run.id].to_i)
+          samples << sample if sample
+        end
+      end
       return if samples.empty?
 
       sorted_memory = samples.map { |sample| sample[:memory_bytes] }.sort
@@ -127,7 +138,10 @@ module AgentRunResourceProfiles
       runner_key_filter = definition[:runner_key]
       base = base.where(runner_key_filter_clause(runner_key_filter)) if runner_key_filter
 
-      base.to_a
+      # AgentRun rows carry large transcripts and snapshots. Keep only the
+      # fields used by sample_for and hydrate a bounded batch at a time.
+      # @spec RAILS-CONTROL-PLANE-011
+      base.select(:id, :peak_memory_bytes, :error_message, :runners_attempted, :completed_at)
     end
 
     def base_scope_for(definition)
@@ -154,22 +168,6 @@ module AgentRunResourceProfiles
     # `eq` keeps it as a bound parameter.
     def runner_key_filter_clause(runner_key)
       Arel.sql(AgentRun.effective_runner_sql).eq(runner_key)
-    end
-
-    def metric_limit_for(run_id)
-      metric_limits_by_run_id[run_id].to_i
-    end
-
-    # Precomputes ContainerMetric#memory_limit_bytes for every finished run in
-    # the lookback window once per refresh, instead of issuing one query per
-    # profile level. The per-level base_scope_for relations are nested
-    # supersets of the same finished_runs set, so this avoids 4 redundant
-    # ContainerMetric lookups per refresh.
-    def metric_limits_by_run_id
-      @metric_limits_by_run_id ||= ContainerMetric
-        .where(agent_run_id: finished_runs.select(:id))
-        .group(:agent_run_id)
-        .maximum(:memory_limit_bytes)
     end
 
     def sample_for(run, metric_limit_bytes)

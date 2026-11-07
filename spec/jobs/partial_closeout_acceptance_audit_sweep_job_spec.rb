@@ -17,4 +17,27 @@ RSpec.describe PartialCloseoutAcceptanceAuditSweepJob do
 
     expect(issue.agent_runs.pluck(:goal)).to eq([ "analyze_issue" ])
   end
+
+  # @spec PARTIAL-CLOSEOUT-041
+  it "resumes after a bounded candidate page in the same project" do
+    stub_const("PartialCloseoutAcceptanceAuditSweepJob::ISSUE_BATCH_SIZE", 1)
+    issues = 2.times.map do |index|
+      issue = create(:issue, project:, github_state: "open", paid_state: "recommend_close")
+      create(:issue, :pull_request, project:, parent_issue: issue, github_number: 20 + index,
+        github_state: "closed", pr_review_phase: "merged")
+      issue
+    end
+    continuations = []
+    allow(described_class).to receive(:perform_later) { |**args| continuations << args }
+
+    described_class.perform_now
+
+    expect(issues.first.agent_runs.pluck(:goal)).to eq([ "analyze_issue" ])
+    expect(issues.last.agent_runs).to be_empty
+    expect(continuations).not_to be_empty
+
+    described_class.perform_now(**continuations.shift)
+
+    expect(issues.last.agent_runs.pluck(:goal)).to eq([ "analyze_issue" ])
+  end
 end

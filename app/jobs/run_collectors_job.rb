@@ -40,27 +40,34 @@ class RunCollectorsJob < ApplicationJob
     end
   end
 
-  def perform(project_id, commit_sha, branch: "main", committed_at: nil)
+  def perform(project_id, commit_sha, branch: "main", committed_at: nil, collector_type: nil, collector_cursor: nil)
     project = Project.find(project_id)
     project.update!(knowledge_status: "collecting") unless project.knowledge_status == "collecting"
 
+    runner_options = collector_type ? {
+      options: { collector_types: [ collector_type ], partial_collection: true, resume_interrupted: true,
+        collector_cursor: collector_cursor }
+    } : {}
     result = if Knowledge::ContainerizedRunner.available?
       Knowledge::ContainerizedRunner.call(
         project: project,
         commit_sha: commit_sha,
         branch: branch,
-        committed_at: committed_at
+        committed_at: committed_at,
+        **runner_options
       )
     else
       Knowledge::CollectorRunner.call(
         project: project,
         commit_sha: commit_sha,
         branch: branch,
-        committed_at: committed_at
+        committed_at: committed_at,
+        **runner_options
       )
     end
 
-    update_knowledge_status(project, result)
+    update_knowledge_status(project, result) unless collector_type
+    result
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
   rescue Knowledge::ArtifactStore::LockUnavailable

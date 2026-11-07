@@ -7,7 +7,11 @@ module FeatureIntents
   # @spec DESIGN-RECONCILIATION-001
   class DiscoverRdrArtifacts
     Artifact = Data.define(:path, :revision, :body)
-    Discovery = Data.define(:artifacts, :revision, :coverage_complete, :directory_status) do
+    Discovery = Data.define(:artifacts, :revision, :coverage_complete, :directory_status, :matching_paths) do
+      def initialize(artifacts:, revision:, coverage_complete:, directory_status:, matching_paths: nil)
+        super
+      end
+
       def complete? = coverage_complete
     end
 
@@ -26,24 +30,31 @@ module FeatureIntents
       )
     end
 
-    def initialize(project:)
+    def initialize(project:, after_path: nil, limit: nil, revision: nil)
       @project = project
+      @after_path = after_path
+      @limit = limit
+      @revision = revision
     end
 
     def call
-      revision = branch_revision
+      revision = @revision || branch_revision
       return unavailable_discovery unless revision
 
       tree = repository_tree(revision)
       return unavailable_discovery(revision) unless complete_tree?(tree)
 
       entries = Array(tree.tree)
-      artifacts = entries.filter_map { |entry| artifact_for(entry, revision) }
+      matching = entries.select { |entry| matching_artifact?(entry) }.sort_by(&:path)
+      selected = @after_path ? matching.select { |entry| entry.path > @after_path } : matching
+      selected = selected.first(@limit) if @limit
+      artifacts = selected.map { |entry| artifact_for(entry, revision) }
       Discovery.new(
         artifacts:,
         revision:,
         coverage_complete: true,
-        directory_status: directory_status(entries, artifacts)
+        directory_status: directory_status(entries, matching),
+        matching_paths: matching.map(&:path)
       )
     end
 
@@ -88,10 +99,12 @@ module FeatureIntents
       :no_matching_files
     end
 
-    def artifact_for(entry, revision)
-      return unless entry.type == "blob" && File.dirname(entry.path) == convention.directory
-      return unless File.fnmatch?(convention.file_pattern, File.basename(entry.path))
+    def matching_artifact?(entry)
+      entry.type == "blob" && File.dirname(entry.path) == convention.directory &&
+        File.fnmatch?(convention.file_pattern, File.basename(entry.path))
+    end
 
+    def artifact_for(entry, revision)
       Artifact.new(path: entry.path, revision:, body: body_for(entry.path, revision))
     end
 

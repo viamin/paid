@@ -112,7 +112,8 @@ module Knowledge
         commit_sha: commit_sha,
         branch: branch,
         committed_at: committed_at,
-        options: { container_runner: self }
+        options: { container_runner: self }.merge(options.slice(:collector_types, :partial_collection,
+          :resume_interrupted, :collector_cursor))
       )
     ensure
       cleanup!
