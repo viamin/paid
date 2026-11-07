@@ -9,7 +9,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
-    return unless start!(agent_run)
+    return handoff_terminal_measurement(agent_run) unless start!(agent_run)
 
     result = TechnicalPrerequisites::ValidateExecution.call(
       agent_run:, native_command: recipe(agent_run).fetch("command")
@@ -56,6 +56,14 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
     # creates continuation/agent-run rows, so a scheduling failure here must
     # not roll back the terminal status of the finished measurement run.
     PartialCloseouts::AutoAudit.call(issue: audit_issue) if audit_issue
+  end
+
+  def handoff_terminal_measurement(agent_run)
+    measurement = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
+    return unless agent_run.finished? && measurement.present?
+    return if agent_run.status == "cancelled" || agent_run.issue.nil?
+
+    PartialCloseouts::AutoAudit.call(issue: agent_run.issue)
   end
 
   def fail!(agent_run, error)

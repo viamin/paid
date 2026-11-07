@@ -96,6 +96,32 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   # @spec PARTIAL-CLOSEOUT-042
+  it "keeps a completed sample set unknown when the linked pull request head changed during measurement" do
+    pull_request = create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+      last_scanned_head_sha: "a" * 40)
+    configure_performance_measurement(samples: 1)
+    stub_compatible_host
+    stub_provisioning
+    samples = [ 20, 12 ]
+    allow(agent_run).to receive(:execute_in_execution_environment) do
+      value = samples.shift
+      pull_request.update!(last_scanned_head_sha: "c" * 40) if samples.empty?
+      { stdout: { wall_ms: value }.to_json, stderr: "", exit_code: 0 }
+    end
+
+    result = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:)
+
+    expect(result.status).to eq("failed")
+    expect(result.evidence.dig("performance_measurement", "comparison")).to include(
+      "status" => "unknown",
+      "reason" => "The linked pull request head changed during measurement."
+    )
+    expect(result.evidence.dig("performance_measurement", "current", "samples")).to contain_exactly(
+      include("stdout" => '{"wall_ms":12}')
+    )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
   it "keeps successful JSON values that are not objects as unknown evidence" do
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
       "source_run_id" => source_run.id, "performance_measurement" => {
@@ -449,6 +475,16 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     FeatureFlags.enable!(:marketplace_tool_sidecars, project:)
   end
 
+  def configure_performance_measurement(samples:)
+    agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
+      "source_run_id" => source_run.id, "performance_measurement" => {
+        "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,
+        "metrics" => [ "wall_ms" ], "samples" => samples, "environment" => "isolated-linux",
+        "budget_seconds" => 60
+      }
+    } })
+  end
+
   def stub_browser_measurement
     project.update!(screenshot_settings: { "verification_enabled" => true })
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
@@ -478,6 +514,12 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   def stub_provisioning
+    performance_recipe = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
+    if performance_recipe
+      project.issues.find_by(github_number: source_run.pull_request_number, is_pull_request: true) ||
+        create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+          last_scanned_head_sha: performance_recipe.fetch("current_commit_sha"))
+    end
     allow(agent_run).to receive_messages(
       provision_execution_environment: nil,
       cleanup_execution_environment: nil

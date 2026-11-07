@@ -115,5 +115,27 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
 
     expect(agent_run.reload.status).to eq("completed")
     expect(agent_run.completed_at).to be_present
+
+    allow(PartialCloseouts::AutoAudit).to receive(:call).and_return(nil)
+    described_class.perform_now(agent_run.id)
+
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:).twice
+    expect(TechnicalPrerequisites::ValidateExecution).to have_received(:call).once
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "does not hand a cancelled terminal measurement to the acceptance audit" do
+    issue = create(:issue, project:)
+    agent_run.update!(status: "cancelled", completed_at: Time.current, issue:, external_metadata: {
+      "technical_prerequisite_validation" => {
+        "requirement_id" => 1, "requirement_name" => "measure", "command" => "bin/measure", "source_run_id" => 1,
+        "performance_measurement" => { "samples" => 2 }
+      }
+    })
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(PartialCloseouts::AutoAudit).not_to have_received(:call)
   end
 end

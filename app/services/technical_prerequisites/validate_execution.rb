@@ -145,7 +145,7 @@ module TechnicalPrerequisites
       @measurement_deadline = monotonic_now + performance_recipe.fetch("budget_seconds").to_f
       baseline = measure_revision(performance_recipe.fetch("baseline_commit_sha"))
       current = measure_revision(performance_recipe.fetch("current_commit_sha"))
-      comparison = compare_measurements(baseline:, current:)
+      comparison = current_revision? ? compare_measurements(baseline:, current:) : changed_head_comparison
       status = comparison["status"] == "complete" ? "completed" : "failed"
       persist_terminal(status, error: comparison["reason"], performance_measurement: {
         "recipe" => performance_recipe, "baseline" => baseline, "current" => current,
@@ -189,6 +189,18 @@ module TechnicalPrerequisites
         agent_run:, container_id: agent_run.container_id, worktree_path: agent_run.worktree_path
       )
       Containers::GitOperations.new(container_service: execution_environment, agent_run:).checkout_commit(revision)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-042
+    def current_revision?
+      source_run = AgentRun.find_by(id: agent_run.external_metadata.dig(RECIPE_KEY, "source_run_id"))
+      pull_request_number = source_run&.pull_request_number.presence || source_run&.source_pull_request_number
+      pull_request = source_run&.project&.issues&.find_by(github_number: pull_request_number, is_pull_request: true)
+      pull_request&.last_scanned_head_sha.to_s.casecmp?(performance_recipe.fetch("current_commit_sha"))
+    end
+
+    def changed_head_comparison
+      { "status" => "unknown", "reason" => "The linked pull request head changed during measurement." }
     end
 
     def compare_measurements(baseline:, current:)
