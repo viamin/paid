@@ -85,7 +85,11 @@ the baseline commit, the current pinned run commit, representative workload
 identity and provenance, metric keys, sample count, isolated environment
 identity, time budget, and raw-artifact contract. The Inbox exposes the same
 prepared action as other criterion-specific validations; project authorization,
-tenant scoping, pause and normal isolated-run admission remain authoritative.
+tenant scoping, and normal isolated-run admission remain authoritative. A
+project- or account-level scheduler pause rejects new performance measurements
+before queueing and when the validation job claims a queued synthetic
+measurement; existing equivalent measurements remain visible for their evidence
+handoff.
 
 The validation run clones and measures both pinned revisions in the approved
 isolated environment, retains bounded raw output for every sample on the

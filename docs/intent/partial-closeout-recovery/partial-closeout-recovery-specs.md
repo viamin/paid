@@ -816,8 +816,12 @@
   capability-aware isolated runner, deduplicate an equivalent issue/criterion/
   revisions/recipe/workload attempt, and retain bounded raw samples plus a
   mechanical p50/p95 comparison. Missing baseline or metrics, nonrepresentative
-  workload, unavailable environment, changed head, and partial samples SHALL
-  remain unknown and SHALL not claim an improvement. A terminal comparison
+  workload, unavailable environment, changed head, partial samples, or a
+  project- or account-level scheduler pause SHALL remain unknown and SHALL not
+  claim an improvement. A paused scheduler SHALL reject a new performance
+  measurement before queueing and again when its validation job claims the
+  synthetic run; an equivalent queued, running, or completed measurement
+  remains discoverable. A terminal comparison
   SHALL re-enter the normal evidence-bound acceptance audit; it SHALL not close
   the issue or semantically interpret the result.
   *Code:* `app/services/technical_prerequisites/performance_recipe.rb`,

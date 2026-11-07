@@ -3,7 +3,7 @@
 module TechnicalPrerequisites
   # Creates the fresh, pinned operational run used by an authorized Inbox
   # validation. Commands come only from persisted reviewed requirements.
-  # @spec PARTIAL-CLOSEOUT-032
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
   class StartValidation
     Result = Data.define(:status, :agent_run, :message) do
       def success? = status == :queued
@@ -22,7 +22,6 @@ module TechnicalPrerequisites
     def call
       return failure("Select a run with a pinned checkout.") if source_run.base_commit_sha.blank?
       return failure("Select the original implementation run, not a prior validation.") if source_run.technical_prerequisite_validation_goal?
-      return failure("Project scheduling is paused; resume it before running prerequisite validation.") if scheduling_paused?
       return failure("Select an enabled validation recipe for this project.") unless allowed_requirement?
       return failure("The selected validation recipe has an invalid command.") unless reviewed_command
       return failure("Select a completed implementation run with a produced revision to measure.") if performance_requirement? && current_commit_sha.blank?
@@ -30,7 +29,8 @@ module TechnicalPrerequisites
       return failure("Select an implementation run linked to an issue to measure.") if performance_requirement? && source_run.issue.nil?
       return failure("The linked pull request head changed or is unavailable; performance evidence remains unknown.") if performance_requirement? && !current_revision?
 
-      run, created = admit_validation_run
+      run, created, pause_message = admit_validation_run
+      return failure(pause_message) if pause_message
       # Enqueued after the run is committed: the job claims the run by id, and
       # a job that starts before the commit would not find it.
       TechnicalPrerequisiteValidationJob.perform_later(run.id) if created
@@ -43,21 +43,21 @@ module TechnicalPrerequisites
     attr_reader :actor, :requirement, :source_run, :criterion, :tool_name
 
     def admit_validation_run
-      return [ create_validation_run!, true ] unless performance_requirement?
+      return [ create_validation_run!, true, nil ] unless performance_requirement?
+
       source_run.issue.with_lock do
-        existing_run ? [ existing_run, false ] : [ create_validation_run!, true ]
+        existing = existing_run
+        return [ existing, false, nil ] if existing
+
+        pause_message = TechnicalPrerequisites.scheduler_pause_message(source_run.project)
+        return [ nil, false, pause_message ] if pause_message
+
+        [ create_validation_run!, true, nil ]
       end
     end
 
     def allowed_requirement?
       PreCommitRequirement.resolve(project: source_run.project, user: actor).any? { |candidate| candidate.id == requirement.id }
-    end
-
-    # A report-only measurement still consumes an isolated execution slot and
-    # its reviewed time budget. Scheduler pauses are therefore an admission
-    # boundary even though this run never enters the normal agent-work queue.
-    def scheduling_paused?
-      source_run.project.scheduler_paused? || source_run.project.account.scheduler_paused?
     end
 
     def create_validation_run!
