@@ -811,33 +811,6 @@ module Workflows
       { waiting: true }
     end
 
-    # Extracts the meaningful error message from a Temporal exception.
-    #
-    # When an activity raises ApplicationError, the Temporal SDK wraps it
-    # in an ActivityError whose message is the generic "Activity task failed".
-    # This method unwraps to the cause's message so we record the actual error.
-    def unwrap_error_message(error)
-      cause = error.respond_to?(:cause) ? error.cause : nil
-      if cause.is_a?(Temporalio::Error::ApplicationError)
-        cause.message
-      else
-        error.message
-      end
-    end
-
-    # Preserve the activity's typed failure classification at the terminal-run
-    # boundary. The original exception is still re-raised below, so Temporal
-    # retains its diagnostic stack trace.
-    # @spec ISSUE-ANALYSIS-018
-    def unwrap_error_type(error)
-      return error.type if error.is_a?(Temporalio::Error::ApplicationError)
-
-      cause = error.respond_to?(:cause) ? error.cause : nil
-      return cause.type if cause.is_a?(Temporalio::Error::ApplicationError)
-
-      cause&.class&.name || error.class.name
-    end
-
     def pre_runner_infra_error?(error_message)
       msg = error_message.to_s.downcase
       PRE_RUNNER_INFRA_PATTERNS.any? { |pattern| msg.include?(pattern.downcase) }

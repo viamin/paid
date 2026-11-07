@@ -113,9 +113,28 @@ module Workflows
 
     def activity_failure_category(error)
       application_error = error.respond_to?(:cause) ? error.cause : nil
-      return unless application_error.is_a?(Temporalio::Error::ApplicationError)
+      unless application_error.is_a?(Temporalio::Error::ApplicationError)
+        return "timeout" if error.is_a?(Temporalio::Error::ActivityError) &&
+          error.retry_state == Temporalio::Error::RetryState::TIMEOUT
+
+        return
+      end
 
       application_error.details.first.to_h["category"]
+    end
+
+    def unwrap_error_message(error)
+      cause = error.respond_to?(:cause) ? error.cause : nil
+      cause.is_a?(Temporalio::Error::ApplicationError) ? cause.message : error.message
+    end
+
+    def unwrap_error_type(error) # @spec ISSUE-ANALYSIS-018
+      return error.type if error.is_a?(Temporalio::Error::ApplicationError)
+
+      cause = error.respond_to?(:cause) ? error.cause : nil
+      return cause.type if cause.is_a?(Temporalio::Error::ApplicationError)
+
+      cause&.class&.name || error.class.name
     end
 
     def record_swallowed_non_critical_activity_failure(project_id:, helper:, error:, pr_number: nil)

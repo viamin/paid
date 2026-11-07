@@ -33,7 +33,9 @@ RSpec.describe SourceClosureRecoveryJob do
     )
     allow(client).to receive(:start_workflow).and_raise(error)
 
-    expect { described_class.perform_now(run.id) }.to raise_error(Temporalio::Error::RPCError)
+    expect {
+      described_class.perform_now(run.id)
+    }.to have_enqueued_job(described_class).with(run.id).and raise_error(Temporalio::Error::RPCError)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
   end
 

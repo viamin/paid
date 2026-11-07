@@ -10,7 +10,6 @@ module Workflows
     def execute(input) # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
       agent_run_id = input.fetch(:agent_run_id)
       project_id = input.fetch(:project_id)
-      recovery_attempt = input.fetch(:recovery_attempt)
       goal = input.fetch(:goal, "create_pr")
       run_activity(Activities::ProvisionContainerActivity, { agent_run_id: }, timeout: 60)
       return { agent_run_id:, waiting: true } unless assess_source_closure_or_park(agent_run_id)
@@ -26,8 +25,8 @@ module Workflows
       { agent_run_id:, recovered: true }
     rescue => e
       raise_if_canceled!(e)
-      run_cleanup_activity(Activities::ReleaseSourceClosureRecoveryClaimActivity,
-        { agent_run_id:, recovery_attempt: }, timeout: 30)
+      run_cleanup_activity(Activities::MarkAgentRunFailedActivity,
+        { agent_run_id:, error: unwrap_error_message(e), failure_type: unwrap_error_type(e) }, timeout: 30)
       raise
     ensure
       if agent_run_id.present?

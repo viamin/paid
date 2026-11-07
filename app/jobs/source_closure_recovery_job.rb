@@ -15,6 +15,7 @@ class SourceClosureRecoveryJob < ApplicationJob
 
     recovery_attempt = agent_run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")
     commit_sha = agent_run.reconciliation.dig("source_closure_recovery", "commit_sha")
+    workflow_start_attempted = true
     Paid.temporal_client.start_workflow(Workflows::SourceClosureRecoveryWorkflow,
       { agent_run_id: agent_run.id, project_id: agent_run.project_id,
         recovery_attempt: recovery_attempt, goal: agent_run.goal, commit_sha: commit_sha },
@@ -24,6 +25,13 @@ class SourceClosureRecoveryJob < ApplicationJob
   rescue StandardError
     recovery_attempt ||= agent_run&.reconciliation&.dig("source_closure_recovery", "recovery_attempt")
     PartialCloseouts::SourceClosureRecovery.release_claim!(agent_run: agent_run, attempts: recovery_attempt) if recovery_attempt
+    enqueue_retry(agent_run_id) if workflow_start_attempted
     raise
+  end
+
+  private
+
+  def enqueue_retry(agent_run_id)
+    self.class.set(wait: PartialCloseouts::SourceClosureRecovery::RETRY_DELAY).perform_later(agent_run_id)
   end
 end
