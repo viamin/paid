@@ -644,8 +644,6 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
   surface, not the workflow contract. `approve_plan`, `reject_plan`, and
   `revise_plan` remain the bridge into `Workflows::PlanningWorkflow`.
 
-## Testing
-
 ## Decision briefs
 
 Every actionable Inbox entry has one deterministic `Inbox::DecisionBrief`
@@ -661,8 +659,10 @@ unknown and asks one focused question. Detailed evidence, examples, and
 history remain in the lane-specific detail and collapsed disclosures.
 
 - `spec/services/inbox/decision_brief_spec.rb` covers the deterministic
-  contract for product questions, action required, manual review, and partial
-  closeout states.
+  contract across every queue lane, including evidence fallbacks, concise
+  product questions, and human-readable partial-closeout prerequisites.
+
+## Testing
 
 - `spec/services/inbox/queue_spec.rb` covers typed discovery of
   clarifying-question, plan-review, merge-approval, and action-required
