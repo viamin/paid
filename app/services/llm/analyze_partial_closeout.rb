@@ -360,6 +360,7 @@ module Llm
         Reuse owner_issue_number only when one of the currently open issues listed below directly owns the still-unmet criterion; closed historical work is not an owner.
         Current source issue: ##{agent_run.issue.github_number} #{agent_run.issue.title}\nEvidence: #{agent_run.agent_summary_with_stderr_fallback(limit: 200)}
         Technical prerequisite validation evidence: #{TechnicalPrerequisites::Evidence.records_for(agent_run.issue).to_json}
+        Trusted live post-deploy measurement evidence (only "current": true rows are collected against the deployed revision; treat any other row as unknown): #{TrustedMeasurements::Evidence.records_for(agent_run.issue).to_json}
         Open issues eligible for ownership:\n#{open_issue_lines}
       PROMPT
     end

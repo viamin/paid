@@ -4,7 +4,7 @@ module PartialCloseouts
   # Schedules one report-only audit after terminal closeout evidence appears.
   # The issue lock covers the historical-attempt check and admission so a
   # completed or failed audit cannot be repeated by overlapping sweeps.
-  # @spec PARTIAL-CLOSEOUT-037
+  # @spec PARTIAL-CLOSEOUT-037 TRUSTED-MEASUREMENTS-006
   class AutoAudit
     Result = Data.define(:agent_run, :code) do
       def scheduled? = agent_run.present?
@@ -23,10 +23,11 @@ module PartialCloseouts
         status = Issues::CloseoutStatus.call(issue)
         return result(:not_stalled) unless status.stalled?
         return result(:blocked) if status.blockers.any?
-        return result(:assessment_current) unless Assessment.call(
+        assessment = Assessment.call(
           issue, evidence: status.evidence, technical_evidence: status.technical_evidence
-        ).stale?
-        return result(:already_audited) if prior_audit?(source_revision(status))
+        )
+        return result(:assessment_current) unless assessment.stale?
+        return result(:already_audited) if prior_audit?(assessment.current_source_revision)
 
         request = Issues::RequestAcceptanceAudit.call(issue:, actor: issue.project.effective_owner, origin: :automatic)
         Result.new(agent_run: request.agent_run, code: request.code)
@@ -41,13 +42,6 @@ module PartialCloseouts
       IssueContinuationRequest.where(issue:)
         .where("evidence->>'source_revision' = ?", source_revision)
         .where("evidence->>'continuation_mode' = ?", "acceptance_audit").exists?
-    end
-
-    # @spec PARTIAL-CLOSEOUT-042
-    def source_revision(status)
-      Assessment.source_revision_for(
-        issue, closeout_evidence: status.evidence, technical_evidence: status.technical_evidence
-      )
     end
 
     def result(code) = Result.new(agent_run: nil, code:)

@@ -23,6 +23,7 @@ require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_r
 require Rails.root.join("db/migrate/20260730190357_make_projects_github_token_optional_in_rls")
 require Rails.root.join("db/migrate/20261029221250_create_inbox_history_events")
 require Rails.root.join("db/migrate/20261105195000_create_bounded_delegated_actions")
+require Rails.root.join("db/migrate/20261107082941_create_trusted_measurement_attempts")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -94,6 +95,30 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       end
       described_class.clear!
       expect(BoundedDelegatedAction.all).to be_empty
+    end
+  end
+
+  # @spec TRUSTED-MEASUREMENTS-001
+  it "isolates trusted measurement attempts and rejects cross-tenant scope references" do
+    attempt_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      create(:trusted_measurement_attempt, account: account_a, project:, issue: create(:issue, project:))
+    end
+    project_b, issue_b = described_class.with_system_access do
+      project = create(:project, account: account_b)
+      issue = create(:issue, project:)
+      create(:trusted_measurement_attempt, account: account_b, project:, issue:)
+      [ project, issue ]
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(TrustedMeasurementAttempt.all).to contain_exactly(attempt_a)
+        expect_rls_rejection { insert_trusted_measurement_attempt(account_a, project_b, issue_b) }
+        expect_rls_rejection { insert_trusted_measurement_attempt(account_a, attempt_a.project, issue_b) }
+      end
+      described_class.clear!
+      expect(TrustedMeasurementAttempt.all).to be_empty
     end
   end
 
@@ -298,6 +323,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
+      CreateTrustedMeasurementAttempts.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -349,10 +375,12 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
       CreateBoundedDelegatedActions.new.disable_tenant_rls
+      CreateTrustedMeasurementAttempts.new.disable_tenant_rls
       EnableTenantRowLevelSecurity.new.down
 
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
+      CreateTrustedMeasurementAttempts.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -567,6 +595,19 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
         #{account.id}, #{project.id}, #{issue.id}, #{sql_value(created_by&.id)}, 'review', 'active',
         '{"intent_digest":"rls","acceptance_refs":["AC-1"]}'::jsonb,
         CURRENT_TIMESTAMP + INTERVAL '1 hour', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_trusted_measurement_attempt(account, project, issue)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO trusted_measurement_attempts (
+        account_id, project_id, issue_id, external_issue_number, criterion_key, check_key,
+        check_version, status, result, created_at, updated_at
+      ) VALUES (
+        #{account.id}, #{project.id}, #{issue.id}, #{issue.github_number},
+        'closed_planning_hold_notifications_cleared', 'agent_planning_hold_reconciliation_closed_count',
+        1, 'pending', '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
     SQL
   end

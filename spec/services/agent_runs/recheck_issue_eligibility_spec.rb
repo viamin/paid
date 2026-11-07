@@ -298,6 +298,19 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(request.closure_reason).to include("evidence")
     end
 
+    # @spec TRUSTED-MEASUREMENTS-006
+    it "cancels a queued acceptance audit when trusted measurement evidence changes" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "completed")
+      merged_partial_pr(issue: issue, number: 70)
+      run = Issues::RequestAcceptanceAudit.call(issue:, actor: user).agent_run
+
+      create(:trusted_measurement_attempt, :succeeded, project:, issue:)
+
+      expect(described_class.call(run)).to be(true)
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.continuation_request.reload.status).to eq("superseded")
+    end
+
     it "cancels the run when its request already closed" do
       issue = create(:issue, project: project, github_state: "open")
       merged_partial_pr(issue: issue, number: 64)

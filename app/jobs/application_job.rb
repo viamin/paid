@@ -173,7 +173,8 @@ class ApplicationJob < ActiveJob::Base
       ProjectHealthCheckJob,
       PoolReplenishmentJob,
       RunCollectorsJob,
-      StyleGuideExtractionJob
+      StyleGuideExtractionJob,
+      TrustedMeasurements::RunCheckJob
     ].any? { |job_class| is_a?(job_class) }
   end
 

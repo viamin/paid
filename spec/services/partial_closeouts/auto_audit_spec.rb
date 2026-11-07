@@ -85,6 +85,33 @@ RSpec.describe PartialCloseouts::AutoAudit do
       .not_to eq(first.agent_run.continuation_request.evidence["source_revision"])
   end
 
+  # @spec TRUSTED-MEASUREMENTS-006
+  it "allows one new audit when trusted measurement evidence changes without another merged PR" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "completed", completed_at: Time.current)
+    create(:trusted_measurement_attempt, :succeeded, project:, issue:)
+
+    second = described_class.call(issue:)
+
+    expect(second.scheduled?).to be(true)
+    expect(second.agent_run.id).not_to eq(first.agent_run.id)
+    expect(second.agent_run.continuation_request.evidence_digest)
+      .to eq(PartialCloseouts::Assessment.source_revision_for(issue))
+  end
+
+  # @spec TRUSTED-MEASUREMENTS-006
+  it "does not repeat an audit when only the measurement execution timestamp changes" do
+    attempt = create(:trusted_measurement_attempt, :succeeded, project:, issue:)
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "completed", completed_at: Time.current)
+
+    attempt.update!(executed_at: 1.hour.from_now)
+    second = described_class.call(issue:)
+
+    expect(second.code).to eq(:already_audited)
+    expect(issue.agent_runs.count).to eq(1)
+  end
+
   # @spec PARTIAL-CLOSEOUT-037
   it "keeps a dependency-held closeout for an operator" do
     dependency = create(:issue, project:, github_state: "open", paid_state: "new")
