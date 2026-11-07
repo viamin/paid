@@ -1602,6 +1602,66 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.reload.status).to eq("running")
       end
 
+      # Delegated-work boundary recheck at dequeue: a bounded authorization
+      # that was revoked after the run was queued must not begin a new
+      # action, no matter which path queued the run (retries included).
+      context "with delegated-work boundary rechecks" do
+        def record_current_assessment(work_item)
+          assessment_run = create(:agent_run, :completed, project: work_item.project, issue: work_item)
+          assessment_run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(
+            assessment_run, { "criteria" => [], "gaps" => [] }
+          ) })
+        end
+
+        def authorize_delegated_review(work_item)
+          create(:bounded_delegated_action,
+            project: work_item.project,
+            issue: work_item,
+            action: "review",
+            evidence: Automation::DelegatedActionAdmission.admission_evidence(
+              work_item: work_item, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+            ))
+        end
+
+        it "cancels a queued run whose delegated authorization was revoked" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-004
+          project = create(:project, auto_pick_enabled: true)
+          pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+            github_state: "open", pr_review_phase: "ready")
+          record_current_assessment(pull_request)
+          authorization = authorize_delegated_review(pull_request)
+          run = create(:agent_run, :queued, :automatic, project: project, goal: "review",
+            issue: nil, source_pull_request_number: 42)
+          authorization.update!(status: "revoked")
+
+          expect(temporal_client).not_to receive(:start_workflow)
+
+          described_class.new.perform
+
+          expect(run.reload.status).to eq("cancelled")
+          expect(run.reload.error_message).to include("boundary recheck")
+          notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
+          expect(notification.metadata).to include("boundary" => "dequeue")
+          expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+        end
+
+        it "starts a queued run whose delegated authorization is still current" do # @spec PROJECT-DELEGATION-004
+          project = create(:project, :with_github_installation, auto_pick_enabled: true)
+          pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+            github_state: "open", pr_review_phase: "ready")
+          record_current_assessment(pull_request)
+          authorize_delegated_review(pull_request)
+          run = create(:agent_run, :queued, :automatic, project: project, goal: "review",
+            issue: nil, source_pull_request_number: 42)
+
+          expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+          described_class.new.perform
+
+          expect(run.reload.temporal_workflow_id).to be_present
+          expect(run.reload.status).to eq("running")
+        end
+      end
+
       # @spec EXEC-DISABLE-002
       it "parks queued runs when a global execution disable is enabled" do
         run = create(:agent_run, :queued)

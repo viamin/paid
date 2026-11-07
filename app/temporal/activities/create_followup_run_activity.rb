@@ -40,7 +40,10 @@ module Activities
         goal: goal,
         auto_pick: true,
         initiating_user_id: agent_run.initiating_user_id,
-        runner_id: agent_run.runner_id
+        runner_id: agent_run.runner_id,
+        # The follow-up scheduler names its delegated-work boundary so the
+        # admission recheck reports where the block happened.
+        delegated_boundary: "follow_up"
       }.compact
     end
   end

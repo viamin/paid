@@ -9,7 +9,8 @@ module PartialCloseouts
   # current implementation or a closed child completed a criterion.
   # @spec PARTIAL-CLOSEOUT-023 PARTIAL-CLOSEOUT-032
   class Assessment
-    Result = Data.define(:assessment, :criteria, :source_revision, :intent_revision, :assessed_at, :stale, :next_action) do
+    Result = Data.define(:assessment, :criteria, :source_revision, :current_source_revision,
+      :intent_revision, :assessed_at, :stale, :next_action) do
       def stale? = stale
 
       def closeout_state
@@ -53,6 +54,7 @@ module PartialCloseouts
         assessment: assessment,
         criteria: criteria,
         source_revision: assessment["source_revision"],
+        current_source_revision: current_source_revision,
         intent_revision: assessment["intent_revision"],
         assessed_at: assessment["assessed_at"],
         stale: stale?,

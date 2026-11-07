@@ -50,6 +50,33 @@ module Activities
         return { queued: false, skipped: true, reason: "untrusted_issue" }
       end
 
+      # Delegated-work boundary recheck: an admitted bounded authorization
+      # that has since been revoked, gone stale, or blown its budget must not
+      # queue new delegated work. The boundary caller names itself via
+      # :delegated_boundary (queue by default, follow_up from the follow-up
+      # scheduler); a block routes to one focused Inbox decision.
+      # @spec PROJECT-DELEGATION-004 @spec BOUNDED-PHASE-AUTHORIZATION-004
+      delegated_recheck = Automation::DelegatedActionAdmission.call(
+        project: project,
+        issue: issue,
+        pull_request_number: source_pull_request_number,
+        goal: goal,
+        boundary: input.fetch(:delegated_boundary, "queue").to_sym,
+        trigger: trigger_type
+      )
+      if delegated_recheck&.blocked?
+        logger.info(
+          message: "queue_agent_run.delegated_boundary_blocked",
+          project_id: project.id,
+          issue_id: issue&.id,
+          pull_request_number: source_pull_request_number,
+          goal: goal,
+          boundary: delegated_recheck.boundary,
+          reasons: delegated_recheck.reasons.map(&:to_s)
+        )
+        return { queued: false, skipped: true, reason: "delegated_boundary_blocked" }
+      end
+
       respect_requested = input.key?(:agent_type) || input.key?(:runner_id)
       provider_id, agent_type = resolve_runner_selection(
         project: project,

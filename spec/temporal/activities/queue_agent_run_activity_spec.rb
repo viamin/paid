@@ -744,5 +744,82 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(result[:duplicate]).to be true
       end
     end
+
+    # The delegated-work boundary recheck: a bounded authorization that has
+    # been revoked or gone stale since admission must not queue new
+    # delegated work at any queueing boundary.
+    context "with delegated-work boundary rechecks" do
+      let(:delegated_project) { create(:project, :with_github_installation, account: user.account, created_by: user) }
+      let(:pull_request) do
+        create(:issue, :pull_request, project: delegated_project, github_number: 42,
+          github_state: "open", pr_review_phase: "ready")
+      end
+
+      def record_current_assessment
+        assessment_run = create(:agent_run, :completed, project: delegated_project, issue: pull_request)
+        assessment_run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(
+          assessment_run, { "criteria" => [], "gaps" => [] }
+        ) })
+      end
+
+      def authorize_delegated_review
+        create(:bounded_delegated_action,
+          project: delegated_project,
+          issue: pull_request,
+          action: "review",
+          evidence: Automation::DelegatedActionAdmission.admission_evidence(
+            work_item: pull_request, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+          ))
+      end
+
+      it "skips queueing when the governing authorization was revoked" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-004
+        record_current_assessment
+        authorization = authorize_delegated_review
+        authorization.update!(status: "revoked")
+
+        result = activity.execute(
+          project_id: delegated_project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        expect(result).to include(queued: false, skipped: true, reason: "delegated_boundary_blocked")
+        expect(AgentRun.where(project: delegated_project, goal: "review")).to be_empty
+        notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
+        expect(notification.metadata).to include("boundary" => "queue")
+        expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+      end
+
+      it "queues delegated work whose authorization is still current" do # @spec PROJECT-DELEGATION-004
+        record_current_assessment
+        authorize_delegated_review
+
+        result = activity.execute(
+          project_id: delegated_project.id,
+          source_pull_request_number: 42,
+          goal: "review"
+        )
+
+        expect(result[:queued]).to be(true)
+        expect(AgentRun.find(result[:agent_run_id]).status).to eq("queued")
+        expect(Notification.count).to eq(0)
+      end
+
+      it "reports the boundary the caller names, so follow-up retries are attributed" do # @spec PROJECT-DELEGATION-004
+        record_current_assessment
+        authorization = authorize_delegated_review
+        authorization.update!(status: "revoked")
+
+        activity.execute(
+          project_id: delegated_project.id,
+          source_pull_request_number: 42,
+          goal: "review",
+          delegated_boundary: "follow_up"
+        )
+
+        notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
+        expect(notification.metadata).to include("boundary" => "follow_up")
+      end
+    end
   end
 end
