@@ -913,3 +913,21 @@
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/requests/inbox_spec.rb`,
   `spec/requests/api/v1/design_artifact_findings_spec.rb`.
+
+- [x] **OPERATOR-INBOX-027** — When an actionable Inbox entry is listed,
+  selected, requested through the supported API, or opened in contextual chat,
+  the system SHALL use one deterministic decision-brief projection that names
+  the project goal, change, exact decision/action, recommendation when its
+  structured evidence supports one, waiting work, primary action, and the
+  next state. The default view SHALL keep questions separate from explanation
+  and omit raw technical identifiers. If evidence cannot support a
+  recommendation, the projection SHALL disclose that uncertainty and ask one
+  focused question. The projection SHALL derive only from current structured
+  state and evidence and SHALL not call an LLM while rendering.
+  *Code:* `app/services/inbox/decision_brief.rb`,
+  `app/views/dashboard/_inbox_decision_brief.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/decision_brief_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.

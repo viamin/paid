@@ -766,7 +766,7 @@ components:
           dependency_cycle: '#/components/schemas/DependencyCycleEntry'
     InboxEntryBase:
       type: object
-      required: [id, kind]
+      required: [id, kind, decision_brief]
       properties:
         id: {type: string}
         kind: {type: string}
@@ -782,6 +782,19 @@ components:
         title: {type: string, nullable: true}
         summary: {type: string, nullable: true}
         action_url: {type: string, nullable: true}
+        decision_brief:
+          type: object
+          required: [goal, changed, decision, waiting_work, primary_action, next_state]
+          properties:
+            goal: {type: string}
+            changed: {type: string}
+            decision: {type: string}
+            recommendation: {type: string, nullable: true}
+            recommendation_reason: {type: string, nullable: true}
+            waiting_work: {type: string}
+            primary_action: {type: string}
+            next_state: {type: string}
+            unknown: {type: string, nullable: true}
     ClarifyingQuestionsEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
