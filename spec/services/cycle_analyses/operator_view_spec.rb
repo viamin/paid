@@ -75,6 +75,20 @@ RSpec.describe CycleAnalyses::OperatorView do
   end
 
   # @spec AUTO-PICK-QUEUE-023
+  it "does not promise a GitHub edit while a requeued pending-sync confirmation run is in flight" do
+    [ "queued", "running" ].each do |state|
+      run = completed_run(status: state, repair: { "status" => "pending_sync",
+        "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } })
+      status = view_for(run).status
+
+      expect(status.key).to eq(state.to_sym)
+      expect(status.button).to be_nil
+      expect(status.description).to include("does not edit GitHub")
+      expect(status.description).not_to include("may edit one verified GitHub dependency declaration")
+    end
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
   it "names the automatically repaired declaration and keeps confirmation read-only for a pending sync" do
     run = completed_run(repair: { "status" => "pending_sync", "reason" => "awaiting_github_synchronization",
       "changed_edge_ids" => [ removal_edge.fetch("id") ],

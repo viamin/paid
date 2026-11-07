@@ -166,6 +166,19 @@ RSpec.describe "Inbox" do
     expect(status_link["data-turbo-frame"]).to eq("_top")
   end
 
+  # @spec AUTO-PICK-QUEUE-023
+  it "does not promise a GitHub edit while a requeued pending-sync confirmation is queued" do
+    _issues, cycle, = cycle_analysis_run(status: "queued",
+      repair: { "status" => "pending_sync", "reason" => "awaiting_github_synchronization" })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Analysis queued")
+    expect(response.body).to include("does not edit GitHub")
+    expect(response.body).not_to include("may edit one verified GitHub dependency declaration")
+  end
+
   # @spec AUTO-PICK-QUEUE-017 AUTO-PICK-QUEUE-018 AUTO-PICK-QUEUE-024
   it "renders the completed recommendation as readable fields and keeps raw JSON collapsed" do
     issues, cycle, = cycle_analysis_run

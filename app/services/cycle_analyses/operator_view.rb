@@ -212,12 +212,24 @@ module CycleAnalyses
         button: Button.new(:start_analysis, "Start repair analysis", START_CONFIRMATION))
     end
 
+    # A requeued pending-sync run keeps its applied repair and takes
+    # CycleAnalysisJob's read-only confirm_repair branch, so the in-flight copy
+    # must not promise a possible GitHub edit the confirmation run never makes.
     def in_flight_status(key)
       Status.new(key:, title: key == :queued ? "Analysis queued" : "Analysis running",
-        description: "The analysis has not changed GitHub yet. When its safeguards pass, " \
-                     "the run may edit one verified GitHub dependency declaration.",
+        description: in_flight_description,
         next_action: "Check the run for progress — no operator action is needed here.",
         button: nil)
+    end
+
+    def in_flight_description
+      if repair_status == "pending_sync"
+        "Paid already made the repair and is re-checking the synchronized graph to confirm it. " \
+          "This does not edit GitHub."
+      else
+        "The analysis has not changed GitHub yet. When its safeguards pass, " \
+          "the run may edit one verified GitHub dependency declaration."
+      end
     end
 
     # The confirm action is offered only for a completed, current run that
