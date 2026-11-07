@@ -73,31 +73,6 @@ default-off project `project_delegation` gate. Rolling back selects
 `conservative`, preserves evidence/audit history, blocks future delegated
 boundaries, and creates focused recovery requests.
 
-`ProjectDelegation::PilotEnrollment` is the explicit, per-project pilot
-opt-in: at most five active enrollments platform-wide, each pinning the
-project's own conservative baseline captured from recorded history
-(`ProjectDelegation::PilotMetrics::Baseline`). `PilotMetricEvent` is the
-append-only, revision-stamped ledger: human Inbox decisions with decision
-time, admitted and completed issues, settled decisions later reversed,
-security/tenant/trust breaches, and missing-evidence downgrades, each with
-reason-coded exclusions. `ProjectDelegation::RecordPilotMetric` captures
-events idempotently at the existing boundaries — bounded-action admission,
-Inbox decision resolution, focused-decision reversal, and issue completion —
-and a required revision it cannot resolve becomes an `evidence_missing`
-event that pauses expansion rather than an unattributed metric.
-
-`ProjectDelegation::ExpansionGuard` is the one broadening decision service:
-broadening is disabled by default and permitted only after the RDR-080 review
-window (at least 30 completed issues and 14 days) and only when every
-enrolled project meets all thresholds against its own baseline — Inbox
-decisions per completed issue down at least 25%, median decision time not
-increased, completion rate down no more than 5 percentage points, and no
-material reversal attributable to delegated work. A material reversal, a
-security/tenant/trust breach, or missing metric evidence pauses expansion
-through `ProjectDelegation::PauseExpansion`, which returns the affected
-project to `conservative` (its enrollment pauses) and routes one focused
-Inbox decision for the required human review.
-
 ## Pilot metrics and expansion guard
 
 RDR-080's measurement section is implemented by the pilot recorder and the
@@ -145,5 +120,4 @@ preserves every snapshot and audit record; a human restores the pilot through
 | Focus a stop on one material delta | Settled intent should not be repeatedly re-litigated. | Reopen all questions for every downstream stop. |
 | Permit recording a follow-up, not executing it | The finding must be recorded and linked, but the follow-up carries its own authority. | Rejecting the follow-up record, or letting the delegated posture run it. |
 | Broadening behind one default-disabled guard | RDR-080 requires evidence before any default change, so one service must own the threshold decision every surface asks. | Enabling broader defaults at pilot enrollment, or per-surface threshold checks. |
-| Ledger events instead of on-demand recomputation | Pilot metrics must be revision-aware and attributable, so facts are stamped when they happen; a recompute cannot recover the revision a decision was made against. | Deriving pilot metrics from current state at review time. |
 | Persist metric snapshots, not read-time derivation | Broadening needs durable, inspectable evidence, and missing evidence must itself pause expansion. | Computing pilot metrics on demand, where a failed computation leaves no pause record. |
