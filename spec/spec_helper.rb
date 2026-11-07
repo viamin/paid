@@ -24,6 +24,11 @@ coverage_enabled = SpecCoverageDecision.call(env: ENV, mutant_defined: defined?(
 if coverage_enabled
   require "simplecov"
   SimpleCov.start "rails" do
+    # CI shards may legitimately approach the one-hour job timeout. Keep their
+    # own result current through finalization so the required raw artifact is
+    # not discarded by SimpleCov's ten-minute default merge window.
+    # @spec TEST-SUITE-004 @spec TEST-SUITE-005
+    merge_timeout 2 * 60 * 60
     # @spec TEST-SUITE-005
     minimum_coverage 80 unless SpecRunMode.focused? || ENV.key?("RSPEC_SHARD_INDEX")
     if ENV.key?("RSPEC_SHARD_INDEX")
