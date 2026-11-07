@@ -232,7 +232,7 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-037** — When the partial-closeout Inbox lane reads the
+- [ ] **PARTIAL-CLOSEOUT-042** — When the partial-closeout Inbox lane reads the
   accepted persisted stall projection, the
   system SHALL recompute that projection outside Inbox rendering whenever an
   issue's closeout evidence, blocking runs, continuation request, explicit
@@ -253,7 +253,7 @@
   *Proposed tests:* projection recomputation and invalidation, stale-row
   removal, failure retention, and tenant isolation.
 
-- [ ] **PARTIAL-CLOSEOUT-038** — The partial-closeout lane's list, nav-badge
+- [ ] **PARTIAL-CLOSEOUT-043** — The partial-closeout lane's list, nav-badge
   count, and filter matrix SHALL
   read one shared projection reader and SHALL report the same lane membership
   for the same operator; for each project with a successful projection
