@@ -39,6 +39,25 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("progress").fetch(:milestones)).to include(hash_including(id: "merge"))
   end
 
+  it "retrieves the shared delegation projection on demand" do
+    # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:project_delegation, project:)
+    context = described_class.call(chat_session:, user:, sections: [ :delegation ])
+
+    expect(context.fetch("delegation")).to include(
+      project_id: project.id,
+      work_item_id: issue.id,
+      authorizations: [],
+      phase_authority: hash_including("review", "repair", "merge")
+    )
+  end
+
+  it "omits delegation context until the project opts in" do
+    context = described_class.call(chat_session:, user:, sections: [ :delegation ])
+
+    expect(context.fetch("delegation")).to eq({})
+  end
+
   # @spec OPERATOR-INBOX-027
   it "retrieves the same concise decision brief on demand" do
     issue.update!(paid_state: "needs_input", needs_input_questions: [ { "question" => "Which cache should exports use?", "recommendation" => "Redis",

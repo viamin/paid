@@ -49,6 +49,20 @@ Status markers: `[ ]` planned implementation gap.
   background jobs SHALL use `Automation::EffectivePolicy` and the same
   delegation projection; no surface SHALL infer authority from a label, stale
   approval, queue state, or local UI state.
+  PR #4918 delivers only the shared read projection for UI, API, and MCP;
+  it does not complete this requirement or close #4879.
+  *Read-surface verification:*
+  `spec/services/project_delegation/projection_spec.rb` (the one shared read
+  model: `Automation::EffectivePolicy` decisions, bounded authorization
+  lifecycle, admission-contract posture signature),
+  `spec/requests/projects/automation_phases_spec.rb` (settings surface),
+  `spec/requests/projects/agent_runs_continuation_spec.rb` and
+  `spec/services/inbox/chat_context_spec.rb` (Inbox/work-detail surfaces),
+  `spec/requests/api/v1/delegation_spec.rb` (API surface, same signature as
+  the settings projection), and `spec/mcp/tools/get_project_delegation_spec.rb`
+  (MCP surface). Completing #4879 still requires the shared `ActionPlan`
+  write/admission contract for queue, dequeue, retry, follow-up, closeout, and
+  repair boundaries.
 
 - [x] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
   authority, the system SHALL apply the broader posture only to new admissions

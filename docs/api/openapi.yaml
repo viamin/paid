@@ -278,6 +278,84 @@ paths:
                 $ref: '#/components/schemas/FeatureIntentResponse'
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/delegation:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: getProjectDelegation
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: |
+            The shared delegation projection (RDR-080 surface parity): the
+            project's newest bounded delivery authorization per work item
+            and action, the effective-policy decision for each delegated
+            action's phase, and the posture signatures every boundary
+            recheck pins. The same read model backs the settings surface,
+            Inbox, and MCP, so clients never infer authority from labels,
+            approvals, or queue state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [project_id, authorizations, posture_signatures, signature]
+                properties:
+                  project_id: {type: integer}
+                  work_item_id:
+                    type: integer
+                    nullable: true
+                    description: Present when the projection is scoped to one work item.
+                  authorizations:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, work_item_id, action, phase, stop_before_phase, status, in_force, authority]
+                      properties:
+                        id: {type: integer}
+                        work_item_id: {type: integer}
+                        action: {type: string, enum: [review, repair, merge]}
+                        phase: {type: string}
+                        stop_before_phase: {type: string}
+                        status: {type: string, enum: [active, revoked, completed]}
+                        in_force: {type: boolean}
+                        expires_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        authority:
+                          type: object
+                          description: Effective-policy decision scoped to this authorization's work item.
+                          required: [permitted]
+                          properties:
+                            permitted: {type: boolean}
+                            source: {type: string, nullable: true}
+                            reason: {type: string, nullable: true}
+                            phase: {type: string, nullable: true}
+                            grant_id: {type: integer, nullable: true}
+                  phase_authority:
+                    type: object
+                    description: Effective-policy decisions present only on a single-work-item projection.
+                    additionalProperties:
+                      type: object
+                      required: [permitted]
+                      properties:
+                        permitted: {type: boolean}
+                        source: {type: string, nullable: true}
+                        reason: {type: string, nullable: true}
+                        phase: {type: string, nullable: true}
+                        grant_id: {type: integer, nullable: true}
+                  posture_signatures:
+                    type: object
+                    description: The posture signature pinned by boundary rechecks, per action.
+                    additionalProperties: {type: string}
+                  signature: {type: string}
+        default:
+          $ref: '#/components/responses/Error'
   /projects/{project_id}/design_artifact_findings:
     parameters:
       - name: project_id

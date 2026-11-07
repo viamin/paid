@@ -200,6 +200,22 @@ RSpec.describe "Project agent run continuation" do
     expect(response.body).to include("Automation authority", "Continuation grant:", "project defaults may independently permit this work.")
   end
 
+  it "shows the work item's delegated delivery authorization from the shared projection" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:project_delegation, project:)
+    run = create(:agent_run, project:, issue:, goal: "create_pr")
+    create(:bounded_delegated_action, project:, issue:, action: "review",
+      evidence: Automation::DelegatedActionAdmission.admission_evidence(
+        work_item: issue, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+      ))
+
+    get project_agent_run_path(project, run)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Delegated delivery authorization")
+    expect(response.body).to include("review")
+    expect(response.body).to include("stops before Merge")
+  end
+
   def rendered_signature
     Nokogiri::HTML(response.body)
       .at_css("input[name='continuation_notice_signature']")["value"]

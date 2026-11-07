@@ -107,6 +107,13 @@ class FeatureFlags
       rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
       cleanup_criteria: "Remove after closeout verifies migration and complete execution-path coverage."
     ),
+    project_delegation: Definition.new(
+      name: :project_delegation,
+      owner: "project-delegation",
+      intent: "Gate shared project-delegation read surfaces while the effective-policy projection is validated.",
+      rollout_plan: "Default-off; enable selected projects only after the delegation projection and all settings, Inbox, API, and MCP consumers are verified together.",
+      cleanup_criteria: "Remove after the project-delegation pilot validates surface parity and rollback behavior."
+    ),
     layered_verification_add_on: Definition.new(
       name: :layered_verification_add_on,
       owner: "layered-verification",

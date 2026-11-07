@@ -84,6 +84,14 @@ module Projects
       @rollout_enabled = Automation::RolloutGuard.enabled?(@project)
       @active_grants = @project.work_item_continuation_grants.active
         .includes(:issue).order(created_at: :desc).limit(50)
+      # The shared delegation projection (RDR-080 surface parity): settings
+      # reads delegation state through the same read model as Inbox, API,
+      # and MCP. @spec PROJECT-DELEGATION-005
+      if FeatureFlags.enabled?(:project_delegation, project: @project)
+        @delegation_projection = ProjectDelegation::Projection.for_project(@project)
+        @delegation_work_items = @project.issues
+          .where(id: @delegation_projection.authorizations.map(&:work_item_id)).index_by(&:id)
+      end
       @migration_preview = Automation::Phases::MigrationPreview.call(project: @project, user: current_user)
     end
 
