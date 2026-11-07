@@ -31,3 +31,17 @@ prefix: RUN-OBSTACLE
   SHALL not claim causality from recurrence counts. It SHALL reevaluate an
   insufficient-evidence outcome only while its bounded after period remains
   open; that outcome is terminal after the period closes.
+
+- [x] **RUN-OBSTACLE-006** — When the detector sweeps accounts, Paid SHALL
+  process a bounded number of accounts per job continuation using a stable
+  account keyset cursor and a cycle end captured at cycle start; accounts
+  created after the captured end SHALL wait for a later cycle, and duplicate
+  overlapping chains SHALL be prevented by bounded enqueue and perform
+  concurrency under one concurrency key.
+
+- [x] **RUN-OBSTACLE-007** — When one account's detection fails during a sweep,
+  Paid SHALL record that failure with per-account duration and allocation
+  metrics and SHALL continue the remaining accounts of the cycle; the failed
+  account SHALL be reprocessed by a later cycle, and per-account detection,
+  diagnosis budget, remediation recording, and notification SHALL remain
+  idempotent across retries and cycles.

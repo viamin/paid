@@ -38,6 +38,19 @@ and supplies a suggested correction, validation plan, and uncertainty. The
 structured response may cite only supplied evidence pointers. Evidence text is
 untrusted data, never instruction.
 
+The scheduled sweep is bounded per job perform: each continuation processes
+a small fixed number of accounts, then enqueues its successor with a stable
+account keyset cursor (`id > last processed id`). A cycle captures its end
+(maximum account id) when it starts, so accounts created mid-cycle wait for
+the next cycle instead of extending the chain indefinitely. GoodJob enqueue
+and perform concurrency limits (`enqueue_limit: 1`, `perform_limit: 1` under
+one key) prevent a scheduled tick from starting a duplicate chain while a
+continuation is queued or performing. One account's failure is logged with
+per-account duration and allocation metrics and the cycle advances past it;
+because detection, diagnosis budgeting, remediation recording, and
+notification are idempotent per account, a later cycle safely reprocesses a
+failed account.
+
 `RemediationDecision` remains the inspectable proposal and the repair identity.
 It stores the affected scope, copied bounded evidence, validation plan,
 uncertainty, and exposure/sample counts. The same unresolved fingerprint and
