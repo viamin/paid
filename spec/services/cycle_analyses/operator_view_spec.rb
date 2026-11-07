@@ -147,6 +147,9 @@ RSpec.describe CycleAnalyses::OperatorView do
 
     expect(status.key).to eq(:failed)
     expect(status.description).to include("provider unavailable")
+    expect(status.description).to include("cannot confirm whether GitHub changed")
+    expect(status.description).not_to include("Nothing on GitHub changed")
+    expect(status.next_action).to start_with("Check the live GitHub declaration")
     expect(status.button).to have_attributes(kind: :retry_analysis, label: "Retry repair analysis")
   end
 

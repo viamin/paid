@@ -301,8 +301,8 @@ module CycleAnalyses
     def failed_status
       reason = run.error_message.presence || run.status.humanize.downcase
       Status.new(key: :failed, title: "Analysis failed",
-        description: "The analysis did not complete (#{reason}). Nothing on GitHub changed for this attempt.",
-        next_action: "Retry the analysis, or review the declarations and edit the wrong one on GitHub yourself.",
+        description: "The analysis did not complete (#{reason}). Its recorded result cannot confirm whether GitHub changed.",
+        next_action: "Check the live GitHub declaration before retrying the analysis or editing it yourself.",
         button: Button.new(:retry_analysis, "Retry repair analysis", RETRY_CONFIRMATION))
     end
 
