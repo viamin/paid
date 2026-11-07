@@ -75,6 +75,17 @@
   *Tests:* `spec/config/good_job_cron_dedup_spec.rb`.
   *Code:* `config/initializers/good_job.rb`, `db/schema.rb`.
 
+- [x] **RAILS-CONTROL-PLANE-013** — When Puma runs in preloaded cluster mode
+  (two or more workers), the control plane SHALL shut down GoodJob's async
+  scheduler threads in the master before each worker fork and before a worker
+  shuts down, and SHALL restart them in the worker only after that worker's
+  inherited ActiveRecord connections have been cleared, so a forked worker
+  never performs a GoodJob-queued job (including the `knowledge` queue)
+  through a scheduler still bound to the master's pre-fork database
+  connections.
+  *Tests:* `spec/lib/paid/puma_boot_spec.rb`, `spec/config/puma_configuration_spec.rb`.
+  *Code:* `Paid::PumaBoot`, `config/puma.rb`.
+
 ## Current View Stack
 
 - [x] **RAILS-CONTROL-PLANE-004** — The control plane SHALL continue to ship

@@ -149,4 +149,45 @@ RSpec.describe PumaConfiguration, :no_db do
       expect(hook_blocks).to be_empty
     end
   end
+
+  describe "before_fork and before_worker_shutdown hooks" do # @spec RAILS-CONTROL-PLANE-013
+    def hook_blocks(hook_key)
+      config = Puma::Configuration.new(config_files: Array(Rails.root.join("config/puma.rb").to_s))
+      config.load
+      config.clamp
+      config.options.all_of(hook_key).map { |entry| entry[:block] }
+    end
+
+    it "registers before_fork, before_worker_boot, and before_worker_shutdown together in cluster mode" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      ENV["WEB_CONCURRENCY"] = "4"
+
+      expect(hook_blocks(:before_fork)).not_to be_empty
+      expect(hook_blocks(:before_worker_boot)).not_to be_empty
+      expect(hook_blocks(:before_worker_shutdown)).not_to be_empty
+    end
+
+    it "does not register before_fork or before_worker_shutdown in single-worker mode" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+
+      expect(hook_blocks(:before_fork)).to be_empty
+      expect(hook_blocks(:before_worker_shutdown)).to be_empty
+    end
+
+    it "shuts down GoodJob in the master before each fork" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      ENV["WEB_CONCURRENCY"] = "4"
+      expect(Paid::PumaBoot).to receive(:shutdown_good_job!)
+
+      hook_blocks(:before_fork).each(&:call)
+    end
+
+    it "shuts down GoodJob before a worker shuts down" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      ENV["WEB_CONCURRENCY"] = "4"
+      expect(Paid::PumaBoot).to receive(:shutdown_good_job!)
+
+      hook_blocks(:before_worker_shutdown).each(&:call)
+    end
+  end
 end

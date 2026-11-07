@@ -19,6 +19,32 @@ RSpec.describe Paid::PumaBoot do
     end
   end
 
+  describe ".shutdown_good_job!" do
+    it "delegates to GoodJob.shutdown" do
+      expect(GoodJob).to receive(:shutdown)
+
+      described_class.shutdown_good_job!
+    end
+
+    it "is a no-op when GoodJob has not been loaded" do
+      hide_const("GoodJob")
+      expect { described_class.shutdown_good_job! }.not_to raise_error
+    end
+  end
+
+  describe ".restart_good_job!" do
+    it "delegates to GoodJob.restart" do
+      expect(GoodJob).to receive(:restart)
+
+      described_class.restart_good_job!
+    end
+
+    it "is a no-op when GoodJob has not been loaded" do
+      hide_const("GoodJob")
+      expect { described_class.restart_good_job! }.not_to raise_error
+    end
+  end
+
   describe ".reset_temporal_client!" do
     it "delegates to Paid.reset_temporal_client!" do
       expect(Paid).to receive(:reset_temporal_client!)
@@ -58,10 +84,11 @@ RSpec.describe Paid::PumaBoot do
   end
 
   describe ".call_after_fork" do
-    it "clears connections, resets the temporal client, and warms in the background" do
+    it "clears connections, restarts GoodJob, resets the temporal client, and warms in the background" do
       handler = double("ConnectionHandler") # rubocop:disable RSpec/VerifiedDoubles
       allow(ActiveRecord::Base).to receive(:connection_handler).and_return(handler)
       allow(handler).to receive(:clear_all_connections!)
+      allow(GoodJob).to receive(:restart)
       allow(Paid).to receive(:reset_temporal_client!)
       allow(Paid).to receive(:temporal_client)
 
@@ -69,8 +96,21 @@ RSpec.describe Paid::PumaBoot do
       thread.join
 
       expect(handler).to have_received(:clear_all_connections!)
+      expect(GoodJob).to have_received(:restart)
       expect(Paid).to have_received(:reset_temporal_client!)
       expect(Paid).to have_received(:temporal_client)
+    end
+
+    it "restarts GoodJob only after clearing ActiveRecord connections" do # @spec RAILS-CONTROL-PLANE-013
+      call_order = []
+      allow(ActiveRecord::Base.connection_handler).to receive(:clear_all_connections!) { call_order << :clear_connections }
+      allow(GoodJob).to receive(:restart) { call_order << :restart_good_job }
+      allow(Paid).to receive(:reset_temporal_client!)
+      allow(Paid).to receive(:temporal_client)
+
+      described_class.call_after_fork.join
+
+      expect(call_order).to eq([ :clear_connections, :restart_good_job ])
     end
   end
 end

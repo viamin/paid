@@ -121,7 +121,20 @@ elsif workers_count
 end
 if preload_app_enabled && preload_app_cluster_count && preload_app_cluster_count > 1
   require_relative "../lib/paid/puma_boot"
+
+  # GoodJob's async scheduler threads are started in the master during
+  # preload and are not fork-safe (see Paid::PumaBoot). Shut them down before
+  # each fork and before a worker shuts down, and restart them once a worker
+  # has its own clean connections (RAILS-CONTROL-PLANE-013).
+  before_fork do
+    Paid::PumaBoot.shutdown_good_job!
+  end
+
   before_worker_boot do
     Paid::PumaBoot.call_after_fork
+  end
+
+  before_worker_shutdown do
+    Paid::PumaBoot.shutdown_good_job!
   end
 end

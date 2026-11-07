@@ -47,6 +47,21 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
+GoodJob's `async_server` scheduler threads are started once, during Rails
+boot. Under Puma's `preload_app!` cluster mode that boot happens in the
+master, before any worker is forked, so without intervention every forked
+worker inherits scheduler objects bound to the master's pre-fork database
+connections — `fork(2)` continues only the forking thread, not the scheduler's
+own threads. The control plane treats this the same as the already-documented
+ActiveRecord-connection and Temporal-client fork hazards (`Paid::PumaBoot`):
+`config/puma.rb` shuts GoodJob down in the master before each fork and before
+a worker shuts down, and restarts it in the worker only once that worker's
+inherited connection pool has been cleared. Skipping this leaves a forked
+worker able to pick up a GoodJob-queued job (e.g. on the `knowledge` queue)
+through a scheduler still pointed at a connection the master may concurrently
+tear down, surfacing as `ActiveRecord::ConnectionNotEstablished` with a
+`PQsocket()` error from libpq.
+
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
 fallback profile levels execute as a
