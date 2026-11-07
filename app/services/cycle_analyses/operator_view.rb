@@ -94,16 +94,7 @@ module CycleAnalyses
 
     # @spec AUTO-PICK-QUEUE-023
     def status
-      return no_analysis_status if run.nil?
-      return in_flight_status(:queued) if run.status == "queued"
-      return in_flight_status(:running) if run.status == "running"
-      return failed_status unless run.successful? || cancelled_pending_sync?
-      return stale_status if stale?
-      return pending_sync_status(confirmable: run.successful?) if repair_status == "pending_sync"
-      return confirmed_status if repair_status == "resolved"
-      return ambiguous? ? ambiguous_status : stopped_status if repair_status == "needs_operator_action"
-
-      completed_status
+      @status ||= calculate_status
     end
 
     # @spec AUTO-PICK-QUEUE-023
@@ -131,22 +122,15 @@ module CycleAnalyses
     end
 
     def candidates
-      return [] unless recommendation_data.is_a?(Hash)
-
-      recommendation_data.fetch("candidates", []).each_with_index.filter_map do |raw, index|
-        next unless raw.is_a?(Hash)
-
-        Candidate.new(index:, changes: changes_for(raw), evidence: text_array(raw["evidence"]),
-          tradeoffs: text_array(raw["tradeoffs"]),
-          missing_or_conflicting_intent: text_array(raw["missing_or_conflicting_intent"]),
-          acyclic: raw["acyclic"] == true)
-      end
+      @candidates ||= build_candidates
     end
 
     def manual_repair_candidates
-      return [] unless MANUAL_REPAIR_STATUSES.include?(status.key)
-
-      candidates.select(&:manual_repair?)
+      @manual_repair_candidates ||= if MANUAL_REPAIR_STATUSES.include?(status.key)
+        candidates.select(&:manual_repair?)
+      else
+        []
+      end
     end
 
     # @spec AUTO-PICK-QUEUE-024
@@ -169,6 +153,32 @@ module CycleAnalyses
     private
 
     attr_reader :cycle, :run
+
+    def calculate_status
+      return no_analysis_status if run.nil?
+      return in_flight_status(:queued) if run.status == "queued"
+      return in_flight_status(:running) if run.status == "running"
+      return failed_status unless run.successful? || cancelled_pending_sync?
+      return stale_status if stale?
+      return pending_sync_status(confirmable: run.successful?) if repair_status == "pending_sync"
+      return confirmed_status if repair_status == "resolved"
+      return ambiguous? ? ambiguous_status : stopped_status if repair_status == "needs_operator_action"
+
+      completed_status
+    end
+
+    def build_candidates
+      return [] unless recommendation_data.is_a?(Hash)
+
+      recommendation_data.fetch("candidates", []).each_with_index.filter_map do |raw, index|
+        next unless raw.is_a?(Hash)
+
+        Candidate.new(index:, changes: changes_for(raw), evidence: text_array(raw["evidence"]),
+          tradeoffs: text_array(raw["tradeoffs"]),
+          missing_or_conflicting_intent: text_array(raw["missing_or_conflicting_intent"]),
+          acyclic: raw["acyclic"] == true)
+      end
+    end
 
     def result
       run&.verification_result&.dig(RESULT_KEY) || {}

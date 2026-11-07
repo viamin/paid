@@ -152,6 +152,20 @@ RSpec.describe "Inbox" do
   end
 
   # @spec AUTO-PICK-QUEUE-023
+  it "describes a self-loop as one issue waiting on itself" do
+    issue = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue:, depends_on_issue: issue)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    blocked_work = Nokogiri::HTML(response.body).at_css("[data-testid='cycle-blocked-work']").text
+    expect(blocked_work).to include("1 issue waits on itself in a closed loop")
+    expect(blocked_work).not_to include("issues wait on each other")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
   it "explains the blocked work, the recommendation, and the possible GitHub edit before any analysis" do
     first = create(:issue, project:, github_state: "open")
     second = create(:issue, project:, github_state: "open")
