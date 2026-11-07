@@ -19,7 +19,8 @@
 - [x] **TRUSTED-MEASUREMENTS-003** — When a named allowlisted check is run,
   Paid SHALL execute it through project tenant context, persist an idempotent
   revision-bound result, retain a new row for a newer deployed revision, and
-  record execution failure without fabricating success.
+  record execution failure without fabricating success or retaining a partial
+  result as evidence.
   *Code:* `app/services/trusted_measurements/run_check.rb`,
   `app/jobs/trusted_measurements/run_check_job.rb`.
   *Test:* `spec/services/trusted_measurements/run_check_spec.rb`,
