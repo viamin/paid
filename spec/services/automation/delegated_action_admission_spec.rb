@@ -207,4 +207,44 @@ RSpec.describe Automation::DelegatedActionAdmission do
 
     expect(recheck(action: "merge", boundary: :closeout, work_item: pull_request)).to be_permitted
   end
+
+  it "records an admission snapshot when delegated work is permitted" do # @spec PROJECT-DELEGATION-006
+    authorize(action: "review")
+
+    expect do
+      recheck(goal: "review")
+    end.to change(AdmissionSnapshot, :count).by(1)
+
+    snapshot = AdmissionSnapshot.last
+    expect(snapshot).to have_attributes(
+      action: "review",
+      boundary: "dequeue",
+      status: "active",
+      project_id: project.id,
+      issue_id: issue.id,
+      account_id: account.id
+    )
+    expect(snapshot.snapshot).to include(
+      "intent_revision" => "sha256:#{PartialCloseouts::Assessment.intent_revision_for(issue)}",
+      "posture_signature" => snapshot.snapshot["posture_signature"]
+    )
+  end
+
+  it "binds admission snapshots to authorization expiry" do # @spec PROJECT-DELEGATION-006
+    authorization = authorize(action: "review", stop_before_phase: "merge")
+
+    recheck(goal: "review")
+    snapshot = AdmissionSnapshot.last
+
+    expect(snapshot.expires_at).to eq(authorization.expires_at)
+  end
+
+  it "does not record a snapshot when delegated work is blocked" do # @spec PROJECT-DELEGATION-006
+    authorize(action: "review")
+    issue.update!(title: "A materially different request")
+
+    expect do
+      recheck(goal: "review")
+    end.not_to change(AdmissionSnapshot, :count)
+  end
 end

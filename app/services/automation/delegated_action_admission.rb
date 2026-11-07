@@ -115,12 +115,17 @@ module Automation
     end
 
     # Returns a DelegatedWorkBoundary::Result, or nil when the work item is
-    # not governed by a bounded authorization for this action.
+    # not governed by a bounded authorization for this action. When permitted,
+    # records the admission snapshot to bind authorization to current posture
+    # and evidence revisions so in-flight broadening cannot retroactively
+    # enlarge the original authorization. @spec PROJECT-DELEGATION-006
     def call
       return nil if authorization.nil?
 
       authorization.with_lock do
-        DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+        result = DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+        record_admission_snapshot if result&.permitted?
+        result
       end
     end
 
@@ -164,6 +169,28 @@ module Automation
 
     def assessment
       @assessment ||= PartialCloseouts::Assessment.call(work_item)
+    end
+
+    # Records the admission snapshot to bind the authorization to current
+    # posture, policy, and evidence revisions. A later policy broadening
+    # cannot retroactively enlarge this admission.
+    def record_admission_snapshot
+      AdmissionSnapshot.record(
+        bounded_action: authorization,
+        boundary: boundary,
+        snapshot: snapshot
+      )
+    rescue => e
+      Rails.logger.warn(
+        message: "automation.admission_snapshot_record_failed",
+        error_class: e.class.name,
+        error: e.message,
+        project_id: project.id,
+        issue_id: work_item.id,
+        action: action,
+        boundary: boundary
+      )
+      nil
     end
   end
 end

@@ -18,6 +18,7 @@ class BoundedDelegatedAction < ApplicationRecord
   belongs_to :issue
   belongs_to :created_by, class_name: "User", optional: true, inverse_of: :created_bounded_delegated_actions
   belongs_to :revoked_by, class_name: "User", optional: true, inverse_of: :revoked_bounded_delegated_actions
+  has_many :admission_snapshots, dependent: :destroy
 
   validates :action, presence: true, inclusion: { in: ACTIONS, message: "is not a delegable delivery action" }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -26,6 +27,8 @@ class BoundedDelegatedAction < ApplicationRecord
   validate :account_matches_scope
   validate :creator_belongs_to_account
   validate :revoker_belongs_to_account
+
+  after_commit :rollback_admission_snapshots_on_revoke, if: -> { saved_change_to_status? && revoked? }
 
   scope :active, -> { where(status: "active").where("expires_at > ?", Time.current) }
 
@@ -94,5 +97,12 @@ class BoundedDelegatedAction < ApplicationRecord
 
   def revoker_belongs_to_account
     errors.add(:revoked_by, "must belong to the account") if revoked_by && account && revoked_by.account_id != account_id
+  end
+
+  # Rolls back active admission snapshots when this authorization is revoked,
+  # preserving audit evidence and blocking further delegated work until
+  # a new admission is granted. @spec PROJECT-DELEGATION-006
+  def rollback_admission_snapshots_on_revoke
+    admission_snapshots.where(status: "active").find_each(&:revoke!)
   end
 end

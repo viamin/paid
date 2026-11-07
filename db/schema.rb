@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -114,6 +114,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
     t.index ["status"], name: "index_accounts_on_status"
+  end
+
+  create_table "admission_snapshots", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "action", null: false
+    t.string "boundary", null: false
+    t.bigint "bounded_delegated_action_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at"
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.text "rollback_reason"
+    t.jsonb "snapshot", default: {}, null: false
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_admission_snapshots_on_account_and_created_at"
+    t.index ["account_id"], name: "index_admission_snapshots_on_account_id"
+    t.index ["bounded_delegated_action_id", "boundary"], name: "index_admission_snapshots_on_action_and_boundary", unique: true
+    t.index ["bounded_delegated_action_id"], name: "index_admission_snapshots_on_bounded_delegated_action_id"
+    t.index ["issue_id"], name: "index_admission_snapshots_on_issue_id"
+    t.index ["project_id", "issue_id", "action"], name: "index_admission_snapshots_on_project_issue_action"
+    t.index ["project_id"], name: "index_admission_snapshots_on_project_id"
+    t.index ["status", "expires_at"], name: "index_admission_snapshots_on_status_and_expiry"
   end
 
   create_table "agent_coordination_signals", force: :cascade do |t|
@@ -4754,6 +4777,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
   add_foreign_key "account_activity_events", "users", column: "actor_id"
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
+  add_foreign_key "admission_snapshots", "accounts"
+  add_foreign_key "admission_snapshots", "bounded_delegated_actions"
+  add_foreign_key "admission_snapshots", "issues"
+  add_foreign_key "admission_snapshots", "projects"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_images", "accounts"
