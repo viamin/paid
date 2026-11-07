@@ -1275,6 +1275,18 @@ RSpec.describe Inbox::Queue do
       expect(entry.waiting_since).to be_present
     end
 
+    # @spec OPERATOR-INBOX-027
+    it "preloads prerequisite dependencies for the decision brief projection" do
+      issue = create_partial_closeout_issue(github_number: 202)
+      prerequisite = create(:issue, project:, github_number: 203)
+      create(:issue_dependency, issue:, depends_on_issue: prerequisite)
+
+      entry = described_class.call(user:, kind: described_class::PARTIAL_CLOSEOUT_KIND).find { |candidate| candidate.issue == issue }
+
+      expect(entry.issue.association(:issue_dependencies)).to be_loaded
+      expect(entry.issue.issue_dependencies.first.association(:depends_on_issue)).to be_loaded
+    end
+
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
     it "surfaces no-code terminal evidence under the same lane" do
       issue = create(:issue, project: project, github_number: 202, paid_state: "completed", no_code_required_at: 2.hours.ago)

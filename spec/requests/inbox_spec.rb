@@ -2205,7 +2205,9 @@ RSpec.describe "Inbox" do
 
       document = Nokogiri::HTML(response.body)
       brief = document.at_css("[data-testid='inbox-decision-brief']")
-      expect(brief.text).to include("Which cache should exports use?", "Paid recommends:", "Redis", "Answer the question")
+      expect(brief.text).to include("Goal", "Structured question", "What changed",
+        "Product direction is needed before work can continue.", "Which cache should exports use?",
+        "Paid recommends:", "Redis", "Answer the question")
       expect(document.at_css("[data-testid='inbox-question-recommendation']").text).to include("Redis")
       expect(document.css("[data-controller='clarifying-choice'] input[type='radio']").size).to eq(3)
       details = document.at_css("[data-testid='inbox-question-details']")

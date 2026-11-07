@@ -100,6 +100,7 @@ module Inbox
 
     def changed
       return "Product direction is needed before work can continue." if entry.clarifying_questions?
+      return "This issue still has remaining acceptance work." if entry.partial_closeout?
 
       entry.summary.presence || "This work is waiting for a human decision."
     end
@@ -111,7 +112,9 @@ module Inbox
     end
 
     def recommendation
-      case entry.kind
+      return @recommendation if defined?(@recommendation)
+
+      @recommendation = case entry.kind
       when Queue::CLARIFYING_QUESTIONS_KIND then question_payload[:recommendation]
       when Queue::ACTION_REQUIRED_KIND then entry.tasks.first.to_s.presence
       when Queue::PARTIAL_CLOSEOUT_KIND then partial_closeout_recommendation
@@ -170,6 +173,14 @@ module Inbox
       return unless entry.issue && reference.match?(/\A#\d+\z/)
 
       number = reference.delete_prefix("#").to_i
+      if entry.issue.association(:issue_dependencies).loaded?
+        dependency = entry.issue.issue_dependencies.find do |candidate|
+          depends_on = candidate.depends_on_issue
+          depends_on&.project_id == entry.project.id && depends_on.github_number == number
+        end
+        return dependency&.depends_on_issue&.title
+      end
+
       entry.issue.dependencies.find_by(project: entry.project, github_number: number)&.title
     end
   end

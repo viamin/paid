@@ -2,6 +2,8 @@
 <% brief = Inbox::DecisionBrief.call(entry:) %>
 <section class="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="inbox-decision-brief-heading" data-testid="inbox-decision-brief">
   <h3 id="inbox-decision-brief-heading" class="text-sm font-semibold text-indigo-950">What needs your decision</h3>
+  <p class="mt-3 text-sm text-indigo-900"><span class="font-semibold">Goal:</span> <%= brief.goal %></p>
+  <p class="mt-1 text-sm text-indigo-900"><span class="font-semibold">What changed:</span> <%= brief.changed %></p>
   <p class="mt-1 text-sm text-indigo-900"><%= brief.decision %></p>
   <% if brief.recommendation %>
     <p class="mt-3 text-sm text-indigo-900"><span class="font-semibold">Paid recommends:</span> <%= brief.recommendation %></p>

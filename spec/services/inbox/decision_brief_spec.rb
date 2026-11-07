@@ -62,12 +62,30 @@ RSpec.describe Inbox::DecisionBrief do
     blocked_issue = create(:issue, project:, github_number: 511)
     create(:issue_dependency, issue: blocked_issue, depends_on_issue: prerequisite)
     closeout = described_class.call(entry: entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue: blocked_issue,
-      tasks: [ "#512" ], summary_text: "A merged change left one criterion open."))
+      tasks: [ "#512" ], summary_text: "Paid recorded no no-code-required declaration and no merged PR; paid_state is new. " \
+        "Unresolved prerequisite work (#512) must be resolved or linked before continuation."))
 
     expect(manual.to_h).to include(decision: "Choose whether and how Paid should resume.", primary_action: "Review recovery")
     expect(closeout.to_h).to include(decision: "Choose how to finish the remaining acceptance criteria.",
+      changed: "This issue still has remaining acceptance work.",
       recommendation: "Resolve the prerequisite: Verify the production result.", primary_action: "Resolve remaining work")
     expect(closeout.to_h.to_json).not_to include("#512")
+    expect(closeout.to_h.to_json).not_to include("paid_state")
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "resolves a partial-closeout recommendation only once per brief" do
+    prerequisite = create(:issue, project:, github_number: 512, title: "Verify the production result")
+    blocked_issue = create(:issue, project:, github_number: 511)
+    create(:issue_dependency, issue: blocked_issue, depends_on_issue: prerequisite)
+    queries = []
+    callback = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] if payload[:sql].include?("issue_dependencies") }
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      described_class.call(entry: entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue: blocked_issue, tasks: [ "#512" ]))
+    end
+
+    expect(queries.size).to eq(1)
   end
 
   # @spec OPERATOR-INBOX-027
