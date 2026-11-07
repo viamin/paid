@@ -92,4 +92,55 @@ RSpec.describe "Project automation phases" do
     expect(response).to redirect_to(project_automation_phases_path(project))
     expect(grant.reload.endpoint).to eq("merge")
   end
+
+  describe "delegated delivery authority" do
+    let(:issue) { create(:issue, project:) }
+
+    def authorize_review
+      create(:bounded_delegated_action,
+        project: project,
+        issue: issue,
+        action: "review",
+        evidence: Automation::DelegatedActionAdmission.admission_evidence(
+          work_item: issue, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+        ))
+    end
+
+    it "renders no delegation surface while the project gate is off" do # @spec PROJECT-DELEGATION-005
+      authorize_review
+
+      get project_automation_phases_path(project)
+
+      expect(response.body).not_to include("Delegated delivery authority")
+    end
+
+    it "renders each authorization's effective authority from the shared policy" do # @spec PROJECT-DELEGATION-005
+      FeatureFlags.enable!(:automation_phases, project:)
+      FeatureFlags.enable!(:project_delegation, project:)
+      project.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "coding" => true },
+          Automation::PhaseSettings::RELEASE_KEY => false,
+          Automation::PhaseSettings::DEPLOYMENT_KEY => false
+        }
+      )
+      authorize_review
+
+      get project_automation_phases_path(project)
+
+      expect(response.body).to include("Delegated delivery authority")
+      expect(response.body).to include("Effective authority")
+      expect(response.body).to include("project phase defaults")
+    end
+
+    it "attributes authority to the legacy policy while the phase rollout is off" do # @spec PROJECT-DELEGATION-005
+      FeatureFlags.enable!(:project_delegation, project:)
+      authorize_review
+
+      get project_automation_phases_path(project)
+
+      expect(response.body).to include("Delegated delivery authority")
+      expect(response.body).to include("legacy policy")
+    end
+  end
 end

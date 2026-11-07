@@ -24,7 +24,8 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
+        common_fields.merge(kind_payload).merge(progress_payload).merge(history_payload)
+          .merge(workflow_payload).merge(delegation_payload)
       end
 
       def render_list
@@ -61,6 +62,20 @@ module Api
         return {} unless entry.issue
 
         { progress: Inbox::ProgressProjection.call(issue: entry.issue).to_h }
+      end
+
+      # Delegated authority for the entry's work item, read through the shared
+      # delegation projection so API consumers see the same per-authorization
+      # effective policy every other surface shows. Absent entirely while the
+      # project delegation gate is off.
+      # @spec PROJECT-DELEGATION-005
+      def delegation_payload
+        return {} unless entry.issue && entry.project
+
+        projection = ProjectDelegation::Projection.call(project: entry.project, issue: entry.issue)
+        return {} unless projection.enabled
+
+        { delegation: projection.to_h }
       end
 
       # @spec OPERATOR-INBOX-024

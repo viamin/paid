@@ -52,6 +52,7 @@ module Projects
       @egress_denied_event_count = egress_audit_events.count
       @session_summary = @agent_run.agent_run_session_summary
       load_continuation_authority
+      load_delegation_authority
     end
 
     def provenance
@@ -1400,6 +1401,30 @@ module Projects
       @continuation_authority = Automation::EffectivePolicy.call(
         project: @project, phase:, work_item: @agent_run, trigger: :automatic
       )
+    end
+
+    # Delegated authority for this run's work item, read through the shared
+    # delegation projection so the run detail shows the same effective policy
+    # the runtime boundaries enforce. Nothing is inferred from run or queue
+    # state.
+    # @spec PROJECT-DELEGATION-005
+    def load_delegation_authority
+      return unless ProjectDelegation::Projection.enabled?(@project)
+
+      work_item = delegation_work_item
+      return unless work_item
+
+      @delegation = ProjectDelegation::Projection.call(project: @project, issue: work_item)
+    end
+
+    def delegation_work_item
+      return @agent_run.issue if @agent_run.issue
+
+      return if @agent_run.source_pull_request_number.blank?
+
+      pull_request = @project.issues.pull_requests_only
+        .find_by(github_number: @agent_run.source_pull_request_number)
+      pull_request&.parent_issue || pull_request
     end
 
     # @spec AUTOMATION-PHASES-005

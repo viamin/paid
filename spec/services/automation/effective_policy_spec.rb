@@ -115,6 +115,41 @@ RSpec.describe Automation::EffectivePolicy do
     end
   end
 
+  describe "batched pre-resolution for projection surfaces" do
+    before { configure({ "coding" => false, "merge" => false }) }
+
+    it "uses pre-resolved continuation grants instead of querying per work item" do # @spec AUTOMATION-PHASES-017
+      grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+
+      decision = described_class.call(project:, phase: "coding", work_item: issue,
+        trigger: :automatic, continuation_grants: [ grant ])
+
+      expect(decision).to be_permitted
+      expect(decision.source).to eq(:continuation_grant)
+      expect(decision.to_h[:grant_id]).to eq(grant.id)
+    end
+
+    it "does not authorize through grants outside the pre-resolved chain" do # @spec AUTOMATION-PHASES-017
+      other_issue = create(:issue, project:)
+      grant = create(:work_item_continuation_grant, project:, issue: other_issue,
+        start_phase: "coding", endpoint: "merge")
+
+      decision = described_class.call(project:, phase: "coding", work_item: issue,
+        trigger: :automatic, continuation_grants: [])
+
+      expect(decision).to be_blocked
+      expect(grant).to be_present
+    end
+
+    it "uses the pre-resolved rollout state instead of re-reading the flag" do # @spec AUTOMATION-PHASES-017
+      decision = described_class.call(project:, phase: "coding", work_item: issue,
+        trigger: :automatic, rollout_enabled: false)
+
+      expect(decision).to be_permitted
+      expect(decision.source).to eq(:legacy_policy)
+    end
+  end
+
   describe "operations" do
     it "keeps an operations-originated handoff from authorizing coding" do
       configure({ "coding" => false, "merge" => false })

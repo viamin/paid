@@ -85,6 +85,7 @@ module Projects
       @active_grants = @project.work_item_continuation_grants.active
         .includes(:issue).order(created_at: :desc).limit(50)
       @migration_preview = Automation::Phases::MigrationPreview.call(project: @project, user: current_user)
+      @delegation = ProjectDelegation::Projection.call(project: @project)
     end
 
     def phase_settings_params

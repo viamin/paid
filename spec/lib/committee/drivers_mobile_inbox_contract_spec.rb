@@ -118,6 +118,22 @@ RSpec.describe Committee::Drivers do
     )
   end
 
+  # @spec PROJECT-DELEGATION-005
+  it "documents the per-authorization delegated authority payload" do
+    delegation = schema.dig("components", "schemas", "InboxEntryBase", "properties", "delegation")
+    authorization = delegation.fetch("properties").fetch("authorizations").fetch("items")
+
+    expect(authorization.fetch("required")).to match_array(%w[authorization_id action effective_policy])
+    expect(authorization.fetch("properties").keys).to match_array(
+      %w[authorization_id action status expires_at issue_id issue_number issue_title
+         phase stop_before_phase posture_signature effective_policy]
+    )
+    expect(authorization.dig("properties", "effective_policy", "properties").keys)
+      .to match_array(%w[permitted source reason phase grant_id])
+    expect(authorization.dig("properties", "effective_policy", "properties", "source"))
+      .to include("enum" => %w[legacy_policy manual_action continuation_grant project_defaults])
+  end
+
   # @spec OPERATOR-INBOX-021
   it "documents design-PR revisions with their review state" do
     properties = schema.dig("components", "schemas", "FeatureDecisionEntry").fetch("allOf").last.fetch("properties")

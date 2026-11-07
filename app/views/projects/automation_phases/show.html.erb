@@ -74,6 +74,41 @@
     </p>
   </section>
 
+  <%# @spec PROJECT-DELEGATION-005 %>
+  <% if @delegation.enabled %>
+    <section class="mt-8" id="project-delegation">
+      <h2 class="text-sm font-semibold text-gray-900">Delegated delivery authority</h2>
+      <p class="mt-1 text-sm text-gray-500">
+        Every row reads its current effective policy through the shared policy contract; this list never
+        infers authority from labels, approvals, or queue state.
+        <% unless @delegation.phase_model_enabled %>
+          The phase model rollout is off for this project, so authority below is attributed to the legacy policy.
+        <% end %>
+      </p>
+      <% if @delegation.authorizations.any? %>
+        <ul class="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+          <% @delegation.authorizations.each do |authorization| %>
+            <li class="p-3 text-sm" id="delegation-authorization-<%= authorization.authorization_id %>">
+              <div class="font-medium text-gray-900">
+                <%= authorization.action.humanize %> · #<%= authorization.issue_number %> <%= authorization.issue_title %>
+              </div>
+              <div class="text-xs text-gray-500">
+                <%= Automation::Phases.label(authorization.phase) %> · stops before
+                <%= Automation::Phases.label(authorization.stop_before_phase) %> ·
+                <%= authorization.status %> · expires <%= authorization.expires_at.to_date %>
+              </div>
+              <div class="mt-1 text-xs <%= authorization.permitted? ? "text-green-700" : "text-gray-500" %>">
+                Effective authority: <%= authorization.authority_label %>
+              </div>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <p class="mt-2 text-sm text-gray-500">No bounded delivery authorizations are recorded for this project.</p>
+      <% end %>
+    </section>
+  <% end %>
+
   <section class="mt-8">
     <h2 class="text-sm font-semibold text-gray-900">Continuation grants</h2>
     <% if @active_grants.empty? %>

@@ -73,6 +73,57 @@ RSpec.describe "Mobile inbox API" do
     )
   end
 
+  describe "delegated authority payload" do
+    def authorize_review
+      create(:bounded_delegated_action,
+        project: project,
+        issue: issue,
+        action: "review",
+        evidence: Automation::DelegatedActionAdmission.admission_evidence(
+          work_item: issue, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+        ))
+    end
+
+    it "omits delegation from the detail while the project gate is off" do # @spec PROJECT-DELEGATION-005
+      authorize_review
+      issue
+
+      get "/api/v1/inbox/entries/clarifying_questions:#{issue.id}", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("entry")).not_to have_key("delegation")
+    end
+
+    it "exposes each authorization's effective policy on the detail payload" do # @spec PROJECT-DELEGATION-005
+      FeatureFlags.enable!(:project_delegation, project:)
+      authorization = authorize_review
+      issue
+
+      get "/api/v1/inbox/entries/clarifying_questions:#{issue.id}", headers: headers
+
+      delegation = response.parsed_body.dig("entry", "delegation")
+      expect(delegation).to include("enabled" => true, "phase_model_enabled" => false)
+      expect(delegation.fetch("authorizations")).to contain_exactly(
+        a_hash_including(
+          "authorization_id" => authorization.id,
+          "action" => "review",
+          "effective_policy" => a_hash_including("permitted" => true, "source" => "legacy_policy")
+        )
+      )
+    end
+
+    it "keeps the list payload free of delegation resolution" do # @spec PROJECT-DELEGATION-005
+      FeatureFlags.enable!(:project_delegation, project:)
+      authorize_review
+      issue
+
+      get "/api/v1/inbox", params: { kind: "clarifying_questions", project_id: project.id }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch("entries").first).not_to have_key("delegation")
+    end
+  end
+
   # @spec AUTO-PICK-QUEUE-015 MOBILE-API-006
   it "does not serialize dependency cycles that cross another owner's project" do
     other_user = create(:user, account:)

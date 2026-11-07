@@ -50,6 +50,23 @@
 
   <% if entry.issue %>
     <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
+    <%# @spec PROJECT-DELEGATION-005 %>
+    <% delegation = entry.project && ProjectDelegation::Projection.call(project: entry.project, issue: entry.issue) %>
+    <% if delegation&.enabled && delegation.authorizations.any? %>
+      <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4" data-testid="inbox-delegated-authority">
+        <h3 class="text-sm font-semibold text-gray-900">Delegated authority</h3>
+        <ul class="mt-2 space-y-1 text-xs text-gray-700">
+          <% delegation.authorizations.each do |authorization| %>
+            <li>
+              <%= authorization.action.humanize %> ·
+              <span class="<%= authorization.permitted? ? "text-green-700" : "text-gray-500" %>">
+                effective authority: <%= authorization.authority_label %>
+              </span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
   <% end %>
 
   <%= render "dashboard/inbox_workflow_milestones", entry: entry if entry.workflow_milestones? %>

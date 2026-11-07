@@ -75,6 +75,42 @@ RSpec.describe Tools::GetProject do
       tool.call(project_id: project.id)
     end
 
+    describe "delegated authority payload" do
+      let(:issue) { create(:issue, project:) }
+
+      def authorize_review
+        create(:bounded_delegated_action,
+          project: project,
+          issue: issue,
+          action: "review",
+          evidence: Automation::DelegatedActionAdmission.admission_evidence(
+            work_item: issue, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+          ))
+      end
+
+      it "omits delegation while the project gate is off" do # @spec PROJECT-DELEGATION-005
+        authorize_review
+
+        expect(tool.call(project_id: project.id)).not_to have_key(:delegation)
+      end
+
+      it "exposes each authorization's effective policy with its own authority" do # @spec PROJECT-DELEGATION-005
+        FeatureFlags.enable!(:project_delegation, project:)
+        authorization = authorize_review
+
+        delegation = tool.call(project_id: project.id).fetch(:delegation)
+
+        expect(delegation).to include(enabled: true, phase_model_enabled: false)
+        expect(delegation.fetch(:authorizations)).to contain_exactly(
+          a_hash_including(
+            authorization_id: authorization.id,
+            action: "review",
+            effective_policy: a_hash_including(permitted: true, source: :legacy_policy)
+          )
+        )
+      end
+    end
+
     context "with app-backed diagnostics" do
       let(:installation) { create(:github_installation, account: account) }
       let(:fallback_token) { create(:github_token, account: account, name: "Fallback PAT") }

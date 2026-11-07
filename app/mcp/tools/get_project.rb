@@ -35,13 +35,26 @@ module Tools
         default_branch: project.default_branch,
         lid: Interop::ExternalAgentLidContract.call(project: project),
         github_diagnostics: Projects::GithubDiagnostics.call(project: project),
+        delegation: delegation_payload(project),
         recent_runs: recent_runs.map { |r| run_summary(r) },
         created_at: project.created_at,
         updated_at: project.updated_at
-      }
+      }.compact
     end
 
     private
+
+    # Delegated authority through the shared delegation projection, so tool
+    # consumers see each authorization's own effective policy instead of a
+    # project-wide authority figure. Absent entirely while the project
+    # delegation gate is off.
+    # @spec PROJECT-DELEGATION-005
+    def delegation_payload(project)
+      projection = ProjectDelegation::Projection.call(project: project)
+      return unless projection.enabled
+
+      projection.to_h
+    end
 
     def project_for(project_id)
       @projects_by_id ||= {}

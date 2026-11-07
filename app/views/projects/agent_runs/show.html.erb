@@ -60,6 +60,35 @@
       </section>
     <% end %>
 
+    <%# @spec PROJECT-DELEGATION-005 %>
+    <% if @delegation&.enabled && @delegation.authorizations.any? %>
+      <section class="mt-6 rounded-lg border border-gray-200 bg-white p-4">
+        <h2 class="text-sm font-semibold text-gray-900">Delegated authority</h2>
+        <p class="mt-1 text-sm text-gray-700">
+          This work item carries bounded delivery authorizations. Each row's authority is read through the
+          shared policy contract, never inferred from this run's state.
+        </p>
+        <ul class="mt-3 space-y-2 text-sm text-gray-700">
+          <% @delegation.authorizations.each do |authorization| %>
+            <li class="rounded border border-gray-100 p-3">
+              <p>
+                <strong><%= authorization.action.humanize %></strong> ·
+                #<%= authorization.issue_number %> <%= authorization.issue_title %>
+              </p>
+              <p class="mt-1 text-xs text-gray-500">
+                <%= Automation::Phases.label(authorization.phase) %> · stops before
+                <%= Automation::Phases.label(authorization.stop_before_phase) %> ·
+                <%= authorization.status %> · expires <%= authorization.expires_at.to_date %>
+              </p>
+              <p class="mt-1 text-xs <%= authorization.permitted? ? "text-green-700" : "text-gray-500" %>">
+                Effective authority: <%= authorization.authority_label %>
+              </p>
+            </li>
+          <% end %>
+        </ul>
+      </section>
+    <% end %>
+
     <% if @agent_run.layered_verification_audit_goal? && @agent_run.external_metadata.dig("layered_verification", "coverage").present? %>
       <%= render "agent_runs/layered_verification_coverage", agent_run: @agent_run %>
     <% end %>

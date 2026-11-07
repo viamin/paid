@@ -45,10 +45,24 @@ Status markers: `[ ]` planned implementation gap.
   every queued retry must pass), and
   `spec/services/automation/focused_decision_spec.rb` (dedup and refresh).
 
-- [ ] **PROJECT-DELEGATION-005** — UI, API, MCP, queue, dequeue, retries, and
+- [x] **PROJECT-DELEGATION-005** — UI, API, MCP, queue, dequeue, retries, and
   background jobs SHALL use `Automation::EffectivePolicy` and the same
   delegation projection; no surface SHALL infer authority from a label, stale
   approval, queue state, or local UI state.
+  *Verified by:* `spec/services/project_delegation/projection_spec.rb` (the
+  shared read model computes each authorization's authority through
+  `Automation::EffectivePolicy`, selects governing rows in SQL, and batches
+  grant resolution), the delegation surfaces of
+  `spec/requests/projects/automation_phases_spec.rb` (settings),
+  `spec/requests/projects/agent_run_delegation_spec.rb` (run detail),
+  `spec/requests/inbox_delegation_spec.rb` (Inbox detail),
+  `spec/requests/api/v1/inbox_spec.rb` (API detail payload, absent while the
+  default-off `project_delegation` gate is off),
+  `spec/mcp/tools/get_project_spec.rb` (MCP per-authorization authority), and
+  `spec/lib/committee/drivers_mobile_inbox_contract_spec.rb` (API contract).
+  Queue, dequeue, retry, and background-job boundaries already resolve policy
+  through `Automation::EffectivePolicy` inside
+  `Automation::DelegatedActionAdmission` (see PROJECT-DELEGATION-004).
 
 - [x] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
   authority, the system SHALL apply the broader posture only to new admissions

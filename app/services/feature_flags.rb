@@ -107,6 +107,13 @@ class FeatureFlags
       rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
       cleanup_criteria: "Remove after closeout verifies migration and complete execution-path coverage."
     ),
+    project_delegation: Definition.new(
+      name: :project_delegation,
+      owner: "project-delegation",
+      intent: "Gate the shared delegation projection (RDR-080) so settings, agent-run detail, Inbox, API, and MCP surfaces expose delegated authority only for opted-in projects.",
+      rollout_plan: "Default-off; enable a pilot project only together with automation_phases, after every projected surface reads Automation::EffectivePolicy through ProjectDelegation::Projection. No project is enrolled by migration or by an account-level default.",
+      cleanup_criteria: "Remove after the RDR-080 pilot review approves the delegation posture surfaces and rollback preserves audit and evidence history."
+    ),
     layered_verification_add_on: Definition.new(
       name: :layered_verification_add_on,
       owner: "layered-verification",

@@ -795,6 +795,44 @@ components:
             primary_action: {type: string}
             next_state: {type: string}
             unknown: {type: string, nullable: true}
+        delegation:
+          type: object
+          description: >-
+            Present only on detail payloads for issue entries whose project opted
+            into the project delegation gate; each authorization carries its own
+            effective policy from the shared policy contract.
+          required: [enabled, phase_model_enabled, authorizations]
+          properties:
+            enabled: {type: boolean}
+            phase_model_enabled: {type: boolean}
+            authorizations:
+              type: array
+              items:
+                type: object
+                required: [authorization_id, action, effective_policy]
+                properties:
+                  authorization_id: {type: integer}
+                  action: {type: string}
+                  status: {type: string}
+                  expires_at: {type: string, format: date-time}
+                  issue_id: {type: integer}
+                  issue_number: {type: integer, nullable: true}
+                  issue_title: {type: string}
+                  phase: {type: string}
+                  stop_before_phase: {type: string, nullable: true}
+                  posture_signature: {type: string, nullable: true}
+                  effective_policy:
+                    type: object
+                    required: [permitted, source, reason]
+                    properties:
+                      permitted: {type: boolean}
+                      source:
+                        type: string
+                        nullable: true
+                        enum: [legacy_policy, manual_action, continuation_grant, project_defaults]
+                      reason: {type: string, nullable: true}
+                      phase: {type: string}
+                      grant_id: {type: integer, nullable: true}
     ClarifyingQuestionsEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'

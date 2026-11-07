@@ -45,11 +45,21 @@ module Automation
       new(...).call
     end
 
-    def initialize(project:, phase:, work_item: nil, trigger: :automatic)
+    # Pre-resolved facts batch surfaces may supply so projecting many work
+    # items does not re-read the rollout flag or query continuation grants
+    # one row at a time. +continuation_grants+ must be the active grants of
+    # the work item's continuation chain (ContinuationGrantLookup chain
+    # semantics); +rollout_enabled+ is Automation::RolloutGuard.enabled? for
+    # the project. Both default to resolving internally, which every
+    # non-batch caller uses.
+    def initialize(project:, phase:, work_item: nil, trigger: :automatic,
+      continuation_grants: nil, rollout_enabled: nil)
       @project = project
       @phase = phase&.to_s
       @work_item = work_item
       @trigger = trigger
+      @continuation_grants = continuation_grants
+      @rollout_enabled = rollout_enabled
     end
 
     def call
@@ -77,6 +87,8 @@ module Automation
 
     # Rollout guard: while the flag is off the pre-existing policy applies.
     def enabled?
+      return @rollout_enabled unless @rollout_enabled.nil?
+
       Automation::RolloutGuard.enabled?(project)
     end
 
@@ -93,6 +105,8 @@ module Automation
     end
 
     def covering_grant
+      return @continuation_grants.find { |grant| grant.covers_phase?(phase) } if @continuation_grants
+
       ContinuationGrantLookup.covering(project:, phase:, work_item:)
     end
   end
