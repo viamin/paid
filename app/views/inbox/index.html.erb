@@ -3,7 +3,7 @@
     later row selection under that collection URL: browser Back must request the
     collection again so its canonical first selection and detail stay aligned.
     @spec OPERATOR-INBOX-026 %>
-<% content_for(:head) { tag.meta(name: "turbo-cache-control", content: "no-cache") } %>
+<% turbo_exempts_page_from_cache %>
 <%# @spec OPERATOR-INBOX-015 %>
 <% turbo_page_requires_reload if turbo_frame_request_id == "inbox-detail" %>
 
