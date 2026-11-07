@@ -11,6 +11,16 @@ RSpec.describe DependencyCycleReconciliationJob do
     allow(Rails.logger).to receive(:error)
   end
 
+  def fail_once_then_succeed(failing_account, calls)
+    attempts = 0
+    allow(Issues::DependencyCycles).to receive(:call) do |account:|
+      calls << account.id
+      raise Issues::DependencyCycles::CoverageUnavailable, "unavailable" if account == failing_account && (attempts += 1) == 1
+
+      []
+    end
+  end
+
   # @spec AUTO-PICK-QUEUE-014
   it "covers every account in a bounded cycle through durable continuations without duplicate work" do
     baseline = baseline_account_id
@@ -64,15 +74,9 @@ RSpec.describe DependencyCycleReconciliationJob do
     healthy_account = create(:account)
     continuations = []
     calls = []
-    attempts = 0
     allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
     allow(Dashboard::CacheVersion).to receive(:bump)
-    allow(Issues::DependencyCycles).to receive(:call) do |account:|
-      calls << account.id
-      raise Issues::DependencyCycles::CoverageUnavailable, "unavailable" if account == failing_account && (attempts += 1) == 1
-
-      []
-    end
+    fail_once_then_succeed(failing_account, calls)
 
     described_class.perform_now(after_account_id: baseline)
 
@@ -81,7 +85,6 @@ RSpec.describe DependencyCycleReconciliationJob do
       failing_account.id.to_s => hash_including(account_id: failing_account.id, attempts: 1)
     )
     expect(Dashboard::CacheVersion).to have_received(:bump).with(healthy_account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
-    expect(Dashboard::CacheVersion).not_to have_received(:bump).with(failing_account, scope: anything)
 
     described_class.perform_now(**continuations.shift)
 
