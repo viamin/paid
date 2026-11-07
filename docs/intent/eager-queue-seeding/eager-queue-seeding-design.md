@@ -75,10 +75,16 @@ behind the cursor is reconsidered on the next sweep cycle. The normal
 single-issue eligibility recheck and unique active-run index remain the
 idempotency authority.
 
-A project page failure retains that project's prior issue cursor for the next
-continuation while failures remain isolated from other projects. Every page
-logs project and candidate counts, newly-enqueued runs, duration, object
-allocations, and peak RSS for operational capacity review.
+A project page failure retains that project's prior issue cursor for one retry
+in the next continuation while failures remain isolated from other projects.
+If that retry also fails, the project is deferred to the next scheduled cycle
+so one persistently failing project cannot keep the cycle or its concurrency
+key alive forever. Continuations also retain the original project-page boundary
+while pending projects finish, so completed projects are not swept twice. The
+confidence-delivery and planning-hold reconcilers run only on the first issue
+page for a project; later issue pages perform only bounded eligibility work.
+Every page logs project and candidate counts, newly-enqueued runs, duration,
+object allocations, and peak RSS for operational capacity review.
 
 ## Dequeue-time eligibility recheck
 

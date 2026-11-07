@@ -12,6 +12,7 @@ class AutoPickEligibilitySweepJob < ApplicationJob
 
   PROJECT_PAGE_SIZE = 10
   ISSUE_PAGE_SIZE = 100
+  MAX_PROJECT_PAGE_ATTEMPTS = 2
 
   good_job_control_concurrency_with(
     total_limit: 1,
@@ -20,26 +21,28 @@ class AutoPickEligibilitySweepJob < ApplicationJob
   )
 
   # @spec EAGER-QUEUE-017
-  def perform(after_project_id: nil, through_project_id: nil, pending_projects: {})
+  def perform(after_project_id: nil, through_project_id: nil, page_after_project_id: nil, pending_projects: {})
     started_at = monotonic_clock
     allocated_before = GC.stat(:total_allocated_objects)
     through_project_id ||= eligible_projects.maximum(:id)
     return unless through_project_id
 
     page = pending_projects.presence || fresh_project_page(after_project_id, through_project_id)
+    page_after_project_id ||= cursor_value(page.values.last, :project_id) if page.present?
     results = sweep_page(page)
     log_page(started_at, allocated_before, page.size, results)
 
     if results.any? { |result| result.cursor }
       self.class.perform_later(
-        after_project_id: cursor_value(page.values.last, :project_id),
+        after_project_id: page_after_project_id,
         through_project_id:,
-        pending_projects: results.filter_map { |result| [ cursor_value(result.cursor, :project_id), result.cursor ] if result.cursor }.to_h
+        page_after_project_id:,
+        pending_projects: results.filter_map(&:cursor).index_by { |cursor| cursor_value(cursor, :project_id).to_s }
       )
       return
     end
 
-    enqueue_next_page(cursor_value(page.values.last, :project_id), through_project_id) if page.present?
+    enqueue_next_page(page_after_project_id, through_project_id) if page.present?
   end
 
   private
@@ -86,13 +89,17 @@ class AutoPickEligibilitySweepJob < ApplicationJob
       enqueued: page.runs.count(&:previously_new_record?)
     )
   rescue StandardError => error
+    attempts = cursor_value(cursor, :attempts).to_i + 1
     Rails.logger.error(
       message: "auto_pick_eligibility_sweep.project_failed",
       project_id: project.id,
+      attempt: attempts,
+      retry_exhausted: attempts >= MAX_PROJECT_PAGE_ATTEMPTS,
       error_class: error.class.name,
       error: error.message
     )
-    SweepResult.new(cursor:, issues: 0, enqueued: 0)
+    retry_cursor = cursor.merge(attempts:) if attempts < MAX_PROJECT_PAGE_ATTEMPTS
+    SweepResult.new(cursor: retry_cursor, issues: 0, enqueued: 0)
   end
 
   def next_cursor(project, page, through_issue_id)

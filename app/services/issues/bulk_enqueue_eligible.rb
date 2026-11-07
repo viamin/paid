@@ -20,13 +20,12 @@ module Issues
     def call # @spec EAGER-QUEUE-003
       return [] unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
 
-      release_confidence_delivery_holds
-      discover_agent_planning_holds
-      reconcile_agent_planning_holds
+      reconcile_project_holds if after_issue_id.nil?
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
+      candidates = issues
 
-      issues.each do |issue|
+      candidates.each do |issue|
         run = EnqueueEligible.call(issue, project: project, skip_project_gate: true)
 
         if run.nil?
@@ -52,9 +51,9 @@ module Issues
 
       PageResult.new(
         runs:,
-        last_issue_id: issues.last&.id,
-        candidate_count: issues.size,
-        more?: issues.size == page_size
+        last_issue_id: candidates.last&.id,
+        candidate_count: candidates.size,
+        more?: candidates.size == page_size
       )
     end
 
@@ -70,7 +69,13 @@ module Issues
     def issues
       return candidate_page if page_size
 
-      each_eligible_issue.to_a
+      each_eligible_issue
+    end
+
+    def reconcile_project_holds
+      release_confidence_delivery_holds
+      discover_agent_planning_holds
+      reconcile_agent_planning_holds
     end
 
     def each_eligible_issue

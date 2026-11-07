@@ -36,10 +36,13 @@
 - [x] **EAGER-QUEUE-017** — The periodic eligibility sweep SHALL process a
   bounded, ID-snapshotted page of active Auto-Pick projects and bounded,
   ID-cursored pages of each project's eligible issues. It SHALL persist its
-  continuation cursor in job arguments, retry a failed project page from its
-  prior cursor without blocking other projects, and finish the snapshotted
-  project set even when later projects are created during the cycle. Each page
-  SHALL report project and issue counts, duration, allocations, and peak RSS.
+  continuation cursor and original project-page boundary in job arguments,
+  retry a failed project page once from its prior cursor without blocking other
+  projects, and defer a twice-failed project to the next scheduled cycle so the
+  snapshotted project set can finish even when a project persistently fails or
+  later projects are created during the cycle. Per-project hold reconciliation
+  SHALL run only on the first issue page. Each page SHALL report project and
+  issue counts, duration, allocations, and peak RSS.
   *Code:* `AutoPickEligibilitySweepJob#perform`,
   `Issues::BulkEnqueueEligible#candidate_page`.
   *Test:* `spec/jobs/auto_pick_eligibility_sweep_job_spec.rb`,
