@@ -172,6 +172,7 @@ class ApplicationJob < ActiveJob::Base
       ProjectConventions::OpenHookGuardrailPullRequestJob,
       ProjectHealthCheckJob,
       PoolReplenishmentJob,
+      PartialCloseoutStallProjectionJob,
       RunCollectorsJob,
       StyleGuideExtractionJob
     ].any? { |job_class| is_a?(job_class) }

@@ -232,7 +232,7 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-042** — When the partial-closeout Inbox lane reads the
+- [x] **PARTIAL-CLOSEOUT-042** — When the partial-closeout Inbox lane reads the
   accepted persisted stall projection, the
   system SHALL recompute that projection outside Inbox rendering whenever an
   issue's closeout evidence, blocking runs, continuation request, explicit
@@ -248,12 +248,19 @@
   mutate `paid_state`.
   *Issue:* #4558.
   *RDR:* `docs/rdrs/RDR-081-partial-closeout-lane-read-model.md`.
-  *Proposed code:* `Issues::StalledCloseoutProjection`, its recomputation job,
-  `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`.
-  *Proposed tests:* projection recomputation and invalidation, stale-row
-  removal, failure retention, and tenant isolation.
+  *Code:* `app/services/issues/stalled_closeout_projection.rb`,
+  `app/jobs/partial_closeout_stall_projection_job.rb`,
+  `app/jobs/partial_closeout_stall_projection_sweep_job.rb`,
+  `app/models/partial_closeout_stall_checkpoint.rb`,
+  `app/models/partial_closeout_stall.rb`,
+  `app/models/issue.rb`, `app/models/agent_run.rb`,
+  `app/models/issue_continuation_request.rb`, `app/models/runner.rb`,
+  `app/services/feature_flags.rb`.
+  *Test:* `spec/services/issues/stalled_closeout_projection_spec.rb`,
+  `spec/jobs/partial_closeout_stall_projection_job_spec.rb`,
+  `spec/jobs/partial_closeout_stall_projection_sweep_job_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-043** — The partial-closeout lane's list, nav-badge
+- [x] **PARTIAL-CLOSEOUT-043** — The partial-closeout lane's list, nav-badge
   count, and filter matrix SHALL
   read one shared projection reader and SHALL report the same lane membership
   for the same operator; for each project with a successful projection
@@ -265,10 +272,11 @@
   the live scoped continuation preflight.
   *Issue:* #4558.
   *RDR:* `docs/rdrs/RDR-081-partial-closeout-lane-read-model.md`.
-  *Proposed code:* `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`,
-  `Issues::StalledCloseoutProjection`.
-  *Proposed tests:* a Queue/Count/Availability agreement spec and an Inbox
-  render regression proving no `eligible_scope` evaluation.
+  *Code:* `app/services/issues/stalled_closeout_projection.rb`,
+  `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/services/inbox/availability.rb`.
+  *Test:* `spec/services/inbox/partial_closeout_lane_read_model_spec.rb`,
+  `spec/services/issues/stalled_closeout_projection_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-026** — When the Inbox evaluates multiple
   partial-closeout candidates for one project, it SHALL batch the closeout

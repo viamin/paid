@@ -212,18 +212,20 @@ module Inbox
       LayeredVerificationFinding.where(project_id: visible_project_ids, status: %w[open deferred]).count
     end
 
-    # Shares the exact lane computation with Inbox::Queue
-    # (Issues::StalledCloseouts) so the badge can never disagree with the
-    # list. The SQL prefilter on indexed state columns keeps the scan bounded;
+    # Shares the exact lane computation with Inbox::Queue through the RDR-081
+    # shared projection reader, so the badge can never disagree with the list.
+    # Enrolled projects with a successful checkpoint are counted from the
+    # persisted projection; every other project keeps the live evaluation.
+    # The SQL prefilter on indexed state columns keeps the live scan bounded;
     # the stall population is small by construction (terminal evidence plus no
     # operator hold and no work in flight).
-    # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009
+    # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-009 @spec PARTIAL-CLOSEOUT-043
     def partial_closeout_count
       projects = Project.where(id: visible_project_ids)
         .includes(account: :tenant_setting, created_by: :user_setting).to_a
       return 0 if projects.empty?
 
-      Issues::StalledCloseouts.call(projects).size
+      Issues::StalledCloseoutProjection.reader_for(projects).size
     end
 
     # Authorized Inbox visibility: account isolation plus per-owner

@@ -92,6 +92,8 @@ class Issue < ApplicationRecord
   has_many :agent_planning_holds, dependent: :destroy
   has_many :code_scanning_remediation_attempts, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
+  # RDR-081 display-only stall projection rows for this issue.
+  has_many :partial_closeout_stalls, dependent: :delete_all
   has_many :change_intents, dependent: :nullify
   has_many :issue_merge_subscriptions, dependent: :destroy
   has_many :intent_conformance_verdicts, dependent: :destroy
@@ -172,6 +174,11 @@ class Issue < ApplicationRecord
   after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
   after_update_commit :complete_continuation_grants, if: :continuation_endpoint_reached?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
+  # RDR-081: any issue write can change the partial-closeout lane's admission
+  # inputs (closeout evidence, explicit holds, labels, state), so it schedules
+  # a projection recomputation for enrolled projects. No-op otherwise.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :enqueue_partial_closeout_stall_projection_recompute, on: [ :create, :update, :destroy ]
 
   # UI -> GitHub: whenever the local `paused` flag flips, mirror it onto the
   # issue/PR by adding or removing the `paid-paused` label. `before_save`
@@ -984,6 +991,11 @@ class Issue < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  def enqueue_partial_closeout_stall_projection_recompute
+    Issues::StalledCloseoutProjection.schedule(project) if project
   end
 
   # @spec INBOX-PHASE-RELEVANCE-001

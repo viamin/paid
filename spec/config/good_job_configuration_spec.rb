@@ -148,6 +148,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         runner_quota_balance account_health_check_sweep legacy_partial_closeout_reconciliation_sweep
         claude_auth_health_check style_guide_evolution
         agent_run_pattern_detector billing_period_management
+        partial_closeout_stall_projection_sweep
       ]
 
       expected_jobs.each do |job_key|

@@ -263,14 +263,15 @@ module Inbox
         .pending_review.group(:project_id).count
     end
 
+    # RDR-081: the filter matrix reads the same shared projection reader as the
+    # list and the badge, so all three surfaces report the same membership.
+    # @spec PARTIAL-CLOSEOUT-043
     def partial_closeout_by_project
       return {} if visible_project_ids.empty?
 
       projects = Project.where(id: visible_project_ids)
         .includes(account: :tenant_setting, created_by: :user_setting).to_a
-      Issues::StalledCloseouts.call(projects)
-        .map { |pair| pair.issue.project_id }
-        .tally
+      Issues::StalledCloseoutProjection.reader_for(projects).count_by_project
     end
 
     def test_review_pending_by_project

@@ -308,6 +308,10 @@ class Project < ApplicationRecord
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
   has_many :bounded_delegated_actions, dependent: :destroy
+  # RDR-081 display-only stall projection; recomputation atomically replaces
+  # the checkpoint and its rows.
+  has_one :partial_closeout_stall_checkpoint, dependent: :delete
+  has_many :partial_closeout_stalls, dependent: :delete_all
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy

@@ -104,7 +104,9 @@ module Script
       end
 
       # One operator who owns exactly `count` projects, each holding a
-      # stalled partial closeout plus an ordinary open issue.
+      # stalled partial closeout plus an ordinary open issue. Live numbers are
+      # measured first, then the projects enroll in the RDR-081 read model and
+      # the same reads are measured against the persisted projection.
       def measure(count)
         user = create(:user, account: @account)
         projects = seed_projects(count, user)
@@ -117,8 +119,28 @@ module Script
             Inbox::Queue.call(user: user, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
           end,
           "inbox_count" => measure_call { Inbox::Count.call(user: user) },
-          "inbox_availability" => measure_call { Inbox::Availability.new(user: user).kind_counts }
+          "inbox_availability" => measure_call { Inbox::Availability.new(user: user).kind_counts },
+          "projected" => measure_projected(projects) do
+            {
+              "inbox_queue_partial_closeout_only" => measure_call do
+                Inbox::Queue.call(user: user, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+              end,
+              "inbox_count" => measure_call { Inbox::Count.call(user: user) },
+              "inbox_availability" => measure_call { Inbox::Availability.new(user: user).kind_counts }
+            }
+          end
         }
+      end
+
+      # Enables the read model for the seeded projects, commits their initial
+      # projection checkpoints (outside the measured window), then yields so
+      # the same request paths can be measured against the projection.
+      def measure_projected(projects)
+        projects.each do |project|
+          FeatureFlags.enable!(:partial_closeout_lane_read_model, project: project)
+          Issues::StalledCloseoutProjection.recompute!(project)
+        end
+        yield
       end
 
       def seed_projects(count, user)

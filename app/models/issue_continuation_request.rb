@@ -29,6 +29,11 @@ class IssueContinuationRequest < ApplicationRecord
   scope :closed, -> { where.not(status: OPEN_STATUSES) }
 
   after_commit :bump_inbox_cache_version, on: [ :create, :update ]
+  # RDR-081: an opening, closing, or superseded request changes the lane's
+  # admission input, so it schedules a projection recomputation for enrolled
+  # projects.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :enqueue_partial_closeout_stall_projection_recompute, on: [ :create, :update, :destroy ]
 
   def self.open_for_issue(issue)
     open.where(issue: issue).last
@@ -59,5 +64,10 @@ class IssueContinuationRequest < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  def enqueue_partial_closeout_stall_projection_recompute
+    Issues::StalledCloseoutProjection.schedule(project) if project
   end
 end

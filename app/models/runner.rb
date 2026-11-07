@@ -130,6 +130,11 @@ class Runner < ApplicationRecord
   before_discard :clear_provider_api_key_reference
   after_commit :invalidate_agent_run_runner_option_caches, if: :agent_run_runner_option_cache_invalidation_needed?
   after_commit :enqueue_parked_run_recovery, if: :became_available_for_agent_runs?
+  # RDR-081: runner configuration changes the admission-relevant tier
+  # feasibility set, so it schedules a projection recomputation for the
+  # owner's enrolled projects.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :enqueue_partial_closeout_stall_projection_recomputes, on: [ :create, :update, :destroy ]
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :monthly_token_budget,
@@ -1055,6 +1060,14 @@ class Runner < ApplicationRecord
     return unless user
 
     AgentRun.invalidate_runner_options_cache(account_id: user.account_id)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  def enqueue_partial_closeout_stall_projection_recomputes
+    return unless user
+
+    Project.where(account_id: user.account_id, created_by_id: user.id, active: true)
+      .find_each { |project| Issues::StalledCloseoutProjection.schedule(project) }
   end
 
   def clear_provider_api_key_reference

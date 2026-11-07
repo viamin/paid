@@ -120,6 +120,13 @@ class FeatureFlags
       intent: "Gate provider-neutral work-item surfaces while tracker providers migrate from GitHub issue contracts.",
       rollout_plan: "Default-off; enable only for selected account and project combinations through tenant_settings.features or a project actor gate after provider identity, lifecycle, and relationship parity are verified.",
       cleanup_criteria: "Remove only after every supported tracker uses the unified work-item contract and the GitHub compatibility path is retired."
+    ),
+    partial_closeout_lane_read_model: Definition.new(
+      name: :partial_closeout_lane_read_model,
+      owner: "operator-inbox",
+      intent: "Read the partial_closeout Inbox lane from the persisted display-only stall projection (RDR-081) instead of evaluating live admission on the request path.",
+      rollout_plan: "Default-off; enable per project. Enabling schedules an initial recomputation and the project switches to projection reads only after its checkpoint commits; until then it stays on the live path. Live eligible_scope remains the admission authority at continuation preflight, dequeue recheck, and run start. Rollback is disabling the flag, which restores the live path with no schema change.",
+      cleanup_criteria: "Remove the flag and the guarded live-path branch only after the RDR-081 closeout audit records every validation criterion passing and production has run with the projection enabled for every project for 14 consecutive days with no membership mismatch and no read-model rollback."
     )
   }.freeze
 

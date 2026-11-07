@@ -308,6 +308,10 @@ class AgentRun < ApplicationRecord
   after_commit :update_project_last_agent_run_at, on: :create, unless: :synthetic_operational_run?
   after_commit :invalidate_runner_options_cache_on_change, on: [ :create, :update ]
   after_commit :invalidate_filter_options_cache_on_change, on: [ :create, :update, :destroy ]
+  # RDR-081: run lifecycle changes the lane's blocking-run admission input, so
+  # they schedule a projection recomputation for enrolled projects.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :enqueue_partial_closeout_stall_projection_recompute, on: [ :create, :update, :destroy ]
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
@@ -4282,6 +4286,11 @@ class AgentRun < ApplicationRecord
       project.agent_runs_count, project.completed_agent_runs_count = fresh_counts
       project.clear_attribute_changes([ "agent_runs_count", "completed_agent_runs_count" ])
     end
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  def enqueue_partial_closeout_stall_projection_recompute
+    Issues::StalledCloseoutProjection.schedule(project) if project
   end
 
   def just_finished?
