@@ -47,6 +47,18 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
+Under GoodJob's `async_server` mode, a job's checked-out database connection
+stays held for the full `perform` call — Rails only releases it once the
+whole job returns. A job that blocks on a slow external subprocess (for
+example, `WorktreeService` shelling out to `git clone`/`git fetch`) can
+therefore leave that connection idle long enough for the server or an
+intermediate proxy to drop it; the next ActiveRecord call then raises
+`ActiveRecord::ConnectionNotEstablished` trying to reuse the dead socket
+instead of transparently reconnecting. `WorktreeService` releases its
+connection before each git subprocess call and restores tenant context
+(which lives per-connection, not per-thread) once the subprocess returns, so
+the next query always checks out a fresh, verified connection.
+
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
 fallback profile levels execute as a

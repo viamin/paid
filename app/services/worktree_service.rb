@@ -430,7 +430,7 @@ class WorktreeService
     options = {}
     options[:chdir] = chdir if chdir
 
-    stdout, stderr, status = Open3.capture3("git", *args, **options)
+    stdout, stderr, status = release_connection_during { Open3.capture3("git", *args, **options) }
 
     if !status.success? && raise_on_error
       redacted_args = args.map { |a| redact_credentials(a) }
@@ -439,6 +439,28 @@ class WorktreeService
     end
 
     stdout
+  end
+
+  # Open3.capture3 blocks the calling thread for the full duration of the git
+  # subprocess (clone/fetch over the network can run long). GoodJob keeps a
+  # job's checked-out database connection held for the whole perform call, so
+  # a slow git operation leaves that connection idle long enough for the
+  # server or an intermediate proxy to drop it; the next ActiveRecord call
+  # then raises ActiveRecord::ConnectionNotEstablished trying to reuse the
+  # dead socket. Release the connection before the subprocess runs and
+  # restore tenant context (which lives per-connection, not per-thread) once
+  # it returns, so the next query checks out a fresh, verified connection.
+  # @spec RAILS-CONTROL-PLANE-013
+  def release_connection_during
+    pool = ActiveRecord::Base.connection_pool
+    return yield unless pool.active_connection?
+
+    restore_account = Current.account
+    restore_bypass = TenantContext.bypass_enabled?
+    pool.release_connection
+    yield
+  ensure
+    TenantContext.restore!(account: restore_account, bypass: restore_bypass) if restore_account || restore_bypass
   end
 
   def redact_credentials(str)

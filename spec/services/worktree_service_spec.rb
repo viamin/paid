@@ -455,6 +455,68 @@ RSpec.describe WorktreeService do
     end
   end
 
+  # @spec RAILS-CONTROL-PLANE-013
+  describe "#run_git connection handling" do
+    let(:connection_pool) { instance_double(ActiveRecord::ConnectionAdapters::ConnectionPool) }
+    let(:success_status) { instance_double(Process::Status, success?: true) }
+
+    before do
+      FileUtils.mkdir_p(repo_path)
+      allow(Open3).to receive(:capture3).and_return([ "", "", success_status ])
+      allow(ActiveRecord::Base).to receive(:connection_pool).and_return(connection_pool)
+      allow(connection_pool).to receive(:active_connection?).and_return(true)
+      allow(connection_pool).to receive(:release_connection)
+      allow(TenantContext).to receive(:bypass_enabled?).and_return(false)
+      allow(TenantContext).to receive(:restore!)
+    end
+
+    it "releases the checked-out database connection before shelling out to git" do
+      service.run_repo_command("rev-parse", "HEAD")
+
+      expect(connection_pool).to have_received(:release_connection).ordered
+      expect(Open3).to have_received(:capture3).ordered
+    end
+
+    it "restores tenant context after the git subprocess returns" do
+      # rubocop:disable RSpec/VerifiedDoubles,RSpec/VerifiedDoubleReference
+      account = double("Account", id: 123)
+      # rubocop:enable RSpec/VerifiedDoubles,RSpec/VerifiedDoubleReference
+      Current.account = account
+
+      service.run_repo_command("rev-parse", "HEAD")
+
+      expect(connection_pool).to have_received(:release_connection).ordered
+      expect(TenantContext).to have_received(:restore!).with(account: account, bypass: false).ordered
+    ensure
+      Current.reset
+    end
+
+    it "skips release and restore when no connection is checked out" do
+      allow(connection_pool).to receive(:active_connection?).and_return(false)
+
+      service.run_repo_command("rev-parse", "HEAD")
+
+      expect(connection_pool).not_to have_received(:release_connection)
+      expect(TenantContext).not_to have_received(:restore!)
+    end
+
+    it "still restores tenant context when the git command fails" do
+      # rubocop:disable RSpec/VerifiedDoubles,RSpec/VerifiedDoubleReference
+      account = double("Account", id: 123)
+      # rubocop:enable RSpec/VerifiedDoubles,RSpec/VerifiedDoubleReference
+      allow(success_status).to receive(:success?).and_return(false)
+      allow(Open3).to receive(:capture3).and_return([ "", "fatal: not a repo", success_status ])
+      Current.account = account
+
+      expect { service.run_repo_command("rev-parse", "HEAD") }.to raise_error(WorktreeService::Error)
+
+      expect(connection_pool).to have_received(:release_connection)
+      expect(TenantContext).to have_received(:restore!).with(account: account, bypass: false)
+    ensure
+      Current.reset
+    end
+  end
+
   describe "#push_branch" do
     let(:worktree_dir) { File.join(worktrees_path, "paid-agent-test") }
     let(:result_sha) { "def456789012345678901234567890abcdef1234" }

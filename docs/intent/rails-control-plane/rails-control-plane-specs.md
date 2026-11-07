@@ -75,6 +75,16 @@
   *Tests:* `spec/config/good_job_cron_dedup_spec.rb`.
   *Code:* `config/initializers/good_job.rb`, `db/schema.rb`.
 
+- [x] **RAILS-CONTROL-PLANE-013** — When a GoodJob-backed background job runs
+  a git subprocess through `WorktreeService` while holding a checked-out
+  database connection, the control plane SHALL release that connection before
+  the subprocess runs and restore tenant context once it returns, so an idle
+  connection dropped by the server or a proxy during a slow clone/fetch
+  surfaces as a fresh reconnect on the next query instead of
+  `ActiveRecord::ConnectionNotEstablished`.
+  *Tests:* `spec/services/worktree_service_spec.rb`.
+  *Code:* `WorktreeService#run_git`.
+
 ## Current View Stack
 
 - [x] **RAILS-CONTROL-PLANE-004** — The control plane SHALL continue to ship
