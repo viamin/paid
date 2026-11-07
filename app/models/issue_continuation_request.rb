@@ -29,6 +29,11 @@ class IssueContinuationRequest < ApplicationRecord
   scope :closed, -> { where.not(status: OPEN_STATUSES) }
 
   after_commit :bump_inbox_cache_version, on: [ :create, :update ]
+  # Opening, consuming, or superseding a request changes lane membership, so
+  # the display-only projection recomputes promptly for flag-enabled projects
+  # (the sweep covers every other input on its cadence).
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :schedule_stall_projection_recompute, on: [ :create, :update ]
 
   def self.open_for_issue(issue)
     open.where(issue: issue).last
@@ -59,5 +64,9 @@ class IssueContinuationRequest < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def schedule_stall_projection_recompute
+    Issues::StalledCloseoutProjection.schedule(project)
   end
 end

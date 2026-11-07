@@ -300,6 +300,11 @@ class Project < ApplicationRecord
   has_many :intent_conformance_shadow_evaluations, dependent: :destroy
   has_many :facet_confidence_evaluations, dependent: :destroy
   has_many :design_artifact_findings, dependent: :destroy
+  # Display-only partial-closeout stall projection (RDR-081); admission stays
+  # with DefaultCandidateSource.eligible_scope.
+  # @spec PARTIAL-CLOSEOUT-042
+  has_many :partial_closeout_stall_checkpoints, dependent: :destroy
+  has_many :partial_closeout_stalls, dependent: :delete_all
   has_many :auto_merge_attempts, dependent: :destroy
   # @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
   has_many :layered_verification_obligations, dependent: :delete_all

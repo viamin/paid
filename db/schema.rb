@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_150100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -425,8 +425,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
     t.index ["project_id", "external_source_key", "external_run_key"], name: "idx_agent_runs_external_dedup", unique: true, where: "(external_run_key IS NOT NULL)"
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying, 'waiting_recovery'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying, 'waiting_recovery'::character varying])::text[])))"
+    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number", "status"], name: "idx_agent_runs_review_feedback_lookup"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
@@ -3402,6 +3402,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
     t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
+  create_table "partial_closeout_stall_checkpoints", comment: "Project checkpoints for the display-only partial-closeout stall projection (RDR-081).", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "computed_at", comment: "When the last successful projection was committed; null until one succeeds."
+    t.datetime "created_at", null: false
+    t.bigint "generation", default: 0, null: false, comment: "Identity of the last successful atomic row replacement."
+    t.datetime "input_watermark", comment: "Newest admission-relevant input included in the last successful computation."
+    t.jsonb "last_failure", default: {}, null: false, comment: "Bounded failure metadata for operator diagnosis."
+    t.datetime "last_failure_at", comment: "When the latest failed recomputation attempt occurred."
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_partial_closeout_stall_checkpoints_on_account_id"
+    t.index ["project_id"], name: "index_partial_closeout_stall_checkpoints_on_project_id", unique: true
+  end
+
+  create_table "partial_closeout_stalls", comment: "Persisted stalled-issue rows of the display-only partial-closeout stall projection (RDR-081).", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "blockers", default: [], null: false, comment: "Additive structured blockers CloseoutStatus produced for the stall."
+    t.datetime "created_at", null: false
+    t.string "evidence_digest", null: false, comment: "Outcome-generation digest the stall was computed against."
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.bigint "projection_generation", null: false, comment: "Checkpoint generation that produced this row."
+    t.jsonb "status", default: {}, null: false, comment: "Serialized CloseoutStatus display payload: outcome, reason, prerequisites, evidence, technical evidence."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_partial_closeout_stalls_on_account_id"
+    t.index ["issue_id"], name: "index_partial_closeout_stalls_on_issue_id", unique: true
+    t.index ["project_id", "projection_generation"], name: "index_partial_closeout_stalls_on_project_and_generation"
+  end
+
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -5098,6 +5127,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_111859) do
   add_foreign_key "page_load_regression_findings", "accounts", on_delete: :cascade
   add_foreign_key "page_load_regression_findings", "agent_runs", on_delete: :nullify
   add_foreign_key "page_load_regression_findings", "projects", on_delete: :cascade
+  add_foreign_key "partial_closeout_stall_checkpoints", "accounts"
+  add_foreign_key "partial_closeout_stall_checkpoints", "projects"
+  add_foreign_key "partial_closeout_stalls", "accounts"
+  add_foreign_key "partial_closeout_stalls", "issues"
+  add_foreign_key "partial_closeout_stalls", "projects"
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"

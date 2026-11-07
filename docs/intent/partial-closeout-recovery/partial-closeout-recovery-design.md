@@ -228,9 +228,14 @@ decision, its evidence, and its alternatives:
 | B — persisted stall read model | Recompute the stalled-closeout projection outside Inbox rendering, on every input that changes admission or lane membership; a durable project checkpoint represents both populated and empty results; the Inbox reads the projection after that checkpoint exists; live `eligible_scope` remains the admission authority at continuation preflight, dequeue, and run start. | Removes admission from the hot path and mirrors the persisted project-readiness snapshot, but adds a durable derived record, invalidation coverage, freshness semantics, and a rollout guard. |
 | C — per-project cache | Cache the `StalledCloseouts` result per project behind the account's `inbox` `Dashboard::CacheVersion`, shared by Queue, Count, and Availability. | Lowest implementation cost, but the cache boundary is the badge boundary, not the admission-input boundary, so it serves badge-grade staleness to the lane list and returns to live admission on every cold cache. |
 
-**Recorded decision: the owner chose Option B on 2026-11-05; it is accepted but
-not yet implemented.** The lane keeps live admission until RDR-081's read model
-is implemented and enabled. The decision rests on three findings: the request-path
+**Recorded decision: the owner chose Option B on 2026-11-05; it is implemented
+behind the default-off `partial_closeout_lane_read_model` flag (#4912).** The
+projection (`Issues::StalledCloseoutProjection` and its checkpoint/stall rows)
+recomputes outside Inbox rendering, and `Inbox::Queue`, `Inbox::Count`, and
+`Inbox::Availability` read one shared reader that evaluates no
+`eligible_scope` for a project with a successful checkpoint. While the flag is
+off — or until a project's first successful checkpoint commits — the lane keeps
+live admission. The decision rests on three findings: the request-path
 cost grows with the number of projects that have closeout candidates rather
 than with the number of stalls; Option C needs the same invalidation coverage
 as the projection to be correct, because the `inbox` cache version does not
@@ -745,7 +750,8 @@ those revisions change.
 - *Per-project cache of the stalled-closeout result (#4558)*: rejected — the
   `inbox` cache version is a badge boundary rather than an admission-input
   boundary, so the lane list would inherit the badge's staleness.
-- *Persisted stall read model (#4558)*: accepted in RDR-081 but not yet in force —
+- *Persisted stall read model (#4558)*: accepted in RDR-081 and implemented
+  behind the default-off `partial_closeout_lane_read_model` flag (#4912) —
   it is the chosen direction for the lane's request-path cost, and it
   supersedes only the live-evaluation part of the derived-lane decision, never
   the admission authority.
@@ -759,4 +765,6 @@ those revisions change.
 2. ✅ The lane's membership stays derived from evidence, not persisted as Inbox
    items.
 3. ✅ The owner chose Option B, the persisted stall read model in RDR-081, for
-   the lane's request-path cost (#4558). Implementation and rollout remain open.
+   the lane's request-path cost (#4558). It is implemented behind the
+   default-off `partial_closeout_lane_read_model` flag (#4912); removal of the
+   guard remains open until RDR-081's closeout criteria are met.

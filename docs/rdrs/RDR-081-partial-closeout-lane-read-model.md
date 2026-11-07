@@ -5,10 +5,10 @@
 ## Metadata
 
 - **Date**: 2026-10-28
-- **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implementation pending
+- **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implemented behind the default-off `partial_closeout_lane_read_model` flag (#4912)
 - **Type**: Architecture
 - **Related RDRs**: [RDR-074](RDR-074-project-readiness.md) (the persisted project-readiness snapshot this read model mirrors), [RDR-032](RDR-032-eager-queue-seeding.md) (auto-pick admission authority)
-- **Related Issues**: #4558 (this decision), #4120 (partial-closeout recovery umbrella), #4119 (gap ownership), #4556 (eligible-scope query optimization)
+- **Related Issues**: #4558 (this decision), #4120 (partial-closeout recovery umbrella), #4119 (gap ownership), #4556 (eligible-scope query optimization), #4912 (implementation)
 
 ## Problem
 
@@ -256,6 +256,9 @@ the same coverage Option C would need and the main implementation risk.
 
 The owner chose Option B on 2026-11-05. This accepts the display-only read
 model while keeping live admission authoritative at preflight, dequeue, and run
-start. The lane continues using live admission until the projection is
-implemented and the rollout guard is enabled; accepting this RDR does not
-create a projection table or change runtime behavior.
+start. The implementation (#4912) landed the projection
+(`Issues::StalledCloseoutProjection`, its checkpoint and stall rows, the
+recomputation and sweep jobs) behind the default-off
+`partial_closeout_lane_read_model` flag; while the flag is off, or until a
+project's first successful checkpoint commits, the lane continues using live
+admission.

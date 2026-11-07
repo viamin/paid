@@ -904,10 +904,13 @@ module Inbox
     # per project inside Issues::StalledCloseouts), and each entry's summary
     # carries the exact reason automatic continuation cannot proceed plus the
     # recorded outcome; the detail pane adds evidence links, unresolved
-    # prerequisites, and the authorized recovery actions (#4120).
-    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    # prerequisites, and the authorized recovery actions (#4120). Flag-enabled
+    # projects with a successful projection checkpoint read the persisted
+    # display rows through the shared projection reader instead — no
+    # eligible_scope evaluation on the request path (RDR-081).
+    # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-043 @spec OPERATOR-INBOX-002H
     def partial_closeout_entries
-      pairs = Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id)
+      pairs = Issues::StalledCloseoutProjection.read(scoped_projects, issue_id: @record_id)
       preload_partial_closeout_dependencies(pairs)
       pairs.map do |pair|
         status = pair.status

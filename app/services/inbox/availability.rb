@@ -263,12 +263,16 @@ module Inbox
         .pending_review.group(:project_id).count
     end
 
+    # Reads the lane through the same shared projection reader as
+    # Inbox::Queue and Inbox::Count (RDR-081), so the filter matrix can never
+    # disagree with the list or the badge.
+    # @spec PARTIAL-CLOSEOUT-043
     def partial_closeout_by_project
       return {} if visible_project_ids.empty?
 
       projects = Project.where(id: visible_project_ids)
         .includes(account: :tenant_setting, created_by: :user_setting).to_a
-      Issues::StalledCloseouts.call(projects)
+      Issues::StalledCloseoutProjection.read(projects)
         .map { |pair| pair.issue.project_id }
         .tally
     end

@@ -1400,6 +1400,44 @@ RSpec.describe Inbox::Queue do
       expect(multi_row_queries).to eq(single_row_queries)
     end
 
+    # @spec PARTIAL-CLOSEOUT-043 — the runtime hot path: with the read-model
+    # flag enabled and a successful checkpoint, an Inbox render serves the
+    # lane from the persisted projection without evaluating live admission.
+    it "renders the lane from the persisted stall projection without evaluating eligible_scope" do
+      stalled = create_partial_closeout_issue(github_number: 222)
+      FeatureFlags.enable!(Issues::StalledCloseoutProjection::FLAG, project: project)
+      Issues::StalledCloseoutProjection.recompute(project)
+      evaluations = []
+      allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:partial_closeout_eligibility)
+        .and_wrap_original { |method, *args, **kwargs|
+          evaluations << args
+          method.call(*args, **kwargs)
+        }
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries.map(&:issue)).to eq([ stalled ])
+      expect(evaluations).to be_empty
+    end
+
+    # @spec PARTIAL-CLOSEOUT-043 — a flag-enabled project without a
+    # successful checkpoint stays on the live path until recomputation lands.
+    it "keeps evaluating live admission for a flag-enabled project without a checkpoint" do
+      create_partial_closeout_issue(github_number: 223)
+      FeatureFlags.enable!(Issues::StalledCloseoutProjection::FLAG, project: project)
+      evaluations = []
+      allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:partial_closeout_eligibility)
+        .and_wrap_original { |method, *args, **kwargs|
+          evaluations << args
+          method.call(*args, **kwargs)
+        }
+
+      entries = described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+
+      expect(entries).to be_present
+      expect(evaluations).not_to be_empty
+    end
+
     # @spec OPERATOR-INBOX-002K
     it "batch-preloads merge-approval entries instead of querying per PR" do
       create_merge_approval_pr(github_number: 219)
