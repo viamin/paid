@@ -22,9 +22,11 @@ module TrustedMeasurements
       arguments.first
     end
 
-    def perform(project_id, check_key:, external_issue_number:, criterion_key:)
+    def perform(project_id, check_key:, external_issue_number:, criterion_key:, expected_deployed_revision:)
       project = Project.find(project_id)
-      RunCheck.call(project: project, check_key: check_key, external_issue_number: external_issue_number, criterion_key: criterion_key)
+      RunCheck.call(
+        project:, check_key:, external_issue_number:, criterion_key:, expected_deployed_revision:
+      )
     end
   end
 end

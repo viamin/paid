@@ -19,8 +19,11 @@ names a versioned Ruby check that accepts a project, uses tenant-scoped
 ActiveRecord reads, and returns a bounded structured result. The runner never
 accepts SQL, a repository command, or a dynamically selected class.
 
-An attempt is uniquely identified by project, source issue number, criterion,
-check key/version, and deployed revision. It retains project/account scope,
+Each collection request names the exact target revision it expects the deploy
+pipeline to report. A missing signal or a signal for another revision records
+unknown evidence and does not execute the read check. An attempt is uniquely
+identified by project, source issue number, criterion, check key/version, and
+deployed revision. It retains project/account scope,
 execution time, result, and terminal status. Retrying an identical deployment
 updates the same row; a new revision creates a new historical row. The current
 evidence projection exposes only a succeeded row whose revision equals the
@@ -39,11 +42,13 @@ deployment revision or synchronized source issue produces an inspectable
 unknown attempt without querying the check. Database errors remain failed
 attempts and are retried by the job under normal role restrictions.
 
-A completed measurement changes the closeout evidence digest and enters the
-existing bounded acceptance-audit path. The closeout assessor, not the check,
-decides whether the exact criterion is now satisfied and whether its matching
-prerequisite can be released. A passing count never closes an issue or attests
-unrelated criteria.
+A semantically changed measurement changes the closeout evidence digest and
+enters the existing bounded acceptance-audit path. Volatile collection metadata
+such as execution time remains visible to the assessor but does not create a new
+evidence generation when an identical deployment is retried. The closeout
+assessor, not the check, decides whether the exact criterion is now satisfied
+and whether its matching prerequisite can be released. A passing count never
+closes an issue or attests unrelated criteria.
 
 Routine attempts are represented by the evidence/progress path. Action Required
 is reserved for an unallowlisted request, missing deployment/source authority,

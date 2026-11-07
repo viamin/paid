@@ -16,8 +16,10 @@ RSpec.describe TrustedMeasurements::RunCheck do
     ENV["PAID_DEPLOYED_REVISION"] = previous
   end
 
-  def call(key: check_key, number: issue.github_number)
-    described_class.call(project:, check_key: key, external_issue_number: number, criterion_key:)
+  def call(key: check_key, number: issue.github_number, expected_deployed_revision: "rev-1")
+    described_class.call(
+      project:, check_key: key, external_issue_number: number, criterion_key:, expected_deployed_revision:
+    )
   end
 
   def call_ignoring_failure(key: check_key, number: issue.github_number)
@@ -49,6 +51,18 @@ RSpec.describe TrustedMeasurements::RunCheck do
 
     expect(attempt).to have_attributes(status: "unknown", deployed_revision: nil, failure_reason: "missing_deployment_signal")
     expect(attempt.issue).to eq(issue)
+  end
+
+  # @spec TRUSTED-MEASUREMENTS-004
+  it "records stale deployment without running the check when the target revision is not deployed" do
+    ENV["PAID_DEPLOYED_REVISION"] = "pre-fix-revision"
+    expect(TrustedMeasurements::Checks::PlanningHoldReconciliationClosedCount).not_to receive(:call)
+
+    attempt = call(expected_deployed_revision: "target-fix-revision")
+
+    expect(attempt).to have_attributes(
+      status: "unknown", deployed_revision: "pre-fix-revision", failure_reason: "stale_deployment"
+    )
   end
 
   it "records an inspectable unknown attempt when the source issue is unavailable" do

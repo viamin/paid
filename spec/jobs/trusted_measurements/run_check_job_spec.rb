@@ -10,7 +10,8 @@ RSpec.describe TrustedMeasurements::RunCheckJob do
     {
       check_key: "agent_planning_hold_reconciliation_closed_count",
       external_issue_number: issue.github_number,
-      criterion_key: "closed_planning_hold_notifications_cleared"
+      criterion_key: "closed_planning_hold_notifications_cleared",
+      expected_deployed_revision: "rev-1"
     }
   end
 
@@ -25,7 +26,8 @@ RSpec.describe TrustedMeasurements::RunCheckJob do
   it "runs the named check for the project and persists the attempt" do
     described_class.new.perform(
       project.id, check_key: "agent_planning_hold_reconciliation_closed_count",
-      external_issue_number: issue.github_number, criterion_key: "closed_planning_hold_notifications_cleared"
+      external_issue_number: issue.github_number, criterion_key: "closed_planning_hold_notifications_cleared",
+      expected_deployed_revision: "rev-1"
     )
 
     attempt = TrustedMeasurementAttempt.last
@@ -41,7 +43,8 @@ RSpec.describe TrustedMeasurements::RunCheckJob do
 
     described_class.perform_now(
       project.id, check_key: "agent_planning_hold_reconciliation_closed_count",
-      external_issue_number: issue.github_number, criterion_key: "closed_planning_hold_notifications_cleared"
+      external_issue_number: issue.github_number, criterion_key: "closed_planning_hold_notifications_cleared",
+      expected_deployed_revision: "rev-1"
     )
 
     expect(observed_account_id).to eq(project.account_id)

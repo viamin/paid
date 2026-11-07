@@ -30,7 +30,8 @@ module TrustedMeasurements
       records ||= records_for(issue)
       return if records.empty?
 
-      Digest::SHA256.hexdigest(JSON.generate(records))
+      semantic_records = records.map { |record| record.except("executed_at") }
+      Digest::SHA256.hexdigest(JSON.generate(semantic_records))
     end
 
     def self.present(attempt)

@@ -75,6 +75,7 @@ module TrustedMeasurements
 
     def title
       return "Trusted measurement deployment revision is unknown" if missing_deployment_signal?
+      return "Trusted measurement target revision is not deployed" if stale_deployment?
       return "Trusted measurement source issue is unavailable" if attempt.unknown?
       return "Trusted measurement is contradicting its own evidence" if contradictory?
 
@@ -85,6 +86,9 @@ module TrustedMeasurements
       return "#{DeploymentSignal::ENV_KEY} is not set, so the #{attempt.check_key} measurement for issue " \
         "##{attempt.external_issue_number} cannot be bound to a deployed revision. Set #{DeploymentSignal::ENV_KEY} " \
         "in the deploy pipeline so this measurement can attest closeout evidence." if missing_deployment_signal?
+      return "The deployment signal does not match the target revision requested for the #{attempt.check_key} " \
+        "measurement on issue ##{attempt.external_issue_number}. Deploy the target revision, update " \
+        "#{DeploymentSignal::ENV_KEY}, then retry the measurement." if stale_deployment?
       return "Issue ##{attempt.external_issue_number} is not available in this project's synchronized issue set, so " \
         "#{attempt.check_key} cannot be attached to its closeout evidence. Synchronize the issue, then retry." if attempt.unknown?
       return "The #{attempt.check_key} measurement for issue ##{attempt.external_issue_number} returned a closed-issue " \
@@ -104,6 +108,10 @@ module TrustedMeasurements
 
     def missing_deployment_signal?
       attempt.unknown? && attempt.failure_reason == "missing_deployment_signal"
+    end
+
+    def stale_deployment?
+      attempt.unknown? && attempt.failure_reason == "stale_deployment"
     end
 
     def notification_source

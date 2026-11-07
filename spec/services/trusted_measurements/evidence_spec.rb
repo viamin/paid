@@ -82,5 +82,15 @@ RSpec.describe TrustedMeasurements::Evidence do
 
       expect(described_class.revision_for(issue)).not_to eq(first_revision)
     end
+
+    # @spec TRUSTED-MEASUREMENTS-006
+    it "does not change for an identical retry with a new execution timestamp" do
+      attempt = create(:trusted_measurement_attempt, :succeeded, project:, issue:, deployed_revision: "rev-1")
+      first_revision = described_class.revision_for(issue)
+
+      attempt.update!(executed_at: 1.hour.from_now)
+
+      expect(described_class.revision_for(issue)).to eq(first_revision)
+    end
   end
 end

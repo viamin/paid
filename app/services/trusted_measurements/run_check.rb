@@ -20,11 +20,12 @@ module TrustedMeasurements
   class RunCheck
     def self.call(...) = new(...).call
 
-    def initialize(project:, check_key:, external_issue_number:, criterion_key:)
+    def initialize(project:, check_key:, external_issue_number:, criterion_key:, expected_deployed_revision:)
       @project = project
       @check_key = check_key
       @external_issue_number = external_issue_number
       @criterion_key = criterion_key
+      @expected_deployed_revision = expected_deployed_revision
     end
 
     def call
@@ -33,6 +34,7 @@ module TrustedMeasurements
 
       attempt = find_or_create_attempt(check_class.version, DeploymentSignal.current)
       return record_unknown!(attempt, "missing_deployment_signal") if attempt.deployed_revision.blank?
+      return record_unknown!(attempt, "stale_deployment") if stale_deployment?(attempt)
       return record_unknown!(attempt, "source_issue_not_available") unless attempt.issue
 
       execute!(attempt, check_class)
@@ -42,7 +44,11 @@ module TrustedMeasurements
 
     private
 
-    attr_reader :project, :check_key, :external_issue_number, :criterion_key
+    attr_reader :project, :check_key, :external_issue_number, :criterion_key, :expected_deployed_revision
+
+    def stale_deployment?(attempt)
+      expected_deployed_revision.blank? || attempt.deployed_revision != expected_deployed_revision
+    end
 
     def resolve_check_class
       TrustedMeasurements.check_class(check_key)

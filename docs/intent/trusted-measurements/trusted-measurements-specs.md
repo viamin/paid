@@ -26,8 +26,9 @@
   `spec/jobs/trusted_measurements/run_check_job_spec.rb`.
 
 - [x] **TRUSTED-MEASUREMENTS-004** — When deployment identity or the source
-  issue is unavailable, Paid SHALL persist an unknown attempt with the exact
-  recovery reason and SHALL not execute the read check.
+  issue is unavailable, or when deployment identity does not equal the target
+  revision named by the collection request, Paid SHALL persist an unknown
+  attempt with the exact recovery reason and SHALL not execute the read check.
   *Code:* `app/services/trusted_measurements/run_check.rb`,
   `app/services/trusted_measurements/escalate.rb`.
   *Test:* `spec/services/trusted_measurements/run_check_spec.rb`.
@@ -39,9 +40,14 @@
   `app/services/llm/analyze_partial_closeout.rb`.
   *Test:* `spec/services/trusted_measurements/evidence_spec.rb`.
 
-- [x] **TRUSTED-MEASUREMENTS-006** — When trusted measurement evidence changes,
-  Paid SHALL mark a prior closeout assessment stale and re-enter the bounded
-  assessment path; only that assessment may release the matching prerequisite.
+- [x] **TRUSTED-MEASUREMENTS-006** — When trusted measurement semantic evidence
+  changes, Paid SHALL mark a prior closeout assessment stale and re-enter the
+  bounded assessment path; collection timestamps and identical retries SHALL
+  NOT create another evidence generation, and only that assessment may release
+  the matching prerequisite.
   *Code:* `app/services/partial_closeouts/assessment.rb`,
-  `app/services/trusted_measurements/run_check.rb`.
-  *Test:* `spec/services/partial_closeouts/assessment_spec.rb`.
+  `app/services/trusted_measurements/run_check.rb`,
+  `app/services/trusted_measurements/evidence.rb`.
+  *Test:* `spec/services/partial_closeouts/assessment_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`,
+  `spec/services/trusted_measurements/evidence_spec.rb`.
