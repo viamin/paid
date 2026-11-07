@@ -109,6 +109,8 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
   it "queues one deduplicated, pinned performance comparison with its reviewed recipe contract" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
+    create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+      last_scanned_head_sha: source_run.result_commit_sha)
     requirement = create(:pre_commit_requirement, project:, account: project.account,
       check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
           "baseline_commit_sha" => "b" * 40, "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
@@ -126,6 +128,29 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(first.agent_run.base_commit_sha).to eq("c" * 40)
     expect(first.agent_run.external_metadata.dig("technical_prerequisite_validation", "performance_measurement"))
       .to include("baseline_commit_sha" => "b" * 40, "current_commit_sha" => "c" * 40, "samples" => 3)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "keeps a performance comparison unknown when the linked pull request head has advanced" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
+    create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+      last_scanned_head_sha: "e" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account,
+      check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
+        "baseline_commit_sha" => "b" * 40,
+        "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
+        "metrics" => [ "wall_ms" ], "samples" => 3,
+        "environment" => "isolated-linux", "budget_seconds" => 60,
+        "artifact_contract" => [ "raw_samples", "comparison" ]
+      })
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+
+    expect(result).not_to be_success
+    expect(result.agent_run).to be_nil
+    expect(result.message).to include("head changed")
+    expect(TechnicalPrerequisiteValidationJob).not_to have_been_enqueued
   end
 
   # @spec PARTIAL-CLOSEOUT-042

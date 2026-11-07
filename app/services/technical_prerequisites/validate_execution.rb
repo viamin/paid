@@ -221,7 +221,8 @@ module TechnicalPrerequisites
     end
 
     def numeric(value)
-      Float(value)
+      parsed = Float(value)
+      parsed if parsed.finite?
     rescue ArgumentError, TypeError
       nil
     end

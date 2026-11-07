@@ -27,6 +27,7 @@ module TechnicalPrerequisites
       return failure("Select a completed implementation run with a produced revision to measure.") if performance_requirement? && current_commit_sha.blank?
       return failure(performance_recipe.error) if performance_requirement? && !performance_recipe.valid?
       return failure("Select an implementation run linked to an issue to measure.") if performance_requirement? && source_run.issue.nil?
+      return failure("The linked pull request head changed or is unavailable; performance evidence remains unknown.") if performance_requirement? && !current_revision?
 
       run, created = admit_validation_run
       # Enqueued after the run is committed: the job claims the run by id, and
@@ -124,6 +125,20 @@ module TechnicalPrerequisites
     # changes under review.
     def current_commit_sha
       @current_commit_sha ||= source_run.result_commit_sha.presence
+    end
+
+    def current_revision?
+      head_sha = current_pull_request_head_sha
+      head_sha.present? && head_sha.casecmp?(current_commit_sha)
+    end
+
+    def current_pull_request_head_sha
+      pull_request_number = source_run.pull_request_number.presence || source_run.source_pull_request_number
+      return if pull_request_number.blank?
+
+      source_run.project.issues.find_by(
+        github_number: pull_request_number, is_pull_request: true
+      )&.last_scanned_head_sha
     end
 
     # A performance validation re-checks out the produced revision as its

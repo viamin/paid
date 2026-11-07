@@ -11,6 +11,8 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     issue = create(:issue, project:)
     source_run = create(:agent_run, :completed, project:, issue:,
       base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
+    create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+      last_scanned_head_sha: source_run.result_commit_sha)
     requirement = create(:pre_commit_requirement, project:, account: project.account,
       check_type: "performance_measurement", command: "bin/measure", measurement_recipe: measurement_recipe)
 
