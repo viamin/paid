@@ -87,6 +87,22 @@ RSpec.describe "Technical prerequisite validations" do
     expect(response).to have_http_status(:ok)
   end
 
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
+  it "does not start a measurement for a user outside the account" do
+    outsider = create(:user)
+    sign_in outsider
+    source_run
+
+    expect {
+      post validate_technical_prerequisite_project_agent_runs_path(project), params: {
+        issue_id: issue.id, source_run_id: source_run.id, requirement_id: requirement.id
+      }
+    }.not_to change(AgentRun, :count)
+
+    expect(response).to have_http_status(:not_found)
+    expect(TechnicalPrerequisiteValidationJob).not_to have_been_enqueued
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "refuses a recipe outside the effective project configuration" do
     sign_in user
