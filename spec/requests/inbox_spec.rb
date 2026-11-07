@@ -2179,7 +2179,7 @@ RSpec.describe "Inbox" do
     end
   end
 
-  # @spec OPERATOR-INBOX-025
+  # @spec OPERATOR-INBOX-025 OPERATOR-INBOX-027
   context "when a question uses the structured payload" do
     let(:structured_question) do
       {
@@ -2204,6 +2204,8 @@ RSpec.describe "Inbox" do
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       document = Nokogiri::HTML(response.body)
+      brief = document.at_css("[data-testid='inbox-decision-brief']")
+      expect(brief.text).to include("Which cache should exports use?", "Paid recommends:", "Redis", "Answer the question")
       expect(document.at_css("[data-testid='inbox-question-recommendation']").text).to include("Redis")
       expect(document.css("[data-controller='clarifying-choice'] input[type='radio']").size).to eq(3)
       details = document.at_css("[data-testid='inbox-question-details']")

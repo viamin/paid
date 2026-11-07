@@ -1,0 +1,15 @@
+<%# @spec OPERATOR-INBOX-027 %>
+<% brief = Inbox::DecisionBrief.call(entry:) %>
+<section class="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="inbox-decision-brief-heading" data-testid="inbox-decision-brief">
+  <h3 id="inbox-decision-brief-heading" class="text-sm font-semibold text-indigo-950">What needs your decision</h3>
+  <p class="mt-1 text-sm text-indigo-900"><%= brief.decision %></p>
+  <% if brief.recommendation %>
+    <p class="mt-3 text-sm text-indigo-900"><span class="font-semibold">Paid recommends:</span> <%= brief.recommendation %></p>
+    <p class="mt-1 text-sm text-indigo-800"><%= brief.recommendation_reason %></p>
+  <% else %>
+    <p class="mt-3 text-sm text-indigo-900"><span class="font-semibold">Unknown:</span> <%= brief.unknown %></p>
+  <% end %>
+  <p class="mt-3 text-sm text-indigo-800"><span class="font-semibold">Waiting:</span> <%= brief.waiting_work %></p>
+  <p class="mt-3 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white"><%= brief.primary_action %></p>
+  <p class="mt-2 text-xs text-indigo-800">Afterward: <%= brief.next_state %></p>
+</section>

@@ -646,6 +646,24 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 
 ## Testing
 
+## Decision briefs
+
+Every actionable Inbox entry has one deterministic `Inbox::DecisionBrief`
+projection. It is built from the current queue entry and its persisted
+assessment/evidence, never from a rendered summary or an LLM call. The list,
+selected detail, API detail, and contextual chat use the same projection.
+
+The brief names the project goal, what changed, the exact decision or action,
+the supported recommendation and its reason, the waiting work, and the next
+state after the primary action. A recommendation is present only where the
+structured source supports it. Otherwise the brief explicitly names the
+unknown and asks one focused question. Detailed evidence, examples, and
+history remain in the lane-specific detail and collapsed disclosures.
+
+- `spec/services/inbox/decision_brief_spec.rb` covers the deterministic
+  contract for product questions, action required, manual review, and partial
+  closeout states.
+
 - `spec/services/inbox/queue_spec.rb` covers typed discovery of
   clarifying-question, plan-review, merge-approval, and action-required
   entries.

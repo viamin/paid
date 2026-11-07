@@ -46,6 +46,8 @@
 </div>
 
 <div class="px-4 py-5 sm:px-6">
+  <%= render "dashboard/inbox_decision_brief", entry: entry %>
+
   <% if entry.issue %>
     <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
   <% end %>
