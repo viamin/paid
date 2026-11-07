@@ -48,6 +48,18 @@ path. Existing issue filing and repair services remain separately authorized
 paths. Pattern detection does not call repair application, create an execution,
 or opt an account into automatic remediation.
 
+The periodic detector sweep is bounded per continuation: one job perform
+processes a small page of accounts and re-enqueues its continuation with the
+keyset cursor (the last processed account ID) and the cycle's captured end
+(the maximum account ID when the cycle started), so accounts created during a
+cycle are deferred to the next scheduled cycle. An account's detection,
+diagnosis budget, remediation recording, and notification stay per-account and
+idempotent, so an in-cycle retry re-runs the same account unit the same way
+the next scheduled cycle would. One account's failure is logged with its
+attempt count and retried once inside the cycle; after that it is deferred to
+the next cycle while the remaining accounts finish. The single-flight GoodJob
+concurrency key keeps one sweep chain running at a time.
+
 For an accepted/applied correction, outcome evaluation uses the same goal,
 fingerprint identity where available, and window represented by the proposal.
 It records before/after failure and exposure counts. It reports

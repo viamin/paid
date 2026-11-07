@@ -31,3 +31,17 @@ prefix: RUN-OBSTACLE
   SHALL not claim causality from recurrence counts. It SHALL reevaluate an
   insufficient-evidence outcome only while its bounded after period remains
   open; that outcome is terminal after the period closes.
+
+- [x] **RUN-OBSTACLE-006** — The periodic detection sweep SHALL process a
+  bounded page of accounts per job continuation, carrying immutable account-ID
+  cursors in its continuation arguments: keyset progress past the last
+  processed account and the cycle's captured end, so accounts created during a
+  cycle are deferred to the next scheduled cycle. Per-account detection,
+  diagnosis budgeting, remediation recording, and notification SHALL remain
+  idempotent account units. A failed account SHALL be observable with its
+  attempt count, retried once within the cycle, and otherwise deferred to the
+  next cycle while remaining accounts continue. The sweep SHALL allow only one
+  chain at a time and SHALL report per-account pattern counts, duration, and
+  allocations.
+  *Code:* `AgentRunPatternDetectorJob#perform`.
+  *Test:* `spec/jobs/agent_run_pattern_detector_job_spec.rb`.
