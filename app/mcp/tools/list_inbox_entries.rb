@@ -43,7 +43,11 @@ module Tools
 
     private
 
+    # Mirrors Api::V1::InboxController#inbox_limit: an explicit null or blank
+    # limit means the default page, not the minimum page size.
     def bounded_limit(limit)
+      return DEFAULT_LIMIT if limit.blank?
+
       limit.to_i.clamp(1, MAX_LIMIT)
     end
 

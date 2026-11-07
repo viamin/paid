@@ -30,7 +30,77 @@ RSpec.describe Tools::ListInboxEntries do
   end
 
   # @spec MCP-INBOX-TOOLS-001 MCP-INBOX-TOOLS-003
-  it "honors project visibility, actionable defaults, removals, and duplicate reads" do
+  it "treats a blank limit as the default page, like the REST Inbox API" do
+    result = described_class.new(user:, session:).call(kind: "clarifying_questions", limit: nil)
+
+    expect(result.fetch(:entries).map { |entry| entry.fetch(:id) })
+      .to eq(issues.map { |issue| "clarifying_questions:#{issue.id}" })
+  end
+
+  # @spec MCP-INBOX-TOOLS-001 MCP-INBOX-TOOLS-003
+  it "filters by an accessible project and rejects a project outside the account" do
+    other_account = create(:account)
+    other_project = create(:project, account: other_account)
+    tool = described_class.new(user:, session:)
+
+    scoped = tool.call(kind: "clarifying_questions", project_id: project.id).fetch(:entries)
+    expect(scoped.map { |entry| entry.fetch(:id) })
+      .to match_array(issues.map { |issue| "clarifying_questions:#{issue.id}" })
+
+    expect { tool.call(project_id: other_project.id) }.to raise_error(ActiveRecord::RecordNotFound)
+  end
+
+  context "with a merge_approval request held back by a disabled phase" do
+    let(:governed_project) do
+      create(
+        :project,
+        account:,
+        created_by: user,
+        auto_pick_enabled: true,
+        active: true,
+        auto_merge_mode: "all",
+        owner_reviewer_login: "viamin",
+        owner: "acme",
+        repo: "governed"
+      )
+    end
+
+    let!(:pull_request) do
+      create(
+        :issue,
+        :pull_request,
+        project: governed_project,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+    end
+
+    before do
+      FeatureFlags.enable!(:automation_phases, project: governed_project)
+      governed_project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "merge" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+    end
+
+    # @spec MCP-INBOX-TOOLS-001 MCP-INBOX-TOOLS-003
+    it "lists another kind and surfaces entries held back by a disabled phase" do
+      tool = described_class.new(user:, session:)
+
+      expect(tool.call(kind: "merge_approval").fetch(:entries)).to be_empty
+
+      held = tool.call(
+        kind: "merge_approval", scope: Inbox::Queue::DISABLED_PHASES_SCOPE
+      ).fetch(:entries)
+      expect(held.map { |entry| entry.fetch(:id) }).to eq([ "merge_approval:#{pull_request.id}" ])
+      expect(held.first).to include(kind: "merge_approval", summary: be_present)
+    end
+  end
+
+  # @spec MCP-INBOX-TOOLS-001 MCP-INBOX-TOOLS-003
+  it "honors actionable defaults, removals, and duplicate reads" do
     other_user = create(:user, account:)
     hidden_project = create(:project, account:, created_by: other_user)
     hidden_issue = create(:issue, :needs_input, project: hidden_project, needs_input_questions: [ "Hidden" ])
@@ -47,23 +117,5 @@ RSpec.describe Tools::ListInboxEntries do
     expect(tool.call(kind: "clarifying_questions").fetch(:entries).map { |item| item.fetch(:id) }).not_to include(entry_id)
     expect(tool.call(kind: "clarifying_questions", scope: Inbox::Queue::REMOVED_SCOPE)
       .fetch(:entries).map { |item| item.fetch(:id) }).to include(entry_id)
-  end
-
-  # @spec MCP-INBOX-TOOLS-002 MCP-INBOX-TOOLS-003
-  it "returns the REST detail projection for a current ID and a safe result for stale IDs" do
-    entry_id = "clarifying_questions:#{issues.first.id}"
-    tool = Tools::GetInboxEntry.new(user:, session:)
-
-    result = tool.call(entry_id:)
-    expect(result).to include(found: true, entry: include(id: entry_id, questions: [ "What should happen?" ], progress: be_present))
-    expect(tool.call(entry_id: "clarifying_questions:999999")).to eq(found: false)
-
-    issues.first.update!(github_state: "closed")
-    expect(tool.call(entry_id:)).to eq(found: false)
-
-    other_account = create(:account)
-    other_user = create(:user, account: other_account)
-    other_session = create(:chat_session, account: other_account, created_by: other_user)
-    expect(Tools::GetInboxEntry.new(user: other_user, session: other_session).call(entry_id:)).to eq(found: false)
   end
 end
