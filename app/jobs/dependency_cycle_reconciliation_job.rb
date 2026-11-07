@@ -10,6 +10,8 @@ class DependencyCycleReconciliationJob < ApplicationJob
   queue_as :maintenance
 
   ACCOUNT_PAGE_SIZE = 2
+  UNAVAILABLE_RETRY_BASE_DELAY = 1.minute
+  UNAVAILABLE_RETRY_MAX_DELAY = 10.minutes
 
   good_job_control_concurrency_with(
     enqueue_limit: 2,
@@ -18,7 +20,7 @@ class DependencyCycleReconciliationJob < ApplicationJob
   )
 
   # @spec AUTO-PICK-QUEUE-014
-  def perform(after_account_id: nil, through_account_id: nil)
+  def perform(after_account_id: nil, through_account_id: nil, unavailable_retries: 0)
     started_at = monotonic_clock
     allocated_before = GC.stat(:total_allocated_objects)
     through_account_id ||= Account.maximum(:id)
@@ -27,7 +29,10 @@ class DependencyCycleReconciliationJob < ApplicationJob
     accounts = account_page(after_account_id, through_account_id)
     last_successful_account_id, reconciled_count, unavailable_count = reconcile_page(accounts)
     log_page(started_at, allocated_before, accounts, after_account_id, through_account_id, reconciled_count, unavailable_count)
-    enqueue_continuation(last_successful_account_id, through_account_id) if next_page?(last_successful_account_id, through_account_id)
+    return unless next_page?(last_successful_account_id, through_account_id)
+
+    enqueue_continuation(last_successful_account_id, through_account_id,
+      unavailable_retries: unavailable_count.positive? ? unavailable_retries + 1 : 0)
   end
 
   private
@@ -63,8 +68,22 @@ class DependencyCycleReconciliationJob < ApplicationJob
     Account.where("accounts.id > ? AND accounts.id <= ?", after_account_id.to_i, through_account_id).exists?
   end
 
-  def enqueue_continuation(after_account_id, through_account_id)
-    self.class.perform_later(after_account_id:, through_account_id:)
+  # A page stopped by an unavailable account retries the same cursor after a
+  # backed-off delay (1m doubling to a 10m cap): an immediate continuation
+  # would hot-loop the maintenance worker on the failing account until the
+  # coverage outage resolves. Fully successful pages continue immediately and
+  # reset the backoff.
+  def enqueue_continuation(after_account_id, through_account_id, unavailable_retries:)
+    if unavailable_retries.zero?
+      self.class.perform_later(after_account_id:, through_account_id:)
+    else
+      self.class.set(wait: unavailable_retry_delay(unavailable_retries))
+        .perform_later(after_account_id:, through_account_id:, unavailable_retries:)
+    end
+  end
+
+  def unavailable_retry_delay(unavailable_retries)
+    [ UNAVAILABLE_RETRY_BASE_DELAY * (2**(unavailable_retries - 1)), UNAVAILABLE_RETRY_MAX_DELAY ].min
   end
 
   def log_page(started_at, allocated_before, accounts, after_account_id, through_account_id, reconciled_count, unavailable_count)

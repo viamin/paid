@@ -74,7 +74,10 @@ that boundary and resumes after its last successfully reconciled account. This
 prevents inserts during a cycle from shifting the page, so every account in the
 captured range is visited once and accounts created later wait for the next
 cron cycle. If coverage is unavailable for an account, the continuation keeps
-the prior cursor and retries that account before advancing. Cache versions are
+the prior cursor and retries that account before advancing; the retry is
+delayed by a bounded exponential backoff (one minute doubling to a ten-minute
+cap) so an extended outage cannot hot-loop the maintenance queue, while fully
+successful pages continue immediately. Cache versions are
 bumped only after that account's reconciliation succeeds. Each page logs its
 account count, duration, and object allocations for fleet-capacity monitoring.
 
