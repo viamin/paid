@@ -727,6 +727,18 @@ module Projects
         alert: "Another agent run is already queued or in progress for this target."
     end
 
+    def retry_source_closure # @spec PARTIAL-CLOSEOUT-045
+      authorize @agent_run
+      unless @agent_run.waiting_recovery?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not waiting for source-closure recovery."
+        return
+      end
+
+      SourceClosureRecoveryJob.perform_later(@agent_run.id)
+      audit_event("agent_run.source_closure_recovery_requested", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
+      redirect_to project_agent_run_path(@project, @agent_run), notice: "Source-closure recovery was queued without rerunning coding."
+    end
+
     def terminate
       authorize @agent_run
 

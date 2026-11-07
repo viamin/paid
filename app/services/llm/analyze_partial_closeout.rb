@@ -106,6 +106,8 @@ module Llm
       parsed
     rescue AssessmentFailure
       raise
+    rescue AgentHarness::TimeoutError
+      raise assessment_failure("timeout")
     rescue AgentHarness::AuthenticationError
       raise assessment_failure("authentication_unavailable")
     rescue AgentHarness::ConfigurationError
@@ -268,6 +270,8 @@ module Llm
         "Partial closeout assessment could not authenticate with the configured runner. Reconnect its credential and retry."
       when "unsuccessful_response"
         "partial closeout assessment failed: transport returned an unsuccessful response. Retry after runner recovery."
+      when "timeout"
+        "Partial closeout assessment timed out. Retry after runner recovery."
       when "invalid_json"
         "partial closeout assessment failed: returned invalid JSON. Retry the assessment."
       when "invalid_assessment"

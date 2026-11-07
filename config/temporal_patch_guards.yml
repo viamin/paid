@@ -29,6 +29,8 @@ workflows:
       introduced_on: "2026-10-10"
     source-closure-disposition-v1:
       introduced_on: "2026-10-24"
+    source-closure-recovery-v1:
+      introduced_on: "2026-11-07"
     layered-verification-audit-completion-v1:
       introduced_on: "2026-10-26"
     layered-verification-audit-result-ingestion-v1:

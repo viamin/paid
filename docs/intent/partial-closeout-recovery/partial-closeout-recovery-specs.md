@@ -4,6 +4,26 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-044** — When source-closure assessment transport
+  exhausts its bounded, backoff retry policy after a branch push, Paid SHALL
+  retain the same AgentRun in `waiting_recovery` with the failed step, pushed
+  branch and commit, attempt count, sanitized category, and next retry time;
+  it SHALL release its idle execution environment and SHALL NOT mark the coding
+  result terminally failed solely for that transport outage.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-045** — When a waiting source-closure recovery is due
+  or authorized by an operator, Paid SHALL claim it once, restore only the
+  isolated assessment environment as needed, reassess before PR publication,
+  and reuse the same AgentRun and pushed branch. Cancellation and concurrent or
+  replayed claims SHALL not rerun coding or duplicate PR publication.
+  *Code:* `app/jobs/source_closure_recovery_job.rb`,
+  `app/temporal/workflows/source_closure_recovery_workflow.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted
   tier model, and configured credentials through `agent_harness`,

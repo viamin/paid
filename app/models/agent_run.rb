@@ -17,7 +17,7 @@ class AgentRun < ApplicationRecord
     [ %r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com" ],
     [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
   ].freeze
-  STATUSES = %w[queued running paused completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
+  STATUSES = %w[queued running paused waiting_recovery completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
   # Must include every value RunnerSupport.agent_type_for produces for a
   # container-executable runner key (RunnerSupport::CONTAINER_EXECUTABLE_RUNNER_KEYS),
   # otherwise dequeue-time runner binding writes an agent_type that can never be
@@ -178,7 +178,7 @@ class AgentRun < ApplicationRecord
     where(key.eq(Arel::Nodes.build_quoted(value)))
   end
   private_class_method :cycle_analysis_metadata
-  UNFINISHED_STATUSES = %w[queued running paused].freeze
+  UNFINISHED_STATUSES = %w[queued running paused waiting_recovery].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress token_budget].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   # Statuses that mean work is already in flight for an issue/PR and must block
@@ -2007,6 +2007,10 @@ class AgentRun < ApplicationRecord
 
   def running?
     status == "running"
+  end
+
+  def waiting_recovery?
+    status == "waiting_recovery"
   end
 
   def finished?

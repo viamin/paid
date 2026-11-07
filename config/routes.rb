@@ -323,6 +323,7 @@ Rails.application.routes.draw do
       post :refresh_auth, on: :member
       post :diagnose_error, on: :member
       post :resume, on: :member
+      post :retry_source_closure, on: :member
       post :terminate, on: :member
       post :promote_session_summary, on: :member
       get :provenance, on: :member

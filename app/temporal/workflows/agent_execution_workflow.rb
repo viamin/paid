@@ -35,6 +35,10 @@ module Workflows
       max_attempts: 5
     )
 
+    SOURCE_CLOSURE_RETRY_POLICY = Temporalio::RetryPolicy.new(
+      initial_interval: 15, max_interval: 2.minutes, backoff_coefficient: 2, max_attempts: 3
+    )
+
     # The proxy health check activity performs a single HTTP check per
     # invocation and raises a retryable error when unhealthy. Temporal
     # manages backoff/retry via this policy (5s initial → 30s cap), freeing
@@ -468,8 +472,13 @@ module Workflows
           else
             # @spec PARTIAL-CLOSEOUT-029
             if Temporalio::Workflow.patched("source-closure-disposition-v1")
-              run_activity(Activities::AssessSourceClosureActivity,
-                { agent_run_id: agent_run_id }, timeout: 120)
+              if Temporalio::Workflow.patched("source-closure-recovery-v1")
+                assessment_result = assess_source_closure_or_park(agent_run_id)
+                return { success: true, waiting_for_recovery: true, agent_run_id: agent_run_id } if assessment_result[:waiting]
+              else
+                run_activity(Activities::AssessSourceClosureActivity,
+                  { agent_run_id: agent_run_id }, timeout: 120)
+              end
             end
 
             # Step 6: Create PR
@@ -784,6 +793,20 @@ module Workflows
     end
 
     private
+
+    # @spec PARTIAL-CLOSEOUT-044
+    def assess_source_closure_or_park(agent_run_id)
+      run_activity(Activities::AssessSourceClosureActivity, { agent_run_id: agent_run_id }, timeout: 120,
+        retry_policy: SOURCE_CLOSURE_RETRY_POLICY)
+      { waiting: false }
+    rescue => e
+      raise_if_canceled!(e)
+      raise unless retry_exhausted_activity_error?(e)
+
+      run_activity(Activities::ParkSourceClosureRecoveryActivity,
+        { agent_run_id: agent_run_id, category: "timeout", attempts: SOURCE_CLOSURE_RETRY_POLICY.max_attempts }, timeout: 30)
+      { waiting: true }
+    end
 
     # Extracts the meaningful error message from a Temporal exception.
     #

@@ -38,6 +38,14 @@
   </div>
 <% end %>
 
+<% if show_retry && agent_run.waiting_recovery? %>
+  <div class="mt-3 flex justify-end">
+    <%= button_to "Retry source-closure assessment",
+          retry_source_closure_project_agent_run_path(agent_run.project, agent_run), method: :post,
+          class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500" %>
+  </div>
+<% end %>
+
 <% if show_retry %>
   <div class="mt-3 flex justify-end" data-when-finished <% unless agent_run.finished? %>hidden<% end %>>
     <%= form_with url: retry_project_agent_run_path(agent_run.project, agent_run), method: :post, class: "flex flex-wrap items-center justify-end gap-2", data: {

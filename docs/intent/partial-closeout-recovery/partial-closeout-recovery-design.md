@@ -47,6 +47,26 @@ generation.
 
 ### Source-closure publication
 
+### Post-push assessment recovery (#4886)
+
+Source-closure assessment is post-processing after a branch push. Its retry
+policy uses bounded exponential backoff (15 seconds through two minutes), not
+the workflow default's one-second cadence. Authentication, configuration, and
+invalid-response failures remain actionable and fail closed; timeout and
+transport exhaustion persist a `waiting_recovery` record on the original run.
+That record carries only the failed step, branch, pinned pushed commit, attempt
+count, sanitized category, and next retry time. It is a work-slot hold, not an
+execution failure, and cleanup releases the prior container.
+
+A delayed job and an authorized run-detail retry claim the record under the
+run lock and start a narrow recovery workflow. That workflow provisions only a
+fresh isolated assessment environment when required, runs the assessment, and
+then invokes the existing idempotent PR activity. It never invokes the coding
+or push activities. Cancellation wins over recovery; duplicate/replayed claims
+are no-ops. A branch or source-policy mismatch stays fail-closed and returns to
+visible recovery state; PR creation remains impossible without a successful
+current assessment.
+
 Closeout assessment uses the run's effective configured runner through
 `Llm::Request` and `agent_harness`, with its tier model resolved through
 the existing runner model policy and its credentials in the isolated execution
