@@ -192,5 +192,32 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       expect { job.perform_now }.not_to raise_error
       expect(notifier).not_to have_received(:call)
     end
+
+    # @spec KNOWLEDGE-015
+    it "retries a transient database connection failure without notifying" do
+      allow(worktree_service).to receive(:ensure_cloned)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "PQsocket() can't get socket descriptor")
+
+      job = described_class.new(project.id)
+      job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished]" => 0 }
+
+      expect { job.perform_now }.not_to raise_error
+      expect(notifier).not_to have_received(:call)
+    end
+
+    # @spec KNOWLEDGE-015
+    it "notifies after a database connection failure exhausts retries" do
+      allow(worktree_service).to receive(:ensure_cloned)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "PQsocket() can't get socket descriptor")
+
+      job = described_class.new(project.id)
+      job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished]" => 4 }
+
+      expect { job.perform_now }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+      expect(notifier).to have_received(:call).with(
+        an_instance_of(ActiveRecord::ConnectionNotEstablished),
+        data: hash_including(subsystem: "knowledge", project_id: project.id)
+      )
+    end
   end
 end

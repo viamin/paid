@@ -17,6 +17,11 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
     job.notify_terminal_failure(error)
     raise error
   end
+  # @spec KNOWLEDGE-015
+  retry_on ActiveRecord::ConnectionNotEstablished, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.notify_terminal_failure(error)
+    raise error
+  end
 
   def notification_project_id
     arguments.first
