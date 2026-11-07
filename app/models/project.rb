@@ -308,6 +308,9 @@ class Project < ApplicationRecord
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
   has_many :bounded_delegated_actions, dependent: :destroy
+  # @spec PROJECT-DELEGATION-001 @spec PROJECT-DELEGATION-006 @spec PROJECT-DELEGATION-007 @spec PROJECT-DELEGATION-008
+  belongs_to :delegation_authorized_by, class_name: "User", optional: true
+  has_many :project_delegation_audit_events, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy
