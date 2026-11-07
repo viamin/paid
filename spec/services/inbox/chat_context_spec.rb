@@ -29,6 +29,23 @@ RSpec.describe Inbox::ChatContext do
     expect(chat_session.messages).to be_empty
   end
 
+  it "retrieves the current decision brief without an LLM summary" do # @spec OPERATOR-INBOX-027
+    issue.update!(needs_input_questions: [
+      {
+        "question" => "Which cache should exports use?",
+        "recommendation" => "Use Redis.",
+        "rationale" => "It is already shared by workers.",
+        "evidence_references" => [ "Worker configuration" ]
+      }
+    ])
+
+    context = described_class.call(chat_session:, user:, sections: [ :decision_brief ])
+
+    expect(context.fetch("decision_brief")).to include(
+      recommendation: "Use Redis.", evidence_state: "current", primary_action: "Use Redis."
+    )
+  end
+
   it "retrieves the same current progress contract on demand" do
     # @spec INBOX-PROGRESS-003
     issue.update!(is_pull_request: true, pr_review_phase: "ready", last_scanned_head_sha: "a" * 40)

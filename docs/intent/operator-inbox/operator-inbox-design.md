@@ -103,6 +103,24 @@ rechecks current queue membership and returns an empty frame for stale entries.
 
 ## Detail progress projection
 
+## Decision brief
+
+Every Inbox entry has a small, deterministic decision brief shared by the
+queue row, selected detail, API detail, and contextual chat. The brief names
+the project, work item, current goal when the record supplies one, the action
+being requested, its impact, and what Paid is waiting to do next. A selected
+brief also carries a recommendation only when current structured queue state
+supports one; it never asks an LLM to summarize or infer an action while
+rendering.
+
+The detail places that brief before lane-specific explanation and actions. Its
+recommended action is the primary action; other actions remain secondary.
+Evidence, examples, revisions, and history stay in their existing named
+disclosures. A missing, stale, or conflicting recommendation is explicitly
+identified as such and asks one focused question rather than presenting a
+guess as certainty. The list remains a local projection and does not load
+detail-only evidence or call external services for each row.
+
 For an issue-backed selected detail only, `Inbox::ProgressProjection` returns
 an ordered, typed lifecycle contract. The contract names design approval,
 proposed-test review, implementation, code review, owner approval, and merge

@@ -24,11 +24,11 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
+        common_fields.merge(decision_brief_payload).merge(kind_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
       end
 
       def render_list
-        common_fields.merge(list_kind_payload)
+        common_fields.merge(list_decision_brief_payload).merge(list_kind_payload)
       end
 
       private
@@ -51,6 +51,20 @@ module Api
         return unless entry.project
 
         { id: entry.project.id, owner: entry.project.owner, repo: entry.project.repo, name: entry.project.full_name }
+      end
+
+      # @spec OPERATOR-INBOX-027
+      def decision_brief_payload
+        { decision_brief: decision_brief.to_h }
+      end
+
+      # @spec OPERATOR-INBOX-027
+      def list_decision_brief_payload
+        { decision_brief: decision_brief.list }
+      end
+
+      def decision_brief
+        @decision_brief ||= Inbox::DecisionBrief.call(entry:)
       end
 
       # Deliberately absent from render_list: resolving a lifecycle projection

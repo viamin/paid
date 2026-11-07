@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history decision_brief].freeze
 
     def self.call(...)
       new(...).call
@@ -90,6 +90,14 @@ module Inbox
 
     def queue_metadata
       chat_session.inbox_item_metadata
+    end
+
+    # @spec OPERATOR-INBOX-027
+    def decision_brief
+      entry = Inbox::Queue.find_entry(user:, entry_id: chat_session.inbox_item_key) || decision_brief_entry
+      return unavailable_decision_brief unless entry
+
+      Inbox::DecisionBrief.call(entry:).to_h
     end
 
     # Uses the exact detail/API contract rather than asking an agent to infer
@@ -182,6 +190,35 @@ module Inbox
 
     def inbox_kind
       chat_session.inbox_item_metadata["kind"]
+    end
+
+    def unavailable_decision_brief
+      {
+        evidence_state: "unknown",
+        uncertainty: "This Inbox item is no longer available, so Paid cannot recommend an action.",
+        focused_question: "What outcome should Paid pursue next?"
+      }
+    end
+
+    # A chat can outlive the Inbox occurrence that opened it. For issue-backed
+    # conversations, rebuild only the small local presentation input from the
+    # current issue rather than treating its stored opening snapshot as live
+    # evidence or asking a model to recreate the recommendation.
+    def decision_brief_entry
+      return unless issue
+
+      Inbox::Queue::Entry.new(
+        id: chat_session.inbox_item_key,
+        kind: inbox_kind,
+        project: chat_session.project,
+        issue: issue,
+        record: issue,
+        questions: Inbox::Queue.questions_for(issue),
+        tasks: [],
+        summary_text: nil,
+        title_text: nil,
+        action_url: nil
+      )
     end
 
     def record_id

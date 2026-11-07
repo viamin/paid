@@ -76,6 +76,26 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     )
   end
 
+  it "opens a concise decision brief with one evidence-backed primary action" do # @spec OPERATOR-INBOX-027
+    issue = create(:issue, :needs_input, project: project, title: "Choose export cache", needs_input_questions: [
+      {
+        "question" => "Which cache should exports use?",
+        "recommendation" => "Use Redis.",
+        "rationale" => "It is already shared by workers.",
+        "evidence_references" => [ "Worker configuration" ]
+      }
+    ])
+
+    sign_in_as(user)
+    visit inbox_entry_path("clarifying_questions:#{issue.id}", project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    expect(page).to have_css("#inbox-decision-brief")
+    expect(page).to have_content("Paid recommends")
+    expect(page).to have_content("Use Redis.")
+    expect(page).to have_content("Primary action: Use Redis.")
+  end
+
   # @spec LIST-DETAIL-007
   it "renders Inbox in the shared viewport-bound shell with independent pane scroll regions" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)

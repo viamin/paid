@@ -1,0 +1,17 @@
+<%# @spec OPERATOR-INBOX-027 %>
+<section class="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="inbox-decision-brief">
+  <h3 id="inbox-decision-brief" class="text-sm font-semibold text-indigo-950">Decision brief</h3>
+  <dl class="mt-3 grid gap-3 text-sm text-indigo-950">
+    <div><dt class="font-medium">Project goal</dt><dd><%= brief.goal %></dd></div>
+    <div><dt class="font-medium">What needs deciding</dt><dd><%= brief.decision %></dd></div>
+    <div><dt class="font-medium">What changed</dt><dd><%= brief.what_changed %></dd></div>
+    <div><dt class="font-medium">What is waiting</dt><dd><%= brief.waiting_on %></dd></div>
+    <% if brief.recommendation.present? %>
+      <div><dt class="font-medium">Paid recommends</dt><dd class="font-semibold"><%= brief.recommendation %></dd></div>
+      <% if brief.why.present? %><div><dt class="font-medium">Why</dt><dd><%= brief.why %></dd></div><% end %>
+    <% else %>
+      <div><dt class="font-medium">What is unknown</dt><dd><%= brief.uncertainty %> <%= brief.focused_question %></dd></div>
+    <% end %>
+  </dl>
+  <p class="mt-4 text-sm font-semibold text-indigo-950">Primary action: <%= brief.primary_action %></p>
+</section>

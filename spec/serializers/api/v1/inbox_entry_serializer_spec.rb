@@ -26,6 +26,23 @@ RSpec.describe Api::V1::InboxEntrySerializer do
   end
 
   describe "#render" do
+    it "serializes the shared decision brief in list and detail payloads" do # @spec OPERATOR-INBOX-027
+      question = {
+        "question" => "Which cache should exports use?",
+        "recommendation" => "Use Redis.",
+        "rationale" => "It is already shared by workers.",
+        "evidence_references" => [ "Worker configuration" ]
+      }
+      entry = build_entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, questions: [ question ])
+
+      expect(described_class.render_list(entry).fetch(:decision_brief)).to include(
+        project: project.full_name, work_item: "title", decision: "Which cache should exports use?"
+      )
+      expect(described_class.render(entry).fetch(:decision_brief)).to include(
+        recommendation: "Use Redis.", why: "It is already shared by workers.", evidence_state: "current"
+      )
+    end
+
     it "serializes clarifying_questions with its questions" do
       issue = create(:issue, project: project)
       entry = build_entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
@@ -232,7 +249,7 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
       payload = described_class.render(entry)
 
-      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url history history_incomplete history_next_cursor])
+      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url decision_brief history history_incomplete history_next_cursor])
     end
 
     it "serializes project_setup_pending with its task descriptions" do

@@ -66,6 +66,50 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("entry", "questions")).to eq([ "Which cache should exports use?" ])
   end
 
+  it "returns the concise decision brief in list and detail responses" do # @spec OPERATOR-INBOX-027
+    issue.update!(needs_input_questions: [
+      {
+        "question" => "Which cache should exports use?",
+        "recommendation" => "Use Redis.",
+        "rationale" => "It is already shared by workers.",
+        "evidence_references" => [ "Worker configuration" ]
+      }
+    ])
+
+    get "/api/v1/inbox", params: { kind: "clarifying_questions" }, headers: headers
+    expect(response.parsed_body.fetch("entries").sole.fetch("decision_brief")).to include(
+      "project" => project.full_name, "decision" => "Which cache should exports use?"
+    )
+
+    get "/api/v1/inbox/entries/clarifying_questions:#{issue.id}", headers: headers
+    expect(response.parsed_body.dig("entry", "decision_brief")).to include(
+      "recommendation" => "Use Redis.", "evidence_state" => "current"
+    )
+  end
+
+  it "discloses unknown recommendations for manual review, action required, and partial closeout" do # @spec OPERATOR-INBOX-027
+    github_client = instance_double(GithubClient, issue_comments: [])
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    manual_review = create(:issue, project:, paid_state: "manual_review", manual_review_reason: "Needs an owner decision.")
+    notification = create(:notification, :error, account:, subject: project, blocking: true,
+      title: "Credential required", description: "Connect the missing credential.", metadata: {})
+    closeout = create(:issue, project:, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: closeout)
+
+    [
+      "manual_review:#{manual_review.id}",
+      "action_required:#{notification.id}",
+      "partial_closeout:#{closeout.id}"
+    ].each do |entry_id|
+      get "/api/v1/inbox/entries/#{entry_id}", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("entry", "decision_brief")).to include(
+        "evidence_state" => "unknown", "focused_question" => "What outcome should Paid pursue next?"
+      )
+    end
+  end
+
   # @spec AUTO-PICK-QUEUE-015 MOBILE-API-006
   it "does not serialize dependency cycles that cross another owner's project" do
     other_user = create(:user, account:)
