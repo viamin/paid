@@ -33,6 +33,18 @@
   `Issues::BulkEnqueueEligible#each_eligible_issue`.
   *Test:* `spec/services/issues/bulk_enqueue_eligible_spec.rb`.
 
+- [x] **EAGER-QUEUE-017** — The periodic eligibility sweep SHALL process a
+  bounded, ID-snapshotted page of active Auto-Pick projects and bounded,
+  ID-cursored pages of each project's eligible issues. It SHALL persist its
+  continuation cursor in job arguments, retry a failed project page from its
+  prior cursor without blocking other projects, and finish the snapshotted
+  project set even when later projects are created during the cycle. Each page
+  SHALL report project and issue counts, duration, allocations, and peak RSS.
+  *Code:* `AutoPickEligibilitySweepJob#perform`,
+  `Issues::BulkEnqueueEligible#candidate_page`.
+  *Test:* `spec/jobs/auto_pick_eligibility_sweep_job_spec.rb`,
+  `spec/services/issues/bulk_enqueue_eligible_spec.rb`.
+
 ## Reactive seeding triggers
 
 - [x] **EAGER-QUEUE-004** — The system SHALL seed eligible issues on issue

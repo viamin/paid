@@ -2,14 +2,19 @@
 
 module Issues
   class BulkEnqueueEligible
+    PageResult = Struct.new(:runs, :last_issue_id, :candidate_count, :more?, keyword_init: true)
+
     def self.call(...)
       new(...).call
     end
 
-    def initialize(project:, limit: nil, skip_project_gate: false)
+    def initialize(project:, limit: nil, skip_project_gate: false, after_issue_id: nil, through_issue_id: nil, page_size: nil)
       @project = project
       @limit = limit
       @skip_project_gate = skip_project_gate
+      @after_issue_id = after_issue_id
+      @through_issue_id = through_issue_id
+      @page_size = page_size
     end
 
     def call # @spec EAGER-QUEUE-003
@@ -21,7 +26,7 @@ module Issues
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
 
-      each_eligible_issue do |issue|
+      issues.each do |issue|
         run = EnqueueEligible.call(issue, project: project, skip_project_gate: true)
 
         if run.nil?
@@ -43,7 +48,14 @@ module Issues
         skipped_count: counts[:skipped]
       )
 
-      runs
+      return runs unless page_size
+
+      PageResult.new(
+        runs:,
+        last_issue_id: issues.last&.id,
+        candidate_count: issues.size,
+        more?: issues.size == page_size
+      )
     end
 
     private
@@ -51,11 +63,32 @@ module Issues
     attr_reader :project
     attr_reader :limit
     attr_reader :skip_project_gate
+    attr_reader :after_issue_id
+    attr_reader :through_issue_id
+    attr_reader :page_size
 
-    def each_eligible_issue(&)
-      return ordered_eligible_scope.each(&) if limit.present?
+    def issues
+      return candidate_page if page_size
 
-      eligible_scope.find_each(&)
+      each_eligible_issue.to_a
+    end
+
+    def each_eligible_issue
+      return enum_for(:each_eligible_issue) unless block_given?
+      return ordered_eligible_scope.each { |issue| yield issue } if limit.present?
+
+      eligible_scope.find_each { |issue| yield issue }
+    end
+
+    # ID cursors remain stable while enqueueing changes the eligible scope.
+    # The caller snapshots +through_issue_id+ before the first page, so new
+    # records cannot keep one maintenance cycle open indefinitely.
+    # @spec EAGER-QUEUE-017
+    def candidate_page
+      return [] unless through_issue_id
+
+      scope = eligible_scope.where("issues.id > ? AND issues.id <= ?", after_issue_id.to_i, through_issue_id)
+      scope.order(:id).limit(page_size).to_a
     end
 
     # Held confidence-delivery issues are intentionally absent from the normal

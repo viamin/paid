@@ -149,6 +149,31 @@ RSpec.describe Issues::BulkEnqueueEligible do
       .with(third_issue, project: project, skip_project_gate: true)
   end
 
+  # @spec EAGER-QUEUE-017
+  it "returns an ID-cursored maintenance page without offset pagination" do
+    paged_service = described_class.new(project: project, after_issue_id: 10, through_issue_id: 30, page_size: 2)
+    first_issue = instance_double(issue_class, id: 15)
+    second_issue = instance_double(issue_class, id: 20)
+    first_run = instance_double(run_class, issue: first_issue, previously_new_record?: true)
+    second_run = instance_double(run_class, issue: second_issue, previously_new_record?: true)
+    cursor_scope = instance_double(ActiveRecord::Relation)
+    ordered_page = instance_double(ActiveRecord::Relation)
+
+    allow(scope).to receive(:where)
+      .with("issues.id > ? AND issues.id <= ?", 10, 30)
+      .and_return(cursor_scope)
+    allow(cursor_scope).to receive(:order).with(:id).and_return(ordered_page)
+    allow(ordered_page).to receive(:limit).with(2).and_return([ first_issue, second_issue ])
+    stub_enqueue(first_issue, first_run)
+    stub_enqueue(second_issue, second_run)
+    allow(Rails.logger).to receive(:info)
+
+    result = paged_service.call
+
+    expect(result.runs).to eq([ first_run, second_run ])
+    expect(result).to have_attributes(last_issue_id: 20, candidate_count: 2, more?: true)
+  end
+
   describe "#release_confidence_delivery_holds" do
     let(:project) { create(:project) }
 
