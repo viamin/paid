@@ -83,6 +83,24 @@ RSpec.describe ProjectDelegation::Posture do
       expect(posture.source).to eq("guard_disabled")
     end
 
+    it "preserves a stored conservative rollback while a guard is off" do
+      selected_at = 1.hour.ago.change(usec: 0)
+      record = create(:project_delegation_posture, project: project, level: "conservative", revision: 4,
+        selected_by: user, enabled_action_classes: [], policy_signature: "rollback-signature", updated_at: selected_at)
+      FeatureFlags.disable!(:automation_phases, project:)
+
+      posture = described_class.resolve(project)
+
+      expect(posture).to have_attributes(
+        level: described_class::CONSERVATIVE,
+        source: "selected",
+        revision: 4,
+        policy_signature: "rollback-signature",
+        selected_by_id: user.id,
+        selected_at: record.updated_at
+      )
+    end
+
     it "delegates no action classes and names the reviews under the fallback" do
       FeatureFlags.disable!(:project_delegation, project:)
       create(:project_delegation_posture, project: project, level: "bounded_delivery")

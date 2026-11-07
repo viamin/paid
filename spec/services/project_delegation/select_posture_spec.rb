@@ -64,6 +64,19 @@ RSpec.describe ProjectDelegation::SelectPosture do
     )
   end
 
+  it "rolls back the posture selection when recording its audit event fails" do
+    described_class.call(project: project, actor: owner, level: "bounded_delivery")
+    original = project.delegation_posture.reload.attributes
+    allow(Audit::RecordEvent).to receive(:call).and_raise(ActiveRecord::RecordInvalid)
+
+    expect { described_class.call(project: project, actor: owner, level: "conservative") }
+      .to raise_error(ActiveRecord::RecordInvalid)
+
+    expect(project.delegation_posture.attributes).to eq(original)
+    expect(ProjectDelegationPosture.find_by!(project: project).attributes).to eq(original)
+    expect(audit_events.count).to eq(1)
+  end
+
   it "lets an account admin select the posture" do
     admin = create(:user, :admin, account: account)
 

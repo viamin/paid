@@ -36,8 +36,8 @@ module ProjectDelegation
       ensure_authorized!
       ensure_guard_permits!
 
-      previous_level, record = persist
-      audit(record, previous_level)
+      _, record = persist_with_audit
+      project.delegation_posture = record
 
       Posture.resolve(project)
     end
@@ -72,7 +72,6 @@ module ProjectDelegation
           previous_level = record.level
           apply_selection(record)
         end
-        project.delegation_posture = record
         [ previous_level, record ]
       else
         record = ProjectDelegationPosture.create!(
@@ -81,10 +80,15 @@ module ProjectDelegation
           revision: 1,
           **selection_attrs
         )
-        # Keep a shared project's association cache in sync so the resolve
-        # below and any held projection see the selection it just made.
-        project.delegation_posture = record
         [ Posture::CONSERVATIVE, record ]
+      end
+    end
+
+    def persist_with_audit
+      ProjectDelegationPosture.transaction do
+        previous_level, record = persist
+        audit(record, previous_level)
+        [ previous_level, record ]
       end
     end
 
