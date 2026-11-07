@@ -135,6 +135,7 @@ RSpec.describe TrustedMeasurements::RunCheck do
     expect(call(key: "drop_all_tables")).to be_nil
     expect(TrustedMeasurementAttempt.count).to eq(0)
   end
+
   it "publishes a blocking escalation notification for an unauthorized check key" do
     call(key: "drop_all_tables")
 
