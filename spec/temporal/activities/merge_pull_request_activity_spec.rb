@@ -44,6 +44,10 @@ RSpec.describe Activities::MergePullRequestActivity do
         let(:delegated_provider) { instance_double(Automation::Providers::Github::RepositoryProvider) }
 
         before do
+          FeatureFlags.enable!(:automation_phases, project: delegated_project)
+          FeatureFlags.enable!(:project_delegation, project: delegated_project)
+          delegated_project.update!(automation_phase_settings: { "phases" => { "merge" => true } })
+          create(:project_delegation_posture, project: delegated_project, level: "bounded_delivery")
           allow(Automation::Providers::Resolver).to receive(:repository_for)
             .with(delegated_project)
             .and_return(delegated_provider)

@@ -755,6 +755,13 @@ RSpec.describe Activities::QueueAgentRunActivity do
           github_state: "open", pr_review_phase: "ready")
       end
 
+      before do
+        FeatureFlags.enable!(:automation_phases, project: delegated_project)
+        FeatureFlags.enable!(:project_delegation, project: delegated_project)
+        delegated_project.update!(automation_phase_settings: { "phases" => { "coding" => true } })
+        create(:project_delegation_posture, project: delegated_project, level: "bounded_delivery")
+      end
+
       def record_current_assessment
         assessment_run = create(:agent_run, :completed, project: delegated_project, issue: pull_request)
         assessment_run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(

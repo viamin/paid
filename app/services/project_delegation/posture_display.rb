@@ -8,6 +8,16 @@ module ProjectDelegation
   #
   # @spec PROJECT-DELEGATION-001
   module PostureDisplay
+    REACHABLE_PHASES = {
+      Posture::CONSERVATIVE => [],
+      Posture::BOUNDED_DELIVERY => [ Automation::Phases::CODING, Automation::Phases::MERGE ]
+    }.freeze
+
+    STOP_BOUNDARIES = {
+      Posture::CONSERVATIVE => [],
+      Posture::BOUNDED_DELIVERY => [ Automation::Phases::MERGE, Automation::Phases::RELEASE_DEPLOYMENT ]
+    }.freeze
+
     REMAINING_REVIEWS = {
       Posture::CONSERVATIVE => [
         { key: "approvals", description: "Every existing approval" },

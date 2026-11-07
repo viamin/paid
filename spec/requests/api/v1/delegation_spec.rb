@@ -35,7 +35,7 @@ RSpec.describe "Project delegation API" do
     expect(payload.fetch("authorizations")).to include(
       hash_including(
         "action" => "review", "in_force" => true, "stop_before_phase" => "merge",
-        "authority" => hash_including("permitted" => true)
+        "authority" => hash_including("permitted" => false, "reason" => "posture_restricted")
       )
     )
     expect(payload).not_to include("phase_authority")

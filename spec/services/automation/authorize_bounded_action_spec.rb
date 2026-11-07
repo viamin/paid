@@ -17,6 +17,13 @@ RSpec.describe Automation::AuthorizeBoundedAction do
     }
   end
 
+  before do
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+    project.update!(automation_phase_settings: { "phases" => { "coding" => true } })
+    create(:project_delegation_posture, project:, level: "bounded_delivery", selected_by: user)
+  end
+
   it "creates a bounded action with inspectable evidence and audit" do
     action = described_class.call(project:, issue:, user:, action: "repair", evidence:)
 

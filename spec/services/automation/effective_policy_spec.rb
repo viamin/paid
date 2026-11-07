@@ -9,6 +9,18 @@ RSpec.describe Automation::EffectivePolicy do
   let(:project) { create(:project, account:) }
   let(:issue) { create(:issue, project:) }
 
+  it "includes the fail-closed effective posture in the canonical decision" do # @spec PROJECT-DELEGATION-004
+    decision = described_class.call(project:, phase: "coding", work_item: issue,
+      delegated_action: "review", rollout_enabled: true)
+
+    expect(decision).to be_blocked
+    expect(decision.reason).to eq(:posture_restricted)
+    expect(decision.to_h[:phase_policy_signature]).to be_a(String)
+    expect(decision.to_h[:posture]).to include(
+      level: "conservative", revision: 0, policy_signature: kind_of(String)
+    )
+  end
+
   def configure(phases)
     project.update!(
       Automation::PhaseSettings::SETTINGS_KEY => {

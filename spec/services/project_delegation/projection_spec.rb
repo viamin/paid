@@ -37,6 +37,11 @@ RSpec.describe ProjectDelegation::Projection do
     )
   end
 
+  def select_bounded_delivery
+    owner = create(:user, :owner, account: account)
+    ProjectDelegation::SelectPosture.call(project:, actor: owner, level: "bounded_delivery")
+  end
+
   it "projects the latest bounded authorization per action with its lifecycle state" do
     authorization = authorize_review
 
@@ -84,6 +89,13 @@ RSpec.describe ProjectDelegation::Projection do
 
     expect(decision).to be_permitted
     expect(decision.source).to eq(:continuation_grant)
+  end
+
+  it "fails delegated action authority closed under the conservative posture" do # @spec PROJECT-DELEGATION-004
+    decision = described_class.for_work_item(project:, work_item: issue).action_authority("review")
+
+    expect(decision).to be_blocked
+    expect(decision.reason).to eq(:posture_restricted)
   end
 
   it "exposes the same posture signature the admission contract pins" do
@@ -147,6 +159,7 @@ RSpec.describe ProjectDelegation::Projection do
   end
 
   it "scopes each project authorization authority to its work item" do
+    select_bounded_delivery
     disable_delivery_phases
     granted_issue = create(:issue, project: project)
     authorize_review
@@ -203,7 +216,7 @@ RSpec.describe ProjectDelegation::Projection do
       project_id: project.id,
       authorizations: [ hash_including(
         action: "review", in_force: true, stop_before_phase: "merge",
-        authority: hash_including(permitted: true)
+        authority: hash_including(permitted: false, reason: :posture_restricted)
       ) ]
     )
     expect(payload).not_to include(:phase_authority)

@@ -1623,8 +1623,16 @@ RSpec.describe ProcessRunQueueJob do
             ))
         end
 
+        def enable_project_delegation(project)
+          FeatureFlags.enable!(:automation_phases, project:)
+          FeatureFlags.enable!(:project_delegation, project:)
+          project.update!(automation_phase_settings: { "phases" => { "coding" => true } })
+          create(:project_delegation_posture, project:, level: "bounded_delivery")
+        end
+
         it "cancels a queued run whose delegated authorization was revoked" do # @spec PROJECT-DELEGATION-004 BOUNDED-PHASE-AUTHORIZATION-004
           project = create(:project, auto_pick_enabled: true)
+          enable_project_delegation(project)
           pull_request = create(:issue, :pull_request, project: project, github_number: 42,
             github_state: "open", pr_review_phase: "ready")
           record_current_assessment(pull_request)
@@ -1646,6 +1654,7 @@ RSpec.describe ProcessRunQueueJob do
 
         it "starts a queued run whose delegated authorization is still current" do # @spec PROJECT-DELEGATION-004
           project = create(:project, :with_github_installation, auto_pick_enabled: true)
+          enable_project_delegation(project)
           pull_request = create(:issue, :pull_request, project: project, github_number: 42,
             github_state: "open", pr_review_phase: "ready")
           record_current_assessment(pull_request)

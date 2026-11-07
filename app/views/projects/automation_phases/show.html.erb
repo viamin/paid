@@ -167,6 +167,9 @@
             <span class="block text-xs text-gray-500">
               <%= ProjectDelegation::PostureDisplay::SUMMARIES.fetch("conservative") %>
             </span>
+            <span class="mt-1 block text-xs text-gray-500">
+              Reachable phases: None. Applicable stop boundaries: None; each downstream decision stays human.
+            </span>
           </span>
         </label>
         <label class="flex items-start gap-3 text-sm <%= @delegation_guards_enabled ? "text-gray-700" : "text-gray-400" %>">
@@ -181,6 +184,14 @@
               <% unless @delegation_guards_enabled %>
                 Requires the automation_phases rollout and the project_delegation capability to be enabled.
               <% end %>
+            </span>
+            <span class="mt-1 block text-xs text-gray-500">
+              Reachable phases:
+              <%= ProjectDelegation::PostureDisplay::REACHABLE_PHASES.fetch("bounded_delivery")
+                    .map { |phase| Automation::Phases.label(phase) }.to_sentence %>.
+              Applicable stop boundaries:
+              <%= ProjectDelegation::PostureDisplay::STOP_BOUNDARIES.fetch("bounded_delivery")
+                    .map { |phase| "Before #{Automation::Phases.label(phase)}" }.to_sentence %>.
             </span>
           </span>
         </label>
@@ -221,6 +232,8 @@
               <%= state.authority.permitted? ? "permitted" : "not permitted" %>
               <% if state.authority.source %>
                 through <%= state.authority.source.to_s.humanize(capitalize: false) %>
+              <% elsif state.authority.blocked? %>
+                because <%= state.authority.reason.to_s.humanize(capitalize: false) %>
               <% end %>
             </div>
           </li>

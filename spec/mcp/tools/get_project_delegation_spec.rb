@@ -32,7 +32,7 @@ RSpec.describe Tools::GetProjectDelegation do
       project_id: project.id,
       authorizations: [ hash_including(
         id: authorization.id, action: "review", in_force: true,
-        authority: hash_including(permitted: true)
+        authority: hash_including(permitted: false, reason: :posture_restricted)
       ) ]
     )
     expect(result).to include(:signature)

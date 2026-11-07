@@ -4,7 +4,8 @@ require "rails_helper"
 
 # The settings-surface half of the delegation posture: the automation-phases
 # page shows the effective posture, its source and revision, the enabled
-# action classes, and the reviews that remain human decisions, and an
+# action classes, reachable phases, applicable stop boundaries, and the
+# reviews that remain human decisions, and an
 # authorized owner or project admin selects the posture through the guarded
 # write path.
 # @spec PROJECT-DELEGATION-001
@@ -33,6 +34,11 @@ RSpec.describe "Project delegation posture settings" do
     expect(response.body).to include("conservative")
     expect(response.body).to include("Effective posture")
     expect(response.body).to include("Remaining human reviews")
+    expect(response.body).to include("Reachable phases")
+    expect(response.body).to include("Applicable stop boundaries")
+    expect(response.body).to include("Coding")
+    expect(response.body).to include("Before Merge")
+    expect(response.body).to include("Before Release &amp; Deployment")
   end
 
   it "selects bounded_delivery for an owner through the guarded write path" do
