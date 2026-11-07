@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_152010) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1393,6 +1393,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
     t.index ["project_id", "created_at"], name: "index_decomposition_decisions_on_project_id_and_created_at"
     t.index ["project_id"], name: "index_decomposition_decisions_on_project_id"
     t.index ["workflow_id", "decision_type"], name: "index_decomposition_decisions_on_workflow_id_and_decision_type"
+  end
+
+  create_table "delegation_pilot_enrollments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "enrolled_at", null: false
+    t.bigint "enrolled_by_id"
+    t.jsonb "pause_evidence", default: {}, null: false
+    t.string "pause_reason"
+    t.datetime "paused_at"
+    t.string "posture", default: "bounded_delivery", null: false
+    t.bigint "project_id", null: false
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_delegation_pilot_enrollments_on_account_id"
+    t.index ["enrolled_by_id"], name: "index_delegation_pilot_enrollments_on_enrolled_by_id"
+    t.index ["project_id"], name: "index_delegation_pilot_enrollments_on_project_id"
+    t.index ["status"], name: "index_delegation_pilot_enrollments_on_status"
+  end
+
+  create_table "delegation_pilot_metric_snapshots", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "enrollment_id", null: false
+    t.jsonb "exclusions", default: [], null: false
+    t.jsonb "metrics", default: {}, null: false
+    t.string "posture", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "revisions", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.datetime "window_ended_at", null: false
+    t.datetime "window_started_at", null: false
+    t.index ["account_id"], name: "index_delegation_pilot_metric_snapshots_on_account_id"
+    t.index ["enrollment_id", "posture", "window_ended_at"], name: "index_delegation_pilot_metric_snapshots_identity", unique: true
+    t.index ["enrollment_id"], name: "index_delegation_pilot_metric_snapshots_on_enrollment_id"
+    t.index ["project_id"], name: "index_delegation_pilot_metric_snapshots_on_project_id"
   end
 
   create_table "dependabot_alert_coverages", comment: "Durable alert-level Dependabot remediation coverage and escalation evidence.", force: :cascade do |t|
@@ -4898,6 +4934,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_083149) do
   add_foreign_key "decision_records", "projects", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "issues", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
+  add_foreign_key "delegation_pilot_enrollments", "accounts"
+  add_foreign_key "delegation_pilot_enrollments", "projects"
+  add_foreign_key "delegation_pilot_enrollments", "users", column: "enrolled_by_id"
+  add_foreign_key "delegation_pilot_metric_snapshots", "accounts"
+  add_foreign_key "delegation_pilot_metric_snapshots", "delegation_pilot_enrollments", column: "enrollment_id"
+  add_foreign_key "delegation_pilot_metric_snapshots", "projects"
   add_foreign_key "dependabot_alert_coverages", "accounts"
   add_foreign_key "dependabot_alert_coverages", "projects"
   add_foreign_key "dependabot_alert_coverages", "users", column: "accepted_by_id"

@@ -120,6 +120,13 @@ class FeatureFlags
       intent: "Gate provider-neutral work-item surfaces while tracker providers migrate from GitHub issue contracts.",
       rollout_plan: "Default-off; enable only for selected account and project combinations through tenant_settings.features or a project actor gate after provider identity, lifecycle, and relationship parity are verified.",
       cleanup_criteria: "Remove only after every supported tracker uses the unified work-item contract and the GitHub compatibility path is retired."
+    ),
+    project_delegation: Definition.new(
+      name: :project_delegation,
+      owner: "project-delegation",
+      intent: "Gate RDR-080 project delegation (bounded_delivery posture, pilot metrics, and expansion broadening) past the conservative default.",
+      rollout_plan: "Default-off; enable per project only together with the automation_phases guard, and only for the explicitly opted-in RDR-080 pilot of at most five projects. Broadening past conservative stays disabled until the pilot thresholds in RDR-080 are met from recorded metric evidence.",
+      cleanup_criteria: "Remove after the RDR-080 pilot review decides the default posture and the expansion guard is either retired or becomes the unconditional policy."
     )
   }.freeze
 

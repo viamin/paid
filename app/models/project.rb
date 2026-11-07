@@ -308,6 +308,8 @@ class Project < ApplicationRecord
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
   has_many :bounded_delegated_actions, dependent: :destroy
+  # RDR-080 delegation pilot: one enrollment per opted-in project.
+  has_many :delegation_pilot_enrollments, dependent: :destroy
   has_many :trusted_measurement_attempts, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy

@@ -161,6 +161,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily refresh of project dashboard metric snapshots"
     },
+    delegation_pilot_metrics_sweep: {
+      cron: "55 0 * * *",
+      class: "DelegationPilotMetricsSweepJob",
+      queue: "maintenance",
+      description: "Daily RDR-080 delegation-pilot metric snapshots and expansion-guard pauses"
+    },
     legacy_partial_closeout_reconciliation_sweep: {
       cron: "45 5 * * *",
       class: "LegacyPartialCloseoutReconciliationSweepJob",
