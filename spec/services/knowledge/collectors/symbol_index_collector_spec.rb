@@ -139,6 +139,15 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
 
   # @spec KNOWLEDGE-014
   describe "#each_page" do
+    def collector_for(scan_path)
+      described_class.new(
+        project: project,
+        project_version: project_version,
+        collector_run: collector_run,
+        options: { scan_path: scan_path }
+      )
+    end
+
     it "uses a stable cursor and yields bounded file artifacts" do
       stub_const("Knowledge::Collectors::SymbolIndexCollector::FILES_PER_PAGE", 1)
       cursor = nil
@@ -155,6 +164,66 @@ RSpec.describe Knowledge::Collectors::SymbolIndexCollector, :no_db do
 
       expect(paths).to all(end_with(".rb"))
       expect(paths).to include("sample.rb")
+    end
+
+    it "batches ast-grep into one run per pattern per page instead of per file" do
+      Dir.mktmpdir("symbol-index-page-spec") do |dir|
+        3.times { |i| File.write(File.join(dir, "file#{i}.rb"), "class C#{i}\nend\n") }
+        ast_grep_runs = []
+        allow(Open3).to receive(:capture3) do |*cmd|
+          ast_grep_runs << cmd if cmd.first == "ast-grep" && cmd[1] == "run"
+          [ "[]", "", instance_double(Process::Status, success?: true, exitstatus: 0) ]
+        end
+
+        artifacts, next_cursor = collector_for(dir).each_page
+        artifacts.to_a
+
+        expect(next_cursor).to be_nil
+        expect(ast_grep_runs.size).to eq(described_class::PATTERNS.fetch(:ruby).size)
+      end
+    end
+
+    it "yields duplicate matched content once per page" do
+      skip "ast-grep not installed; skipping integration specs" if collector.tool_version.nil?
+
+      Dir.mktmpdir("symbol-index-page-spec") do |dir|
+        File.write(File.join(dir, "a.rb"), "class Alpha\n  def initialize\n  end\nend\n")
+        File.write(File.join(dir, "b.rb"), "class Beta\n  def initialize\n  end\nend\n")
+
+        artifacts, _next_cursor = collector_for(dir).each_page
+
+        contents = artifacts.to_a.map { |artifact| artifact[:content] }
+        expect(contents.select { |content| content.start_with?("def initialize") }.size).to eq(1)
+        expect(contents).to include(a_string_starting_with("class Alpha"), a_string_starting_with("class Beta"))
+      end
+    end
+  end
+
+  # @spec KNOWLEDGE-014
+  describe "#collect_page" do
+    it "deduplicates identical matched content across files in the page" do
+      skip "ast-grep not installed; skipping integration specs" if collector.tool_version.nil?
+
+      Dir.mktmpdir("symbol-index-page-spec") do |dir|
+        File.write(File.join(dir, "a.rb"), "class Alpha\n  def initialize\n  end\nend\n")
+        File.write(File.join(dir, "b.rb"), "class Beta\n  def initialize\n  end\nend\n")
+        page_collector = described_class.new(
+          project: project,
+          project_version: project_version,
+          collector_run: collector_run,
+          options: { scan_path: dir }
+        )
+
+        artifacts, next_cursor = page_collector.collect_page
+
+        expect(next_cursor).to be_nil
+        expect(artifacts.map { |artifact| artifact[:content] })
+          .to contain_exactly(
+            a_string_starting_with("class Alpha"),
+            a_string_starting_with("class Beta"),
+            a_string_starting_with("def initialize")
+          )
+      end
     end
   end
 end

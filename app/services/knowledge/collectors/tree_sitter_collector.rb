@@ -126,12 +126,7 @@ module Knowledge
         next_cursor = has_more ? page.last : nil
         return [ [].each, nil ] if page.empty?
 
-        artifacts = Enumerator.new do |yielder|
-          page.each do |path|
-            artifacts_for_path(path).each { |artifact| yielder << artifact }
-          end
-        end
-        [ artifacts, next_cursor ]
+        [ page_artifacts_enum(page), next_cursor ]
       end
 
       def collector_type
@@ -290,16 +285,41 @@ module Knowledge
         end
       end
 
-      def artifacts_for_path(path)
-        language, config = LANGUAGE_CONFIG.find do |_name, candidate|
-          matching_extension?(path, candidate[:extensions])
+      # Yields each file's artifacts in path order. The page's ast-grep runs
+      # are batched once per pattern per language (never per file), and the
+      # per-page digest set keeps duplicate matched content from reaching the
+      # artifact store's conflict-recovery path.
+      def page_artifacts_enum(page)
+        Enumerator.new do |yielder|
+          seen = Set.new
+          artifacts_by_path = page_artifacts_by_path(page)
+          page.each do |path|
+            artifacts_by_path.fetch(path, []).each do |artifact|
+              next unless seen.add?(content_digest(artifact))
+
+              yielder << artifact
+            end
+          end
         end
-        if config
-          artifacts = collect_language(language, config, paths: [ File.join(scan_path, path) ])
-          return artifacts if artifacts.any?
+      end
+
+      # One ast-grep run per pattern per language for the whole page; a page
+      # of matches in memory is the accepted per-shard bound. Files without
+      # AST matches keep their whole-file fallback artifacts.
+      def page_artifacts_by_path(page)
+        by_path = {}
+        LANGUAGE_CONFIG.each do |language, config|
+          paths = page.select { |path| matching_extension?(path, config[:extensions]) }
+          next if paths.empty?
+
+          collect_language(language, config, paths: paths.map { |path| File.join(scan_path, path) })
+            .each { |artifact| (by_path[artifact[:scope_path]] ||= []) << artifact }
         end
 
-        fallback_artifact_for_path(path)
+        page.each do |path|
+          by_path[path] = fallback_artifact_for_path(path) unless by_path[path]&.any?
+        end
+        by_path
       end
 
       def fallback_artifact_for_path(path)
@@ -432,7 +452,11 @@ module Knowledge
       # The unique index on [collector_run_id, content_hash] rejects
       # duplicates, so keep only the first artifact per content hash.
       def deduplicate_by_content(artifacts)
-        artifacts.uniq { |a| Digest::SHA256.hexdigest(a[:content].to_s) }
+        artifacts.uniq { |a| content_digest(a) }
+      end
+
+      def content_digest(artifact)
+        Digest::SHA256.hexdigest(artifact[:content].to_s)
       end
 
       def ast_grep_log_component

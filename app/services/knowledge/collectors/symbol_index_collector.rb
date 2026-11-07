@@ -20,55 +20,16 @@ module Knowledge
       IGNORED_PATH_SEGMENTS = TreeSitterCollector::IGNORED_PATH_SEGMENTS
 
       def collect
-        artifacts = []
-
-        PATTERNS.each do |language, patterns|
-          extensions = LANGUAGE_EXTENSIONS[language]
-          all_results = collect_all_results(patterns, language, extensions)
-
-          all_results
-            .group_by { |r| r[:file_path] }
-            .sort_by { |file_path, _| file_path }
-            .each do |file_path, file_results|
-            sorted_file_results = sort_symbol_results(file_results)
-            scope_stack = build_scope_stack(sorted_file_results)
-
-            sorted_file_results.each do |result|
-              qualified_name = qualified_scope_name(scope_stack, result)
-              identifier = build_identifier(file_path, result[:symbol_type], qualified_name)
-              content = result[:content]
-
-              artifacts << {
-                artifact_type: "symbol",
-                scope_path: file_path,
-                identifier: identifier,
-                content: content,
-                metadata: {
-                  language: language.to_s,
-                  symbol_type: result[:symbol_type].to_s,
-                  name: result[:name],
-                  line: result[:line]
-                },
-                chunks: [
-                  {
-                    chunk_type: "definition",
-                    content: content,
-                    scope_tags: [ language.to_s, result[:symbol_type].to_s ],
-                    sequence: 0
-                  }
-                ]
-              }
-            end
-          end
-        end
-
-        deduplicate_by_content(artifacts)
+        PATTERNS.flat_map do |language, patterns|
+          results = collect_all_results(patterns, language, LANGUAGE_EXTENSIONS[language])
+          artifacts_from_results(results, language)
+        end.then { |artifacts| deduplicate_by_content(artifacts) }
       end
 
       # @spec KNOWLEDGE-014
       def collect_page(cursor: nil)
         artifacts, next_cursor = each_page(cursor:)
-        [ artifacts.to_a, next_cursor ]
+        [ deduplicate_by_content(artifacts.to_a), next_cursor ]
       end
 
       # @spec KNOWLEDGE-014
@@ -77,12 +38,7 @@ module Knowledge
         next_cursor = has_more ? page.last : nil
         return [ [].each, nil ] if page.empty?
 
-        artifacts = Enumerator.new do |yielder|
-          page.each do |path|
-            artifacts_for_file(path).each { |artifact| yielder << artifact }
-          end
-        end
-        [ artifacts, next_cursor ]
+        [ page_artifacts_enum(page), next_cursor ]
       end
 
       def collector_type
@@ -121,13 +77,36 @@ module Knowledge
         results
       end
 
-      def artifacts_for_file(path)
-        language, extensions = LANGUAGE_EXTENSIONS.find { |_name, values| matching_extension?(path, values) }
-        return [] unless language
+      # Yields each file's artifacts in path order. The page's ast-grep runs
+      # are batched once per pattern (never per file), and the per-page digest
+      # set keeps duplicate matched content from reaching the artifact
+      # store's conflict-recovery path.
+      def page_artifacts_enum(page)
+        Enumerator.new do |yielder|
+          seen = Set.new
+          artifacts_by_file = page_artifacts_by_file(page)
+          page.each do |path|
+            artifacts_by_file.fetch(path, []).each do |artifact|
+              next unless seen.add?(content_digest(artifact))
 
-        results = collect_all_results(PATTERNS.fetch(language), language, extensions,
-          paths: [ File.join(scan_path, path) ])
-        artifacts_from_results(results, language)
+              yielder << artifact
+            end
+          end
+        end
+      end
+
+      # One ast-grep run per pattern for the whole page; a page of results in
+      # memory is the accepted per-shard bound.
+      def page_artifacts_by_file(page)
+        LANGUAGE_EXTENSIONS.each_with_object({}) do |(language, extensions), by_file|
+          paths = page.select { |path| matching_extension?(path, extensions) }
+          next if paths.empty?
+
+          results = collect_all_results(PATTERNS.fetch(language), language, extensions,
+            paths: paths.map { |path| File.join(scan_path, path) })
+          artifacts_from_results(results, language)
+            .each { |artifact| (by_file[artifact[:scope_path]] ||= []) << artifact }
+        end
       end
 
       def artifacts_from_results(results, language)
@@ -257,7 +236,11 @@ module Knowledge
       # The unique index on [collector_run_id, content_hash] rejects
       # duplicates, so keep only the first artifact per content hash.
       def deduplicate_by_content(artifacts)
-        artifacts.uniq { |a| Digest::SHA256.hexdigest(a[:content].to_s) }
+        artifacts.uniq { |a| content_digest(a) }
+      end
+
+      def content_digest(artifact)
+        Digest::SHA256.hexdigest(artifact[:content].to_s)
       end
 
       def ast_grep_log_component
