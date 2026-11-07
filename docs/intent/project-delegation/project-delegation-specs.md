@@ -13,11 +13,20 @@ Status markers: `[ ]` planned implementation gap.
   human reviews, and SHALL record the actor, project, revision, enabled action
   classes, and audit event.
 
-- [ ] **PROJECT-DELEGATION-002** — When material product questions are known
+- [x] **PROJECT-DELEGATION-002** — When material product questions are known
   before downstream work, the system SHALL group related questions, show a
   recommendation and consequences, and bind a human's settled answers to the
   immutable design and acceptance revision; it SHALL NOT ask again downstream
   unless new evidence conflicts with, invalidates, or materially expands it.
+  *Verified by:* `spec/services/project_delegation/intent_checkpoint/plan_spec.rb`
+  (grouping, presentation, single Inbox request, RDR-066 derivation),
+  `spec/services/project_delegation/intent_checkpoint/settle_spec.rb`
+  (settle/reject/amend, immutable revision binding, decision resolution),
+  `spec/services/project_delegation/intent_checkpoint/resolve_spec.rb`
+  (no re-asking, focused re-decision routing, unrelated groups stay closed),
+  `spec/services/project_delegation/intent_checkpoint/revisions_spec.rb`, and
+  `spec/models/intent_checkpoint_spec.rb` (model validation and append-only
+  settlements).
 
 - [ ] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
   system SHALL delegate only bounded implementation choices, focused follow-up

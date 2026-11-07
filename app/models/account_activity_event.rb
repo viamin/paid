@@ -57,6 +57,7 @@ class AccountActivityEvent < ApplicationRecord
     "feature_intent.released" => "approval",
     "bounded_action.authorized" => "approval",
     "bounded_action.revoked" => "approval",
+    "intent_checkpoint.settled" => "approval",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
     "egress_allowlist.account_entry_created" => "egress_allowlist",

@@ -23,13 +23,32 @@ relied on; a later broadening never changes that admission.
 ## Checkpoint and action plan
 
 `ProjectDelegation::IntentCheckpoint::Plan` groups related material questions
-and returns the recommendation, alternatives, consequences, evidence,
-affected scope, and proposed revision. A human settlement produces immutable
-answers linked to the design/acceptance revision. `ActionPlan` then resolves a
-requested downstream action against those revisions and returns permit, block,
-or a focused decision request. It allows only explicit technical choices,
-one deduplicated follow-up record, classified technical recovery,
-evidence-gated closeout, and bounded cycle repair.
+(one group per affected scope) and returns the recommendation, alternatives,
+consequences, evidence, affected scope, and proposed revision; explicit
+question payloads come from agent-emitted output, while an omitted payload
+derives groups from the work item's open RDR-066 `FeatureIntentDecision`
+records instead of duplicating them. `Plan` persists one `IntentCheckpoint`
+row per work item (partial-unique pending slot, superseding an older pending
+plan) and surfaces a single blocking Inbox request carrying the grouped
+presentation.
+
+`ProjectDelegation::IntentCheckpoint::Settle` records the human settlement —
+settle, reject, or amend — and binds the answers to the design and acceptance
+revision tokens current at settlement (`Revisions`: the linked approved
+design baseline plus intent content, and the recorded assessment's criteria
+digest). Settled and rejected checkpoints are append-only at both the model
+and database layers, and settling resolves the source feature-intent
+decisions so no approval surface re-asks them. `Resolve` then answers a
+downstream question from the settled checkpoint whenever the bound revisions
+are still current, and routes one focused Inbox re-decision naming only the
+smallest affected group when a changed revision token proves the settled
+revision was conflicted with, invalidated, or materially expanded;
+unrelated settled questions stay closed.
+
+`ActionPlan` resolves a requested downstream action against those revisions
+and returns permit, block, or a focused decision request. It allows only
+explicit technical choices, one deduplicated follow-up record, classified
+technical recovery, evidence-gated closeout, and bounded cycle repair.
 
 `ActionPlan` answers whether a decision class is delegated or needs a human; it
 never supplies execution authority. That stays with the RDR-077 phase policy

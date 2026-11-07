@@ -3,15 +3,16 @@
 module Automation
   # Idempotent Inbox routing for a failed delegated-work boundary check.
   #
-  # Decision identity is the narrow set of metadata fields that distinguish
-  # one boundary failure from another (authorization, boundary, reasons).
-  # Equivalent identities collapse into the existing notification — including
-  # a dismissed or resolved one, so a repeated equivalent failure never
-  # re-prompts the operator. A later failure with a different identity
-  # refreshes that same notification so the Inbox always points at the
-  # authorization, boundary, and reasons that currently block the work.
   class FocusedDecision
-    IDENTITY_KEYS = %w[authorization_id boundary reasons].freeze
+    # Decision identity is the narrow set of metadata fields that distinguish
+    # one boundary failure from another (authorization, boundary, reasons,
+    # and the settled-intent group a re-decision re-opens). Equivalent
+    # identities collapse into the existing notification — including a
+    # dismissed or resolved one, so a repeated equivalent failure never
+    # re-prompts the operator. A later failure with a different identity
+    # refreshes that same notification so the Inbox always points at the
+    # authorization, boundary, and reasons that currently block the work.
+    IDENTITY_KEYS = %w[authorization_id boundary reasons group_key].freeze
 
     def self.call(account:, subject:, source:, title:, description:, metadata:)
       notification = Notification.find_by(account:, source:, subject:)

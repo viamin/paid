@@ -1,0 +1,4 @@
+CREATE TRIGGER prevent_intent_checkpoint_terminal_delete
+BEFORE DELETE ON public.intent_checkpoints
+FOR EACH ROW
+EXECUTE FUNCTION prevent_intent_checkpoint_terminal_mutation();

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_06_214108) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_093353) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2479,6 +2479,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_214108) do
     t.index ["account_id", "service_key"], name: "index_integration_credentials_on_account_id_and_service_key"
     t.index ["account_id"], name: "index_integration_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_integration_credentials_on_created_by_id"
+  end
+
+  create_table "intent_checkpoints", comment: "RDR-080 grouped material-question checkpoints; settlements bind immutable answers to the design and acceptance revision.", force: :cascade do |t|
+    t.string "acceptance_revision", comment: "Acceptance revision token the settlement is bound to."
+    t.bigint "account_id", null: false
+    t.jsonb "answers", default: {}, null: false, comment: "Immutable human answers keyed by group key, bound at settlement."
+    t.datetime "created_at", null: false
+    t.string "design_revision", comment: "Design revision token the settlement is bound to."
+    t.string "disposition", comment: "Human disposition recorded at settlement: settled, amended, or rejected."
+    t.bigint "feature_intent_id"
+    t.jsonb "groups", default: [], null: false, comment: "Grouped material questions: key, questions, recommendation, alternatives, consequences, affected scope, evidence."
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.datetime "settled_at"
+    t.bigint "settled_by_id"
+    t.string "status", default: "pending", null: false, comment: "pending, settled, rejected, or superseded. settled/rejected are terminal and append-only."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_intent_checkpoints_on_account_id"
+    t.index ["feature_intent_id"], name: "index_intent_checkpoints_on_feature_intent_id"
+    t.index ["issue_id", "status"], name: "index_intent_checkpoints_on_issue_and_status"
+    t.index ["issue_id"], name: "index_intent_checkpoints_on_issue_id"
+    t.index ["issue_id"], name: "index_intent_checkpoints_one_pending_per_issue", unique: true, where: "((status)::text = 'pending'::text)"
+    t.index ["project_id", "status"], name: "index_intent_checkpoints_on_project_and_status"
+    t.index ["project_id"], name: "index_intent_checkpoints_on_project_id"
+    t.index ["settled_by_id"], name: "index_intent_checkpoints_on_settled_by_id"
   end
 
   create_table "intent_conformance_decisions", comment: "Human resolutions of a material_drift/uncertain/not_evaluated intent-conformance verdict (RDR-067). A bounded_exception decision is scoped to its exact head_sha and stops applying the moment a new commit changes the PR HEAD.", force: :cascade do |t|
@@ -4991,6 +5016,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_214108) do
   add_foreign_key "inbox_request_ownerships", "projects"
   add_foreign_key "integration_credentials", "accounts"
   add_foreign_key "integration_credentials", "users", column: "created_by_id"
+  add_foreign_key "intent_checkpoints", "accounts"
+  add_foreign_key "intent_checkpoints", "feature_intents"
+  add_foreign_key "intent_checkpoints", "issues"
+  add_foreign_key "intent_checkpoints", "projects"
+  add_foreign_key "intent_checkpoints", "users", column: "settled_by_id"
   add_foreign_key "intent_conformance_decisions", "intent_conformance_verdicts", column: "verdict_id"
   add_foreign_key "intent_conformance_decisions", "issues"
   add_foreign_key "intent_conformance_decisions", "users", column: "actor_id"
@@ -6009,6 +6039,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_214108) do
       $function$
   SQL
 
+  create_function :prevent_intent_checkpoint_terminal_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_intent_checkpoint_terminal_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF OLD.status IN ('settled', 'rejected') THEN
+          RAISE EXCEPTION 'intent_checkpoints terminal settlements are append-only; UPDATE and DELETE are rejected at the database layer (PROJECT-DELEGATION-002)';
+        END IF;
+        RETURN COALESCE(NEW, OLD);
+      END;
+      $function$
+  SQL
+
   create_trigger :logidze_on_account_memberships, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_account_memberships BEFORE INSERT OR UPDATE ON public.account_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -6167,5 +6211,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_214108) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :prevent_intent_checkpoint_terminal_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_intent_checkpoint_terminal_update BEFORE UPDATE ON public.intent_checkpoints FOR EACH ROW EXECUTE FUNCTION prevent_intent_checkpoint_terminal_mutation()
+  SQL
+
+  create_trigger :prevent_intent_checkpoint_terminal_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_intent_checkpoint_terminal_delete BEFORE DELETE ON public.intent_checkpoints FOR EACH ROW EXECUTE FUNCTION prevent_intent_checkpoint_terminal_mutation()
   SQL
 end

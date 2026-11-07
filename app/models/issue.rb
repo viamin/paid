@@ -89,6 +89,9 @@ class Issue < ApplicationRecord
                         inverse_of: :parent_issue, dependent: :nullify
   has_many :agent_runs, dependent: :nullify
   has_many :bounded_delegated_actions, dependent: :destroy
+  # @spec PROJECT-DELEGATION-002 — settled checkpoints are immutable evidence,
+  # so issue destruction is restricted rather than cascaded.
+  has_many :intent_checkpoints, dependent: :restrict_with_error
   has_many :agent_planning_holds, dependent: :destroy
   has_many :code_scanning_remediation_attempts, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
