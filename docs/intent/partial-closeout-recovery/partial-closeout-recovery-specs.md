@@ -24,7 +24,9 @@
   replayed claims SHALL not rerun coding or duplicate PR publication. A claim
   that outlives its bounded lease SHALL be reclaimable, and successful recovery
   SHALL run the same best-effort screenshot, decision-record, and applicable
-  LID-planning post-publication steps as the primary workflow.
+  LID-planning post-publication steps as the primary workflow. A branch mismatch
+  SHALL remain visibly parked for authorized manual retry without scheduling
+  automatic retries or provisioning additional assessment environments.
   *Code:* `app/jobs/source_closure_recovery_job.rb`,
   `app/temporal/workflows/source_closure_recovery_workflow.rb`,
   `app/controllers/projects/agent_runs_controller.rb`.

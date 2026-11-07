@@ -41,7 +41,8 @@ module Workflows
 
     def park_branch_mismatch(agent_run_id)
       run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id:, category: "branch_mismatch", attempts: ASSESSMENT_RETRY_POLICY.max_attempts }, timeout: 30)
+        { agent_run_id:, category: "branch_mismatch", attempts: ASSESSMENT_RETRY_POLICY.max_attempts,
+          auto_retry: false }, timeout: 30)
       { agent_run_id:, waiting: true }
     end
 

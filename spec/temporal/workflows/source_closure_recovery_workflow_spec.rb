@@ -65,7 +65,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow.execute(input)).to include(waiting: true)
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
-      { agent_run_id: 42, category: "branch_mismatch", attempts: 3 },
+      { agent_run_id: 42, category: "branch_mismatch", attempts: 3, auto_retry: false },
       timeout: 30
     )
     expect(workflow).not_to have_received(:run_activity).with(Activities::ReconcilePartialCloseoutActivity, any_args)

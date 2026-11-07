@@ -118,12 +118,15 @@ module Dashboard
     # Candidate eligibility is specific to open issues. Scheduler facts are
     # deliberately broader: the queue preview also shows manual and PR runs.
     def handoff_counts_by_project(projects)
-      counts = AgentRun.where(project_id: projects, status: %w[queued running paused])
+      counts = AgentRun.where(project_id: projects, status: AgentRun::UNFINISHED_STATUSES)
         .group(:project_id, :status)
         .count
 
       projects.to_h do |project|
-        [ project.id, [ "queued", "running", "paused" ].map { |status| counts.fetch([ project.id, status ], 0) } ]
+        queued = counts.fetch([ project.id, "queued" ], 0)
+        paused = counts.fetch([ project.id, "paused" ], 0)
+        active = (AgentRun::UNFINISHED_STATUSES - %w[queued paused]).sum { |status| counts.fetch([ project.id, status ], 0) }
+        [ project.id, [ queued, active, paused ] ]
       end
     end
 
