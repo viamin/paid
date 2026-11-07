@@ -4,13 +4,23 @@ module TechnicalPrerequisites
   # Projects the existing placement and rollout decisions into an actionable
   # Inbox-ready result. A missing Docker socket in the browser/control-plane
   # process is intentionally not an input to this decision.
-  # @spec PARTIAL-CLOSEOUT-032
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-041
   class CapabilityInspection
+    BROWSER_ENVIRONMENT_UNAVAILABLE_ACTION = "This validation path provisions an isolated container only; " \
+      "it cannot satisfy a recipe that requires a browser-visible environment."
+
     Result = Data.define(:host, :compatible_hosts, :failures, :requirements_error, :tool_sidecars_enabled, :setup_action) do
       def runnable? = compatible_hosts.any? && setup_action.nil?
     end
 
     def self.call(...) = new(...).call
+
+    def self.browser_setup_action_for(performance_recipe)
+      return unless performance_recipe.present?
+      return unless ActiveModel::Type::Boolean.new.cast(performance_recipe["requires_browser"])
+
+      BROWSER_ENVIRONMENT_UNAVAILABLE_ACTION
+    end
 
     def initialize(agent_run:, performance_recipe: nil, scheduler: Containers::BackendScheduler)
       @agent_run = agent_run
@@ -48,7 +58,7 @@ module TechnicalPrerequisites
     def setup_action_for(schedule)
       return "Resolve execution requirements: #{schedule.requirements_error}" if schedule.requirements_error.present?
       return "Configure or restore a compatible execution backend for this project." if schedule.candidate_hosts.empty?
-      return browser_environment_unavailable_action if requires_browser?
+      return self.class.browser_setup_action_for(performance_recipe) if requires_browser?
       return unless agent_run.tool_sidecar_snapshot.any? && !tool_sidecars_enabled?
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project; execution capability does not authorize the rollout."
@@ -56,10 +66,6 @@ module TechnicalPrerequisites
 
     def requires_browser?
       performance_recipe.present? && ActiveModel::Type::Boolean.new.cast(performance_recipe["requires_browser"])
-    end
-
-    def browser_environment_unavailable_action
-      "This validation path provisions an isolated container only; it cannot satisfy a recipe that requires a browser-visible environment."
     end
   end
 end

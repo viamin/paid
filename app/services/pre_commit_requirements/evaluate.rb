@@ -26,11 +26,11 @@ module PreCommitRequirements
       new(...).call
     end
 
-    def call # @spec QUALITY-LOOPS-002
+    def call # @spec QUALITY-LOOPS-002 PARTIAL-CLOSEOUT-041
       requirements = PreCommitRequirement.resolve(
         project: agent_run.project,
         user: agent_run.settings_user
-      )
+      ).reject { |requirement| requirement.check_type == "performance_measurement" }
 
       return { passed: true, results: [], blocking: false } if requirements.empty?
 

@@ -16,7 +16,7 @@ module Issues
   # skip labels, and active-run uniqueness all still apply, with the blocker
   # explained to the user.
   # @spec PARTIAL-CLOSEOUT-003 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
-  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037
+  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037 @spec PARTIAL-CLOSEOUT-041
   class RequestContinuation
     Result = Struct.new(:request, :agent_run, :code, :message, keyword_init: true) do
       def success? = code.nil?
@@ -154,8 +154,8 @@ module Issues
           project: issue.project,
           requested_by: actor,
           reason: reason,
-          evidence: evidence_snapshot(status.evidence).merge("continuation_mode" => continuation_mode),
-          evidence_digest: evidence_digest_for(status)
+          evidence: evidence_snapshot(status).merge("continuation_mode" => continuation_mode),
+          evidence_digest: status.evidence.digest
         )
         runner_id, agent_type = AgentRuns::RunnerResolver.call(project: issue.project, goal: goal)
         run = AgentRun.create!(
@@ -199,20 +199,17 @@ module Issues
       success(request, run)
     end
 
-    def evidence_snapshot(evidence)
-      {
+    def evidence_snapshot(status)
+      evidence = status.evidence
+      snapshot = {
         "merged_prs" => evidence.merged_prs.map { |pr| { "number" => pr.number, "url" => pr.url, "run_id" => pr.run_id } },
         "no_code_required_at" => evidence.no_code_required_at&.utc&.iso8601
       }
-    end
+      return snapshot unless continuation_mode == "acceptance_audit"
 
-    # @spec PARTIAL-CLOSEOUT-041
-    def evidence_digest_for(status)
-      return status.evidence.digest unless continuation_mode == "acceptance_audit"
-
-      PartialCloseouts::Assessment.source_revision_for(
-        issue, closeout_evidence: status.evidence, technical_evidence: status.technical_evidence
-      )
+      snapshot.merge("source_revision" => PartialCloseouts::Assessment.source_revision_for(
+        issue, closeout_evidence: evidence, technical_evidence: status.technical_evidence
+      ))
     end
 
     def success(request, agent_run) = Result.new(request: request, agent_run: agent_run)

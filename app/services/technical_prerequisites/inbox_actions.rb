@@ -62,9 +62,10 @@ module TechnicalPrerequisites
     def performance_setup_action(requirement)
       return "Configure a complete representative performance recipe for this criterion." unless requirement.check_type == "performance_measurement"
       return "Select an implementation run with a produced revision before validating this criterion." unless source_run.result_commit_sha.present?
-      return if PerformanceRecipe.call(requirement:, current_commit_sha: source_run.result_commit_sha).valid?
+      recipe = PerformanceRecipe.call(requirement:, current_commit_sha: source_run.result_commit_sha)
+      return "Configure a complete representative performance recipe for this criterion." unless recipe.valid?
 
-      "Configure a complete representative performance recipe for this criterion."
+      CapabilityInspection.browser_setup_action_for(recipe.recipe)
     end
   end
 end

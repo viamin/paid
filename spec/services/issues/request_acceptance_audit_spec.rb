@@ -37,6 +37,32 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(result.request.evidence).to include("continuation_mode" => "acceptance_audit")
   end
 
+  # @spec PARTIAL-CLOSEOUT-041
+  it "keeps the closeout digest while snapshotting technical evidence freshness" do
+    merged_partial_pr
+    source_run = create(:agent_run, :completed, project:, issue:, goal: "analyze_issue",
+      pull_request_url: nil, pull_request_number: nil)
+    source_run.update!(reconciliation: {
+      TechnicalPrerequisites::Evidence::RECONCILIATION_KEY => { "status" => "completed" }
+    })
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.request.evidence_digest).to eq(Issues::CloseoutEvidence.call(issue).digest)
+    expect(result.request.evidence.fetch("source_revision"))
+      .to eq(PartialCloseouts::Assessment.source_revision_for(issue))
+    expect(AgentRuns::RecheckIssueEligibility.call(result.agent_run)).to be(false)
+    expect(result.agent_run.reload).to be_queued
+
+    source_run.update!(reconciliation: source_run.reconciliation.deep_merge(
+      TechnicalPrerequisites::Evidence::RECONCILIATION_KEY => { "status" => "unavailable" }
+    ))
+
+    expect(AgentRuns::RecheckIssueEligibility.call(result.agent_run)).to be(true)
+    expect(result.agent_run.reload.status).to eq("cancelled")
+    expect(result.agent_run.error_message).to include("technical evidence changed")
+  end
+
   # @spec PARTIAL-CLOSEOUT-027
   it "reuses an open audit request rather than queueing duplicate work" do
     merged_partial_pr

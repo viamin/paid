@@ -38,7 +38,8 @@ module PartialCloseouts
     attr_reader :issue
 
     def prior_audit?(source_revision)
-      IssueContinuationRequest.where(issue:, evidence_digest: source_revision)
+      IssueContinuationRequest.where(issue:)
+        .where("evidence->>'source_revision' = ?", source_revision)
         .where("evidence->>'continuation_mode' = ?", "acceptance_audit").exists?
     end
 

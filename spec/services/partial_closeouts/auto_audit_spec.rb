@@ -64,6 +64,8 @@ RSpec.describe PartialCloseouts::AutoAudit do
     expect(second.agent_run.id).not_to eq(first.agent_run.id)
     expect(second.agent_run.continuation_request.evidence_digest)
       .not_to eq(first.agent_run.continuation_request.evidence_digest)
+    expect(second.agent_run.continuation_request.evidence["source_revision"])
+      .not_to eq(first.agent_run.continuation_request.evidence["source_revision"])
   end
 
   # @spec PARTIAL-CLOSEOUT-041
@@ -78,7 +80,9 @@ RSpec.describe PartialCloseouts::AutoAudit do
 
     expect(second).to be_scheduled
     expect(second.agent_run.continuation_request.evidence_digest)
-      .not_to eq(first.agent_run.continuation_request.evidence_digest)
+      .to eq(first.agent_run.continuation_request.evidence_digest)
+    expect(second.agent_run.continuation_request.evidence["source_revision"])
+      .not_to eq(first.agent_run.continuation_request.evidence["source_revision"])
   end
 
   # @spec PARTIAL-CLOSEOUT-037

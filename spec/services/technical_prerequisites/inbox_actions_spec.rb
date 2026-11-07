@@ -34,4 +34,22 @@ RSpec.describe TechnicalPrerequisites::InboxActions do
     expect(action).not_to be_ready
     expect(action.setup_action).to eq("Select an implementation run with a produced revision before validating this criterion.")
   end
+
+  # @spec PARTIAL-CLOSEOUT-041
+  it "explains when a performance recipe requires a browser-visible environment" do
+    requirement.update!(measurement_recipe: {
+      "baseline_commit_sha" => "b" * 40,
+      "workload" => { "identity" => "browser-chat", "provenance" => "reviewed fixture v1", "representative" => true },
+      "metrics" => [ "wall_ms" ], "samples" => 3, "environment" => "browser-visible",
+      "budget_seconds" => 60, "artifact_contract" => [ "raw_samples", "comparison" ],
+      "requires_browser" => true
+    })
+
+    action = described_class.call(project:, actor: project.created_by, assessment:, source_run:).sole
+
+    expect(action).not_to be_ready
+    expect(action.setup_action).to eq(
+      "This validation path provisions an isolated container only; it cannot satisfy a recipe that requires a browser-visible environment."
+    )
+  end
 end
