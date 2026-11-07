@@ -116,14 +116,18 @@ RSpec.describe TrustedMeasurements::RunCheck do
     expect(current.current_for_revision?("rev-2")).to be(true)
   end
 
-  it "never reports succeeded when execution raises" do
+  it "clears a prior result and never reports succeeded when a retry raises" do
     ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
+    successful_attempt = call
+    expect(successful_attempt.result).not_to be_empty
+
     allow(TrustedMeasurements::Checks::PlanningHoldReconciliationClosedCount).to receive(:call).and_raise(ActiveRecord::StatementInvalid, "boom")
 
     expect { call }.to raise_error(ActiveRecord::StatementInvalid)
 
     attempt = TrustedMeasurementAttempt.last
     expect(attempt.status).to eq("failed")
+    expect(attempt.result).to eq({})
     expect(attempt.consecutive_failure_count).to eq(1)
   end
 
@@ -131,8 +135,6 @@ RSpec.describe TrustedMeasurements::RunCheck do
     expect(call(key: "drop_all_tables")).to be_nil
     expect(TrustedMeasurementAttempt.count).to eq(0)
   end
-
-
   it "publishes a blocking escalation notification for an unauthorized check key" do
     call(key: "drop_all_tables")
 
