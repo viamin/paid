@@ -32,12 +32,11 @@ module TrustedMeasurements
       def self.call(project:)
         scope = Notification.active
           .where(account_id: project.account_id, source: NOTIFICATION_SOURCE, subject_type: "Issue")
-          .joins("INNER JOIN issues ON issues.id = notifications.subject_id")
-          .where(issues: { project_id: project.id })
+          .where(subject_id: project.issues.select(:id))
 
         Result.new(
           active_total: scope.count,
-          active_closed_issue_count: scope.where(issues: { github_state: "closed" }).count,
+          active_closed_issue_count: scope.where(subject_id: project.issues.where(github_state: "closed").select(:id)).count,
           baseline: BASELINE,
           target: TARGET,
           project_scope: "project:#{project.id}:#{project.full_name}"
