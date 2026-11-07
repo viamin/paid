@@ -39,6 +39,18 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("progress").fetch(:milestones)).to include(hash_including(id: "merge"))
   end
 
+  it "retrieves the shared delegation projection on demand" do
+    # @spec PROJECT-DELEGATION-005
+    context = described_class.call(chat_session:, user:, sections: [ :delegation ])
+
+    expect(context.fetch("delegation")).to include(
+      project_id: project.id,
+      work_item_id: issue.id,
+      authorizations: [],
+      phase_authority: hash_including("review", "repair", "merge")
+    )
+  end
+
   it "rejects context access after comment permission is removed" do
     # @spec QUESTION-EXPLORATION-014
     chat_session

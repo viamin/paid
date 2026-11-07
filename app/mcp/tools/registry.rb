@@ -9,6 +9,7 @@ module Tools
       "Tools::GetAccountCapabilities",
       "Tools::GetProductDocs",
       "Tools::GetProject",
+      "Tools::GetProjectDelegation",
       "Tools::GetProjectIssues",
       "Tools::GetProjectPullRequests",
       "Tools::UpdateProjectSettings",

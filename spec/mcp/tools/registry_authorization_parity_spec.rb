@@ -69,6 +69,16 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "get_project_delegation",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+          ProjectDelegation::Projection.for_project(project_record).to_h
+        }
+      },
+      {
         tool_name: "get_project_issues",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id } },

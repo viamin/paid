@@ -18,6 +18,7 @@ RSpec.describe Committee::Drivers do
       "/inbox/entries/{entry_id}/restore",
       "/feature_intents/{id}/cancel",
       "/feature_intents/{id}/reopen",
+      "/projects/{project_id}/delegation",
       "/projects/{project_id}/design_artifact_findings",
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links",
       "/chat/sessions",

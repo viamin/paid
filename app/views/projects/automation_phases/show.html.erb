@@ -108,4 +108,37 @@
       </ul>
     <% end %>
   </section>
+
+  <%# @spec PROJECT-DELEGATION-005 %>
+  <section class="mt-8">
+    <h2 class="text-sm font-semibold text-gray-900">Delegated delivery actions</h2>
+    <p class="mt-1 text-sm text-gray-500">
+      Read from the shared delegation projection: each work item's newest bounded authorization, its lifecycle,
+      and the current effective policy for its phase. No surface infers this from labels or queue state.
+    </p>
+    <% if @delegation_projection.authorizations.empty? %>
+      <p class="mt-2 text-sm text-gray-500">No delegated delivery actions for this project.</p>
+    <% else %>
+      <ul class="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+        <% @delegation_projection.authorizations.each do |state| %>
+          <% work_item = @delegation_work_items[state.work_item_id] %>
+          <li class="p-3 text-sm">
+            <div class="font-medium text-gray-900">
+              <%= work_item&.title.presence || "Issue ##{state.work_item_id}" %>
+            </div>
+            <div class="mt-1 text-xs text-gray-500">
+              <%= state.action %> in <%= Automation::Phases.label(state.phase) %>
+              · stops before <%= Automation::Phases.label(state.stop_before_phase) %>
+              · <%= state.in_force? ? "in force" : state.expired? ? "expired" : state.status %>
+              <% if state.expires_at %>
+                · expires <%= state.expires_at.to_date %>
+              <% end %>
+              · <%= Automation::Phases.label(state.phase) %> currently
+              <%= @delegation_projection.phase_decision(state.phase).permitted? ? "permitted" : "not permitted" %>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
 </div>

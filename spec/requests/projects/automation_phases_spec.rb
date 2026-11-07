@@ -92,4 +92,32 @@ RSpec.describe "Project automation phases" do
     expect(response).to redirect_to(project_automation_phases_path(project))
     expect(grant.reload.endpoint).to eq("merge")
   end
+
+  it "renders delegated delivery authority from the shared projection" do # @spec PROJECT-DELEGATION-005
+    work_item = create(:issue, project:)
+    create(:bounded_delegated_action, project:, issue: work_item, action: "review",
+      evidence: Automation::DelegatedActionAdmission.admission_evidence(
+        work_item: work_item, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+      ))
+    revoked = create(:bounded_delegated_action, project:, issue: work_item, action: "repair",
+      evidence: Automation::DelegatedActionAdmission.admission_evidence(
+        work_item: work_item, action: "repair", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+      ))
+    revoked.update!(status: "revoked")
+
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Delegated delivery actions")
+    expect(response.body).to include("review")
+    expect(response.body).to include("in force")
+    expect(response.body).to include("revoked")
+  end
+
+  it "states when the project has no delegated delivery actions" do # @spec PROJECT-DELEGATION-005
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("No delegated delivery actions")
+  end
 end

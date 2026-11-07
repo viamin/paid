@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history delegation].freeze
 
     def self.call(...)
       new(...).call
@@ -97,6 +97,17 @@ module Inbox
     # @spec INBOX-PROGRESS-003
     def progress
       issue ? ProgressProjection.call(issue:).to_h : {}
+    end
+
+    # The shared delegation projection (RDR-080 surface parity): the same
+    # read model the settings page, API, and MCP consume, so chat answers
+    # delegated authority from the effective policy instead of inferring it
+    # from labels, approvals, or queue state.
+    # @spec PROJECT-DELEGATION-005
+    def delegation
+      return {} unless issue
+
+      ProjectDelegation::Projection.for_work_item(project: chat_session.project, work_item: issue).to_h
     end
 
     def agent_run_output

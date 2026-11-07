@@ -1393,13 +1393,15 @@ module Projects
       phase = Automation::ManualStart::Plan.phase_for_goal(@agent_run.goal)
       return unless phase
 
+      # The shared delegation projection (RDR-080 surface parity): this
+      # surface reads authority through the same read model as settings,
+      # API, and MCP instead of assembling grants and policy inline.
+      # @spec PROJECT-DELEGATION-005
+      projection = ProjectDelegation::Projection.for_work_item(project: @project, work_item: @agent_run)
       @continuation_phase = phase
-      @continuation_grants = Automation::ContinuationGrantLookup.resolve(
-        project: @project, phase:, work_item: @agent_run
-      )
-      @continuation_authority = Automation::EffectivePolicy.call(
-        project: @project, phase:, work_item: @agent_run, trigger: :automatic
-      )
+      @continuation_grants = projection.continuation_grants(phase)
+      @continuation_authority = projection.phase_decision(phase)
+      @delegated_authorizations = projection.authorizations
     end
 
     # @spec AUTOMATION-PHASES-005
