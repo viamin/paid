@@ -276,6 +276,14 @@ module Inbox
         @manual_review_recovery ||= Inbox::ManualReviewRecovery.call(issue:) if manual_review?
       end
 
+      # @spec INBOX-DECISION-BRIEF-001
+      # Lazy accessor: only the SELECTED entry renders its full detail brief,
+      # so building the queue never pays the detail-only reads (provenance,
+      # acceptance assessment, last agreed decision).
+      def decision_brief
+        @decision_brief ||= Inbox::DecisionBrief.call(entry: self, detail: true)
+      end
+
       private
 
       def context_loader

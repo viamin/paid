@@ -334,7 +334,9 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Inbox", project.full_name, second_project.full_name)
     expect(response.body).to include("Alpha question", "Beta question", "PR question", "Approval blocked PR", "Review me", "Quality pause requires manual review")
-    expect(response.body).to include("Visible task", "What is the expected behavior?")
+    # @spec INBOX-DECISION-BRIEF-002 The row's default copy is the plain
+    # decision line; the question texts render on the selected detail.
+    expect(response.body).to include("Visible task", "Answer 2 clarifying questions")
     expect(response.body).not_to include("Closed question")
   end
 

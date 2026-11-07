@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout progress action_history decision_brief].freeze
 
     def self.call(...)
       new(...).call
@@ -97,6 +97,17 @@ module Inbox
     # @spec INBOX-PROGRESS-003
     def progress
       issue ? ProgressProjection.call(issue:).to_h : {}
+    end
+
+    # The same decision brief the detail pane renders, resolved through the
+    # queue's all-scope lookup so the chat agent answers with the same
+    # grounded recommendation basis the operator sees (#4864).
+    # @spec INBOX-DECISION-BRIEF-007
+    def decision_brief
+      entry = Inbox::Queue.find_entry(user:, entry_id: chat_session.inbox_item_key)
+      return {} unless entry
+
+      Inbox::DecisionBrief.call(entry:, detail: true).to_h
     end
 
     def agent_run_output

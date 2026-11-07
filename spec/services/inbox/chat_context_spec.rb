@@ -234,6 +234,26 @@ RSpec.describe Inbox::ChatContext do
     expect(assessment.fetch(:criteria)).to include(hash_including("state" => "unknown", "prerequisite" => "Pilot report"))
   end
 
+  it "exposes the same decision-brief contract the detail pane renders" do
+    # @spec INBOX-DECISION-BRIEF-007
+    issue.update!(title: "Ship the export", paid_state: "needs_input",
+      needs_input_questions: [ "Which format should the export use?" ])
+
+    context = described_class.call(chat_session:, user:, sections: [ :decision_brief ])
+
+    brief = context.fetch("decision_brief")
+    expect(brief).to include(goal: "Ship the export", decision: kind_of(String), impact: kind_of(String))
+  end
+
+  it "omits the decision-brief section when the entry is no longer resolvable" do
+    # @spec INBOX-DECISION-BRIEF-007
+    chat_session.update!(inbox_item_key: "clarifying_questions:999999", inbox_item_metadata: { "kind" => "clarifying_questions", "issue_id" => 999999 })
+
+    context = described_class.call(chat_session:, user:, sections: [ :decision_brief ])
+
+    expect(context.fetch("decision_brief")).to eq({})
+  end
+
   def github_comment(id:, login:, body:)
     user = Struct.new(:login).new(login)
     Struct.new(:id, :user, :body, :created_at).new(id, user, body, Time.current)

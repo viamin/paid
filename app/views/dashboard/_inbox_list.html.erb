@@ -49,7 +49,19 @@
                 <%= entry.title %>
               <% end %>
             </p>
-            <p class="mt-1 text-sm text-gray-500"><%= entry.summary.presence || "Waiting for review" %></p>
+            <%# @spec INBOX-DECISION-BRIEF-002 The plain-language decision +
+                impact line replaces the raw lane summary in the row's
+                default view; the lane summary stays available on the detail
+                pane where its context is explained. %>
+            <% brief = Inbox::DecisionBrief.list_payload(entry) %>
+            <% if brief[:decision].present? %>
+              <p class="mt-1 text-sm text-gray-600" data-testid="inbox-list-brief">
+                <span class="font-medium text-gray-700"><%= brief[:decision] %></span>
+                <% if brief[:impact].present? %><span class="text-gray-500"> · <%= brief[:impact] %></span><% end %>
+              </p>
+            <% else %>
+              <p class="mt-1 text-sm text-gray-500"><%= entry.summary.presence || "Waiting for review" %></p>
+            <% end %>
           </div>
           <span class="shrink-0 text-xs text-gray-400" data-testid="inbox-list-waiting-age"><%= entry.waiting_since ? time_ago_in_words(entry.waiting_since) : "Waiting —" %></span>
         </div>

@@ -24,11 +24,11 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
+        common_fields.merge(kind_payload).merge(brief_payload).merge(progress_payload).merge(history_payload).merge(workflow_payload)
       end
 
       def render_list
-        common_fields.merge(list_kind_payload)
+        common_fields.merge(list_kind_payload).merge(list_brief_payload)
       end
 
       private
@@ -45,6 +45,18 @@ module Api
           summary: entry.summary,
           action_url: entry.action_url
         }
+      end
+
+      # @spec INBOX-DECISION-BRIEF-007
+      # The full decision brief belongs to the selected detail item only;
+      # the list stays with the list-safe subset (same split as progress).
+      def brief_payload
+        { brief: Inbox::DecisionBrief.call(entry:, detail: true).to_h }
+      end
+
+      # @spec INBOX-DECISION-BRIEF-002
+      def list_brief_payload
+        { brief: Inbox::DecisionBrief.list_payload(entry) }
       end
 
       def project

@@ -232,7 +232,52 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
       payload = described_class.render(entry)
 
-      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url history history_incomplete history_next_cursor])
+      expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url brief history history_incomplete history_next_cursor])
+    end
+
+    describe "decision brief parity" do
+      it "serializes the full decision brief on the detail payload" do
+        # @spec INBOX-DECISION-BRIEF-007
+        issue = create(:issue, project: project, title: "Ship the export")
+        entry = build_entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+          issue: issue, record: issue, questions: [ "Which format?" ])
+
+        payload = described_class.render(entry)
+
+        expect(payload.fetch(:brief)).to include(
+          goal: "Ship the export",
+          decision: kind_of(String),
+          impact: kind_of(String),
+          question: "Which format?"
+        )
+        expect(payload.fetch(:brief)).not_to have_key(:primary_action_url)
+      end
+
+      it "serializes the list-safe brief subset without the detail-only fields" do
+        # @spec INBOX-DECISION-BRIEF-002 INBOX-DECISION-BRIEF-007
+        issue = create(:issue, project: project, title: "Ship the export")
+        entry = build_entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+          issue: issue, record: issue, questions: [ "Which format?" ])
+
+        payload = described_class.render_list(entry)
+
+        expect(payload.fetch(:brief)).to include(decision: kind_of(String), impact: kind_of(String))
+        expect(payload.fetch(:brief).keys).to contain_exactly(:decision, :impact, :question)
+      end
+
+      it "keeps a grounded merge-approval recommendation and its stale disclosure in the brief" do
+        # @spec INBOX-DECISION-BRIEF-006 INBOX-DECISION-BRIEF-007
+        issue = create(:issue, :pull_request, project: project)
+        entry = build_entry(Inbox::Queue::MERGE_APPROVAL_KIND, issue: issue, record: issue,
+          guidance: { heading: "Approval is stale for the current revision",
+            instruction: "Review and approve the current revision on GitHub.",
+            stale_approval: true, blockers: [] })
+
+        payload = described_class.render(entry)
+
+        expect(payload.fetch(:brief)).to include(recommendation: "Review and approve the current revision on GitHub.")
+        expect(payload.fetch(:brief).fetch(:unknowns)).not_to be_empty
+      end
     end
 
     it "serializes project_setup_pending with its task descriptions" do

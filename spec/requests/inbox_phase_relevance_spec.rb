@@ -12,8 +12,11 @@ RSpec.describe "Inbox phase relevance and removal" do
   let(:user) { create(:user, account:) }
   let(:project) { create(:project, account:, created_by: user, owner: "acme", repo: "alpha") }
   let(:issue) do
-    create(:issue, :needs_input, project:, github_state: "open",
-      needs_input_questions: [ "Which behavior?" ])
+    # The distinctive title is the list-row visibility marker; the question
+    # text renders on the selected detail, not in the row's default copy
+    # (@spec INBOX-DECISION-BRIEF-002).
+    create(:issue, :needs_input, project:, github_state: "open", title: "Phase held question",
+      needs_input_questions: [ "Phase held question" ])
   end
 
   before do
@@ -41,11 +44,11 @@ RSpec.describe "Inbox phase relevance and removal" do
     get inbox_path
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).not_to include("Which behavior?")
+    expect(response.body).not_to include("Phase held question")
 
     get inbox_path(scope: Inbox::Queue::DISABLED_PHASES_SCOPE)
 
-    expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Phase held question")
 
     # The collection response no longer builds the detail, so the operator's
     # browser loads it through the eager detail frame.
@@ -71,7 +74,7 @@ RSpec.describe "Inbox phase relevance and removal" do
     get inbox_entry_path(entry_id: "clarifying_questions:#{issue.id}")
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Phase held question")
     expect(response.body).to include("Enable the Issue preparation phase")
   end
 
@@ -82,7 +85,7 @@ RSpec.describe "Inbox phase relevance and removal" do
 
     expect(response).to redirect_to(inbox_path)
     get inbox_path
-    expect(response.body).not_to include("Which behavior?")
+    expect(response.body).not_to include("Phase held question")
 
     expect(issue.reload.paid_state).to eq("needs_input")
     expect(issue.needs_input_questions).to be_present
@@ -93,11 +96,11 @@ RSpec.describe "Inbox phase relevance and removal" do
 
     post inbox_entry_remove_path(entry_id: "clarifying_questions:#{issue.id}")
     get inbox_path(scope: Inbox::Queue::REMOVED_SCOPE)
-    expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Phase held question")
 
     post inbox_entry_restore_path(entry_id: "clarifying_questions:#{issue.id}")
     get inbox_path
-    expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Phase held question")
   end
 
   it "leaves the pre-existing behavior untouched while the rollout flag is off" do
@@ -105,16 +108,16 @@ RSpec.describe "Inbox phase relevance and removal" do
 
     get inbox_path
 
-    expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Phase held question")
   end
 
   it "honors personal removal while the rollout flag is off" do
     post inbox_entry_remove_path(entry_id: "clarifying_questions:#{issue.id}")
 
     get inbox_path
-    expect(response.body).not_to include("Which behavior?")
+    expect(response.body).not_to include("Phase held question")
 
     get inbox_path(scope: Inbox::Queue::REMOVED_SCOPE)
-    expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Phase held question")
   end
 end

@@ -1,0 +1,100 @@
+<%# @spec INBOX-DECISION-BRIEF-003 @spec INBOX-DECISION-BRIEF-004
+    @spec INBOX-DECISION-BRIEF-005
+    The concise decision brief every Inbox detail opens with (#4864): goal,
+    what changed, the exact decision, Paid's grounded recommendation (or the
+    disclosed unknown and one focused question), what happens after acting,
+    and the waiting impact. Evidence and technical history stay behind the
+    named disclosure. The per-kind pane below remains the action surface, so
+    no action semantics are duplicated here; the brief's primary action is a
+    navigation pointer only. %>
+<% brief = entry.decision_brief %>
+<section class="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4" data-testid="inbox-decision-brief" aria-label="Decision brief">
+  <h3 class="text-sm font-semibold text-gray-900">What Paid needs from you</h3>
+  <dl class="mt-3 space-y-2 text-sm">
+    <% if brief.goal.present? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">Goal</dt>
+        <dd class="text-gray-900" data-testid="inbox-brief-goal"><%= brief.goal %></dd>
+      </div>
+    <% end %>
+    <% if brief.changed.present? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">What changed</dt>
+        <dd class="text-gray-700" data-testid="inbox-brief-changed"><%= brief.changed %></dd>
+      </div>
+    <% end %>
+    <% if brief.decision.present? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">Decision needed</dt>
+        <dd class="font-medium text-gray-900" data-testid="inbox-brief-decision"><%= brief.decision %></dd>
+      </div>
+    <% end %>
+    <% if brief.recommendation.present? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">Paid recommends</dt>
+        <dd class="text-indigo-900" data-testid="inbox-brief-recommendation">
+          <%= brief.recommendation %>
+          <% if brief.rationale.present? %><span class="mt-0.5 block text-xs text-indigo-700/80"><%= brief.rationale %></span><% end %>
+        </dd>
+      </div>
+    <% end %>
+    <% if brief.unknowns.any? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">Not certain</dt>
+        <dd class="text-amber-800" data-testid="inbox-brief-unknowns">
+          <%= brief.unknowns.join(" ") %>
+        </dd>
+      </div>
+    <% end %>
+    <% if brief.question.present? %>
+      <div class="rounded-lg bg-white px-3 py-2">
+        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Question</dt>
+        <dd class="mt-0.5 text-gray-900" data-testid="inbox-brief-question"><%= brief.question %></dd>
+      </div>
+    <% end %>
+    <% if brief.after_action.present? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">After you act</dt>
+        <dd class="text-gray-700" data-testid="inbox-brief-after"><%= brief.after_action %></dd>
+      </div>
+    <% end %>
+    <% if brief.impact.present? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">Waiting</dt>
+        <dd class="text-gray-700" data-testid="inbox-brief-impact"><%= brief.impact %></dd>
+      </div>
+    <% end %>
+    <% if brief.last_decision.present? %>
+      <div class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+        <dt class="shrink-0 font-medium text-gray-500">Last agreed decision</dt>
+        <dd class="text-gray-700" data-testid="inbox-brief-last-decision"><%= brief.last_decision %></dd>
+      </div>
+    <% end %>
+  </dl>
+
+  <% if brief.primary_action %>
+    <div class="mt-4">
+      <% if brief.primary_action.external %>
+        <%= link_to brief.primary_action.label, brief.primary_action.url,
+              target: "_blank", rel: "noopener noreferrer",
+              data: { testid: "inbox-brief-primary-action" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% else %>
+        <%= link_to brief.primary_action.label, brief.primary_action.url,
+              data: { turbo_frame: "_top", testid: "inbox-brief-primary-action" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if brief.evidence.any? %>
+    <details class="mt-4 text-sm" data-testid="inbox-brief-evidence">
+      <summary class="cursor-pointer font-medium text-gray-700">Evidence and history</summary>
+      <ul class="mt-2 space-y-1 text-gray-600">
+        <% brief.evidence.each do |item| %>
+          <li class="rounded-md bg-white/70 px-3 py-1.5"><%= item %></li>
+        <% end %>
+      </ul>
+    </details>
+  <% end %>
+</section>

@@ -46,6 +46,10 @@
 </div>
 
 <div class="px-4 py-5 sm:px-6">
+  <%# @spec INBOX-DECISION-BRIEF-003 The decision brief opens the detail;
+      the per-kind pane below keeps its own actions and explanations. %>
+  <%= render "dashboard/inbox_decision_brief", entry: entry %>
+
   <% if entry.issue %>
     <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
   <% end %>
