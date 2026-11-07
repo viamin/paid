@@ -14,6 +14,7 @@ RSpec.describe ProjectDelegation::Projection do
 
   before do
     FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
   end
 
   def authorize_review(work_item: issue, stop_before_phase: "merge")
@@ -129,6 +130,20 @@ RSpec.describe ProjectDelegation::Projection do
     expect(states.fetch(issue.id).authority).to be_blocked
     expect(states.fetch(granted_issue.id).authority).to be_permitted
     expect(states.fetch(granted_issue.id).authority.source).to eq(:continuation_grant)
+  end
+
+  it "bulk loads continuation grants for a project projection" do
+    5.times { authorize_review(work_item: create(:issue, project: project)) }
+    projection = described_class.for_project(project)
+
+    grant_queries = []
+    callback = lambda do |_name, _started, _finished, _id, payload|
+      grant_queries << payload[:sql] if payload[:sql].include?('FROM "work_item_continuation_grants"')
+    end
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { projection.authorizations }
+
+    expect(grant_queries.size).to eq(1)
   end
 
   it "rejects an unscoped phase decision on a project projection" do

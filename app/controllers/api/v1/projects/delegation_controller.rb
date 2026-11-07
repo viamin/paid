@@ -13,6 +13,7 @@ module Api
         def show
           project = policy_scope(Project).find(params[:project_id])
           authorize project, :show?
+          raise ActiveRecord::RecordNotFound unless FeatureFlags.enabled?(:project_delegation, project:)
 
           render json: ProjectDelegation::Projection.for_project(project).to_h
         end

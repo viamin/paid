@@ -201,6 +201,7 @@ RSpec.describe "Project agent run continuation" do
   end
 
   it "shows the work item's delegated delivery authorization from the shared projection" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:project_delegation, project:)
     run = create(:agent_run, project:, issue:, goal: "create_pr")
     create(:bounded_delegated_action, project:, issue:, action: "review",
       evidence: Automation::DelegatedActionAdmission.admission_evidence(

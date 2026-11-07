@@ -87,9 +87,11 @@ module Projects
       # The shared delegation projection (RDR-080 surface parity): settings
       # reads delegation state through the same read model as Inbox, API,
       # and MCP. @spec PROJECT-DELEGATION-005
-      @delegation_projection = ProjectDelegation::Projection.for_project(@project)
-      @delegation_work_items = @project.issues
-        .where(id: @delegation_projection.authorizations.map(&:work_item_id)).index_by(&:id)
+      if FeatureFlags.enabled?(:project_delegation, project: @project)
+        @delegation_projection = ProjectDelegation::Projection.for_project(@project)
+        @delegation_work_items = @project.issues
+          .where(id: @delegation_projection.authorizations.map(&:work_item_id)).index_by(&:id)
+      end
       @migration_preview = Automation::Phases::MigrationPreview.call(project: @project, user: current_user)
     end
 

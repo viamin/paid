@@ -17,6 +17,7 @@ RSpec.describe "Project delegation API" do
     PersonalAccessToken.create!(
       user:, account:, name: "Inbox", scopes: [ "inbox" ], token_digest: PersonalAccessToken.digest(plaintext)
     )
+    FeatureFlags.enable!(:project_delegation, project:)
   end
 
   it "returns the shared delegation projection for the project" do
@@ -53,6 +54,14 @@ RSpec.describe "Project delegation API" do
     get "/api/v1/projects/#{project.id}/delegation"
 
     expect(response).to have_http_status(:unauthorized)
+  end
+
+  it "returns not found until the project opts in" do
+    FeatureFlags.disable!(:project_delegation, project:)
+
+    get "/api/v1/projects/#{project.id}/delegation", headers: headers
+
+    expect(response).to have_http_status(:not_found)
   end
 
   it "hides other accounts' projects" do

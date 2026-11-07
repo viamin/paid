@@ -106,6 +106,7 @@ module Inbox
     # @spec PROJECT-DELEGATION-005
     def delegation
       return {} unless issue
+      return {} unless FeatureFlags.enabled?(:project_delegation, project: chat_session.project)
 
       ProjectDelegation::Projection.for_work_item(project: chat_session.project, work_item: issue).to_h
     end

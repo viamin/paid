@@ -110,6 +110,7 @@
   </section>
 
   <%# @spec PROJECT-DELEGATION-005 %>
+  <% if @delegation_projection %>
   <section class="mt-8">
     <h2 class="text-sm font-semibold text-gray-900">Delegated delivery actions</h2>
     <p class="mt-1 text-sm text-gray-500">
@@ -135,10 +136,14 @@
               <% end %>
               · <%= Automation::Phases.label(state.phase) %> currently
               <%= state.authority.permitted? ? "permitted" : "not permitted" %>
+              <% if state.authority.source %>
+                through <%= state.authority.source.to_s.humanize(capitalize: false) %>
+              <% end %>
             </div>
           </li>
         <% end %>
       </ul>
     <% end %>
   </section>
+  <% end %>
 </div>

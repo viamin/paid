@@ -45,7 +45,7 @@ Status markers: `[ ]` planned implementation gap.
   every queued retry must pass), and
   `spec/services/automation/focused_decision_spec.rb` (dedup and refresh).
 
-- [x] **PROJECT-DELEGATION-005** — UI, API, MCP, queue, dequeue, retries, and
+- [ ] **PROJECT-DELEGATION-005** — UI, API, MCP, queue, dequeue, retries, and
   background jobs SHALL use `Automation::EffectivePolicy` and the same
   delegation projection; no surface SHALL infer authority from a label, stale
   approval, queue state, or local UI state.
@@ -57,12 +57,8 @@ Status markers: `[ ]` planned implementation gap.
   `spec/services/inbox/chat_context_spec.rb` (Inbox/work-detail surfaces),
   `spec/requests/api/v1/delegation_spec.rb` (API surface, same signature as
   the settings projection), and `spec/mcp/tools/get_project_delegation_spec.rb`
-  (MCP surface). Queue, dequeue, retry, follow-up, and closeout boundaries
-  consume `Automation::EffectivePolicy` through
-  `Automation::DelegatedActionAdmission` (see `PROJECT-DELEGATION-004`
-  verification: `spec/jobs/process_run_queue_job_spec.rb`,
-  `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
-  `spec/temporal/activities/merge_pull_request_activity_spec.rb`).
+  (MCP surface). The shared `ActionPlan` write/admission contract for queue,
+  dequeue, retry, follow-up, closeout, and repair boundaries remains planned.
 
 - [x] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
   authority, the system SHALL apply the broader posture only to new admissions

@@ -10,6 +10,8 @@ RSpec.describe Tools::GetProjectDelegation do
   let(:project) { create(:project, account: account, created_by: user) }
   let(:tool) { described_class.new(user: user, session: session) }
 
+  before { FeatureFlags.enable!(:project_delegation, project:) }
+
   def authorize_review(work_item:)
     create(:bounded_delegated_action,
       project: project,
@@ -59,6 +61,13 @@ RSpec.describe Tools::GetProjectDelegation do
     other_project = create(:project)
 
     expect { tool.call(project_id: other_project.id) }
+      .to raise_error(ActiveRecord::RecordNotFound)
+  end
+
+  it "raises until the project opts in" do
+    FeatureFlags.disable!(:project_delegation, project:)
+
+    expect { tool.call(project_id: project.id) }
       .to raise_error(ActiveRecord::RecordNotFound)
   end
 end

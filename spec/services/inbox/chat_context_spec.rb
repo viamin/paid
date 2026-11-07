@@ -41,6 +41,7 @@ RSpec.describe Inbox::ChatContext do
 
   it "retrieves the shared delegation projection on demand" do
     # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:project_delegation, project:)
     context = described_class.call(chat_session:, user:, sections: [ :delegation ])
 
     expect(context.fetch("delegation")).to include(
@@ -49,6 +50,12 @@ RSpec.describe Inbox::ChatContext do
       authorizations: [],
       phase_authority: hash_including("review", "repair", "merge")
     )
+  end
+
+  it "omits delegation context until the project opts in" do
+    context = described_class.call(chat_session:, user:, sections: [ :delegation ])
+
+    expect(context.fetch("delegation")).to eq({})
   end
 
   it "rejects context access after comment permission is removed" do

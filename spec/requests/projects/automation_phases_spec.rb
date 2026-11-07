@@ -94,6 +94,7 @@ RSpec.describe "Project automation phases" do
   end
 
   it "renders delegated delivery authority from the shared projection" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:project_delegation, project:)
     work_item = create(:issue, project:)
     create(:bounded_delegated_action, project:, issue: work_item, action: "review",
       evidence: Automation::DelegatedActionAdmission.admission_evidence(
@@ -115,9 +116,29 @@ RSpec.describe "Project automation phases" do
   end
 
   it "states when the project has no delegated delivery actions" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:project_delegation, project:)
     get project_automation_phases_path(project)
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("No delegated delivery actions")
+  end
+
+  it "hides delegated delivery actions until the project opts in" do # @spec PROJECT-DELEGATION-005
+    get project_automation_phases_path(project)
+
+    expect(response.body).not_to include("Delegated delivery actions")
+  end
+
+  it "attributes fallback authority to the legacy policy" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:project_delegation, project:)
+    work_item = create(:issue, project:)
+    create(:bounded_delegated_action, project:, issue: work_item, action: "review",
+      evidence: Automation::DelegatedActionAdmission.admission_evidence(
+        work_item:, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+      ))
+
+    get project_automation_phases_path(project)
+
+    expect(Nokogiri::HTML(response.body).text.squish).to include("permitted through legacy policy")
   end
 end

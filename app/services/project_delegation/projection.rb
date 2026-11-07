@@ -75,14 +75,18 @@ module ProjectDelegation
     # Active continuation grants covering `phase` for the projected work
     # item's chain (RDR-077 §3), resolved through the shared lookup.
     def continuation_grants(phase)
-      Automation::ContinuationGrantLookup.resolve(project: project, phase: phase, work_item: work_item)
+      grants_for(work_item).select { |grant| grant.covers_phase?(phase) }
     end
 
     # The newest bounded authorization per delegated action for the
     # projected scope: work-item scoped when a work item is given, otherwise
     # the project's governing authorizations keyed by work item and action.
     def authorizations
-      @authorizations ||= latest_records.map { |record| state_for(record) }
+      @authorizations ||= begin
+        records = latest_records
+        preload_grants(records.map(&:issue))
+        records.map { |record| state_for(record) }
+      end
     end
 
     def authorization_for(action)
@@ -164,8 +168,45 @@ module ProjectDelegation
       key = [ phase.to_s, scoped_work_item&.id ]
       @phase_decisions ||= {}
       @phase_decisions[key] ||= Automation::EffectivePolicy.call(
-        project: project, phase: phase.to_s, work_item: scoped_work_item, trigger: :automatic
+        project: project,
+        phase: phase.to_s,
+        work_item: scoped_work_item,
+        trigger: :automatic,
+        continuation_grants: grants_for(scoped_work_item),
+        rollout_enabled: rollout_enabled?
       )
+    end
+
+    def rollout_enabled?
+      return @rollout_enabled if defined?(@rollout_enabled)
+
+      @rollout_enabled = Automation::RolloutGuard.enabled?(project)
+    end
+
+    def grants_for(scoped_work_item)
+      issue = Automation::ContinuationGrantLookup.issue_for(scoped_work_item)
+      return [] unless issue
+
+      preload_grants([ issue ]) unless @grant_chain_ids&.key?(issue.id)
+      @grants_by_issue_id.values_at(*@grant_chain_ids.fetch(issue.id)).flatten
+    end
+
+    def preload_grants(issues)
+      root_ids_by_issue = issues.to_h do |issue|
+        roots = [ issue.id ]
+        roots << issue.parent_issue_id if issue.is_pull_request? && issue.parent_issue_id.present?
+        [ issue.id, roots ]
+      end
+      root_ids = root_ids_by_issue.values.flatten.uniq
+      linked_ids = project.issues.pull_requests_only.where(parent_issue_id: root_ids)
+        .pluck(:parent_issue_id, :id).group_by(&:first).transform_values { |pairs| pairs.map(&:last) }
+      @grant_chain_ids ||= {}
+      root_ids_by_issue.each do |issue_id, roots|
+        @grant_chain_ids[issue_id] = roots | roots.flat_map { |root_id| linked_ids.fetch(root_id, []) }
+      end
+      grant_ids = @grant_chain_ids.values.flatten.uniq
+      @grants_by_issue_id = project.work_item_continuation_grants.active.where(issue_id: grant_ids).group_by(&:issue_id)
+      @grants_by_issue_id.default = []
     end
 
     def serialized_phase_authority

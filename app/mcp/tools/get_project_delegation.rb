@@ -42,7 +42,9 @@ module Tools
 
     def project_for(project_id)
       @projects_by_id ||= {}
-      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
+      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id).tap do |project|
+        raise ActiveRecord::RecordNotFound unless FeatureFlags.enabled?(:project_delegation, project:)
+      end
     end
   end
 end

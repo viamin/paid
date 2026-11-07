@@ -1401,7 +1401,11 @@ module Projects
       @continuation_phase = phase
       @continuation_grants = projection.continuation_grants(phase)
       @continuation_authority = projection.phase_decision(phase)
-      @delegated_authorizations = projection.authorizations
+      @delegated_authorizations = if FeatureFlags.enabled?(:project_delegation, project: @project)
+        projection.authorizations
+      else
+        []
+      end
     end
 
     # @spec AUTOMATION-PHASES-005
