@@ -32,7 +32,7 @@ class AutoPickEligibilitySweepJob < ApplicationJob
     results = sweep_page(page)
     log_page(started_at, allocated_before, page.size, results)
 
-    if results.any? { |result| result.cursor }
+    if results.any?(&:cursor)
       self.class.perform_later(
         after_project_id: page_after_project_id,
         through_project_id:,
