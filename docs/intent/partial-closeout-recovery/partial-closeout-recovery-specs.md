@@ -803,11 +803,15 @@
 - [x] **PARTIAL-CLOSEOUT-042** — When a built-in, typed closeout evaluation
   retains a report for its originating Inbox prerequisite, the system SHALL
   record the report as revision-bound evidence for only the matching current
-  occurrence and SHALL release the scheduling guard only after every current
-  occurrence is sufficient. A report whose source revision changed SHALL be
-  recorded as stale and keep the notification active. Generic notification
-  dismissal and report completion SHALL remain distinct from whole-issue
-  acceptance or GitHub closure.
+  occurrence — located on whichever active prerequisite notification carries
+  the occurrence, including another owner's notification after reassessment
+  moves it, and typed at the occurrence level so a merged notification's
+  generic occurrences neither block reconciliation nor release early — and
+  SHALL release the scheduling guard only after every current occurrence is
+  sufficient. A report whose source revision changed SHALL be recorded as
+  stale and keep the notification active. Generic notification dismissal and
+  report completion SHALL remain distinct from whole-issue acceptance or
+  GitHub closure.
   *Code:* `app/services/facet_confidence/closeout_evaluation/reconcile_report.rb`,
   `app/models/notification.rb`,
   `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.

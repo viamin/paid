@@ -191,10 +191,15 @@ text.
 
 When that typed evaluation freezes its complete report, the system records the
 report digest, sole judge, and pinned source revision against only matching
-prerequisite occurrences. It releases the notification only if every current
-occurrence is sufficient at that revision; a changed revision records stale
-evidence and retains the scheduling guard. A stale disposition is recoverable
-rather than terminal: because the evidence generation is keyed by the recorded
+prerequisite occurrences. An occurrence is located on whichever active
+prerequisite notification carries it — reassessment can move an occurrence onto
+another owner's notification while its source issue stays recorded on the
+occurrence — and typing is decided per occurrence, so a merged notification
+that also carries generic occurrences still reconciles its typed occurrence
+while its release waits for every occurrence. It releases the notification only
+if every current occurrence is sufficient at that revision; a changed revision
+records stale evidence and retains the scheduling guard. A stale disposition is
+recoverable rather than terminal: because the evidence generation is keyed by the recorded
 source revision, a closeout whose evidence changed gets a fresh Start for the
 new generation once its reassessment records the moved revision, and the typed
 Inbox entry offers that Start instead of linking only the stale frozen report.

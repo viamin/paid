@@ -113,4 +113,57 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::ReconcileReport do
     expect(notification).to be_active
     expect(notification.resolved_at).to be_nil
   end
+
+  # A reassessment can move an occurrence this issue sourced onto another
+  # owner: Reconcile#publish_prerequisite_notification! publishes under the
+  # owner as the subject while preserving this issue in source_issue_number,
+  # and Reconcile#reconcile_misplaced_prerequisite! resolves the original
+  # subject's row. The frozen evaluation must still reconcile the moved
+  # occurrence on the owner's notification.
+  it "reconciles an occurrence a reassessment moved onto another owner's notification" do
+    notification.update!(resolved_at: 1.hour.ago)
+    owner_issue = create(:issue, project: project, github_number: 5150)
+    moved_notification = create(:notification, :error, account: account, subject: owner_issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+                  "prerequisites" => [ own_occurrence.merge("owner_issue_number" => owner_issue.github_number) ] })
+
+    result = described_class.call(evaluation:)
+
+    expect(result.notification_ids).to eq([ moved_notification.id ])
+    submission = moved_notification.reload.metadata.fetch("evidence_submissions").sole
+    expect(submission).to include("prerequisite_identity" => "own-identity", "outcome" => "sufficient",
+      "evaluation_id" => evaluation.id, "source_revision" => "own-sha")
+    expect(moved_notification.resolved_at).to be_present
+    expect(moved_notification.metadata.fetch("released_by")).to eq("facet_confidence_evaluation")
+  end
+
+  # workflow_for writes the top-level workflow marker only when every
+  # occurrence is typed, so a merged notification that gained a generic
+  # occurrence after this evaluation started carries no marker. The typed
+  # occurrence must still reconcile at freeze time — the frozen evaluation
+  # cannot be rerun — and the merged generic prerequisite keeps the hold until
+  # its own evidence later releases the notification.
+  it "reconciles the typed occurrence in a merged notification that also carries a generic prerequisite" do
+    generic_occurrence = { "identity" => "generic-identity", "criterion" => "Attach the run log",
+      "source_revision" => "own-sha", "source_issue_number" => issue.github_number }
+    notification.update!(metadata: { "prerequisites" => [ own_occurrence, generic_occurrence ] })
+
+    result = described_class.call(evaluation:)
+
+    expect(result.reconciled).to eq(1)
+    submissions = notification.reload.metadata.fetch("evidence_submissions")
+    expect(submissions.find { |submission| submission["prerequisite_identity"] == "own-identity" })
+      .to include("outcome" => "sufficient", "evaluation_id" => evaluation.id, "source_revision" => "own-sha")
+    expect(notification).to be_active
+
+    PartialCloseouts::SubmitEvidence.call(notification: notification, actor: owner,
+      prerequisite_identity: "generic-identity", evidence_url: "https://example.com/run-log",
+      explanation: "The run log is attached.")
+    PartialCloseouts::ReconcileEvidence.call(notification: notification, prerequisite_identity: "generic-identity",
+      evidence_url: "https://example.com/run-log", explanation: "The run log is attached.", outcome: "sufficient")
+
+    expect(notification.reload.resolved_at).to be_present
+    expect(notification.metadata.fetch("released_by")).to eq("reconciled_evidence")
+  end
 end

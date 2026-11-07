@@ -31,26 +31,39 @@ module FacetConfidence
 
       def report_ready? = evaluation.frozen? && evaluation.report.present? && evaluation.source_revision.present?
 
+      # The reconciled occurrence can be carried by another owner's
+      # notification: when a reassessment moves an occurrence this issue
+      # sourced, Reconcile publishes it under the new owner as the subject
+      # while preserving this issue in source_issue_number, and the original
+      # subject's row is already resolved as misplaced. Rows are therefore
+      # located by the occurrence they carry, never by subject alone.
       def notifications
-        Notification.active.where(account: evaluation.project.account, subject: evaluation.issue,
-          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).order(:id)
+        Notification.active.where(account: evaluation.project.account, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+          .where("metadata -> 'prerequisites' @> ?::jsonb", [ { "source_issue_number" => evaluation.issue.github_number } ].to_json)
+          .order(:id)
       end
 
       def reconcile(notification)
         notification.with_lock do
           notification.reload
-          return unless typed_notification?(notification)
+          return unless notification.active?
 
-          outcomes = applicable_occurrences(notification).map { |occurrence| record(notification, occurrence) }
+          occurrences = applicable_occurrences(notification)
+          return if occurrences.empty?
+
+          outcomes = occurrences.map { |occurrence| record(notification, occurrence) }
           resolve_if_complete(notification)
           { notification_id: notification.id, reconciled: outcomes.count(:sufficient), stale: outcomes.count(:stale) }
         end
       end
 
-      def typed_notification?(notification)
-        notification.active? && notification.metadata["workflow"] == InboxEscalation::WORKFLOW
-      end
-
+      # Typing is decided per occurrence, not by the notification's top-level
+      # workflow marker: merged notifications intentionally retain foreign
+      # occurrences (Reconcile#workflow_for writes the marker only when every
+      # occurrence is typed), and skipping the whole row for a generic
+      # occurrence added later would strand the typed one — a frozen evaluation
+      # can never be rerun. Release stays gated on every occurrence in
+      # resolve_if_complete.
       def applicable_occurrences(notification)
         PartialCloseouts::PrerequisiteOccurrences.for(notification).select do |occurrence|
           occurrence["kind"] != "external" && occurrence["workflow"] == InboxEscalation::WORKFLOW &&
