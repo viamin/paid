@@ -17,6 +17,7 @@ module TrustedMeasurements
     #
     # Read-only: two COUNT queries through normal tenant-scoped
     # ActiveRecord relations. No writes, no cross-tenant join, no raw SQL.
+    # @spec TRUSTED-MEASUREMENTS-002
     class PlanningHoldReconciliationClosedCount
       VERSION = 1
       NOTIFICATION_SOURCE = "agent_planning_hold_reconciliation"
@@ -30,13 +31,12 @@ module TrustedMeasurements
       def self.version = VERSION
 
       def self.call(project:)
-        scope = Notification.active
+        base = Notification.active
           .where(account_id: project.account_id, source: NOTIFICATION_SOURCE, subject_type: "Issue")
-          .where(subject_id: project.issues.select(:id))
 
         Result.new(
-          active_total: scope.count,
-          active_closed_issue_count: scope.where(subject_id: project.issues.where(github_state: "closed").select(:id)).count,
+          active_total: base.where(subject_id: project.issues.select(:id)).count,
+          active_closed_issue_count: base.where(subject_id: project.issues.where(github_state: "closed").select(:id)).count,
           baseline: BASELINE,
           target: TARGET,
           project_scope: "project:#{project.id}:#{project.full_name}"
