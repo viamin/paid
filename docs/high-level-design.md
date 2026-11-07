@@ -218,6 +218,17 @@ actionable owner or a clearly routed operator prerequisite. The parent retains
 the PR evidence and explicit dependency edges; a merged audit alone is never
 proof that its acceptance criteria passed.
 
+Some operator prerequisites are bounded, mechanical reads against a project's
+own live data rather than judgment calls — "is this count now zero" rather
+than "does this evidence establish the claim." For that narrow class, a
+reviewed, allowlisted, read-only check run under existing tenant and
+deployment authority is a sanctioned evidence source alongside human
+submission and AI-judged sufficiency: it feeds the same criterion/evidence
+and partial-closeout reconciliation path, releasing only the one prerequisite
+it measures, never attesting whole-issue completion, and a missing
+deployment signal or execution failure stays visible with a concrete next
+action rather than silently passing. See `docs/intent/post-deploy-measurement/`.
+
 A project may also host the layered-verification add-on: a bounded capability
 that checks correspondence between approved business intent and its
 representations (specs, formal models, tests, code) without treating a

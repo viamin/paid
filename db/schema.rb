@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_075438) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3435,6 +3435,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
   end
 
+  create_table "post_deploy_check_runs", comment: "Idempotent attempts and evidence for trusted, read-only, allowlisted post-deploy measurements against live tenant data (see docs/intent/post-deploy-measurement).", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "check_key", null: false
+    t.integer "check_version", null: false
+    t.datetime "created_at", null: false
+    t.string "deployed_revision"
+    t.datetime "executed_at"
+    t.text "failure_reason"
+    t.string "idempotency_key", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "result", default: {}, null: false
+    t.bigint "source_issue_id"
+    t.string "status", default: "pending", null: false
+    t.bigint "superseded_by_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "idempotency_key"], name: "index_post_deploy_check_runs_idempotency", unique: true
+    t.index ["account_id"], name: "index_post_deploy_check_runs_on_account_id"
+    t.index ["project_id", "check_key"], name: "index_post_deploy_check_runs_project_check"
+    t.index ["project_id"], name: "index_post_deploy_check_runs_on_project_id"
+    t.index ["source_issue_id"], name: "index_post_deploy_check_runs_on_source_issue_id"
+    t.index ["superseded_by_id"], name: "index_post_deploy_check_runs_on_superseded_by_id"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'running'::character varying, 'succeeded'::character varying, 'failed'::character varying, 'unknown'::character varying]::text[])", name: "post_deploy_check_runs_status"
+  end
+
   create_table "pr_templates", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "body", null: false
@@ -5077,6 +5101,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"
+  add_foreign_key "post_deploy_check_runs", "accounts", on_delete: :cascade
+  add_foreign_key "post_deploy_check_runs", "issues", column: "source_issue_id", on_delete: :nullify
+  add_foreign_key "post_deploy_check_runs", "post_deploy_check_runs", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "post_deploy_check_runs", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
