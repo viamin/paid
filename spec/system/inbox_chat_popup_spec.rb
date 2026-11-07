@@ -29,12 +29,7 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
   # inbox entry. Stub the client so the inbox page can build under WebMock
   # without touching the network.
   let(:github_client) { instance_double(GithubClient, issue_comments: []) }
-
-  before do
-    skip "Chromium is not available for Cuprite" unless chromium_path
-
-    allow(GithubClient).to receive(:new).and_return(github_client)
-
+  let(:issue) do
     create(
       :issue,
       :needs_input,
@@ -42,6 +37,13 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
       title: "Alpha question",
       body: "<!-- paid:enhance-issue -->\n\n## Clarifying questions\n1. What is the expected behavior?\n"
     )
+  end
+
+  before do
+    skip "Chromium is not available for Cuprite" unless chromium_path
+
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    issue
 
     Warden.test_mode!
     login_as(user, scope: :user)
@@ -106,7 +108,7 @@ RSpec.describe "Inbox chat popup", :js, system_driver: :paid_cuprite, type: :sys
     # its rendered content before selecting another row: a second frame
     # navigation intentionally aborts the first request, which Cuprite
     # correctly reports as a JavaScript error while that request is in flight.
-    expect(page).to have_css("turbo-frame#inbox-detail h2", text: "#1 Alpha question")
+    expect(page).to have_css("turbo-frame#inbox-detail h2", text: "##{issue.github_number} Alpha question")
 
     page.find("[data-inbox-master-detail-target='row']", match: :first).click
 
