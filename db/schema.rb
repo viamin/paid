@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_120100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3610,6 +3610,51 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
   end
 
+  create_table "project_delegation_expansion_pauses", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.text "detail"
+    t.jsonb "evidence", default: {}, null: false
+    t.bigint "paused_by_id"
+    t.string "posture_before", default: "conservative", null: false
+    t.bigint "project_id", null: false
+    t.string "reason", null: false
+    t.text "resolution_note"
+    t.datetime "resolved_at"
+    t.bigint "resolved_by_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_project_delegation_expansion_pauses_on_account_id"
+    t.index ["paused_by_id"], name: "index_project_delegation_expansion_pauses_on_paused_by_id"
+    t.index ["project_id", "resolved_at"], name: "index_expansion_pauses_on_project_unresolved", where: "(resolved_at IS NULL)"
+    t.index ["project_id"], name: "index_project_delegation_expansion_pauses_on_project_id"
+    t.index ["resolved_by_id"], name: "index_project_delegation_expansion_pauses_on_resolved_by_id"
+  end
+
+  create_table "project_delegation_pilot_metrics", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.integer "completed_issues", default: 0, null: false
+    t.decimal "completion_rate", precision: 6, scale: 5
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.jsonb "exclusions", default: {}, null: false
+    t.integer "inbox_decisions", default: 0, null: false
+    t.float "median_decision_seconds"
+    t.float "p90_decision_seconds"
+    t.string "posture", default: "conservative", null: false
+    t.bigint "project_id", null: false
+    t.decimal "reversal_rate", precision: 6, scale: 5
+    t.jsonb "reversals", default: [], null: false
+    t.integer "reversed_decisions", default: 0, null: false
+    t.jsonb "revisions", default: {}, null: false
+    t.integer "total_issues", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.datetime "window_ended_at", null: false
+    t.datetime "window_started_at", null: false
+    t.index ["account_id"], name: "index_project_delegation_pilot_metrics_on_account_id"
+    t.index ["project_id", "posture", "window_started_at"], name: "index_pilot_metrics_on_project_posture_window", unique: true
+    t.index ["project_id"], name: "index_project_delegation_pilot_metrics_on_project_id"
+  end
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -5095,6 +5140,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
   add_foreign_key "project_convention_recommendations", "projects"
   add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
   add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
+  add_foreign_key "project_delegation_expansion_pauses", "accounts"
+  add_foreign_key "project_delegation_expansion_pauses", "projects"
+  add_foreign_key "project_delegation_expansion_pauses", "users", column: "paused_by_id"
+  add_foreign_key "project_delegation_expansion_pauses", "users", column: "resolved_by_id"
+  add_foreign_key "project_delegation_pilot_metrics", "accounts"
+  add_foreign_key "project_delegation_pilot_metrics", "projects"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"

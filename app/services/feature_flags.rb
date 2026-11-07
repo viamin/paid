@@ -107,6 +107,13 @@ class FeatureFlags
       rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
       cleanup_criteria: "Remove after closeout verifies migration and complete execution-path coverage."
     ),
+    project_delegation: Definition.new(
+      name: :project_delegation,
+      owner: "project-delegation",
+      intent: "Gate RDR-080 project delegation (bounded_delivery) behind both the automation_phases guard and recorded pilot-metric evidence.",
+      rollout_plan: "Default-off; broadening beyond the RDR-080 pilot stays disabled until ExpansionGuard verifies every pilot threshold against the project's own conservative baseline, and any material reversal, security/tenant/trust breach, or missing metric evidence pauses expansion and returns affected projects to conservative pending human review.",
+      cleanup_criteria: "Remove only after the RDR-080 pilot review approves broadened defaults and the delegation posture record owns the gate."
+    ),
     layered_verification_add_on: Definition.new(
       name: :layered_verification_add_on,
       owner: "layered-verification",

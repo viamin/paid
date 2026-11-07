@@ -62,11 +62,19 @@ Status markers: `[ ]` planned implementation gap.
   `spec/services/automation/focused_decision_spec.rb` (one recovery decision
   whose metadata tracks the current failure).
 
-- [ ] **PROJECT-DELEGATION-007** — For each opted-in project, the system SHALL
+- [x] **PROJECT-DELEGATION-007** — For each opted-in project, the system SHALL
   record revision-aware human Inbox decisions per completed issue, decision
   time, completion rate, and later-reversed decisions; it SHALL keep broadening
   disabled until the RDR-080 pilot threshold is met and SHALL pause expansion
   on a material reversal, security/tenant/trust breach, or missing evidence.
+  *Verified by:* `spec/services/project_delegation/record_pilot_metrics_spec.rb`
+  (revision-aware recording, aggregates, idempotent windows),
+  `spec/models/project_delegation/pilot_metric_spec.rb`,
+  `spec/services/project_delegation/expansion_guard_spec.rb`
+  (default-disabled broadening and every RDR-080 threshold),
+  `spec/services/project_delegation/pause_expansion_spec.rb`
+  (pause, conservative return, focused Inbox decision),
+  and `spec/models/project_delegation/expansion_pause_spec.rb`.
 
 - [ ] **PROJECT-DELEGATION-008** — When a delegated action records a focused
   follow-up, the system SHALL record the finding, affected scope, evidence,

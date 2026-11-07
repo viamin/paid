@@ -75,6 +75,43 @@ boundaries, and creates focused recovery requests. Metric events are revision
 aware and measure decision volume/time, completion, and later reversals for
 the bounded pilot defined by RDR-080.
 
+### Pilot metrics
+
+`ProjectDelegation::PilotMetric` is the durable per-project measurement row
+for the RDR-080 pilot. One row records a posture cohort (`conservative`
+baseline or `bounded_delivery` pilot) over an explicit window: human Inbox
+decision count, median and p90 decision seconds, completed-issue count and
+rate, and settled-decision reversal count and rate. `ProjectDelegation::
+RecordPilotMetrics` is the single write path: it validates the measured
+inputs (counts, decision-time samples, reversal events, reason-coded
+exclusions), computes the aggregates, and upserts idempotently per project,
+posture, and window start. Every row pins the `intent`, `acceptance`, and
+`evidence` revisions it joined on, and every reversal event carries both its
+settled and its reversing revision, so a metric can never silently attach to
+a revision it did not measure.
+
+### Expansion guard and pause
+
+`ProjectDelegation::ExpansionGuard` answers one question for every
+broadening surface: may delegation expand for this project? It fails closed.
+Broadening stays disabled unless the `automation_phases` and
+`project_delegation` guards both permit, no unresolved expansion pause
+exists, and the recorded pilot evidence meets every RDR-080 threshold — at
+least 30 completed issues and a 14-day review window, at least a 25%
+reduction in Inbox decisions per completed issue versus the project's own
+conservative baseline, no median decision-time increase, no more than a
+5-percentage-point completion-rate decline, and no material reversal
+attributable to delegated work. Missing or incomplete metric evidence
+blocks with its own reason; it is never treated as passing.
+
+`ProjectDelegation::PauseExpansion` records an unresolved
+`ProjectDelegation::ExpansionPause` for a material reversal, a security,
+tenant, or trust breach, or missing metric evidence. The pause captures the
+effective posture before it, routes one focused blocking Inbox decision for
+human review, and while unresolved the project's effective posture is
+`conservative` and the guard blocks broadening. Resolving a pause is a human
+decision recorded on the pause row.
+
 ## Decisions & alternatives
 
 | Decision | Rationale | Alternative rejected |
