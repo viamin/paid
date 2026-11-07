@@ -38,15 +38,19 @@ RSpec.describe "Inbox supplementary context", system_driver: :paid_cuprite, type
     page.driver.resize(1440, 1000)
     visit inbox_path(kind: "clarifying_questions")
 
-    expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
+    expect(page).to have_css("[data-testid='inbox-clarifying-context']")
     expect(page).to have_button("Submit Answers")
     expect(page.evaluate_script("getComputedStyle(document.querySelector('[data-testid=inbox-question-layout]')).display")).not_to eq("grid")
     expect(page.evaluate_script("document.querySelector('[data-testid=inbox-clarifying-context]').open")).to be(false)
+    find("[data-testid='inbox-clarifying-context'] summary").click
+    expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.")
 
     within("#inbox-list") { click_link "Second question", exact: false }
 
     within("#inbox-detail") do
       expect(page).to have_css("h2", text: "Second question")
+      expect(page).to have_css("[data-testid='inbox-clarifying-context']", count: 1)
+      find("[data-testid='inbox-clarifying-context'] summary").click
       expect(page).to have_css("[data-testid='inbox-clarifying-context']", text: "Existing behavior is documented.", count: 1)
     end
   end
