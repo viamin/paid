@@ -3,6 +3,7 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20261024205417_create_facet_confidence_evaluations")
 require Rails.root.join("db/migrate/20261026194943_create_facet_confidence_evaluation_label_revisions")
+require Rails.root.join("db/migrate/20261106235102_add_source_revision_to_facet_confidence_evaluation_generation_index")
 
 RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
   # @spec FACET-CONFIDENCE-020 @spec FACET-CONFIDENCE-021
@@ -10,6 +11,7 @@ RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
 
   let(:migration) { described_class.new }
   let(:revision_migration) { CreateFacetConfidenceEvaluationLabelRevisions.new }
+  let(:generation_index_migration) { AddSourceRevisionToFacetConfidenceEvaluationGenerationIndex.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
@@ -27,6 +29,9 @@ RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
+      # Restore the schema to its migrated state: the later index migration
+      # keys the generation on the source revision as well.
+      generation_index_migration.up
     end
     revision_migration.up if revisions_existed
     clear_schema_metadata!

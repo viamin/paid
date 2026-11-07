@@ -37,14 +37,37 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     }
   end
 
-  def label!(case_id, judgment)
+  def label!(case_id, judgment, on: evaluation)
     FacetConfidence::CloseoutEvaluation::RecordLabel.call(
-      evaluation: evaluation, actor: owner, case_id: case_id, judgment: judgment
+      evaluation: on, actor: owner, case_id: case_id, judgment: judgment
     )
   end
 
-  def label_all!
-    evaluation.corpus.cases.each { |corpus_case| label!(corpus_case.fetch("id"), judgment_for(corpus_case)) }
+  def label_all!(on: evaluation)
+    on.corpus.cases.each { |corpus_case| label!(corpus_case.fetch("id"), judgment_for(corpus_case), on:) }
+  end
+
+  def typed_prerequisite_notification!
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: {
+        "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+        "prerequisites" => [ {
+          "identity" => "facet-evaluation-1", "criterion" => "Independent evaluation",
+          "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+          "source_revision" => "intent-sha", "source_issue_number" => issue.github_number
+        } ]
+      })
+  end
+
+  # The reassessed closeout records the moved revision, and its re-attributing
+  # run re-publishes the prerequisite occurrence at that revision
+  # (PartialCloseouts::Reconcile#prerequisite_occurrence).
+  def reassess_closeout_at!(notification, revision:)
+    allow(PartialCloseouts::Assessment).to receive(:call).with(issue)
+      .and_return(instance_double(PartialCloseouts::Assessment::Result, source_revision: revision))
+    occurrence = notification.metadata.fetch("prerequisites").sole.merge("source_revision" => revision)
+    notification.update!(metadata: notification.metadata.merge("prerequisites" => [ occurrence ]))
   end
 
   it "freezes the full reference set and compiles the report against the frozen expectations" do
@@ -66,16 +89,7 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
   end
 
   it "reconciles only the current typed prerequisite after retaining the report" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-042
-    notification = create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
-      metadata: {
-        "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
-        "prerequisites" => [ {
-          "identity" => "facet-evaluation-1", "criterion" => "Independent evaluation",
-          "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
-          "source_revision" => "intent-sha", "source_issue_number" => issue.github_number
-        } ]
-      })
+    notification = typed_prerequisite_notification!
     allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("intent-sha")
     label_all!
 
@@ -91,16 +105,7 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
   end
 
   it "keeps the typed prerequisite held when its source revision changed" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-042
-    notification = create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
-      metadata: {
-        "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
-        "prerequisites" => [ {
-          "identity" => "facet-evaluation-1", "criterion" => "Independent evaluation",
-          "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
-          "source_revision" => "intent-sha", "source_issue_number" => issue.github_number
-        } ]
-      })
+    notification = typed_prerequisite_notification!
     allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("changed-sha")
     label_all!
 
@@ -109,6 +114,35 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     submission = notification.reload.metadata.fetch("evidence_submissions").sole
     expect(submission).to include("outcome" => "stale", "source_revision" => "intent-sha")
     expect(notification).to be_active
+  end
+
+  # The reviewer-flagged recovery route: after a stale reconciliation the
+  # operator must be able to start a fresh evaluation generation for the moved
+  # revision and release the hold through it, instead of being stranded on the
+  # frozen row (which can never be refrozen).
+  it "recovers a stale hold through a new evaluation generation for the moved revision" do # @spec FACET-CONFIDENCE-023 FACET-CONFIDENCE-020
+    notification = typed_prerequisite_notification!
+    allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("changed-sha")
+    label_all!
+
+    expect(described_class.call(evaluation:, actor: owner)).to be_success
+    expect(notification.reload.metadata.fetch("evidence_submissions").sole).to include("outcome" => "stale")
+    expect(notification).to be_active
+
+    reassess_closeout_at!(notification, revision: "changed-sha")
+    retry_result = FacetConfidence::CloseoutEvaluation::Start.call(project: project, issue: issue, actor: owner,
+      status: instance_double(Issues::CloseoutStatus::Result, blockers: []))
+    expect(retry_result.evaluation).to have_attributes(source_revision: "changed-sha")
+    label_all!(on: retry_result.evaluation)
+
+    expect(described_class.call(evaluation: retry_result.evaluation, actor: owner)).to be_success
+
+    submissions = notification.reload.metadata.fetch("evidence_submissions")
+    expect(submissions.last).to include("outcome" => "sufficient", "evaluation_id" => retry_result.evaluation.id,
+      "source_revision" => "changed-sha")
+    expect(submissions.first).to include("outcome" => "stale", "evaluation_id" => evaluation.id)
+    expect(notification.resolved_at).to be_present
+    expect(notification.metadata.fetch("released_by")).to eq("facet_confidence_evaluation")
   end
 
   it "measures divergences and citation violations instead of hiding them" do

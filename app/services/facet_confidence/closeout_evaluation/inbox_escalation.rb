@@ -38,7 +38,12 @@ module FacetConfidence
       def evaluation
         return @evaluation if defined?(@evaluation)
 
-        @evaluation = issue.facet_confidence_evaluations.find_by(corpus_digest: current_corpus.content_digest)
+        # Current generation only: the row Start would resume for the corpus
+        # digest and the closeout's currently recorded source revision. A
+        # moved revision leaves this nil, so the typed entry offers Start for
+        # the new generation instead of linking only the stale frozen report.
+        @evaluation = issue.facet_confidence_evaluations
+          .find_by(corpus_digest: current_corpus.content_digest, source_revision: recorded_source_revision)
       end
 
       def title = "Independent evaluation needed"
@@ -86,6 +91,12 @@ module FacetConfidence
 
       def issue = notification.subject
       def current_corpus = @current_corpus ||= FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
+
+      # The revision the closeout's recorded assessment covers — the same
+      # revision Start pins a new generation to.
+      def recorded_source_revision
+        @recorded_source_revision ||= PartialCloseouts::Assessment.call(issue).source_revision
+      end
     end
   end
 end

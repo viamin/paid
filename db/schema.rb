@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1930,7 +1930,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.index ["recorded_by_id"], name: "index_facet_confidence_evaluation_labels_on_recorded_by_id"
   end
 
-  create_table "facet_confidence_evaluations", comment: "Facet-confidence closeout evaluation (#4596): one blinded reference-judgment session per originating closeout (issue, frozen corpus digest) over the shipped RDR-070 corpus.", force: :cascade do |t|
+  create_table "facet_confidence_evaluations", comment: "Facet-confidence closeout evaluation (#4596): one blinded reference-judgment session per originating closeout (issue, frozen corpus digest, source revision) over the shipped RDR-070 corpus.", force: :cascade do |t|
     t.string "corpus_digest", null: false, comment: "SHA-256 of the frozen corpus manifest content; changing the corpus starts a new evidence generation."
     t.string "corpus_path", null: false, comment: "Repository-relative path of the frozen corpus manifest."
     t.string "corpus_version", null: false, comment: "Frozen corpus version pinned at start."
@@ -1943,11 +1943,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_195000) do
     t.jsonb "report", default: {}, null: false, comment: "Compiled reproducible report (identities, judgments, measures, provenance)."
     t.text "report_markdown", comment: "Rendered markdown of the reproducible report."
     t.string "rubric_version", null: false, comment: "Rubric version pinned at start."
-    t.string "source_revision", comment: "Closeout source revision recorded at start."
+    t.string "source_revision", comment: "Closeout source revision pinned at start; a changed revision starts a new evidence generation."
     t.string "status", default: "labeling", null: false, comment: "labeling | frozen (see FacetConfidenceEvaluation::STATUSES)."
     t.datetime "updated_at", null: false
     t.index ["created_by_id"], name: "index_facet_confidence_evaluations_on_created_by_id"
-    t.index ["issue_id", "corpus_digest"], name: "idx_facet_confidence_evaluations_one_per_closeout_generation", unique: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation."
+    t.index ["issue_id", "corpus_digest", "source_revision"], name: "idx_facet_confidence_evaluations_one_per_closeout_generation", unique: true, nulls_not_distinct: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation (issue, corpus digest, source revision)."
     t.index ["issue_id"], name: "index_facet_confidence_evaluations_on_issue_id"
     t.index ["project_id"], name: "index_facet_confidence_evaluations_on_project_id"
   end
