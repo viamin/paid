@@ -73,6 +73,47 @@ RSpec.describe InboxMasterDetailControllerNodeHarness do
     JSON.parse(stdout)
   end
 
+  def run_detail_navigation_harness
+    script = detail_navigation_script
+    stdout, stderr, status = Open3.capture3("node", stdin_data: script)
+    expect(status).to be_success, stderr
+    JSON.parse(stdout)
+  end
+
+  def detail_navigation_script
+    <<~JAVASCRIPT
+      const fs = require("node:fs")
+      const source = fs.readFileSync("app/javascript/controllers/inbox_master_detail_controller.js", "utf8")
+      const transformed = source
+        .replace('import { Controller } from "@hotwired/stimulus"', "class Controller {}")
+        .replace("export default class extends Controller {", "return class InboxController extends Controller {")
+      const InboxController = new Function(transformed)()
+
+      let deferredLoad
+      let deferredNavigation
+      let clicks = 0
+      let prevented = false
+      global.window = { setTimeout(callback) { deferredNavigation = callback } }
+      const link = { click() { clicks += 1 } }
+      const frame = {
+        hasAttribute(name) { return name === "busy" },
+        addEventListener(_name, callback) { deferredLoad = callback }
+      }
+      const controller = Object.create(InboxController.prototype)
+      controller.detailSectionTarget = { querySelector() { return frame } }
+
+      controller.deferWhileDetailLoads({
+        currentTarget: link,
+        preventDefault() { prevented = true }
+      })
+      const beforeLoad = { clicks, prevented }
+      deferredLoad()
+      const afterLoad = { clicks }
+      deferredNavigation()
+      process.stdout.write(JSON.stringify({ beforeLoad, afterLoad, clicks }))
+    JAVASCRIPT
+  end
+
   it "copies the canonical URL from the rendered button dataset" do
     result = run_harness(:native_success)
 
@@ -94,5 +135,14 @@ RSpec.describe InboxMasterDetailControllerNodeHarness do
     expect(result.fetch("warnings")).to eq(1)
     expect(result.fetch("focused")).to be(true)
     expect(result.fetch("status")).to eq("Copy failed.")
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "defers a row navigation while the detail frame is loading" do
+    result = run_detail_navigation_harness
+
+    expect(result.fetch("beforeLoad")).to eq("clicks" => 0, "prevented" => true)
+    expect(result.fetch("afterLoad")).to eq("clicks" => 0)
+    expect(result.fetch("clicks")).to eq(1)
   end
 end

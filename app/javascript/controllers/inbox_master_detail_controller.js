@@ -44,6 +44,30 @@ export default class extends Controller {
     if (placeholder) placeholder.textContent = "Loading item…"
     this.highlightRow(event.currentTarget)
     this.detailOpenValue = true
+    this.deferWhileDetailLoads(event)
+  }
+
+  // Turbo cancels the frame's eager request when a row navigation starts
+  // before the initial detail arrives. Let that request settle first so the
+  // cancellation does not surface as an unhandled AbortError in the browser.
+  // @spec OPERATOR-INBOX-025
+  deferWhileDetailLoads(event) {
+    const frame = this.detailSectionTarget.querySelector("turbo-frame#inbox-detail")
+    if (!frame?.hasAttribute("busy")) return
+
+    event.preventDefault()
+    this.pendingDetailLink = event.currentTarget
+    if (this.awaitingDetailLoad) return
+
+    this.awaitingDetailLoad = true
+    frame.addEventListener("turbo:frame-load", () => {
+      this.awaitingDetailLoad = false
+      const link = this.pendingDetailLink
+      this.pendingDetailLink = null
+      // Turbo dispatches frame-load before clearing the frame's `busy`
+      // attribute. Resume on the next task so the replay is not deferred again.
+      window.setTimeout(() => link?.click(), 0)
+    }, { once: true })
   }
 
   // @spec OPERATOR-INBOX-026
