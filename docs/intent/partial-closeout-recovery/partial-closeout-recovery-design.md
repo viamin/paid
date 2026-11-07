@@ -88,8 +88,10 @@ prepared action as other criterion-specific validations; project authorization,
 tenant scoping, pause and normal isolated-run admission remain authoritative.
 
 The validation run clones and measures both pinned revisions in the approved
-isolated environment, retains bounded raw output for every sample, and derives
-only mechanical p50/p95 values for the reviewed metric keys. It deduplicates
+isolated environment, retains bounded raw output for every sample on the
+synthetic validation run, and projects only sample counts and digests into the
+source run's closeout evidence. It derives only mechanical p50/p95 values for
+the reviewed metric keys. It deduplicates
 the issue, criterion, revisions, recipe, and workload identity. Any unavailable
 baseline/environment/metric, nonrepresentative workload, changed head, or
 partial sample is durable `unknown` evidence, never an improvement claim.

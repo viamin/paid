@@ -91,6 +91,33 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(comparison).to include("status" => "complete")
     expect(comparison.dig("metrics", "wall_ms", "baseline", "p50")).to eq(22.0)
     expect(comparison).not_to have_key("improvement")
+    projected = source_run.reload.reconciliation.dig("technical_prerequisite_evidence", "performance_measurement")
+    expect(projected.dig("baseline", "samples")).to be_nil
+    expect(projected.dig("baseline", "sample_count")).to eq(2)
+    expect(projected.dig("baseline", "samples_digest")).to match(/\A[0-9a-f]{64}\z/)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "keeps successful JSON values that are not objects as unknown evidence" do
+    agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
+      "source_run_id" => source_run.id, "performance_measurement" => {
+        "baseline_commit_sha" => "b" * 40, "current_commit_sha" => "a" * 40,
+        "metrics" => [ "wall_ms" ], "samples" => 3, "environment" => "isolated-linux",
+        "budget_seconds" => 60
+      }
+    } })
+    stub_compatible_host
+    stub_provisioning
+    allow(agent_run).to receive(:execute_in_execution_environment)
+      .and_return({ stdout: "20", stderr: "", exit_code: 0 }, { stdout: "[1,2]", stderr: "", exit_code: 0 },
+        { stdout: "null", stderr: "", exit_code: 0 }, { stdout: '{"wall_ms":12}', stderr: "", exit_code: 0 },
+        { stdout: '{"wall_ms":13}', stderr: "", exit_code: 0 }, { stdout: '{"wall_ms":14}', stderr: "", exit_code: 0 })
+
+    result = described_class.call(agent_run:, native_command: "bin/measure", execution_runner:)
+
+    expect(result.status).to eq("failed")
+    expect(result.evidence.dig("performance_measurement", "comparison"))
+      .to include("status" => "unknown", "reason" => "A baseline, current, or raw metric sample was unavailable.")
   end
 
   # @spec PARTIAL-CLOSEOUT-042
@@ -137,6 +164,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.status).to eq("failed")
     expect(result.evidence.dig("performance_measurement", "comparison"))
       .to include("status" => "unknown", "reason" => "Metric wall_ms was unavailable from a complete sample set.")
+    expect(result.evidence["error"]).to eq("Metric wall_ms was unavailable from a complete sample set.")
   end
 
   # @spec PARTIAL-CLOSEOUT-042

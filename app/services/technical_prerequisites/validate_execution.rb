@@ -147,7 +147,7 @@ module TechnicalPrerequisites
       current = measure_revision(performance_recipe.fetch("current_commit_sha"))
       comparison = compare_measurements(baseline:, current:)
       status = comparison["status"] == "complete" ? "completed" : "failed"
-      persist_terminal(status, performance_measurement: {
+      persist_terminal(status, error: comparison["reason"], performance_measurement: {
         "recipe" => performance_recipe, "baseline" => baseline, "current" => current,
         "comparison" => comparison, "environment" => runtime_environment
       })
@@ -213,7 +213,8 @@ module TechnicalPrerequisites
 
     def parsed_samples(measurement)
       measurement.fetch("samples").filter_map do |sample|
-        JSON.parse(sample["stdout"].to_s) if sample["exit_code"] == 0
+        parsed = JSON.parse(sample["stdout"].to_s) if sample["exit_code"] == 0
+        parsed if parsed.is_a?(Hash)
       rescue JSON::ParserError
         nil
       end

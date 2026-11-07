@@ -75,11 +75,9 @@ module TechnicalPrerequisites
       current_commit_sha.to_s.match?(SHA) && payload["baseline_commit_sha"].to_s.match?(SHA)
     end
 
-    # Optional attestation: the isolated runner never provisions a browser
-    # sidecar for a performance measurement, so a recipe that explicitly
-    # declares this need is accepted here (its provenance is still valid) but
-    # is held unavailable at capability inspection instead of being silently
-    # measured in an environment that cannot satisfy it.
+    # Optional attestation: capability inspection requires a browser-capable
+    # host and ValidateExecution provisions its isolated browser sidecar before
+    # running a recipe that declares this need.
     def requires_browser_valid?
       payload["requires_browser"].nil? || [ true, false ].include?(payload["requires_browser"])
     end
