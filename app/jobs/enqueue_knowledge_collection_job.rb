@@ -54,7 +54,7 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
   def detect_repo_profile(project, repo_path) # @spec POLYGLOT-TEST-002
     profile = Projects::DetectRepoProfile.call(project:, repo_path:)
     project.update!(repo_profile: profile) if profile.present?
-  rescue WorktreeService::Error, Errno::ENOENT
+  rescue WorktreeService::Error, Errno::ENOENT, ActiveRecord::ConnectionNotEstablished
     raise
   rescue StandardError => e
     Rails.logger.error(
@@ -71,7 +71,7 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
       commit_sha: commit_sha,
       branch: project.default_branch
     )
-  rescue WorktreeService::Error, Errno::ENOENT
+  rescue WorktreeService::Error, Errno::ENOENT, ActiveRecord::ConnectionNotEstablished
     raise
   rescue StandardError => e
     Rails.logger.error(

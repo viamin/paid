@@ -137,6 +137,22 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       expect { described_class.new.perform(project.id) }.to raise_error(Errno::ENOENT)
     end
 
+    # @spec KNOWLEDGE-015
+    it "re-raises database connection errors from repo profile detection for retry_on to handle" do
+      allow(Projects::DetectRepoProfile).to receive(:call)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "database unavailable")
+
+      expect { described_class.new.perform(project.id) }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+    end
+
+    # @spec KNOWLEDGE-015
+    it "re-raises database connection errors from import convention detection for retry_on to handle" do
+      allow(ProjectConventions::DetectForImport).to receive(:call)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "database unavailable")
+
+      expect { described_class.new.perform(project.id) }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+    end
+
     it "raises WorktreeService::Error for retry_on to handle" do
       allow(worktree_service).to receive(:ensure_cloned).and_raise(WorktreeService::Error, "not cloned")
 
