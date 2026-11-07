@@ -26,6 +26,11 @@ RSpec.describe TrustedMeasurements::RunCheck do
     nil
   end
 
+  def escalation_notifications
+    Notification.where(account: project.account)
+      .where("source LIKE ?", "#{TrustedMeasurements::Escalate::SOURCE}/%")
+  end
+
   it "persists a succeeded attempt bound to the deployed revision when the signal is present" do
     ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
 
@@ -64,6 +69,7 @@ RSpec.describe TrustedMeasurements::RunCheck do
     expect(retried.id).to eq(first.id)
     expect(retried).to have_attributes(status: "succeeded", issue: synchronized_issue)
     expect(TrustedMeasurementAttempt.count).to eq(1)
+    expect(escalation_notifications.active).to be_empty
   end
 
   it "is idempotent for repeated calls against the same deployed revision" do
@@ -116,7 +122,7 @@ RSpec.describe TrustedMeasurements::RunCheck do
   it "publishes a blocking escalation notification for an unauthorized check key" do
     call(key: "drop_all_tables")
 
-    notification = Notification.find_by(source: TrustedMeasurements::Escalate::SOURCE, account: project.account)
+    notification = escalation_notifications.first
     expect(notification).to be_blocking
     expect(notification.title).to include("not allowlisted")
   end
@@ -126,7 +132,7 @@ RSpec.describe TrustedMeasurements::RunCheck do
 
     call
 
-    notification = Notification.find_by(source: TrustedMeasurements::Escalate::SOURCE, account: project.account)
+    notification = escalation_notifications.first
     expect(notification).to be_active
     expect(notification).to be_blocking
     expect(notification.title).to include("revision is unknown")
@@ -137,7 +143,7 @@ RSpec.describe TrustedMeasurements::RunCheck do
 
     2.times { call }
 
-    expect(Notification.where(source: TrustedMeasurements::Escalate::SOURCE, account: project.account).count).to eq(1)
+    expect(escalation_notifications.count).to eq(1)
   end
 
   it "escalates only after persistent execution failure, not a single transient one" do
@@ -146,22 +152,22 @@ RSpec.describe TrustedMeasurements::RunCheck do
 
     2.times { call_ignoring_failure }
 
-    expect(Notification.where(source: TrustedMeasurements::Escalate::SOURCE, account: project.account).active).to be_empty
+    expect(escalation_notifications.active).to be_empty
 
     call_ignoring_failure
 
-    expect(Notification.where(source: TrustedMeasurements::Escalate::SOURCE, account: project.account).active).not_to be_empty
+    expect(escalation_notifications.active).not_to be_empty
   end
 
   it "resolves a prior failure escalation once the check succeeds again" do
     ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
     allow(TrustedMeasurements::Checks::PlanningHoldReconciliationClosedCount).to receive(:call).and_raise(ActiveRecord::StatementInvalid, "boom")
     3.times { call_ignoring_failure }
-    expect(Notification.where(source: TrustedMeasurements::Escalate::SOURCE, account: project.account).active).not_to be_empty
+    expect(escalation_notifications.active).not_to be_empty
 
     allow(TrustedMeasurements::Checks::PlanningHoldReconciliationClosedCount).to receive(:call).and_call_original
     call
 
-    expect(Notification.where(source: TrustedMeasurements::Escalate::SOURCE, account: project.account).active).to be_empty
+    expect(escalation_notifications.active).to be_empty
   end
 end

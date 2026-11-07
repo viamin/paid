@@ -207,7 +207,9 @@ module Issues
     end
 
     def request_evidence_digest(status)
-      return PartialCloseouts::Assessment.source_revision_for(issue) if continuation_mode == "acceptance_audit"
+      if continuation_mode == "acceptance_audit"
+        return PartialCloseouts::Assessment.source_revision_for(issue, closeout_evidence: status.evidence)
+      end
 
       status.evidence.digest
     end

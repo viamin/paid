@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "digest"
+require "json"
+
 module TrustedMeasurements
   # Surfaces the categories of trusted-measurement outcome Paid cannot
   # resolve on its own: a check key outside the allowlist, a deployment
@@ -18,9 +21,17 @@ module TrustedMeasurements
 
     def self.call(attempt:) = new(attempt: attempt).call
 
+    def self.source_for(check_key:, criterion_key:, external_issue_number:)
+      fingerprint = Digest::SHA256.hexdigest(
+        JSON.generate([ check_key, criterion_key, external_issue_number ])
+      )[0, 16]
+      "#{SOURCE}/#{fingerprint}"
+    end
+
     def self.unauthorized(project:, check_key:, external_issue_number:, criterion_key:)
       publish(
         account: project.account, subject: project,
+        source: source_for(check_key:, criterion_key:, external_issue_number:),
         title: "Trusted measurement check is not allowlisted",
         description: "#{check_key.inspect} is not an allowlisted trusted measurement check " \
           "(criterion #{criterion_key.inspect} on issue ##{external_issue_number}). " \
@@ -29,21 +40,11 @@ module TrustedMeasurements
       )
     end
 
-    def self.publish(account:, subject:, title:, description:, metadata:)
-      notification = Notification.find_by(account: account, source: SOURCE, subject: subject)
-      return reactivate(notification, title: title, description: description, metadata: metadata) if notification
-
-      Notification.create!(
-        account: account, source: SOURCE, subject: subject, severity: :error, blocking: true,
+    def self.publish(account:, source:, subject:, title:, description:, metadata:)
+      Notifications::Publish.call(
+        account:, source:, subject:, severity: :error, blocking: true,
         nav_section: "projects", title: title, description: description, metadata: metadata
       )
-    end
-
-    def self.reactivate(notification, title:, description:, metadata:)
-      return notification if notification.active?
-
-      notification.update!(resolved_at: nil, dismissed_at: nil, title: title, description: description, metadata: metadata)
-      notification
     end
 
     def initialize(attempt:)
@@ -54,7 +55,8 @@ module TrustedMeasurements
       return resolve! if resolved_condition?
 
       self.class.publish(
-        account: attempt.account, subject: attempt.issue || attempt.project,
+        account: attempt.account, subject: attempt.project,
+        source: notification_source,
         title: title, description: description,
         metadata: {
           "attempt_id" => attempt.id, "check_key" => attempt.check_key,
@@ -72,7 +74,8 @@ module TrustedMeasurements
     end
 
     def title
-      return "Trusted measurement deployment revision is unknown" if attempt.unknown?
+      return "Trusted measurement deployment revision is unknown" if missing_deployment_signal?
+      return "Trusted measurement source issue is unavailable" if attempt.unknown?
       return "Trusted measurement is contradicting its own evidence" if contradictory?
 
       "Trusted measurement check keeps failing"
@@ -103,9 +106,20 @@ module TrustedMeasurements
       attempt.unknown? && attempt.failure_reason == "missing_deployment_signal"
     end
 
+    def notification_source
+      self.class.source_for(
+        check_key: attempt.check_key,
+        criterion_key: attempt.criterion_key,
+        external_issue_number: attempt.external_issue_number
+      )
+    end
+
     def resolve!
-      Notification.where(account: attempt.account, source: SOURCE, subject: attempt.issue || attempt.project)
-        .active.find_each { |notification| notification.update!(resolved_at: Time.current) }
+      Notifications::Resolve.call(
+        account: attempt.account,
+        source: notification_source,
+        subject: attempt.project
+      )
     end
   end
 end
