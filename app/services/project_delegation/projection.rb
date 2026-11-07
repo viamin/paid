@@ -12,14 +12,13 @@ module ProjectDelegation
   # @spec PROJECT-DELEGATION-005
   class Projection
     AUTHORIZED_ACTIONS = BoundedDelegatedAction::ACTIONS.freeze
-    RECENT_LIMIT = 200
 
     # Lifecycle view of one bounded authorization. Mirrors the lineage rule
     # the admission contract enforces: the newest authorization for an
     # action governs, and a terminal or expired one admits nothing until a
     # new explicit authorization exists.
     AuthorizationState = Data.define(:id, :work_item_id, :action, :phase, :stop_before_phase,
-      :status, :expires_at) do
+      :status, :expires_at, :authority) do
       def in_force?
         status == "active" && expires_at.present? && expires_at > Time.current
       end
@@ -37,7 +36,8 @@ module ProjectDelegation
           stop_before_phase: stop_before_phase,
           status: status,
           in_force: in_force?,
-          expires_at: expires_at&.iso8601
+          expires_at: expires_at&.iso8601,
+          authority: authority.to_h
         }
       end
     end
@@ -62,11 +62,9 @@ module ProjectDelegation
     # The one effective-policy answer for a phase. Read surfaces call this
     # instead of re-deriving authority from settings, grants, or labels.
     def phase_decision(phase)
-      phase = phase.to_s
-      @phase_decisions ||= {}
-      @phase_decisions[phase] ||= Automation::EffectivePolicy.call(
-        project: project, phase: phase, work_item: work_item, trigger: :automatic
-      )
+      raise ArgumentError, "phase decisions require a work-item projection" unless work_item
+
+      effective_policy_decision(phase, work_item)
     end
 
     # Effective-policy decision for a delegated action's owning phase.
@@ -82,7 +80,7 @@ module ProjectDelegation
 
     # The newest bounded authorization per delegated action for the
     # projected scope: work-item scoped when a work item is given, otherwise
-    # the project's recent authorizations keyed by work item and action.
+    # the project's governing authorizations keyed by work item and action.
     def authorizations
       @authorizations ||= latest_records.map { |record| state_for(record) }
     end
@@ -103,14 +101,15 @@ module ProjectDelegation
 
     # One serializable payload shared by the API and MCP surfaces.
     def to_h
-      {
+      payload = {
         project_id: project.id,
         work_item_id: work_issue&.id,
         authorizations: authorizations.map(&:to_h),
-        phase_authority: AUTHORIZED_ACTIONS.to_h { |action| [ action, action_authority(action).to_h ] },
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] },
         signature: signature
       }
+      payload[:phase_authority] = serialized_phase_authority if work_issue
+      payload
     end
 
     # Digest of the projected state: stable until an authorization, the
@@ -124,16 +123,18 @@ module ProjectDelegation
     def latest_records
       return [] if work_item && work_issue.nil?
 
-      scope = work_issue ? work_issue.bounded_delegated_actions.order(id: :desc) : recent_project_authorizations
-      grouped = scope.each_with_object({}) do |record, latest|
-        key = [ record.issue_id, record.action ]
-        latest[key] ||= record
-      end
-      grouped.values.sort_by { |record| [ record.issue_id.to_i, record.action ] }
+      governing_records.sort_by { |record| [ record.issue_id.to_i, record.action ] }
     end
 
-    def recent_project_authorizations
-      project.bounded_delegated_actions.order(id: :desc).limit(RECENT_LIMIT)
+    def governing_records
+      authorization_scope
+        .select("DISTINCT ON (issue_id, action) bounded_delegated_actions.*")
+        .order(:issue_id, :action, id: :desc)
+        .includes(:issue)
+    end
+
+    def authorization_scope
+      work_issue ? work_issue.bounded_delegated_actions : project.bounded_delegated_actions
     end
 
     # A work item may be the issue itself or a run; the projection follows
@@ -152,14 +153,29 @@ module ProjectDelegation
         phase: Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(record.action, record.action),
         stop_before_phase: record.evidence.to_h["stop_before_phase"],
         status: record.status,
-        expires_at: record.expires_at
+        expires_at: record.expires_at,
+        authority: effective_policy_decision(
+          Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(record.action, record.action), record.issue
+        )
       )
+    end
+
+    def effective_policy_decision(phase, scoped_work_item)
+      key = [ phase.to_s, scoped_work_item&.id ]
+      @phase_decisions ||= {}
+      @phase_decisions[key] ||= Automation::EffectivePolicy.call(
+        project: project, phase: phase.to_s, work_item: scoped_work_item, trigger: :automatic
+      )
+    end
+
+    def serialized_phase_authority
+      AUTHORIZED_ACTIONS.to_h { |action| [ action, action_authority(action).to_h ] }
     end
 
     def signature_source
       {
         authorizations: authorizations.map(&:to_h),
-        phase_authority: AUTHORIZED_ACTIONS.to_h { |action| [ action, action_authority(action).to_h ] },
+        phase_authority: work_issue ? serialized_phase_authority : nil,
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] }
       }
     end

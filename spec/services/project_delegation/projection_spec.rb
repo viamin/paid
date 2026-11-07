@@ -116,6 +116,40 @@ RSpec.describe ProjectDelegation::Projection do
     expect(states).to all(have_attributes(action: "review", in_force?: true))
   end
 
+  it "scopes each project authorization authority to its work item" do
+    disable_delivery_phases
+    granted_issue = create(:issue, project: project)
+    authorize_review
+    authorize_review(work_item: granted_issue)
+    create(:work_item_continuation_grant, project: project, issue: granted_issue,
+      start_phase: "coding", endpoint: "merge")
+
+    states = described_class.for_project(project).authorizations.index_by(&:work_item_id)
+
+    expect(states.fetch(issue.id).authority).to be_blocked
+    expect(states.fetch(granted_issue.id).authority).to be_permitted
+    expect(states.fetch(granted_issue.id).authority.source).to eq(:continuation_grant)
+  end
+
+  it "rejects an unscoped phase decision on a project projection" do
+    projection = described_class.for_project(project)
+
+    expect { projection.phase_decision("coding") }
+      .to raise_error(ArgumentError, "phase decisions require a work-item projection")
+  end
+
+  it "selects every work item's governing authorization before materializing project rows" do
+    older_issue = create(:issue, project: project)
+    older_authorization = authorize_review(work_item: older_issue)
+    noisy_issue = create(:issue, project: project)
+    201.times { authorize_review(work_item: noisy_issue) }
+
+    states = described_class.for_project(project).authorizations
+
+    expect(states.map(&:id)).to include(older_authorization.id)
+    expect(states.count { |state| state.work_item_id == noisy_issue.id && state.action == "review" }).to eq(1)
+  end
+
   it "serializes one payload for the API and MCP surfaces" do
     authorize_review
 
@@ -123,9 +157,12 @@ RSpec.describe ProjectDelegation::Projection do
 
     expect(payload).to include(
       project_id: project.id,
-      authorizations: [ hash_including(action: "review", in_force: true, stop_before_phase: "merge") ]
+      authorizations: [ hash_including(
+        action: "review", in_force: true, stop_before_phase: "merge",
+        authority: hash_including(permitted: true)
+      ) ]
     )
-    expect(payload.fetch(:phase_authority).fetch("review")).to include(permitted: true)
+    expect(payload).not_to include(:phase_authority)
     expect(payload).to include(:signature)
   end
 

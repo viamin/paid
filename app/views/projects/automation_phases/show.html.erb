@@ -134,7 +134,7 @@
                 · expires <%= state.expires_at.to_date %>
               <% end %>
               · <%= Automation::Phases.label(state.phase) %> currently
-              <%= @delegation_projection.phase_decision(state.phase).permitted? ? "permitted" : "not permitted" %>
+              <%= state.authority.permitted? ? "permitted" : "not permitted" %>
             </div>
           </li>
         <% end %>

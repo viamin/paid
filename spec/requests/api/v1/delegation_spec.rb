@@ -32,9 +32,12 @@ RSpec.describe "Project delegation API" do
     payload = response.parsed_body
     expect(payload.fetch("project_id")).to eq(project.id)
     expect(payload.fetch("authorizations")).to include(
-      hash_including("action" => "review", "in_force" => true, "stop_before_phase" => "merge")
+      hash_including(
+        "action" => "review", "in_force" => true, "stop_before_phase" => "merge",
+        "authority" => hash_including("permitted" => true)
+      )
     )
-    expect(payload.fetch("phase_authority").fetch("review")).to include("permitted")
+    expect(payload).not_to include("phase_authority")
     expect(payload).to include("signature")
   end
 

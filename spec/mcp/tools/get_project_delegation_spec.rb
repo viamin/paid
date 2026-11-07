@@ -28,9 +28,13 @@ RSpec.describe Tools::GetProjectDelegation do
 
     expect(result).to include(
       project_id: project.id,
-      authorizations: [ hash_including(id: authorization.id, action: "review", in_force: true) ]
+      authorizations: [ hash_including(
+        id: authorization.id, action: "review", in_force: true,
+        authority: hash_including(permitted: true)
+      ) ]
     )
-    expect(result).to include(:phase_authority, :signature)
+    expect(result).to include(:signature)
+    expect(result).not_to include(:phase_authority)
   end
 
   it "scopes the projection to a requested work item" do
