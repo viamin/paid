@@ -83,6 +83,7 @@ RSpec.describe SystemWorkflowFile, :no_db do
     install_step = system_step("Install Chromium runtime dependencies")
     run = install_step.fetch("run")
 
+    expect(run).not_to include("apt-get update")
     expect(run).to include(
       "libglib2.0-0t64",
       "libgtk-3-0t64",
