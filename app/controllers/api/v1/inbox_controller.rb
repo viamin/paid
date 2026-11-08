@@ -20,7 +20,7 @@ module Api
         entries = Inbox::Queue.call(user: current_user, **filters.slice(:project, :kind, :sort, :scope))
         page = paginated_entries(entries)
         listed_entries = page.first(inbox_limit)
-        payload = { entries: listed_entries.map { |entry| InboxEntrySerializer.render_list(entry) } }
+        payload = { entries: InboxEntrySerializer.render_list_page(listed_entries) }
         payload[:next_cursor] = listed_entries.last.id if page.size > inbox_limit
 
         render json: payload

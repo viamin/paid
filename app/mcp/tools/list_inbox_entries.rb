@@ -37,7 +37,7 @@ module Tools
       page = entries_after_cursor(entries, cursor).first(bounded_limit(limit) + 1)
       listed_entries = page.first(bounded_limit(limit))
 
-      { entries: listed_entries.map { |entry| Api::V1::InboxEntrySerializer.render_list(entry) },
+      { entries: Api::V1::InboxEntrySerializer.render_list_page(listed_entries),
         next_cursor: page.size > bounded_limit(limit) ? listed_entries.last.id : nil }.compact
     end
 

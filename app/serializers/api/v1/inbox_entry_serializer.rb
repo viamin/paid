@@ -2,7 +2,7 @@
 
 module Api
   module V1
-    # @spec MOBILE-API-006
+    # @spec MOBILE-API-006 OPERATOR-INBOX-027
     # Exceeds the ~100-line class target deliberately: one small payload
     # method per Inbox::Queue::KINDS kind keeps each branch readable, and
     # splitting them into per-kind classes would scatter the `oneOf`
@@ -14,6 +14,18 @@ module Api
 
       def self.render_list(entry)
         new(entry).render_list
+      end
+
+      def self.render_list_page(entries)
+        issues = entries.filter_map do |entry|
+          entry.issue if entry.partial_closeout? && entry.issue && entry.tasks.first.to_s.match?(/\A#\d+\z/)
+        end
+        if issues.any?
+          ActiveRecord::Associations::Preloader.new(
+            records: issues, associations: { issue_dependencies: :depends_on_issue }
+          ).call
+        end
+        entries.map { |entry| render_list(entry) }
       end
 
       def initialize(entry, user: nil, history_limit: nil, history_cursor: nil)

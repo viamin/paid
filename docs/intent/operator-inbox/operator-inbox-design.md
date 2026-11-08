@@ -78,10 +78,10 @@ selected detail loads through a separate eager Turbo Frame, so progress,
 actions, and history never hold up the first list response. The eager loading
 mode allows a row click to replace the in-flight first-detail request rather
 than race with it. A selected detail renders its local actions before a
-separate eager history frame loads. History requests
-recheck current entry visibility and may reuse a short-lived, per-subject
-Rails cache entry for the read-only timeline. Cached history can lag recent
-run or external events briefly; new Paid-owned history writes invalidate that
+separate lazy history frame loads when its section enters the viewport.
+History requests recheck current entry visibility and may reuse a short-lived,
+per-subject Rails cache entry for the read-only timeline. Cached history can lag
+recent run or external events briefly; new Paid-owned history writes invalidate that
 item's cache. Actionable state, permissions, and entry membership are always
 checked against current records and are never served from that cache.
 
@@ -648,8 +648,13 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 
 Every actionable Inbox entry has one deterministic `Inbox::DecisionBrief`
 projection. It is built from the current queue entry and its persisted
-assessment/evidence, never from a rendered summary or an LLM call. The list,
-selected detail, API detail, and contextual chat use the same projection.
+assessment/evidence, never from a rendered summary or an LLM call. The HTML
+list uses only the decision and change fields needed for its concise summary;
+selected detail, API and MCP entries, and contextual chat use the full
+projection. Queue construction does not preload prerequisite dependencies
+solely for decision briefs. API and MCP lists batch that association after
+pagination for entries whose first prerequisite needs a local title; a
+selected partial-closeout detail resolves its own recommendation.
 
 The brief names the project goal, what changed, the exact decision or action,
 the supported recommendation and its reason, the waiting work, and the next

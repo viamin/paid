@@ -79,6 +79,10 @@ module Inbox
       new(entry:).call
     end
 
+    def self.list_summary(entry:)
+      new(entry:).list_summary
+    end
+
     def initialize(entry:)
       raise ArgumentError, "unknown inbox kind: #{entry.kind}" unless Queue::KINDS.include?(entry.kind)
 
@@ -88,6 +92,10 @@ module Inbox
     def call
       Result.new(goal:, changed:, decision:, recommendation:, recommendation_reason:, waiting_work:,
         primary_action: action.first, next_state: action.last, unknown:)
+    end
+
+    def list_summary
+      [ decision, changed ].compact.uniq.join(" — ").truncate(220)
     end
 
     private

@@ -803,10 +803,11 @@
   eager Turbo Frame using the same filtered member route. Opening another row
   SHALL replace any in-flight first-detail request. When a detail renders,
   it SHALL return its local actions without waiting for action history; a
-  separate eager history request
-  SHALL recheck entry visibility and membership. Read-only history MAY use a
-  short-lived per-subject Rails cache; new Paid-owned history writes SHALL
-  invalidate that item's cache, while authorization and actionable state
+  separate lazy Turbo Frame history request SHALL start when the history
+  section enters the viewport and recheck entry visibility and membership.
+  Read-only history MAY use a short-lived per-subject Rails cache; new
+  Paid-owned history writes SHALL invalidate that item's cache, while
+  authorization and actionable state
   SHALL always be read from current records.
   *Test:* `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/action_history_spec.rb`,
@@ -923,7 +924,11 @@
   and omit raw technical identifiers. If evidence cannot support a
   recommendation, the projection SHALL disclose that uncertainty and ask one
   focused question. The projection SHALL derive only from current structured
-  state and evidence and SHALL not call an LLM while rendering.
+  state and evidence and SHALL not call an LLM while rendering. The HTML list
+  SHALL calculate only its decision/change summary without resolving
+  recommendations. API and MCP list serialization SHALL preserve the full
+  decision brief and batch local partial-closeout prerequisite reads only for
+  entries in the returned page, without preloading them for the whole queue.
   *Code:* `app/services/inbox/decision_brief.rb`,
   `app/views/dashboard/_inbox_decision_brief.html.erb`,
   `app/serializers/api/v1/inbox_entry_serializer.rb`,
