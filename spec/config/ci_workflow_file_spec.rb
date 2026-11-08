@@ -69,6 +69,28 @@ RSpec.describe CiWorkflowFile, :no_db do
     )
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-002
+  it "uses a non-superuser runtime role and checks Docker before test setup" do
+    job = workflow.fetch("jobs").fetch("test-shards")
+    env = job.fetch("env")
+    postgres = job.fetch("services").fetch("postgres")
+    docker_step = job.fetch("steps").find { |step| step["name"] == "Verify Docker availability" }
+
+    expect(env).to include(
+      "DATABASE_URL" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
+      "DB_USERNAME" => "paid_runtime",
+      "PGUSER" => "paid_runtime",
+      "DB_PASSWORD" => "paid_runtime",
+      "PGPASSWORD" => "paid_runtime"
+    )
+    expect(postgres.fetch("env")).to include(
+      "POSTGRES_USER" => "paid_runtime",
+      "POSTGRES_PASSWORD" => "paid_runtime"
+    )
+    expect(postgres.fetch("options")).to include('--health-cmd="pg_isready -U paid_runtime"')
+    expect(docker_step).to include("run" => "docker info")
+  end
+
 
   it "verifies workflow jobs install the matching PGDG postgres client major package" do
     lint_step = postgres_pin_step

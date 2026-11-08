@@ -227,13 +227,13 @@ jobs:
       postgres:
         image: postgres:16.15
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: paid_runtime
+          POSTGRES_PASSWORD: paid_runtime
         ports:
           - 5432:5432
         options: >-
           --shm-size=512m
-          --health-cmd="pg_isready -U postgres"
+          --health-cmd="pg_isready -U paid_runtime"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -254,14 +254,16 @@ jobs:
       PAID_TEST_DATABASE: paid_test
       # Keep Rails, libpq shellouts, and any child processes on the same test
       # database connection flow instead of relying on split DB_* / PG* vars.
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      # Keep the CI runtime role below PostgreSQL's SUPERUSER/BYPASSRLS guard.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid_runtime
+      PGUSER: paid_runtime
+      DB_PASSWORD: paid_runtime
+      PGPASSWORD: paid_runtime
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -270,6 +272,10 @@ jobs:
       QDRANT_URL: http://localhost:6333
 
     steps:
+      - name: Verify Docker availability
+        # bin/setup builds the agent image and runtime checks need the Docker API.
+        run: docker info
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
