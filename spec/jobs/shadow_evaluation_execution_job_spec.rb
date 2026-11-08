@@ -92,7 +92,10 @@ RSpec.describe ShadowEvaluationExecutionJob do
       failed: 0
     )
     allow(IntentConformance::ShadowEvaluation::ExecuteReviewer).to receive(:call) do
-      evaluation.request_cancellation!(actor: evaluation.created_by)
+      requested = IntentConformanceShadowEvaluation.find(evaluation.id)
+        .request_cancellation!(actor: evaluation.created_by)
+
+      expect(requested).to be(true)
       result
     end
     allow(IntentConformance::ShadowEvaluation::CompileReport).to receive(:call)
