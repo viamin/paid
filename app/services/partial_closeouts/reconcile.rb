@@ -65,6 +65,10 @@ module PartialCloseouts
 
       gaps.each do |gap|
         raise ArgumentError, "gap criterion is required" if gap["criterion"].blank?
+        if gap.key?("retain_on_source") && gap["retain_on_source"] != false &&
+            !(gap["kind"] == "agent" && gap["retain_on_source"] == true && gap["owner_issue_number"].nil?)
+          raise ArgumentError, "source retention is invalid"
+        end
         # Mirrors Llm::AnalyzePartialCloseout#owner_resolvable? so the exact
         # operator next step reaches the Inbox notification; a generic
         # fallback would leave the prerequisite unactionable (#4119).
@@ -167,6 +171,11 @@ module PartialCloseouts
     end
 
     def reconcile_agent_gap(gap, index)
+      if gap["retain_on_source"] == true
+        record_gap!(index, gap, status: "source_owned")
+        return
+      end
+
       owner = reusable_owner(gap) || create_owner!(gap, index)
       IssueDependency.find_or_create_by!(issue: agent_run.issue, depends_on_issue: owner)
       record_gap!(index, gap, owner_issue_id: owner.id, owner_issue_number: owner.github_number)
@@ -177,11 +186,29 @@ module PartialCloseouts
       return if number.zero?
 
       owner = agent_run.project.issues.find_by(github_number: number, github_state: "open")
+      reusable_owner_candidate(owner)
+    end
+
+    # A persisted replay owner can gain a dependency after its first use, so
+    # every path that reuses an open owner must recheck trust and cycles.
+    def reusable_owner_candidate(owner)
       # The parent cannot own its own residual gap; a self-referential edge
       # would fail IssueDependency#not_self_referential with
       # ActiveRecord::RecordInvalid, which is not a GithubClient::Error and
       # would bypass the retryable-failure path in +call+.
-      owner if owner && owner.id != agent_run.issue.id
+      return unless owner && owner.id != agent_run.issue.id
+      trusted = agent_run.project.trusted_github_author_logins
+      return if trusted.present? && !agent_run.project.trusted_github_author?(owner.github_creator_login)
+      return if dependency_cycle?(owner)
+
+      owner
+    end
+
+    def dependency_cycle?(owner)
+      Issues::DependencyCycle.call(
+        IssueDependency.new(issue: agent_run.issue, depends_on_issue: owner,
+          cycle_provenance: "partial_closeout_owner_reuse")
+      ).cycle?
     end
 
     def create_owner!(gap, index)
@@ -214,7 +241,7 @@ module PartialCloseouts
 
     def local_owner_with_marker(marker)
       owner = agent_run.project.issues.where("body LIKE ?", "%#{marker}%").where(github_state: "open").first
-      owner if owner && owner.id != agent_run.issue.id
+      reusable_owner_candidate(owner)
     end
 
     # A worker can terminate after GitHub accepts create_issue but before the
@@ -232,7 +259,7 @@ module PartialCloseouts
       return unless remote_owner
 
       owner = Issues::UpsertFromGithub.call(project: agent_run.project, github_issue: remote_owner)
-      owner if owner.id != agent_run.issue.id && owner.github_state == "open"
+      reusable_owner_candidate(owner) if owner.github_state == "open"
     end
 
     def remote_owner_query(marker)
@@ -251,7 +278,7 @@ module PartialCloseouts
 
     def prior_owner(index)
       state = reconciliation.fetch("gaps", {}).fetch(index.to_s, {})
-      owner_from_id(state) || owner_from_number(state)
+      reusable_owner_candidate(owner_from_id(state) || owner_from_number(state))
     end
 
     def owner_from_id(state)
@@ -565,8 +592,12 @@ module PartialCloseouts
       end
     end
 
-    def publish_parent_dependencies!
-      numbers = agent_run.issue.issue_dependencies.includes(:depends_on_issue).filter_map { |dependency| dependency.depends_on_issue&.github_number }
+    def publish_parent_dependencies! # @spec NO-OUTPUT-ISSUE-007
+      # DependencyCycle reads this association while validating reusable owners.
+      # Query through IssueDependency here so a newly persisted edge is visible
+      # even when that earlier read populated the association cache.
+      numbers = IssueDependency.where(issue: agent_run.issue).includes(:depends_on_issue)
+        .filter_map { |dependency| dependency.depends_on_issue&.github_number }
       return if numbers.empty?
 
       # Base the rewrite on the live GitHub body, not the local copy, so

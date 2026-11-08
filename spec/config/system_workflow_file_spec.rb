@@ -78,4 +78,23 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
     expect(export_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
   end
+
+  # @spec TOOLCHAIN-PIN-029
+  it "installs the Chromium runtime libraries required by Cuprite" do
+    runtime_step = system_step("Install Chromium runtime dependencies")
+    run = runtime_step.fetch("run")
+
+    expect(run).to include(
+      "timeout 5m apt-get",
+      "Acquire::http::Timeout=30",
+      "Acquire::https::Timeout=30",
+      "Acquire::Retries=3",
+      "libglib2.0-0t64",
+      "libgtk-3-0t64",
+      "libnss3",
+      "libgbm1",
+      "libx11-xcb1"
+    )
+    expect(run).not_to include("apt-get update")
+  end
 end

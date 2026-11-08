@@ -128,6 +128,14 @@
   `.github/workflows/test_prof.yml`, `.github/workflows/pr-screenshots.yml`,
   `.github/workflows/ephemeral_tests.yml`.
 
+- [x] **TOOLCHAIN-PIN-029** — When the system-test job installs the browser
+  runtime libraries required by Chrome, it SHALL install GLib and GTK from the
+  package indexes already refreshed by the PostgreSQL client setup with bounded
+  package-download settings, so browser verification is reproducible without
+  an unguarded duplicate `apt-get update` or an unbounded package download.
+  *Tests:* `spec/config/system_workflow_file_spec.rb`.
+  *Code:* `.github/workflows/system_tests.yml`.
+
 ## Contract-Owned Agent CLI Versions
 
 - [x] **TOOLCHAIN-PIN-030** — `bin/update` SHALL NOT write agent CLI versions

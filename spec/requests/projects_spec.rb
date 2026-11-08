@@ -3177,6 +3177,7 @@ RSpec.describe "Projects" do
         expect(project.reload.github_token).to eq(new_token)
       end
 
+      # @spec POSTGRESQL-PERSISTENCE-006
       it "switches a project from PAT auth to app auth when an installation covers the repository" do
         installation = create(:github_installation, account: account, accessible_repositories: [ { "full_name" => "octocat/hello", "id" => 123 } ])
         project = create(:project, account: account, github_token: github_token, owner: "octocat", repo: "hello")

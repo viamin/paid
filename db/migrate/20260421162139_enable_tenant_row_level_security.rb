@@ -313,7 +313,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
       [ optional_project_reference_condition(table), optional_user_reference_condition(table) ]
     when "projects"
       [
-        account_owned_reference_condition(table, "github_tokens", "github_token_id"),
+        project_credential_condition(table),
         optional_user_reference_condition(table, "created_by_id")
       ]
     when "quality_thresholds"
@@ -321,6 +321,23 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
     else
       []
     end
+  end
+
+  def project_credential_condition(table)
+    <<~SQL.squish
+      (
+        EXISTS (
+          SELECT 1 FROM github_tokens
+          WHERE github_tokens.id = #{table}.github_token_id
+            AND github_tokens.account_id = paid_current_account_id()
+        )
+        OR EXISTS (
+          SELECT 1 FROM github_installations
+          WHERE github_installations.id = #{table}.github_installation_id
+            AND github_installations.account_id = paid_current_account_id()
+        )
+      )
+    SQL
   end
 
   def account_owned_reference_condition(table, referenced_table, foreign_key)

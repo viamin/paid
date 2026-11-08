@@ -10,17 +10,17 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
   workflow_expectations = {
     ".github/workflows/ci.yml" => {
       "test-shards" => {
-        "db_username" => "paid",
-        "db_password" => "paid",
-        "database_url" => "postgres://paid:paid@localhost:5432/paid_test",
+        "db_username" => "paid_runtime",
+        "db_password" => "paid_runtime",
+        "database_url" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
         "creates_application_role" => true,
         "retries_database_setup" => true
       },
       "performance" => {
-        "db_username" => "paid",
-        "db_password" => "paid",
-        "database_url" => "postgres://paid:paid@localhost:5432/paid_test",
-        "creates_application_role" => true
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "database_url" => "postgres://postgres:postgres@localhost:5432/paid_test",
+        "creates_application_role" => false
       }
     },
     ".github/workflows/system_tests.yml" => {
@@ -97,13 +97,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           "PAID_DEVELOPMENT_CABLE_DATABASE" => "paid_test",
           "PAID_TEST_DATABASE" => "paid_test",
           "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
-          "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test",
+          "DATABASE_URL" => "postgres://postgres:postgres@localhost:5432/paid_test",
           "PGHOST" => "localhost",
           "PGPORT" => 5432,
-          "PGUSER" => "paid",
-          "PGPASSWORD" => "paid",
-          "DB_USERNAME" => "paid",
-          "DB_PASSWORD" => "paid"
+          "PGUSER" => "postgres",
+          "PGPASSWORD" => "postgres",
+          "DB_USERNAME" => "postgres",
+          "DB_PASSWORD" => "postgres"
         }
       end
 

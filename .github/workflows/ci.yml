@@ -52,10 +52,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
@@ -241,14 +254,21 @@ jobs:
       PAID_TEST_DATABASE: paid_test
       # Keep Rails, libpq shellouts, and any child processes on the same test
       # database connection flow instead of relying on split DB_* / PG* vars.
-      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
+      # Keep the CI runtime role below PostgreSQL's SUPERUSER/BYPASSRLS guard.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: paid
-      PGUSER: paid
-      DB_PASSWORD: paid
-      PGPASSWORD: paid
+      DB_USERNAME: paid_runtime
+      PGUSER: paid_runtime
+      DB_PASSWORD: paid_runtime
+      PGPASSWORD: paid_runtime
+      # Tests can open additional PostgreSQL connections outside the example
+      # wrapper. Default those CI-only connections to system access; individual
+      # tenant-isolation examples explicitly set this false through TenantContext.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      PGOPTIONS: -c paid.bypass_tenant_rls=true
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -257,6 +277,10 @@ jobs:
       QDRANT_URL: http://localhost:6333
 
     steps:
+      - name: Verify Docker availability
+        # bin/setup builds the agent image and runtime checks need the Docker API.
+        run: docker info
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -281,10 +305,23 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
@@ -326,11 +363,11 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
@@ -398,23 +435,41 @@ jobs:
           apt_with_retry install -y postgresql-client-16
           psql --version
 
-      # @spec POSTGRESQL-PERSISTENCE-002
       - name: Create application database role
+        # PostgreSQL's bootstrap user is always a superuser. Create the test
+        # runtime role explicitly so RuntimeRoleGuard exercises its real policy.
+        # @spec POSTGRESQL-PERSISTENCE-002
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          -- RLS regression specs create and revoke a restricted test role. This
+          -- grants that narrowly scoped setup capability while preserving the
+          -- runtime guard's non-superuser and non-BYPASSRLS invariants.
+          -- Each matrix shard receives a newly initialized PostgreSQL service,
+          -- so the role is declared once rather than conditionally through DO.
+          CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
           DO $$
           BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid';
-            ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname = 'paid_runtime'
+                AND rolcanlogin
+                AND rolcreatedb
+                AND rolcreaterole
+                AND NOT rolsuper
+                AND NOT rolbypassrls
+            ) THEN
+              RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';
             END IF;
           END
           $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
           SQL
+          # Exercise the configured connection rather than discovering a bad
+          # password or LOGIN attribute after every shard has started.
+          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+            -c "SELECT 1"
 
       - name: Build assets
         run: yarn build && yarn build:css
@@ -487,10 +542,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Download all shard reports
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
@@ -542,14 +610,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: paid
-      PGUSER: paid
-      DB_PASSWORD: paid
-      PGPASSWORD: paid
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       npm_config_cache: ${{ github.workspace }}/.cache/npm
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -574,34 +642,23 @@ jobs:
           fi
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client-16
-          psql --version
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
 
-      # @spec POSTGRESQL-PERSISTENCE-002
-      - name: Create application database role
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid';
-            ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
-            END IF;
-          END
-          $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
-          SQL
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
@@ -709,14 +766,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: paid
-      PGUSER: paid
-      DB_PASSWORD: paid
-      PGPASSWORD: paid
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       npm_config_cache: ${{ github.workspace }}/.cache/npm
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -741,34 +798,23 @@ jobs:
           fi
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client-16
-          psql --version
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
 
-      # @spec POSTGRESQL-PERSISTENCE-002
-      - name: Create application database role
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid';
-            ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
-            END IF;
-          END
-          $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
-          SQL
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
@@ -914,14 +960,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: paid
-      PGUSER: paid
-      DB_PASSWORD: paid
-      PGPASSWORD: paid
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       npm_config_cache: ${{ github.workspace }}/.cache/npm
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -948,34 +994,23 @@ jobs:
           fi
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client-16
-          psql --version
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
 
-      # @spec POSTGRESQL-PERSISTENCE-002
-      - name: Create application database role
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid';
-            ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
-            END IF;
-          END
-          $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
-          SQL
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       # HEAD^ is the base branch tip: on a pull request HEAD is the merge commit,
       # and on a push to main it is the previous main commit. bin/ci-migration-replay
@@ -999,10 +1034,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Run fasterer
         run: bundle exec fasterer
@@ -1041,14 +1089,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: paid
-      PGUSER: paid
-      DB_PASSWORD: paid
-      PGPASSWORD: paid
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -1080,10 +1128,23 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
@@ -1156,24 +1217,6 @@ jobs:
           fi
           apt_with_retry install -y postgresql-client-16
           psql --version
-
-      # @spec POSTGRESQL-PERSISTENCE-002
-      - name: Create application database role
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid';
-            ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
-            END IF;
-          END
-          $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
-          SQL
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
