@@ -65,7 +65,7 @@ RSpec.describe EnsureWorktreeDatabasesScript do
       stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
 
       expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
-      expect(stdout).to include("DATABASE_URL is set — skipping automatic worktree database creation.")
+      expect(stdout.force_encoding("UTF-8")).to include("DATABASE_URL is set — skipping automatic worktree database creation.")
       expect(File.exist?(File.join(dir, "psql-invoked.log"))).to be(false)
     end
   end

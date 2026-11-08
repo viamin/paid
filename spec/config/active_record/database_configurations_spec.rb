@@ -15,16 +15,21 @@ RSpec.describe ActiveRecord::DatabaseConfigurations, :no_db do # @spec RAILS-CON
   end
 
   it "uses DATABASE_URL for database tasks instead of the local PostgreSQL socket" do
+    skip "requires DATABASE_URL to pin database tasks" if ENV["DATABASE_URL"].blank?
+
     database_url = ENV.fetch("DATABASE_URL")
     development = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "primary").configuration_hash
+    cable = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "cable").configuration_hash
     url = URI.parse(database_url)
-
-    expect(development).to include(
+    expected = {
       host: url.host,
       port: url.port,
       database: url.path.delete_prefix("/"),
       username: url.user,
       password: url.password
-    )
+    }.compact
+
+    expect(development).to include(expected)
+    expect(cable).to include(host: url.host)
   end
 end

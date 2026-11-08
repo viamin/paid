@@ -26,7 +26,13 @@ default: &default
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   pool: <%= ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS", 20) } %>
-  <% if ENV["DATABASE_URL"] %>
+  # Pin database tasks to DATABASE_URL outside production only. Emitting a
+  # shared `url:` in production would collapse every connection onto the URL's
+  # database and disable the per-connection CACHE_DATABASE_URL /
+  # CABLE_DATABASE_URL variables, so production keeps Rails's built-in
+  # DATABASE_URL handling. The ENV fallback mirrors Rails.env resolution so
+  # this file stays renderable without the Rails constant.
+  <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
   url: <%= ENV["DATABASE_URL"] %>
   <% end %>
   <% if ENV["DB_HOST"] %>
