@@ -120,7 +120,16 @@ FileUtils.chdir APP_ROOT do
   File.chmod(0o600, token_path)
 
   puts "\n== Building agent container image =="
-  system! "scripts/build-agent-image.sh"
+  # The image build is a local developer convenience; CI sandboxes backed by
+  # managed PostgreSQL/Qdrant services may have no Docker daemon (see
+  # docs/guides/remote-docker-setup.md). Mirror the Qdrant check's tolerance:
+  # build when Docker is reachable, warn and skip otherwise.
+  if system("docker", "info", out: File::NULL, err: File::NULL)
+    system! "scripts/build-agent-image.sh"
+  else
+    puts "  Docker is unavailable — skipping agent container image build."
+    puts "  Build it later on a Docker host with: scripts/build-agent-image.sh"
+  end
 
   puts "\n== Removing old logs and tempfiles =="
   FileUtils.rm_f(Dir["log/*.log"])

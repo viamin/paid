@@ -127,6 +127,37 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "builds the agent container image when Docker is available" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir)
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("== Building agent container image ==")
+      expect(File.read(File.join(dir, "build-agent-image-calls.log"))).to include("build-agent-image")
+    end
+  end
+
+  it "skips the agent container image build with a warning when Docker is unavailable" do
+    # CI sandboxes backed by managed PostgreSQL/Qdrant services (see
+    # docs/guides/remote-docker-setup.md) may have no local Docker daemon.
+    # bin/setup must not hard-fail there: the image build is a local
+    # developer convenience and can run later on any Docker host.
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, docker_available: false)
+      env = setup_script_env(dir)
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Docker is unavailable")
+      expect(stdout).to include("skipping agent container image build")
+      expect(File.exist?(File.join(dir, "build-agent-image-calls.log"))).to be(false)
+    end
+  end
+
   it "skips database preparation when --skip-database is provided" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
@@ -170,7 +201,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  def prepare_script_fixture(dir, installed_bundler_versions: [ "4.0.12" ])
+  def prepare_script_fixture(dir, installed_bundler_versions: [ "4.0.12" ], docker_available: true)
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "lib", "paid"))
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
@@ -297,19 +328,23 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
 
-    write_executable(
-      File.join(dir, "stubbin", "docker"),
-      <<~BASH
-        #!/usr/bin/env bash
-        exit 0
-      BASH
-    )
+    stub_docker = File.join(dir, "stubbin", "docker")
+    docker_body = if docker_available
+      "exit 0"
+    else
+      "echo 'Cannot connect to the Docker daemon' >&2; exit 1"
+    end
+    write_executable(stub_docker, <<~BASH)
+      #!/usr/bin/env bash
+      #{docker_body}
+    BASH
 
     FileUtils.mkdir_p(File.join(dir, "scripts"))
     write_executable(
       File.join(dir, "scripts", "build-agent-image.sh"),
       <<~BASH
         #!/usr/bin/env bash
+        printf 'build-agent-image %s\\n' "$*" >> "#{dir}/build-agent-image-calls.log"
         exit 0
       BASH
     )
