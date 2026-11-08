@@ -466,6 +466,10 @@ jobs:
           END
           $$;
           SQL
+          # Exercise the configured connection rather than discovering a bad
+          # password or LOGIN attribute after every shard has started.
+          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+            -c "SELECT 1"
 
       - name: Build assets
         run: yarn build && yarn build:css

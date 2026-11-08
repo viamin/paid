@@ -114,7 +114,8 @@ RSpec.describe CiWorkflowFile, :no_db do
       "AND rolcreaterole",
       "AND NOT rolsuper",
       "AND NOT rolbypassrls",
-      "RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';"
+      "RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';",
+      "PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h \"$DB_HOST\" -U paid_runtime -d postgres"
     )
   end
 
