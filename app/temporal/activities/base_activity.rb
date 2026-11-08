@@ -96,8 +96,10 @@ module Activities
         restore_outer_tenant_context!(pool) if pool
       end
 
+      # @spec TEST-SUITE-003
       def restore_outer_tenant_context!(pool)
         return unless pool.respond_to?(:active_connection?) && pool.active_connection?
+        return if ActiveRecord::Base.connection.transaction_open?
 
         restore_account = Current.account if defined?(Current)
         restore_bypass = TenantContext.bypass_enabled? if defined?(TenantContext)

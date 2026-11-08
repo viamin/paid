@@ -16,6 +16,7 @@ RSpec.describe Activities::BaseActivity do
       TestBaseActivity.new
     end
     let(:connection_pool) { instance_double(ActiveRecord::ConnectionAdapters::ConnectionPool) }
+    let(:connection) { instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter, transaction_open?: false) }
     let(:executor) { object_double(Rails.application.executor) }
 
     before do
@@ -25,7 +26,7 @@ RSpec.describe Activities::BaseActivity do
       allow(TenantContext).to receive(:bypass_enabled?).and_return(false)
       allow(TenantContext).to receive(:restore!)
       allow(Project).to receive(:find_by)
-      allow(ActiveRecord::Base).to receive(:connection_pool).and_return(connection_pool)
+      allow(ActiveRecord::Base).to receive_messages(connection_pool:, connection:)
       allow(connection_pool).to receive(:active_connection?).and_return(true)
       allow(connection_pool).to receive(:release_connection)
       allow(Rails.application).to receive(:executor).and_return(executor)
@@ -42,6 +43,16 @@ RSpec.describe Activities::BaseActivity do
 
     it "skips release when no active connection is checked out" do
       allow(connection_pool).to receive(:active_connection?).and_return(false)
+
+      result = activity.execute("project_id" => 456)
+
+      expect(result).to eq(project_id: 456)
+      expect(connection_pool).not_to have_received(:release_connection)
+    end
+
+    # @spec TEST-SUITE-003
+    it "keeps an active transactional connection for the caller" do
+      allow(connection).to receive(:transaction_open?).and_return(true)
 
       result = activity.execute("project_id" => 456)
 
