@@ -199,8 +199,13 @@ jobs:
           SQL
 
       - name: Install Chromium runtime dependencies
+        # @spec TOOLCHAIN-PIN-029
         run: |
-          sudo apt-get install -y --no-install-recommends \
+          sudo timeout 5m apt-get \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            -o Acquire::Retries=3 \
+            install -y --no-install-recommends \
             libasound2t64 \
             libatk-bridge2.0-0t64 \
             libatk1.0-0t64 \
