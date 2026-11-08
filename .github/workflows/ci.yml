@@ -241,14 +241,14 @@ jobs:
       PAID_TEST_DATABASE: paid_test
       # Keep Rails, libpq shellouts, and any child processes on the same test
       # database connection flow instead of relying on split DB_* / PG* vars.
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid
+      PGUSER: paid
+      DB_PASSWORD: paid
+      PGPASSWORD: paid
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -398,6 +398,24 @@ jobs:
           apt_with_retry install -y postgresql-client-16
           psql --version
 
+      # @spec POSTGRESQL-PERSISTENCE-002
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
+
       - name: Build assets
         run: yarn build && yarn build:css
 
@@ -524,14 +542,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid
+      PGUSER: paid
+      DB_PASSWORD: paid
+      PGPASSWORD: paid
       npm_config_cache: ${{ github.workspace }}/.cache/npm
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -560,6 +578,24 @@ jobs:
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      # @spec POSTGRESQL-PERSISTENCE-002
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
@@ -667,14 +703,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid
+      PGUSER: paid
+      DB_PASSWORD: paid
+      PGPASSWORD: paid
       npm_config_cache: ${{ github.workspace }}/.cache/npm
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -703,6 +739,24 @@ jobs:
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      # @spec POSTGRESQL-PERSISTENCE-002
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
@@ -848,14 +902,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid
+      PGUSER: paid
+      DB_PASSWORD: paid
+      PGPASSWORD: paid
       npm_config_cache: ${{ github.workspace }}/.cache/npm
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
 
@@ -886,6 +940,24 @@ jobs:
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      # @spec POSTGRESQL-PERSISTENCE-002
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
 
       # HEAD^ is the base branch tip: on a pull request HEAD is the merge commit,
       # and on a push to main it is the previous main commit. bin/ci-migration-replay
@@ -951,14 +1023,14 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid
+      PGUSER: paid
+      DB_PASSWORD: paid
+      PGPASSWORD: paid
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -1066,6 +1138,24 @@ jobs:
           fi
           apt_with_retry install -y postgresql-client-16
           psql --version
+
+      # @spec POSTGRESQL-PERSISTENCE-002
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
 
       - name: Set up database
         run: bin/rails db:create db:schema:load

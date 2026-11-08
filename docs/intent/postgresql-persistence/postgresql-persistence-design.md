@@ -41,7 +41,9 @@ later upstream migrations.
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
 guards against unsafe runtime roles that would bypass those policies. The
-shipped policy set does not just hide rows on reads; it also rejects
+primary CI workflow starts its PostgreSQL service with the bootstrap role, then
+creates and uses a dedicated non-superuser application role for Rails database
+tasks. The shipped policy set does not just hide rows on reads; it also rejects
 cross-tenant join rows and direct-account writes whose foreign keys point at a
 different tenant.
 

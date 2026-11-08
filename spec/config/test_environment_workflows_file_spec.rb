@@ -85,7 +85,7 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
 
   def expected_libpq_credentials
     {
-      ".github/workflows/ci.yml" => [ "postgres", "postgres" ],
+      ".github/workflows/ci.yml" => [ "paid", "paid" ],
       ".github/workflows/pr-screenshots-publish.yml" => [ "postgres", "postgres" ],
       ".github/workflows/system_tests.yml" => [ "paid", "paid" ],
       ".github/workflows/test_prof.yml" => [ "postgres", "postgres" ],

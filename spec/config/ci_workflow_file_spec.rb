@@ -69,6 +69,21 @@ RSpec.describe CiWorkflowFile, :no_db do
     )
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-002
+  it "bootstraps a non-superuser application role before every CI database setup" do
+    %w[test-shards pact-provider-verification schemathesis migrations performance].each do |job_name|
+      job = workflow.fetch("jobs").fetch(job_name)
+      role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
+
+      expect(job.fetch("env")).to include(
+        "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test",
+        "DB_USERNAME" => "paid",
+        "DB_PASSWORD" => "paid"
+      )
+      expect(role_step.fetch("run")).to include("ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;")
+    end
+  end
+
 
   it "verifies workflow jobs install the matching PGDG postgres client major package" do
     lint_step = postgres_pin_step
