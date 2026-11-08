@@ -54,32 +54,17 @@ RSpec.describe DatabaseYmlErb do
   end
 
   # @spec RAILS-CONTROL-PLANE-013
-  it "uses DATABASE_URL for non-production boots" do
+  it "pins only primary and test tasks to DATABASE_URL" do
+    database_url = "postgres://agent:agent@primary:5432/paid_test"
     rendered = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
       prepare_fixture(dir)
-      render_fixture(
-        dir,
-        env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_test", "RAILS_ENV" => "test" }
-      )
+      render_fixture(dir, "DATABASE_URL" => database_url)
     end
+    configuration = YAML.safe_load(rendered, aliases: true)
 
-    expect(rendered).to include("url: postgres://agent:secret@db.example/paid_test")
-  end
-
-  # @spec RAILS-CONTROL-PLANE-013
-  it "keeps the development cable connection on its dedicated database" do
-    configuration = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
-      prepare_fixture(dir)
-      parse_fixture(
-        render_fixture(
-          dir,
-          env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_development", "RAILS_ENV" => "development" }
-        )
-      )
-    end
-
-    expect(configuration.dig("development", "primary", "url")).to eq("postgres://agent:secret@db.example/paid_development")
+    expect(configuration.dig("development", "primary", "url")).to eq(database_url)
     expect(configuration.dig("development", "cable")).not_to have_key("url")
+    expect(configuration.dig("test", "url")).to eq(database_url)
   end
 
   # @spec RAILS-CONTROL-PLANE-013
@@ -131,9 +116,9 @@ RSpec.describe DatabaseYmlErb do
     ENV["PATH"] = "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}"
   end
 
-  def render_fixture(dir, env: {})
+  def render_fixture(dir, env = {})
     stdout, stderr, status = Open3.capture3(
-      { "PATH" => ENV.fetch("PATH") }.merge(env),
+      { "PATH" => ENV.fetch("PATH"), **env },
       "ruby",
       "-rerb",
       "-e",
@@ -143,10 +128,6 @@ RSpec.describe DatabaseYmlErb do
 
     expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
     stdout
-  end
-
-  def parse_fixture(rendered)
-    YAML.safe_load(rendered, aliases: true)
   end
 
   def resolve_production_configurations(dir, env: {})

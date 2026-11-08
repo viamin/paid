@@ -42,20 +42,20 @@ development:
   primary: &primary_development
     <<: *default
     database: <%= development_primary_database %>
-    <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
-    # CI and other non-production boots may provide the complete primary
-    # connection through DATABASE_URL. Cable retains its dedicated database.
-    url: <%= ENV["DATABASE_URL"] %>
-    <% end %>
     # Short OLTP requests lose seconds compiling complex eligibility plans with JIT.
     variables:
       jit: "off" # @spec RAILS-CONTROL-PLANE-010
+    # Pin primary database tasks to DATABASE_URL outside production without
+    # overriding the connection-specific CABLE_DATABASE_URL for cable tasks.
+    <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
+    url: <%= ENV["DATABASE_URL"] %> # @spec RAILS-CONTROL-PLANE-013
+    <% end %>
   cable:
     <<: *default
     database: <%= development_cable_database %>
     migrations_paths: db/cable_migrate
     variables:
-      jit: "off"
+      jit: "off" # @spec RAILS-CONTROL-PLANE-010
 
   # The specified database role being used to connect to PostgreSQL.
   # To create additional roles in PostgreSQL see `$ createuser --help`.
@@ -90,10 +90,10 @@ development:
 test:
   <<: *default
   database: <%= test_database %>
+  # Test database tasks use DATABASE_URL when CI provides it, avoiding a
+  # fallback to a local PostgreSQL socket.
   <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
-  # CI and other non-production boots may provide the complete connection
-  # through DATABASE_URL (for example, an externally provisioned database).
-  url: <%= ENV["DATABASE_URL"] %>
+  url: <%= ENV["DATABASE_URL"] %> # @spec RAILS-CONTROL-PLANE-013
   <% end %>
   # Disable prepared statements in tests to avoid cached-plan failures when
   # order-dependent examples recreate or change schema objects mid-suite.
