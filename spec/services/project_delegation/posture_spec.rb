@@ -83,6 +83,19 @@ RSpec.describe ProjectDelegation::Posture do
       expect(posture.source).to eq("guard_disabled")
     end
 
+    # @spec PROJECT-DELEGATION-001
+    it "fails closed when a stored posture level is unrecognized" do
+      record = build(:project_delegation_posture, project: project, level: "unknown")
+      project.association(:delegation_posture).target = record
+
+      posture = described_class.resolve(project)
+
+      expect(posture).to be_conservative
+      expect(posture.enabled_action_classes).to eq([])
+      expect(posture.remaining_reviews.map { |review| review[:key] })
+        .to contain_exactly("approvals", "reviews", "merges", "holds", "unresolved_stops")
+    end
+
     it "preserves a stored conservative rollback while a guard is off" do
       selected_at = 1.hour.ago.change(usec: 0)
       record = create(:project_delegation_posture, project: project, level: "conservative", revision: 4,

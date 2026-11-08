@@ -54,7 +54,9 @@ module ProjectDelegation
       def resolve(project)
         record = project.delegation_posture
         return default_state(project) if record.nil?
-        return selected_state(record) if record.level == CONSERVATIVE || guards_enabled?(project)
+        return selected_state(record) if record.level == CONSERVATIVE
+        return default_state(project) unless record.level == BOUNDED_DELIVERY
+        return selected_state(record) if guards_enabled?(project)
 
         # A stored broadened selection never survives its guards being off:
         # the effective posture falls back to conservative (the RDR-080

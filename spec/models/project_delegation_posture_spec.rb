@@ -27,6 +27,14 @@ RSpec.describe ProjectDelegationPosture do
     expect(record.errors[:level]).to include("is not a supported delegation posture")
   end
 
+  # @spec PROJECT-DELEGATION-001
+  it "rejects unknown levels when writes bypass model validation" do
+    record = create(:project_delegation_posture, project: project)
+
+    expect { record.update_column(:level, "autonomous") }
+      .to raise_error(ActiveRecord::StatementInvalid, /chk_project_delegation_postures_level/)
+  end
+
   it "rejects action classes outside the delegated vocabulary" do
     record = described_class.new(account: account, project: project, level: "bounded_delivery",
       enabled_action_classes: [ "release", "deployment" ], policy_signature: "sig")

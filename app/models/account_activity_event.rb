@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AccountActivityEvent < ApplicationRecord
+  IMMUTABLE_ACTIONS = %w[project_delegation.posture_selected].freeze
+
   ACTION_CATEGORIES = {
     "account.updated" => "account",
     "account.deleted" => "account",
@@ -82,6 +84,11 @@ class AccountActivityEvent < ApplicationRecord
   scope :by_category, ->(category) { where(action: actions_for_category(category)) }
   scope :searchable, ->(q) { where("metadata::text ILIKE ?", "%#{q}%") }
 
+  # @spec PROJECT-DELEGATION-001
+  def readonly?
+    super || immutable_action?
+  end
+
   def self.ransackable_attributes(_auth_object = nil)
     %w[
       action
@@ -109,6 +116,10 @@ class AccountActivityEvent < ApplicationRecord
 
   def category
     ACTION_CATEGORIES[action] || "other"
+  end
+
+  def immutable_action?
+    persisted? && IMMUTABLE_ACTIONS.include?(attribute_in_database(:action))
   end
 
   def description

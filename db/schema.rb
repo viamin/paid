@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_000239) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3626,6 +3626,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_200000) do
     t.index ["selected_by_id"], name: "index_project_delegation_postures_on_selected_by_id"
   end
 
+  add_check_constraint "project_delegation_postures", "level::text = ANY (ARRAY['conservative'::character varying::text, 'bounded_delivery'::character varying::text])", name: "chk_project_delegation_postures_level", validate: false
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -6051,6 +6053,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_200000) do
         RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
       END;
       $function$
+  SQL
+
+  create_function :protect_project_delegation_audit_event, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.protect_project_delegation_audit_event()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF OLD.action = 'project_delegation.posture_selected' THEN
+          RAISE EXCEPTION 'project delegation posture audit events are append-only; UPDATE and DELETE are rejected';
+        END IF;
+
+        IF TG_OP = 'UPDATE' AND NEW.action = 'project_delegation.posture_selected' THEN
+          RAISE EXCEPTION 'existing account activity events cannot become project delegation posture audit events';
+        END IF;
+
+        IF TG_OP = 'DELETE' THEN
+          RETURN OLD;
+        END IF;
+
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
+  create_trigger :protect_project_delegation_audit_event_update, sql_definition: <<-SQL
+      CREATE TRIGGER protect_project_delegation_audit_event_update BEFORE UPDATE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
+  SQL
+
+  create_trigger :protect_project_delegation_audit_event_delete, sql_definition: <<-SQL
+      CREATE TRIGGER protect_project_delegation_audit_event_delete BEFORE DELETE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
   SQL
 
   create_trigger :logidze_on_account_memberships, sql_definition: <<-SQL
