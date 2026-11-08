@@ -86,9 +86,11 @@ module ProjectDelegation
 
     def persist_with_audit
       ProjectDelegationPosture.transaction do
-        previous_level, record = persist
-        audit(record, previous_level)
-        [ previous_level, record ]
+        project.with_lock do
+          previous_level, record = persist
+          audit(record, previous_level)
+          [ previous_level, record ]
+        end
       end
     end
 
