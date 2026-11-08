@@ -81,7 +81,8 @@ RSpec.describe CiWorkflowFile, :no_db do
       "DB_USERNAME" => "paid_runtime",
       "PGUSER" => "paid_runtime",
       "DB_PASSWORD" => "paid_runtime",
-      "PGPASSWORD" => "paid_runtime"
+      "PGPASSWORD" => "paid_runtime",
+      "PGOPTIONS" => "-c paid.bypass_tenant_rls=true"
     )
     expect(postgres.fetch("env")).to include(
       "POSTGRES_USER" => "postgres",

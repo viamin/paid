@@ -17,7 +17,9 @@
   PostgreSQL roles with `SUPERUSER` or `BYPASSRLS` privileges so application
   traffic cannot silently bypass tenant RLS. CI SHALL use a dedicated
   `NOSUPERUSER NOBYPASSRLS` role and MAY grant it `CREATEROLE` only to create
-  and revoke restricted roles required by tenant-RLS regression specs.
+  and revoke restricted roles required by tenant-RLS regression specs. CI test
+  connections SHALL default to the explicit application system-access setting;
+  tenant-isolation tests SHALL set it false before asserting scoped behavior.
   *Tests:* `spec/config/ci_workflow_file_spec.rb`,
   `spec/security/tenant_context_spec.rb`.
   *Code:* `Database::RuntimeRoleGuard`, `.github/workflows/ci.yml`.

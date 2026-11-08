@@ -264,6 +264,11 @@ jobs:
       PGUSER: paid_runtime
       DB_PASSWORD: paid_runtime
       PGPASSWORD: paid_runtime
+      # Tests can open additional PostgreSQL connections outside the example
+      # wrapper. Default those CI-only connections to system access; individual
+      # tenant-isolation examples explicitly set this false through TenantContext.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      PGOPTIONS: -c paid.bypass_tenant_rls=true
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache

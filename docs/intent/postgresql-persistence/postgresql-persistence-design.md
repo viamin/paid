@@ -46,7 +46,10 @@ cross-tenant join rows and direct-account writes whose foreign keys point at a
 different tenant. CI grants its dedicated test runtime role `CREATEROLE` so
 RLS regression specs can create and revoke their restricted test role. The CI
 role remains explicitly `NOSUPERUSER` and `NOBYPASSRLS`, matching the runtime
-guard's safety boundary.
+guard's safety boundary. CI test connections default to the application's
+explicit system-access setting so independently opened test connections retain
+the harness context; tenant-isolation examples set the value false before
+asserting scoped behavior.
 
 Sensitive GitHub tokens are encrypted at rest through Rails encrypted
 attributes, and the token records retain change history through Logidze.
