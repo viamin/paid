@@ -592,8 +592,12 @@ module PartialCloseouts
       end
     end
 
-    def publish_parent_dependencies!
-      numbers = agent_run.issue.issue_dependencies.includes(:depends_on_issue).filter_map { |dependency| dependency.depends_on_issue&.github_number }
+    def publish_parent_dependencies! # @spec NO-OUTPUT-ISSUE-007
+      # DependencyCycle reads this association while validating reusable owners.
+      # Query through IssueDependency here so a newly persisted edge is visible
+      # even when that earlier read populated the association cache.
+      numbers = IssueDependency.where(issue: agent_run.issue).includes(:depends_on_issue)
+        .filter_map { |dependency| dependency.depends_on_issue&.github_number }
       return if numbers.empty?
 
       # Base the rewrite on the live GitHub body, not the local copy, so
