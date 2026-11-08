@@ -26,7 +26,9 @@
 
 - [x] **POSTGRESQL-PERSISTENCE-006** — Tenant RLS policies SHALL reject
   cross-tenant writes for direct account rows, join rows, and project-owned
-  records instead of relying on application checks alone.
+  records, while allowing a project to replace its account-owned GitHub token
+  with its account-owned GitHub App installation, instead of relying on
+  application checks alone.
   *Tests:* `spec/security/tenant_context_spec.rb`.
   *Code:* `EnableTenantRowLevelSecurity`, `TenantContext`.
 
