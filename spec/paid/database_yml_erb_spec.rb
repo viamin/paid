@@ -49,7 +49,7 @@ RSpec.describe DatabaseYmlErb do
     expect(rendered).to include("database: paid_test_feature_pay_1940_")
   end
 
-  it "pins only primary and test tasks to DATABASE_URL" do # @spec RAILS-CONTROL-PLANE-010
+  it "pins only primary and test tasks to DATABASE_URL" do # @spec RAILS-CONTROL-PLANE-013
     database_url = "postgres://agent:agent@primary:5432/paid_test"
     rendered = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
       prepare_fixture(dir)

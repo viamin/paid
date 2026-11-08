@@ -43,7 +43,7 @@ development:
     # Pin primary database tasks to DATABASE_URL outside production without
     # overriding the connection-specific CABLE_DATABASE_URL for cable tasks.
     <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
-    url: <%= ENV["DATABASE_URL"] %>
+    url: <%= ENV["DATABASE_URL"] %> # @spec RAILS-CONTROL-PLANE-013
     <% end %>
   cable:
     <<: *default
@@ -88,7 +88,7 @@ test:
   # Test database tasks use DATABASE_URL when CI provides it, avoiding a
   # fallback to a local PostgreSQL socket.
   <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
-  url: <%= ENV["DATABASE_URL"] %>
+  url: <%= ENV["DATABASE_URL"] %> # @spec RAILS-CONTROL-PLANE-013
   <% end %>
   # Disable prepared statements in tests to avoid cached-plan failures when
   # order-dependent examples recreate or change schema objects mid-suite.

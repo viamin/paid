@@ -13,6 +13,13 @@
   *Tests:* `spec/config/active_record/database_configurations_spec.rb`.
   *Code:* `config/database.yml`.
 
+- [x] **RAILS-CONTROL-PLANE-013** — When a non-production Rails database task
+  has a `DATABASE_URL`, the primary development and test connections SHALL use
+  that URL rather than a local PostgreSQL socket; the separate development
+  Action Cable connection SHALL retain its connection-specific configuration.
+  *Tests:* `spec/paid/database_yml_erb_spec.rb`.
+  *Code:* `config/database.yml`.
+
 - [x] **RAILS-CONTROL-PLANE-009** — When Action Cable shuts down during a
   development code reload with a broadcast pending, the control plane SHALL
   complete shutdown without deadlocking, preserve the broadcast, and support
