@@ -104,13 +104,14 @@ module Automation
       delegated_action = action || GOAL_ACTIONS[goal.to_s]
       return nil if work_item.nil? || delegated_action.nil?
 
-      new(work_item: work_item, action: delegated_action, boundary: boundary).call
+      new(work_item: work_item, action: delegated_action, boundary: boundary, trigger:).call
     end
 
-    def initialize(work_item:, action:, boundary:)
+    def initialize(work_item:, action:, boundary:, trigger:)
       @work_item = work_item
       @action = action
       @boundary = boundary
+      @trigger = trigger
     end
 
     # Returns a DelegatedWorkBoundary::Result, or nil when the work item is
@@ -125,7 +126,7 @@ module Automation
 
     private
 
-    attr_reader :work_item, :action, :boundary
+    attr_reader :work_item, :action, :boundary, :trigger
 
     def project
       work_item.project
@@ -153,7 +154,7 @@ module Automation
         posture_signature: self.class.posture_signature_for(project:, action:),
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
-          work_item:, trigger: :automatic),
+          work_item:, trigger:),
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
