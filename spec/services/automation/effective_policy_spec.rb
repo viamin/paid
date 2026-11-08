@@ -9,6 +9,8 @@ RSpec.describe Automation::EffectivePolicy do
   let(:project) { create(:project, account:) }
   let(:issue) { create(:issue, project:) }
 
+  before { FeatureFlags.enable!(:automation_phases, project:) }
+
   it "includes the fail-closed effective posture in the canonical decision" do # @spec PROJECT-DELEGATION-004
     decision = described_class.call(project:, phase: "coding", work_item: issue,
       delegated_action: "review", rollout_enabled: true)
@@ -34,8 +36,6 @@ RSpec.describe Automation::EffectivePolicy do
   def decide(phase:, work_item: issue, trigger: :automatic)
     described_class.call(project:, phase:, work_item:, trigger:)
   end
-
-  before { FeatureFlags.enable!(:automation_phases, project:) }
 
   describe "rollout guard" do
     it "keeps the legacy policy while the flag is off" do

@@ -11,13 +11,15 @@ Status markers: `[ ]` planned implementation gap.
   selects a project delegation posture, the system SHALL default every project
   to `conservative`, SHALL show the effective posture and remaining required
   human reviews, and SHALL record the actor, project, revision, enabled action
-  classes, and audit event.
+  classes, and audit event. The audit event SHALL reject independent update or
+  deletion while allowing removal only through teardown of its owning account.
   *Verified by:* `spec/services/project_delegation/posture_spec.rb`
   (conservative default, guarded effective posture, enabled action classes,
   remaining-review display data),
   `spec/services/project_delegation/select_posture_spec.rb` (authorized
   selection, revision increment, immutable audit event, guard failures),
   `spec/models/project_delegation_posture_spec.rb` (durable record shape),
+  `spec/models/account_spec.rb` (owning-account teardown),
   `spec/requests/projects/delegation_postures_spec.rb` (settings surface
   selection and display), and the posture additions to
   `spec/services/project_delegation/projection_spec.rb`,

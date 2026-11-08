@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_000239) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_003303) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4767,7 +4767,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_000239) do
   add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
   add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
-  add_foreign_key "account_activity_events", "accounts"
+  add_foreign_key "account_activity_events", "accounts", on_delete: :cascade
   add_foreign_key "account_activity_events", "users", column: "actor_id"
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
@@ -6061,11 +6061,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_000239) do
        LANGUAGE plpgsql
       AS $function$
       BEGIN
-        IF OLD.action = 'project_delegation.posture_selected' THEN
+        IF OLD.action = 'project_delegation.posture_selected'
+           AND NOT (
+             current_setting('paid.account_teardown_account_id', true) = OLD.account_id::text
+             OR (pg_trigger_depth() > 1 AND NOT EXISTS (SELECT 1 FROM public.accounts WHERE id = OLD.account_id))
+           ) THEN
           RAISE EXCEPTION 'project delegation posture audit events are append-only; UPDATE and DELETE are rejected';
         END IF;
 
-        IF TG_OP = 'UPDATE' AND NEW.action = 'project_delegation.posture_selected' THEN
+        IF TG_OP = 'UPDATE'
+           AND OLD.action IS DISTINCT FROM 'project_delegation.posture_selected'
+           AND NEW.action = 'project_delegation.posture_selected' THEN
           RAISE EXCEPTION 'existing account activity events cannot become project delegation posture audit events';
         END IF;
 
