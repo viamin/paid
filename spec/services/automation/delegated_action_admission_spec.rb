@@ -12,6 +12,13 @@ RSpec.describe Automation::DelegatedActionAdmission do
   end
 
   before do
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+    project.update!(automation_phase_settings: {
+      "phases" => { "coding" => true, "merge" => true }
+    })
+    create(:project_delegation_posture, project:, level: "bounded_delivery", revision: 1, selected_by: user)
+
     # Delegated work requires a current recorded assessment so rechecks are
     # otherwise current.
     [ issue, pull_request ].each do |work_item|
@@ -156,14 +163,29 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(result.reasons).to include(:intent_revision)
   end
 
-  it "blocks when the project posture changed since admission" do # @spec PROJECT-DELEGATION-006
+  it "blocks when the project posture narrows after admission" do # @spec PROJECT-DELEGATION-006
     authorize(action: "review")
-    project.update!(automation_phase_settings: { "phases" => { "merge" => true } })
+    project.delegation_posture.update!(
+      level: "conservative",
+      revision: 2,
+      enabled_action_classes: [],
+      policy_signature: ProjectDelegation::Posture.policy_signature(project)
+    )
 
     result = recheck(goal: "review")
 
     expect(result).to be_blocked
-    expect(result.reasons).to include(:posture_signature)
+    expect(result.reasons).to include(:posture_signature, :phase_policy)
+  end
+
+  it "blocks when a rollout guard rolls a bounded posture back" do # @spec PROJECT-DELEGATION-006
+    authorize(action: "review")
+    FeatureFlags.disable!(:project_delegation, project:)
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:posture_signature, :phase_policy)
   end
 
   it "applies the shared effective policy to delegated repair boundaries" do # @spec PROJECT-DELEGATION-005

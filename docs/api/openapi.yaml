@@ -303,13 +303,49 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [project_id, authorizations, posture_signatures, signature]
+                required: [project_id, posture, authorizations, posture_signatures, signature]
                 properties:
                   project_id: {type: integer}
                   work_item_id:
                     type: integer
                     nullable: true
                     description: Present when the projection is scoped to one work item.
+                  posture:
+                    type: object
+                    description: |
+                      The effective project delegation posture (RDR-080): the
+                      level (conservative by default, bounded_delivery only
+                      after an authorized guarded selection), its source and
+                      revision, the enabled action classes, and the reviews
+                      that remain human decisions. The posture never grants
+                      execution authority.
+                    required: [level, source, revision, enabled_action_classes, remaining_reviews]
+                    properties:
+                      level: {type: string, enum: [conservative, bounded_delivery]}
+                      source:
+                        type: string
+                        enum: [default, selected, guard_disabled]
+                        description: Where the effective level came from.
+                      revision: {type: integer}
+                      enabled_action_classes:
+                        type: array
+                        items: {type: string}
+                      policy_signature: {type: string}
+                      selected_by_id:
+                        type: integer
+                        nullable: true
+                      selected_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      remaining_reviews:
+                        type: array
+                        items:
+                          type: object
+                          required: [key, description]
+                          properties:
+                            key: {type: string}
+                            description: {type: string}
                   authorizations:
                     type: array
                     items:

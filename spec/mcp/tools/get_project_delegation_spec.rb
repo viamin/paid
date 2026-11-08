@@ -10,7 +10,10 @@ RSpec.describe Tools::GetProjectDelegation do
   let(:project) { create(:project, account: account, created_by: user) }
   let(:tool) { described_class.new(user: user, session: session) }
 
-  before { FeatureFlags.enable!(:project_delegation, project:) }
+  before do
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+  end
 
   def authorize_review(work_item:)
     create(:bounded_delegated_action,
@@ -32,11 +35,20 @@ RSpec.describe Tools::GetProjectDelegation do
       project_id: project.id,
       authorizations: [ hash_including(
         id: authorization.id, action: "review", in_force: true,
-        authority: hash_including(permitted: true)
+        authority: hash_including(permitted: false, reason: :posture_restricted)
       ) ]
     )
     expect(result).to include(:signature)
     expect(result).not_to include(:phase_authority)
+  end
+
+  # @spec PROJECT-DELEGATION-001
+  it "returns the effective project posture" do
+    result = tool.call(project_id: project.id)
+
+    expect(result.fetch(:posture)).to include(
+      level: "conservative", source: "default", revision: 0, enabled_action_classes: []
+    )
   end
 
   it "scopes the projection to a requested work item" do

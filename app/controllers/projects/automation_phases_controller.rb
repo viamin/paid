@@ -91,6 +91,9 @@ module Projects
         @delegation_projection = ProjectDelegation::Projection.for_project(@project)
         @delegation_work_items = @project.issues
           .where(id: @delegation_projection.authorizations.map(&:work_item_id)).index_by(&:id)
+        # @spec PROJECT-DELEGATION-001
+        @delegation_posture = @delegation_projection.posture
+        @delegation_guards_enabled = ProjectDelegation::Posture.guards_enabled?(@project)
       end
       @migration_preview = Automation::Phases::MigrationPreview.call(project: @project, user: current_user)
     end

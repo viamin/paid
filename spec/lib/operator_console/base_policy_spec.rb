@@ -59,6 +59,15 @@ RSpec.describe OperatorConsole::BasePolicy, :no_db do
   end
 
   describe "specialized operator-console policies" do
+    # @spec PROJECT-DELEGATION-001
+    it "keeps account activity events read-only for operators" do
+      policy = OperatorConsole::AccountActivityEventPolicy.new(operator, AccountActivityEvent)
+
+      expect(policy.update?).to be(false)
+      expect(policy.edit?).to be(false)
+      expect(policy.destroy?).to be(false)
+    end
+
     it "permits tenant setting creation only for operators" do
       expect(OperatorConsole::TenantSettingPolicy.new(operator, TenantSetting).create?).to be(true)
       expect(OperatorConsole::TenantSettingPolicy.new(non_operator, TenantSetting).create?).to be(false)

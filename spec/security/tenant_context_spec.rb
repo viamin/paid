@@ -24,6 +24,7 @@ require Rails.root.join("db/migrate/20260730190357_make_projects_github_token_op
 require Rails.root.join("db/migrate/20261029221250_create_inbox_history_events")
 require Rails.root.join("db/migrate/20261105195000_create_bounded_delegated_actions")
 require Rails.root.join("db/migrate/20261107082941_create_trusted_measurement_attempts")
+require Rails.root.join("db/migrate/20261107200000_create_project_delegation_postures")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -95,6 +96,30 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       end
       described_class.clear!
       expect(BoundedDelegatedAction.all).to be_empty
+    end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-001 PROJECT-DELEGATION-001
+  it "isolates delegation postures and rejects cross-tenant scope references" do
+    posture_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      create(:project_delegation_posture, account: account_a, project:)
+    end
+    project_b = described_class.with_system_access do
+      project = create(:project, account: account_b)
+      create(:project_delegation_posture, account: account_b, project:)
+      project
+    end
+    user_b = described_class.with_system_access { create(:user, account: account_b) }
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ProjectDelegationPosture.all).to contain_exactly(posture_a)
+        expect_rls_rejection { insert_project_delegation_posture(account_a, project_b) }
+        expect_rls_rejection { insert_project_delegation_posture(account_a, posture_a.project, user_b) }
+      end
+      described_class.clear!
+      expect(ProjectDelegationPosture.all).to be_empty
     end
   end
 
@@ -324,6 +349,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
       CreateTrustedMeasurementAttempts.new.enable_tenant_rls
+      CreateProjectDelegationPostures.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -376,11 +402,13 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
       CreateBoundedDelegatedActions.new.disable_tenant_rls
       CreateTrustedMeasurementAttempts.new.disable_tenant_rls
+      CreateProjectDelegationPostures.new.disable_tenant_rls
       EnableTenantRowLevelSecurity.new.down
 
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
       CreateTrustedMeasurementAttempts.new.enable_tenant_rls
+      CreateProjectDelegationPostures.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -595,6 +623,18 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
         #{account.id}, #{project.id}, #{issue.id}, #{sql_value(created_by&.id)}, 'review', 'active',
         '{"intent_digest":"rls","acceptance_refs":["AC-1"]}'::jsonb,
         CURRENT_TIMESTAMP + INTERVAL '1 hour', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_project_delegation_posture(account, project, selected_by = nil)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_delegation_postures (
+        account_id, project_id, selected_by_id, level, revision, enabled_action_classes,
+        policy_signature, created_at, updated_at
+      ) VALUES (
+        #{account.id}, #{project.id}, #{sql_value(selected_by&.id)}, 'bounded_delivery', 1,
+        '["technical_stop_recovery"]'::jsonb, 'sig', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
     SQL
   end

@@ -3,6 +3,49 @@
 require "rails_helper"
 
 RSpec.describe AccountActivityEvent do
+  describe "posture-selection audit immutability" do
+    let(:account) { create(:account) }
+    let(:event) do
+      described_class.create!(
+        account: account,
+        action: "project_delegation.posture_selected",
+        metadata: { "level" => "bounded_delivery", "revision" => 1 }
+      )
+    end
+
+    # @spec PROJECT-DELEGATION-001
+    it "rejects updates after the event is persisted" do
+      event.metadata["revision"] = 2
+
+      expect { event.save! }.to raise_error(ActiveRecord::ReadOnlyRecord)
+      expect(event.reload.metadata).to include("revision" => 1)
+    end
+
+    # @spec PROJECT-DELEGATION-001
+    it "rejects deletion after the event is persisted" do
+      expect { event.destroy! }.to raise_error(ActiveRecord::ReadOnlyRecord)
+      expect(described_class.exists?(event.id)).to be(true)
+    end
+
+    # @spec PROJECT-DELEGATION-001
+    it "rejects updates that bypass the model instance" do
+      event
+      expect_db_rejection(/append-only/) do
+        described_class.where(id: event.id).update_all(metadata: { revision: 2 })
+      end
+      expect(event.reload.metadata).to include("revision" => 1)
+    end
+
+    # @spec PROJECT-DELEGATION-001
+    it "rejects deletes that bypass the model instance" do
+      event
+      expect_db_rejection(/append-only/) do
+        described_class.where(id: event.id).delete_all
+      end
+      expect(described_class.exists?(event.id)).to be(true)
+    end
+  end
+
   describe ".actions_for_category" do
     it "returns actions for a given category" do
       project_actions = described_class.actions_for_category("project")
@@ -187,5 +230,16 @@ RSpec.describe AccountActivityEvent do
       expect(account.account_activity_events.by_category("runner").count).to eq(1)
       expect(account.account_activity_events.by_category("membership").count).to eq(1)
     end
+  end
+
+  private
+
+  def expect_db_rejection(pattern)
+    connection = ActiveRecord::Base.connection
+    connection.execute("SAVEPOINT project_delegation_audit_rejection")
+    expect { yield }.to raise_error(ActiveRecord::StatementInvalid, pattern)
+  ensure
+    connection.execute("ROLLBACK TO SAVEPOINT project_delegation_audit_rejection")
+    connection.execute("RELEASE SAVEPOINT project_delegation_audit_rejection")
   end
 end

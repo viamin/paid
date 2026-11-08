@@ -70,17 +70,17 @@ module Automation
       "criteria:#{Digest::SHA256.hexdigest(assessment.criteria.to_json)}"
     end
 
-    # Posture signature: digest of the project's current phase-policy
-    # settings, so broadening or narrowing delegated posture after admission
-    # fails the next boundary recheck (the authorization keeps its pinned
-    # posture; only a new admission picks up the broader one).
+    # Canonical policy signature: digest of the phase decision plus the
+    # effective posture level, revision, and policy signature. Narrowing or a
+    # guard rollback therefore invalidates an existing admission at the next
+    # boundary recheck.
     def self.posture_signature_for(project:, action:)
-      EffectivePolicyNotice.new(
-        project: project,
+      Digest::SHA256.hexdigest(EffectivePolicy.call(
+        project:,
         phase: ACTION_PHASES.fetch(action),
-        endpoint: ACTION_PHASES.fetch(action),
-        continuation_selected: true
-      ).signature
+        trigger: :automatic,
+        delegated_action: action
+      ).to_h.to_json)
     end
 
     # The canonical bounded evidence an authorization for this work item and
@@ -154,7 +154,7 @@ module Automation
         posture_signature: self.class.posture_signature_for(project:, action:),
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
-          work_item:, trigger:),
+          work_item:, trigger:, delegated_action: action),
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,

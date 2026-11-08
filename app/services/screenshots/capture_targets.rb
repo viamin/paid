@@ -384,6 +384,9 @@ module Screenshots
       # @spec FACET-CONFIDENCE-020
       "projects/facet_confidence_evaluations_controller.rb" => %i[project_facet_confidence_evaluation_new project_facet_confidence_evaluation_show],
       "projects/automation_phases_controller.rb" => [ :project_automation_phases ],
+      # Posture updates redirect back to the automation phases settings surface.
+      # @spec PROJECT-DELEGATION-001
+      "projects/delegation_postures_controller.rb" => [ :project_automation_phases ],
       "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
       "projects/health_check_controller.rb" => [ :project_health_check ],
       "projects/connector_events_controller.rb" => [ :project_edit ],

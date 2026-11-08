@@ -3612,6 +3612,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
     t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
   end
 
+  create_table "project_delegation_postures", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "enabled_action_classes", default: [], null: false
+    t.string "level", default: "conservative", null: false
+    t.string "policy_signature", null: false
+    t.bigint "project_id", null: false
+    t.integer "revision", default: 1, null: false
+    t.bigint "selected_by_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_project_delegation_postures_on_account_id"
+    t.index ["project_id"], name: "index_project_delegation_postures_on_project_id", unique: true
+    t.index ["selected_by_id"], name: "index_project_delegation_postures_on_selected_by_id"
+  end
+
+  add_check_constraint "project_delegation_postures", "level::text = ANY (ARRAY['conservative'::character varying::text, 'bounded_delivery'::character varying::text])", name: "chk_project_delegation_postures_level", validate: false
+
   create_table "project_mcp_servers", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "mcp_server_definition_id", null: false
@@ -4751,7 +4768,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
   add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
   add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
-  add_foreign_key "account_activity_events", "accounts"
+  add_foreign_key "account_activity_events", "accounts", on_delete: :cascade
   add_foreign_key "account_activity_events", "users", column: "actor_id"
   add_foreign_key "account_memberships", "accounts"
   add_foreign_key "account_memberships", "users"
@@ -5120,6 +5137,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
   add_foreign_key "project_convention_recommendations", "projects"
   add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
   add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
+  add_foreign_key "project_delegation_postures", "accounts"
+  add_foreign_key "project_delegation_postures", "projects"
+  add_foreign_key "project_delegation_postures", "users", column: "selected_by_id"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"
@@ -6030,6 +6050,43 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
       END;
       $function$
+  SQL
+
+  create_function :protect_project_delegation_audit_event, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.protect_project_delegation_audit_event()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF OLD.action = 'project_delegation.posture_selected'
+           AND NOT (
+             COALESCE(current_setting('paid.account_teardown_account_id', true), '') = OLD.account_id::text
+             OR (pg_trigger_depth() > 1 AND NOT EXISTS (SELECT 1 FROM public.accounts WHERE id = OLD.account_id))
+           ) THEN
+          RAISE EXCEPTION 'project delegation posture audit events are append-only; UPDATE and DELETE are rejected';
+        END IF;
+
+        IF TG_OP = 'UPDATE'
+           AND OLD.action IS DISTINCT FROM 'project_delegation.posture_selected'
+           AND NEW.action = 'project_delegation.posture_selected' THEN
+          RAISE EXCEPTION 'existing account activity events cannot become project delegation posture audit events';
+        END IF;
+
+        IF TG_OP = 'DELETE' THEN
+          RETURN OLD;
+        END IF;
+
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
+  create_trigger :protect_project_delegation_audit_event_update, sql_definition: <<-SQL
+      CREATE TRIGGER protect_project_delegation_audit_event_update BEFORE UPDATE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
+  SQL
+
+  create_trigger :protect_project_delegation_audit_event_delete, sql_definition: <<-SQL
+      CREATE TRIGGER protect_project_delegation_audit_event_delete BEFORE DELETE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
   SQL
 
   create_trigger :logidze_on_account_memberships, sql_definition: <<-SQL

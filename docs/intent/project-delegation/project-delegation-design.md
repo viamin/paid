@@ -16,9 +16,12 @@ controls. It supplies one normalized input to `Automation::EffectivePolicy`.
 
 The durable posture record has project/account scope, an authorized actor,
 selected level, policy revision/signature, enabled action classes, timestamps,
-and immutable audit events. `conservative` is the default. An admission stores
-the posture signature plus the design, acceptance, and evidence revisions it
-relied on; a later broadening never changes that admission.
+and audit events that are immutable for the account's lifetime. Account
+teardown removes those tenant-scoped events through the account foreign-key
+cascade; there is no independent update or delete path. `conservative` is the
+default. An admission stores the posture signature plus the design, acceptance,
+and evidence revisions it relied on; a later broadening never changes that
+admission.
 
 ## Checkpoint and action plan
 

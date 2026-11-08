@@ -1,0 +1,4 @@
+CREATE TRIGGER protect_project_delegation_audit_event_delete
+BEFORE DELETE ON public.account_activity_events
+FOR EACH ROW
+EXECUTE FUNCTION protect_project_delegation_audit_event();

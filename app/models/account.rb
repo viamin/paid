@@ -9,12 +9,15 @@ class Account < ApplicationRecord
 
   enum :status, { active: 0, suspended: 1, deactivated: 2 }
 
+  around_destroy :with_activity_event_teardown, prepend: true
   before_destroy :destroy_apple_verification_records
   before_destroy :destroy_chat_records
 
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
-  has_many :account_activity_events, dependent: :destroy
+  # The database cascades these rows so immutable events remain protected from
+  # direct deletion while the supported account teardown can remove the tenant.
+  has_many :account_activity_events
   has_many :personal_access_tokens, dependent: :destroy
   has_many :members, through: :account_memberships, source: :user
   has_many :provider_api_keys, through: :users
@@ -203,6 +206,19 @@ class Account < ApplicationRecord
   end
 
   private
+
+  # @spec PROJECT-DELEGATION-001
+  def with_activity_event_teardown
+    database = self.class.connection
+    database.execute("SELECT set_config('paid.account_teardown_account_id', #{database.quote(id.to_s)}, true)")
+    yield
+  ensure
+    database&.execute("SELECT set_config('paid.account_teardown_account_id', '', true)") unless transaction_failed?(database)
+  end
+
+  def transaction_failed?(database)
+    database.nil? || database.raw_connection.transaction_status == PG::PQTRANS_INERROR
+  end
 
   # Runs before the `users` association's dependent: :destroy so that approvers
   # (User#approved_apple_verification_workflow_revisions, dependent: :restrict_with_exception)

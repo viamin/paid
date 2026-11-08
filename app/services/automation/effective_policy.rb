@@ -16,12 +16,13 @@ module Automation
   # rules, tenant permissions, or scheduler safety holds.
   #
   # @spec AUTOMATION-PHASES-003 @spec AUTOMATION-PHASES-007
-  # @spec AUTOMATION-PHASES-017
+  # @spec AUTOMATION-PHASES-017 @spec PROJECT-DELEGATION-004
   class EffectivePolicy
     SOURCES = %i[legacy_policy manual_action continuation_grant project_defaults].freeze
-    REASONS = %i[phase_disabled phase_enabled].freeze
+    REASONS = %i[phase_disabled phase_enabled posture_restricted].freeze
 
-    Decision = Struct.new(:permitted, :source, :reason, :phase, :grant, keyword_init: true) do
+    Decision = Struct.new(:permitted, :source, :reason, :phase, :grant, :posture, :phase_policy_signature,
+      keyword_init: true) do
       def permitted?
         permitted
       end
@@ -36,7 +37,21 @@ module Automation
           source: source,
           reason: reason,
           phase: phase,
-          grant_id: grant&.id
+          grant_id: grant&.id,
+          phase_policy_signature: phase_policy_signature,
+          posture: serialized_posture
+        }
+      end
+
+      private
+
+      def serialized_posture
+        return unless posture
+
+        {
+          level: posture.level,
+          revision: posture.revision,
+          policy_signature: posture.policy_signature
         }
       end
     end
@@ -46,24 +61,26 @@ module Automation
     end
 
     def initialize(project:, phase:, work_item: nil, trigger: :automatic, continuation_grants: nil,
-      rollout_enabled: nil)
+      rollout_enabled: nil, delegated_action: nil)
       @project = project
       @phase = phase&.to_s
       @work_item = work_item
       @trigger = trigger
       @continuation_grants = continuation_grants
       @rollout_enabled = rollout_enabled
+      @delegated_action = delegated_action
     end
 
     def call
-      return permit(:legacy_policy, :phase_enabled) unless enabled?
+      return legacy_decision unless enabled?
+      return block(:posture_restricted) if delegated_action && !posture.bounded_delivery?
       return permit(:manual_action, :phase_enabled) if manual_action?
 
       grant = covering_grant
       return permit(:continuation_grant, :phase_enabled, grant:) if grant
       return permit(:project_defaults, :phase_enabled) if phase_enabled?
 
-      Decision.new(permitted: false, source: nil, reason: :phase_disabled, phase:, grant: nil)
+      block(:phase_disabled)
     end
 
     def permitted?(...)
@@ -72,10 +89,28 @@ module Automation
 
     private
 
-    attr_reader :continuation_grants, :phase, :project, :rollout_enabled, :trigger, :work_item
+    attr_reader :continuation_grants, :delegated_action, :phase, :project, :rollout_enabled, :trigger, :work_item
 
     def permit(source, reason, grant: nil)
-      Decision.new(permitted: true, source:, reason:, phase:, grant:)
+      Decision.new(permitted: true, source:, reason:, phase:, grant:, posture:,
+        phase_policy_signature: current_phase_policy_signature)
+    end
+
+    def legacy_decision
+      Decision.new(permitted: true, source: :legacy_policy, reason: :phase_enabled, phase:, grant: nil)
+    end
+
+    def block(reason)
+      Decision.new(permitted: false, source: nil, reason:, phase:, grant: nil, posture:,
+        phase_policy_signature: current_phase_policy_signature)
+    end
+
+    def posture
+      @posture ||= ProjectDelegation::Posture.resolve(project)
+    end
+
+    def current_phase_policy_signature
+      ProjectDelegation::Posture.policy_signature(project)
     end
 
     # Rollout guard: while the flag is off the pre-existing policy applies.

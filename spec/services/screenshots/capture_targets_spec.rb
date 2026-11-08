@@ -298,8 +298,11 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       )
     end
 
-    it "maps the automation phases controller and show view to the automation phases target" do
-      controller_targets = described_class.call(changed_files: [ "app/controllers/projects/automation_phases_controller.rb" ])
+    it "maps the automation phase settings surfaces to the automation phases target" do # @spec PROJECT-DELEGATION-001
+      controller_targets = described_class.call(changed_files: [
+        "app/controllers/projects/automation_phases_controller.rb",
+        "app/controllers/projects/delegation_postures_controller.rb"
+      ])
       view_targets = described_class.call(changed_files: [ "app/views/projects/automation_phases/show.html.erb" ])
 
       expect(controller_targets.map(&:slug)).to eq([ "project_automation_phases" ])

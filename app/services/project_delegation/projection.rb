@@ -59,6 +59,13 @@ module ProjectDelegation
 
     attr_reader :project, :work_item
 
+    # The effective project posture (RDR-080), shared with the selection
+    # write path so read surfaces and settings cannot disagree.
+    # @spec PROJECT-DELEGATION-001
+    def posture
+      @posture ||= ProjectDelegation::Posture.resolve(project)
+    end
+
     # The one effective-policy answer for a phase. Read surfaces call this
     # instead of re-deriving authority from settings, grants, or labels.
     def phase_decision(phase)
@@ -69,7 +76,10 @@ module ProjectDelegation
 
     # Effective-policy decision for a delegated action's owning phase.
     def action_authority(action)
-      phase_decision(Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(action.to_s))
+      action = action.to_s
+      effective_policy_decision(
+        Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(action), work_item, delegated_action: action
+      )
     end
 
     # Active continuation grants covering `phase` for the projected work
@@ -108,6 +118,7 @@ module ProjectDelegation
       payload = {
         project_id: project.id,
         work_item_id: work_issue&.id,
+        posture: posture.to_h,
         authorizations: authorizations.map(&:to_h),
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] },
         signature: signature
@@ -159,13 +170,14 @@ module ProjectDelegation
         status: record.status,
         expires_at: record.expires_at,
         authority: effective_policy_decision(
-          Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(record.action, record.action), record.issue
+          Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(record.action, record.action), record.issue,
+          delegated_action: record.action
         )
       )
     end
 
-    def effective_policy_decision(phase, scoped_work_item)
-      key = [ phase.to_s, scoped_work_item&.id ]
+    def effective_policy_decision(phase, scoped_work_item, delegated_action: nil)
+      key = [ phase.to_s, scoped_work_item&.id, delegated_action ]
       @phase_decisions ||= {}
       @phase_decisions[key] ||= Automation::EffectivePolicy.call(
         project: project,
@@ -173,7 +185,8 @@ module ProjectDelegation
         work_item: scoped_work_item,
         trigger: :automatic,
         continuation_grants: grants_for(scoped_work_item),
-        rollout_enabled: rollout_enabled?
+        rollout_enabled: rollout_enabled?,
+        delegated_action: delegated_action
       )
     end
 
@@ -215,6 +228,7 @@ module ProjectDelegation
 
     def signature_source
       {
+        posture: { level: posture.level, revision: posture.revision, policy_signature: posture.policy_signature },
         authorizations: authorizations.map(&:to_h),
         phase_authority: work_issue ? serialized_phase_authority : nil,
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] }

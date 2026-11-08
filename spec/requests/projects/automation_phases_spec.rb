@@ -129,7 +129,8 @@ RSpec.describe "Project automation phases" do
     expect(response.body).not_to include("Delegated delivery actions")
   end
 
-  it "attributes fallback authority to the legacy policy" do # @spec PROJECT-DELEGATION-005
+  it "attributes blocked authority to the conservative posture" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:automation_phases, project:)
     FeatureFlags.enable!(:project_delegation, project:)
     work_item = create(:issue, project:)
     create(:bounded_delegated_action, project:, issue: work_item, action: "review",
@@ -139,6 +140,6 @@ RSpec.describe "Project automation phases" do
 
     get project_automation_phases_path(project)
 
-    expect(Nokogiri::HTML(response.body).text.squish).to include("permitted through legacy policy")
+    expect(Nokogiri::HTML(response.body).text.squish).to include("not permitted because posture restricted")
   end
 end

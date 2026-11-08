@@ -208,4 +208,30 @@ RSpec.describe Account do
         .and change(BillingPlan, :count).by(-1)
     end
   end
+
+  describe "dependent activity events" do
+    # @spec PROJECT-DELEGATION-001
+    it "destroys posture-selection audit events with the account" do
+      account = create(:account)
+      actor = create(:user, account: account)
+      event = account.account_activity_events.create!(
+        action: "project_delegation.posture_selected",
+        actor: actor,
+        metadata: { "level" => "bounded_delivery", "revision" => 1 }
+      )
+
+      expect { account.destroy! }.to change(AccountActivityEvent, :count).by(-1)
+      expect(AccountActivityEvent.exists?(event.id)).to be(false)
+    end
+
+    # @spec PROJECT-DELEGATION-001
+    it "allows the database account cascade while model callbacks are bypassed" do
+      account = create(:account)
+      event = account.account_activity_events.create!(action: "project_delegation.posture_selected")
+
+      expect { described_class.where(id: account.id).delete_all }
+        .to change(AccountActivityEvent, :count).by(-1)
+      expect(AccountActivityEvent.exists?(event.id)).to be(false)
+    end
+  end
 end

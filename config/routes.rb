@@ -300,6 +300,9 @@ Rails.application.routes.draw do
       delete "continuation_grants/:id", to: "projects/automation_phases#revoke_grant", as: :continuation_grant
       patch "continuation_grants/:id", to: "projects/automation_phases#extend_grant", as: :extend_continuation_grant
     end
+    # RDR-080: the project delegation posture selection.
+    # @spec PROJECT-DELEGATION-001
+    resource :delegation_posture, only: [ :update ], controller: "projects/delegation_postures"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resource :docker_host_preference, only: [ :update ], controller: "projects/docker_host_preferences"
