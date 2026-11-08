@@ -8,7 +8,11 @@
 - **Related issues**: #4863; [#4512](https://github.com/viamin/paid/issues/4512)
 - **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md), and [RDR-078](RDR-078-bounded-delivery-phase-authorization.md)
 - **Related intent**: `docs/intent/project-delegation/`
-- **Implementation status**: Design authority only. It changes no runtime behavior.
+- **Implementation status**: The default-conservative posture, authorized selection,
+  effective-posture projection, remaining-review display data, and immutable
+  posture-selection audit event are implemented behind the required rollout
+  guards. Intent checkpoints, delegated action plans, and pilot measurement
+  remain follow-on work described by the unchecked EARS specs.
 
 ## Decision
 
