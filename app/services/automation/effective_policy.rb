@@ -39,11 +39,19 @@ module Automation
           phase: phase,
           grant_id: grant&.id,
           phase_policy_signature: phase_policy_signature,
-          posture: {
-            level: posture.level,
-            revision: posture.revision,
-            policy_signature: posture.policy_signature
-          }
+          posture: serialized_posture
+        }
+      end
+
+      private
+
+      def serialized_posture
+        return unless posture
+
+        {
+          level: posture.level,
+          revision: posture.revision,
+          policy_signature: posture.policy_signature
         }
       end
     end
@@ -64,8 +72,8 @@ module Automation
     end
 
     def call
+      return legacy_decision unless enabled?
       return block(:posture_restricted) if delegated_action && !posture.bounded_delivery?
-      return permit(:legacy_policy, :phase_enabled) unless enabled?
       return permit(:manual_action, :phase_enabled) if manual_action?
 
       grant = covering_grant
@@ -86,6 +94,10 @@ module Automation
     def permit(source, reason, grant: nil)
       Decision.new(permitted: true, source:, reason:, phase:, grant:, posture:,
         phase_policy_signature: current_phase_policy_signature)
+    end
+
+    def legacy_decision
+      Decision.new(permitted: true, source: :legacy_policy, reason: :phase_enabled, phase:, grant: nil)
     end
 
     def block(reason)

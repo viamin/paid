@@ -47,6 +47,19 @@ RSpec.describe Automation::EffectivePolicy do
       expect(decision).to be_permitted
       expect(decision.source).to eq(:legacy_policy)
     end
+
+    it "does not evaluate phase or posture state while the flag is off" do
+      legacy_project = Object.new
+
+      decision = described_class.call(project: legacy_project, phase: "merge", rollout_enabled: false)
+
+      expect(decision).to be_permitted
+      expect(decision.to_h).to include(
+        source: :legacy_policy,
+        phase_policy_signature: nil,
+        posture: nil
+      )
+    end
   end
 
   describe "project defaults" do
