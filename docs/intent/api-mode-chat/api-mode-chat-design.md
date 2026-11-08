@@ -85,10 +85,17 @@ desktop retains Turbo's visibility-based lazy loading.
 
 ### Personal unstarted-chat drafts
 
-A personal full-page chat draft is an active conversation created by a user
+A personal full-page chat draft is a visible conversation created by a user
 with no user message and no title. At most one such draft may exist per user.
 The database owns that invariant through a partial unique index, so concurrent
-page loads cannot create duplicates. Chat creation recovers a unique-index
+page loads cannot create duplicates. Archived drafts are outside the
+invariant — an archived blank draft releases the one-draft slot instead of
+holding it, because an archived session can never accept the first user
+message that would mark it started; closed and idle blank drafts remain
+reusable so idle cycles do not accumulate a new blank item per visit.
+Restoring an archived blank draft discards the newer blank draft first,
+keeping exactly one while preserving the session the user chose to restore.
+Chat creation recovers a unique-index
 conflict by returning the committed draft. A configuration-free page load
 leaves that draft unchanged; an explicit create configuration is applied to
 the reusable draft so project, runner, model, prompt, approval, metadata, and

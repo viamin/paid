@@ -107,11 +107,16 @@
   unchanged, while a create request with explicit session configuration SHALL
   apply that configuration to the reusable draft. The first persisted user
   message SHALL mark the draft started, after which a later load MAY create a
-  new draft. Started chats and scoped Inbox or exploration chats SHALL remain
+  new draft. Archived drafts SHALL NOT participate in the one-draft invariant;
+  a load after the user's blank draft is archived SHALL create a fresh draft,
+  and restoring an archived blank draft SHALL discard the newer blank draft
+  rather than collide with the invariant.
+  Started chats and scoped Inbox or exploration chats SHALL remain
   unaffected.
   *Tests:* `spec/system/chat_unstarted_draft_spec.rb`,
   `spec/services/chat_sessions/create_spec.rb`,
-  `spec/services/chat_sessions/create_call_concurrency_spec.rb`.
+  `spec/services/chat_sessions/create_call_concurrency_spec.rb`,
+  `spec/services/chat_sessions/unarchive_spec.rb`.
   *Code:* `ChatSession.unstarted_untitled_personal`, `ChatSession#start!`,
   `ChatSessions::Create#call`, `ChatMessage#mark_chat_session_started`.
 

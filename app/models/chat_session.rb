@@ -103,6 +103,7 @@ class ChatSession < ApplicationRecord
   # @spec CHAT-API-030
   scope :unstarted_untitled_personal, -> {
     where(started_at: nil, inbox_item_key: nil, clarifying_question_issue_id: nil, feature_intent_id: nil)
+      .where.not(status: "archived")
       .where("NULLIF(BTRIM(title), '') IS NULL")
   }
   scope :visible, -> { where.not(status: "archived") }

@@ -79,6 +79,19 @@ RSpec.describe ChatSessions::Create do
       expect(ChatSession.unstarted_untitled_personal.where(created_by: user)).to contain_exactly(replacement)
     end
 
+    # @spec CHAT-API-030
+    it "creates a fresh draft instead of reusing the user's archived blank draft" do
+      original = described_class.call(account: account, user: user)
+      ChatSessions::Archive.call(chat_session: original)
+
+      replacement = described_class.call(account: account, user: user)
+
+      expect(replacement).not_to eq(original)
+      expect(replacement.status).to eq("active")
+      expect(original.reload.status).to eq("archived")
+      expect(ChatSession.unstarted_untitled_personal.where(created_by: user)).to contain_exactly(replacement)
+    end
+
     it "persists a system prompt as the first message" do
       # @spec CHAT-API-001
       session = described_class.call(account: account, user: user)

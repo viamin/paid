@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
   disable_ddl_transaction!
 
@@ -27,6 +29,7 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
             AND inbox_item_key IS NULL
             AND clarifying_question_issue_id IS NULL
             AND feature_intent_id IS NULL
+            AND status <> 'archived'
         ), discarded_drafts AS (
           SELECT id FROM ranked_drafts WHERE position > 1
         ), deleted_messages AS (
@@ -41,7 +44,7 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
 
     add_index :chat_sessions, :created_by_id,
       unique: true,
-      where: "started_at IS NULL AND NULLIF(BTRIM(title), '') IS NULL AND inbox_item_key IS NULL AND clarifying_question_issue_id IS NULL AND feature_intent_id IS NULL",
+      where: "started_at IS NULL AND NULLIF(BTRIM(title), '') IS NULL AND inbox_item_key IS NULL AND clarifying_question_issue_id IS NULL AND feature_intent_id IS NULL AND status <> 'archived'",
       name: "index_chat_sessions_one_unstarted_untitled_personal",
       algorithm: :concurrently
   end
