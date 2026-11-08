@@ -4,8 +4,9 @@
 # remediation proposals. The fleet sweep runs as a bounded continuation chain
 # because detection and diagnosis can include external LLM work: each perform
 # sweeps at most ACCOUNTS_PER_PAGE accounts, and GoodJob persists the keyset
-# cursor plus the captured cycle end in each continuation's arguments, so one
-# perform's duration and memory stay flat as the fleet grows. The cron entry
+# cursor, captured cycle end, and accumulated pattern count in each
+# continuation's arguments, so one perform's duration and memory stay flat as
+# the fleet grows. The cron entry
 # enqueues only this cursor-less starter; a starter that finds an unfinished
 # continuation skips itself, and the shared concurrency key rejects duplicate
 # enqueues, so chains never overlap.
@@ -44,7 +45,7 @@ class AgentRunPatternDetectorJob < ApplicationJob
     end
   end
 
-  def perform(after_account_id: nil, through_account_id: nil)
+  def perform(after_account_id: nil, through_account_id: nil, total_patterns: 0)
     return if fresh_cycle_start?(after_account_id) && continuation_pending?
 
     page_usage = SweepUsage.start
@@ -54,14 +55,16 @@ class AgentRunPatternDetectorJob < ApplicationJob
     return unless result
 
     log_page(result, page_usage)
+    cycle_total_patterns = total_patterns + result.total_patterns
 
     if continuation?(result)
       AgentRunPatternDetectorContinuationJob.perform_later(
         after_account_id: result.accounts.last.id,
-        through_account_id: result.through_account_id
+        through_account_id: result.through_account_id,
+        total_patterns: cycle_total_patterns
       )
     else
-      log_cycle_completed(result)
+      log_cycle_completed(result, cycle_total_patterns)
     end
   end
 
@@ -154,17 +157,17 @@ class AgentRunPatternDetectorJob < ApplicationJob
     )
   end
 
-  def log_cycle_completed(result)
+  def log_cycle_completed(result, total_patterns)
     Rails.logger.info(
       message: "agent_run_patterns.detection_cycle_completed",
       through_account_id: result.through_account_id,
-      total_patterns: result.total_patterns
+      total_patterns:
     )
   end
 
   def peak_rss_kb
     File.foreach("/proc/self/status") do |line|
-      return line.split.last.to_i if line.start_with?("VmHWM:")
+      return line.split[1].to_i if line.start_with?("VmHWM:")
     end
     nil
   rescue Errno::ENOENT

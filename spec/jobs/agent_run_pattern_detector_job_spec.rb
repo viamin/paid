@@ -122,7 +122,8 @@ RSpec.describe AgentRunPatternDetectorJob do
       expect(AgentRunPatterns::Detect).not_to have_received(:call).with(account: accounts[2])
       expect(AgentRunPatternDetectorContinuationJob).to have_received(:perform_later).with(
         after_account_id: accounts[1].id,
-        through_account_id: accounts[4].id
+        through_account_id: accounts[4].id,
+        total_patterns: 0
       )
     end
 
@@ -171,6 +172,23 @@ RSpec.describe AgentRunPatternDetectorJob do
         hash_including(
           message: "agent_run_patterns.detection_cycle_completed",
           through_account_id: Account.maximum(:id)
+        )
+      )
+    end
+
+    # @spec RUN-OBSTACLE-006
+    it "carries the pattern count across pages and logs the cycle total" do
+      create_list(:account, 2)
+      stub_const("#{described_class.name}::ACCOUNTS_PER_PAGE", 1)
+      allow(AgentRunPatterns::Detect).to receive(:call).and_return([ pattern ], [ follow_up_pattern ])
+      allow(AgentRunPatterns::Diagnose).to receive(:call).and_return(diagnosis)
+
+      drain_cycle
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "agent_run_patterns.detection_cycle_completed",
+          total_patterns: 2
         )
       )
     end
@@ -365,6 +383,21 @@ RSpec.describe AgentRunPatternDetectorJob do
           duration_ms: a_value >= 0,
           allocations: a_value >= 0,
           peak_rss_kb: anything
+        )
+      )
+    end
+
+    # @spec RUN-OBSTACLE-007
+    it "records the numeric peak RSS value reported by Linux" do
+      create(:account)
+      allow(File).to receive(:foreach).with("/proc/self/status").and_yield("VmHWM:\t12812 kB\n")
+
+      described_class.perform_now
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "agent_run_patterns.detection_page_completed",
+          peak_rss_kb: 12_812
         )
       )
     end
