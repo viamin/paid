@@ -105,10 +105,10 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(recheck(goal: "create_pr")).to be_nil
   end
 
-  it "returns nil for manual operator requests, which carry their own authority" do
+  it "rechecks delegated manual operator requests" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005
     authorize(action: "review")
 
-    expect(recheck(goal: "review", trigger: :manual)).to be_nil
+    expect(recheck(goal: "review", trigger: :manual)).to be_permitted
   end
 
   it "resolves the PR work item for PR-scoped delegated runs" do

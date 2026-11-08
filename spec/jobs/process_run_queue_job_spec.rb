@@ -1644,7 +1644,7 @@ RSpec.describe ProcessRunQueueJob do
           expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
         end
 
-        it "cancels a retry-minted queued run at the same dequeue boundary" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005
+        it "cancels a user-triggered PR retry at the same dequeue boundary" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005
           project = create(:project, auto_pick_enabled: true)
           pull_request = create(:issue, :pull_request, project: project, github_number: 42,
             github_state: "open", pr_review_phase: "ready")
@@ -1653,9 +1653,8 @@ RSpec.describe ProcessRunQueueJob do
           original = create(:agent_run, :failed, :automatic, project: project, goal: "review",
             issue: nil, source_pull_request_number: 42)
           original.retry!(decision_point: "boundary_spec_retry")
-          retry_run = create(:agent_run, :queued, :automatic, project: project, goal: "review",
-            issue: nil, source_pull_request_number: 42,
-            external_metadata: { AgentRun::MANUAL_RETRY_PARENT_METADATA_KEY => original.id })
+          retry_run = create(:agent_run, :queued, :manual, project: project, goal: "review",
+            issue: nil, source_pull_request_number: 42, external_metadata: {})
           authorization.update!(status: "revoked")
 
           expect(temporal_client).not_to receive(:start_workflow)
