@@ -6063,7 +6063,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_003303) do
       BEGIN
         IF OLD.action = 'project_delegation.posture_selected'
            AND NOT (
-             current_setting('paid.account_teardown_account_id', true) = OLD.account_id::text
+             COALESCE(current_setting('paid.account_teardown_account_id', true), '') = OLD.account_id::text
              OR (pg_trigger_depth() > 1 AND NOT EXISTS (SELECT 1 FROM public.accounts WHERE id = OLD.account_id))
            ) THEN
           RAISE EXCEPTION 'project delegation posture audit events are append-only; UPDATE and DELETE are rejected';
