@@ -137,6 +137,22 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       expect { described_class.new.perform(project.id) }.to raise_error(Errno::ENOENT)
     end
 
+    # @spec KNOWLEDGE-015
+    it "re-raises database connection errors from repo profile detection for retry_on to handle" do
+      allow(Projects::DetectRepoProfile).to receive(:call)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "database unavailable")
+
+      expect { described_class.new.perform(project.id) }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+    end
+
+    # @spec KNOWLEDGE-015
+    it "re-raises database connection errors from import convention detection for retry_on to handle" do
+      allow(ProjectConventions::DetectForImport).to receive(:call)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "database unavailable")
+
+      expect { described_class.new.perform(project.id) }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+    end
+
     it "raises WorktreeService::Error for retry_on to handle" do
       allow(worktree_service).to receive(:ensure_cloned).and_raise(WorktreeService::Error, "not cloned")
 
@@ -191,6 +207,33 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       # retry without running it) instead of invoking the terminal block.
       expect { job.perform_now }.not_to raise_error
       expect(notifier).not_to have_received(:call)
+    end
+
+    # @spec KNOWLEDGE-015
+    it "retries a transient database connection failure without notifying" do
+      allow(worktree_service).to receive(:ensure_cloned)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "PQsocket() can't get socket descriptor")
+
+      job = described_class.new(project.id)
+      job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished]" => 0 }
+
+      expect { job.perform_now }.not_to raise_error
+      expect(notifier).not_to have_received(:call)
+    end
+
+    # @spec KNOWLEDGE-015
+    it "notifies after a database connection failure exhausts retries" do
+      allow(worktree_service).to receive(:ensure_cloned)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "PQsocket() can't get socket descriptor")
+
+      job = described_class.new(project.id)
+      job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished]" => 4 }
+
+      expect { job.perform_now }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+      expect(notifier).to have_received(:call).with(
+        an_instance_of(ActiveRecord::ConnectionNotEstablished),
+        data: hash_including(subsystem: "knowledge", project_id: project.id)
+      )
     end
   end
 end

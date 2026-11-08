@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -425,8 +425,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
     t.index ["project_id", "external_source_key", "external_run_key"], name: "idx_agent_runs_external_dedup", unique: true, where: "(external_run_key IS NOT NULL)"
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
+    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number", "status"], name: "idx_agent_runs_review_feedback_lookup"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
@@ -1028,6 +1028,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
     t.integer "duration_ms"
     t.text "error_message"
     t.jsonb "metadata", default: {}
+    t.string "progress_cursor"
     t.bigint "project_version_id", null: false
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
@@ -3469,6 +3470,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
     t.string "failure_behavior", limit: 50, default: "block", null: false
     t.text "fix_command"
     t.jsonb "log_data"
+    t.jsonb "measurement_recipe"
     t.string "name", limit: 255, null: false
     t.integer "position", default: 0, null: false
     t.bigint "project_id"
@@ -4572,6 +4574,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
     t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
   end
 
+  create_table "trusted_measurement_attempts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "check_key", null: false
+    t.integer "check_version", default: 1, null: false
+    t.integer "consecutive_failure_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.string "criterion_key", null: false
+    t.string "deployed_revision"
+    t.datetime "executed_at"
+    t.integer "external_issue_number", null: false
+    t.string "failure_reason"
+    t.bigint "issue_id"
+    t.bigint "project_id", null: false
+    t.jsonb "result", default: {}, null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_trusted_measurement_attempts_on_account_id"
+    t.index ["issue_id"], name: "index_trusted_measurement_attempts_on_issue_id"
+    t.index ["project_id", "check_key", "check_version", "deployed_revision", "criterion_key", "external_issue_number"], name: "index_trusted_measurement_attempts_on_identity", unique: true
+    t.index ["project_id", "status"], name: "index_trusted_measurement_attempts_on_project_id_and_status"
+    t.index ["project_id"], name: "index_trusted_measurement_attempts_on_project_id"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
     t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
@@ -5190,6 +5215,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"
   add_foreign_key "tracker_configurations", "users", column: "created_by_id"
+  add_foreign_key "trusted_measurement_attempts", "accounts"
+  add_foreign_key "trusted_measurement_attempts", "issues"
+  add_foreign_key "trusted_measurement_attempts", "projects"
   add_foreign_key "user_settings", "provider_api_keys", column: "kb_chat_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "provider_api_keys", column: "kb_embedding_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "users"
@@ -5937,14 +5965,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
       $function$
   SQL
 
+  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
+      END;
+      $function$
+  SQL
+
   create_function :paid_current_account_id, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.paid_current_account_id()
        RETURNS bigint
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -5955,8 +5992,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
@@ -5993,17 +6028,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_235102) do
         END IF;
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
-      END;
-      $function$
-  SQL
-
-  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
-       RETURNS trigger
-       LANGUAGE plpgsql
-      AS $function$
-      BEGIN
-        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
       END;
       $function$
   SQL

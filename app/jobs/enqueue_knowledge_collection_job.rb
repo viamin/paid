@@ -17,6 +17,11 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
     job.notify_terminal_failure(error)
     raise error
   end
+  # @spec KNOWLEDGE-015
+  retry_on ActiveRecord::ConnectionNotEstablished, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.notify_terminal_failure(error)
+    raise error
+  end
 
   def notification_project_id
     arguments.first
@@ -49,7 +54,7 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
   def detect_repo_profile(project, repo_path) # @spec POLYGLOT-TEST-002
     profile = Projects::DetectRepoProfile.call(project:, repo_path:)
     project.update!(repo_profile: profile) if profile.present?
-  rescue WorktreeService::Error, Errno::ENOENT
+  rescue WorktreeService::Error, Errno::ENOENT, ActiveRecord::ConnectionNotEstablished
     raise
   rescue StandardError => e
     Rails.logger.error(
@@ -66,7 +71,7 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
       commit_sha: commit_sha,
       branch: project.default_branch
     )
-  rescue WorktreeService::Error, Errno::ENOENT
+  rescue WorktreeService::Error, Errno::ENOENT, ActiveRecord::ConnectionNotEstablished
     raise
   rescue StandardError => e
     Rails.logger.error(

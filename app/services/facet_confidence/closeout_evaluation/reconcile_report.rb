@@ -6,7 +6,7 @@ module FacetConfidence
     # prerequisite occurrences that it assessed. The report is human evidence,
     # not an attestation of whole-issue delivery or policy enforcement.
     # @spec FACET-CONFIDENCE-023
-    # @spec PARTIAL-CLOSEOUT-042
+    # @spec PARTIAL-CLOSEOUT-046
     class ReconcileReport
       RELEASED_BY = "facet_confidence_evaluation"
       Result = Data.define(:reconciled, :stale, :notification_ids)

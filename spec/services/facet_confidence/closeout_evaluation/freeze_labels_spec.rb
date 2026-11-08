@@ -88,7 +88,7 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(evaluation.report_markdown).to include("FC-CORPUS-01").and include("80/80")
   end
 
-  it "reconciles only the current typed prerequisite after retaining the report" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-042
+  it "reconciles only the current typed prerequisite after retaining the report" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-046
     notification = typed_prerequisite_notification!
     allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("intent-sha")
     label_all!
@@ -104,7 +104,7 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(evaluation.reload.report.dig("originating_closeout", "source_revision")).to eq("intent-sha")
   end
 
-  it "keeps the typed prerequisite held when its source revision changed" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-042
+  it "keeps the typed prerequisite held when its source revision changed" do # @spec FACET-CONFIDENCE-023 PARTIAL-CLOSEOUT-046
     notification = typed_prerequisite_notification!
     allow(PartialCloseouts::Assessment).to receive(:source_revision_for).with(issue).and_return("changed-sha")
     label_all!

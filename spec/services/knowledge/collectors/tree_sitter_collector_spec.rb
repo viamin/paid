@@ -394,4 +394,48 @@ RSpec.describe Knowledge::Collectors::TreeSitterCollector, :no_db do
         .to match_array(collector.collect.map { |artifact| Digest::SHA256.hexdigest(artifact[:content]) })
     end
   end
+
+  # @spec KNOWLEDGE-014
+  describe "#each_page" do
+    def collector_for(scan_path)
+      described_class.new(
+        project: project,
+        project_version: project_version,
+        collector_run: collector_run,
+        options: { scan_path: scan_path }
+      )
+    end
+
+    it "batches ast-grep into one run per pattern per page instead of per file" do
+      Dir.mktmpdir("tree-sitter-page-spec") do |dir|
+        3.times { |i| File.write(File.join(dir, "file#{i}.rb"), "class C#{i}\nend\n") }
+        ast_grep_runs = []
+        allow(Open3).to receive(:capture3) do |*cmd|
+          ast_grep_runs << cmd if cmd.first == "ast-grep" && cmd[1] == "run"
+          [ "[]", "", instance_double(Process::Status, success?: true, exitstatus: 0) ]
+        end
+
+        artifacts, next_cursor = collector_for(dir).each_page
+        artifacts.to_a
+
+        expect(next_cursor).to be_nil
+        expect(ast_grep_runs.size).to eq(described_class::LANGUAGE_CONFIG[:ruby][:patterns].size)
+      end
+    end
+
+    it "yields duplicate matched content once per page" do
+      skip "ast-grep not installed; skipping integration specs" if collector.tool_version.nil?
+
+      Dir.mktmpdir("tree-sitter-page-spec") do |dir|
+        File.write(File.join(dir, "a.rb"), "class Alpha\n  def initialize\n  end\nend\n")
+        File.write(File.join(dir, "b.rb"), "class Beta\n  def initialize\n  end\nend\n")
+
+        artifacts, _next_cursor = collector_for(dir).each_page
+
+        contents = artifacts.to_a.map { |artifact| artifact[:content] }
+        expect(contents.select { |content| content.start_with?("def initialize") }.size).to eq(1)
+        expect(contents).to include(a_string_starting_with("class Alpha"), a_string_starting_with("class Beta"))
+      end
+    end
+  end
 end

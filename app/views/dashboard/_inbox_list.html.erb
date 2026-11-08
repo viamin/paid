@@ -6,6 +6,7 @@
 
 <ul class="divide-y divide-gray-100">
   <% entries.each do |entry| %>
+    <% summary = Inbox::DecisionBrief.list_summary(entry:) %>
     <% selected = entry == selected_entry %>
     <li>
       <%= link_to inbox_entry_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)),
@@ -49,7 +50,7 @@
                 <%= entry.title %>
               <% end %>
             </p>
-            <p class="mt-1 text-sm text-gray-500"><%= entry.summary.presence || "Waiting for review" %></p>
+            <p class="mt-1 text-sm text-gray-500"><%= summary %></p>
           </div>
           <span class="shrink-0 text-xs text-gray-400" data-testid="inbox-list-waiting-age"><%= entry.waiting_since ? time_ago_in_words(entry.waiting_since) : "Waiting —" %></span>
         </div>

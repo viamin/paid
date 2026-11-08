@@ -15,8 +15,7 @@ module ClarifyingQuestions
 
     # @spec QUIET-MODE-011
     def call
-      body_questions = Parse.call(comment_body: issue.body)
-      stored_questions = issue.respond_to?(:needs_input_questions) ? Array(issue.needs_input_questions).map { |question| question.to_s.strip }.reject(&:blank?) : []
+      body_questions = reconciled_description_questions
       current_questions = body_questions.presence || stored_questions
 
       if current_questions.any?
@@ -81,6 +80,35 @@ module ClarifyingQuestions
 
     def github_available?
       project.github_credential_present?
+    end
+
+    def stored_question(question)
+      return question if question.is_a?(Hash) && QuestionPayload.submission_text(question).present?
+
+      question.to_s.strip.presence
+    end
+
+    def stored_questions
+      return [] unless issue.respond_to?(:needs_input_questions)
+
+      Array(issue.needs_input_questions).filter_map { |question| stored_question(question) }
+    end
+
+    # The description channel (#4236) parses the posted marker lines back into
+    # folded strings, while the same run persisted the structured contract in
+    # needs_input_questions. Reconcile the two exactly like the comment
+    # channel (latest_comment_questions) so a quiet-mode project renders the
+    # structured record — recommendation, rationale, examples, evidence —
+    # instead of the raw marker text. Reconcile is identity-guarded on labels
+    # AND choice contracts: the stored records only win when the posted text
+    # still offers the same choices, so a human edit to the description's
+    # markers is served instead of the cached choices.
+    # @spec OPERATOR-INBOX-025
+    def reconciled_description_questions
+      QuestionPayload.reconcile(
+        comment_questions: Parse.call(comment_body: issue.body),
+        stored_questions: stored_questions
+      )
     end
 
     def latest_enhancement_comment
@@ -152,7 +180,7 @@ module ClarifyingQuestions
     def latest_questions(body_questions:, enhancement_comment:)
       if enhancement_comment.present?
         questions = Parse.call(comment_body: comment_body(enhancement_comment))
-        return questions if questions.any?
+        return QuestionPayload.reconcile(comment_questions: questions, stored_questions: stored_questions) if questions.any?
       end
 
       body_questions
@@ -168,7 +196,10 @@ module ClarifyingQuestions
       enhancement_comment = latest_enhancement_comment
       return unless enhancement_comment
 
-      Parse.call(comment_body: comment_body(enhancement_comment)).presence
+      questions = Parse.call(comment_body: comment_body(enhancement_comment)).presence
+      return unless questions
+
+      QuestionPayload.reconcile(comment_questions: questions, stored_questions: stored_questions)
     end
 
     def marked_description_questions?

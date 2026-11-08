@@ -544,6 +544,26 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("does not post to GitHub or resolve the inbox item")
       end
 
+      # @spec QUESTION-EXPLORATION-002
+      it "does not restore a saved answer after a same-label choice revision" do
+        original_question = {
+          question: "Which cache should exports use?",
+          choice_type: "single",
+          choices: [ { label: "Redis", detail: "Shared cache" }, { label: "Postgres", detail: "Persistent rows" } ]
+        }
+        chat_session.update!(metadata: chat_session.metadata.merge("clarifying_questions" => [ original_question ]))
+        ClarifyingQuestions::SaveProgress.call(
+          chat_session: chat_session, position: 1, answer: "Redis", actor: user
+        )
+
+        revised_question = original_question.deep_dup
+        revised_question[:choices].first[:detail] = "Per-process cache"
+        chat_session.update!(metadata: chat_session.metadata.merge("clarifying_questions" => [ revised_question ]))
+
+        expect(prompt).to include("Redis (Per-process cache)")
+        expect(prompt).not_to include("Saved draft answer: Redis")
+      end
+
       # @spec QUESTION-EXPLORATION-004
       # A diagram comment is human discussion context. Without it in the
       # exploration section the assistant cannot answer the question the

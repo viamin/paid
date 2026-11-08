@@ -1,10 +1,8 @@
 <%# @spec OPERATOR-INBOX-008 @spec OPERATOR-INBOX-011 %>
-<%# The two-column lg+ layout puts the agent-authored context beside the
-    answer form (sticky sidebar, scrolls with the page if long); below lg the
-    same context lives inside a collapsible <details> above the questions so
-    mobile operators can read the context once without it dominating the
-    answer form. Without the lg grid wrapper the flex default would still
-    render but the question list would lose its sticky bottom submit button. %>
+<%# The answer form keeps each clarifying question and its answer control
+    together. Its supporting context is a native collapsed disclosure after
+    the questions, so it remains available without competing with the answer
+    flow on either desktop or mobile. %>
 <div class="space-y-6">
   <%# Whitelisted embedded flow: this form intentionally renders inside the
       `inbox-detail` Turbo frame so the chat panel replaces the questions

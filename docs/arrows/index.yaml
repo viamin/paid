@@ -778,6 +778,14 @@ arrows:
     taxonomy: operations
     status: OK
     audited: 2026-10-05
+  trusted-measurements:
+    title: Trusted Post-Deploy Measurements
+    path: docs/intent/trusted-measurements/trusted-measurements-design.md
+    specs: docs/intent/trusted-measurements/trusted-measurements-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-11-07
   onboarding-chat-setup:
     title: Onboarding Chat-Led Setup
     path: docs/intent/onboarding-chat-setup/onboarding-chat-setup-design.md

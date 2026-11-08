@@ -308,6 +308,7 @@ class Project < ApplicationRecord
   # RDR-077: explicit continuation grants authorized by a manual start.
   has_many :work_item_continuation_grants, dependent: :destroy
   has_many :bounded_delegated_actions, dependent: :destroy
+  has_many :trusted_measurement_attempts, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy
@@ -791,7 +792,7 @@ class Project < ApplicationRecord
       .to_set
   end
 
-  # Returns the set of PR numbers that have any unfinished (queued/pending/running/paused) agent run,
+  # Returns PR numbers with unfinished agent runs, including parked recovery,
   # used to suppress "Quick Run" when a run is already in progress (unique index would reject it).
   def pr_numbers_with_active_runs
     agent_runs

@@ -148,7 +148,7 @@ module AgentRuns
         )
     end
 
-    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006
+    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-041
     def recheck_continuation
       issue.reload
       request = agent_run.continuation_request
@@ -156,7 +156,10 @@ module AgentRuns
       if issue.closeout_closing?
         return cancel_continuation("Continuation superseded: GitHub closure is in progress.")
       end
-      return cancel_continuation("Continuation evidence generation changed.") unless Issues::CloseoutEvidence.call(issue).digest == request.evidence_digest
+      return cancel_continuation("Continuation evidence generation changed.") unless continuation_evidence_digest(request) == request.evidence_digest
+      if acceptance_audit_source_changed?(request)
+        return cancel_continuation("Continuation technical evidence changed.")
+      end
 
       # Manual-trigger runs bypass the scheduler's project-pause filters, so
       # explicit operator pauses are honored here instead — a continuation
@@ -168,6 +171,21 @@ module AgentRuns
       return cancel_continuation("Continuation is no longer eligible at dequeue.") unless continuation_eligible?(request)
 
       false
+    end
+
+    def continuation_evidence_digest(request)
+      if request.evidence["continuation_mode"] == "acceptance_audit"
+        return PartialCloseouts::Assessment.source_revision_for(issue, technical_evidence: [])
+      end
+
+      Issues::CloseoutEvidence.call(issue).digest
+    end
+
+    def acceptance_audit_source_changed?(request)
+      return false unless request.evidence["continuation_mode"] == "acceptance_audit"
+
+      source_revision = request.evidence["source_revision"]
+      source_revision.present? && source_revision != PartialCloseouts::Assessment.source_revision_for(issue)
     end
 
     def continuation_eligible?(request)

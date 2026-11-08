@@ -215,6 +215,54 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    # @spec OPERATOR-INBOX-025 — the standalone wizard is the surface the
+    # Needs Input queue links to, so it renders the same evidence-backed
+    # recommendation and collapsed supporting detail as the inbox form.
+    context "when a question uses the structured payload" do
+      let(:structured_question) do
+        {
+          "question" => "Which cache should exports use?",
+          "choices" => [
+            { "label" => "Redis", "detail" => "Shared cache" },
+            { "label" => "Postgres", "detail" => "Persistent rows" }
+          ],
+          "recommendation" => "Redis",
+          "rationale" => "Existing workers already use it.",
+          "examples" => [ "Nightly exports" ],
+          "evidence_references" => [ "app/jobs/export_job.rb:12" ]
+        }
+      end
+      let(:issue) do
+        create(:issue, :needs_input, project: project, body: issue_body,
+          needs_input_questions: [ structured_question, "Should this be behind a flag?" ])
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([])
+      end
+
+      it "shows the recommendation and collapsed supporting detail beside the answer control" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        expect(response).to have_http_status(:ok)
+        document = Nokogiri::HTML(response.body)
+        expect(document.at_css("[data-testid='standalone-question-recommendation']").text).to include("Paid recommends: Redis")
+        details = document.at_css("[data-testid='standalone-question-details']")
+        expect(details).to be_present
+        expect(details.attribute("open")).to be_nil
+        expect(details.text).to include("Existing workers already use it.", "Nightly exports", "app/jobs/export_job.rb:12")
+      end
+
+      it "keeps the wizard freeform-only for questions without supporting detail" do
+        get project_issue_clarifying_questions_path(project, issue)
+
+        document = Nokogiri::HTML(response.body)
+
+        expect(document.css("[data-testid='standalone-question-recommendation']").size).to eq(1)
+        expect(document.css("[data-testid='standalone-question-details']").size).to eq(1)
+      end
+    end
+
     context "when no clarifying questions found" do
       before do
         allow(github_client).to receive(:issue_comments).and_return([])

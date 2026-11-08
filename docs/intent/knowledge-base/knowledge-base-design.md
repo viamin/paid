@@ -33,14 +33,18 @@ chain per project commit and skip when a continuation is already pending;
 continuation jobs can enqueue despite that limit and share an execution key with
 legacy full collection. A queued batch stops when its branch has advanced to a
 newer commit, allowing the current commit's chain to use the knowledge worker.
-Each collector releases its container before the
+The import-time enqueue job retries transient worktree and PostgreSQL connection
+failures with bounded backoff; it reports the failure only when that retry
+policy is exhausted. Each collector releases its container before the
 next starts; Ruby heap memory remains subject to garbage collection. The
-tree-sitter collector scans at most 25 source files per continuation, carrying
-the last processed relative path forward. It marks its collector run complete
-only after the final page; direct full collection still uses its existing
-single-call behavior. A retried
-continuation replays a collector left `running` by process interruption, using
-idempotent artifact writes. The final continuation checks every collector's
+tree-sitter and symbol-index collectors scan at most 25 source files per
+continuation. Their stable relative-path cursor is persisted on the unique
+collector run for a project version and collector type only after that shard's
+artifacts are stored, so retries resume idempotently even if job arguments are
+lost. Each shard streams artifacts to the store instead of accumulating the
+repository's matches or artifacts in Puma. A collector run completes only
+after its final page; direct full collection retains its existing single-call
+behavior. The final continuation checks every collector's
 persisted status before marking older artifacts stale and the project ready;
 skipped collectors that preserve existing artifacts remain exempt from staling.
 Direct collector-runner calls used by Temporal retain their existing contract.

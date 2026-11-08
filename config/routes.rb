@@ -323,6 +323,7 @@ Rails.application.routes.draw do
       post :refresh_auth, on: :member
       post :diagnose_error, on: :member
       post :resume, on: :member
+      post :retry_source_closure, on: :member
       post :terminate, on: :member
       post :promote_session_summary, on: :member
       get :provenance, on: :member
@@ -454,6 +455,10 @@ Rails.application.routes.draw do
       post "inbox/entries/:entry_id/restore", to: "inbox#restore_entry"
       post "feature_intents/:id/cancel", to: "feature_intents#cancel"
       post "feature_intents/:id/reopen", to: "feature_intents#reopen"
+      # RDR-080 surface parity: the shared delegation projection over the
+      # mobile API.
+      # @spec PROJECT-DELEGATION-005
+      get "projects/:project_id/delegation", to: "projects/delegation#show"
       get "projects/:project_id/design_artifact_findings", to: "design_artifact_findings#index"
       post "projects/:project_id/design_artifact_findings/:id/resolve", to: "design_artifact_findings#resolve"
       post "projects/:project_id/design_artifact_findings/:id/file_issue", to: "design_artifact_findings#file_issue"

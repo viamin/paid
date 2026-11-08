@@ -109,16 +109,22 @@ module Knowledge
       tool_version = collector.tool_version
       collector_run.update!(tool_version: tool_version) if tool_version
 
-      artifact_data, next_cursor = if options[:partial_collection] && collector.respond_to?(:collect_page)
-        collector.collect_page(cursor: options[:collector_cursor])
+      artifact_data, next_cursor = if options[:partial_collection] && collector.respond_to?(:each_page)
+        collector.each_page(cursor: collector_run.progress_cursor.presence || options[:collector_cursor])
+      elsif options[:partial_collection] && collector.respond_to?(:collect_page)
+        collector.collect_page(cursor: collector_run.progress_cursor.presence || options[:collector_cursor])
       else
         [ collector.collect, nil ]
       end
       store = ArtifactStore.new(project: project, collector_run: collector_run)
       count = store.store_all(artifact_data)
-      return { collector_type: collector_type, status: "in_progress", cursor: next_cursor } if next_cursor
+      if next_cursor
+        collector_run.update!(progress_cursor: next_cursor)
+        return { collector_type: collector_type, status: "in_progress", cursor: next_cursor }
+      end
 
-      count = collector_run.knowledge_artifacts.active.count if collector.respond_to?(:collect_page) && options[:partial_collection]
+      count = collector_run.knowledge_artifacts.active.count if collector.respond_to?(:each_page) ||
+        (collector.respond_to?(:collect_page) && options[:partial_collection])
       collector_run.mark_completed!(count: count)
 
       { collector_type: collector_type, status: "completed", artifacts_count: count }

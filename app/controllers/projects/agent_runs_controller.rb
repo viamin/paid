@@ -12,7 +12,8 @@ module Projects
 
     before_action :set_project
     before_action :set_agent_run, only: [
-      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary
+      :show, :cancel, :retry, :retry_source_closure, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance,
+      :promote_session_summary
     ]
 
     def index
@@ -727,6 +728,22 @@ module Projects
         alert: "Another agent run is already queued or in progress for this target."
     end
 
+    def retry_source_closure # @spec PARTIAL-CLOSEOUT-045
+      authorize @agent_run, :retry?
+      unless @agent_run.waiting_recovery?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not waiting for source-closure recovery."
+        return
+      end
+
+      job = SourceClosureRecoveryJob.perform_later(@agent_run.id)
+      unless job.successfully_enqueued?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "Source-closure recovery could not be queued. Please try again."
+        return
+      end
+      audit_event("agent_run.source_closure_recovery_requested", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
+      redirect_to project_agent_run_path(@project, @agent_run), notice: "Source-closure recovery was queued without rerunning coding."
+    end
+
     def terminate
       authorize @agent_run
 
@@ -1376,13 +1393,19 @@ module Projects
       phase = Automation::ManualStart::Plan.phase_for_goal(@agent_run.goal)
       return unless phase
 
+      # The shared delegation projection (RDR-080 surface parity): this
+      # surface reads authority through the same read model as settings,
+      # API, and MCP instead of assembling grants and policy inline.
+      # @spec PROJECT-DELEGATION-005
+      projection = ProjectDelegation::Projection.for_work_item(project: @project, work_item: @agent_run)
       @continuation_phase = phase
-      @continuation_grants = Automation::ContinuationGrantLookup.resolve(
-        project: @project, phase:, work_item: @agent_run
-      )
-      @continuation_authority = Automation::EffectivePolicy.call(
-        project: @project, phase:, work_item: @agent_run, trigger: :automatic
-      )
+      @continuation_grants = projection.continuation_grants(phase)
+      @continuation_authority = projection.phase_decision(phase)
+      @delegated_authorizations = if FeatureFlags.enabled?(:project_delegation, project: @project)
+        projection.authorizations
+      else
+        []
+      end
     end
 
     # @spec AUTOMATION-PHASES-005

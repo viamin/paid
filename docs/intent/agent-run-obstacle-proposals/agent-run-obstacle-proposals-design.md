@@ -48,6 +48,21 @@ path. Existing issue filing and repair services remain separately authorized
 paths. Pattern detection does not call repair application, create an execution,
 or opt an account into automatic remediation.
 
+The fleet sweep runs as a bounded continuation chain because detection and
+diagnosis can include external LLM work: each perform sweeps at most
+`ACCOUNTS_PER_PAGE` accounts, and GoodJob persists the keyset cursor
+(`after_account_id`) and the cycle end (`through_account_id`, captured when
+the cycle starts) in each continuation's arguments. Accounts created after the
+cycle start fall outside the captured end and wait for the next cycle. The
+cron entry enqueues only the cursor-less starter job; the continuation job
+class shares the starter's concurrency key but carries no enqueue limit so a
+performing page can always enqueue its successor, while a duplicate cron
+start is rejected at enqueue and a starter that finds an unfinished
+continuation performs no work — chains never overlap. One account failure is
+logged with per-account duration and allocation metrics and skipped; the
+per-account detection, daily diagnosis budget, fingerprint dedupe, and
+notification resolution are idempotent, so the next cycle's retry is safe.
+
 For an accepted/applied correction, outcome evaluation uses the same goal,
 fingerprint identity where available, and window represented by the proposal.
 It records before/after failure and exposure counts. It reports

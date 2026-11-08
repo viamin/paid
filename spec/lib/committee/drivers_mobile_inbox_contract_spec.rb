@@ -18,6 +18,7 @@ RSpec.describe Committee::Drivers do
       "/inbox/entries/{entry_id}/restore",
       "/feature_intents/{id}/cancel",
       "/feature_intents/{id}/reopen",
+      "/projects/{project_id}/delegation",
       "/projects/{project_id}/design_artifact_findings",
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links",
       "/chat/sessions",
@@ -45,6 +46,18 @@ RSpec.describe Committee::Drivers do
       expect(mapping.keys).to match_array(Inbox::Queue::KINDS)
       expect(branch_references).to match_array(mapping.values)
     end
+  end
+
+  # @spec OPERATOR-INBOX-027 MOBILE-API-016
+  it "documents the shared inbox decision brief" do
+    decision_brief = schema.dig("components", "schemas", "InboxEntryBase", "properties", "decision_brief")
+
+    expect(decision_brief.fetch("required")).to match_array(
+      %w[goal changed decision waiting_work primary_action next_state]
+    )
+    expect(decision_brief.fetch("properties").keys).to match_array(
+      %w[goal changed decision recommendation recommendation_reason waiting_work primary_action next_state unknown]
+    )
   end
 
   # @spec CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-021
@@ -165,6 +178,7 @@ RSpec.describe Committee::Drivers do
       "/inbox/entries/{entry_id}/restore" => { "post" => [ "inbox" ] },
       "/feature_intents/{id}/cancel" => { "post" => [ "inbox" ] },
       "/feature_intents/{id}/reopen" => { "post" => [ "inbox" ] },
+      "/projects/{project_id}/delegation" => { "get" => [ "inbox" ] },
       "/projects/{project_id}/design_artifact_findings" => { "get" => [ "inbox" ] },
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links" => { "post" => [ "inbox" ] },
       "/chat/sessions" => { "get" => [ "chat" ], "post" => [ "chat" ] },

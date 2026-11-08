@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "json"
+
 module ClarifyingQuestions
   module AnswerPairs
     # Local alias to the freeform-notes marker so the regex below matches the
@@ -36,8 +38,16 @@ module ClarifyingQuestions
       Array(questions).map { |question| normalize_question(question) }
     end
 
+    def progress_identity(question)
+      normalized_question = normalize_question(question)
+      choices = Choices.call(question: question) if question.is_a?(Hash)
+      return normalized_question unless choices
+
+      JSON.generate(question: normalized_question, choice_type: choices[:type], choices: choices[:options])
+    end
+
     def normalize_question(question)
-      question.to_s.strip.gsub(/\s+/, " ")
+      QuestionPayload.submission_text(question).gsub(/\s+/, " ")
     end
   end
 end

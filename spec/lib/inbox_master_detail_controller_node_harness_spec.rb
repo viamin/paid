@@ -95,4 +95,12 @@ RSpec.describe InboxMasterDetailControllerNodeHarness do
     expect(result.fetch("focused")).to be(true)
     expect(result.fetch("status")).to eq("Copy failed.")
   end
+
+  # @spec OPERATOR-INBOX-025
+  it "leaves an in-flight detail replacement to Turbo" do
+    source = File.read("app/javascript/controllers/inbox_master_detail_controller.js")
+
+    expect(source).not_to include("deferWhileDetailLoads")
+    expect(source).not_to include("event.preventDefault()")
+  end
 end

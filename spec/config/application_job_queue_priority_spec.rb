@@ -25,6 +25,7 @@ RSpec.describe ApplicationJob, :no_db do
         QdrantCollectionCleanupJob
         RetryFailedManualRunJob
         RetryTimedOutIssueGoalJob
+        SourceClosureRecoveryJob
       ],
       maintenance: %w[
         AnalyzeIssueFollowupBackfillJob
@@ -33,6 +34,7 @@ RSpec.describe ApplicationJob, :no_db do
         AutoPickEligibilitySweepJob
         AutoPickQueueBackfillJob
         AgentRunPatternDetectorJob
+        AgentRunPatternDetectorContinuationJob
         AgentRunResourceJanitorJob
         AppleVerificationBundleRetentionSweepJob
         AppleVerificationDispatchJob

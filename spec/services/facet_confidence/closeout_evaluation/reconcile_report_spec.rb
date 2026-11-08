@@ -9,7 +9,7 @@ require "rails_helper"
 # current revision — a merged foreign occurrence is never re-pegged to this
 # evaluation's revision.
 # @spec FACET-CONFIDENCE-023
-# @spec PARTIAL-CLOSEOUT-042
+# @spec PARTIAL-CLOSEOUT-046
 RSpec.describe FacetConfidence::CloseoutEvaluation::ReconcileReport do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }

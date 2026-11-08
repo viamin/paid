@@ -3,7 +3,8 @@
 module Automation
   # Single write boundary for bounded delivery authorization. Every caller
   # supplies explicit evidence; reserved product/release actions fail closed.
-  # @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
+  # @spec BOUNDED-PHASE-AUTHORIZATION-004 @spec BOUNDED-PHASE-AUTHORIZATION-010
+  # @spec BOUNDED-PHASE-AUTHORIZATION-011 @spec PROJECT-DELEGATION-004
   class AuthorizeBoundedAction
     class Error < StandardError; end
     class PermissionDenied < Error; end
@@ -36,7 +37,7 @@ module Automation
           issue:,
           created_by: user,
           action:,
-          evidence: evidence.deep_stringify_keys,
+          evidence: canonical_evidence,
           expires_at:
         )
         Audit::RecordEvent.call(
@@ -80,13 +81,17 @@ module Automation
 
       ensure_intent_digest!
       ensure_acceptance_refs!
+      ensure_stop_before_phase!
     end
 
     def ensure_intent_digest!
       digest = evidence_value("intent_digest")
-      return if digest.is_a?(String) && digest.match?(BoundedDelegatedAction::INTENT_DIGEST_FORMAT)
+      unless digest.is_a?(String) && digest.match?(BoundedDelegatedAction::INTENT_DIGEST_FORMAT)
+        raise InvalidEvidence, "Evidence must include intent_digest as a sha256:<64 hex characters> digest."
+      end
+      return if digest == canonical_intent_digest
 
-      raise InvalidEvidence, "Evidence must include intent_digest as a sha256:<64 hex characters> digest."
+      raise InvalidEvidence, "Evidence intent_digest must match the work item's current intent."
     end
 
     def ensure_acceptance_refs!
@@ -94,6 +99,26 @@ module Automation
       return if acceptance_references.is_a?(Array) && acceptance_references.any?(&:present?)
 
       raise InvalidEvidence, "Evidence must include acceptance_refs."
+    end
+
+    def ensure_stop_before_phase!
+      expected = DelegatedActionAdmission::STOP_BEFORE_PHASES.fetch(action)
+      return if evidence_value("stop_before_phase").to_s == expected
+
+      raise InvalidEvidence, "Evidence stop_before_phase must be #{expected} for #{action}."
+    end
+
+    def canonical_intent_digest
+      "sha256:#{PartialCloseouts::Assessment.intent_revision_for(issue)}"
+    end
+
+    def canonical_evidence
+      @canonical_evidence ||= DelegatedActionAdmission.admission_evidence(
+        work_item: issue,
+        action:,
+        acceptance_refs: evidence_value("acceptance_refs"),
+        stop_before_phase: evidence_value("stop_before_phase")
+      )
     end
 
     def evidence_value(key)

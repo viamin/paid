@@ -263,7 +263,7 @@ module Api
       #
       # NOTE: completed review-goal lookups use the dedicated
       # idx_agent_runs_review_feedback_lookup composite index because the
-      # active-run unique index only covers queued/pending/running/paused rows.
+      # active-run unique index only covers unfinished rows, including parked recovery.
       @project.agent_runs
         .where(pull_request_number: pr_number, status: "completed")
         .order(created_at: :desc)

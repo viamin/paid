@@ -624,10 +624,10 @@
   in a separate lazy Turbo Frame, fetching comments once per supplementary
   request, SHALL flow through `Inbox::Queue::Entry#context_markdown`,
   and SHALL be exposed through `shared/markdown_text` rendered in block
-  mode so paragraphs and lists keep their structure. On `lg+` viewports
-  the context SHALL sit in a two-column grid beside the questions; below
-  `lg` it SHALL collapse into a native `<details>` disclosure above the
-  questions so it does not dominate the answer form on phones. When the
+  mode so paragraphs and lists keep their structure. The context SHALL use a
+  native `<details>` disclosure on every viewport so the question and answer
+  control remain together and first; it remains keyboard and screen-reader
+  accessible. When the
   comment body cannot be fetched (missing GitHub credential, transient
   GitHub failure, or the questions came from a local `needs_input_questions`
   snapshot rather than a fetched comment), the system SHALL hide the panel
@@ -642,6 +642,22 @@
   *Test:* `spec/services/clarifying_questions/context_spec.rb`,
   `spec/services/clarifying_questions/load_spec.rb`,
   `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-025** — When the Inbox renders a clarifying question,
+  it SHALL normalize either a structured payload or a legacy string without
+  guessing a product answer from prose. It SHALL show the concise question and
+  answer choices first, show a Paid recommendation only when the payload has
+  evidence references, and place rationale, examples, and references in a
+  collapsed native disclosure. The existing answer submission, freeform path,
+  issue/PR support, trusted-comment admission, progress, and reassessment
+  contracts SHALL retain their current question-text identity.
+  A structured payload's `choice_type` SHALL determine its answer-control and
+  validation semantics without relying on a comment reload.
+  *Tests:* `spec/services/clarifying_questions/question_payload_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
+  *Code:* `app/services/clarifying_questions/question_payload.rb`,
+  `app/views/dashboard/_inbox_clarifying_answer_form.html.erb`,
+  `app/controllers/projects/clarifying_questions_controller.rb`.
 
 - [x] **OPERATOR-INBOX-012** — When a clarifying question carries strict
   choice markers (ISSUE-ENHANCEMENT-018), every answer surface — the inbox
@@ -787,10 +803,11 @@
   eager Turbo Frame using the same filtered member route. Opening another row
   SHALL replace any in-flight first-detail request. When a detail renders,
   it SHALL return its local actions without waiting for action history; a
-  separate eager history request
-  SHALL recheck entry visibility and membership. Read-only history MAY use a
-  short-lived per-subject Rails cache; new Paid-owned history writes SHALL
-  invalidate that item's cache, while authorization and actionable state
+  separate lazy Turbo Frame history request SHALL start when the history
+  section enters the viewport and recheck entry visibility and membership.
+  Read-only history MAY use a short-lived per-subject Rails cache; new
+  Paid-owned history writes SHALL invalidate that item's cache, while
+  authorization and actionable state
   SHALL always be read from current records.
   *Test:* `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/action_history_spec.rb`,
@@ -897,3 +914,25 @@
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/requests/inbox_spec.rb`,
   `spec/requests/api/v1/design_artifact_findings_spec.rb`.
+
+- [x] **OPERATOR-INBOX-027** — When an actionable Inbox entry is listed,
+  selected, requested through the supported API, or opened in contextual chat,
+  the system SHALL use one deterministic decision-brief projection that names
+  the project goal, change, exact decision/action, recommendation when its
+  structured evidence supports one, waiting work, primary action, and the
+  next state. The default view SHALL keep questions separate from explanation
+  and omit raw technical identifiers. If evidence cannot support a
+  recommendation, the projection SHALL disclose that uncertainty and ask one
+  focused question. The projection SHALL derive only from current structured
+  state and evidence and SHALL not call an LLM while rendering. The HTML list
+  SHALL calculate only its decision/change summary without resolving
+  recommendations. API and MCP list serialization SHALL preserve the full
+  decision brief and batch local partial-closeout prerequisite reads only for
+  entries in the returned page, without preloading them for the whole queue.
+  *Code:* `app/services/inbox/decision_brief.rb`,
+  `app/views/dashboard/_inbox_decision_brief.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/decision_brief_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.

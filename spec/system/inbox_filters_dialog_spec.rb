@@ -64,12 +64,14 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
   end
 
   # @spec OPERATOR-INBOX-025
-  it "loads a selected detail and its history after the list appears" do
+  it "loads selected detail history when its lazy frame enters view" do
     visit inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
 
     expect(page).to have_content("Alpha question")
     expect(page).to have_selector("turbo-frame#inbox-detail")
     expect(page).to have_selector("form[action='#{project_issue_clarifying_questions_path(project_a, project_a.issues.first)}']")
+    expect(page).to have_selector("turbo-frame#inbox-history[loading='lazy']")
+    page.execute_script("document.querySelector('#inbox-history').scrollIntoView()")
     expect(page).to have_content("Action history")
   end
 

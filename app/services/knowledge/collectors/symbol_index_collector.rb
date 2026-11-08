@@ -16,51 +16,29 @@ module Knowledge
       LANGUAGE_EXTENSIONS = {
         ruby: %w[.rb]
       }.freeze
+      FILES_PER_PAGE = 25
+      IGNORED_PATH_SEGMENTS = TreeSitterCollector::IGNORED_PATH_SEGMENTS
 
       def collect
-        artifacts = []
+        PATTERNS.flat_map do |language, patterns|
+          results = collect_all_results(patterns, language, LANGUAGE_EXTENSIONS[language])
+          artifacts_from_results(results, language)
+        end.then { |artifacts| deduplicate_by_content(artifacts) }
+      end
 
-        PATTERNS.each do |language, patterns|
-          extensions = LANGUAGE_EXTENSIONS[language]
-          all_results = collect_all_results(patterns, language, extensions)
+      # @spec KNOWLEDGE-014
+      def collect_page(cursor: nil)
+        artifacts, next_cursor = each_page(cursor:)
+        [ deduplicate_by_content(artifacts.to_a), next_cursor ]
+      end
 
-          all_results
-            .group_by { |r| r[:file_path] }
-            .sort_by { |file_path, _| file_path }
-            .each do |file_path, file_results|
-            sorted_file_results = sort_symbol_results(file_results)
-            scope_stack = build_scope_stack(sorted_file_results)
+      # @spec KNOWLEDGE-014
+      def each_page(cursor: nil)
+        page, has_more = source_page(cursor:)
+        next_cursor = has_more ? page.last : nil
+        return [ [].each, nil ] if page.empty?
 
-            sorted_file_results.each do |result|
-              qualified_name = qualified_scope_name(scope_stack, result)
-              identifier = build_identifier(file_path, result[:symbol_type], qualified_name)
-              content = result[:content]
-
-              artifacts << {
-                artifact_type: "symbol",
-                scope_path: file_path,
-                identifier: identifier,
-                content: content,
-                metadata: {
-                  language: language.to_s,
-                  symbol_type: result[:symbol_type].to_s,
-                  name: result[:name],
-                  line: result[:line]
-                },
-                chunks: [
-                  {
-                    chunk_type: "definition",
-                    content: content,
-                    scope_tags: [ language.to_s, result[:symbol_type].to_s ],
-                    sequence: 0
-                  }
-                ]
-              }
-            end
-          end
-        end
-
-        deduplicate_by_content(artifacts)
+        [ page_artifacts_enum(page), next_cursor ]
       end
 
       def collector_type
@@ -73,11 +51,11 @@ module Knowledge
 
       private
 
-      def collect_all_results(patterns, language, extensions)
+      def collect_all_results(patterns, language, extensions, paths: nil)
         results = []
 
         patterns.each do |symbol_type, pattern|
-          matches = run_ast_grep(pattern, language.to_s.capitalize)
+          matches = run_ast_grep(pattern, language.to_s.capitalize, paths:)
           matches.each do |match|
             file_path = relative_path(match["file"])
             next unless matching_extension?(file_path, extensions)
@@ -97,6 +75,95 @@ module Knowledge
         end
 
         results
+      end
+
+      # Yields each file's artifacts in path order. The page's ast-grep runs
+      # are batched once per pattern (never per file), and the per-page digest
+      # set keeps duplicate matched content from reaching the artifact
+      # store's conflict-recovery path.
+      def page_artifacts_enum(page)
+        Enumerator.new do |yielder|
+          seen = Set.new
+          artifacts_by_file = page_artifacts_by_file(page)
+          page.each do |path|
+            artifacts_by_file.fetch(path, []).each do |artifact|
+              next unless seen.add?(content_digest(artifact))
+
+              yielder << artifact
+            end
+          end
+        end
+      end
+
+      # One ast-grep run per pattern for the whole page; a page of results in
+      # memory is the accepted per-shard bound.
+      def page_artifacts_by_file(page)
+        LANGUAGE_EXTENSIONS.each_with_object({}) do |(language, extensions), by_file|
+          paths = page.select { |path| matching_extension?(path, extensions) }
+          next if paths.empty?
+
+          results = collect_all_results(PATTERNS.fetch(language), language, extensions,
+            paths: paths.map { |path| File.join(scan_path, path) })
+          artifacts_from_results(results, language)
+            .each { |artifact| (by_file[artifact[:scope_path]] ||= []) << artifact }
+        end
+      end
+
+      def artifacts_from_results(results, language)
+        results.group_by { |result| result[:file_path] }.sort_by(&:first).flat_map do |file_path, file_results|
+          scope_stack = build_scope_stack(file_results)
+          sort_symbol_results(file_results).map do |result|
+            qualified_name = qualified_scope_name(scope_stack, result)
+            build_artifact(file_path, result, qualified_name, language)
+          end
+        end.then { |artifacts| deduplicate_by_content(artifacts) }
+      end
+
+      def build_artifact(file_path, result, qualified_name, language)
+        content = result[:content]
+        {
+          artifact_type: "symbol",
+          scope_path: file_path,
+          identifier: build_identifier(file_path, result[:symbol_type], qualified_name),
+          content: content,
+          metadata: {
+            language: language.to_s,
+            symbol_type: result[:symbol_type].to_s,
+            name: result[:name],
+            line: result[:line]
+          },
+          chunks: [ { chunk_type: "definition", content: content,
+            scope_tags: [ language.to_s, result[:symbol_type].to_s ], sequence: 0 } ]
+        }
+      end
+
+      def source_page(cursor:)
+        root = host_repo_path
+        skip!("repository path not available", preserve_existing_artifacts: true) if root.blank?
+
+        require "find"
+        paths = []
+        Find.find(root) do |path|
+          relative = Pathname.new(path).relative_path_from(Pathname.new(root)).to_s
+          if File.directory?(path)
+            Find.prune if relative != "." && ignored_path?(relative)
+            next
+          end
+
+          next if ignored_path?(relative) || cursor && relative <= cursor
+          next unless LANGUAGE_EXTENSIONS.values.flatten.any? { |extension| relative.end_with?(extension) }
+
+          paths << relative
+          paths.sort!
+          paths.pop if paths.size > FILES_PER_PAGE + 1
+        rescue Errno::ENOENT, Errno::EACCES
+          next
+        end
+        [ paths.first(FILES_PER_PAGE), paths.size > FILES_PER_PAGE ]
+      end
+
+      def ignored_path?(relative_path)
+        relative_path.split(File::SEPARATOR).any? { |segment| IGNORED_PATH_SEGMENTS.include?(segment) }
       end
 
       def extract_name(match)
@@ -169,7 +236,11 @@ module Knowledge
       # The unique index on [collector_run_id, content_hash] rejects
       # duplicates, so keep only the first artifact per content hash.
       def deduplicate_by_content(artifacts)
-        artifacts.uniq { |a| Digest::SHA256.hexdigest(a[:content].to_s) }
+        artifacts.uniq { |a| content_digest(a) }
+      end
+
+      def content_digest(artifact)
+        Digest::SHA256.hexdigest(artifact[:content].to_s)
       end
 
       def ast_grep_log_component

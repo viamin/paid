@@ -33,6 +33,11 @@ when the underlying execution takes milliseconds. The setting is scoped to
 development connections so request and background workers use the same plan
 behavior without changing production database policy.
 
+Outside production, primary development and test database tasks use the
+provided `DATABASE_URL` when it is available. This prevents Rails tasks from
+falling back to a local PostgreSQL socket in CI while leaving the separate
+development Action Cable connection available for its own database URL.
+
 That same request lifecycle fail-closes tenant access at the controller layer.
 Active accounts proceed normally, suspended accounts stay read-only for
 mutating requests, and deactivated accounts lose both HTML and API access with

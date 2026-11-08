@@ -18,6 +18,22 @@ module Activities
         disposition = PartialCloseouts::SourceClosureDisposition.record!(agent_run, assessment: assessment)
         { agent_run_id: agent_run.id, disposition: disposition.fetch("disposition") }
       end
+    rescue Llm::AnalyzePartialCloseout::AssessmentFailure => e
+      category = e.diagnostic.fetch(:category, "transport_error")
+      raise Temporalio::Error::ApplicationError.new(
+        e.message, { "category" => category }, type: "SourceClosureAssessmentFailure",
+        non_retryable: !recoverable_category?(category)
+      )
+    rescue AgentHarness::ConfigurationError
+      raise Temporalio::Error::ApplicationError.new(
+        "Partial closeout assessment configuration is unavailable. Review the configured runner and retry.",
+        { "category" => "configuration_unavailable" },
+        type: "SourceClosureAssessmentFailure", non_retryable: true
+      )
     end
+
+    private
+
+    def recoverable_category?(category) = category.in?(%w[timeout transport_error])
   end
 end

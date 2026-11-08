@@ -32,6 +32,12 @@ RSpec.describe "Projects::PreCommitRequirements" do
         expect(response.body).to include("bundle exec mutant run --results-dir .mutant/results --since HEAD~1")
       end
 
+      it "does not offer performance measurements without a structured recipe editor" do # @spec PARTIAL-CLOSEOUT-042
+        get project_pre_commit_requirements_path(project)
+
+        expect(response.body).not_to include(%(value="performance_measurement"))
+      end
+
       it "renders the warden security scan fieldset with its default command" do # @spec QUALITY-LOOPS-007
         get project_pre_commit_requirements_path(project)
 

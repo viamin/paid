@@ -2,100 +2,167 @@
 
 require "rails_helper"
 
-RSpec.describe AutoPickEligibilitySweepJob, :no_db do
-  def stub_projects(*projects)
-    active_relation = instance_double(ActiveRecord::Relation)
-    where_relation = instance_double(ActiveRecord::Relation)
-    includes_relation = instance_double(ActiveRecord::Relation)
-    select_relation = instance_double(ActiveRecord::Relation)
+RSpec.describe AutoPickEligibilitySweepJob do
+  let(:account) { create(:account) }
+  let(:owner) { create(:user, account:) }
 
-    allow(Project).to receive(:active).and_return(active_relation)
-    allow(active_relation).to receive(:where).with(auto_pick_enabled: true).and_return(where_relation)
-    allow(where_relation).to receive(:includes).with(:account, :created_by).and_return(includes_relation)
-    allow(includes_relation).to receive(:select).with(:id, :account_id, :created_by_id).and_return(select_relation)
-    allow(select_relation).to receive(:to_a).and_return(projects)
-    allow(includes_relation).to receive(:find_each) do |&block|
-      projects.each { |p| block.call(p) }
+  def page_result(last_issue_id: nil, candidate_count: 0, more: false, created_count: 0)
+    runs = Array.new(created_count) { instance_double(AgentRun, previously_new_record?: true) }
+    Issues::BulkEnqueueEligible::PageResult.new(
+      runs:,
+      last_issue_id:,
+      candidate_count:,
+      more?: more
+    )
+  end
+
+  def fail_first_project_page(failing_project, calls)
+    attempts = 0
+    allow(Issues::BulkEnqueueEligible).to receive(:call) do |project:, **|
+      calls << project
+      raise "queue unavailable" if project == failing_project && (attempts += 1) == 1
+
+      page_result
     end
   end
 
   before do
-    stub_const("Project", Class.new do
-      attr_reader :id, :account_id, :created_by_id
-
-      def initialize(id)
-        @id = id
-        @account_id = nil
-        @created_by_id = nil
-      end
-
-      def self.active; end
-      def self.where(*); end
-    end)
-
-    allow(Account).to receive(:batch_fallback_owner_ids).and_return({})
-    user_relation = instance_double(ActiveRecord::Relation)
-    allow(User).to receive(:where).and_return(user_relation)
-    allow(user_relation).to receive(:index_by).and_return({})
-  end
-
-  it "bulk enqueues eligible issues for each runnable project" do
-    project = Project.new(101)
-
-    stub_projects(project)
-    allow(Issues::AutoPickProjectGate).to receive(:call).with(project, hash_including(:owner)).and_return(true)
-    allow(Issues::BulkEnqueueEligible).to receive(:call).and_return([])
-
-    described_class.perform_now
-
-    expect(Issues::BulkEnqueueEligible).to have_received(:call).with(
-      project: project,
-      skip_project_gate: true
-    )
-  end
-
-  it "skips projects that do not pass the gate" do
-    project = Project.new(202)
-
-    stub_projects(project)
-    allow(Issues::AutoPickProjectGate).to receive(:call).with(project, hash_including(:owner)).and_return(false)
-    allow(Issues::BulkEnqueueEligible).to receive(:call)
-
-    described_class.perform_now
-
-    expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
-  end
-
-  it "continues processing remaining projects after a failure" do
-    failing_project = Project.new(303)
-    healthy_project = Project.new(404)
-
-    stub_projects(failing_project, healthy_project)
     allow(Issues::AutoPickProjectGate).to receive(:call).and_return(true)
-    allow(Issues::BulkEnqueueEligible).to receive(:call) do |kwargs|
-      raise "queue unavailable" if kwargs[:project].id == 303
+    allow(Rails.logger).to receive(:info)
+    allow(Rails.logger).to receive(:error)
+  end
 
-      []
+  # @spec EAGER-QUEUE-017
+  it "covers every project in a bounded cycle through durable continuations" do
+    stub_const("AutoPickEligibilitySweepJob::PROJECT_PAGE_SIZE", 1)
+    first_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    second_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    continuations = []
+    calls = []
+    allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
+    allow(Issues::BulkEnqueueEligible).to receive(:call) { |**arguments| calls << arguments; page_result }
+
+    described_class.perform_now
+
+    expect(calls).to contain_exactly(hash_including(project: have_attributes(id: first_project.id), page_size: 100))
+    expect(continuations).to contain_exactly(after_project_id: first_project.id, through_project_id: second_project.id)
+
+    described_class.perform_now(**continuations.shift)
+
+    expect(calls).to include(hash_including(project: have_attributes(id: second_project.id), page_size: 100))
+  end
+
+  # @spec EAGER-QUEUE-017
+  it "resumes a large project after the last examined issue without duplicate work" do
+    project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    issue = create(:issue, project:)
+    continuations = []
+    calls = []
+    allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
+    allow(Issues::BulkEnqueueEligible).to receive(:call) do |**arguments|
+      calls << arguments
+      arguments[:after_issue_id].nil? ? page_result(last_issue_id: issue.id, candidate_count: 1, more: true, created_count: 1) : page_result
     end
 
     described_class.perform_now
+    described_class.perform_now(**continuations.shift)
 
-    expect(Issues::BulkEnqueueEligible).to have_received(:call).twice
+    expect(calls).to include(hash_including(project: have_attributes(id: project.id), after_issue_id: issue.id, through_issue_id: issue.id, page_size: 100))
+    expect(calls.size).to eq(2)
   end
 
-  it "runs on every invocation unlike the one-time backfill" do
-    project = Project.new(505)
-
-    stub_projects(project)
-    allow(Issues::AutoPickProjectGate).to receive(:call).with(project, hash_including(:owner)).and_return(true)
-    allow(Issues::BulkEnqueueEligible).to receive(:call).and_return([])
+  # @spec EAGER-QUEUE-017
+  it "retries a failed project page from its prior cursor while continuing other projects" do
+    stub_const("AutoPickEligibilitySweepJob::PROJECT_PAGE_SIZE", 2)
+    failing_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    healthy_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    continuations = []
+    calls = []
+    allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
+    fail_first_project_page(failing_project, calls)
 
     described_class.perform_now
-    described_class.perform_now
+
+    expect(calls).to include(have_attributes(id: healthy_project.id))
+    expect(continuations.first.fetch(:pending_projects)).to include(
+      failing_project.id.to_s => hash_including(project_id: failing_project.id, after_issue_id: nil)
+    )
+
+    described_class.perform_now(**continuations.shift)
 
     expect(Issues::BulkEnqueueEligible).to have_received(:call).twice.with(
-      project: project,
-      skip_project_gate: true
+      project: failing_project,
+      skip_project_gate: true,
+      after_issue_id: nil,
+      through_issue_id: nil,
+      page_size: AutoPickEligibilitySweepJob::ISSUE_PAGE_SIZE
     )
+  end
+
+  # @spec EAGER-QUEUE-017
+  it "finishes the cycle snapshot when a newer project appears mid-cycle" do
+    stub_const("AutoPickEligibilitySweepJob::PROJECT_PAGE_SIZE", 1)
+    first_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    second_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    continuations = []
+    calls = []
+    allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
+    allow(Issues::BulkEnqueueEligible).to receive(:call) { |**arguments| calls << arguments; page_result }
+
+    described_class.perform_now
+    added_during_cycle = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    described_class.perform_now(**continuations.shift)
+
+    expect(calls).to include(hash_including(project: have_attributes(id: second_project.id), page_size: 100))
+    expect(calls).not_to include(hash_including(project: have_attributes(id: added_during_cycle.id), page_size: 100))
+    expect(continuations).to be_empty
+    expect(first_project.id).to be < second_project.id
+  end
+
+  # @spec EAGER-QUEUE-017
+  it "retains the original project-page boundary while a pending project finishes" do
+    stub_const("AutoPickEligibilitySweepJob::PROJECT_PAGE_SIZE", 3)
+    projects = Array.new(3) { create(:project, account:, created_by: owner, auto_pick_enabled: true) }
+    continuations = []
+    calls = []
+    allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
+    allow(Issues::BulkEnqueueEligible).to receive(:call) do |project:, after_issue_id:, **|
+      calls << project.id
+      if project == projects.first && after_issue_id.nil?
+        page_result(last_issue_id: 10, candidate_count: 1, more: true)
+      else
+        page_result
+      end
+    end
+
+    described_class.perform_now
+    described_class.perform_now(**continuations.shift)
+
+    expect(calls).to eq([ *projects.map(&:id), projects.first.id ])
+    expect(continuations).to be_empty
+  end
+
+  # @spec EAGER-QUEUE-017
+  it "defers a persistently failing project after one retry and advances the cycle" do
+    stub_const("AutoPickEligibilitySweepJob::PROJECT_PAGE_SIZE", 2)
+    failing_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    healthy_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    later_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    continuations = []
+    calls = []
+    allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
+    allow(Issues::BulkEnqueueEligible).to receive(:call) do |project:, **|
+      calls << project.id
+      raise "queue unavailable" if project == failing_project
+
+      page_result
+    end
+
+    described_class.perform_now
+    described_class.perform_now(**continuations.shift)
+    described_class.perform_now(**continuations.shift)
+
+    expect(calls).to eq([ failing_project.id, healthy_project.id, failing_project.id, later_project.id ])
+    expect(continuations).to be_empty
   end
 end

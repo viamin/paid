@@ -30,12 +30,13 @@ module TechnicalPrerequisites
     end
 
     def call
-      inspection = CapabilityInspection.call(agent_run:)
+      inspection = CapabilityInspection.call(agent_run:, performance_recipe:)
       return persist_unavailable(inspection) unless inspection.runnable?
 
       execute_validation(inspection)
     rescue Containers::Provision::Error, Containers::GitOperations::Error,
-      ExecutionRunners::Error, Containers::McpProvisioner::Error => error
+      ExecutionRunners::Error, Containers::McpProvisioner::Error,
+      AgentRuns::Verification::Error => error
       return cancelled_result if cancelled?
 
       persist_terminal("failed", error: error.message)
@@ -61,9 +62,12 @@ module TechnicalPrerequisites
       evidence["checkout"] = prepare_checkout
       return cancelled_result if cancelled?
 
+      provision_browser
       provision_sidecars
       record_tool_evidence
       return cancelled_result if cancelled?
+
+      return execute_performance_measurement if performance_measurement?
 
       native = capture(native_command, env: command_environment)
       persist_terminal(status_for(native), native:)
@@ -102,6 +106,18 @@ module TechnicalPrerequisites
       )
     end
 
+    # @spec PARTIAL-CLOSEOUT-042
+    def provision_browser
+      return unless performance_recipe&.fetch("requires_browser", false)
+
+      result = execution_runner.provision_browser_container(
+        agent_run:,
+        network: Containers::Provision.network_for(agent_run:),
+        logger: Rails.logger
+      )
+      evidence["browser"] = { "container_id" => result.container_id, "cdp_url" => result.cdp_url }
+    end
+
     def record_tool_evidence
       agent_run.reload
       evidence["tool_endpoints"] = agent_run.tool_sidecar_endpoints
@@ -110,17 +126,141 @@ module TechnicalPrerequisites
 
     def command_environment
       endpoints = agent_run.tool_sidecar_endpoints
-      return {} if endpoints.blank?
+      environment = {}
+      environment["PAID_TOOL_SIDECAR_ENDPOINTS"] = endpoints.to_json if endpoints.present?
+      environment["PAID_BROWSER_CDP_URL"] = evidence.dig("browser", "cdp_url") if evidence["browser"]
+      environment
+    end
 
-      { "PAID_TOOL_SIDECAR_ENDPOINTS" => endpoints.to_json }
+    def performance_measurement? = performance_recipe.present?
+
+    def performance_recipe
+      @performance_recipe ||= agent_run.external_metadata.dig(RECIPE_KEY, "performance_measurement")
+    end
+
+    # A command is run from each pinned checkout for every reviewed sample. Its
+    # stdout is retained as bounded raw evidence; only numeric JSON fields named
+    # by the reviewed recipe enter the mechanical comparison.
+    def execute_performance_measurement
+      @measurement_deadline = monotonic_now + performance_recipe.fetch("budget_seconds").to_f
+      baseline = measure_revision(performance_recipe.fetch("baseline_commit_sha"))
+      current = measure_revision(performance_recipe.fetch("current_commit_sha"))
+      comparison = current_revision? ? compare_measurements(baseline:, current:) : changed_head_comparison
+      status = comparison["status"] == "complete" ? "completed" : "failed"
+      persist_terminal(status, error: comparison["reason"], performance_measurement: {
+        "recipe" => performance_recipe, "baseline" => baseline, "current" => current,
+        "comparison" => comparison, "environment" => runtime_environment
+      })
+    end
+
+    # A checkout/fetch failure for one revision must not abort the whole
+    # measurement: the other revision's samples (and this revision's
+    # provenance) remain durable evidence that compare_measurements resolves
+    # to an "unknown" comparison rather than losing the record entirely.
+    def measure_revision(revision)
+      checkout_revision(revision)
+      { "revision" => revision, "samples" => collect_samples(revision) }
+    rescue Containers::GitOperations::Error => error
+      { "revision" => revision, "samples" => [], "error" => error.message }
+    end
+
+    # Both revisions draw from one shared measurement budget. Sampling stops as
+    # soon as that deadline is exhausted so the whole comparison stays within
+    # the job's perform_timeout; a comparison left short simply remains unknown
+    # evidence that execute_performance_measurement still persists.
+    def collect_samples(revision)
+      performance_recipe.fetch("samples").times.each_with_object([]) do |sample, collected|
+        break collected unless budget_remaining.positive?
+
+        collected << capture(native_command, timeout: sample_timeout, env: command_environment.merge(
+          "PAID_MEASUREMENT_REVISION" => revision, "PAID_MEASUREMENT_SAMPLE" => (sample + 1).to_s
+        ))
+      end
+    end
+
+    def sample_timeout = [ budget_remaining.seconds, COMMAND_TIMEOUT ].min
+
+    def budget_remaining = @measurement_deadline - monotonic_now
+
+    def monotonic_now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    def checkout_revision(revision)
+      execution_environment = Containers::Provision.reconnect(
+        agent_run:, container_id: agent_run.container_id, worktree_path: agent_run.worktree_path
+      )
+      Containers::GitOperations.new(container_service: execution_environment, agent_run:).checkout_commit(revision)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-042
+    def current_revision?
+      source_run = AgentRun.find_by(id: agent_run.external_metadata.dig(RECIPE_KEY, "source_run_id"))
+      pull_request_number = source_run&.pull_request_number.presence || source_run&.source_pull_request_number
+      pull_request = source_run&.project&.issues&.find_by(github_number: pull_request_number, is_pull_request: true)
+      pull_request&.last_scanned_head_sha.to_s.casecmp?(performance_recipe.fetch("current_commit_sha"))
+    end
+
+    def changed_head_comparison
+      { "status" => "unknown", "reason" => "The linked pull request head changed during measurement." }
+    end
+
+    def compare_measurements(baseline:, current:)
+      parsed = [ baseline, current ].to_h { |measurement| [ measurement.fetch("revision"), parsed_samples(measurement) ] }
+      return { "status" => "unknown", "reason" => "A baseline, current, or raw metric sample was unavailable." } unless parsed.values.all? { |samples| samples.size == performance_recipe.fetch("samples") }
+
+      metrics = performance_recipe.fetch("metrics").to_h do |metric|
+        baseline_values = parsed.fetch(baseline.fetch("revision")).filter_map { |sample| numeric(sample[metric]) }
+        current_values = parsed.fetch(current.fetch("revision")).filter_map { |sample| numeric(sample[metric]) }
+        return { "status" => "unknown", "reason" => "Metric #{metric} was unavailable from a complete sample set." } unless complete_metric_samples?(baseline_values, current_values)
+
+        [ metric, { "baseline" => percentiles(baseline_values), "current" => percentiles(current_values) } ]
+      end
+      { "status" => "complete", "metrics" => metrics }
+    end
+
+    # @spec PARTIAL-CLOSEOUT-042
+    def complete_metric_samples?(baseline_values, current_values)
+      expected_samples = performance_recipe.fetch("samples")
+      baseline_values.size == expected_samples && current_values.size == expected_samples
+    end
+
+    def parsed_samples(measurement)
+      measurement.fetch("samples").filter_map do |sample|
+        parsed = JSON.parse(sample["stdout"].to_s) if sample["exit_code"] == 0
+        parsed if parsed.is_a?(Hash)
+      rescue JSON::ParserError
+        nil
+      end
+    end
+
+    def numeric(value)
+      parsed = Float(value)
+      parsed if parsed.finite?
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def percentiles(values)
+      sorted = values.sort
+      { "p50" => percentile(sorted, 0.5), "p95" => percentile(sorted, 0.95) }
+    end
+
+    def percentile(sorted, fraction)
+      index = fraction * (sorted.length - 1)
+      lower = sorted[index.floor]
+      upper = sorted[index.ceil]
+      lower + ((upper - lower) * (index - index.floor))
+    end
+
+    def runtime_environment
+      { "container_host" => agent_run.container_host, "image" => base_evidence["image"], "identity" => performance_recipe["environment"] }
     end
 
     def execution_runner
       @execution_runner ||= ExecutionRunners.resolve_for(agent_run)
     end
 
-    def capture(command, env:)
-      result = agent_run.execute_in_execution_environment(command, timeout: COMMAND_TIMEOUT, stream: false, env:)
+    def capture(command, env:, timeout: COMMAND_TIMEOUT)
+      result = agent_run.execute_in_execution_environment(command, timeout:, stream: false, env:)
       output(result[:stdout], result[:stderr], result[:exit_code])
     rescue Containers::Provision::ExecutionError => error
       output(error.stdout, error.stderr, error.exit_code)

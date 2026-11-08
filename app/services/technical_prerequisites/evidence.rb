@@ -5,9 +5,8 @@ require "digest"
 module TechnicalPrerequisites
   # Copies the latest bounded validation record to the originating run's
   # reconciliation data. The synthetic run retains the full durable record;
-  # this projection is the canonical closeout-assessment input and is
-  # intentionally one record per source run so retries cannot grow it without
-  # bound.
+  # performance samples are represented here only by counts and digests so the
+  # canonical closeout-assessment input stays cheap to read and hash.
   # @spec PARTIAL-CLOSEOUT-032
   class Evidence
     RECONCILIATION_KEY = "technical_prerequisite_evidence"
@@ -43,7 +42,7 @@ module TechnicalPrerequisites
     def record!
       source_run&.with_lock do
         source_run.update!(reconciliation: source_run.reconciliation.merge(
-          RECONCILIATION_KEY => record.merge("validation_run_id" => agent_run.id)
+          RECONCILIATION_KEY => reconciliation_record
         ))
       end
     end
@@ -51,6 +50,22 @@ module TechnicalPrerequisites
     private
 
     attr_reader :agent_run, :record
+
+    def reconciliation_record
+      record.deep_dup.tap do |projection|
+        summarize_samples(projection.dig("performance_measurement", "baseline"))
+        summarize_samples(projection.dig("performance_measurement", "current"))
+        projection["validation_run_id"] = agent_run.id
+      end
+    end
+
+    def summarize_samples(measurement)
+      return unless measurement.is_a?(Hash) && measurement["samples"].is_a?(Array)
+
+      samples = measurement.delete("samples")
+      measurement["sample_count"] = samples.size
+      measurement["samples_digest"] = Digest::SHA256.hexdigest(JSON.generate(samples))
+    end
 
     def source_run
       @source_run ||= agent_run.project.agent_runs.find_by(

@@ -4,6 +4,18 @@ require "rails_helper"
 
 # @spec QUIET-MODE-011
 RSpec.describe ClarifyingQuestions::DescriptionSection, :no_db do
+  describe ".digest_for" do
+    it "digests a structured record and its label-only rendering identically" do # @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+      structured = {
+        "question" => "Which events should be recorded?",
+        "choices" => [ { "label" => "Logins", "detail" => "Security audits" } ]
+      }
+
+      expect(described_class.digest_for([ structured ]))
+        .to eq(described_class.digest_for([ "Which events should be recorded?" ]))
+    end
+  end
+
   describe ".replace_questions_section" do
     it "replaces the prior preamble with the current enhancement context" do
       initial_body = described_class.replace_questions_section(

@@ -52,6 +52,59 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     OpenStruct.new(body: body, created_at: created_at, user: OpenStruct.new(login: login))
   end
 
+  def structured_cache_comment
+    <<~COMMENT
+      ## Clarifying questions
+      1. Which cache should exports use?
+         - ( ) Redis) Shared cache
+         - ( ) Postgres) Persistent rows
+    COMMENT
+  end
+
+  def structured_cache_question
+    {
+      "question" => "Which cache should exports use?",
+      "choices" => [
+        { "label" => "Redis", "detail" => "Shared cache" },
+        { "label" => "Postgres", "detail" => "Persistent rows" }
+      ]
+    }
+  end
+
+  def structured_cache_issue
+    build_stubbed(:issue, body: "Original issue body", needs_input_questions: [ structured_cache_question ])
+  end
+
+  # A quiet-mode description section: the posted marker lines ride under the
+  # numbered label while the structured record is persisted locally.
+  def sectioned_cache_issue
+    digest = ClarifyingQuestions::DescriptionSection.digest_for([ structured_cache_question["question"] ])
+    build_stubbed(
+      :issue,
+      body: <<~BODY,
+        Original issue body
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        <!-- paid:clarifying-questions-digest:#{digest} -->
+        1. #{structured_cache_question["question"]}
+           - ( ) Redis) Shared cache
+           - ( ) Postgres) Persistent rows
+        <!-- /paid:clarifying-questions -->
+      BODY
+      needs_input_questions: [ structured_cache_question ]
+    )
+  end
+
+  def cache_answer_comment
+    comment(
+      body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which cache should exports use?**\n**A1:** Redis",
+      created_at: Time.current,
+      login: trusted_login
+    )
+  end
+
   it "returns paired questions and answers from the admitted comment flow" do
     result = described_class.call(project: project, issue_comments: [ enhancement_comment, answer_comment ], issue: issue)
 
@@ -194,6 +247,57 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
       expect(result.qa_pairs).to eq([])
       expect(result.answer_comment).to be_nil
     end
+
+    # @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+    it "reconciles a marked description section with the persisted structured payload" do
+      result = described_class.call(project:, issue: sectioned_cache_issue, issue_comments: [ cache_answer_comment ])
+
+      expect(result.qa_pairs).to eq([ { question: "Which cache should exports use?", answer: "Redis" } ])
+    end
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "returns concise text when a matching structured question is the local fallback" do
+    structured_issue = build_stubbed(
+      :issue,
+      body: "Original issue body",
+      needs_input_questions: [
+        {
+          "question" => "Which cache should exports use?",
+          "choices" => [
+            { "label" => "Redis", "detail" => "Shared cache" },
+            { "label" => "Postgres", "detail" => "Persistent rows" }
+          ]
+        }
+      ]
+    )
+    answer = comment(
+      body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which cache should exports use?**\n**A1:** Redis",
+      created_at: Time.current,
+      login: trusted_login
+    )
+
+    result = described_class.call(project:, issue: structured_issue, issue_comments: [ answer ])
+
+    expect(result.qa_pairs).to eq([ { question: "Which cache should exports use?", answer: "Redis" } ])
+  end
+
+  # @spec OPERATOR-INBOX-025
+  it "reconciles a posted choice question with its persisted structured payload" do
+    enhancement = comment(
+      body: "<!-- paid:enhance-issue -->\n\n#{structured_cache_comment}",
+      created_at: 2.minutes.ago,
+      login: bot_login
+    )
+    answer = comment(
+      body: "<!-- paid:clarifying-answers -->\n\n**Q1: Which cache should exports use?**\n**A1:** Redis",
+      created_at: 1.minute.ago,
+      login: trusted_login
+    )
+
+    result = described_class.call(project:, issue: structured_cache_issue, issue_comments: [ enhancement, answer ])
+
+    expect(result.qa_pairs).to eq([ { question: "Which cache should exports use?", answer: "Redis" } ])
   end
 
   context "when the clarifying questions are persisted locally" do

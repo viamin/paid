@@ -4,6 +4,37 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-044** — When source-closure assessment transport
+  exhausts its bounded, backoff retry policy after a branch push, Paid SHALL
+  retain the same AgentRun in `waiting_recovery` with the failed step, pushed
+  branch and commit, attempt count, sanitized category, and next retry time;
+  it SHALL retain the issue/PR work slot, release its idle execution environment,
+  and SHALL NOT mark the coding result terminally failed solely for that
+  transport outage.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/temporal/activities/assess_source_closure_activity_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-045** — When a waiting source-closure recovery is due
+  or authorized by an operator, Paid SHALL claim it once, restore only the
+  isolated assessment environment as needed, reassess before PR publication,
+  and reuse the same AgentRun and pushed branch. Cancellation and concurrent or
+  replayed claims SHALL not rerun coding or duplicate PR publication. A claim
+  that outlives its bounded lease SHALL be reclaimable, and successful recovery
+  SHALL run the same best-effort screenshot, decision-record, and applicable
+  LID-planning post-publication steps as the primary workflow. A branch mismatch
+  SHALL remain visibly parked for authorized manual retry without scheduling
+  automatic retries or provisioning additional assessment environments.
+  *Code:* `app/jobs/source_closure_recovery_job.rb`,
+  `app/temporal/workflows/source_closure_recovery_workflow.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_spec.rb`,
+  `spec/requests/projects/source_closure_recovery_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted
   tier model, and configured credentials through `agent_harness`,
@@ -232,7 +263,7 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-037** — When the partial-closeout Inbox lane reads the
+- [ ] **PARTIAL-CLOSEOUT-042** — When the partial-closeout Inbox lane reads the
   accepted persisted stall projection, the
   system SHALL recompute that projection outside Inbox rendering whenever an
   issue's closeout evidence, blocking runs, continuation request, explicit
@@ -253,7 +284,7 @@
   *Proposed tests:* projection recomputation and invalidation, stale-row
   removal, failure retention, and tenant isolation.
 
-- [ ] **PARTIAL-CLOSEOUT-038** — The partial-closeout lane's list, nav-badge
+- [ ] **PARTIAL-CLOSEOUT-043** — The partial-closeout lane's list, nav-badge
   count, and filter matrix SHALL
   read one shared projection reader and SHALL report the same lane membership
   for the same operator; for each project with a successful projection
@@ -807,7 +838,7 @@
   *Code:* `app/jobs/partial_closeout_acceptance_audit_sweep_job.rb`.
   *Test:* `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-042** — When a built-in, typed closeout evaluation
+- [x] **PARTIAL-CLOSEOUT-046** — When a built-in, typed closeout evaluation
   retains a report for its originating Inbox prerequisite, the system SHALL
   record the report as revision-bound evidence for only the matching current
   occurrence — located on whichever active prerequisite notification carries
@@ -824,6 +855,33 @@
   `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
   *Test:* `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`,
   `spec/services/facet_confidence/closeout_evaluation/reconcile_report_spec.rb`.
+- [x] **PARTIAL-CLOSEOUT-042** — When a current partial-closeout criterion
+  names a reproducible performance comparison, Paid SHALL offer a reviewed
+  performance-measurement recipe only when it records a pinned baseline and
+  current revision, representative workload identity and provenance, metric
+  definitions, sample count, isolated environment identity, time budget, and
+  raw-artifact contract. It SHALL execute those samples only through the
+  capability-aware isolated runner, deduplicate an equivalent issue/criterion/
+  revisions/recipe/workload attempt, and retain bounded raw samples plus a
+  mechanical p50/p95 comparison. Missing baseline or metrics, nonrepresentative
+  workload, unavailable environment, changed head, partial samples, or a
+  project- or account-level scheduler pause SHALL remain unknown and SHALL not
+  claim an improvement. A paused scheduler SHALL reject a new performance
+  measurement before queueing and again when its validation job claims the
+  synthetic run; an equivalent queued, running, or completed measurement
+  remains discoverable. A terminal comparison
+  SHALL re-enter the normal evidence-bound acceptance audit; it SHALL not close
+  the issue or semantically interpret the result.
+  *Code:* `app/services/technical_prerequisites/performance_recipe.rb`,
+  `app/services/technical_prerequisites/start_validation.rb`,
+  `app/services/technical_prerequisites/validate_execution.rb`,
+  `app/services/technical_prerequisites/inbox_actions.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`,
+  `app/services/issues/request_continuation.rb`.
+  *Test:* `spec/services/technical_prerequisites/start_validation_spec.rb`,
+  `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+  `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body

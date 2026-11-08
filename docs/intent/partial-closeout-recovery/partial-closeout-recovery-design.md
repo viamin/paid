@@ -47,6 +47,26 @@ generation.
 
 ### Source-closure publication
 
+### Post-push assessment recovery (#4886)
+
+Source-closure assessment is post-processing after a branch push. Its retry
+policy uses bounded exponential backoff (15 seconds through two minutes), not
+the workflow default's one-second cadence. Authentication, configuration, and
+invalid-response failures remain actionable and fail closed; timeout and
+transport exhaustion persist a `waiting_recovery` record on the original run.
+That record carries only the failed step, branch, pinned pushed commit, attempt
+count, sanitized category, and next retry time. It is a work-slot hold, not an
+execution failure, and cleanup releases the prior container.
+
+A delayed job and an authorized run-detail retry claim the record under the
+run lock and start a narrow recovery workflow. That workflow provisions only a
+fresh isolated assessment environment when required, runs the assessment, and
+then invokes the existing idempotent PR activity. It never invokes the coding
+or push activities. Cancellation wins over recovery; duplicate/replayed claims
+are no-ops. A branch or source-policy mismatch stays fail-closed and returns to
+visible recovery state; PR creation remains impossible without a successful
+current assessment.
+
 Closeout assessment uses the run's effective configured runner through
 `Llm::Request` and `agent_harness`, with its tier model resolved through
 the existing runner model policy and its credentials in the isolated execution
@@ -76,6 +96,32 @@ reference — becomes `Tracks` unless the persisted disposition is `close`;
 free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
+
+### Reviewed performance measurements (#4894)
+
+A performance prerequisite is a distinct reviewed recipe, not an inference
+from issue prose or a general pre-commit command. Its persisted contract names
+the baseline commit, the current pinned run commit, representative workload
+identity and provenance, metric keys, sample count, isolated environment
+identity, time budget, and raw-artifact contract. The Inbox exposes the same
+prepared action as other criterion-specific validations; project authorization,
+tenant scoping, and normal isolated-run admission remain authoritative. A
+project- or account-level scheduler pause rejects new performance measurements
+before queueing and when the validation job claims a queued synthetic
+measurement; existing equivalent measurements remain visible for their evidence
+handoff.
+
+The validation run clones and measures both pinned revisions in the approved
+isolated environment, retains bounded raw output for every sample on the
+synthetic validation run, and projects only sample counts and digests into the
+source run's closeout evidence. It derives only mechanical p50/p95 values for
+the reviewed metric keys. It deduplicates
+the issue, criterion, revisions, recipe, and workload identity. Any unavailable
+baseline/environment/metric, nonrepresentative workload, changed head, or
+partial sample is durable `unknown` evidence, never an improvement claim.
+Terminal measurement evidence schedules the normal report-only acceptance
+audit; semantic interpretation remains in `agent_harness`, and no measurement
+can close the issue.
 
 ### Human prerequisite attribution (#4893)
 
@@ -192,7 +238,7 @@ move when an agent run starts or finishes, when a no-code-required outcome
 appears, when a skip label changes, or when runner configuration changes the
 tier feasibility set; and a display-only projection cannot authorize work,
 because the continuation preflight and the dequeue recheck still decide
-admission live. `PARTIAL-CLOSEOUT-037` and `PARTIAL-CLOSEOUT-038` state the
+admission live. `PARTIAL-CLOSEOUT-042` and `PARTIAL-CLOSEOUT-043` state the
 accepted implementation contract.
 
 ### Recovery: `IssueContinuationRequest` (scoped authorization)

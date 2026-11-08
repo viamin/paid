@@ -269,6 +269,75 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
         expect(github_client).not_to have_received(:remove_label_from_issue)
         expect(pending_issue).not_to have_received(:update!)
       end
+
+      # @spec QUIET-MODE-010 @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+      # The description section carries the posted marker lines while the
+      # inbox form renders the structured payload's labels; the staleness
+      # digest must reconcile the two or a structured form could never
+      # submit.
+      context "when the pending form renders a structured payload" do
+        let(:structured_label) { "Which cache should exports use?" }
+        let(:pending_issue) do
+          awaiting_input_issue.tap do |issue|
+            allow(issue).to receive(:needs_input_questions).and_return([
+              {
+                "question" => structured_label,
+                "choices" => [
+                  { "label" => "Redis", "detail" => "Shared cache" },
+                  { "label" => "Postgres", "detail" => "Persistent rows" }
+                ]
+              }
+            ])
+          end
+        end
+
+        before do
+          folded = "#{structured_label} - ( ) Redis) Shared cache - ( ) Postgres) Persistent rows"
+          allow(project).to receive(:enhance_issue_needs_input_label_name).and_return("paid-needs-input")
+          allow(github_client).to receive(:issue)
+            .and_return(Struct.new(:body).new(remote_body("Human-written issue context", [ folded ])))
+          allow(github_client).to receive(:update_issue)
+          allow(github_client).to receive(:remove_label_from_issue)
+          allow(pending_issue).to receive(:update!)
+        end
+
+        it "accepts the form labels against the description's posted marker lines" do
+          expect {
+            described_class.call(
+              project: project,
+              issue: pending_issue,
+              questions_and_answers: [ { question: structured_label, answer: "Redis" } ]
+            )
+          }.not_to raise_error
+
+          expect(github_client).to have_received(:update_issue).with(
+            project.full_name,
+            issue.github_number,
+            body: a_string_including("**Q1: Which cache should exports use?**", "**A1:** Redis")
+          )
+        end
+
+        # @spec QUIET-MODE-010 @spec QUIET-MODE-011
+        # The description is the editable questions channel: a human edit that
+        # swaps a choice marker while leaving the question label untouched must
+        # not let a stale form submit an option that is no longer offered.
+        it "rejects answers when a human edited the description's choice markers" do
+          edited_folded = "#{structured_label} - ( ) Redis) Shared cache - ( ) Memory) Ephemeral cache"
+          allow(github_client).to receive(:issue)
+            .and_return(Struct.new(:body).new(remote_body("Human-written issue context", [ edited_folded ])))
+
+          expect {
+            described_class.call(
+              project: project,
+              issue: pending_issue,
+              questions_and_answers: [ { question: structured_label, answer: "Postgres" } ]
+            )
+          }.to raise_error(ClarifyingQuestions::SubmitAnswers::StaleQuestionsError, /changed/)
+
+          expect(github_client).not_to have_received(:update_issue)
+          expect(pending_issue).not_to have_received(:update!)
+        end
+      end
     end
 
     context "when the issue is awaiting input" do

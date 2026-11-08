@@ -10,10 +10,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
   workflow_expectations = {
     ".github/workflows/ci.yml" => {
       "test-shards" => {
-        "db_username" => "postgres",
-        "db_password" => "postgres",
-        "database_url" => "postgres://postgres:postgres@localhost:5432/paid_test",
-        "creates_application_role" => false,
+        "db_username" => "paid_runtime",
+        "db_password" => "paid_runtime",
+        "database_url" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
+        "creates_application_role" => true,
         "retries_database_setup" => true
       },
       "performance" => {

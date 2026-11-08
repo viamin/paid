@@ -46,9 +46,9 @@ class BoundedDelegatedAction < ApplicationRecord
   # project policy before revocation. The model still fails closed on
   # cross-account revokers via revoker_belongs_to_account.
   def revoke!(user:)
-    return false unless status == "active"
+    with_lock do
+      return false unless status == "active"
 
-    self.class.transaction do
       update!(status: "revoked", revoked_at: Time.current, revoked_by: user)
       Audit::RecordEvent.call(
         action: "bounded_action.revoked",

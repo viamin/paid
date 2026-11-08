@@ -238,7 +238,10 @@ module Inbox
       end
 
       def summary
-        return questions.first(2).join(" ").truncate(220) if clarifying_questions?
+        if clarifying_questions?
+          return questions.first(2).map { |question| ClarifyingQuestions::QuestionPayload.submission_text(question) }
+            .join(" ").truncate(220)
+        end
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
           test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding? ||
@@ -314,13 +317,21 @@ module Inbox
     # of every queue consumer until reconciliation clears the stale state.
     # @spec INBOX-FOUNDATION-010
     def self.questions_for(issue)
+      stored = Array(issue.needs_input_questions)
       questions = ClarifyingQuestions::Parse.call(comment_body: issue.body)
-      return questions if questions.any?
+      # The body channel (quiet-mode descriptions, #4236) parses posted marker
+      # lines into folded strings; reconcile with the stored structured
+      # contract — identity-guarded on labels and choice contracts, so the
+      # stored records only win when the posted text still offers the same
+      # choices — or the inbox would render raw marker text instead of the
+      # structured payload, or stale choices after a human body edit.
+      # @spec OPERATOR-INBOX-025
+      return ClarifyingQuestions::QuestionPayload.reconcile(comment_questions: questions, stored_questions: stored) if questions.any?
 
       # create_feature runs persist their clarifying questions locally when
       # the needs-input comment is posted, so the dashboard renders without a
       # per-issue GitHub API round-trip (RDR-053).
-      Array(issue.needs_input_questions)
+      stored
     end
 
     # Shared lane computation so the queue list and the nav badge count can

@@ -3,6 +3,7 @@
 # @spec AUTO-MERGE-004
 class AutoMergeAttempt < ApplicationRecord
   REASON_AUTO_MERGE_DISABLED = "auto_merge_disabled"
+  REASON_DELEGATED_BOUNDARY_BLOCKED = "delegated_boundary_blocked"
   REASON_CHECKS_NOT_GREEN = "checks_not_green"
   REASON_EXPECTED_MERGE_FAILURE = "expected_merge_failure"
   REASON_GRANULARITY_MISMATCH = "granularity_mismatch"

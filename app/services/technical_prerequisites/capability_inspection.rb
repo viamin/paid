@@ -4,7 +4,7 @@ module TechnicalPrerequisites
   # Projects the existing placement and rollout decisions into an actionable
   # Inbox-ready result. A missing Docker socket in the browser/control-plane
   # process is intentionally not an input to this decision.
-  # @spec PARTIAL-CLOSEOUT-032
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
   class CapabilityInspection
     Result = Data.define(:host, :compatible_hosts, :failures, :requirements_error, :tool_sidecars_enabled, :setup_action) do
       def runnable? = compatible_hosts.any? && setup_action.nil?
@@ -12,13 +12,14 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, scheduler: Containers::BackendScheduler)
+    def initialize(agent_run:, performance_recipe: nil, scheduler: Containers::BackendScheduler)
       @agent_run = agent_run
+      @performance_recipe = performance_recipe
       @scheduler = scheduler
     end
 
     def call
-      schedule = scheduler.call(agent_run:)
+      schedule = scheduler.call(agent_run:, additional_capabilities:)
       hosts = schedule.candidate_hosts
       Result.new(
         host: hosts.first,
@@ -32,7 +33,11 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :agent_run, :scheduler
+    attr_reader :agent_run, :performance_recipe, :scheduler
+
+    def additional_capabilities
+      performance_recipe&.fetch("requires_browser", false) ? [ :browser_sidecar ] : []
+    end
 
     def tool_sidecars_enabled?
       FeatureFlags.enabled?(:marketplace_tool_sidecars, project: agent_run.project)
@@ -41,6 +46,9 @@ module TechnicalPrerequisites
     def setup_action_for(schedule)
       return "Resolve execution requirements: #{schedule.requirements_error}" if schedule.requirements_error.present?
       return "Configure or restore a compatible execution backend for this project." if schedule.candidate_hosts.empty?
+      if performance_recipe&.fetch("requires_browser", false) && !agent_run.project.verification_enabled?
+        return "Enable browser verification for this project before running browser-visible measurements."
+      end
       return unless agent_run.tool_sidecar_snapshot.any? && !tool_sidecars_enabled?
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project; execution capability does not authorize the rollout."

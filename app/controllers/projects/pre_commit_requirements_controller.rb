@@ -119,7 +119,7 @@ module Projects
     def pre_commit_requirement_params
       params.require(:pre_commit_requirement).permit(
         :name, :command, :check_type, :fix_command,
-        :failure_behavior, :position, :enabled
+        :failure_behavior, :position, :enabled, measurement_recipe: {}
       )
     end
   end

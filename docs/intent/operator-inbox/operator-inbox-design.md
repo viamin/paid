@@ -78,10 +78,10 @@ selected detail loads through a separate eager Turbo Frame, so progress,
 actions, and history never hold up the first list response. The eager loading
 mode allows a row click to replace the in-flight first-detail request rather
 than race with it. A selected detail renders its local actions before a
-separate eager history frame loads. History requests
-recheck current entry visibility and may reuse a short-lived, per-subject
-Rails cache entry for the read-only timeline. Cached history can lag recent
-run or external events briefly; new Paid-owned history writes invalidate that
+separate lazy history frame loads when its section enters the viewport.
+History requests recheck current entry visibility and may reuse a short-lived,
+per-subject Rails cache entry for the read-only timeline. Cached history can lag
+recent run or external events briefly; new Paid-owned history writes invalidate that
 item's cache. Actionable state, permissions, and entry membership are always
 checked against current records and are never served from that cache.
 
@@ -228,15 +228,25 @@ the numbered questions in the latest enhancement comment — the
 `## Clarifying questions` heading — as `context_markdown`, surfaced by
 `ClarifyingQuestions::Load#context_markdown` fetching and memoizing
 `issue_comments` in the separate supplementary request. The inbox detail pane
-(`OPERATOR-INBOX-011`) renders that markdown beside the answer form on `lg+`
-viewports (two-column grid, sticky scrollable sidebar) and inside a
-collapsible native `<details>` disclosure above the questions on smaller
-viewports, via the shared `shared/markdown_text` partial in block mode.
+(`OPERATOR-INBOX-011`) renders that markdown in a collapsed native `<details>`
+disclosure after the question and answer control on every viewport, via the
+shared `shared/markdown_text` partial in block mode. This keeps the decision
+surface first while retaining keyboard and screen-reader access to context.
 The panel hides gracefully when no context is fetchable (no GitHub
 credential, transient GitHub failure, or questions sourced from the local
 `needs_input_questions` snapshot rather than a fetched comment); the
 existing `View Issue` / `View PR` link remains so the operator can still
 read the comment directly on GitHub.
+
+Clarifying-question payloads normalize both legacy strings and structured
+records. A structured record has `question`, `choices`, `choice_type`,
+`recommendation`, `rationale`, `examples`, and `evidence_references` fields.
+`choice_type` retains the single- or multi-answer semantics represented by the
+enhancement comment markers. The Inbox never
+derives a recommendation from a legacy string: only an explicitly supplied
+recommendation accompanied by evidence references is shown. Rationale,
+examples, and references stay in a collapsed disclosure; the short question,
+choices, and existing freeform answer route remain the primary interaction.
 
 ### `plan_review`
 
@@ -633,6 +643,29 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 - **Temporal signaling remains controller-driven**: the inbox changes the UI
   surface, not the workflow contract. `approve_plan`, `reject_plan`, and
   `revise_plan` remain the bridge into `Workflows::PlanningWorkflow`.
+
+## Decision briefs
+
+Every actionable Inbox entry has one deterministic `Inbox::DecisionBrief`
+projection. It is built from the current queue entry and its persisted
+assessment/evidence, never from a rendered summary or an LLM call. The HTML
+list uses only the decision and change fields needed for its concise summary;
+selected detail, API and MCP entries, and contextual chat use the full
+projection. Queue construction does not preload prerequisite dependencies
+solely for decision briefs. API and MCP lists batch that association after
+pagination for entries whose first prerequisite needs a local title; a
+selected partial-closeout detail resolves its own recommendation.
+
+The brief names the project goal, what changed, the exact decision or action,
+the supported recommendation and its reason, the waiting work, and the next
+state after the primary action. A recommendation is present only where the
+structured source supports it. Otherwise the brief explicitly names the
+unknown and asks one focused question. Detailed evidence, examples, and
+history remain in the lane-specific detail and collapsed disclosures.
+
+- `spec/services/inbox/decision_brief_spec.rb` covers the deterministic
+  contract across every queue lane, including evidence fallbacks, concise
+  product questions, and human-readable partial-closeout prerequisites.
 
 ## Testing
 

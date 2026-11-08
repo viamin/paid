@@ -917,7 +917,7 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include(discard_project_change_intent_path(project, change_intent))
   end
 
-  # @spec OPERATOR-INBOX-025
+  # @spec OPERATOR-INBOX-025 OPERATOR-INBOX-026
   it "returns the collection before fetching its first detail" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
@@ -927,12 +927,26 @@ RSpec.describe "Inbox" do
     document = Nokogiri::HTML(response.body)
     frame = document.at_css("turbo-frame#inbox-detail")
     master_detail = document.at_css("[data-controller~='inbox-master-detail']")
+    cache_control = document.at_css("meta[name='turbo-cache-control']")
 
+    expect(cache_control["content"]).to eq("no-cache")
     expect(frame["src"]).to eq(inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue),
       project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
     expect(frame["loading"]).to eq("eager")
     expect(frame.at_css("form")).to be_nil
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("false")
+    expect(cache_control["content"]).to eq("no-cache")
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "renders list summaries without building full decision briefs" do
+    create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
+    expect(Inbox::DecisionBrief).not_to receive(:call)
+
+    get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("What is the expected behavior?")
   end
 
   it "opens the current user's canonical interactive chat with one targeted queue lookup" do
@@ -1020,7 +1034,7 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
-  it "offers a cursor-backed continuation when the selected detail has older history" do
+  it "loads history lazily and offers a cursor-backed continuation for older activity" do
     issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
     subject_key = "issue:#{project.id}:#{issue.github_number}"
     21.times do |index|
@@ -1033,7 +1047,7 @@ RSpec.describe "Inbox" do
     detail = Nokogiri::HTML(response.body)
     history_frame = detail.at_css("turbo-frame#inbox-history")
     expect(history_frame["src"]).to eq(inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)))
-    expect(history_frame["loading"]).to eq("eager")
+    expect(history_frame["loading"]).to eq("lazy")
     expect(history_frame.at_css("ol")).to be_nil
 
     get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
@@ -2082,29 +2096,24 @@ RSpec.describe "Inbox" do
       expect(context_node["data-markdown-text-content-value"]).to include("- The repo already has a flag toggle wired up.")
     end
 
-    it "lays the context out beside the form on lg+ viewports via a two-column grid" do
+    it "keeps the context after the questions rather than beside the answer controls" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       grid = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-question-layout']")
-      expect(grid["class"]).to include("lg:has-[[data-testid=inbox-clarifying-context]]:grid")
-      expect(grid["class"]).to include("grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+      expect(grid["class"]).not_to include("grid")
+      expect(response.body.index("What is the expected behavior?")).to be < response.body.index("Context from Paid")
     end
 
-    it "does not collapse the disclosure on lg+ so the operator does not have to tap to read context" do
+    it "keeps the context disclosure collapsed on every viewport" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
       get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       panel = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']")
-      # OPERATOR-INBOX-011 expects the context to be visible by default on lg+
-      # so the operator does not have to expand the disclosure before reading it.
-      # The native <details open> default-expansion is what removes that tap;
-      # Nokogiri represents a present boolean attribute as `""`, so we look
-      # for the attribute itself rather than a truthy string value.
-      expect(panel.attribute("open")).not_to be_nil
-      expect(panel.at_css("summary")["class"]).to include("lg:cursor-default")
+      expect(panel.attribute("open")).to be_nil
+      expect(panel.at_css("summary")["class"]).not_to include("lg:cursor-default")
     end
 
     it "escapes the fallback text so it never renders as raw HTML before JS runs" do
@@ -2178,6 +2187,45 @@ RSpec.describe "Inbox" do
       expect(response.body).not_to include("Context from Paid")
       expect(response.body).not_to include("data-testid=\"inbox-clarifying-context\"")
       expect(response.body).to include("What is the desired behavior?")
+    end
+  end
+
+  # @spec OPERATOR-INBOX-025 OPERATOR-INBOX-027
+  context "when a question uses the structured payload" do
+    let(:structured_question) do
+      {
+        "question" => "Which cache should exports use?",
+        "choices" => [ { "label" => "Redis", "detail" => "Shared cache" }, { "label" => "Postgres", "detail" => "Persistent rows" } ],
+        "recommendation" => "Redis",
+        "rationale" => "Existing workers already use it.",
+        "examples" => [ "Nightly exports" ],
+        "evidence_references" => [ "app/jobs/export_job.rb:12" ]
+      }
+    end
+
+    it "puts choices and an evidence-backed recommendation before collapsed supporting details" do
+      issue = create(
+        :issue,
+        :needs_input,
+        project: project,
+        title: "Structured question",
+        needs_input_questions: [ structured_question ]
+      )
+
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+
+      document = Nokogiri::HTML(response.body)
+      brief = document.at_css("[data-testid='inbox-decision-brief']")
+      expect(brief.text).to include("Goal", "Structured question", "What changed",
+        "Product direction is needed before work can continue.", "Which cache should exports use?",
+        "Paid recommends:", "Redis", "Answer the question")
+      expect(document.at_css("[data-testid='inbox-question-recommendation']").text).to include("Redis")
+      expect(document.css("[data-controller='clarifying-choice'] input[type='radio']").size).to eq(3)
+      details = document.at_css("[data-testid='inbox-question-details']")
+      expect(details).to be_present
+      expect(details.attribute("open")).to be_nil
+      expect(details.text).to include("Existing workers already use it.", "Nightly exports", "app/jobs/export_job.rb:12")
+      expect(document.at_css("textarea[name='freeform_note']")).to be_present
     end
   end
 

@@ -247,6 +247,18 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(run.reload.status).to eq("queued")
     end
 
+    it "keeps a legacy acceptance audit queued without a technical evidence freshness snapshot" do # @spec PARTIAL-CLOSEOUT-041
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 70)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      request.update!(evidence: request.evidence.merge("continuation_mode" => "acceptance_audit"))
+      run = continuation_run(issue: issue, request: request)
+
+      expect(described_class.call(run)).to be false
+      expect(run.reload.status).to eq("queued")
+      expect(request.reload.status).to eq("queued")
+    end
+
     it "cancels a continuation run while GitHub closure is in flight" do # @spec PARTIAL-CLOSEOUT-006
       issue = create(:issue, project: project, github_state: "open")
       merged_partial_pr(issue: issue, number: 68)
@@ -284,6 +296,19 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(run.reload.status).to eq("cancelled")
       expect(request.reload.status).to eq("superseded")
       expect(request.closure_reason).to include("evidence")
+    end
+
+    # @spec TRUSTED-MEASUREMENTS-006
+    it "cancels a queued acceptance audit when trusted measurement evidence changes" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "completed")
+      merged_partial_pr(issue: issue, number: 70)
+      run = Issues::RequestAcceptanceAudit.call(issue:, actor: user).agent_run
+
+      create(:trusted_measurement_attempt, :succeeded, project:, issue:)
+
+      expect(described_class.call(run)).to be(true)
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.continuation_request.reload.status).to eq("superseded")
     end
 
     it "cancels the run when its request already closed" do

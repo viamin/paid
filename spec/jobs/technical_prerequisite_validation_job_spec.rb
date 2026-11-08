@@ -39,6 +39,19 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
   end
 
   # @spec PARTIAL-CLOSEOUT-032
+  it "executes a non-performance validation while the project scheduler is paused" do
+    project.update!(scheduler_paused_at: Time.current)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload.status).to eq("completed")
+    expect(TechnicalPrerequisites::ValidateExecution).to have_received(:call).with(
+      agent_run:, native_command: "bin/audit"
+    )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-032
   it "marks the run failed with the recorded validation error" do
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_return(validation_result("failed", { "error" => "analyzer exited 3" }))
@@ -78,5 +91,86 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
 
     expect(agent_run.reload.status).to eq("failed")
     expect(agent_run.error_message).to eq("no container provisioned")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "schedules the acceptance audit after a terminal performance measurement" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:, external_metadata: {
+      "technical_prerequisite_validation" => {
+        "requirement_id" => 1, "requirement_name" => "measure", "command" => "bin/measure", "source_run_id" => 1,
+        "performance_measurement" => { "samples" => 2 }
+      }
+    })
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload.status).to eq("completed")
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "fails a queued performance measurement when the project scheduler is paused before it starts" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:, external_metadata: {
+      "technical_prerequisite_validation" => {
+        "requirement_id" => 1, "requirement_name" => "measure", "command" => "bin/measure", "source_run_id" => 1,
+        "performance_measurement" => { "samples" => 2 }
+      }
+    })
+    project.update!(scheduler_paused_at: Time.current)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload).to have_attributes(
+      status: "failed", error_message: "Project scheduling is paused; resume it before running performance measurement."
+    )
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
+    expect(PartialCloseouts::AutoAudit).not_to have_received(:call)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "keeps the terminal measurement status when audit scheduling fails" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:, external_metadata: {
+      "technical_prerequisite_validation" => {
+        "requirement_id" => 1, "requirement_name" => "measure", "command" => "bin/measure", "source_run_id" => 1,
+        "performance_measurement" => { "samples" => 2 }
+      }
+    })
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+      .and_raise(ActiveRecord::RecordNotUnique, "concurrent continuation request")
+
+    expect { described_class.perform_now(agent_run.id) }.to raise_error(ActiveRecord::RecordNotUnique)
+
+    expect(agent_run.reload.status).to eq("completed")
+    expect(agent_run.completed_at).to be_present
+
+    allow(PartialCloseouts::AutoAudit).to receive(:call).and_return(nil)
+    described_class.perform_now(agent_run.id)
+
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:).twice
+    expect(TechnicalPrerequisites::ValidateExecution).to have_received(:call).once
+  end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "does not hand a cancelled terminal measurement to the acceptance audit" do
+    issue = create(:issue, project:)
+    agent_run.update!(status: "cancelled", completed_at: Time.current, issue:, external_metadata: {
+      "technical_prerequisite_validation" => {
+        "requirement_id" => 1, "requirement_name" => "measure", "command" => "bin/measure", "source_run_id" => 1,
+        "performance_measurement" => { "samples" => 2 }
+      }
+    })
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(PartialCloseouts::AutoAudit).not_to have_received(:call)
   end
 end

@@ -662,6 +662,69 @@ RSpec.describe Inbox::Queue do
       ])
     end
 
+    # @spec OPERATOR-INBOX-025
+    it "uses concise question text in the summary for structured questions" do
+      feature_issue = create_needs_input(
+        github_number: 21,
+        body: "Need export caching",
+        needs_input_questions: [
+          {
+            "question" => "Which cache should exports use?",
+            "choices" => [
+              { "label" => "Redis", "detail" => "Shared cache" },
+              { "label" => "Postgres", "detail" => "Persistent rows" }
+            ]
+          }
+        ]
+      )
+
+      entry = described_class.call(user: user, project: project).find { |item| item.issue == feature_issue }
+
+      expect(entry.summary).to eq("Which cache should exports use?")
+    end
+
+    # @spec QUIET-MODE-011 @spec OPERATOR-INBOX-025
+    context "when the body carries a quiet-mode questions section" do
+      let(:structured_question) do
+        {
+          "question" => "Which cache should exports use?",
+          "choices" => [
+            { "label" => "Redis", "detail" => "Shared cache" },
+            { "label" => "Postgres", "detail" => "Persistent rows" }
+          ],
+          "recommendation" => "Redis",
+          "evidence_references" => [ "app/jobs/export_job.rb:12" ]
+        }
+      end
+      let(:sectioned_issue) do
+        digest = ClarifyingQuestions::DescriptionSection.digest_for([ structured_question["question"] ])
+        create_needs_input(
+          github_number: 22,
+          body: <<~BODY,
+            Need export caching
+
+            <!-- paid:clarifying-questions -->
+            ## Clarifying questions
+
+            <!-- paid:clarifying-questions-digest:#{digest} -->
+            1. #{structured_question["question"]}
+               - ( ) Redis) Shared cache
+               - ( ) Postgres) Persistent rows
+            <!-- /paid:clarifying-questions -->
+          BODY
+          needs_input_questions: [ structured_question ]
+        )
+      end
+
+      it "reconciles body-section questions with the stored structured payload" do
+        issue = sectioned_issue
+
+        entry = described_class.call(user: user, project: project).find { |item| item.issue == issue }
+
+        expect(entry.questions).to eq([ structured_question ])
+      end
+    end
+
     it "skips questionless issues until sync repairs them" do
       questionless = create_needs_input(github_number: 9, body: "Needs manual retry")
       answerable = create_needs_input(github_number: 10, body: questions_body)
@@ -1210,6 +1273,17 @@ RSpec.describe Inbox::Queue do
       )
       expect(entry.summary).to include("#14")
       expect(entry.waiting_since).to be_present
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "leaves prerequisite dependencies unloaded for the list" do
+      issue = create_partial_closeout_issue(github_number: 202)
+      prerequisite = create(:issue, project:, github_number: 203)
+      create(:issue_dependency, issue:, depends_on_issue: prerequisite)
+
+      entry = described_class.call(user:, kind: described_class::PARTIAL_CLOSEOUT_KIND).find { |candidate| candidate.issue == issue }
+
+      expect(entry.issue.association(:issue_dependencies)).not_to be_loaded
     end
 
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H

@@ -45,11 +45,14 @@ module Automation
       new(...).call
     end
 
-    def initialize(project:, phase:, work_item: nil, trigger: :automatic)
+    def initialize(project:, phase:, work_item: nil, trigger: :automatic, continuation_grants: nil,
+      rollout_enabled: nil)
       @project = project
       @phase = phase&.to_s
       @work_item = work_item
       @trigger = trigger
+      @continuation_grants = continuation_grants
+      @rollout_enabled = rollout_enabled
     end
 
     def call
@@ -69,7 +72,7 @@ module Automation
 
     private
 
-    attr_reader :phase, :project, :trigger, :work_item
+    attr_reader :continuation_grants, :phase, :project, :rollout_enabled, :trigger, :work_item
 
     def permit(source, reason, grant: nil)
       Decision.new(permitted: true, source:, reason:, phase:, grant:)
@@ -77,6 +80,8 @@ module Automation
 
     # Rollout guard: while the flag is off the pre-existing policy applies.
     def enabled?
+      return rollout_enabled unless rollout_enabled.nil?
+
       Automation::RolloutGuard.enabled?(project)
     end
 
@@ -93,6 +98,8 @@ module Automation
     end
 
     def covering_grant
+      return continuation_grants.find { |grant| grant.covers_phase?(phase) } if continuation_grants
+
       ContinuationGrantLookup.covering(project:, phase:, work_item:)
     end
   end

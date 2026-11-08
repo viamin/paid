@@ -2,7 +2,7 @@
 
 module Api
   module V1
-    # @spec MOBILE-API-006
+    # @spec MOBILE-API-006 OPERATOR-INBOX-027
     # Exceeds the ~100-line class target deliberately: one small payload
     # method per Inbox::Queue::KINDS kind keeps each branch readable, and
     # splitting them into per-kind classes would scatter the `oneOf`
@@ -14,6 +14,18 @@ module Api
 
       def self.render_list(entry)
         new(entry).render_list
+      end
+
+      def self.render_list_page(entries)
+        issues = entries.filter_map do |entry|
+          entry.issue if entry.partial_closeout? && entry.issue && entry.tasks.first.to_s.match?(/\A#\d+\z/)
+        end
+        if issues.any?
+          ActiveRecord::Associations::Preloader.new(
+            records: issues, associations: { issue_dependencies: :depends_on_issue }
+          ).call
+        end
+        entries.map { |entry| render_list(entry) }
       end
 
       def initialize(entry, user: nil, history_limit: nil, history_cursor: nil)
@@ -43,7 +55,8 @@ module Api
           project: project,
           title: entry.title,
           summary: entry.summary,
-          action_url: entry.action_url
+          action_url: entry.action_url,
+          decision_brief: Inbox::DecisionBrief.call(entry:).to_h
         }
       end
 
@@ -90,7 +103,8 @@ module Api
       # escalated_pr's blocker counters) that only `entry.record` holds.
       def kind_payload
         case entry.kind
-        when Inbox::Queue::CLARIFYING_QUESTIONS_KIND then { questions: entry.questions }
+        when Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+          { questions: question_texts }
         when Inbox::Queue::PLAN_REVIEW_KIND then { tasks: entry.tasks }
         when Inbox::Queue::MERGE_APPROVAL_KIND then merge_approval_payload
         when Inbox::Queue::ACTION_REQUIRED_KIND then { remediation_steps: entry.tasks }
@@ -193,11 +207,15 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        { questions: question_texts, comment_url: entry.manual_review_comment_url }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: question_texts }
+      end
+
+      def question_texts
+        ClarifyingQuestions::QuestionPayload.submission_texts(entry.questions)
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

@@ -46,6 +46,8 @@
 </div>
 
 <div class="px-4 py-5 sm:px-6">
+  <%= render "dashboard/inbox_decision_brief", entry: entry %>
+
   <% if entry.issue %>
     <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
   <% end %>
@@ -122,7 +124,7 @@
   <%# @spec OPERATOR-INBOX-025 %>
   <%= turbo_frame_tag("inbox-history",
         src: inbox_entry_history_path(entry, **inbox_query_params(project: scoped_project, kind: selected_kind)),
-        loading: :eager) do %>
+        loading: :lazy) do %>
     <p class="mt-6 text-sm text-gray-500" role="status">Loading history…</p>
   <% end %>
   <%= render "dashboard/inbox_phase_and_removal", entry: entry %>

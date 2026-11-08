@@ -24,11 +24,14 @@ export default class extends Controller {
 
   connect() {
     this.mediaQuery.addEventListener("change", this.boundResetOnDesktop)
+    this.boundReloadCollection = this.reloadCollection.bind(this)
+    window.addEventListener("popstate", this.boundReloadCollection)
     this.syncPaneVisibility()
   }
 
   disconnect() {
     this.mediaQuery?.removeEventListener("change", this.boundResetOnDesktop)
+    window.removeEventListener("popstate", this.boundReloadCollection)
   }
 
   detailOpenValueChanged() {
@@ -76,6 +79,17 @@ export default class extends Controller {
       this.detailOpenValue = false
     } else {
       this.syncPaneVisibility()
+    }
+  }
+
+  // A frame navigation with `advance` changes the history URL while keeping
+  // this collection document alive. On Back, the browser restores the URL but
+  // not the frame's earlier HTML, so reload the collection and let the server
+  // select its canonical first entry again.
+  // @spec OPERATOR-INBOX-026
+  reloadCollection() {
+    if (window.location.pathname === this.element.dataset.inboxCollectionPath) {
+      window.location.reload()
     }
   }
 
