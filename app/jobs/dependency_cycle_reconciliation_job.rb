@@ -24,7 +24,7 @@ class DependencyCycleReconciliationJob < ApplicationJob
     started_at = monotonic_clock
     allocated_before = GC.stat(:total_allocated_objects)
     through_account_id ||= Account.maximum(:id)
-    return unless through_account_id
+    return log_page(started_at, allocated_before, [], after_account_id, nil, 0, 0) unless through_account_id
 
     accounts = account_page(after_account_id, through_account_id)
     last_successful_account_id, reconciled_count, unavailable_count = reconcile_page(accounts)

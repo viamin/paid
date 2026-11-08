@@ -10,6 +10,23 @@ RSpec.describe DependencyCycleReconciliationJob do
   end
 
   # @spec AUTO-PICK-QUEUE-014
+  it "logs an empty root page when no accounts exist" do
+    described_class.perform_now
+
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(
+        message: "dependency_cycles.reconciliation_page_completed",
+        account_count: 0,
+        reconciled_count: 0,
+        unavailable_count: 0,
+        through_account_id: nil,
+        duration_ms: a_kind_of(Integer),
+        allocations: a_kind_of(Integer)
+      )
+    )
+  end
+
+  # @spec AUTO-PICK-QUEUE-014
   it "reconciles each account in a captured cycle once through bounded continuations" do
     stub_const("DependencyCycleReconciliationJob::ACCOUNT_PAGE_SIZE", 2)
     accounts = Array.new(3) { create(:account) }
