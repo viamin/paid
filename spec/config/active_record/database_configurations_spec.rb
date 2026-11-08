@@ -13,4 +13,18 @@ RSpec.describe ActiveRecord::DatabaseConfigurations, :no_db do # @spec RAILS-CON
     expect(cable.fetch(:variables).fetch("jit")).to eq("off")
     expect(production.fetch(:variables, {})).not_to have_key("jit")
   end
+
+  it "uses DATABASE_URL for database tasks instead of the local PostgreSQL socket" do
+    database_url = ENV.fetch("DATABASE_URL")
+    development = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "primary").configuration_hash
+    url = URI.parse(database_url)
+
+    expect(development).to include(
+      host: url.host,
+      port: url.port,
+      database: url.path.delete_prefix("/"),
+      username: url.user,
+      password: url.password
+    )
+  end
 end

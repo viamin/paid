@@ -55,6 +55,21 @@ RSpec.describe EnsureWorktreeDatabasesScript do
     end
   end
 
+  it "skips PostgreSQL socket discovery when DATABASE_URL is provided" do
+    Dir.mktmpdir("ensure-worktree-databases-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = base_env(dir).merge(
+        "DATABASE_URL" => "postgres://agent:agent@postgres:5432/paid_test"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("DATABASE_URL is set — skipping automatic worktree database creation.")
+      expect(File.exist?(File.join(dir, "psql-invoked.log"))).to be(false)
+    end
+  end
+
   def prepare_script_fixture(dir, psql_stub: default_psql_stub(dir))
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "config"))
