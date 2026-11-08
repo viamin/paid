@@ -316,4 +316,27 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).not_to have_key(:comment_url)
     end
   end
+
+  # @spec OPERATOR-INBOX-027
+  describe ".render_list_page" do
+    it "batches local prerequisite titles for the returned entries" do
+      entries = 2.times.map do |index|
+        prerequisite = create(:issue, project:, github_number: 510 + index, title: "Verify result #{index}")
+        blocked = create(:issue, project:, github_number: 520 + index)
+        create(:issue_dependency, issue: blocked, depends_on_issue: prerequisite)
+        build_entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND,
+          id: "partial_closeout:#{blocked.id}", issue: blocked.reload, tasks: [ "##{prerequisite.github_number}" ])
+      end
+      queries = []
+      callback = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] if payload[:sql].include?("issue_dependencies") }
+
+      payloads = ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        described_class.render_list_page(entries)
+      end
+
+      expect(payloads.map { |payload| payload.dig(:decision_brief, :recommendation) })
+        .to eq([ "Resolve the prerequisite: Verify result 0.", "Resolve the prerequisite: Verify result 1." ])
+      expect(queries.size).to eq(1)
+    end
+  end
 end

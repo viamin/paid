@@ -1276,15 +1276,14 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec OPERATOR-INBOX-027
-    it "preloads prerequisite dependencies for the decision brief projection" do
+    it "leaves prerequisite dependencies unloaded for the list" do
       issue = create_partial_closeout_issue(github_number: 202)
       prerequisite = create(:issue, project:, github_number: 203)
       create(:issue_dependency, issue:, depends_on_issue: prerequisite)
 
       entry = described_class.call(user:, kind: described_class::PARTIAL_CLOSEOUT_KIND).find { |candidate| candidate.issue == issue }
 
-      expect(entry.issue.association(:issue_dependencies)).to be_loaded
-      expect(entry.issue.issue_dependencies.first.association(:depends_on_issue)).to be_loaded
+      expect(entry.issue.association(:issue_dependencies)).not_to be_loaded
     end
 
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H

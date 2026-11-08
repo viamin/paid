@@ -938,6 +938,17 @@ RSpec.describe "Inbox" do
     expect(cache_control["content"]).to eq("no-cache")
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "renders list summaries without building full decision briefs" do
+    create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
+    expect(Inbox::DecisionBrief).not_to receive(:call)
+
+    get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("What is the expected behavior?")
+  end
+
   it "opens the current user's canonical interactive chat with one targeted queue lookup" do
     # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
     issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
@@ -1023,7 +1034,7 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
-  it "offers a cursor-backed continuation when the selected detail has older history" do
+  it "loads history lazily and offers a cursor-backed continuation for older activity" do
     issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
     subject_key = "issue:#{project.id}:#{issue.github_number}"
     21.times do |index|
@@ -1036,7 +1047,7 @@ RSpec.describe "Inbox" do
     detail = Nokogiri::HTML(response.body)
     history_frame = detail.at_css("turbo-frame#inbox-history")
     expect(history_frame["src"]).to eq(inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)))
-    expect(history_frame["loading"]).to eq("eager")
+    expect(history_frame["loading"]).to eq("lazy")
     expect(history_frame.at_css("ol")).to be_nil
 
     get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),

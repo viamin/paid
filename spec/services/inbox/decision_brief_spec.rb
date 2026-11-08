@@ -99,6 +99,23 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "builds a partial-closeout list summary without resolving its recommendation" do
+    prerequisite = create(:issue, project:, github_number: 512, title: "Verify the production result")
+    blocked_issue = create(:issue, project:, github_number: 511)
+    create(:issue_dependency, issue: blocked_issue, depends_on_issue: prerequisite)
+    closeout = entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue: blocked_issue, tasks: [ "#512" ])
+    queries = []
+    callback = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] if payload[:sql].include?("issue_dependencies") }
+
+    summary = ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      described_class.list_summary(entry: closeout)
+    end
+
+    expect(summary).to eq("Choose how to finish the remaining acceptance criteria. — This issue still has remaining acceptance work.")
+    expect(queries).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "describes every queue lane with a specific decision and resulting state" do
     generic_copy = [ "Review and take the requested action.", "Review this item",
       "Paid will recheck the item after the action is recorded." ]
