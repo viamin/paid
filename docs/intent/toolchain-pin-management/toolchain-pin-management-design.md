@@ -123,7 +123,8 @@ application dependencies, so keeping their installation in CI makes the test
 environment reproducible without changing the application runtime. The browser
 runtime installation reuses the package indexes refreshed by the PostgreSQL
 client setup earlier in the job instead of issuing an unguarded duplicate
-refresh.
+refresh, while retaining the same bounded package-download settings as the
+client installation.
 
 That looseness needs one guard. The PGDG signing key is fetched at run time,
 and a runner whose download fails must not publish an unverified key: apt then

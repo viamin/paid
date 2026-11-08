@@ -82,11 +82,16 @@ RSpec.describe SystemWorkflowFile, :no_db do
   # @spec TOOLCHAIN-PIN-029
   it "installs the GLib and GTK runtime libraries required by Chrome" do
     runtime_step = system_step("Install browser runtime libraries")
+    run = runtime_step.fetch("run")
 
-    expect(runtime_step.fetch("run")).to include(
+    expect(run).to include(
+      "timeout 5m apt-get",
+      "Acquire::http::Timeout=30",
+      "Acquire::https::Timeout=30",
+      "Acquire::Retries=3",
       "libglib2.0-0t64",
       "libgtk-3-0t64"
     )
-    expect(runtime_step.fetch("run")).not_to include("apt-get update")
+    expect(run).not_to include("apt-get update")
   end
 end

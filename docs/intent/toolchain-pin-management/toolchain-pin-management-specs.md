@@ -130,8 +130,9 @@
 
 - [x] **TOOLCHAIN-PIN-029** — When the system-test job installs the browser
   runtime libraries required by Chrome, it SHALL install GLib and GTK from the
-  package indexes already refreshed by the PostgreSQL client setup, so browser
-  verification is reproducible without an unguarded duplicate `apt-get update`.
+  package indexes already refreshed by the PostgreSQL client setup with bounded
+  package-download settings, so browser verification is reproducible without
+  an unguarded duplicate `apt-get update` or an unbounded package download.
   *Tests:* `spec/config/system_workflow_file_spec.rb`.
   *Code:* `.github/workflows/system_tests.yml`.
 
