@@ -254,14 +254,21 @@ jobs:
       PAID_TEST_DATABASE: paid_test
       # Keep Rails, libpq shellouts, and any child processes on the same test
       # database connection flow instead of relying on split DB_* / PG* vars.
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      # Keep the CI runtime role below PostgreSQL's SUPERUSER/BYPASSRLS guard.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid_runtime
+      PGUSER: paid_runtime
+      DB_PASSWORD: paid_runtime
+      PGPASSWORD: paid_runtime
+      # Tests can open additional PostgreSQL connections outside the example
+      # wrapper. Default those CI-only connections to system access; individual
+      # tenant-isolation examples explicitly set this false through TenantContext.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      PGOPTIONS: -c paid.bypass_tenant_rls=true
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -270,6 +277,10 @@ jobs:
       QDRANT_URL: http://localhost:6333
 
     steps:
+      - name: Verify Docker availability
+        # bin/setup builds the agent image and runtime checks need the Docker API.
+        run: docker info
+
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -423,6 +434,42 @@ jobs:
           fi
           apt_with_retry install -y postgresql-client-16
           psql --version
+
+      - name: Create application database role
+        # PostgreSQL's bootstrap user is always a superuser. Create the test
+        # runtime role explicitly so RuntimeRoleGuard exercises its real policy.
+        # @spec POSTGRESQL-PERSISTENCE-002
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          -- RLS regression specs create and revoke a restricted test role. This
+          -- grants that narrowly scoped setup capability while preserving the
+          -- runtime guard's non-superuser and non-BYPASSRLS invariants.
+          -- Each matrix shard receives a newly initialized PostgreSQL service,
+          -- so the role is declared once rather than conditionally through DO.
+          CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname = 'paid_runtime'
+                AND rolcanlogin
+                AND rolcreatedb
+                AND rolcreaterole
+                AND NOT rolsuper
+                AND NOT rolbypassrls
+            ) THEN
+              RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';
+            END IF;
+          END
+          $$;
+          SQL
+          # Exercise the configured connection rather than discovering a bad
+          # password or LOGIN attribute after every shard has started.
+          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+            -c "SELECT 1"
 
       - name: Build assets
         run: yarn build && yarn build:css

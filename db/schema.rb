@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_07_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -425,8 +425,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_120000) do
     t.index ["project_id", "external_source_key", "external_run_key"], name: "idx_agent_runs_external_dedup", unique: true, where: "(external_run_key IS NOT NULL)"
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying, 'waiting_recovery'::character varying])::text[])))"
-    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying, 'waiting_recovery'::character varying])::text[])))"
+    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
+    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number", "status"], name: "idx_agent_runs_review_feedback_lookup"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
@@ -5965,14 +5965,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_120000) do
       $function$
   SQL
 
+  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
+      END;
+      $function$
+  SQL
+
   create_function :paid_current_account_id, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.paid_current_account_id()
        RETURNS bigint
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -5983,8 +5992,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_120000) do
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
@@ -6021,17 +6028,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_120000) do
         END IF;
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
-      END;
-      $function$
-  SQL
-
-  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
-       RETURNS trigger
-       LANGUAGE plpgsql
-      AS $function$
-      BEGIN
-        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
       END;
       $function$
   SQL
