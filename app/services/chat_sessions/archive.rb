@@ -78,24 +78,7 @@ module ChatSessions
     end
 
     def cleanup_workspace_resources
-      cleanup_container_resource if chat_session.container_id.present?
-      cleanup_volume_resource if chat_session.workspace_volume.present?
-    end
-
-    def cleanup_container_resource
-      Rails.logger.info(
-        message: "chat_session.cleanup_container",
-        chat_session_id: chat_session.id,
-        container_id: chat_session.container_id
-      )
-    end
-
-    def cleanup_volume_resource
-      Rails.logger.info(
-        message: "chat_session.cleanup_volume",
-        chat_session_id: chat_session.id,
-        workspace_volume: chat_session.workspace_volume
-      )
+      WorkspaceCleanup.call(chat_session: chat_session)
     end
   end
 end

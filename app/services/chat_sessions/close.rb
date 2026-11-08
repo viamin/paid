@@ -87,28 +87,7 @@ module ChatSessions
     end
 
     def cleanup_workspace_resources
-      cleanup_container_resource if chat_session.container_id.present?
-      cleanup_volume_resource if chat_session.workspace_volume.present?
-    end
-
-    def cleanup_container_resource
-      # Placeholder for container cleanup via Containers::Provision or Docker API.
-      # In production, this destroys the persistent workspace container.
-      Rails.logger.info(
-        message: "chat_session.cleanup_container",
-        chat_session_id: chat_session.id,
-        container_id: chat_session.container_id
-      )
-    end
-
-    def cleanup_volume_resource
-      # Placeholder for volume cleanup.
-      # In production, this removes the persistent workspace volume.
-      Rails.logger.info(
-        message: "chat_session.cleanup_volume",
-        chat_session_id: chat_session.id,
-        workspace_volume: chat_session.workspace_volume
-      )
+      WorkspaceCleanup.call(chat_session: chat_session)
     end
   end
 end

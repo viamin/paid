@@ -88,8 +88,9 @@ desktop retains Turbo's visibility-based lazy loading.
 A personal full-page chat draft is a visible conversation created by a user
 with no user message and no title. At most one such draft may exist per user.
 The database owns that invariant through a partial unique index, so concurrent
-page loads cannot create duplicates. Archived drafts are outside the
-invariant — an archived blank draft releases the one-draft slot instead of
+page loads cannot create duplicates. The migration that establishes the index
+releases discarded drafts' workspace resources before deleting them. Archived
+drafts are outside the invariant — an archived blank draft releases the one-draft slot instead of
 holding it, because an archived session can never accept the first user
 message that would mark it started; closed and idle blank drafts remain
 reusable so idle cycles do not accumulate a new blank item per visit.

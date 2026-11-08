@@ -26,10 +26,12 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
   end
 
   def down
-    remove_index :chat_sessions,
-      name: "index_chat_sessions_one_unstarted_untitled_personal",
-      algorithm: :concurrently
-    remove_column :chat_sessions, :started_at
+    if index_exists?(:chat_sessions, name: "index_chat_sessions_one_unstarted_untitled_personal")
+      remove_index :chat_sessions,
+        name: "index_chat_sessions_one_unstarted_untitled_personal",
+        algorithm: :concurrently
+    end
+    safety_assured { remove_column :chat_sessions, :started_at }
   end
 
   private
@@ -54,6 +56,10 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
   end
 
   def deduplicate_unstarted_drafts
+    discarded_unstarted_drafts.each do |draft|
+      ChatSessions::WorkspaceCleanup.call(chat_session: draft)
+    end
+
     execute <<~SQL.squish
       WITH ranked_drafts AS (
         SELECT id,
@@ -74,6 +80,25 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
       )
       DELETE FROM chat_sessions
       WHERE id IN (SELECT id FROM discarded_drafts)
+    SQL
+  end
+
+  def discarded_unstarted_drafts
+    ChatSession.find_by_sql(<<~SQL.squish)
+      SELECT chat_sessions.*
+      FROM chat_sessions
+      INNER JOIN (
+        SELECT id,
+          ROW_NUMBER() OVER (PARTITION BY created_by_id ORDER BY created_at DESC, id DESC) AS position
+        FROM chat_sessions
+        WHERE started_at IS NULL
+          AND NULLIF(BTRIM(title), '') IS NULL
+          AND inbox_item_key IS NULL
+          AND clarifying_question_issue_id IS NULL
+          AND feature_intent_id IS NULL
+          AND status <> 'archived'
+      ) ranked_drafts ON ranked_drafts.id = chat_sessions.id
+      WHERE ranked_drafts.position > 1
     SQL
   end
 end
