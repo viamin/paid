@@ -404,19 +404,26 @@ module Llm
       trusted = agent_run.project.trusted_github_author_logins.presence
       scope = scope.where("LOWER(github_creator_login) IN (?)", trusted) if trusted
       linked_ids = agent_run.issue.issue_dependencies.where.not(depends_on_issue_id: nil).select(:depends_on_issue_id)
-      issues = eligible_owner_issues(scope.where(id: linked_ids).order(github_number: :desc).limit(MAX_OPEN_ISSUES))
+      issues = eligible_owner_issues(scope.where(id: linked_ids), MAX_OPEN_ISSUES)
       remaining = MAX_OPEN_ISSUES - issues.size
       if remaining.positive?
-        recent = scope.where.not(id: issues.map(&:id)).order(github_number: :desc).limit(remaining)
-        issues.concat(eligible_owner_issues(recent))
+        recent = scope.where.not(id: linked_ids)
+        issues.concat(eligible_owner_issues(recent, remaining))
       end
       return "None." if issues.empty?
 
       issues.map { |owner| "##{owner.github_number} #{owner.title.to_s.truncate(120)}" }.join("\n")
     end
 
-    def eligible_owner_issues(issues)
-      issues.reject { |owner| owner_creates_dependency_cycle?(owner) }
+    def eligible_owner_issues(scope, limit)
+      owners = []
+      scope.find_each(cursor: [ :github_number, :id ], order: [ :desc, :desc ]) do |owner|
+        next if owner_creates_dependency_cycle?(owner)
+
+        owners << owner
+        break if owners.size == limit
+      end
+      owners
     end
 
     def owner_creates_dependency_cycle?(owner)

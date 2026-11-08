@@ -212,6 +212,21 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    it "fills the bounded list after rejecting a newer cyclic owner" do # @spec NO-OUTPUT-ISSUE-007
+      stub_const("Llm::AnalyzePartialCloseout::MAX_OPEN_ISSUES", 1)
+      eligible = create(:issue, project:, github_state: "open", title: "Eligible owner")
+      cyclic = create(:issue, project:, github_state: "open", title: "Cyclic owner")
+      create(:issue_dependency, issue: cyclic, depends_on_issue: issue)
+
+      described_class.call(agent_run:)
+
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        eligible_owners = prompt.split("Open issues eligible for ownership:\n", 2).last
+        expect(eligible_owners).to include("##{eligible.github_number} Eligible owner")
+        expect(eligible_owners).not_to include("##{cyclic.github_number} Cyclic owner")
+      end
+    end
+
     it "accepts source-retained agent work and asks the assessor to avoid child copies" do # @spec NO-OUTPUT-ISSUE-007
       allow(llm_response).to receive(:output).and_return({ gaps: [ {
         criterion: "Run browser navigation specs", kind: "agent", retain_on_source: true
