@@ -147,7 +147,12 @@ RSpec.configure do |config|
     next unless database_available
 
     begin
-      TenantContext.clear!
+      # CI uses a non-superuser role, so pooled connections must return to the
+      # explicit system-access baseline after every example. Leaving the
+      # session cleared lets the next example inherit RLS filtering before its
+      # own context wrapper runs.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      TenantContext.apply_system_access!
     rescue ActiveRecord::StatementInvalid => error
       raise unless error.cause.is_a?(PG::InFailedSqlTransaction)
     end
