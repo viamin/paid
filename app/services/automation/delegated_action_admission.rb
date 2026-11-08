@@ -11,9 +11,9 @@ module Automation
   #
   # A work item whose action class has no bounded authorization is not
   # delegated work under this contract: +call+ returns nil and the caller
-  # applies its ordinary policy. Manual operator requests carry their own
-  # explicit authority and are likewise exempt; the automated boundaries are
-  # where stale delegation must stop.
+  # applies its ordinary policy. Manual and automatic actions on a delegated
+  # work item both recheck at their boundary, so a retry cannot outlive a
+  # revoked or stale authorization.
   #
   # @spec PROJECT-DELEGATION-004 @spec PROJECT-DELEGATION-006
   # @spec BOUNDED-PHASE-AUTHORIZATION-004
@@ -103,15 +103,15 @@ module Automation
       work_item = issue || work_item_for(project:, pull_request_number:)
       delegated_action = action || GOAL_ACTIONS[goal.to_s]
       return nil if work_item.nil? || delegated_action.nil?
-      return nil if trigger.to_s == "manual"
 
-      new(work_item: work_item, action: delegated_action, boundary: boundary).call
+      new(work_item: work_item, action: delegated_action, boundary: boundary, trigger:).call
     end
 
-    def initialize(work_item:, action:, boundary:)
+    def initialize(work_item:, action:, boundary:, trigger:)
       @work_item = work_item
       @action = action
       @boundary = boundary
+      @trigger = trigger
     end
 
     # Returns a DelegatedWorkBoundary::Result, or nil when the work item is
@@ -126,7 +126,7 @@ module Automation
 
     private
 
-    attr_reader :work_item, :action, :boundary
+    attr_reader :work_item, :action, :boundary, :trigger
 
     def project
       work_item.project
@@ -154,7 +154,7 @@ module Automation
         posture_signature: self.class.posture_signature_for(project:, action:),
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
-          work_item:, trigger: :automatic),
+          work_item:, trigger:),
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
