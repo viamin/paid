@@ -70,7 +70,7 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec POSTGRESQL-PERSISTENCE-002
-  it "uses a non-superuser runtime role and checks Docker before test setup" do
+  it "uses a dedicated runtime role and checks Docker before test setup" do
     job = workflow.fetch("jobs").fetch("test-shards")
     env = job.fetch("env")
     postgres = job.fetch("services").fetch("postgres")
@@ -84,11 +84,22 @@ RSpec.describe CiWorkflowFile, :no_db do
       "PGPASSWORD" => "paid_runtime"
     )
     expect(postgres.fetch("env")).to include(
-      "POSTGRES_USER" => "paid_runtime",
-      "POSTGRES_PASSWORD" => "paid_runtime"
+      "POSTGRES_USER" => "postgres",
+      "POSTGRES_PASSWORD" => "postgres"
     )
-    expect(postgres.fetch("options")).to include('--health-cmd="pg_isready -U paid_runtime"')
+    expect(postgres.fetch("options")).to include('--health-cmd="pg_isready -U postgres"')
     expect(docker_step).to include("run" => "docker info")
+  end
+
+  it "creates the runtime role without superuser or row-level-security bypass privileges" do
+    job = workflow.fetch("jobs").fetch("test-shards")
+    role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
+    expect(role_step.fetch("env")).to include("PGPASSWORD" => "postgres")
+    expect(role_step.fetch("run")).to include(
+      'CREATE ROLE paid_runtime LOGIN PASSWORD \'paid_runtime\';',
+      'ALTER ROLE paid_runtime WITH LOGIN PASSWORD \'paid_runtime\';',
+      "ALTER ROLE paid_runtime CREATEDB NOSUPERUSER NOBYPASSRLS;"
+    )
   end
 
 

@@ -227,13 +227,13 @@ jobs:
       postgres:
         image: postgres:16.15
         env:
-          POSTGRES_USER: paid_runtime
-          POSTGRES_PASSWORD: paid_runtime
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
           --shm-size=512m
-          --health-cmd="pg_isready -U paid_runtime"
+          --health-cmd="pg_isready -U postgres"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -429,6 +429,26 @@ jobs:
           fi
           apt_with_retry install -y postgresql-client-16
           psql --version
+
+      - name: Create application database role
+        # PostgreSQL's bootstrap user is always a superuser. Create the test
+        # runtime role explicitly so RuntimeRoleGuard exercises its real policy.
+        # @spec POSTGRESQL-PERSISTENCE-002
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid_runtime') THEN
+              CREATE ROLE paid_runtime LOGIN PASSWORD 'paid_runtime';
+            ELSE
+              ALTER ROLE paid_runtime WITH LOGIN PASSWORD 'paid_runtime';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid_runtime CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
 
       - name: Build assets
         run: yarn build && yarn build:css
