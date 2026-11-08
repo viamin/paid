@@ -69,13 +69,14 @@ RSpec.describe DatabaseYmlErb do
 
   # @spec RAILS-CONTROL-PLANE-013
   it "keeps DATABASE_URL from overriding the production primary configuration" do
-    configurations = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
+    result = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
       prepare_fixture(dir)
       resolve_production_configurations(
         dir,
         env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_production", "RAILS_ENV" => "production" }
       )
     end
+    configurations = result.fetch("configurations")
 
     expect(configurations.fetch("primary")).to include(
       "database" => "paid_production",
@@ -86,6 +87,7 @@ RSpec.describe DatabaseYmlErb do
       "cache" => include("database" => "paid_production_cache"),
       "cable" => include("database" => "paid_production_cable")
     )
+    expect(result.fetch("database_url")).to eq("postgres://agent:secret@db.example/paid_production")
   end
 
   def prepare_fixture(dir, linked_worktree: false)
@@ -143,7 +145,7 @@ RSpec.describe DatabaseYmlErb do
       resolved = configurations.configs_for(env_name: ENV.fetch("RAILS_ENV")).to_h do |configuration|
         [configuration.name, configuration.configuration_hash]
       end
-      puts resolved.to_json
+      puts({ configurations: resolved, database_url: ENV.fetch("DATABASE_URL") }.to_json)
     RUBY
     stdout, stderr, status = Open3.capture3(
       { "PATH" => ENV.fetch("PATH") }.merge(env),

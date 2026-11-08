@@ -30,8 +30,8 @@ control plane aligned with the database RLS model.
 Development primary and test database connections may take their complete
 connection from `DATABASE_URL` when a CI or externally provisioned database
 supplies one. Development cable retains its dedicated database connection;
-production discards the generic `DATABASE_URL` before Active Record resolves
-its explicit primary/cache/cable configuration. Development
+production's explicit primary/cache/cable configurations prevent the generic
+`DATABASE_URL` from overriding their configured roles. Development
 database connections disable PostgreSQL JIT. Inbox eligibility
 queries have large plans that PostgreSQL otherwise compiles for seconds even
 when the underlying execution takes milliseconds. The setting is scoped to

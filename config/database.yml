@@ -4,11 +4,6 @@ require File.expand_path("config/worktree_database_names", Dir.pwd)
 development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name
 development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name
 test_database = Paid::WorktreeDatabaseNames.test_name
-
-# Active Record applies DATABASE_URL after evaluating this file, even without a
-# `url:` entry. Production uses the explicit primary/cache/cable configuration
-# below, so discard the generic non-production override before Rails resolves it.
-ENV.delete("DATABASE_URL") if (ENV["RAILS_ENV"] || ENV["RACK_ENV"]) == "production" # @spec RAILS-CONTROL-PLANE-013
 %>
 
 # PostgreSQL. Versions 9.3 and up are supported.
@@ -128,6 +123,9 @@ test:
 production:
   primary: &primary_production
     <<: *default
+    # A URL config keeps Active Record from merging generic DATABASE_URL into
+    # production's explicitly configured database role and name.
+    url: postgresql:/// # @spec RAILS-CONTROL-PLANE-013
     database: paid_production
     username: paid
     password: <%= ENV["PAID_DATABASE_PASSWORD"] %>

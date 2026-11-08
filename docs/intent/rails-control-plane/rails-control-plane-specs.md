@@ -17,8 +17,8 @@
   `DATABASE_URL`, the development primary and test database configurations
   SHALL use that complete connection URL; development cable SHALL retain its
   dedicated database configuration without a generic URL mapping. Production
-  SHALL discard `DATABASE_URL` before Active Record resolves configuration so
-  its explicit primary/cache/cable configuration remains authoritative.
+  SHALL retain `DATABASE_URL` while resolving its explicit primary/cache/cable
+  configuration so the configured roles remain authoritative.
   *Tests:* `spec/paid/database_yml_erb_spec.rb`.
   *Code:* `config/database.yml`.
 
