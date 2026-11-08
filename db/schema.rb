@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_212805) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -916,6 +916,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
     t.string "proxy_token", limit: 64
     t.datetime "rate_limited_until", comment: "When a runner rate limit that paused this chat session is expected to clear. Set when a chat turn exhausts every fallback runner with an AgentHarness::RateLimitError; cleared on a successful resend."
     t.bigint "runner_id"
+    t.datetime "started_at", comment: "When the first user message started this chat session."
     t.string "status", default: "active", null: false
     t.text "system_prompt"
     t.string "title"
@@ -927,6 +928,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
     t.index ["created_by_id", "inbox_item_key", "status"], name: "index_chat_sessions_inbox_history", where: "(inbox_item_key IS NOT NULL)"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
+    t.index ["created_by_id"], name: "index_chat_sessions_one_unstarted_untitled_personal", unique: true, where: "((started_at IS NULL) AND (NULLIF(btrim((title)::text), ''::text) IS NULL) AND (inbox_item_key IS NULL) AND (clarifying_question_issue_id IS NULL) AND (feature_intent_id IS NULL))"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
     t.index ["feature_intent_id"], name: "index_chat_sessions_on_feature_intent_id"
     t.index ["feature_intent_id"], name: "index_chat_sessions_one_open_feature_chat", unique: true, where: "((feature_intent_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"

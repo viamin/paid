@@ -46,17 +46,12 @@ module ChatSessions
     alias_method :provider_id, :runner_id
 
     def call
-      # @spec CHAT-API-001
+      # @spec CHAT-API-001 CHAT-API-030
       validate!
 
-      session = ActiveRecord::Base.transaction do
-        created = create_session
-        prompt_text = build_system_prompt(created)
-        persist_system_message(created, prompt_text)
-        created
-      end
+      session, created = create_or_reuse_session
 
-      enqueue_background_provisioning(session)
+      enqueue_background_provisioning(session) if created
       session
     end
 
@@ -92,6 +87,27 @@ module ChatSessions
         inbox_item_metadata: inbox_item_metadata.presence || {},
         opened_at: opened_at
       )
+    end
+
+    # @spec CHAT-API-030
+    def create_or_reuse_session
+      ActiveRecord::Base.transaction do
+        created = create_session
+        persist_system_message(created, build_system_prompt(created))
+        [ created, true ]
+      end
+    rescue ActiveRecord::RecordNotUnique
+      raise unless reusable_personal_draft?
+
+      [ existing_personal_draft, false ]
+    end
+
+    def reusable_personal_draft?
+      title.blank? && inbox_item_key.blank? && clarifying_question_issue.blank? && feature_intent.blank?
+    end
+
+    def existing_personal_draft
+      ChatSession.unstarted_untitled_personal.where(account:, created_by: user).order(created_at: :desc, id: :desc).first!
     end
 
     def container_requested_at

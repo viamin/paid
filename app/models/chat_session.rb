@@ -100,6 +100,11 @@ class ChatSession < ApplicationRecord
   end
 
   scope :active, -> { where(status: "active") }
+  # @spec CHAT-API-030
+  scope :unstarted_untitled_personal, -> {
+    where(started_at: nil, inbox_item_key: nil, clarifying_question_issue_id: nil, feature_intent_id: nil)
+      .where("NULLIF(BTRIM(title), '') IS NULL")
+  }
   scope :visible, -> { where.not(status: "archived") }
   scope :archived_only, -> { where(status: "archived") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
@@ -316,13 +321,21 @@ class ChatSession < ApplicationRecord
   end
 
   def generate_title_from_content!
-    return if title.present?
+    start!
+  end
+
+  # @spec CHAT-API-030
+  def start!
+    return self if started_at.present?
 
     first_user_message = messages.where(role: "user").order(:created_at).first
-    return unless first_user_message&.content.present?
+    return self unless first_user_message&.content.present?
 
-    generated = first_user_message.content.to_s.tr("\n", " ").truncate(80)
-    update_columns(title: generated)
+    update_columns(
+      started_at: Time.current,
+      title: title.presence || first_user_message.content.to_s.tr("\n", " ").truncate(80)
+    )
+    self
   end
 
   def ensure_proxy_token!

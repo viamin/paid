@@ -100,6 +100,18 @@
   `ChatSessions::Create#call`,
   `ChatSessions::Create#persist_system_message`.
 
+- [x] **CHAT-API-030** — When a user opens the full-page chat without an
+  unstarted, untitled personal chat, Paid SHALL create one reusable draft. A
+  later load, including concurrent loads, SHALL reuse that draft rather than
+  creating another. The first persisted user message SHALL mark the draft
+  started, after which a later load MAY create a new draft. Started chats and
+  scoped Inbox or exploration chats SHALL remain unaffected.
+  *Tests:* `spec/system/chat_unstarted_draft_spec.rb`,
+  `spec/services/chat_sessions/create_spec.rb`,
+  `spec/services/chat_sessions/create_call_concurrency_spec.rb`.
+  *Code:* `ChatSession.unstarted_untitled_personal`, `ChatSession#start!`,
+  `ChatSessions::Create#call`, `ChatMessage#mark_chat_session_started`.
+
 - [x] **CHAT-API-002** — When an API-mode chat turn is sent through JSON, SSE,
   or ActionCable, the system SHALL persist the user/assistant conversation,
   stream start/chunk/tool/completion events, and return a paused status instead

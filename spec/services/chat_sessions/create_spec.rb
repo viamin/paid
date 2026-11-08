@@ -21,6 +21,29 @@ RSpec.describe ChatSessions::Create do
       expect(session.idle_timeout_at).to be_within(5.seconds).of(30.minutes.from_now)
     end
 
+    # @spec CHAT-API-030
+    it "reuses the user's unstarted untitled personal session" do
+      original = described_class.call(account: account, user: user)
+
+      expect {
+        reused = described_class.call(account: account, user: user)
+        expect(reused).to eq(original)
+      }.not_to change(ChatSession, :count)
+    end
+
+    # @spec CHAT-API-030
+    it "creates a new draft after the earlier session starts" do
+      original = described_class.call(account: account, user: user)
+      original.messages.create!(role: "user", content: "Start this chat")
+
+      replacement = described_class.call(account: account, user: user)
+
+      expect(original.reload.started_at).to be_present
+      expect(original.title).to eq("Start this chat")
+      expect(replacement).not_to eq(original)
+      expect(ChatSession.unstarted_untitled_personal.where(created_by: user)).to contain_exactly(replacement)
+    end
+
     it "persists a system prompt as the first message" do
       # @spec CHAT-API-001
       session = described_class.call(account: account, user: user)

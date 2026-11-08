@@ -83,6 +83,17 @@ whose action has no modal target. Because the mobile drawer starts hidden, its
 controller requests the scoped sidebar frame when the page becomes usable;
 desktop retains Turbo's visibility-based lazy loading.
 
+### Personal unstarted-chat drafts
+
+A personal full-page chat draft is an active conversation created by a user
+with no user message and no title. At most one such draft may exist per user.
+The database owns that invariant through a partial unique index, so concurrent
+page loads cannot create duplicates. Chat creation recovers a unique-index
+conflict by returning the committed draft. Persisting the first user message
+marks the session started and generates its title, releasing the user to create
+a later draft. Inbox and exploration chats are outside this personal-draft
+rule because their dedicated identity constraints define their lifecycle.
+
 Sidebar cards receive the first non-system message through a correlated lookup
 that projects only the display-sized prefix. The lookup remains live rather
 than caching transcript data, so message creates and updates are immediately
