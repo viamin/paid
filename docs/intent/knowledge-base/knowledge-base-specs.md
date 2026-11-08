@@ -41,9 +41,12 @@
   collector SHALL serialize with a legacy full collector job for the same
   project commit, and its continuation SHALL enqueue even when initial
   collection requests occupy their enqueue slots. A batch for a commit no
-  longer at the target branch head SHALL skip collection. The tree-sitter
-  collector SHALL process a bounded page of source files per perform and
-  resume from its last processed path until all files are covered.
+  longer at the target branch head SHALL skip collection. The tree-sitter and
+  symbol-index collectors SHALL process a bounded page of source files per
+  perform, persist a stable relative-path cursor only after the shard's
+  artifacts are stored, and resume idempotently from that cursor until all
+  files are covered. They SHALL stream bounded shard artifacts to persistence
+  without materializing repository-wide matches or artifact arrays.
   *Code:* `app/jobs/run_collector_batch_job.rb`,
   `app/jobs/run_collector_continuation_job.rb`,
   `app/services/knowledge/collector_runner.rb`,

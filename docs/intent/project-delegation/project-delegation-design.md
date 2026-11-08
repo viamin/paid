@@ -52,10 +52,13 @@ own work item is recorded as a follow-up or routed to a human decision.
 `Automation::EffectivePolicy` composes intent/readiness, phase policy,
 continuation/bounded authorization, project delegation, and existing controls
 in that order without copying their rules. `ProjectDelegation::Projection` is
-the shared read model for settings, Inbox, API, and MCP. `ActionPlan` is the
-shared write/admission contract for queue, dequeue, retry, follow-up
-recording, closeout, and repair jobs. All calls record the same policy
-signature and evidence references.
+the shared read model for settings, Inbox, API, and MCP.
+`Automation::DelegatedActionAdmission` is the shared write/admission contract
+for queue, dequeue, retry, follow-up recording, closeout, and repair jobs. It
+uses the effective-policy decision as a boundary input, so a disabled phase or
+revoked continuation authority blocks the action and creates one focused
+human decision. All calls record the same policy signature and evidence
+references.
 
 The initial boundary-recheck slice rechecks current revisions, posture
 signature, applicable phase and bounded-stop policy, tenant, trust, budget,

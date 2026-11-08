@@ -182,6 +182,21 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(result.reasons).to include(:posture_signature, :phase_policy)
   end
 
+  it "applies the shared effective policy to delegated repair boundaries" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:automation_phases, project: project)
+    project.update!(automation_phase_settings: {
+      "phases" => { "coding" => false },
+      "release" => false,
+      "deployment" => false
+    })
+    authorize(action: "repair")
+
+    result = recheck(goal: "layered_verification_repair", boundary: :repair)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:phase_policy)
+  end
+
   it "blocks when a hard-stop budget is exceeded" do # @spec PROJECT-DELEGATION-004
     authorize(action: "review")
     create(:cost_budget, project: project, budget_type: "monthly", limit_cents: 100,

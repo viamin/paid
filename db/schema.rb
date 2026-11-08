@@ -1028,6 +1028,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_003303) do
     t.integer "duration_ms"
     t.text "error_message"
     t.jsonb "metadata", default: {}
+    t.string "progress_cursor"
     t.bigint "project_version_id", null: false
     t.datetime "started_at"
     t.string "status", limit: 50, default: "pending", null: false
