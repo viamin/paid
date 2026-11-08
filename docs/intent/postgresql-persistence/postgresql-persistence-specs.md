@@ -15,10 +15,12 @@
 
 - [x] **POSTGRESQL-PERSISTENCE-002** — The application runtime SHALL reject
   PostgreSQL roles with `SUPERUSER` or `BYPASSRLS` privileges so application
-  traffic cannot silently bypass tenant RLS. Primary CI database jobs SHALL
+  traffic cannot silently bypass tenant RLS. Database-backed CI jobs SHALL
   bootstrap and use a dedicated application role without either privilege.
-  *Tests:* `spec/config/ci_workflow_file_spec.rb`.
-  *Code:* `Database::RuntimeRoleGuard`, `.github/workflows/ci.yml`.
+  *Tests:* `spec/config/ci_workflow_file_spec.rb`,
+  `spec/config/mutation_workflow_file_spec.rb`.
+  *Code:* `Database::RuntimeRoleGuard`, `.github/workflows/ci.yml`,
+  `.github/workflows/mutation.yml`.
 
 - [x] **POSTGRESQL-PERSISTENCE-006** — Tenant RLS policies SHALL reject
   cross-tenant writes for direct account rows, join rows, and project-owned

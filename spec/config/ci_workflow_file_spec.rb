@@ -84,6 +84,16 @@ RSpec.describe CiWorkflowFile, :no_db do
     end
   end
 
+  it "installs a PostgreSQL client before bootstrapping each application role" do
+    %w[test-shards pact-provider-verification schemathesis migrations performance].each do |job_name|
+      steps = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+      client_install_index = steps.index { |step| step["name"] == "Install PostgreSQL client" }
+      role_creation_index = steps.index { |step| step["name"] == "Create application database role" }
+
+      expect(client_install_index).to be < role_creation_index
+    end
+  end
+
 
   it "verifies workflow jobs install the matching PGDG postgres client major package" do
     lint_step = postgres_pin_step
