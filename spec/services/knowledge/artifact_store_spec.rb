@@ -183,20 +183,66 @@ RSpec.describe Knowledge::ArtifactStore do
       end
     end
 
-    context "when another collector holds the artifact lock" do
-      # @spec KNOWLEDGE-001
-      it "fails immediately instead of waiting for the advisory lock" do
-        raw_connection = instance_double(PG::Connection)
-        lock_result = instance_double(PG::Result, getvalue: "f")
-        connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter,
-          raw_connection: raw_connection)
-        allow(ActiveRecord::Base).to receive(:connection).and_return(connection)
-        expect(raw_connection).to receive(:exec_params)
-          .with(described_class::TRY_ADVISORY_LOCK_SQL, [ described_class::LOCK_NAMESPACE, kind_of(Integer) ])
-          .and_return(lock_result)
+    context "when another collector session holds the artifact lock" do
+      before { allow(Rails.logger).to receive(:warn) }
 
-        expect { store.store_all([ artifact_data ]) }
-          .to raise_error(described_class::LockUnavailable, /artifact lock/)
+      # A same-thread `connection_pool.with_connection` would reuse this
+      # thread's backend, so simulate the "other process" with a raw pg
+      # connection — session-scoped `pg_try_advisory_lock` only contends
+      # across distinct backends.
+      def with_other_session_lock(lock_key)
+        db_config = ActiveRecord::Base.connection_db_config.configuration_hash
+        other_session = PG.connect(
+          host: db_config[:host], port: db_config[:port], dbname: db_config[:database],
+          user: db_config[:username], password: db_config[:password]
+        )
+        other_session.exec_params(
+          described_class::TRY_ADVISORY_LOCK_SQL,
+          [ described_class::LOCK_NAMESPACE, lock_key ]
+        )
+        yield other_session
+      ensure
+        other_session&.close
+      end
+
+      # @spec KNOWLEDGE-001
+      it "fails the attempt after bounded lock retries instead of waiting indefinitely" do
+        stub_const("Knowledge::ArtifactStore::LOCK_RETRY_DELAY_SECONDS", 0.0)
+        lock_key = store.send(:advisory_lock_key, artifact_data)
+
+        with_other_session_lock(lock_key) do
+          expect { store.store_all([ artifact_data ]) }
+            .to raise_error(described_class::LockUnavailable, /artifact lock/)
+        end
+
+        expect(Rails.logger).to have_received(:warn)
+          .exactly(described_class::LOCK_RETRY_ATTEMPTS - 1).times
+          .with(hash_including(message: "knowledge.artifact_lock_contention", project_id: project.id))
+        expect(KnowledgeArtifact.count).to eq(0)
+      end
+
+      # @spec KNOWLEDGE-001
+      it "waits out transient contention and stores the artifact" do
+        stub_const("Knowledge::ArtifactStore::LOCK_RETRY_DELAY_SECONDS", 0.0)
+        lock_key = store.send(:advisory_lock_key, artifact_data)
+
+        with_other_session_lock(lock_key) do |other_session|
+          # The other holder finishes its upsert while this store waits out
+          # the first contended attempt: release its lock when the store
+          # reports contention, so the next acquisition succeeds.
+          allow(Rails.logger).to receive(:warn).and_wrap_original do |method, *args|
+            method.call(*args)
+            other_session.exec_params(described_class::ADVISORY_UNLOCK_SQL,
+              [ described_class::LOCK_NAMESPACE, lock_key ])
+          end
+
+          expect { store.store_all([ artifact_data ]) }.not_to raise_error
+        end
+
+        expect(Rails.logger).to have_received(:warn).once
+          .with(hash_including(message: "knowledge.artifact_lock_contention", project_id: project.id))
+        expect(KnowledgeArtifact.count).to eq(1)
+        expect(KnowledgeChunk.count).to eq(1)
       end
     end
   end

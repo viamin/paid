@@ -9,9 +9,13 @@
   system SHALL persist versioned collector output in PostgreSQL as project
   versions, collector runs, artifacts, chunks, and links, and SHALL stale older
   active artifacts after a full successful collection run for a newer commit.
-  When concurrent collection contends for an artifact identity, it SHALL not
-  wait indefinitely on a database advisory lock; it SHALL fail the collection
-  attempt promptly and retry through the job's bounded retry policy. During
+  When concurrent collection contends for an artifact identity, it SHALL retry
+  advisory-lock acquisition within the collection attempt for a bounded,
+  configurable interval (attempts and delay) before failing that attempt, so
+  momentary cross-run contention does not exhaust the job retry policy; it
+  SHALL not wait indefinitely on a database advisory lock; it SHALL fail the
+  collection attempt promptly once that bounded interval is exhausted and
+  retry through the job's bounded retry policy. During
   those retryable attempts, it SHALL retain the project's `collecting` status;
   after the retry policy is exhausted, it SHALL mark the collection failed and
   report the terminal failure through the job exception-notification path.

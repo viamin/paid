@@ -7,6 +7,8 @@ module Knowledge
     TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock($1, $2)".freeze
     ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
     LOCK_NAMESPACE = 1_357_180_002
+    LOCK_RETRY_ATTEMPTS = Integer(ENV.fetch("KNOWLEDGE_LOCK_RETRY_ATTEMPTS", 5))
+    LOCK_RETRY_DELAY_SECONDS = Float(ENV.fetch("KNOWLEDGE_LOCK_RETRY_DELAY_SECONDS", 0.25))
 
     attr_reader :project, :collector_run
 
@@ -252,12 +254,45 @@ module Knowledge
 
     def with_artifact_lock(data)
       lock_key = advisory_lock_key(data)
-      acquired = acquire_artifact_lock(lock_key)
+      acquired = acquire_artifact_lock_with_retry(lock_key)
       raise LockUnavailable, "Knowledge artifact lock is unavailable" unless acquired
 
       yield
     ensure
       execute_lock_sql(ADVISORY_UNLOCK_SQL, lock_key) if acquired
+    end
+
+    # @spec KNOWLEDGE-001
+    # Contention is usually momentary: the other holder's critical section is
+    # one short artifact upsert (overlapping collections for different commits
+    # of a project contend per artifact). Retry acquisition briefly within
+    # this attempt before escalating to the job-level retry policy, so
+    # transient contention does not fail the whole collection attempt.
+    def acquire_artifact_lock_with_retry(lock_key)
+      LOCK_RETRY_ATTEMPTS.times do |attempt_index|
+        acquired = acquire_artifact_lock(lock_key)
+        return true if acquired
+
+        next if final_lock_attempt?(attempt_index)
+
+        log_lock_contention(attempt_index)
+        sleep(LOCK_RETRY_DELAY_SECONDS)
+      end
+      false
+    end
+
+    def final_lock_attempt?(attempt_index)
+      attempt_index + 1 >= LOCK_RETRY_ATTEMPTS
+    end
+
+    def log_lock_contention(attempt_index)
+      Rails.logger.warn(
+        message: "knowledge.artifact_lock_contention",
+        project_id: project.id,
+        collector_run_id: collector_run.id,
+        attempt: attempt_index + 1,
+        max_attempts: LOCK_RETRY_ATTEMPTS
+      )
     end
 
     def advisory_lock_key(data)

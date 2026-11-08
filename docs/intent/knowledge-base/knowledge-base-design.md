@@ -112,13 +112,19 @@ Collector runs are versioned by project commit and write artifact/chunk/link
 state into PostgreSQL. Full collection runs stale older active artifacts so the
 knowledge base tracks what was known for each commit while still surfacing the
 latest active view. Artifact identity updates use a non-blocking PostgreSQL
-advisory lock: contention raises a retryable failure promptly instead of
-consuming the collection job's wall-clock budget. `RunCollectorsJob` retries
-that transient failure with its bounded backoff policy, preserving the
-project's `collecting` status while it waits. On exhaustion it marks the
-collection failed, reports the terminal exception, and re-raises it so the
-adapter records the failed execution. This preserves serialized replacement
-without allowing a stranded database lock to create a job timeout.
+advisory lock. Because momentary cross-run contention — overlapping
+collections for different commits of one project contend for the same
+artifact identities while the GoodJob concurrency key serializes per commit
+only — resolves within the other holder's short single-artifact upsert, the
+store first retries lock acquisition for a bounded, configurable interval
+(attempts and delay) inside the collection attempt. Contention that outlasts
+that interval raises a retryable failure promptly instead of consuming the
+collection job's wall-clock budget. `RunCollectorsJob` retries that transient
+failure with its bounded backoff policy, preserving the project's
+`collecting` status while it waits. On exhaustion it marks the collection
+failed, reports the terminal exception, and re-raises it so the adapter
+records the failed execution. This preserves serialized replacement without
+allowing a stranded database lock to create a job timeout.
 
 Full collection runs execute the registered collectors serially, and a large
 repository can legitimately require more than the individual command timeouts
