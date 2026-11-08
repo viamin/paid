@@ -79,6 +79,7 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(export_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
   end
 
+  # @spec TOOLCHAIN-PIN-029
   it "installs the GLib and GTK runtime libraries required by Chrome" do
     runtime_step = system_step("Install browser runtime libraries")
 
@@ -86,5 +87,6 @@ RSpec.describe SystemWorkflowFile, :no_db do
       "libglib2.0-0t64",
       "libgtk-3-0t64"
     )
+    expect(runtime_step.fetch("run")).not_to include("apt-get update")
   end
 end
