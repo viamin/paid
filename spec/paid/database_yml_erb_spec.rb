@@ -5,6 +5,7 @@ require "spec_helper"
 require "fileutils"
 require "open3"
 require "tmpdir"
+require "yaml"
 require_relative "../support/exec_tmpdir"
 
 class DatabaseYmlErb
@@ -65,6 +66,22 @@ RSpec.describe DatabaseYmlErb do
   end
 
   # @spec RAILS-CONTROL-PLANE-013
+  it "keeps the development cable connection on its dedicated database" do
+    configuration = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
+      prepare_fixture(dir)
+      parse_fixture(
+        render_fixture(
+          dir,
+          env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_development", "RAILS_ENV" => "development" }
+        )
+      )
+    end
+
+    expect(configuration.dig("development", "primary", "url")).to eq("postgres://agent:secret@db.example/paid_development")
+    expect(configuration.dig("development", "cable")).not_to have_key("url")
+  end
+
+  # @spec RAILS-CONTROL-PLANE-013
   it "keeps the generic DATABASE_URL mapping out of production" do
     rendered = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
       prepare_fixture(dir)
@@ -118,6 +135,10 @@ RSpec.describe DatabaseYmlErb do
 
     expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
     stdout
+  end
+
+  def parse_fixture(rendered)
+    YAML.safe_load(rendered, aliases: true)
   end
 
   def write_executable(path, contents)

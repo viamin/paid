@@ -23,12 +23,6 @@ test_database = Paid::WorktreeDatabaseNames.test_name
 default: &default
   adapter: postgresql
   encoding: unicode
-  <% if (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
-  # CI and other non-production boots may provide the complete connection
-  # through DATABASE_URL (for example, an externally provisioned database).
-  # Production keeps its explicit primary/cache/cable configuration below.
-  url: <%= ENV["DATABASE_URL"] %>
-  <% end %>
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   pool: <%= ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS", 20) } %>
@@ -43,13 +37,20 @@ development:
   primary: &primary_development
     <<: *default
     database: <%= development_primary_database %>
+    <% if (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
+    # CI and other non-production boots may provide the complete primary
+    # connection through DATABASE_URL. Cable retains its dedicated database.
+    url: <%= ENV["DATABASE_URL"] %>
+    <% end %>
     # Short OLTP requests lose seconds compiling complex eligibility plans with JIT.
     variables:
       jit: "off" # @spec RAILS-CONTROL-PLANE-010
   cable:
-    <<: *primary_development
+    <<: *default
     database: <%= development_cable_database %>
     migrations_paths: db/cable_migrate
+    variables:
+      jit: "off"
 
   # The specified database role being used to connect to PostgreSQL.
   # To create additional roles in PostgreSQL see `$ createuser --help`.
@@ -84,6 +85,11 @@ development:
 test:
   <<: *default
   database: <%= test_database %>
+  <% if (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
+  # CI and other non-production boots may provide the complete connection
+  # through DATABASE_URL (for example, an externally provisioned database).
+  url: <%= ENV["DATABASE_URL"] %>
+  <% end %>
   # Disable prepared statements in tests to avoid cached-plan failures when
   # order-dependent examples recreate or change schema objects mid-suite.
   prepared_statements: false
