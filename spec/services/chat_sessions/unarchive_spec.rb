@@ -39,6 +39,25 @@ RSpec.describe ChatSessions::Unarchive do
     end
 
     # @spec CHAT-API-030
+    it "cleans up a container-backed fresh draft before discarding it" do
+      original = ChatSessions::Create.call(account: account, user: user)
+      ChatSessions::Archive.call(chat_session: original)
+      replacement = ChatSessions::Create.call(account: account, user: user, container_capability: "pending")
+      replacement.update!(container_capability: "ready", container_id: "container-123", workspace_volume: "volume-123")
+      allow(Rails.logger).to receive(:info).and_call_original
+
+      described_class.call(chat_session: original)
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "chat_session.cleanup_container", chat_session_id: replacement.id)
+      )
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "chat_session.cleanup_volume", chat_session_id: replacement.id)
+      )
+      expect { replacement.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    # @spec CHAT-API-030
     it "keeps the fresh draft when restoring a started archived session" do
       started = ChatSessions::Create.call(account: account, user: user)
       started.messages.create!(role: "user", content: "Start this chat")

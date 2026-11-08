@@ -39,10 +39,15 @@ module ChatSessions
     def discard_conflicting_personal_draft
       return unless restoring_personal_draft?
 
+      conflicting_personal_drafts.find_each do |draft|
+        ChatSessions::Close.call(chat_session: draft)
+      end
+    end
+
+    def conflicting_personal_drafts
       chat_session.class.unstarted_untitled_personal
         .where(account_id: chat_session.account_id, created_by_id: chat_session.created_by_id)
         .where.not(id: chat_session.id)
-        .destroy_all
     end
 
     def restoring_personal_draft?

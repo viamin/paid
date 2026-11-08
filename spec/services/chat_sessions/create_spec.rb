@@ -54,6 +54,27 @@ RSpec.describe ChatSessions::Create do
     end
 
     # @spec CHAT-API-030
+    it "preserves a configured draft when the modal submits its default values" do
+      runner = create_api_chat_runner
+      create_configured_container_draft(runner)
+
+      reused = described_class.call(
+        account: account,
+        user: user,
+        container_capability: "none",
+        auto_approve: "0"
+      )
+
+      expect(reused.reload).to have_attributes(
+        container_capability: "pending",
+        runner_id: runner.id,
+        model: "gpt-4o",
+        system_prompt: "Keep this prompt.",
+        auto_approve: true
+      )
+    end
+
+    # @spec CHAT-API-030
     it "provisions a reusable draft configured for a container" do
       original = described_class.call(account: account, user: user)
 
@@ -371,5 +392,17 @@ RSpec.describe ChatSessions::Create do
     create(:runner, :api_key, user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+  end
+
+  def create_configured_container_draft(runner)
+    described_class.call(
+      account: account,
+      user: user,
+      container_capability: "pending",
+      runner_id: runner.id,
+      model: "gpt-4o",
+      system_prompt: "Keep this prompt.",
+      auto_approve: true
+    )
   end
 end

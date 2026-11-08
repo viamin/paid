@@ -37,8 +37,7 @@ module ChatSessions
       @opened_at = opened_at
       @clarifying_question_issue = clarifying_question_issue
       @feature_intent = feature_intent
-      @configured_personal_draft = [ container_capability, runner_id, provider_id, model, project_id,
-        system_prompt, metadata ].any?(&:present?) || !auto_approve.nil?
+      @configured_personal_draft = explicitly_configured_personal_draft?
     end
 
     def self.call(...)
@@ -106,6 +105,15 @@ module ChatSessions
 
     def reusable_personal_draft?
       title.blank? && inbox_item_key.blank? && clarifying_question_issue.blank? && feature_intent.blank?
+    end
+
+    def explicitly_configured_personal_draft?
+      [ runner_id, model, project_id, system_prompt, metadata ].any?(&:present?) ||
+        container_capability == "pending" || auto_approve_enabled?
+    end
+
+    def auto_approve_enabled?
+      ActiveModel::Type::Boolean.new.cast(auto_approve)
     end
 
     def existing_personal_draft
