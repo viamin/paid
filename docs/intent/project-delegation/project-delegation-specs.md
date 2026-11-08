@@ -45,13 +45,11 @@ Status markers: `[ ]` planned implementation gap.
   every queued retry must pass), and
   `spec/services/automation/focused_decision_spec.rb` (dedup and refresh).
 
-- [ ] **PROJECT-DELEGATION-005** — UI, API, MCP, queue, dequeue, retries, and
+- [x] **PROJECT-DELEGATION-005** — UI, API, MCP, queue, dequeue, retries, and
   background jobs SHALL use `Automation::EffectivePolicy` and the same
   delegation projection; no surface SHALL infer authority from a label, stale
   approval, queue state, or local UI state.
-  PR #4918 delivers only the shared read projection for UI, API, and MCP;
-  it does not complete this requirement or close #4879.
-  *Read-surface verification:*
+  *Verified by:*
   `spec/services/project_delegation/projection_spec.rb` (the one shared read
   model: `Automation::EffectivePolicy` decisions, bounded authorization
   lifecycle, admission-contract posture signature),
@@ -60,9 +58,14 @@ Status markers: `[ ]` planned implementation gap.
   `spec/services/inbox/chat_context_spec.rb` (Inbox/work-detail surfaces),
   `spec/requests/api/v1/delegation_spec.rb` (API surface, same signature as
   the settings projection), and `spec/mcp/tools/get_project_delegation_spec.rb`
-  (MCP surface). Completing #4879 still requires the shared `ActionPlan`
-  write/admission contract for queue, dequeue, retry, follow-up, closeout, and
-  repair boundaries.
+  (MCP surface), `spec/services/automation/delegated_action_admission_spec.rb`
+  (shared effective-policy evaluation, including a disabled coding phase for
+  repair), `spec/temporal/activities/queue_agent_run_activity_spec.rb` (queue
+  and follow-up), `spec/jobs/process_run_queue_job_spec.rb` (dequeue, including
+  retry-minted runs), and
+  `spec/temporal/activities/merge_pull_request_activity_spec.rb` (closeout).
+  Repair work enters through the same queue admission mapping as
+  `layered_verification_repair`.
 
 - [x] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
   authority, the system SHALL apply the broader posture only to new admissions
