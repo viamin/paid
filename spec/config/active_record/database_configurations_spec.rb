@@ -19,7 +19,6 @@ RSpec.describe ActiveRecord::DatabaseConfigurations, :no_db do # @spec RAILS-CON
 
     database_url = ENV.fetch("DATABASE_URL")
     development = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "primary").configuration_hash
-    cable = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "cable").configuration_hash
     url = URI.parse(database_url)
     expected = {
       host: url.host,
@@ -30,6 +29,11 @@ RSpec.describe ActiveRecord::DatabaseConfigurations, :no_db do # @spec RAILS-CON
     }.compact
 
     expect(development).to include(expected)
-    expect(cable).to include(host: url.host)
+  end
+
+  it "leaves development cable available for CABLE_DATABASE_URL" do
+    cable = ActiveRecord::Base.configurations.configs_for(env_name: "development", name: "cable").configuration_hash
+
+    expect(cable).not_to have_key(:url)
   end
 end

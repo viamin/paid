@@ -26,15 +26,6 @@ default: &default
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   pool: <%= ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS", 20) } %>
-  # Pin database tasks to DATABASE_URL outside production only. Emitting a
-  # shared `url:` in production would collapse every connection onto the URL's
-  # database and disable the per-connection CACHE_DATABASE_URL /
-  # CABLE_DATABASE_URL variables, so production keeps Rails's built-in
-  # DATABASE_URL handling. The ENV fallback mirrors Rails.env resolution so
-  # this file stays renderable without the Rails constant.
-  <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
-  url: <%= ENV["DATABASE_URL"] %>
-  <% end %>
   <% if ENV["DB_HOST"] %>
   host: <%= ENV["DB_HOST"] %>
   username: <%= ENV.fetch("DB_USERNAME", "paid") %>
@@ -49,10 +40,17 @@ development:
     # Short OLTP requests lose seconds compiling complex eligibility plans with JIT.
     variables:
       jit: "off" # @spec RAILS-CONTROL-PLANE-010
+    # Pin primary database tasks to DATABASE_URL outside production without
+    # overriding the connection-specific CABLE_DATABASE_URL for cable tasks.
+    <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
+    url: <%= ENV["DATABASE_URL"] %>
+    <% end %>
   cable:
-    <<: *primary_development
+    <<: *default
     database: <%= development_cable_database %>
     migrations_paths: db/cable_migrate
+    variables:
+      jit: "off" # @spec RAILS-CONTROL-PLANE-010
 
   # The specified database role being used to connect to PostgreSQL.
   # To create additional roles in PostgreSQL see `$ createuser --help`.
@@ -87,6 +85,11 @@ development:
 test:
   <<: *default
   database: <%= test_database %>
+  # Test database tasks use DATABASE_URL when CI provides it, avoiding a
+  # fallback to a local PostgreSQL socket.
+  <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
+  url: <%= ENV["DATABASE_URL"] %>
+  <% end %>
   # Disable prepared statements in tests to avoid cached-plan failures when
   # order-dependent examples recreate or change schema objects mid-suite.
   prepared_statements: false
