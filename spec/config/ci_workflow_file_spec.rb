@@ -98,7 +98,11 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(role_step.fetch("run")).to include(
       'CREATE ROLE paid_runtime LOGIN PASSWORD \'paid_runtime\';',
       'ALTER ROLE paid_runtime WITH LOGIN PASSWORD \'paid_runtime\';',
-      "ALTER ROLE paid_runtime CREATEDB NOSUPERUSER NOBYPASSRLS;"
+      "ALTER ROLE paid_runtime CREATEDB NOSUPERUSER NOBYPASSRLS;",
+      "WHERE rolname = 'paid_runtime'",
+      "AND NOT rolsuper",
+      "AND NOT rolbypassrls",
+      "RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';"
     )
   end
 
