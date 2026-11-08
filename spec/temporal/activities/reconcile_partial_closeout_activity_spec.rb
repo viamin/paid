@@ -64,6 +64,19 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       expect(parent.reload.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
     end
 
+    it "keeps source-owned work incomplete without creating another child" do # @spec NO-OUTPUT-ISSUE-007
+      assessment = { "gaps" => [ { "criterion" => "Run browser navigation specs",
+        "kind" => "agent", "retain_on_source" => true } ],
+        "criteria" => [ { "criterion" => "Run browser navigation specs", "state" => "unmet" } ] }
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(assessment)
+
+      result = activity.execute(agent_run_id: run.id)
+
+      expect(result).to include(status: "reconciled", gaps_remain: true)
+      expect(parent.reload.issue_dependencies).to be_empty
+      expect(run.reload.reconciliation.dig("source_closure", "disposition")).to eq("track")
+    end
+
     # @spec NO-OUTPUT-ISSUE-007
     it "signals remaining operator prerequisites so the workflow keeps the parent issue incomplete" do
       assessment = { "gaps" => [ { "criterion" => "macOS acceptance", "kind" => "human",

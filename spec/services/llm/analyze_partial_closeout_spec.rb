@@ -170,6 +170,53 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    it "prioritizes linked owners and recent issues within the bounded owner list" do # @spec NO-OUTPUT-ISSUE-007
+      stub_const("Llm::AnalyzePartialCloseout::MAX_OPEN_ISSUES", 2)
+      linked = create(:issue, project:, github_state: "open", title: "Linked owner")
+      omitted = create(:issue, project:, github_state: "open", title: "Older unrelated work")
+      recent = create(:issue, project:, github_state: "open", title: "Recent owner")
+      create(:issue_dependency, issue:, depends_on_issue: linked)
+
+      described_class.call(agent_run:)
+
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        eligible_owners = prompt.split("Open issues eligible for ownership:\n", 2).last
+        expect(eligible_owners).to include("##{linked.github_number} Linked owner", "##{recent.github_number} Recent owner")
+        expect(eligible_owners).not_to include("##{omitted.github_number} Older unrelated work")
+      end
+    end
+
+    it "does not offer an issue already waiting on the source as its owner" do # @spec NO-OUTPUT-ISSUE-007
+      waiting_parent = create(:issue, project:, github_state: "open", title: "Parent awaiting this work")
+      create(:issue_dependency, issue: waiting_parent, depends_on_issue: issue)
+
+      described_class.call(agent_run:)
+
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        eligible_owners = prompt.split("Open issues eligible for ownership:\n", 2).last
+        expect(eligible_owners).not_to include("##{waiting_parent.github_number} Parent awaiting this work")
+      end
+    end
+
+    it "accepts source-retained agent work and asks the assessor to avoid child copies" do # @spec NO-OUTPUT-ISSUE-007
+      allow(llm_response).to receive(:output).and_return({ gaps: [ {
+        criterion: "Run browser navigation specs", kind: "agent", retain_on_source: true
+      } ], criteria: [ { criterion: "Run browser navigation specs", state: "unmet" } ] }.to_json)
+
+      expect(described_class.call(agent_run:).dig("gaps", 0, "retain_on_source")).to be(true)
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        expect(prompt).to include("retain_on_source")
+      end
+    end
+
+    it "accepts an explicit false source-retention flag on an ordinary agent gap" do # @spec NO-OUTPUT-ISSUE-007
+      allow(llm_response).to receive(:output).and_return({ gaps: [ {
+        criterion: "Ship a separate feature", kind: "agent", title: "Ship feature", retain_on_source: false
+      } ] }.to_json)
+
+      expect(described_class.call(agent_run:).dig("gaps", 0, "retain_on_source")).to be(false)
+    end
+
     # @spec PARTIAL-CLOSEOUT-041
     it "supplies the trusted current source issue number for human attribution" do
       described_class.call(agent_run: agent_run)

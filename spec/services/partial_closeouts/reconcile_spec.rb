@@ -28,6 +28,66 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(client).to have_received(:update_issue).with(project.full_name, parent.github_number, body: a_string_including("Depends on ##{owner.github_number}"))
   end
 
+  it "does not link an untrusted issue named as an owner by the assessment" do # @spec NO-OUTPUT-ISSUE-007
+    project.update!(allowed_github_usernames: [ "trusted-author" ])
+    untrusted = create(:issue, project:, github_state: "open", github_creator_login: "untrusted-author")
+    created = OpenStruct.new(number: 444, html_url: "https://example.test/issues/444", id: 444,
+      title: "Finish dispatch", body: "")
+    trusted_owner = create(:issue, project:, github_number: 444, github_state: "open")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(trusted_owner)
+
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "dispatch", "owner_issue_number" => untrusted.github_number,
+      "title" => "Finish dispatch"
+    } ]))
+
+    expect(parent.issue_dependencies.find_by(depends_on_issue: untrusted)).to be_nil
+    expect(parent.issue_dependencies.find_by(depends_on_issue: trusted_owner)).to be_present
+  end
+
+  it "does not reuse an issue that is already waiting on the source" do # @spec NO-OUTPUT-ISSUE-007
+    waiting_parent = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: waiting_parent, depends_on_issue: parent)
+    created = OpenStruct.new(number: 444, html_url: "https://example.test/issues/444", id: 444,
+      title: "Finish dispatch", body: "")
+    owner = create(:issue, project:, github_number: 444, github_state: "open")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(owner)
+
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "dispatch", "owner_issue_number" => waiting_parent.github_number,
+      "title" => "Finish dispatch"
+    } ]))
+
+    expect(parent.issue_dependencies.find_by(depends_on_issue: waiting_parent)).to be_nil
+    expect(parent.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
+  end
+
+  it "retains source-owned work without filing a duplicate child" do # @spec NO-OUTPUT-ISSUE-007
+    allow(client).to receive(:create_issue)
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "Run browser navigation specs", "kind" => "agent", "retain_on_source" => true
+    } ]))
+
+    expect(client).not_to have_received(:create_issue)
+    expect(parent.reload.issue_dependencies).to be_empty
+    expect(run.reload.reconciliation.dig("gaps", "0", "status")).to eq("source_owned")
+  end
+
+  it "creates a separate owner when source retention is explicitly false" do # @spec NO-OUTPUT-ISSUE-007
+    created = OpenStruct.new(number: 445, html_url: "https://example.test/issues/445", id: 445,
+      title: "Ship feature", body: "")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(create(:issue, project:, github_number: 445))
+
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "Ship feature", "kind" => "agent", "title" => "Ship feature", "retain_on_source" => false
+    } ]))
+
+    expect(client).to have_received(:create_issue).once
+  end
+
   # @spec NO-OUTPUT-ISSUE-007
   it "does not let a closed historical issue satisfy an unimplemented gap" do
     create(:issue, project: project, github_state: "closed", paid_state: "completed")

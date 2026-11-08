@@ -65,6 +65,10 @@ module PartialCloseouts
 
       gaps.each do |gap|
         raise ArgumentError, "gap criterion is required" if gap["criterion"].blank?
+        if gap.key?("retain_on_source") && gap["retain_on_source"] != false &&
+            !(gap["kind"] == "agent" && gap["retain_on_source"] == true && gap["owner_issue_number"].nil?)
+          raise ArgumentError, "source retention is invalid"
+        end
         # Mirrors Llm::AnalyzePartialCloseout#owner_resolvable? so the exact
         # operator next step reaches the Inbox notification; a generic
         # fallback would leave the prerequisite unactionable (#4119).
@@ -167,6 +171,11 @@ module PartialCloseouts
     end
 
     def reconcile_agent_gap(gap, index)
+      if gap["retain_on_source"] == true
+        record_gap!(index, gap, status: "source_owned")
+        return
+      end
+
       owner = reusable_owner(gap) || create_owner!(gap, index)
       IssueDependency.find_or_create_by!(issue: agent_run.issue, depends_on_issue: owner)
       record_gap!(index, gap, owner_issue_id: owner.id, owner_issue_number: owner.github_number)
@@ -181,7 +190,12 @@ module PartialCloseouts
       # would fail IssueDependency#not_self_referential with
       # ActiveRecord::RecordInvalid, which is not a GithubClient::Error and
       # would bypass the retryable-failure path in +call+.
-      owner if owner && owner.id != agent_run.issue.id
+      return unless owner && owner.id != agent_run.issue.id
+      trusted = agent_run.project.trusted_github_author_logins
+      return if trusted.present? && !agent_run.project.trusted_github_author?(owner.github_creator_login)
+      return if owner.issue_dependencies.exists?(depends_on_issue_id: agent_run.issue.id)
+
+      owner
     end
 
     def create_owner!(gap, index)
