@@ -78,4 +78,13 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
     expect(export_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
   end
+
+  it "installs the GLib and GTK runtime libraries required by Chrome" do
+    runtime_step = system_step("Install browser runtime libraries")
+
+    expect(runtime_step.fetch("run")).to include(
+      "libglib2.0-0t64",
+      "libgtk-3-0t64"
+    )
+  end
 end
