@@ -130,6 +130,7 @@ RSpec.describe "Project automation phases" do
   end
 
   it "attributes blocked authority to the conservative posture" do # @spec PROJECT-DELEGATION-005
+    FeatureFlags.enable!(:automation_phases, project:)
     FeatureFlags.enable!(:project_delegation, project:)
     work_item = create(:issue, project:)
     create(:bounded_delegated_action, project:, issue: work_item, action: "review",

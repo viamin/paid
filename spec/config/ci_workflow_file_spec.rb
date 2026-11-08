@@ -69,6 +69,59 @@ RSpec.describe CiWorkflowFile, :no_db do
     )
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-002
+  it "uses a dedicated runtime role and checks Docker availability" do
+    job = workflow.fetch("jobs").fetch("test-shards")
+    env = job.fetch("env")
+    postgres = job.fetch("services").fetch("postgres")
+    docker_step = job.fetch("steps").find { |step| step["name"] == "Verify Docker availability" }
+
+    expect(env).to include(
+      "DATABASE_URL" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
+      "DB_USERNAME" => "paid_runtime",
+      "PGUSER" => "paid_runtime",
+      "DB_PASSWORD" => "paid_runtime",
+      "PGPASSWORD" => "paid_runtime",
+      "PGOPTIONS" => "-c paid.bypass_tenant_rls=true"
+    )
+    expect(postgres.fetch("env")).to include(
+      "POSTGRES_USER" => "postgres",
+      "POSTGRES_PASSWORD" => "postgres"
+    )
+    expect(postgres.fetch("options")).to include('--health-cmd="pg_isready -U postgres"')
+    expect(docker_step).to include("run" => "docker info")
+  end
+
+  it "provisions CI prerequisites before schema setup" do
+    steps = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
+    database_step = steps.find { |step| step["name"] == "Set up database" }
+
+    %w[Verify\ Docker\ availability Create\ application\ database\ role].each do |name|
+      prerequisite = steps.find { |step| step["name"] == name }
+      expect(steps.index(prerequisite)).to be < steps.index(database_step)
+    end
+  end
+
+  it "creates the runtime role without superuser or row-level-security bypass privileges" do
+    job = workflow.fetch("jobs").fetch("test-shards")
+    role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
+    sql = role_step.fetch("run").split("<<'SQL'\n", 2).last.split("\nSQL", 2).first
+
+    expect(role_step.fetch("env")).to include("PGPASSWORD" => "postgres")
+    expect(sql).not_to match(/^\s*#/) # PostgreSQL comments begin with --, not #.
+    expect(role_step.fetch("run")).to include(
+      'psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres',
+      "CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';",
+      "WHERE rolname = 'paid_runtime'",
+      "AND rolcanlogin\n      AND rolcreatedb",
+      "AND rolcreaterole",
+      "AND NOT rolsuper",
+      "AND NOT rolbypassrls",
+      "RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';",
+      "PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h \"$DB_HOST\" -U paid_runtime -d postgres"
+    )
+  end
+
 
   it "verifies workflow jobs install the matching PGDG postgres client major package" do
     lint_step = postgres_pin_step
@@ -114,6 +167,32 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include('mkdir -p "$HOME/.local/bin"')
     expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
     expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
+    expect(install_step.fetch("run")).to include("for attempt in 1 2 3 4 5")
+  end
+
+  # @spec TEST-SUITE-003
+  it "falls back to an uncached Ruby setup when the Bundler cache service fails" do
+    workflow.fetch("jobs").except("test").each_value do |job|
+      steps = job.fetch("steps")
+      setup_index = steps.index { |step| step["name"] == "Set up Ruby" }
+      next unless setup_index
+
+      setup_step = steps.fetch(setup_index)
+      recovery_step = steps.fetch(setup_index + 1)
+      install_step = steps.fetch(setup_index + 2)
+
+      expect(setup_step).to include("id" => "setup_ruby", "continue-on-error" => true)
+      expect(recovery_step).to include(
+        "name" => "Recover Ruby dependencies after cache failure",
+        "if" => "steps.setup_ruby.outcome == 'failure'"
+      )
+      expect(recovery_step.fetch("with")).to include("bundler-cache" => false)
+      expect(install_step).to include(
+        "name" => "Install Ruby dependencies after cache failure",
+        "if" => "steps.setup_ruby.outcome == 'failure'",
+        "run" => "bundle install --jobs 4 --retry 3"
+      )
+    end
   end
 
   it "fetches full git history for the test job checkout" do

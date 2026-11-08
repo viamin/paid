@@ -37,6 +37,19 @@ RSpec.describe Activities::PostPartialCloseoutEvidenceActivity do
       )
     end
 
+    it "describes remaining work without claiming every gap has a child dependency" do # @spec NO-OUTPUT-ISSUE-007
+      agent_run.update!(reconciliation: { "assessment" => { "gaps" => [ {
+        "criterion" => "Run browser navigation specs", "kind" => "agent", "retain_on_source" => true
+      } ] } })
+
+      activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
+
+      expect(github_client).to have_received(:add_comment) do |_, _, body|
+        expect(body).to include("This issue stays open")
+        expect(body).not_to include("blocking dependencies")
+      end
+    end
+
     it "tags the evidence comment with the per-run marker" do
       activity.execute(agent_run_id: agent_run.id, pull_request_url: pr_url)
 

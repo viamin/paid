@@ -5,8 +5,8 @@ module Activities
   #
   # Split from UpdateIssueWithPrActivity: when reconciliation leaves gaps, the
   # parent must stay incomplete (no completion, no trigger-label cleanup), but
-  # the PR link must still be visible on the parent issue where the
-  # dependency-blocked remaining work is tracked (#4119) — not only on the
+  # the PR link must still be visible on the source issue where the
+  # remaining work is tracked (#4119) — not only on the
   # internal AgentRun. The comment is marker-tagged per run and deduplicated,
   # so activity retries never double-post.
   class PostPartialCloseoutEvidenceActivity < BaseActivity
@@ -80,8 +80,7 @@ module Activities
         "**Partial pull request created: #{pull_request_url}**",
         "",
         "This pull request addresses part of this issue's acceptance criteria. " \
-        "The remaining gaps are tracked as blocking dependencies of this issue; " \
-        "it stays open and will be picked up again once they resolve."
+        "This issue stays open while its remaining work or prerequisites are resolved."
       ].join("\n")
     end
   end

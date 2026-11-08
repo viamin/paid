@@ -10,7 +10,10 @@ RSpec.describe Tools::GetProjectDelegation do
   let(:project) { create(:project, account: account, created_by: user) }
   let(:tool) { described_class.new(user: user, session: session) }
 
-  before { FeatureFlags.enable!(:project_delegation, project:) }
+  before do
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+  end
 
   def authorize_review(work_item:)
     create(:bounded_delegated_action,

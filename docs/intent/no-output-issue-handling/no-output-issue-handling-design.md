@@ -134,7 +134,15 @@ subject, and parent-body rewrite all target an open work item, not a terminal
 one). The activity uses an agent-harness structured assessment of approved
 intent, the run/PR evidence, and current open issues (the assessment prompt
 lists the bounded open-issue set so owner reuse is grounded, not guessed from
-evidence prose). The assessment follows the same transport routing as the other
+evidence prose). Linked open owners take priority in that set, followed by the
+most recent eligible open issues, so a growing backlog does not hide recent
+follow-up work. An issue whose dependency path already reaches the source
+cannot be offered as an owner, because linking it would create a direct or
+transitive reverse dependency cycle. When the source issue itself
+still owns an unmet criterion, the assessment retains that gap on the source
+instead of creating another
+issue with the same task. A source-retained gap keeps the source incomplete
+without adding a self-dependency. The assessment follows the same transport routing as the other
 schema-boundary services through the configured runner, with a JSON contract
 in the prompt and local structural validation. The request has 60 seconds within
 the activity's 120-second budget so runner startup, authentication, timeout
@@ -162,7 +170,8 @@ status alone is ambiguous: `reconciled` covers both a gap-free closeout and one
 whose gaps all received agent owners). When gaps remain, the workflow splits
 `UpdateIssueWithPrActivity`'s two duties: the completion path (which also owns
 trigger-label cleanup) is skipped, so the parent issue stays in its
-non-terminal state, keeps its trigger label, and remains dependency-blocked.
+non-terminal state and keeps its trigger label. A linked open owner blocks it
+through the dependency gate; source-retained work has no self-dependency.
 
 Keeping the parent open is necessary for a continuation path but not
 sufficient: the permanent merged-PR guard in
@@ -184,7 +193,7 @@ The PR-link evidence does not skip
 with it: a dedicated `PostPartialCloseoutEvidenceActivity` posts a
 marker-tagged `Partial pull request created: …` comment on the still-open
 parent, so the partial PR is visible on the issue where the
-dependency-blocked remaining work is listed — not only on the internal
+remaining work is recorded — not only on the internal
 `AgentRun`. The marker embeds the run id and the dedup check restricts
 matching to Paid-authored comments, so activity retries never double-post and
 a forged marker from another author cannot suppress the evidence. When no

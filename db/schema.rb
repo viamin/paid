@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_003303) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_184432) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -5985,14 +5985,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_003303) do
       $function$
   SQL
 
+  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
+      END;
+      $function$
+  SQL
+
   create_function :paid_current_account_id, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.paid_current_account_id()
        RETURNS bigint
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -6003,8 +6012,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_003303) do
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
@@ -6041,17 +6048,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_003303) do
         END IF;
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
-      END;
-      $function$
-  SQL
-
-  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
-       RETURNS trigger
-       LANGUAGE plpgsql
-      AS $function$
-      BEGIN
-        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
       END;
       $function$
   SQL

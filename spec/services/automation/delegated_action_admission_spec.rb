@@ -112,10 +112,16 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(recheck(goal: "create_pr")).to be_nil
   end
 
-  it "returns nil for manual operator requests, which carry their own authority" do
+  it "permits a delegated manual request when its phase is disabled" do # @spec PROJECT-DELEGATION-004 AUTOMATION-PHASES-003
+    FeatureFlags.enable!(:automation_phases, project: project)
+    project.update!(automation_phase_settings: {
+      "phases" => { "coding" => false },
+      "release" => false,
+      "deployment" => false
+    })
     authorize(action: "review")
 
-    expect(recheck(goal: "review", trigger: :manual)).to be_nil
+    expect(recheck(goal: "review", trigger: :manual)).to be_permitted
   end
 
   it "resolves the PR work item for PR-scoped delegated runs" do

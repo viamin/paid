@@ -1652,6 +1652,29 @@ RSpec.describe ProcessRunQueueJob do
           expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
         end
 
+        it "cancels a user-triggered PR retry at the same dequeue boundary" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005
+          project = create(:project, auto_pick_enabled: true)
+          pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+            github_state: "open", pr_review_phase: "ready")
+          record_current_assessment(pull_request)
+          authorization = authorize_delegated_review(pull_request)
+          original = create(:agent_run, :failed, :automatic, project: project, goal: "review",
+            issue: nil, source_pull_request_number: 42)
+          original.retry!(decision_point: "boundary_spec_retry")
+          retry_run = create(:agent_run, :queued, :manual, project: project, goal: "review",
+            issue: nil, source_pull_request_number: 42, external_metadata: {})
+          authorization.update!(status: "revoked")
+
+          expect(temporal_client).not_to receive(:start_workflow)
+
+          described_class.new.perform
+
+          expect(retry_run.reload.status).to eq("cancelled")
+          expect(retry_run.reload.error_message).to include("boundary recheck")
+          notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
+          expect(notification.metadata).to include("boundary" => "dequeue")
+        end
+
         it "starts a queued run whose delegated authorization is still current" do # @spec PROJECT-DELEGATION-004
           project = create(:project, :with_github_installation, auto_pick_enabled: true)
           enable_project_delegation(project)

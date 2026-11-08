@@ -73,6 +73,7 @@
 - [x] **NO-OUTPUT-ISSUE-007** — When a PR-producing run leaves an approved
   acceptance criterion unmet, the system SHALL use an agent-harness structured
   assessment and SHALL reconcile every gap to an existing open owner, a
+  source-retained gap when the source itself owns the remaining work, a
   replay-safe focused follow-up with an explicit local and GitHub-visible
   dependency, or a blocking Inbox prerequisite for an authorized operator
   that states the gap's exact next step; an assessment whose human gap omits
@@ -85,14 +86,19 @@
   Malformed JSON SHALL fail closed without logging response excerpts.
   Unsuccessful transport responses SHALL surface a bounded, secret-redacted
   transport diagnostic distinct from invalid assessment data.
-  A closed historical issue SHALL NOT satisfy ownership.
+  The bounded owner list SHALL prioritize linked open issues and then recent
+  eligible open issues, excluding issues whose dependency path already reaches
+  the source. A
+  source-retained gap SHALL keep the issue incomplete
+  without creating another issue or a self-dependency. A closed historical
+  issue or an untrusted author SHALL NOT satisfy ownership.
   GitHub failures SHALL retain durable retry state on the run. The
   reconciliation SHALL run before the parent issue is completed; while any
-  gap remains outstanding, the parent SHALL stay incomplete and
-  dependency-blocked, SHALL still receive the run's PR-link evidence as a
+  gap remains outstanding, the parent SHALL stay incomplete, SHALL be
+  dependency-blocked when an open owner is linked, and SHALL still receive the run's PR-link evidence as a
   comment on the parent issue (idempotent across retries), and SHALL NOT be
   transitioned to `paid_state: "completed"` by the run's closeout path.
-  Once the partial PR is no longer open and the recorded gap-owner
+  Once the partial PR is no longer open and any recorded gap-owner
   dependencies are satisfied, Auto-Pick SHALL re-admit the parent through a
   partial-closeout re-audit exception to the permanent merged-PR guard,
   keyed on the issue's latest PR-producing run; a later gap-free closeout

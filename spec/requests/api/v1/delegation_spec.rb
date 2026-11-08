@@ -17,6 +17,7 @@ RSpec.describe "Project delegation API" do
     PersonalAccessToken.create!(
       user:, account:, name: "Inbox", scopes: [ "inbox" ], token_digest: PersonalAccessToken.digest(plaintext)
     )
+    FeatureFlags.enable!(:automation_phases, project:)
     FeatureFlags.enable!(:project_delegation, project:)
   end
 
