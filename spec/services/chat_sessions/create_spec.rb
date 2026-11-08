@@ -32,6 +32,41 @@ RSpec.describe ChatSessions::Create do
     end
 
     # @spec CHAT-API-030
+    it "applies explicit configuration to the user's reusable draft" do
+      original = described_class.call(account: account, user: user)
+      project = create(:project, account: account)
+      runner = create_api_chat_runner
+      options = { runner_id: runner.id, model: "gpt-4o", project_id: project.id,
+                  system_prompt: "Use the selected project settings.",
+                  metadata: { "source" => "configured-create" }, auto_approve: true }
+
+      configured = described_class.call(account: account, user: user, **options)
+
+      expect(configured).to eq(original)
+      expect(configured).to have_attributes(
+        runner_id: runner.id,
+        model: "gpt-4o",
+        project_id: project.id,
+        metadata: { "source" => "configured-create" },
+        auto_approve: true
+      )
+      expect(configured.messages.system.sole.content).to eq("Use the selected project settings.")
+    end
+
+    # @spec CHAT-API-030
+    it "provisions a reusable draft configured for a container" do
+      original = described_class.call(account: account, user: user)
+
+      configured = described_class.call(account: account, user: user, container_capability: "pending")
+
+      expect(configured).to eq(original)
+      expect(configured.container_capability).to eq("pending")
+      expect(ChatSessions::ProvisionContainerJob).to have_been_enqueued.with(
+        hash_including(chat_session_id: original.id, account_id: account.id)
+      )
+    end
+
+    # @spec CHAT-API-030
     it "creates a new draft after the earlier session starts" do
       original = described_class.call(account: account, user: user)
       original.messages.create!(role: "user", content: "Start this chat")

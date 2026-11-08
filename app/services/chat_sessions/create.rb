@@ -37,6 +37,8 @@ module ChatSessions
       @opened_at = opened_at
       @clarifying_question_issue = clarifying_question_issue
       @feature_intent = feature_intent
+      @configured_personal_draft = [ container_capability, runner_id, provider_id, model, project_id,
+        system_prompt, metadata ].any?(&:present?) || !auto_approve.nil?
     end
 
     def self.call(...)
@@ -49,9 +51,9 @@ module ChatSessions
       # @spec CHAT-API-001 CHAT-API-030
       validate!
 
-      session, created = create_or_reuse_session
+      session, enqueue_provisioning = create_or_reuse_session
 
-      enqueue_background_provisioning(session) if created
+      enqueue_background_provisioning(session) if enqueue_provisioning
       session
     end
 
@@ -99,7 +101,7 @@ module ChatSessions
     rescue ActiveRecord::RecordNotUnique
       raise unless reusable_personal_draft?
 
-      [ existing_personal_draft, false ]
+      reconcile_existing_personal_draft
     end
 
     def reusable_personal_draft?
@@ -108,6 +110,32 @@ module ChatSessions
 
     def existing_personal_draft
       ChatSession.unstarted_untitled_personal.where(account:, created_by: user).order(created_at: :desc, id: :desc).first!
+    end
+
+    def reconcile_existing_personal_draft
+      draft = existing_personal_draft
+      return [ draft, false ] unless @configured_personal_draft
+
+      enqueue_provisioning = false
+      draft.with_lock do
+        enqueue_provisioning = !draft.container_pending? && initial_container_capability == "pending"
+        draft.update!(draft_configuration)
+        draft.messages.find_by!(role: "system").update!(content: build_system_prompt(draft))
+      end
+      [ draft, enqueue_provisioning ]
+    end
+
+    def draft_configuration
+      {
+        container_capability: initial_container_capability,
+        container_requested_at: container_requested_at,
+        runner_id: resolved_runner&.id,
+        model: resolved_model,
+        project_id: project_id,
+        system_prompt: system_prompt,
+        metadata: session_metadata,
+        auto_approve: auto_approve || false
+      }
     end
 
     def container_requested_at

@@ -103,9 +103,12 @@
 - [x] **CHAT-API-030** — When a user opens the full-page chat without an
   unstarted, untitled personal chat, Paid SHALL create one reusable draft. A
   later load, including concurrent loads, SHALL reuse that draft rather than
-  creating another. The first persisted user message SHALL mark the draft
-  started, after which a later load MAY create a new draft. Started chats and
-  scoped Inbox or exploration chats SHALL remain unaffected.
+  creating another. A configuration-free load SHALL leave the reusable draft
+  unchanged, while a create request with explicit session configuration SHALL
+  apply that configuration to the reusable draft. The first persisted user
+  message SHALL mark the draft started, after which a later load MAY create a
+  new draft. Started chats and scoped Inbox or exploration chats SHALL remain
+  unaffected.
   *Tests:* `spec/system/chat_unstarted_draft_spec.rb`,
   `spec/services/chat_sessions/create_spec.rb`,
   `spec/services/chat_sessions/create_call_concurrency_spec.rb`.
