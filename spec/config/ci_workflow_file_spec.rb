@@ -106,6 +106,7 @@ RSpec.describe CiWorkflowFile, :no_db do
     role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
     expect(role_step.fetch("env")).to include("PGPASSWORD" => "postgres")
     expect(role_step.fetch("run")).to include(
+      'psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres',
       'CREATE ROLE paid_runtime LOGIN PASSWORD \'paid_runtime\';',
       'ALTER ROLE paid_runtime WITH LOGIN PASSWORD \'paid_runtime\';',
       "ALTER ROLE paid_runtime CREATEDB NOSUPERUSER NOBYPASSRLS;",
