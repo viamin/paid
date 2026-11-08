@@ -52,10 +52,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
@@ -281,10 +294,23 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
@@ -326,11 +352,11 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
@@ -469,10 +495,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Download all shard reports
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
@@ -556,10 +595,23 @@ jobs:
           fi
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
@@ -699,10 +751,23 @@ jobs:
           fi
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up database
         run: bin/rails db:create db:schema:load
@@ -882,10 +947,23 @@ jobs:
           fi
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       # HEAD^ is the base branch tip: on a pull request HEAD is the merge commit,
       # and on a push to main it is the previous main commit. bin/ci-migration-replay
@@ -909,10 +987,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Run fasterer
         run: bundle exec fasterer
@@ -990,10 +1081,23 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6

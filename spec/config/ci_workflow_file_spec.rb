@@ -114,6 +114,32 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include('mkdir -p "$HOME/.local/bin"')
     expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
     expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
+    expect(install_step.fetch("run")).to include("for attempt in 1 2 3 4 5")
+  end
+
+  # @spec TEST-SUITE-003
+  it "falls back to an uncached Ruby setup when the Bundler cache service fails" do
+    workflow.fetch("jobs").except("test").each_value do |job|
+      steps = job.fetch("steps")
+      setup_index = steps.index { |step| step["name"] == "Set up Ruby" }
+      next unless setup_index
+
+      setup_step = steps.fetch(setup_index)
+      recovery_step = steps.fetch(setup_index + 1)
+      install_step = steps.fetch(setup_index + 2)
+
+      expect(setup_step).to include("id" => "setup_ruby", "continue-on-error" => true)
+      expect(recovery_step).to include(
+        "name" => "Recover Ruby dependencies after cache failure",
+        "if" => "steps.setup_ruby.outcome == 'failure'"
+      )
+      expect(recovery_step.fetch("with")).to include("bundler-cache" => false)
+      expect(install_step).to include(
+        "name" => "Install Ruby dependencies after cache failure",
+        "if" => "steps.setup_ruby.outcome == 'failure'",
+        "run" => "bundle install --jobs 4 --retry 3"
+      )
+    end
   end
 
   it "fetches full git history for the test job checkout" do
