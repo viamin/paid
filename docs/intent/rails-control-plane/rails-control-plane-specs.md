@@ -13,6 +13,13 @@
   *Tests:* `spec/config/active_record/database_configurations_spec.rb`.
   *Code:* `config/database.yml`.
 
+- [x] **RAILS-CONTROL-PLANE-013** — When a non-production Rails boot provides
+  `DATABASE_URL`, the database configuration SHALL use that complete
+  connection URL; production SHALL omit the generic URL mapping so its
+  explicit primary/cache/cable configuration remains authoritative.
+  *Tests:* `spec/paid/database_yml_erb_spec.rb`.
+  *Code:* `config/database.yml`.
+
 - [x] **RAILS-CONTROL-PLANE-009** — When Action Cable shuts down during a
   development code reload with a broadcast pending, the control plane SHALL
   complete shutdown without deadlocking, preserve the broadcast, and support

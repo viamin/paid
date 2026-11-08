@@ -20,6 +20,9 @@ RSpec.describe DatabaseYmlErb do
       PAID_DEVELOPMENT_CABLE_DATABASE
       PAID_TEST_DATABASE
       PAID_WORKTREE_DB_SUFFIX
+      DATABASE_URL
+      RAILS_ENV
+      RACK_ENV
     ].each { |key| ENV.delete(key) }
     example.run
   ensure
@@ -46,6 +49,33 @@ RSpec.describe DatabaseYmlErb do
     expect(rendered).to include("database: paid_development_feature_pay_1940_")
     expect(rendered).to include("database: paid_development_cable_feature_pay_1940_")
     expect(rendered).to include("database: paid_test_feature_pay_1940_")
+  end
+
+  # @spec RAILS-CONTROL-PLANE-013
+  it "uses DATABASE_URL for non-production boots" do
+    rendered = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
+      prepare_fixture(dir)
+      render_fixture(
+        dir,
+        env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_test", "RAILS_ENV" => "test" }
+      )
+    end
+
+    expect(rendered).to include("url: postgres://agent:secret@db.example/paid_test")
+  end
+
+  # @spec RAILS-CONTROL-PLANE-013
+  it "keeps the generic DATABASE_URL mapping out of production" do
+    rendered = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
+      prepare_fixture(dir)
+      render_fixture(
+        dir,
+        env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_production", "RAILS_ENV" => "production" }
+      )
+    end
+
+    expect(rendered).not_to include("url: postgres://agent:secret@db.example/paid_production")
+    expect(rendered).to include("database: paid_production")
   end
 
   def prepare_fixture(dir, linked_worktree: false)
@@ -76,9 +106,9 @@ RSpec.describe DatabaseYmlErb do
     ENV["PATH"] = "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}"
   end
 
-  def render_fixture(dir)
+  def render_fixture(dir, env: {})
     stdout, stderr, status = Open3.capture3(
-      { "PATH" => ENV.fetch("PATH") },
+      { "PATH" => ENV.fetch("PATH") }.merge(env),
       "ruby",
       "-rerb",
       "-e",
