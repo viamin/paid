@@ -131,7 +131,7 @@ RSpec.configure do |config|
 
   config.around do |example|
     run_example = proc do
-      if database_available && !example.metadata[:tenant_isolation]
+      if database_available && !example.metadata[:tenant_isolation] && !example.metadata[:no_db]
         TenantContext.with_system_access { example.run }
       else
         example.run
@@ -144,7 +144,7 @@ RSpec.configure do |config|
       run_example.call
     end
   ensure
-    next unless database_available
+    next unless database_available && !example.metadata[:no_db]
 
     begin
       # CI uses a non-superuser role, so pooled connections must return to the

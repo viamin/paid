@@ -12,6 +12,8 @@ RSpec.describe RailsHelperTenantContextFile, :no_db do
     cleanup = source.match(/config\.around do \|example\|.*?ensure\n(?<body>.*?)\n  end/m)
 
     expect(cleanup).not_to be_nil
+    expect(source).to include("database_available && !example.metadata[:tenant_isolation] && !example.metadata[:no_db]")
+    expect(cleanup[:body]).to include("next unless database_available && !example.metadata[:no_db]")
     expect(cleanup[:body]).to include("TenantContext.apply_system_access!")
     expect(cleanup[:body]).not_to include("TenantContext.clear!")
   end
