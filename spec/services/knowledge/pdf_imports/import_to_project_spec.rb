@@ -34,8 +34,16 @@ RSpec.describe Knowledge::PdfImports::ImportToProject do
     ]
   end
 
-  before do
+  # @spec TEST-SUITE-003
+  around do |example|
+    original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :test
+    example.run
+  ensure
+    ActiveJob::Base.queue_adapter = original_adapter
+  end
+
+  before do
     clear_enqueued_jobs
     allow(Knowledge::PdfImports::Parser).to receive(:call).and_return(document)
     allow(Knowledge::PdfImports::Chunker).to receive(:call).and_return(chunks)

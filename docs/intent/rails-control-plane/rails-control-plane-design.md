@@ -27,16 +27,16 @@ Request handling establishes tenant context before application code runs and
 clears it after the request completes, including failure paths. This keeps the
 control plane aligned with the database RLS model.
 
-Development database connections disable PostgreSQL JIT. Inbox eligibility
+Development primary and test database connections may take their complete
+connection from `DATABASE_URL` when a CI or externally provisioned database
+supplies one. Development cable retains its dedicated database connection;
+production's explicit primary/cache/cable configurations prevent the generic
+`DATABASE_URL` from overriding their configured roles. Development
+database connections disable PostgreSQL JIT. Inbox eligibility
 queries have large plans that PostgreSQL otherwise compiles for seconds even
 when the underlying execution takes milliseconds. The setting is scoped to
 development connections so request and background workers use the same plan
 behavior without changing production database policy.
-
-Outside production, primary development and test database tasks use the
-provided `DATABASE_URL` when it is available. This prevents Rails tasks from
-falling back to a local PostgreSQL socket in CI while leaving the separate
-development Action Cable connection available for its own database URL.
 
 That same request lifecycle fail-closes tenant access at the controller layer.
 Active accounts proceed normally, suspended accounts stay read-only for

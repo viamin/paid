@@ -26,7 +26,6 @@ RSpec.describe Config::ProductionValidator do
   # a specific branch.
   let(:valid_kwargs) do
     {
-      database_url: "postgres://paid:secret@db.internal:5432/paid_production",
       database_password: "secret",
       temporal_address: "temporal.internal:7233",
       redis_url: "redis://redis.internal:6379/0",
@@ -55,24 +54,18 @@ RSpec.describe Config::ProductionValidator do
     end
 
     context "when a required setting is missing" do
-      it "fails fast naming DATABASE_URL / PAID_DATABASE_PASSWORD when neither is set" do
+      it "fails fast naming PAID_DATABASE_PASSWORD when it is not set" do
         expect {
-          validator(database_url: nil, database_password: nil).validate!
+          validator(database_password: nil).validate!
         }.to raise_error(
           described_class::ConfigurationError,
-          /database: database connection \(set DATABASE_URL or PAID_DATABASE_PASSWORD\)/
+          /database: PAID_DATABASE_PASSWORD/
         )
       end
 
-      it "accepts DATABASE_URL even when PAID_DATABASE_PASSWORD is absent" do
+      it "accepts PAID_DATABASE_PASSWORD" do
         expect {
-          validator(database_url: "postgres://paid:secret@db/paid", database_password: nil).validate!
-        }.not_to raise_error
-      end
-
-      it "accepts PAID_DATABASE_PASSWORD even when DATABASE_URL is absent" do
-        expect {
-          validator(database_url: nil, database_password: "secret").validate!
+          validator(database_password: "secret").validate!
         }.not_to raise_error
       end
 
@@ -88,7 +81,6 @@ RSpec.describe Config::ProductionValidator do
       it "aggregates every missing setting into a single error message" do
         expect {
           validator(
-            database_url: nil,
             database_password: nil,
             qdrant_api_key: ""
           ).validate!

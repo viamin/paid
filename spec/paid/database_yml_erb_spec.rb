@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "erb"
+require "json"
 require "spec_helper"
 require "fileutils"
 require "open3"
@@ -21,6 +22,9 @@ RSpec.describe DatabaseYmlErb do
       PAID_DEVELOPMENT_CABLE_DATABASE
       PAID_TEST_DATABASE
       PAID_WORKTREE_DB_SUFFIX
+      DATABASE_URL
+      RAILS_ENV
+      RACK_ENV
     ].each { |key| ENV.delete(key) }
     example.run
   ensure
@@ -49,7 +53,8 @@ RSpec.describe DatabaseYmlErb do
     expect(rendered).to include("database: paid_test_feature_pay_1940_")
   end
 
-  it "pins only primary and test tasks to DATABASE_URL" do # @spec RAILS-CONTROL-PLANE-013
+  # @spec RAILS-CONTROL-PLANE-013
+  it "pins only primary and test tasks to DATABASE_URL" do
     database_url = "postgres://agent:agent@primary:5432/paid_test"
     rendered = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
       prepare_fixture(dir)
@@ -60,6 +65,29 @@ RSpec.describe DatabaseYmlErb do
     expect(configuration.dig("development", "primary", "url")).to eq(database_url)
     expect(configuration.dig("development", "cable")).not_to have_key("url")
     expect(configuration.dig("test", "url")).to eq(database_url)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-013
+  it "keeps DATABASE_URL from overriding the production primary configuration" do
+    result = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
+      prepare_fixture(dir)
+      resolve_production_configurations(
+        dir,
+        env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_production", "RAILS_ENV" => "production" }
+      )
+    end
+    configurations = result.fetch("configurations")
+
+    expect(configurations.fetch("primary")).to include(
+      "database" => "paid_production",
+      "username" => "paid"
+    )
+    expect(configurations.fetch("primary")).not_to include("host" => "db.example", "username" => "agent")
+    expect(configurations).to include(
+      "cache" => include("database" => "paid_production_cache"),
+      "cable" => include("database" => "paid_production_cable")
+    )
+    expect(result.fetch("database_url")).to eq("postgres://agent:secret@db.example/paid_production")
   end
 
   def prepare_fixture(dir, linked_worktree: false)
@@ -102,6 +130,33 @@ RSpec.describe DatabaseYmlErb do
 
     expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
     stdout
+  end
+
+  def resolve_production_configurations(dir, env: {})
+    script = <<~RUBY
+      require "active_record"
+      require "active_record/database_configurations"
+      require "erb"
+      require "json"
+      require "yaml"
+
+      rendered = ERB.new(File.read("config/database.yml")).result
+      configurations = ActiveRecord::DatabaseConfigurations.new(YAML.safe_load(rendered, aliases: true))
+      resolved = configurations.configs_for(env_name: ENV.fetch("RAILS_ENV")).to_h do |configuration|
+        [configuration.name, configuration.configuration_hash]
+      end
+      puts({ configurations: resolved, database_url: ENV.fetch("DATABASE_URL") }.to_json)
+    RUBY
+    stdout, stderr, status = Open3.capture3(
+      { "PATH" => ENV.fetch("PATH") }.merge(env),
+      "ruby",
+      "-e",
+      script,
+      chdir: dir
+    )
+
+    expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+    JSON.parse(stdout)
   end
 
   def write_executable(path, contents)

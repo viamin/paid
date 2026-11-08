@@ -13,10 +13,12 @@
   *Tests:* `spec/config/active_record/database_configurations_spec.rb`.
   *Code:* `config/database.yml`.
 
-- [x] **RAILS-CONTROL-PLANE-013** — When a non-production Rails database task
-  has a `DATABASE_URL`, the primary development and test connections SHALL use
-  that URL rather than a local PostgreSQL socket; the separate development
-  Action Cable connection SHALL retain its connection-specific configuration.
+- [x] **RAILS-CONTROL-PLANE-013** — When a non-production Rails boot provides
+  `DATABASE_URL`, the development primary and test database configurations
+  SHALL use that complete connection URL; development cable SHALL retain its
+  dedicated database configuration without a generic URL mapping. Production
+  SHALL retain `DATABASE_URL` while resolving its explicit primary/cache/cable
+  configuration so the configured roles remain authoritative.
   *Tests:* `spec/paid/database_yml_erb_spec.rb`.
   *Code:* `config/database.yml`.
 

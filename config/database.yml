@@ -123,6 +123,9 @@ test:
 production:
   primary: &primary_production
     <<: *default
+    # A URL config keeps Active Record from merging generic DATABASE_URL into
+    # production's explicitly configured database role and name.
+    url: postgresql:/// # @spec RAILS-CONTROL-PLANE-013
     database: paid_production
     username: paid
     password: <%= ENV["PAID_DATABASE_PASSWORD"] %>
