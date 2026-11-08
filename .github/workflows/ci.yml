@@ -447,13 +447,17 @@ jobs:
             END IF;
           END
           $$;
-          ALTER ROLE paid_runtime CREATEDB NOSUPERUSER NOBYPASSRLS;
+          # RLS regression specs create and revoke a restricted test role. This
+          # grants that narrowly scoped setup capability while preserving the
+          # runtime guard's non-superuser and non-BYPASSRLS invariants.
+          ALTER ROLE paid_runtime CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS;
           DO $$
           BEGIN
             IF NOT EXISTS (
               SELECT 1
               FROM pg_roles
               WHERE rolname = 'paid_runtime'
+                AND rolcreaterole
                 AND NOT rolsuper
                 AND NOT rolbypassrls
             ) THEN

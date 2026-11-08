@@ -43,7 +43,10 @@ Tenant isolation is enforced in PostgreSQL with helper functions driven by
 guards against unsafe runtime roles that would bypass those policies. The
 shipped policy set does not just hide rows on reads; it also rejects
 cross-tenant join rows and direct-account writes whose foreign keys point at a
-different tenant.
+different tenant. CI grants its dedicated test runtime role `CREATEROLE` so
+RLS regression specs can create and revoke their restricted test role. The CI
+role remains explicitly `NOSUPERUSER` and `NOBYPASSRLS`, matching the runtime
+guard's safety boundary.
 
 Sensitive GitHub tokens are encrypted at rest through Rails encrypted
 attributes, and the token records retain change history through Logidze.

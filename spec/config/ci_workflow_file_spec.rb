@@ -109,8 +109,9 @@ RSpec.describe CiWorkflowFile, :no_db do
       'psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres',
       'CREATE ROLE paid_runtime LOGIN PASSWORD \'paid_runtime\';',
       'ALTER ROLE paid_runtime WITH LOGIN PASSWORD \'paid_runtime\';',
-      "ALTER ROLE paid_runtime CREATEDB NOSUPERUSER NOBYPASSRLS;",
+      "ALTER ROLE paid_runtime CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS;",
       "WHERE rolname = 'paid_runtime'",
+      "AND rolcreaterole",
       "AND NOT rolsuper",
       "AND NOT rolbypassrls",
       "RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';"
