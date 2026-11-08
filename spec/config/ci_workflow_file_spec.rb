@@ -104,7 +104,10 @@ RSpec.describe CiWorkflowFile, :no_db do
   it "creates the runtime role without superuser or row-level-security bypass privileges" do
     job = workflow.fetch("jobs").fetch("test-shards")
     role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
+    sql = role_step.fetch("run").split("<<'SQL'\n", 2).last.split("\nSQL", 2).first
+
     expect(role_step.fetch("env")).to include("PGPASSWORD" => "postgres")
+    expect(sql).not_to match(/^\s*#/) # PostgreSQL comments begin with --, not #.
     expect(role_step.fetch("run")).to include(
       'psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres',
       "CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';",

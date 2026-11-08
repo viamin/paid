@@ -438,11 +438,11 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          # RLS regression specs create and revoke a restricted test role. This
-          # grants that narrowly scoped setup capability while preserving the
-          # runtime guard's non-superuser and non-BYPASSRLS invariants.
-          # Each matrix shard receives a newly initialized PostgreSQL service,
-          # so the role is declared once rather than conditionally through DO.
+          -- RLS regression specs create and revoke a restricted test role. This
+          -- grants that narrowly scoped setup capability while preserving the
+          -- runtime guard's non-superuser and non-BYPASSRLS invariants.
+          -- Each matrix shard receives a newly initialized PostgreSQL service,
+          -- so the role is declared once rather than conditionally through DO.
           CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
           DO $$
           BEGIN
