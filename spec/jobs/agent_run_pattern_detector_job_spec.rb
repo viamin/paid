@@ -71,6 +71,20 @@ RSpec.describe AgentRunPatternDetectorJob do
     end
   end
 
+  def expect_retry_to_complete_account_processing(account)
+    expect(AgentRunPatterns::DailyDiagnosisBudget).to have_received(:remaining_for).with(account: account)
+    expect(AgentRunPatterns::Diagnose).to have_received(:call).with(pattern, account: account, allow_llm: true)
+    expect(AgentRunPatterns::RecordRemediationDecision).to have_received(:call).with(
+      account: account, pattern: pattern, diagnosis: diagnosis
+    )
+    expect(AgentRunPatterns::Notify).to have_received(:call).with(
+      account: account,
+      patterns: [ pattern ],
+      diagnoses: hash_including("fp-1" => diagnosis),
+      decisions: hash_including("fp-1")
+    )
+  end
+
   describe "queue and concurrency contract" do
     it "is enqueued on the maintenance queue" do
       expect(described_class.new.queue_name).to eq("maintenance")
@@ -251,16 +265,15 @@ RSpec.describe AgentRunPatternDetectorJob do
           attempt_counts[account.id] += 1
           raise "boom" if account == accounts[0] && attempt_counts[account.id] == 1
 
-          []
+          account == accounts[0] ? [ pattern ] : []
         end
+        allow(AgentRunPatterns::Diagnose).to receive(:call).and_return(diagnosis)
 
         drain_cycle
         drain_cycle
 
         expect(attempt_counts[accounts[0].id]).to eq(2)
-        expect(AgentRunPatterns::Notify).to have_received(:call).with(
-          account: accounts[0], patterns: [], diagnoses: {}, decisions: {}
-        )
+        expect_retry_to_complete_account_processing(accounts[0])
       end
     end
 
