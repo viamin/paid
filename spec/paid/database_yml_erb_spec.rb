@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "erb"
+require "json"
 require "spec_helper"
 require "fileutils"
 require "open3"
@@ -82,17 +83,24 @@ RSpec.describe DatabaseYmlErb do
   end
 
   # @spec RAILS-CONTROL-PLANE-013
-  it "keeps the generic DATABASE_URL mapping out of production" do
-    rendered = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
+  it "keeps DATABASE_URL from overriding the production primary configuration" do
+    configurations = Dir.mktmpdir("database-yml-erb-spec", exec_tmpdir) do |dir|
       prepare_fixture(dir)
-      render_fixture(
+      resolve_production_configurations(
         dir,
         env: { "DATABASE_URL" => "postgres://agent:secret@db.example/paid_production", "RAILS_ENV" => "production" }
       )
     end
 
-    expect(rendered).not_to include("url: postgres://agent:secret@db.example/paid_production")
-    expect(rendered).to include("database: paid_production")
+    expect(configurations.fetch("primary")).to include(
+      "database" => "paid_production",
+      "username" => "paid"
+    )
+    expect(configurations.fetch("primary")).not_to include("host" => "db.example", "username" => "agent")
+    expect(configurations).to include(
+      "cache" => include("database" => "paid_production_cache"),
+      "cable" => include("database" => "paid_production_cable")
+    )
   end
 
   def prepare_fixture(dir, linked_worktree: false)
@@ -139,6 +147,33 @@ RSpec.describe DatabaseYmlErb do
 
   def parse_fixture(rendered)
     YAML.safe_load(rendered, aliases: true)
+  end
+
+  def resolve_production_configurations(dir, env: {})
+    script = <<~RUBY
+      require "active_record"
+      require "active_record/database_configurations"
+      require "erb"
+      require "json"
+      require "yaml"
+
+      rendered = ERB.new(File.read("config/database.yml")).result
+      configurations = ActiveRecord::DatabaseConfigurations.new(YAML.safe_load(rendered, aliases: true))
+      resolved = configurations.configs_for(env_name: ENV.fetch("RAILS_ENV")).to_h do |configuration|
+        [configuration.name, configuration.configuration_hash]
+      end
+      puts resolved.to_json
+    RUBY
+    stdout, stderr, status = Open3.capture3(
+      { "PATH" => ENV.fetch("PATH") }.merge(env),
+      "ruby",
+      "-e",
+      script,
+      chdir: dir
+    )
+
+    expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+    JSON.parse(stdout)
   end
 
   def write_executable(path, contents)

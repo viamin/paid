@@ -4,6 +4,11 @@ require File.expand_path("config/worktree_database_names", Dir.pwd)
 development_primary_database = Paid::WorktreeDatabaseNames.development_primary_name
 development_cable_database = Paid::WorktreeDatabaseNames.development_cable_name
 test_database = Paid::WorktreeDatabaseNames.test_name
+
+# Active Record applies DATABASE_URL after evaluating this file, even without a
+# `url:` entry. Production uses the explicit primary/cache/cable configuration
+# below, so discard the generic non-production override before Rails resolves it.
+ENV.delete("DATABASE_URL") if (ENV["RAILS_ENV"] || ENV["RACK_ENV"]) == "production" # @spec RAILS-CONTROL-PLANE-013
 %>
 
 # PostgreSQL. Versions 9.3 and up are supported.
@@ -37,7 +42,7 @@ development:
   primary: &primary_development
     <<: *default
     database: <%= development_primary_database %>
-    <% if (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
+    <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
     # CI and other non-production boots may provide the complete primary
     # connection through DATABASE_URL. Cable retains its dedicated database.
     url: <%= ENV["DATABASE_URL"] %>
@@ -85,7 +90,7 @@ development:
 test:
   <<: *default
   database: <%= test_database %>
-  <% if (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
+  <% if ENV["DATABASE_URL"] && (ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development") != "production" %>
   # CI and other non-production boots may provide the complete connection
   # through DATABASE_URL (for example, an externally provisioned database).
   url: <%= ENV["DATABASE_URL"] %>

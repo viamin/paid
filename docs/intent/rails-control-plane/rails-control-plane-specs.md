@@ -16,9 +16,9 @@
 - [x] **RAILS-CONTROL-PLANE-013** — When a non-production Rails boot provides
   `DATABASE_URL`, the development primary and test database configurations
   SHALL use that complete connection URL; development cable SHALL retain its
-  dedicated database configuration without a generic URL mapping; production
-  SHALL omit the generic URL mapping so its explicit primary/cache/cable
-  configuration remains authoritative.
+  dedicated database configuration without a generic URL mapping. Production
+  SHALL discard `DATABASE_URL` before Active Record resolves configuration so
+  its explicit primary/cache/cable configuration remains authoritative.
   *Tests:* `spec/paid/database_yml_erb_spec.rb`.
   *Code:* `config/database.yml`.
 

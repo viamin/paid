@@ -33,7 +33,7 @@ For deployment sizing and process topology, see [SCALING.md](SCALING.md).
 
 | Setting | How to provide | Notes |
 |---|---|---|
-| Database credentials | `DATABASE_URL` **or** `PAID_DATABASE_PASSWORD` | `database.yml` production block hardcodes `username: paid` and `database: paid_production`; the password comes from `PAID_DATABASE_PASSWORD`. A full `DATABASE_URL` overrides everything. Either one must be present. Use `DB_HOST` to point at a remote database server. |
+| Database credentials | `PAID_DATABASE_PASSWORD` | `database.yml` production block hardcodes `username: paid` and `database: paid_production`; the password comes from `PAID_DATABASE_PASSWORD`. Production discards `DATABASE_URL` so this explicit configuration remains authoritative. Use `DB_HOST` to point at a remote database server. |
 | Qdrant API key | `QDRANT_API_KEY` env var **or** `qdrant.api_key` in Rails credentials | Required for the knowledge base. `Paid.qdrant_api_key` returns the value (credentials first, then `QDRANT_API_KEY`); the validator surfaces it together with any other missing setting. |
 
 ### Required infrastructure-safety limits
@@ -110,7 +110,7 @@ When a required setting is missing, boot aborts with a message like:
 
 ```
 Production configuration validation failed. Resolve all of the following required settings and restart:
-- database: database connection (set DATABASE_URL or PAID_DATABASE_PASSWORD)
+- database: PAID_DATABASE_PASSWORD
 - qdrant_api_key: QDRANT_API_KEY (or qdrant.api_key credential)
 
 See docs/PRODUCTION_CONFIG.md for the complete required environment variable list.
@@ -139,7 +139,7 @@ Existing deployments that already set the documented variables continue to work
 unchanged. The minimum Kamal environment for the validator to pass is:
 
 ```env
-PAID_DATABASE_PASSWORD=...        # or DATABASE_URL
+PAID_DATABASE_PASSWORD=...
 QDRANT_API_KEY=...                # or qdrant.api_key credential
 TEMPORAL_ADDRESS=temporal:7233    # the compose/kamal service DNS name (not localhost)
 REDIS_URL=redis://redis:6379/0    # if Redis-backed features are used
@@ -171,7 +171,7 @@ the contract stays in sync with how the app actually reads configuration:
 
 | Check | Resolved via |
 |---|---|
-| Database | `ENV["DATABASE_URL"]`, `ENV["PAID_DATABASE_PASSWORD"]`, `ENV["DB_HOST"]` (`config/database.yml`) |
+| Database | `ENV["PAID_DATABASE_PASSWORD"]`, `ENV["DB_HOST"]` (`config/database.yml`) |
 | Temporal address | `Paid.temporal_address` (`config/initializers/temporal.rb`) |
 | Redis URL | `ENV["REDIS_URL"]` (`config/initializers/rails_performance.rb`, `ClaudeLoginSessions::Coordination`) |
 | Qdrant URL | `Paid.qdrant_url` (`config/initializers/qdrant.rb`) |

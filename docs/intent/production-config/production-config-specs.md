@@ -15,7 +15,7 @@
 
 - [x] **PROD-CONFIG-002** — When a required setting is individually missing in
   production, the validator SHALL fail boot naming that setting (database when
-  both `DATABASE_URL` and `PAID_DATABASE_PASSWORD` are absent; Qdrant API key
+  `PAID_DATABASE_PASSWORD` is absent; Qdrant API key
   when neither `QDRANT_API_KEY` nor the `qdrant.api_key` credential is present).
   *Code:* `app/services/config/production_validator.rb`.
   *Test:* `spec/services/config/production_validator_spec.rb`.

@@ -29,8 +29,8 @@ is unit-testable without booting a production process.
 It runs from an `after_initialize` hook in
 `config/initializers/production_config.rb`, gated on `Rails.env.production?`.
 
-- **Required settings** (boot fails fast): database credentials
-  (`DATABASE_URL` or `PAID_DATABASE_PASSWORD`) and the Qdrant API key
+- **Required settings** (boot fails fast): the explicit production database
+  password (`PAID_DATABASE_PASSWORD`) and the Qdrant API key
   (`QDRANT_API_KEY` or the `qdrant.api_key` credential). All offending settings
   are collected and reported in a single `ConfigurationError` so one failed boot
   surfaces the full repair list.

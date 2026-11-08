@@ -79,7 +79,6 @@ module Config
       # agree on the source of truth (credentials first, then `QDRANT_API_KEY`).
       def from_environment(logger: Rails.logger)
         new(
-          database_url: ENV["DATABASE_URL"],
           database_password: ENV["PAID_DATABASE_PASSWORD"],
           temporal_address: Paid.temporal_address,
           redis_url: ENV["REDIS_URL"],
@@ -113,7 +112,6 @@ module Config
     # inherent to validating many independent settings in one pass; grouping
     # them behind a struct would only move the indirection without reducing it.
     def initialize(
-      database_url:,
       database_password:,
       temporal_address:,
       redis_url:,
@@ -127,7 +125,6 @@ module Config
       infrastructure_limit_errors:,
       logger:
     )
-      @database_url = database_url
       @database_password = database_password
       @temporal_address = temporal_address
       @redis_url = redis_url
@@ -160,14 +157,14 @@ module Config
 
     private
 
-    attr_reader :database_url, :database_password, :temporal_address, :redis_url,
+    attr_reader :database_password, :temporal_address, :redis_url,
                 :qdrant_url, :qdrant_api_key, :workspace_root, :workspace_writable,
                 :container_backend, :docker_socket_present, :screenshots_configured,
                 :infrastructure_limit_errors, :logger
 
     def validate_required
       # @spec PROD-CONFIG-002
-      add_error(:database, "database connection (set DATABASE_URL or PAID_DATABASE_PASSWORD)") unless database_configured?
+      add_error(:database, "PAID_DATABASE_PASSWORD") unless database_configured?
       add_error(:qdrant_api_key, "QDRANT_API_KEY (or qdrant.api_key credential)") if qdrant_api_key.blank?
       infrastructure_limit_errors.each do |detail|
         add_error(:infrastructure_limits, detail)
@@ -185,7 +182,7 @@ module Config
     end
 
     def database_configured?
-      database_url.present? || database_password.present?
+      database_password.present?
     end
 
     def redis_localhost?
