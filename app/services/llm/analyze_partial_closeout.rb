@@ -395,20 +395,34 @@ module Llm
 
     # Grounds owner_issue_number reuse in a bounded, current open-issue set.
     # Linked owners take priority, then recent issues. The source issue uses
-    # retain_on_source instead of its own number. Untrusted titles stay out.
-    def open_issue_lines
+    # retain_on_source instead of its own number. Untrusted titles and owners
+    # that would create a dependency cycle stay out.
+    def open_issue_lines # @spec NO-OUTPUT-ISSUE-007
       scope = agent_run.project.issues.where(github_state: "open").where.not(id: agent_run.issue_id)
       waiting_on_source = IssueDependency.where(depends_on_issue_id: agent_run.issue_id).select(:issue_id)
       scope = scope.where.not(id: waiting_on_source)
       trusted = agent_run.project.trusted_github_author_logins.presence
       scope = scope.where("LOWER(github_creator_login) IN (?)", trusted) if trusted
       linked_ids = agent_run.issue.issue_dependencies.where.not(depends_on_issue_id: nil).select(:depends_on_issue_id)
-      issues = scope.where(id: linked_ids).order(github_number: :desc).limit(MAX_OPEN_ISSUES).pluck(:github_number, :title)
+      issues = eligible_owner_issues(scope.where(id: linked_ids).order(github_number: :desc).limit(MAX_OPEN_ISSUES))
       remaining = MAX_OPEN_ISSUES - issues.size
-      issues.concat(scope.where.not(github_number: issues.map(&:first)).order(github_number: :desc).limit(remaining).pluck(:github_number, :title)) if remaining.positive?
+      if remaining.positive?
+        recent = scope.where.not(id: issues.map(&:id)).order(github_number: :desc).limit(remaining)
+        issues.concat(eligible_owner_issues(recent))
+      end
       return "None." if issues.empty?
 
-      issues.map { |number, title| "##{number} #{title.to_s.truncate(120)}" }.join("\n")
+      issues.map { |owner| "##{owner.github_number} #{owner.title.to_s.truncate(120)}" }.join("\n")
+    end
+
+    def eligible_owner_issues(issues)
+      issues.reject { |owner| owner_creates_dependency_cycle?(owner) }
+    end
+
+    def owner_creates_dependency_cycle?(owner)
+      Issues::DependencyCycle.call(
+        IssueDependency.new(issue: agent_run.issue, depends_on_issue: owner)
+      ).cycle?
     end
   end
 end

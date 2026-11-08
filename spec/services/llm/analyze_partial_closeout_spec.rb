@@ -198,6 +198,20 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    it "does not offer an owner whose dependency path reaches the source" do # @spec NO-OUTPUT-ISSUE-007
+      intermediary = create(:issue, project:, github_state: "open", title: "Intermediary work")
+      waiting_parent = create(:issue, project:, github_state: "open", title: "Parent awaiting this work")
+      create(:issue_dependency, issue: waiting_parent, depends_on_issue: intermediary)
+      create(:issue_dependency, issue: intermediary, depends_on_issue: issue)
+
+      described_class.call(agent_run:)
+
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        eligible_owners = prompt.split("Open issues eligible for ownership:\n", 2).last
+        expect(eligible_owners).not_to include("##{waiting_parent.github_number} Parent awaiting this work")
+      end
+    end
+
     it "accepts source-retained agent work and asks the assessor to avoid child copies" do # @spec NO-OUTPUT-ISSUE-007
       allow(llm_response).to receive(:output).and_return({ gaps: [ {
         criterion: "Run browser navigation specs", kind: "agent", retain_on_source: true
