@@ -70,7 +70,7 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec POSTGRESQL-PERSISTENCE-002
-  it "uses a dedicated runtime role and checks Docker before test setup" do
+  it "uses a dedicated runtime role and checks Docker availability" do
     job = workflow.fetch("jobs").fetch("test-shards")
     env = job.fetch("env")
     postgres = job.fetch("services").fetch("postgres")
@@ -89,6 +89,16 @@ RSpec.describe CiWorkflowFile, :no_db do
     )
     expect(postgres.fetch("options")).to include('--health-cmd="pg_isready -U postgres"')
     expect(docker_step).to include("run" => "docker info")
+  end
+
+  it "provisions CI prerequisites before schema setup" do
+    steps = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
+    database_step = steps.find { |step| step["name"] == "Set up database" }
+
+    %w[Verify\ Docker\ availability Create\ application\ database\ role].each do |name|
+      prerequisite = steps.find { |step| step["name"] == name }
+      expect(steps.index(prerequisite)).to be < steps.index(database_step)
+    end
   end
 
   it "creates the runtime role without superuser or row-level-security bypass privileges" do
