@@ -117,6 +117,15 @@ release landing after the server image does. That looseness is safe precisely
 because the binding constraint is a major-version one; it is what keeps CI
 independent of the publication ordering the images must wait on.
 
+Browser system tests install the GLib and GTK runtime libraries in their
+GitHub-hosted job. Those libraries are dependencies of the browser binary, not
+application dependencies, so keeping their installation in CI makes the test
+environment reproducible without changing the application runtime. The browser
+runtime installation reuses the package indexes refreshed by the PostgreSQL
+client setup earlier in the job instead of issuing an unguarded duplicate
+refresh, while retaining the same bounded package-download settings as the
+client installation.
+
 That looseness needs one guard. The PGDG signing key is fetched at run time,
 and a runner whose download fails must not publish an unverified key: apt then
 treats the repository as unsigned, every later package operation fails with
