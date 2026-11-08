@@ -87,7 +87,8 @@
   Unsuccessful transport responses SHALL surface a bounded, secret-redacted
   transport diagnostic distinct from invalid assessment data.
   The bounded owner list SHALL prioritize linked open issues and then recent
-  eligible open issues, excluding issues already waiting on the source. A
+  eligible open issues, excluding issues whose dependency path already reaches
+  the source. A
   source-retained gap SHALL keep the issue incomplete
   without creating another issue or a self-dependency. A closed historical
   issue or an untrusted author SHALL NOT satisfy ownership.

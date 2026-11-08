@@ -136,8 +136,9 @@ intent, the run/PR evidence, and current open issues (the assessment prompt
 lists the bounded open-issue set so owner reuse is grounded, not guessed from
 evidence prose). Linked open owners take priority in that set, followed by the
 most recent eligible open issues, so a growing backlog does not hide recent
-follow-up work. An issue already waiting on the source cannot be offered as an
-owner, because that would reverse the dependency. When the source issue itself
+follow-up work. An issue whose dependency path already reaches the source
+cannot be offered as an owner, because linking it would create a direct or
+transitive reverse dependency cycle. When the source issue itself
 still owns an unmet criterion, the assessment retains that gap on the source
 instead of creating another
 issue with the same task. A source-retained gap keeps the source incomplete

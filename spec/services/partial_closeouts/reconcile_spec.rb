@@ -64,6 +64,26 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(parent.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
   end
 
+  it "does not reuse an issue whose dependency path already reaches the source" do # @spec NO-OUTPUT-ISSUE-007
+    intermediary = create(:issue, project:, github_state: "open")
+    waiting_owner = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: waiting_owner, depends_on_issue: intermediary)
+    create(:issue_dependency, issue: intermediary, depends_on_issue: parent)
+    created = OpenStruct.new(number: 444, html_url: "https://example.test/issues/444", id: 444,
+      title: "Finish dispatch", body: "")
+    owner = create(:issue, project:, github_number: 444, github_state: "open")
+    allow(client).to receive(:create_issue).and_return(created)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(owner)
+
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "dispatch", "owner_issue_number" => waiting_owner.github_number,
+      "title" => "Finish dispatch"
+    } ]))
+
+    expect(parent.issue_dependencies.find_by(depends_on_issue: waiting_owner)).to be_nil
+    expect(parent.issue_dependencies.find_by(depends_on_issue: owner)).to be_present
+  end
+
   it "retains source-owned work without filing a duplicate child" do # @spec NO-OUTPUT-ISSUE-007
     allow(client).to receive(:create_issue)
     described_class.call(agent_run: run, assessment: gaps([ {

@@ -186,6 +186,12 @@ module PartialCloseouts
       return if number.zero?
 
       owner = agent_run.project.issues.find_by(github_number: number, github_state: "open")
+      reusable_owner_candidate(owner)
+    end
+
+    # A persisted replay owner can gain a dependency after its first use, so
+    # every path that reuses an open owner must recheck trust and cycles.
+    def reusable_owner_candidate(owner)
       # The parent cannot own its own residual gap; a self-referential edge
       # would fail IssueDependency#not_self_referential with
       # ActiveRecord::RecordInvalid, which is not a GithubClient::Error and
@@ -193,9 +199,16 @@ module PartialCloseouts
       return unless owner && owner.id != agent_run.issue.id
       trusted = agent_run.project.trusted_github_author_logins
       return if trusted.present? && !agent_run.project.trusted_github_author?(owner.github_creator_login)
-      return if owner.issue_dependencies.exists?(depends_on_issue_id: agent_run.issue.id)
+      return if dependency_cycle?(owner)
 
       owner
+    end
+
+    def dependency_cycle?(owner)
+      Issues::DependencyCycle.call(
+        IssueDependency.new(issue: agent_run.issue, depends_on_issue: owner,
+          cycle_provenance: "partial_closeout_owner_reuse")
+      ).cycle?
     end
 
     def create_owner!(gap, index)
@@ -228,7 +241,7 @@ module PartialCloseouts
 
     def local_owner_with_marker(marker)
       owner = agent_run.project.issues.where("body LIKE ?", "%#{marker}%").where(github_state: "open").first
-      owner if owner && owner.id != agent_run.issue.id
+      reusable_owner_candidate(owner)
     end
 
     # A worker can terminate after GitHub accepts create_issue but before the
@@ -246,7 +259,7 @@ module PartialCloseouts
       return unless remote_owner
 
       owner = Issues::UpsertFromGithub.call(project: agent_run.project, github_issue: remote_owner)
-      owner if owner.id != agent_run.issue.id && owner.github_state == "open"
+      reusable_owner_candidate(owner) if owner.github_state == "open"
     end
 
     def remote_owner_query(marker)
@@ -265,7 +278,7 @@ module PartialCloseouts
 
     def prior_owner(index)
       state = reconciliation.fetch("gaps", {}).fetch(index.to_s, {})
-      owner_from_id(state) || owner_from_number(state)
+      reusable_owner_candidate(owner_from_id(state) || owner_from_number(state))
     end
 
     def owner_from_id(state)
