@@ -3,6 +3,7 @@
 require "spec_helper"
 require "fileutils"
 require "open3"
+require "psych"
 require "tmpdir"
 require_relative "../support/exec_tmpdir"
 
@@ -34,6 +35,18 @@ RSpec.describe "bin/zizmor-scan" do # rubocop:disable RSpec/DescribeClass
       expect(status.success?).to be(false)
       expect(stderr).to include("Zizmor found workflow security issues")
     end
+  end
+
+  it "retries the workflow scan before surfacing a failure" do
+    workflow = Psych.safe_load_file(File.expand_path("../../.github/workflows/security.yml", __dir__), aliases: true)
+    scan_step = workflow.fetch("jobs").fetch("workflow-scan").fetch("steps")
+      .find { |step| step["name"] == "Scan GitHub Actions workflows with Zizmor" }
+
+    expect(scan_step.fetch("run")).to include(
+      "for attempt in 1 2 3",
+      "Workflow scan failed (attempt $attempt/3); retrying",
+      "exit 1"
+    )
   end
 
   def prepare_fixture(dir, zizmor_exit:)

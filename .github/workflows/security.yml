@@ -31,10 +31,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
         uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
         with:
           ruby-version: .tool-versions
           bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
@@ -105,4 +118,16 @@ jobs:
           persist-credentials: false
 
       - name: Scan GitHub Actions workflows with Zizmor
-        run: bin/zizmor-scan
+        run: |
+          for attempt in 1 2 3; do
+            if bin/zizmor-scan; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Workflow scan failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            fi
+          done
+
+          exit 1
