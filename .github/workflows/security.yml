@@ -71,7 +71,20 @@ jobs:
         id: security_audit
         env:
           YARN_AUDIT_ACCEPTED_REPORT: ${{ runner.temp }}/yarn-audit-accepted.json
-        run: bin/audit
+        run: |
+          # @spec REPO-DEPENDENCY-AUDIT-009
+          for attempt in 1 2 3; do
+            if bin/audit; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Security audit failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            fi
+          done
+
+          exit 1
 
       - name: Surface accepted advisories in the run summary
         if: always()

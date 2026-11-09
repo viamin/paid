@@ -144,6 +144,10 @@ JSON stream itself rather than trusting the exit code alone. The script:
 trusted authors, on pushes to `main`, and on the daily schedule. The job
 fails on a non-zero exit from `bin/audit` exactly as it already fails on
 a non-zero exit from `bin/brakeman` or `bin/bundler-audit`. The audit
+step retries the complete command up to three times with bounded delays so a
+transient runner or registry failure does not require a manual rerun; a real
+finding or persistent scanner failure still exhausts the attempts and fails
+the job (REPO-DEPENDENCY-AUDIT-009). The audit
 step exports the accepted (allowlisted) advisories to a JSON report via
 the `YARN_AUDIT_ACCEPTED_REPORT` environment variable, and the summary
 step renders those rows — advisory ID, package, severity, expiry, owner,
