@@ -24,6 +24,7 @@ module ChatSessions
       feature_intent: nil)
       @account = account
       @user = user
+      @container_capability_param = container_capability
       @container_capability = container_capability.presence || "none"
       @runner_id = runner_id || provider_id
       @model = model
@@ -37,6 +38,7 @@ module ChatSessions
       @opened_at = opened_at
       @clarifying_question_issue = clarifying_question_issue
       @feature_intent = feature_intent
+      @configured_personal_draft = explicitly_configured_personal_draft?
     end
 
     def self.call(...)
@@ -46,17 +48,12 @@ module ChatSessions
     alias_method :provider_id, :runner_id
 
     def call
-      # @spec CHAT-API-001
+      # @spec CHAT-API-001 CHAT-API-030
       validate!
 
-      session = ActiveRecord::Base.transaction do
-        created = create_session
-        prompt_text = build_system_prompt(created)
-        persist_system_message(created, prompt_text)
-        created
-      end
+      session, enqueue_provisioning = create_or_reuse_session
 
-      enqueue_background_provisioning(session)
+      enqueue_background_provisioning(session) if enqueue_provisioning
       session
     end
 
@@ -92,6 +89,85 @@ module ChatSessions
         inbox_item_metadata: inbox_item_metadata.presence || {},
         opened_at: opened_at
       )
+    end
+
+    # @spec CHAT-API-030
+    def create_or_reuse_session
+      return create_new_session unless reusable_personal_draft?
+
+      user.with_lock { create_or_reuse_personal_draft }
+    end
+
+    def create_or_reuse_personal_draft
+      attempts = 0
+      begin
+        attempts += 1
+        create_new_session(requires_new: true)
+      rescue ActiveRecord::RecordNotUnique
+        reconcile_existing_personal_draft
+      rescue ActiveRecord::RecordNotFound
+        retry if attempts < 2
+
+        raise
+      end
+    end
+
+    def create_new_session(requires_new: false)
+      ActiveRecord::Base.transaction(requires_new:) do
+        created = create_session
+        persist_system_message(created, build_system_prompt(created))
+        [ created, true ]
+      end
+    end
+
+    def reusable_personal_draft?
+      title.blank? && inbox_item_key.blank? && clarifying_question_issue.blank? && feature_intent.blank?
+    end
+
+    def explicitly_configured_personal_draft?
+      [ runner_id, model, project_id, system_prompt, metadata ].any?(&:present?) ||
+        container_capability == "pending" || auto_approve_enabled?
+    end
+
+    def auto_approve_enabled?
+      ActiveModel::Type::Boolean.new.cast(auto_approve)
+    end
+
+    def existing_personal_draft
+      ChatSession.unstarted_untitled_personal.where(account:, created_by: user).order(created_at: :desc, id: :desc).first!
+    end
+
+    def reconcile_existing_personal_draft
+      draft = existing_personal_draft
+      return [ draft, false ] unless @configured_personal_draft
+
+      enqueue_provisioning = false
+      draft.with_lock do
+        enqueue_provisioning = !draft.container_pending? && initial_container_capability == "pending"
+        draft.update!(draft_configuration)
+        draft.messages.find_by!(role: "system").update!(content: build_system_prompt(draft))
+      end
+      [ draft, enqueue_provisioning ]
+    end
+
+    def draft_configuration
+      {
+        runner_id: resolved_runner&.id,
+        model: resolved_model,
+        project_id: project_id,
+        system_prompt: system_prompt,
+        metadata: session_metadata,
+        auto_approve: auto_approve || false
+      }.merge(container_configuration)
+    end
+
+    def container_configuration
+      return {} if @container_capability_param.blank?
+
+      {
+        container_capability: initial_container_capability,
+        container_requested_at: container_requested_at
+      }
     end
 
     def container_requested_at

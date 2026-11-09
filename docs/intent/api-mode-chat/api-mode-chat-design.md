@@ -83,6 +83,34 @@ whose action has no modal target. Because the mobile drawer starts hidden, its
 controller requests the scoped sidebar frame when the page becomes usable;
 desktop retains Turbo's visibility-based lazy loading.
 
+### Personal unstarted-chat drafts
+
+A personal full-page chat draft is a visible conversation created by a user
+with no user message and no title. At most one such draft may exist per user.
+The database owns that invariant through a partial unique index, so concurrent
+page loads cannot create duplicates. The migration that establishes the index
+releases discarded drafts' workspace resources before deleting them. Archived
+drafts are outside the invariant — an archived blank draft releases the one-draft slot instead of
+holding it, because an archived session can never accept the first user
+message that would mark it started; closed and idle blank drafts remain
+reusable so idle cycles do not accumulate a new blank item per visit.
+Restoring an archived blank draft discards the newer blank draft first,
+keeping exactly one while preserving the session the user chose to restore.
+Creation and blank-draft restoration serialize on the creator record, so a
+restore either discards a draft created first or is reused by a create that
+waited for the restore.
+If a rolling-deploy writer attaches dependent records to a duplicate before
+cleanup, the migration marks that session started instead of deleting work or
+failing on its foreign-key references.
+Chat creation recovers a unique-index
+conflict by returning the committed draft. A configuration-free page load
+leaves that draft unchanged; an explicit create configuration is applied to
+the reusable draft so project, runner, model, prompt, approval, metadata, and
+container choices are not discarded. Persisting the first user message marks
+the session started and generates its title, releasing the user to create a
+later draft. Inbox and exploration chats are outside this personal-draft rule
+because their dedicated identity constraints define their lifecycle.
+
 Sidebar cards receive the first non-system message through a correlated lookup
 that projects only the display-sized prefix. The lookup remains live rather
 than caching transcript data, so message creates and updates are immediately

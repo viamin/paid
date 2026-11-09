@@ -15,17 +15,86 @@ module ChatSessions
     def call
       validate!
 
-      chat_session.update!(restore_attributes)
+      restore
 
       chat_session
     end
 
     private
 
+    def restore
+      return restore_session unless restoring_personal_draft?
+
+      chat_session.created_by.with_lock { restore_session }
+    end
+
+    # @spec CHAT-API-030
+    def restore_session
+      attempts = 0
+      begin
+        attempts += 1
+        restore_personal_draft_transaction
+      rescue ActiveRecord::RecordNotUnique
+        retry if attempts < 2
+
+        raise
+      end
+    end
+
+    def restore_personal_draft_transaction
+      ActiveRecord::Base.transaction(requires_new: true) do
+        discard_conflicting_personal_draft
+        chat_session.update!(restore_attributes)
+      end
+    end
+
     def validate!
       return if chat_session.status == "archived"
 
       raise ArgumentError, "chat session must be archived to restore (current: #{chat_session.status})"
+    end
+
+    # @spec CHAT-API-030
+    # A fresh blank draft may have been created while this one was archived.
+    # Restoring an archived blank draft must not collide with the
+    # one-unstarted-draft-per-user invariant, and the conflicting draft is
+    # blank by definition (no user message, no title), so it is discarded.
+    def discard_conflicting_personal_draft
+      return unless restoring_personal_draft?
+
+      conflicting_personal_drafts.find_each do |draft|
+        discard_personal_draft(draft)
+      end
+    end
+
+    def discard_personal_draft(draft)
+      return discard_closed_personal_draft(draft) if draft.closed?
+
+      cleanup_workspace_resources(draft)
+      ChatSessions::Close.call(chat_session: draft)
+    end
+
+    def cleanup_workspace_resources(draft)
+      return if draft.container_id.blank? && draft.workspace_volume.blank?
+
+      ChatSessions::WorkspaceCleanup.call(chat_session: draft)
+    end
+
+    def discard_closed_personal_draft(draft)
+      ChatSessions::WorkspaceCleanup.call(chat_session: draft)
+      draft.destroy!
+    end
+
+    def conflicting_personal_drafts
+      chat_session.class.unstarted_untitled_personal
+        .where(account_id: chat_session.account_id, created_by_id: chat_session.created_by_id)
+        .where.not(id: chat_session.id)
+    end
+
+    def restoring_personal_draft?
+      chat_session.created_by.present? && chat_session.started_at.nil? &&
+        chat_session.inbox_item_key.nil? && chat_session.clarifying_question_issue_id.nil? &&
+        chat_session.feature_intent_id.nil? && chat_session.title.blank?
     end
 
     def restore_attributes

@@ -21,6 +21,94 @@ RSpec.describe ChatSessions::Create do
       expect(session.idle_timeout_at).to be_within(5.seconds).of(30.minutes.from_now)
     end
 
+    # @spec CHAT-API-030
+    it "reuses the user's unstarted untitled personal session" do
+      original = described_class.call(account: account, user: user)
+
+      expect {
+        reused = described_class.call(account: account, user: user)
+        expect(reused).to eq(original)
+      }.not_to change(ChatSession, :count)
+    end
+
+    # @spec CHAT-API-030
+    it "applies explicit configuration to the user's reusable draft" do
+      original = described_class.call(account: account, user: user)
+      project = create(:project, account: account)
+      runner = create_api_chat_runner
+      options = { runner_id: runner.id, model: "gpt-4o", project_id: project.id,
+                  system_prompt: "Use the selected project settings.",
+                  metadata: { "source" => "configured-create" }, auto_approve: true }
+
+      configured = described_class.call(account: account, user: user, **options)
+
+      expect(configured).to eq(original)
+      expect(configured).to have_attributes(
+        runner_id: runner.id,
+        model: "gpt-4o",
+        project_id: project.id,
+        metadata: { "source" => "configured-create" },
+        auto_approve: true
+      )
+      expect(configured.messages.system.sole.content).to eq("Use the selected project settings.")
+    end
+
+    # @spec CHAT-API-030
+    it "preserves a configured draft's container request when a create omits a container choice" do
+      runner = create_api_chat_runner
+      create_configured_container_draft(runner)
+
+      reused = described_class.call(
+        account: account,
+        user: user,
+        model: "gpt-4o",
+        auto_approve: "0"
+      )
+
+      expect(reused.reload).to have_attributes(
+        container_capability: "pending"
+      )
+    end
+
+    # @spec CHAT-API-030
+    it "provisions a reusable draft configured for a container" do
+      original = described_class.call(account: account, user: user)
+
+      configured = described_class.call(account: account, user: user, container_capability: "pending")
+
+      expect(configured).to eq(original)
+      expect(configured.container_capability).to eq("pending")
+      expect(ChatSessions::ProvisionContainerJob).to have_been_enqueued.with(
+        hash_including(chat_session_id: original.id, account_id: account.id)
+      )
+    end
+
+    # @spec CHAT-API-030
+    it "creates a new draft after the earlier session starts" do
+      original = described_class.call(account: account, user: user)
+      original.messages.create!(role: "user", content: "Start this chat")
+
+      replacement = described_class.call(account: account, user: user)
+
+      expect(original.reload.started_at).to be_present
+      expect(original.title).to eq("Start this chat")
+      expect(replacement).not_to eq(original)
+      expect(ChatSession.unstarted_untitled_personal.where(created_by: user)).to contain_exactly(replacement)
+    end
+
+    # @spec CHAT-API-030
+    it "creates a fresh draft instead of reusing the user's archived blank draft" do
+      original = described_class.call(account: account, user: user)
+      ChatSessions::Archive.call(chat_session: original)
+
+      replacement = described_class.call(account: account, user: user)
+
+      expect(replacement).not_to eq(original)
+      expect(replacement.status).to eq("active")
+      expect(original.reload.status).to eq("archived")
+      expect(ChatSession.unstarted_untitled_personal.where(created_by: user)).to contain_exactly(replacement)
+    end
+
     it "persists a system prompt as the first message" do
       # @spec CHAT-API-001
       session = described_class.call(account: account, user: user)
@@ -300,5 +388,17 @@ RSpec.describe ChatSessions::Create do
     create(:runner, :api_key, user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+  end
+
+  def create_configured_container_draft(runner)
+    described_class.call(
+      account: account,
+      user: user,
+      container_capability: "pending",
+      runner_id: runner.id,
+      model: "gpt-4o",
+      system_prompt: "Keep this prompt.",
+      auto_approve: true
+    )
   end
 end

@@ -5,8 +5,14 @@ FactoryBot.define do
     account
     created_by { association :user, account: account }
     status { "active" }
+    started_at { Time.current }
     container_capability { "none" }
     clone_manifest { [] }
+
+    trait :unstarted_draft do
+      title { nil }
+      started_at { nil }
+    end
 
     trait :with_project do
       project { association :project, account: account }

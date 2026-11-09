@@ -5,6 +5,7 @@ class ChatMessage < ApplicationRecord
   TOOL_STATUSES = %w[pending approved denied].freeze
 
   before_validation :set_external_id, on: :create
+  after_create :mark_chat_session_started, if: :user_message?
 
   belongs_to :chat_session
   has_one :chat_diagram, dependent: :nullify
@@ -110,6 +111,15 @@ class ChatMessage < ApplicationRecord
   end
 
   private
+
+  def user_message?
+    role == "user"
+  end
+
+  # @spec CHAT-API-030
+  def mark_chat_session_started
+    chat_session.start!
+  end
 
   def tool_result_message?
     role == "tool"
