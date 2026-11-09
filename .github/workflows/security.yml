@@ -30,6 +30,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Restore pinned Gitleaks binary
+        # @spec REPO-SECRET-SCAN-002
+        # Cache the checksum-verified binary installed by bin/install-gitleaks.
+        # The installer script is included in the key so a version or checksum
+        # change always downloads and verifies the new release.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: tmp/tools/gitleaks
+          key: gitleaks-${{ runner.os }}-${{ hashFiles('bin/install-gitleaks') }}
+
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true

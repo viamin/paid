@@ -49,6 +49,22 @@ RSpec.describe "bin/zizmor-scan" do # rubocop:disable RSpec/DescribeClass
     )
   end
 
+  it "restores the version-sensitive Gitleaks cache before the audit" do
+    # @spec REPO-SECRET-SCAN-002
+    workflow = Psych.safe_load_file(File.expand_path("../../.github/workflows/security.yml", __dir__), aliases: true)
+    steps = workflow.fetch("jobs").fetch("audit").fetch("steps")
+    cache_step = steps.find { |step| step["name"] == "Restore pinned Gitleaks binary" }
+
+    expect(cache_step).to include(
+      "uses" => "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+      "with" => {
+        "path" => "tmp/tools/gitleaks",
+        "key" => "gitleaks-${{ runner.os }}-${{ hashFiles('bin/install-gitleaks') }}"
+      }
+    )
+    expect(steps.index(cache_step)).to be < steps.index(steps.find { |step| step["name"] == "Run security audit and secret scan" })
+  end
+
   def prepare_fixture(dir, zizmor_exit:)
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.cp(File.expand_path("../../bin/zizmor-scan", __dir__), File.join(dir, "bin", "zizmor-scan"))
