@@ -30,11 +30,10 @@ module ProjectDelegation
       material: false, metadata: {})
       raise ArgumentError, "unknown pilot metric event" unless EVENT_TYPES.include?(event_type.to_s)
 
-      InboxHistoryEvent.create!(
-        account: project.account, project:, subject_key: issue ? "issue:#{issue.id}" : "project:#{project.id}",
-        event_key:, occurred_at:, actor_label: "Paid", source: "project_delegation_pilot", result: event_type,
-        revision: posture.revision.to_s,
-        metadata: {
+      subject_key = issue ? "issue:#{issue.id}" : "project:#{project.id}"
+      InboxHistoryEvent.find_or_create_by!(account: project.account, subject_key:, event_key:) do |event|
+        event.assign_attributes(project:, occurred_at:, actor_label: "Paid", source: "project_delegation_pilot",
+          result: event_type, revision: posture.revision.to_s, metadata: {
           "event_type" => event_type.to_s,
           "posture_level" => posture.level,
           "posture_revision" => posture.revision,
@@ -47,8 +46,8 @@ module ProjectDelegation
           "material" => material,
           "decision_started_at" => decision_started_at&.iso8601,
           "decision_resolved_at" => decision_resolved_at&.iso8601
-        }.merge(metadata.to_h.transform_keys(&:to_s)).compact
-      )
+          }.merge(metadata.to_h.transform_keys(&:to_s)).compact)
+      end
     end
 
     def self.call(project:, now: Time.current)
@@ -62,7 +61,7 @@ module ProjectDelegation
 
     def call
       rows = InboxHistoryEvent.where(project:, source: "project_delegation_pilot")
-      pilot = rows.where("metadata ->> 'baseline' = ?", "false")
+      pilot = current_rows(rows, baseline: false)
       completed = count(pilot, "issue_completed")
       started = count(pilot, "issue_started")
       decisions = event_rows(pilot, "human_decision")
@@ -82,7 +81,7 @@ module ProjectDelegation
           row.result != "evidence_missing" && row.metadata["evidence_status"] != "available"
         end
       }
-      baseline = baseline_metrics(rows)
+      baseline = baseline_metrics(current_rows(rows, baseline: true))
       metrics[:baseline] = baseline
       Result.new(available: completed >= MIN_COMPLETED_ISSUES && observed_days(pilot) >= OBSERVATION_PERIOD / 1.day,
         reason: evidence_reason(pilot, completed), sample_count: completed,
@@ -93,8 +92,29 @@ module ProjectDelegation
 
     attr_reader :now, :project
 
+    REVISION_KEYS = %w[posture_revision policy_signature intent_revision acceptance_revision evidence_revision].freeze
+
+    def current_rows(scope, baseline:)
+      rows = scope.where("metadata ->> 'baseline' = ?", baseline.to_s).order(:occurred_at, :id).to_a
+      return rows if rows.empty?
+
+      authority = baseline ? rows.last.metadata.slice("posture_revision", "policy_signature") : current_authority
+      authoritative = rows.select { |row| row.metadata.slice(*authority.keys) == authority }
+      authoritative.group_by(&:subject_key).values.flat_map { |subject_rows| latest_revision_rows(subject_rows) }
+    end
+
+    def latest_revision_rows(rows)
+      revision = rows.last.metadata.slice(*REVISION_KEYS)
+      rows.select { |row| row.metadata.slice(*REVISION_KEYS) == revision }
+    end
+
+    def current_authority
+      posture = Posture.resolve_without_expansion(project)
+      { "posture_revision" => posture.revision, "policy_signature" => posture.policy_signature }
+    end
+
     def event_rows(scope, type)
-      scope.where(result: type).to_a
+      scope.select { |row| row.result == type }
     end
 
     def count(scope, type) = event_rows(scope, type).size
@@ -123,8 +143,7 @@ module ProjectDelegation
       (sorted[(sorted.length - 1) / 2] + sorted[sorted.length / 2]) / 2.0
     end
 
-    def baseline_metrics(rows)
-      baseline = rows.where("metadata ->> 'baseline' = ?", "true")
+    def baseline_metrics(baseline)
       completed = count(baseline, "issue_completed")
       decisions = count(baseline, "human_decision")
       {

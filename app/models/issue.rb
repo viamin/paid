@@ -172,6 +172,7 @@ class Issue < ApplicationRecord
   after_update_commit :enqueue_self_if_became_auto_pick_eligible, if: :auto_pick_recheck_needed?
   after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
   after_update_commit :complete_continuation_grants, if: :continuation_endpoint_reached?
+  after_update_commit :record_project_delegation_pilot_transition
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   # UI -> GitHub: whenever the local `paused` flag flips, mirror it onto the
@@ -970,6 +971,10 @@ class Issue < ApplicationRecord
   end
 
   private
+
+  def record_project_delegation_pilot_transition
+    ProjectDelegation::RecordPilotEvent.issue_transition(self)
+  end
 
   def inbox_count_cache_invalidation_needed?
     saved_change_to_needs_input_since? ||

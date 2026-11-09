@@ -38,6 +38,7 @@ module Automation
         description: "Delegated work is paused before #{boundary} until its current authority is reviewed.",
         metadata: { "authorization_id" => authorization.id, "boundary" => boundary.to_s, "reasons" => reasons.map(&:to_s) }
       )
+      ProjectDelegation::RecordPilotEvent.boundary_stop(authorization:, reasons:, boundary:)
       Result.new(permitted: false, boundary:, reasons:, notification:)
     end
 
@@ -62,6 +63,7 @@ module Automation
         phase_policy: policy_allows?(snapshot[:phase_policy]),
         bounded_stop: bounded_stop_allows?,
         tenant: tenant_matches?,
+        security: truthy?(snapshot.fetch(:security, true)),
         trust: truthy?(snapshot[:trust]),
         budget: allowed?(snapshot[:budget]),
         repository_controls: allowed?(snapshot[:repository_controls]),

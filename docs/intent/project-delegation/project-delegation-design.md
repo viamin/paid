@@ -83,7 +83,12 @@ acceptance, and evidence revisions. The pilot evaluator measures decision
 volume/time, completion, reversals, and security/tenant/trust/evidence stop
 signals. The separate expansion guard is default-off and permits broadening
 only after the RDR-080 sample, observation, baseline, and threshold checks
-pass.
+pass. When expansion is enabled, posture resolution consumes that guard at the
+admission boundary and falls back to `conservative` after a reversal or safety,
+trust, tenant, or evidence stop. Issue lifecycle transitions, resolved human
+decisions, and delegated-boundary stops write the metric ledger through their
+production choke points; aggregation admits only the current posture/policy
+authority and each subject's latest revision tuple.
 
 ## Decisions & alternatives
 

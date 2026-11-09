@@ -23,6 +23,7 @@ module FeatureIntents
         raise StaleDecisionError, "This decision was already resolved. Reload to review its current state." unless decision.open?
 
         decision.resolve!(by: actor, answer:)
+        ProjectDelegation::RecordPilotEvent.human_decision(decision)
       end
     end
 

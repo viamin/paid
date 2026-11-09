@@ -54,6 +54,24 @@ RSpec.describe ProjectDelegation::Posture do
       expect(posture.selected_by_id).to eq(user.id)
     end
 
+    it "returns to conservative when expansion evidence reverses" do # @spec PROJECT-DELEGATION-007
+      record = create(:project_delegation_posture, project: project, level: "bounded_delivery", selected_by: user)
+      FeatureFlags.enable!(:project_delegation_expansion, project:)
+      30.times do |index|
+        ProjectDelegation::PilotMetrics.record(project:, event_type: "issue_completed",
+          event_key: "completed-#{index}", posture: described_class.resolve_without_expansion(project),
+          policy_signature: record.policy_signature, occurred_at: 15.days.ago)
+      end
+      ProjectDelegation::PilotMetrics.record(project:, event_type: "decision_reversed", event_key: "reversal",
+        posture: described_class.resolve_without_expansion(project), policy_signature: record.policy_signature,
+        occurred_at: 1.day.ago, material: true)
+
+      posture = described_class.resolve(project)
+
+      expect(posture).to be_conservative
+      expect(posture.source).to eq("expansion_paused")
+    end
+
     it "lists the reviews that remain human decisions under bounded_delivery" do
       create(:project_delegation_posture, project: project, level: "bounded_delivery")
 

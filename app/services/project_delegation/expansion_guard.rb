@@ -8,7 +8,7 @@ module ProjectDelegation
   class ExpansionGuard
     Result = Data.define(:allowed, :reason, :metrics) do
       def allowed? = allowed
-      def paused? = !allowed && reason.in?(%w[material_reversal security_breach tenant_breach trust_breach missing_evidence])
+      def paused? = !allowed && reason != "expansion_guard_disabled"
       def to_h = { allowed:, reason:, metrics: metrics.to_h }
     end
 

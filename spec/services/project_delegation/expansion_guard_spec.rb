@@ -42,4 +42,22 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
 
     expect(described_class.call(project:)).to be_allowed
   end
+
+  it "reports reversed threshold evidence as a paused expansion" do
+    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
+      available?: true,
+      metrics: {
+        material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
+        missing_evidence: 0, decisions_per_completed_issue: 0.9,
+        median_decision_time_seconds: 100, completion_rate: 1.0,
+        baseline: { decisions_per_completed_issue: 1.0, median_decision_time_seconds: 100, completion_rate: 1.0 }
+      })
+    allow(ProjectDelegation::PilotMetrics).to receive(:call).and_return(metrics)
+    FeatureFlags.enable!(:project_delegation_expansion, project:)
+
+    result = described_class.call(project:)
+
+    expect(result.reason).to eq("decision_volume_threshold_not_met")
+    expect(result).to be_paused
+  end
 end

@@ -97,9 +97,14 @@ Status markers: `[ ]` planned implementation gap.
   time, completion rate, and later-reversed decisions; it SHALL keep broadening
   disabled until the RDR-080 pilot threshold is met and SHALL pause expansion
   on a material reversal, security/tenant/trust breach, or missing evidence.
-  *Verified by:* `spec/services/project_delegation/pilot_metrics_spec.rb` and
-  `spec/services/project_delegation/expansion_guard_spec.rb` (revision-bound
-  ledger records, pilot thresholds, default-off expansion, and pause signals).
+  *Verified by:* `spec/services/project_delegation/pilot_metrics_spec.rb`,
+  `spec/services/project_delegation/expansion_guard_spec.rb`,
+  `spec/services/project_delegation/posture_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_complete_activity_spec.rb`,
+  `spec/services/feature_intents/respond_to_decision_spec.rb`, and
+  `spec/services/automation/delegated_work_boundary_spec.rb` (production
+  lifecycle recording, revision-cohort isolation, pilot thresholds,
+  default-off expansion, enforced rollback, and pause signals).
 
 - [ ] **PROJECT-DELEGATION-008** — When a delegated action records a focused
   follow-up, the system SHALL record the finding, affected scope, evidence,

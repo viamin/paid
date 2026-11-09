@@ -8,8 +8,13 @@ RSpec.describe ProjectDelegation::PilotMetrics do
   let(:owner) { create(:user, :owner, account:) }
   let(:project) { create(:project, :with_github_installation, account:, created_by: owner) }
   let(:posture) { create(:project_delegation_posture, project:, selected_by: owner, level: "bounded_delivery") }
-  let(:policy_signature) { "p" * 64 }
+  let(:policy_signature) { posture.policy_signature }
   let(:now) { Time.zone.parse("2026-11-08 12:00:00") }
+
+  before do
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+  end
 
   def record(type, key, baseline: false, occurred_at: now - 15.days, intent_revision: nil,
     acceptance_revision: nil, evidence_revision: nil, **metadata)
@@ -64,5 +69,16 @@ RSpec.describe ProjectDelegation::PilotMetrics do
       completion_rate: 1.0
     )
     expect(result.metrics[:baseline][:decisions_per_completed_issue]).to eq(2.0)
+  end
+
+  it "does not combine evidence from an earlier authority revision" do # @spec PROJECT-DELEGATION-007
+    30.times { |index| record("issue_completed", "old-completed-#{index}") }
+    posture.update!(revision: 2)
+    record("issue_completed", "current-completed")
+
+    result = described_class.call(project:, now:)
+
+    expect(result.sample_count).to eq(1)
+    expect(result.reason).to eq("minimum_completed_issues_not_met")
   end
 end
