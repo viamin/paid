@@ -54,14 +54,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -307,14 +307,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -544,14 +544,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -644,14 +644,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -800,14 +800,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -996,14 +996,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1036,14 +1036,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1130,14 +1130,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
