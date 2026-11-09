@@ -94,7 +94,12 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
       SET started_at = COALESCE(updated_at, created_at)
       WHERE started_at IS NULL
         AND (
-          EXISTS (SELECT 1 FROM chat_diagrams WHERE chat_diagrams.chat_session_id = chat_sessions.id)
+          EXISTS (
+            SELECT 1 FROM chat_messages
+            WHERE chat_messages.chat_session_id = chat_sessions.id
+              AND chat_messages.role = 'user'
+          )
+          OR EXISTS (SELECT 1 FROM chat_diagrams WHERE chat_diagrams.chat_session_id = chat_sessions.id)
           OR EXISTS (SELECT 1 FROM chat_investigations WHERE chat_investigations.chat_session_id = chat_sessions.id)
           OR EXISTS (SELECT 1 FROM chat_session_projects WHERE chat_session_projects.chat_session_id = chat_sessions.id)
           OR EXISTS (SELECT 1 FROM chat_turn_lifecycle_events WHERE chat_turn_lifecycle_events.chat_session_id = chat_sessions.id)

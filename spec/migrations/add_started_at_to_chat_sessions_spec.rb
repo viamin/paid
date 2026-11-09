@@ -69,6 +69,23 @@ RSpec.describe AddStartedAtToChatSessions, :aggregate_failures do
     expect(migration_chat_session.find(referenced_draft.id).started_at).to be_present
   end
 
+  # @spec CHAT-API-030
+  it "preserves a duplicate draft that receives a user message during deployment" do
+    retained_draft = create_legacy_draft(created_at: 2.minutes.ago)
+    messaged_draft = create_legacy_draft(created_at: 3.minutes.ago)
+    allow(migration).to receive(:execute).and_wrap_original do |original, sql|
+      original.call(sql).tap do
+        create_user_message_for(messaged_draft) if sql.include?("AND EXISTS ( SELECT 1 FROM chat_messages")
+      end
+    end
+
+    migration.up
+
+    expect(migration_chat_session.find(retained_draft.id)).to be_present
+    expect(migration_chat_session.find(messaged_draft.id).started_at).to be_present
+    expect(ChatMessage.where(chat_session_id: messaged_draft.id, role: "user")).to exist
+  end
+
   private
 
   def create_legacy_draft(created_at:, container_capability: "none", container_id: nil, workspace_volume: nil)
@@ -92,11 +109,22 @@ RSpec.describe AddStartedAtToChatSessions, :aggregate_failures do
 
   def cleanup_test_data
     connection.execute(<<~SQL.squish)
+      DELETE FROM chat_messages
+      WHERE chat_session_id IN (SELECT id FROM chat_sessions WHERE created_by_id = #{connection.quote(user.id)})
+    SQL
+    connection.execute(<<~SQL.squish)
       DELETE FROM chat_session_projects
       WHERE chat_session_id IN (SELECT id FROM chat_sessions WHERE created_by_id = #{connection.quote(user.id)})
     SQL
     connection.execute("DELETE FROM chat_sessions WHERE created_by_id = #{connection.quote(user.id)}")
     user.destroy!
     account.destroy!
+  end
+
+  def create_user_message_for(chat_session)
+    connection.execute(<<~SQL.squish)
+      INSERT INTO chat_messages (chat_session_id, content, role, created_at, updated_at)
+      VALUES (#{connection.quote(chat_session.id)}, 'Message sent during deployment', 'user', NOW(), NOW())
+    SQL
   end
 end
