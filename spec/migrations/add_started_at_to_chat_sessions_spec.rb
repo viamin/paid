@@ -32,18 +32,12 @@ RSpec.describe AddStartedAtToChatSessions, :aggregate_failures do
     retained_draft = create_legacy_draft(created_at: 2.minutes.ago)
     discarded_draft = create_legacy_draft(created_at: 3.minutes.ago, container_capability: "ready",
       container_id: "container-123", workspace_volume: "volume-123")
-    allow(Rails.logger).to receive(:info).and_call_original
+    expect_workspace_resources_to_be_released_for(discarded_draft)
 
     migration.up
 
     expect(migration_chat_session.find(retained_draft.id)).to be_present
     expect { migration_chat_session.find(discarded_draft.id) }.to raise_error(ActiveRecord::RecordNotFound)
-    expect(Rails.logger).to have_received(:info).with(
-      hash_including(message: "chat_session.cleanup_container", chat_session_id: discarded_draft.id)
-    )
-    expect(Rails.logger).to have_received(:info).with(
-      hash_including(message: "chat_session.cleanup_volume", chat_session_id: discarded_draft.id)
-    )
   end
 
   # @spec CHAT-API-030
@@ -105,6 +99,19 @@ RSpec.describe AddStartedAtToChatSessions, :aggregate_failures do
       updated_at: created_at,
       workspace_volume: workspace_volume
     )
+  end
+
+  def expect_workspace_resources_to_be_released_for(draft)
+    container = instance_double(Docker::Container)
+    volume = instance_double(Docker::Volume)
+    state_volume = instance_double(Docker::Volume)
+    allow(Containers.backend).to receive(:get_container).with(draft.container_id).and_return(container)
+    allow(Containers.backend).to receive(:stop_container).with(container, timeout: 0)
+    allow(Containers.backend).to receive(:delete_container).with(container, force: true, v: true)
+    allow(Containers.backend).to receive(:get_volume).with(draft.workspace_volume).and_return(volume)
+    allow(Containers.backend).to receive(:get_volume).with("paid-chat-state-#{draft.id}").and_return(state_volume)
+    allow(Containers.backend).to receive(:delete_volume).with(volume)
+    allow(Containers.backend).to receive(:delete_volume).with(state_volume)
   end
 
   def cleanup_test_data

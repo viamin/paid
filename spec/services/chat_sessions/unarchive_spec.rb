@@ -60,16 +60,23 @@ RSpec.describe ChatSessions::Unarchive do
       ChatSessions::Archive.call(chat_session: original)
       replacement = ChatSessions::Create.call(account: account, user: user, container_capability: "pending")
       replacement.update!(container_capability: "ready", container_id: "container-123", workspace_volume: "volume-123")
-      allow(Rails.logger).to receive(:info).and_call_original
+      container = instance_double(Docker::Container)
+      volume = instance_double(Docker::Volume)
+      state_volume = instance_double(Docker::Volume)
+      allow(Containers.backend).to receive(:get_container).with(replacement.container_id).and_return(container)
+      allow(Containers.backend).to receive(:stop_container).with(container, timeout: 0)
+      allow(Containers.backend).to receive(:delete_container).with(container, force: true, v: true)
+      allow(Containers.backend).to receive(:get_volume).with(replacement.workspace_volume).and_return(volume)
+      allow(Containers.backend).to receive(:get_volume)
+        .with("paid-chat-state-#{replacement.id}").and_return(state_volume)
+      allow(Containers.backend).to receive(:delete_volume).with(volume)
+      allow(Containers.backend).to receive(:delete_volume).with(state_volume)
 
       described_class.call(chat_session: original)
 
-      expect(Rails.logger).to have_received(:info).with(
-        hash_including(message: "chat_session.cleanup_container", chat_session_id: replacement.id)
-      )
-      expect(Rails.logger).to have_received(:info).with(
-        hash_including(message: "chat_session.cleanup_volume", chat_session_id: replacement.id)
-      )
+      expect(Containers.backend).to have_received(:delete_container).with(container, force: true, v: true)
+      expect(Containers.backend).to have_received(:delete_volume).with(volume)
+      expect(Containers.backend).to have_received(:delete_volume).with(state_volume)
       expect { replacement.reload }.to raise_error(ActiveRecord::RecordNotFound)
     end
 
