@@ -153,6 +153,12 @@
         A broader posture was selected, but delegation is not enabled for this project right now,
         so the effective posture stays conservative.
       </p>
+    <% elsif @delegation_posture.source == "expansion_paused" %>
+      <p class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+        Expansion is paused because the current pilot evidence does not satisfy the safety and
+        rollout thresholds. Review the expansion evidence, resolve the reported condition, then
+        select the posture again to begin a new revision cohort.
+      </p>
     <% end %>
 
     <%= form_with url: project_delegation_posture_path(@project), method: :patch,

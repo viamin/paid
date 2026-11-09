@@ -18,6 +18,7 @@ module ProjectDelegation
     ].freeze
     MIN_COMPLETED_ISSUES = 30
     OBSERVATION_PERIOD = 14.days
+    REVISION_KEYS = %w[intent_revision acceptance_revision evidence_revision].freeze
 
     Result = Data.define(:available, :reason, :sample_count, :observed_days, :metrics) do
       def available? = available
@@ -103,7 +104,8 @@ module ProjectDelegation
 
     def latest_revision_rows(rows)
       rows.group_by(&:result).values.flat_map do |event_rows|
-        event_rows.first.result == "human_decision" ? event_rows : [ event_rows.last ]
+        latest_revision = event_rows.last.metadata.slice(*REVISION_KEYS)
+        event_rows.select { |row| row.metadata.slice(*REVISION_KEYS) == latest_revision }
       end
     end
 

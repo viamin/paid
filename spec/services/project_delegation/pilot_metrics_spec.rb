@@ -119,4 +119,27 @@ RSpec.describe ProjectDelegation::PilotMetrics do
     expect(metrics).to include(completed_issues: 1, human_decisions: 2, decisions_per_completed_issue: 2.0)
     expect(metrics[:median_decision_time_seconds]).to eq(90.0)
   end
+
+  it "counts distinct stop occurrences on the latest result revision tuple" do # @spec PROJECT-DELEGATION-007
+    issue = create(:issue, project:)
+    revision = { issue:, intent_revision: "intent-2", acceptance_revision: "acceptance-3" }
+    record("decision_reversed", "dequeue-reversal", **revision, material: true)
+    record("decision_reversed", "retry-reversal", **revision, material: false)
+    record("security_breach", "dequeue-security", **revision)
+    record("security_breach", "retry-security", **revision)
+
+    metrics = described_class.call(project:, now:).metrics
+
+    expect(metrics).to include(reversals: 2, material_reversals: 1, security_breaches: 2)
+  end
+
+  it "excludes stop occurrences from an older result revision tuple" do # @spec PROJECT-DELEGATION-007
+    issue = create(:issue, project:)
+    record("security_breach", "stale-security", issue:, evidence_revision: "evidence-1")
+    record("security_breach", "current-security", issue:, evidence_revision: "evidence-2")
+
+    metrics = described_class.call(project:, now:).metrics
+
+    expect(metrics[:security_breaches]).to eq(1)
+  end
 end
