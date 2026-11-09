@@ -137,7 +137,9 @@ module Knowledge
     def reassign_to_current_run(artifact, data)
       return artifact if artifact.collector_run_id == collector_run.id
 
-      artifact.update!(collector_run: collector_run)
+      KnowledgeArtifact.transaction(requires_new: true) do
+        artifact.update!(collector_run: collector_run)
+      end
     rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => error
       raise unless unique_conflict?(error)
 
