@@ -199,5 +199,48 @@ RSpec.describe Knowledge::ArtifactStore do
           .to raise_error(described_class::LockUnavailable, /artifact lock/)
       end
     end
+
+    context "when an artifact lock transaction ends" do
+      self.use_transactional_tests = false
+
+      after { project.account.destroy! }
+
+      # @spec KNOWLEDGE-001
+      it "releases the lock after persisting the artifact" do
+        locking_store = described_class.new(project:, collector_run:)
+        lock_key = Digest::SHA256
+          .digest([ project.id, collector_run.collector_type, artifact_data[:artifact_type],
+            artifact_data[:scope_path], artifact_data[:identifier] ].join(":"))
+          .unpack("l>")
+          .first
+
+        allow(locking_store).to receive(:create_artifact).and_wrap_original do |method, *args|
+          result = with_competing_database_session do |connection|
+            connection.exec_params(described_class::TRY_ADVISORY_LOCK_SQL,
+              [ described_class::LOCK_NAMESPACE, lock_key ]).getvalue(0, 0)
+          end
+
+          expect(result).to eq("f")
+          method.call(*args)
+        end
+
+        locking_store.store_all([ artifact_data ])
+
+        result = with_competing_database_session do |connection|
+          connection.exec_params(described_class::TRY_ADVISORY_LOCK_SQL,
+            [ described_class::LOCK_NAMESPACE, lock_key ]).getvalue(0, 0)
+        end
+
+        expect(result).to eq("t")
+      end
+    end
+  end
+
+  def with_competing_database_session
+    config = ActiveRecord::Base.connection.raw_connection.conninfo_hash
+    connection = PG.connect(**config.slice(:host, :port, :dbname, :user, :password))
+    yield connection
+  ensure
+    connection&.close
   end
 end

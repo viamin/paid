@@ -47,7 +47,10 @@ after its final page; direct full collection retains its existing single-call
 behavior. The final continuation checks every collector's
 persisted status before marking older artifacts stale and the project ready;
 skipped collectors that preserve existing artifacts remain exempt from staling.
-Direct collector-runner calls used by Temporal retain their existing contract.
+Artifact identity serialization uses PostgreSQL transaction-scoped advisory
+locks, so a collector interruption cannot leave a lock attached to a pooled
+database session after its persistence transaction ends. Direct collector-runner
+calls used by Temporal retain their existing contract.
 
 ### Knowledge credential selection
 
