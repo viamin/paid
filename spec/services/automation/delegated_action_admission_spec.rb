@@ -59,6 +59,18 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(Notification.count).to eq(0)
   end
 
+  it "fails closed and records a security pause while no canonical security assessment is available" do # @spec PROJECT-DELEGATION-007
+    FeatureFlags.enable!(:project_delegation_expansion, project:)
+    authorize(action: "review")
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:security)
+    expect(InboxHistoryEvent.where(source: "project_delegation_pilot").pluck(:result))
+      .to include("security_breach")
+  end
+
   it "loads the governing authorization under its lifecycle lock" do # @spec BOUNDED-PHASE-AUTHORIZATION-004
     authorize(action: "review")
     statements = []

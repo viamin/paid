@@ -155,6 +155,7 @@ module Automation
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
           work_item:, trigger:, delegated_action: action),
+        security: security_assessment,
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
@@ -164,6 +165,15 @@ module Automation
 
     def assessment
       @assessment ||= PartialCloseouts::Assessment.call(work_item)
+    end
+
+    # Pilot admissions retain their existing security controls. Expansion
+    # requires a canonical assessment; until its producer exists, nil reaches
+    # DelegatedWorkBoundary and fails closed.
+    def security_assessment
+      return true unless FeatureFlags.enabled?(:project_delegation_expansion, project:)
+
+      nil
     end
   end
 end

@@ -90,12 +90,13 @@ decisions, and delegated-boundary stops write the metric ledger through their
 production choke points; aggregation admits only the current posture/policy
 authority and each subject's latest revision tuple.
 
-The delegated boundary reserves a `security` assessment input and the pilot
-ledger reserves `security_breach` for a canonical security-assessment producer.
-No such producer exists in the current admission snapshot, so current
-production boundary stops emit tenant, trust, and evidence signals but do not
-claim a security breach. Once a canonical producer lands, an explicit failed
-assessment will fail closed and record the already-supported pause signal.
+The delegated boundary requires a canonical `security` assessment input before
+expansion. No such producer currently supplies the expansion admission
+snapshot, so its absence fails closed and records `security_breach` in the
+pilot ledger. A future producer must supply an explicit current result; an
+explicit failed assessment uses the same pause signal. This keeps expansion
+disabled until security evidence is available rather than treating unavailable
+evidence as healthy.
 
 ## Decisions & alternatives
 

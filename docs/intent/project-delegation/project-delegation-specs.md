@@ -96,7 +96,8 @@ Status markers: `[ ]` planned implementation gap.
   record revision-aware human Inbox decisions per completed issue, decision
   time, completion rate, and later-reversed decisions; it SHALL keep broadening
   disabled until the RDR-080 pilot threshold is met and SHALL pause expansion
-  on a material reversal, security/tenant/trust breach, or missing evidence.
+  on a material reversal, security/tenant/trust breach, missing security
+  assessment, or missing evidence.
   *Verified by:* `spec/services/project_delegation/pilot_metrics_spec.rb`,
   `spec/services/project_delegation/expansion_guard_spec.rb`,
   `spec/services/project_delegation/posture_spec.rb`,
