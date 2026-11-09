@@ -58,6 +58,12 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
   end
 
   def deduplicate_unstarted_drafts
+    # Recheck immediately before selecting duplicates. A rolling-deploy writer
+    # can attach a dependent record after the initial scan in +up+; that draft
+    # is no longer disposable and must be released from the partial index
+    # rather than deleted.
+    mark_referenced_drafts_started
+
     discarded_unstarted_drafts.each do |draft|
       ChatSessions::WorkspaceCleanup.call(chat_session: draft)
     end
