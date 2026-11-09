@@ -39,6 +39,22 @@ RSpec.describe ChatSessions::Unarchive do
     end
 
     # @spec CHAT-API-030
+    it "discards an expired closed blank draft when restoring an archived blank draft" do
+      original = ChatSessions::Create.call(account: account, user: user)
+      ChatSessions::Archive.call(chat_session: original)
+      replacement = ChatSessions::Create.call(account: account, user: user)
+      replacement.update!(idle_timeout_at: 1.minute.ago)
+      ChatSessions::ExpireIdleInline.call(chat_session: replacement)
+      expect(replacement.reload).to be_closed
+
+      restored = described_class.call(chat_session: original)
+
+      expect(restored.reload.status).to eq("active")
+      expect(ChatSession.unstarted_untitled_personal.where(created_by: user)).to contain_exactly(restored)
+      expect { replacement.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    # @spec CHAT-API-030
     it "cleans up a container-backed fresh draft before discarding it" do
       original = ChatSessions::Create.call(account: account, user: user)
       ChatSessions::Archive.call(chat_session: original)

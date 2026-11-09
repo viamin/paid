@@ -40,8 +40,19 @@ module ChatSessions
       return unless restoring_personal_draft?
 
       conflicting_personal_drafts.find_each do |draft|
-        ChatSessions::Close.call(chat_session: draft)
+        discard_personal_draft(draft)
       end
+    end
+
+    def discard_personal_draft(draft)
+      return discard_closed_personal_draft(draft) if draft.closed?
+
+      ChatSessions::Close.call(chat_session: draft)
+    end
+
+    def discard_closed_personal_draft(draft)
+      ChatSessions::WorkspaceCleanup.call(chat_session: draft)
+      draft.destroy!
     end
 
     def conflicting_personal_drafts
