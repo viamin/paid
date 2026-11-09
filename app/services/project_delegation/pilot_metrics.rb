@@ -102,7 +102,9 @@ module ProjectDelegation
     end
 
     def latest_revision_rows(rows)
-      rows.group_by(&:result).values.map(&:last)
+      rows.group_by(&:result).values.flat_map do |event_rows|
+        event_rows.first.result == "human_decision" ? event_rows : [ event_rows.last ]
+      end
     end
 
     def current_authority

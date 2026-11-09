@@ -107,4 +107,16 @@ RSpec.describe ProjectDelegation::PilotMetrics do
     expect(metrics[:decisions_per_completed_issue]).to eq(1.0)
     expect(metrics[:median_decision_time_seconds]).to eq(60.0)
   end
+
+  it "counts every resolved decision in the current authority revision" do # @spec PROJECT-DELEGATION-007
+    issue = create(:issue, project:)
+    record("issue_completed", "completed", issue:)
+    record("human_decision", "decision-1", issue:, duration_seconds: 60)
+    record("human_decision", "decision-2", issue:, duration_seconds: 120)
+
+    metrics = described_class.call(project:, now:).metrics
+
+    expect(metrics).to include(completed_issues: 1, human_decisions: 2, decisions_per_completed_issue: 2.0)
+    expect(metrics[:median_decision_time_seconds]).to eq(90.0)
+  end
 end
