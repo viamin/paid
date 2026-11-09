@@ -42,7 +42,7 @@ module ChatSessions
     end
 
     def restore_personal_draft_transaction
-      ActiveRecord::Base.transaction do
+      ActiveRecord::Base.transaction(requires_new: true) do
         discard_conflicting_personal_draft
         chat_session.update!(restore_attributes)
       end
