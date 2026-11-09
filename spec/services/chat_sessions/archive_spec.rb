@@ -10,11 +10,6 @@ RSpec.describe ChatSessions::Archive do
     it "does not append a stopped-capability notice during intentional teardown" do
       chat_session = create(:chat_session, :workspace, account: account, created_by: user)
       create(:chat_message, chat_session: chat_session)
-      allow(Containers.backend).to receive(:get_container)
-        .with(chat_session.container_id)
-        .and_raise(Docker::Error::NotFoundError, "not found")
-      allow(Containers.backend).to receive(:get_volume)
-        .and_raise(Docker::Error::NotFoundError, "not found")
 
       described_class.call(chat_session: chat_session)
 

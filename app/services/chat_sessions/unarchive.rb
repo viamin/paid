@@ -70,7 +70,14 @@ module ChatSessions
     def discard_personal_draft(draft)
       return discard_closed_personal_draft(draft) if draft.closed?
 
+      cleanup_workspace_resources(draft)
       ChatSessions::Close.call(chat_session: draft)
+    end
+
+    def cleanup_workspace_resources(draft)
+      return if draft.container_id.blank? && draft.workspace_volume.blank?
+
+      ChatSessions::WorkspaceCleanup.call(chat_session: draft)
     end
 
     def discard_closed_personal_draft(draft)
