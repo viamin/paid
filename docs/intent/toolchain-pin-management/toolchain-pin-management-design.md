@@ -165,8 +165,10 @@ that already govern Paid's other pins apply to every pin this segment adds.
   GitHub-hosted release assets route through a shared `fetch-release-asset`
   wrapper (`docker/agent/scripts/fetch-release-asset`) whose bounded attempts
   escalate their delay, riding out release-CDN 5xx windows that outlast a
-  single curl's fast retries. Each successful download still passes its pinned
-  SHA-256 verification, so a retry never weakens artifact integrity.
+  single curl's fast retries. Other build-critical upstream downloads use
+  bounded curl retries before their consuming step. Each successful download
+  still passes its pinned SHA-256 verification where a checksum is available,
+  so a retry never weakens artifact integrity.
 - **Hold, do not silently skip.** A pin whose registry pattern no longer
   matches its file holds the whole group and surfaces as a warning at the end
   of the run, rather than being treated as up-to-date — a silently unmatched

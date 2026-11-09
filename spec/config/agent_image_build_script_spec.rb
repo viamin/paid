@@ -167,6 +167,13 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).to include('echo "${EXPECTED_CHECKSUM}  ${ZIPFILE}" | sha256sum -c -')
     end
 
+    # @spec TOOLCHAIN-PIN-054
+    it "retries the PostgreSQL package repository signing-key download" do
+      expect(dockerfile_source).to include("curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 10")
+      expect(dockerfile_source).to include("https://www.postgresql.org/media/keys/ACCC4CF8.asc")
+      expect(dockerfile_source).to include("/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc")
+    end
+
     # @spec TOOLCHAIN-PIN-053
     it "routes every GitHub release-asset download through the retrying fetch helper" do
       expect(dockerfile_source).to include(

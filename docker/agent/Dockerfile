@@ -80,8 +80,12 @@ RUN NODE_VERSION=24.18.0 \
 
 # Install the PGDG apt repository so Ubuntu Noble can install the same pg_dump
 # minor version as the pinned Postgres server image.
+# @spec TOOLCHAIN-PIN-054
 RUN install -d /usr/share/postgresql-common/pgdg \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 10 \
+      --connect-timeout 15 --max-time 120 \
+      -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     && . /etc/os-release \
     && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources
 
