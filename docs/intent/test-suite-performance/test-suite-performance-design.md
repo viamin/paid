@@ -31,6 +31,21 @@ Rails filters and enforces the existing 80% minimum. Missing reports, failing
 shards, or insufficient combined coverage fail the final check. Separate query
 performance specs run once, and the system-test workflow remains unchanged.
 
+## Platform-dropped shard recovery
+
+GitHub Actions occasionally drops a matrix leg (or another job) entirely during
+platform incidents: the job is never created, no check run appears, and the
+matrix aggregate reports failure even though no test ran. A lightweight
+`shard-status` job classifies each expected leg from the run's job list after
+the matrix completes: a leg with no job is recoverable, a leg that ran and did
+not succeed is failing, and an unclassifiable run (jobs API unavailable) fails
+closed. A `shard-recovery` job then re-runs exactly the recoverable legs with
+the same services, credentials, coverage command names, and per-leg artifact
+contract as the matrix, keeping one shard identity per coverage report. The
+final check treats recovery as satisfying only the missing legs: a real shard
+failure, a failed re-run, an incomplete classification, or a still-missing
+report still fails the check. Recovery never re-runs legs that executed.
+
 ## Individual test costs
 
 Certificate behavior specs use the existing explicit test key-size parameter
