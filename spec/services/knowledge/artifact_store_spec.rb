@@ -199,5 +199,22 @@ RSpec.describe Knowledge::ArtifactStore do
           .to raise_error(described_class::LockUnavailable, /artifact lock/)
       end
     end
+
+    context "when acquiring an artifact lock" do
+      # @spec KNOWLEDGE-001
+      it "uses a transaction-scoped advisory lock" do
+        raw_connection = instance_double(PG::Connection)
+        lock_result = instance_double(PG::Result, getvalue: "t")
+        connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter,
+          raw_connection: raw_connection)
+        allow(ActiveRecord::Base).to receive(:connection).and_return(connection)
+        allow(KnowledgeArtifact).to receive(:transaction).and_yield
+        expect(raw_connection).to receive(:exec_params)
+          .with("SELECT pg_try_advisory_xact_lock($1, $2)", [ described_class::LOCK_NAMESPACE, kind_of(Integer) ])
+          .and_return(lock_result)
+
+        store.send(:with_artifact_lock, artifact_data) { nil }
+      end
+    end
   end
 end

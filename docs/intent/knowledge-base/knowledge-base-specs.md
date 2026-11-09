@@ -12,7 +12,10 @@
   When concurrent collection contends for an artifact identity, it SHALL not
   wait indefinitely on a database advisory lock; it SHALL fail the collection
   attempt promptly and retry through the job's bounded retry policy. During
-  those retryable attempts, it SHALL retain the project's `collecting` status;
+  artifact persistence, it SHALL use a transaction-scoped advisory lock so an
+  interrupted collector cannot retain that lock through a pooled database
+  session after its transaction ends. During those retryable attempts, it SHALL
+  retain the project's `collecting` status;
   after the retry policy is exhausted, it SHALL mark the collection failed and
   report the terminal failure through the job exception-notification path.
   A full collection job SHALL retain a 45-minute wall-clock ceiling so a large,

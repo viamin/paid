@@ -4,8 +4,7 @@ module Knowledge
   class ArtifactStore
     class LockUnavailable < StandardError; end
 
-    TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_lock($1, $2)".freeze
-    ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
+    TRY_ADVISORY_LOCK_SQL = "SELECT pg_try_advisory_xact_lock($1, $2)".freeze
     LOCK_NAMESPACE = 1_357_180_002
 
     attr_reader :project, :collector_run
@@ -57,7 +56,7 @@ module Knowledge
     def replace_artifact(data, content_hash)
       # Atomic stale-then-insert to prevent interleaving with concurrent
       # collectors that could violate the partial unique index on active artifacts.
-      KnowledgeArtifact.transaction do
+      KnowledgeArtifact.transaction(requires_new: true) do
         mark_prior_stale(data)
         create_artifact(data, content_hash)
       end
@@ -125,7 +124,7 @@ module Knowledge
     def reuse_conflicted_artifact(artifact, data)
       return artifact if artifact.status.in?(%w[active deleted])
 
-      KnowledgeArtifact.transaction do
+      KnowledgeArtifact.transaction(requires_new: true) do
         mark_prior_stale(data)
         artifact.update!(status: "active", artifact_type: data[:artifact_type], scope_path: data[:scope_path],
           identifier: data[:identifier], content: data[:content], metadata: data[:metadata] || {})
@@ -252,12 +251,12 @@ module Knowledge
 
     def with_artifact_lock(data)
       lock_key = advisory_lock_key(data)
-      acquired = acquire_artifact_lock(lock_key)
-      raise LockUnavailable, "Knowledge artifact lock is unavailable" unless acquired
+      KnowledgeArtifact.transaction do
+        acquired = acquire_artifact_lock(lock_key)
+        raise LockUnavailable, "Knowledge artifact lock is unavailable" unless acquired
 
-      yield
-    ensure
-      execute_lock_sql(ADVISORY_UNLOCK_SQL, lock_key) if acquired
+        yield
+      end
     end
 
     def advisory_lock_key(data)
