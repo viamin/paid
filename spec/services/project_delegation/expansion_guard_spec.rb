@@ -8,6 +8,12 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
   let(:owner) { create(:user, :owner, account:) }
   let(:project) { create(:project, :with_github_installation, account:, created_by: owner) }
 
+  def metric_result(available:, metrics:, reason: nil)
+    ProjectDelegation::PilotMetrics::Result.new(
+      available:, reason:, sample_count: metrics[:completed_issues].to_i, observed_days: 14, metrics:
+    )
+  end
+
   it "is default-disabled even when a pilot has not produced evidence" do
     expect(ProjectDelegation::PilotMetrics).not_to receive(:call)
 
@@ -19,8 +25,7 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
   end
 
   it "pauses on missing evidence and material reversals" do
-    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
-      available?: false, reason: "no_metric_evidence", metrics: { material_reversals: 0 })
+    metrics = metric_result(available: false, reason: "no_metric_evidence", metrics: { material_reversals: 0 })
     allow(ProjectDelegation::PilotMetrics).to receive(:call).and_return(metrics)
     FeatureFlags.enable!(:project_delegation_expansion, project:)
 
@@ -32,9 +37,7 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
   end
 
   it "permits expansion only after all RDR-080 thresholds pass" do
-    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
-      available?: true,
-      metrics: {
+    metrics = metric_result(available: true, metrics: {
         material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
         missing_evidence: 0, decisions_per_completed_issue: 0.5,
         median_decision_time_seconds: 100, completion_rate: 0.96,
@@ -47,9 +50,7 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
   end
 
   it "permits an available cohort with no human decision time to compare" do
-    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
-      available?: true,
-      metrics: {
+    metrics = metric_result(available: true, metrics: {
         material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
         missing_evidence: 0, decisions_per_completed_issue: 0.0,
         median_decision_time_seconds: nil, completion_rate: 0.96,
@@ -62,9 +63,7 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
   end
 
   it "permits an available cohort with no issue-start denominator to compare" do
-    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
-      available?: true,
-      metrics: {
+    metrics = metric_result(available: true, metrics: {
         material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
         missing_evidence: 0, decisions_per_completed_issue: 0.5,
         median_decision_time_seconds: 100, completion_rate: nil,
@@ -77,9 +76,7 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
   end
 
   it "reports reversed threshold evidence as a paused expansion" do
-    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
-      available?: true,
-      metrics: {
+    metrics = metric_result(available: true, metrics: {
         material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
         missing_evidence: 0, decisions_per_completed_issue: 0.9,
         median_decision_time_seconds: 100, completion_rate: 1.0,
@@ -92,5 +89,28 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
 
     expect(result.reason).to eq("decision_volume_threshold_not_met")
     expect(result).to be_paused
+  end
+
+  it "reuses the guard aggregation until the pilot ledger changes" do # @spec PROJECT-DELEGATION-007
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    posture = create(:project_delegation_posture, project:, selected_by: owner, level: "bounded_delivery")
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+    FeatureFlags.enable!(:project_delegation_expansion, project:)
+    ProjectDelegation::PilotMetrics.record(project:, event_type: "issue_completed", event_key: "completed",
+      posture:, policy_signature: posture.policy_signature)
+
+    first_queries = count_queries { described_class.call(project:) }
+    cached_queries = count_queries { described_class.call(project:) }
+    ProjectDelegation::PilotMetrics.record(project:, event_type: "trust_breach", event_key: "breach",
+      posture:, policy_signature: posture.policy_signature)
+    invalidated_queries = count_queries { described_class.call(project:) }
+
+    expect(first_queries).to be > cached_queries
+    expect(cached_queries).to be <= 2
+    expect(invalidated_queries).to be > cached_queries
+  ensure
+    Rails.cache = original_cache
   end
 end

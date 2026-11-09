@@ -16,10 +16,32 @@ RSpec.describe ProjectDelegation::PilotMetrics do
     FeatureFlags.enable!(:project_delegation, project:)
   end
 
-  def record(type, key, baseline: false, occurred_at: now - 15.days, intent_revision: nil,
+  def record(type, key, baseline: false, occurred_at: now - 15.days, issue: nil, intent_revision: nil,
     acceptance_revision: nil, evidence_revision: nil, **metadata)
-    described_class.record(project:, event_type: type, event_key: key, posture:, policy_signature:,
+    described_class.record(project:, event_type: type, event_key: key, posture:, policy_signature:, issue:,
       baseline:, occurred_at:, intent_revision:, acceptance_revision:, evidence_revision:, metadata: metadata)
+  end
+
+  def record_baseline_metrics
+    4.times do |index|
+      issue = create(:issue, project:)
+      record("issue_started", "baseline-started-#{index}", issue:, baseline: true)
+      record("issue_completed", "baseline-completed-#{index}", issue:, baseline: true)
+    end
+    8.times do |index|
+      record("human_decision", "baseline-decision-#{index}", issue: create(:issue, project:), baseline: true,
+        duration_seconds: 100)
+    end
+  end
+
+  def record_pilot_metrics
+    30.times do |index|
+      issue = create(:issue, project:)
+      record("issue_started", "started-#{index}", issue:)
+      record("issue_completed", "completed-#{index}", issue:)
+      record("human_decision", "decision-#{index}", issue:, duration_seconds: 100) if index < 22
+    end
+    record("decision_reversed", "reversal-1", material: true)
   end
 
   it "stores each metric with posture and evidence revisions" do
@@ -47,17 +69,8 @@ RSpec.describe ProjectDelegation::PilotMetrics do
   end
 
   it "calculates revision-aware decision, completion, and reversal metrics" do
-    4.times do |index|
-      record("issue_started", "baseline-started-#{index}", baseline: true)
-      record("issue_completed", "baseline-completed-#{index}", baseline: true)
-    end
-    8.times { |index| record("human_decision", "baseline-decision-#{index}", baseline: true, duration_seconds: 100) }
-    30.times do |index|
-      record("issue_started", "started-#{index}")
-      record("issue_completed", "completed-#{index}")
-    end
-    22.times { |index| record("human_decision", "decision-#{index}", duration_seconds: 100) }
-    record("decision_reversed", "reversal-1", material: true)
+    record_baseline_metrics
+    record_pilot_metrics
 
     result = described_class.call(project:, now:)
 
@@ -80,5 +93,18 @@ RSpec.describe ProjectDelegation::PilotMetrics do
 
     expect(result.sample_count).to eq(1)
     expect(result.reason).to eq("minimum_completed_issues_not_met")
+  end
+
+  it "keeps lifecycle denominators when an issue evidence revision advances" do # @spec PROJECT-DELEGATION-007
+    issue = create(:issue, project:)
+    record("human_decision", "decision", issue:, evidence_revision: "evidence-1", duration_seconds: 60)
+    record("issue_started", "started", issue:, evidence_revision: "evidence-1")
+    record("issue_completed", "completed", issue:, evidence_revision: "evidence-2")
+
+    metrics = described_class.call(project:, now:).metrics
+
+    expect(metrics).to include(completed_issues: 1, human_decisions: 1, completion_rate: 1.0)
+    expect(metrics[:decisions_per_completed_issue]).to eq(1.0)
+    expect(metrics[:median_decision_time_seconds]).to eq(60.0)
   end
 end

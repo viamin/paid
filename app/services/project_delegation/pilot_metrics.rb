@@ -92,8 +92,6 @@ module ProjectDelegation
 
     attr_reader :now, :project
 
-    REVISION_KEYS = %w[posture_revision policy_signature intent_revision acceptance_revision evidence_revision].freeze
-
     def current_rows(scope, baseline:)
       rows = scope.where("metadata ->> 'baseline' = ?", baseline.to_s).order(:occurred_at, :id).to_a
       return rows if rows.empty?
@@ -104,8 +102,7 @@ module ProjectDelegation
     end
 
     def latest_revision_rows(rows)
-      revision = rows.last.metadata.slice(*REVISION_KEYS)
-      rows.select { |row| row.metadata.slice(*REVISION_KEYS) == revision }
+      rows.group_by(&:result).values.map(&:last)
     end
 
     def current_authority

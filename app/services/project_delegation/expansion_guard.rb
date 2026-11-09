@@ -6,6 +6,9 @@ module ProjectDelegation
   # until this evidence-backed gate permits expansion.
   # @spec PROJECT-DELEGATION-007
   class ExpansionGuard
+    CACHE_TTL = 20.seconds
+    CACHE_PREFIX = "project_delegation/expansion_guard/v1"
+
     Result = Data.define(:allowed, :reason, :metrics) do
       def allowed? = allowed
       def paused? = !allowed && reason != "expansion_guard_disabled"
@@ -15,7 +18,15 @@ module ProjectDelegation
     def self.call(project:, now: Time.current)
       return new(project:, metrics: nil).call unless FeatureFlags.enabled?(:project_delegation_expansion, project:)
 
-      new(project:, metrics: PilotMetrics.call(project:, now:)).call
+      Rails.cache.fetch(cache_key(project, now), expires_in: CACHE_TTL) do
+        new(project:, metrics: PilotMetrics.call(project:, now:)).call
+      end
+    end
+
+    def self.cache_key(project, now)
+      latest_event_id = InboxHistoryEvent.where(project:, source: "project_delegation_pilot").maximum(:id)
+      posture_version = project.delegation_posture&.cache_key_with_version
+      [ CACHE_PREFIX, project.id, posture_version, latest_event_id, now.to_i / CACHE_TTL.to_i ].compact
     end
 
     def initialize(project:, metrics:)
