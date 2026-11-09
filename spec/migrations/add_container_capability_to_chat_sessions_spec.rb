@@ -71,6 +71,7 @@ RSpec.describe AddContainerCapabilityToChatSessions, :aggregate_failures do
       metadata: {},
       mode: mode,
       proxy_token: SecureRandom.hex(32),
+      started_at: Time.zone.parse("2026-07-29 18:00:00 UTC"),
       status: "active",
       updated_at: Time.zone.parse("2026-07-29 18:05:00 UTC")
     )

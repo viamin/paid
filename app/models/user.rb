@@ -60,6 +60,7 @@ class User < ApplicationRecord
 
   after_create :assign_owner_role_if_first_user
   after_create :ensure_default_runner
+  before_destroy :destroy_account_memberships_with_system_access, prepend: true
   before_destroy :release_dependabot_alert_acceptances, prepend: true
 
   # Role Management API
@@ -281,6 +282,10 @@ class User < ApplicationRecord
         )
       end
     end
+  end
+
+  def destroy_account_memberships_with_system_access # @spec DEPENDABOT-COVERAGE-001
+    TenantContext.with_system_access { account_memberships.destroy_all }
   end
 
   # Normalize role names between old Rolify format and new enum format
