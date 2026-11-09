@@ -63,6 +63,9 @@ module Automation
         phase_policy: policy_allows?(snapshot[:phase_policy]),
         bounded_stop: bounded_stop_allows?,
         tenant: tenant_matches?,
+        # Reserved for a canonical security-assessment producer. Current
+        # admission snapshots omit this key; absence must not masquerade as a
+        # security breach, while an explicit future false value fails closed.
         security: truthy?(snapshot.fetch(:security, true)),
         trust: truthy?(snapshot[:trust]),
         budget: allowed?(snapshot[:budget]),

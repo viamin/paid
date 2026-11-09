@@ -9,12 +9,13 @@ module ProjectDelegation
     Result = Data.define(:allowed, :reason, :metrics) do
       def allowed? = allowed
       def paused? = !allowed && reason != "expansion_guard_disabled"
-      def to_h = { allowed:, reason:, metrics: metrics.to_h }
+      def to_h = { allowed:, reason:, metrics: metrics&.to_h }
     end
 
     def self.call(project:, now: Time.current)
-      metrics = PilotMetrics.call(project:, now:)
-      new(project:, metrics:).call
+      return new(project:, metrics: nil).call unless FeatureFlags.enabled?(:project_delegation_expansion, project:)
+
+      new(project:, metrics: PilotMetrics.call(project:, now:)).call
     end
 
     def initialize(project:, metrics:)
@@ -36,8 +37,12 @@ module ProjectDelegation
       baseline = values.fetch(:baseline)
       return blocked(values, "baseline_missing") if baseline[:decisions_per_completed_issue].nil? || baseline[:median_decision_time_seconds].nil? || baseline[:completion_rate].nil?
       return blocked(values, "decision_volume_threshold_not_met") unless values[:decisions_per_completed_issue] <= baseline[:decisions_per_completed_issue] * 0.75
-      return blocked(values, "decision_time_increased") if values[:median_decision_time_seconds] > baseline[:median_decision_time_seconds]
-      return blocked(values, "completion_rate_declined") if values[:completion_rate] < baseline[:completion_rate] - 0.05
+
+      median = values[:median_decision_time_seconds]
+      return blocked(values, "decision_time_increased") if median.present? && median > baseline[:median_decision_time_seconds]
+
+      completion_rate = values[:completion_rate]
+      return blocked(values, "completion_rate_declined") if completion_rate.present? && completion_rate < baseline[:completion_rate] - 0.05
 
       Result.new(allowed: true, reason: "thresholds_met", metrics:)
     end

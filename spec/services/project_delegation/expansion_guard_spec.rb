@@ -9,10 +9,13 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
   let(:project) { create(:project, :with_github_installation, account:, created_by: owner) }
 
   it "is default-disabled even when a pilot has not produced evidence" do
+    expect(ProjectDelegation::PilotMetrics).not_to receive(:call)
+
     result = described_class.call(project:)
 
     expect(result).not_to be_allowed
     expect(result.reason).to eq("expansion_guard_disabled")
+    expect(result.to_h).to include(metrics: nil)
   end
 
   it "pauses on missing evidence and material reversals" do
@@ -35,6 +38,36 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
         material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
         missing_evidence: 0, decisions_per_completed_issue: 0.5,
         median_decision_time_seconds: 100, completion_rate: 0.96,
+        baseline: { decisions_per_completed_issue: 1.0, median_decision_time_seconds: 100, completion_rate: 1.0 }
+      })
+    allow(ProjectDelegation::PilotMetrics).to receive(:call).and_return(metrics)
+    FeatureFlags.enable!(:project_delegation_expansion, project:)
+
+    expect(described_class.call(project:)).to be_allowed
+  end
+
+  it "permits an available cohort with no human decision time to compare" do
+    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
+      available?: true,
+      metrics: {
+        material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
+        missing_evidence: 0, decisions_per_completed_issue: 0.0,
+        median_decision_time_seconds: nil, completion_rate: 0.96,
+        baseline: { decisions_per_completed_issue: 1.0, median_decision_time_seconds: 100, completion_rate: 1.0 }
+      })
+    allow(ProjectDelegation::PilotMetrics).to receive(:call).and_return(metrics)
+    FeatureFlags.enable!(:project_delegation_expansion, project:)
+
+    expect(described_class.call(project:)).to be_allowed
+  end
+
+  it "permits an available cohort with no issue-start denominator to compare" do
+    metrics = instance_double(ProjectDelegation::PilotMetrics::Result,
+      available?: true,
+      metrics: {
+        material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
+        missing_evidence: 0, decisions_per_completed_issue: 0.5,
+        median_decision_time_seconds: 100, completion_rate: nil,
         baseline: { decisions_per_completed_issue: 1.0, median_decision_time_seconds: 100, completion_rate: 1.0 }
       })
     allow(ProjectDelegation::PilotMetrics).to receive(:call).and_return(metrics)

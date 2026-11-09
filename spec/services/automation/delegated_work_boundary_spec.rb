@@ -94,7 +94,7 @@ RSpec.describe Automation::DelegatedWorkBoundary do
 
   it "fails closed for tenant, trust, budget, repository, or assessment failures" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-007
     FeatureFlags.enable!(:project_delegation, project:)
-    %i[account_id project_id security trust budget repository_controls assessment_available].each do |key|
+    %i[account_id project_id trust budget repository_controls assessment_available].each do |key|
       result = recheck(key => key == :account_id ? account.id + 1 : false)
 
       expect(result).to be_blocked, "expected #{key} to block"
@@ -108,7 +108,18 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       expect(result.reasons).to include(expected_reason)
     end
     expect(InboxHistoryEvent.where(source: "project_delegation_pilot").pluck(:result))
-      .to include("tenant_breach", "trust_breach", "security_breach", "evidence_missing")
+      .to include("tenant_breach", "trust_breach", "evidence_missing")
+  end
+
+  it "accepts the reserved security assessment input when a producer supplies it" do # @spec PROJECT-DELEGATION-007
+    FeatureFlags.enable!(:project_delegation, project:)
+
+    result = recheck(security: false)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:security)
+    expect(InboxHistoryEvent.where(source: "project_delegation_pilot").pluck(:result))
+      .to include("security_breach")
   end
 
   it "rejects unsupported boundaries" do
