@@ -15,15 +15,25 @@ module ChatSessions
     def call
       validate!
 
-      ActiveRecord::Base.transaction do
-        discard_conflicting_personal_draft
-        chat_session.update!(restore_attributes)
-      end
+      restore
 
       chat_session
     end
 
     private
+
+    def restore
+      return restore_session unless restoring_personal_draft?
+
+      chat_session.created_by.with_lock { restore_session }
+    end
+
+    def restore_session
+      ActiveRecord::Base.transaction do
+        discard_conflicting_personal_draft
+        chat_session.update!(restore_attributes)
+      end
+    end
 
     def validate!
       return if chat_session.status == "archived"

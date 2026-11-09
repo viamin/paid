@@ -93,13 +93,17 @@ module ChatSessions
 
     # @spec CHAT-API-030
     def create_or_reuse_session
+      return create_new_session unless reusable_personal_draft?
+
+      user.with_lock { create_or_reuse_personal_draft }
+    end
+
+    def create_or_reuse_personal_draft
       attempts = 0
       begin
         attempts += 1
-        create_new_session
+        create_new_session(requires_new: true)
       rescue ActiveRecord::RecordNotUnique
-        raise unless reusable_personal_draft?
-
         reconcile_existing_personal_draft
       rescue ActiveRecord::RecordNotFound
         retry if attempts < 2
@@ -108,8 +112,8 @@ module ChatSessions
       end
     end
 
-    def create_new_session
-      ActiveRecord::Base.transaction do
+    def create_new_session(requires_new: false)
+      ActiveRecord::Base.transaction(requires_new:) do
         created = create_session
         persist_system_message(created, build_system_prompt(created))
         [ created, true ]

@@ -121,6 +121,7 @@ drafts SHALL NOT participate in the one-draft invariant;
   `spec/services/chat_sessions/create_spec.rb`,
   `spec/services/chat_sessions/create_call_concurrency_spec.rb`,
   `spec/services/chat_sessions/unarchive_spec.rb`,
+  `spec/services/chat_sessions/unarchive_call_concurrency_spec.rb`,
   `spec/migrations/add_started_at_to_chat_sessions_spec.rb`.
   *Code:* `ChatSession.unstarted_untitled_personal`, `ChatSession#start!`,
   `ChatSessions::Create#call`, `ChatSessions::WorkspaceCleanup#call`,

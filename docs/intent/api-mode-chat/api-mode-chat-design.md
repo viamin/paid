@@ -96,6 +96,9 @@ message that would mark it started; closed and idle blank drafts remain
 reusable so idle cycles do not accumulate a new blank item per visit.
 Restoring an archived blank draft discards the newer blank draft first,
 keeping exactly one while preserving the session the user chose to restore.
+Creation and blank-draft restoration serialize on the creator record, so a
+restore either discards a draft created first or is reused by a create that
+waited for the restore.
 If a rolling-deploy writer attaches dependent records to a duplicate before
 cleanup, the migration marks that session started instead of deleting work or
 failing on its foreign-key references.
