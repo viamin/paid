@@ -117,9 +117,9 @@ class FeatureFlags
     project_delegation_expansion: Definition.new(
       name: :project_delegation_expansion,
       owner: "project-delegation",
-      intent: "Gate default broadening of project delegation until RDR-080 pilot thresholds are met.",
+      intent: "Gate default broadening of project delegation until pilot thresholds are met.",
       rollout_plan: "Default-off; enable only after the canonical security assessment producer supplies the admission snapshot, at least 30 completed issues over 14 days, and human review of the evidence; until that producer exists, enabling this flag fails every delegated admission closed.",
-      cleanup_criteria: "Remove after the RDR-080 closeout records an approved default posture."
+      cleanup_criteria: "Remove after the pilot closeout records an approved default posture."
     ),
     layered_verification_add_on: Definition.new(
       name: :layered_verification_add_on,
