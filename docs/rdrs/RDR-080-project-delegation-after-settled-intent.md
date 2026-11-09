@@ -8,10 +8,14 @@
 - **Related issues**: #4863; [#4512](https://github.com/viamin/paid/issues/4512)
 - **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md), and [RDR-078](RDR-078-bounded-delivery-phase-authorization.md)
 - **Related intent**: `docs/intent/project-delegation/`
-- **Implementation status**: Partially implemented. Posture selection,
-  revision-bound pilot metrics, and the default-off expansion guard are live;
-  remaining action-plan and intent-checkpoint work stays governed by the
-  statuses in `docs/intent/project-delegation/`.
+- **Implementation status**: The default-conservative posture, authorized selection,
+  effective-posture projection, remaining-review display data, and immutable
+  posture-selection audit event are implemented behind the required rollout
+  guards. The shared admission contract also performs the initial boundary
+  rechecks described by `PROJECT-DELEGATION-004`. Revision-aware pilot metrics
+  and the default-off expansion guard are implemented. Intent checkpoints and
+  the full delegated action plan remain follow-on work described by the
+  unchecked EARS specs.
 
 ## Decision
 
@@ -123,13 +127,13 @@ own scope, acceptance, or lineage.
 ## Rollout Guard and rollback
 
 This design uses the existing default-off `automation_phases` rollout guard
-for execution-path integration. A future implementation must add the named,
-default-off per-project `project_delegation` enablement surface, evaluate it
-through the shared policy, and leave it disabled unless both guards permit the
-capability. Rollback sets the project posture to `conservative`, blocks new
-delegated boundaries, preserves audit/evidence records, and routes affected
-work to a focused Inbox decision. It does not reinterpret or delete history.
-No project is enrolled by migration or by an account-level default.
+for execution-path integration. The named, default-off per-project
+`project_delegation` enablement surface is implemented and evaluated through
+the shared policy; the capability remains disabled unless both guards permit
+it. Rollback sets the project posture to `conservative`, blocks new delegated
+boundaries, preserves audit/evidence records, and routes affected work to a
+focused Inbox decision. It does not reinterpret or delete history. No project
+is enrolled by migration or by an account-level default.
 
 ## Measurement and pilot
 
@@ -158,13 +162,24 @@ review.
 | Make automatic closure unconditional | Rejected: closure is a claim about current acceptance evidence, not a workflow terminal state. |
 | Let the posture also execute the follow-up | Rejected: the follow-up is separate work that needs its own admission, so executing it would open a new lineage. |
 
-## Follow-on implementation boundaries
+## Implementation boundaries
 
-1. Add the posture record, policy signature, audit events, and shared effective-policy input behind the named guard.
-2. Build intent-checkpoint grouping and immutable revision binding on existing RDR-066/071 records; do not duplicate feature approval or confidence assessment.
-3. Add action services and boundary rechecks for all queue, dequeue, retry,
-   follow-up recording, closeout, and repair paths.
-4. Add surface-parity projections for settings, Inbox, API, and MCP, then run the pilot and its review before any default change.
+The completed slice includes the posture record, policy signature, immutable
+audit events, guarded effective-policy input, initial action-boundary rechecks,
+shared projections for settings, Inbox, API, and MCP, plus revision-aware pilot
+metrics and the default-off expansion guard.
+
+Follow-on implementation must:
+
+1. Build intent-checkpoint grouping and immutable revision binding on existing
+   RDR-066/071 records; do not duplicate feature approval or confidence
+   assessment.
+2. Complete the delegated action-plan semantics, including focused follow-up
+   recording, and extend boundary assessment to the remaining explicit-hold,
+   actor-policy, lineage, semantic-scope, ambiguity, conflicting-evidence, and
+   material-risk conditions.
+3. Run the bounded pilot and review its revision-aware metric evidence before
+   any default change.
 
 Follow-on implementation issues must cite this accepted RDR and the EARS in
 `docs/intent/project-delegation/`.

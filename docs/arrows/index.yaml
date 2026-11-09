@@ -201,9 +201,10 @@ arrows:
     specs: docs/intent/project-delegation/project-delegation-specs.md
     parent: PAID
     taxonomy: automation
-    status: MAPPED
+    status: PARTIAL
+    audited: 2026-11-08
     blockedBy: [automation-phases, bounded-phase-authorization, confidence-driven-delivery]
-    next: "Implement the default-off per-project posture and shared effective-policy composition from RDR-080, then run its bounded pilot before changing any default."
+    next: "Complete the intent-checkpoint/action-plan and pilot measurement slices from RDR-080; keep bounded_delivery opt-in until their evidence gates pass."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md

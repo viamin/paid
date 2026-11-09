@@ -50,10 +50,12 @@ module ProjectDelegation
       return blocked(values, "decision_volume_threshold_not_met") unless values[:decisions_per_completed_issue] <= baseline[:decisions_per_completed_issue] * 0.75
 
       median = values[:median_decision_time_seconds]
-      return blocked(values, "decision_time_increased") if median.present? && median > baseline[:median_decision_time_seconds]
+      return blocked(values, "decision_time_missing") if median.nil?
+      return blocked(values, "decision_time_increased") if median > baseline[:median_decision_time_seconds]
 
       completion_rate = values[:completion_rate]
-      return blocked(values, "completion_rate_declined") if completion_rate.present? && completion_rate < baseline[:completion_rate] - 0.05
+      return blocked(values, "completion_rate_missing") if completion_rate.nil?
+      return blocked(values, "completion_rate_declined") if completion_rate < baseline[:completion_rate] - 0.05
 
       Result.new(allowed: true, reason: "thresholds_met", metrics:)
     end
