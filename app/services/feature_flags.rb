@@ -114,6 +114,13 @@ class FeatureFlags
       rollout_plan: "Default-off; enable selected projects only after the delegation projection and all settings, Inbox, API, and MCP consumers are verified together.",
       cleanup_criteria: "Remove after the project-delegation pilot validates surface parity and rollback behavior."
     ),
+    project_delegation_expansion: Definition.new(
+      name: :project_delegation_expansion,
+      owner: "project-delegation",
+      intent: "Gate default broadening of project delegation until RDR-080 pilot thresholds are met.",
+      rollout_plan: "Default-off; enable only after at least 30 completed issues over 14 days and human review of the evidence.",
+      cleanup_criteria: "Remove after the RDR-080 closeout records an approved default posture."
+    ),
     layered_verification_add_on: Definition.new(
       name: :layered_verification_add_on,
       owner: "layered-verification",

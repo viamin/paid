@@ -77,9 +77,13 @@ conditions remain planned until that reassessment path lands.
 The implementation is behind the existing `automation_phases` flag and a
 default-off project `project_delegation` gate. Rolling back selects
 `conservative`, preserves evidence/audit history, blocks future delegated
-boundaries, and creates focused recovery requests. Metric events are revision
-aware and measure decision volume/time, completion, and later reversals for
-the bounded pilot defined by RDR-080.
+boundaries, and creates focused recovery requests. Metric events use the
+tenant-scoped Inbox history ledger and snapshot posture, policy, intent,
+acceptance, and evidence revisions. The pilot evaluator measures decision
+volume/time, completion, reversals, and security/tenant/trust/evidence stop
+signals. The separate expansion guard is default-off and permits broadening
+only after the RDR-080 sample, observation, baseline, and threshold checks
+pass.
 
 ## Decisions & alternatives
 
