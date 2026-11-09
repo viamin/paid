@@ -5,7 +5,6 @@ require "ostruct"
 
 # @spec LID-RUNS-003
 RSpec.describe Activities::CreatePullRequestActivity do
-  fixture "activities/create_pull_request/base"
   before { configure_llm_routing(project: project)
 allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
@@ -25,10 +24,9 @@ allow(GithubClient).to receive(:new).and_return(github_client)
    }
 
   let(:activity) { described_class.new }
-  let(:fixture_repository) { instance_variable_get(:@_fixture_kit_repository) }
-  let(:project) { fixture_repository.project }
-  let(:issue) { fixture_repository.issue }
-  let(:agent_run) { fixture_repository.agent_run }
+  let(:project) { create(:project) }
+  let(:issue) { create(:issue, project:) }
+  let(:agent_run) { create(:agent_run, :with_git_context, :with_metrics, project:, issue:) }
   let(:github_client) { instance_double(GithubClient) }
   let(:pr_response) { Struct.new(:html_url, :number, :body, :title).new("https://github.com/#{project.full_name}/pull/42", 42, "PR body", "PR title") }
   let(:issue_response) do
