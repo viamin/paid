@@ -1,0 +1,51 @@
+#!/bin/sh
+# Release-asset download helper for the Paid agent image.
+#
+# Installed at /usr/local/bin/fetch-release-asset in the agent image
+# (docker/agent/Dockerfile). Every GitHub-hosted release-asset download in the
+# image goes through this wrapper so a transient release-CDN failure (observed
+# as repeated 504 responses within a few seconds in CI) does not fail the whole
+# image build: each invocation retries a bounded number of times with an
+# escalating delay between attempts, and each attempt itself retries fast
+# transport errors via curl.
+#
+# Checksum verification deliberately stays with the caller: this helper only
+# moves bytes reliably, the Dockerfile pins and verifies every asset SHA-256.
+#
+# Override knobs (rarely needed, e.g. slow build hosts):
+#   FETCH_RELEASE_ASSET_ATTEMPTS             total attempts (default 5)
+#   FETCH_RELEASE_ASSET_INITIAL_DELAY_SECONDS  first backoff (default 15, doubling)
+#
+# See docs/intent/toolchain-pin-management/ (TOOLCHAIN-PIN-053).
+
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: fetch-release-asset URL OUTPUT_PATH" >&2
+    exit 2
+fi
+
+url="$1"
+output="$2"
+attempts="${FETCH_RELEASE_ASSET_ATTEMPTS:-5}"
+delay="${FETCH_RELEASE_ASSET_INITIAL_DELAY_SECONDS:-15}"
+
+attempt=1
+while :; do
+    if curl --fail --show-error --location \
+            --retry 2 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 15 --max-time 300 \
+            -o "$output" "$url"; then
+        exit 0
+    fi
+
+    if [ "$attempt" -ge "$attempts" ]; then
+        echo "ERROR: failed to download $url after $attempt attempts" >&2
+        exit 1
+    fi
+
+    echo "fetch-release-asset: attempt ${attempt}/${attempts} failed for ${url}; retrying in ${delay}s" >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+done

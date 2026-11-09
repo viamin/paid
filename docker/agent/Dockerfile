@@ -80,8 +80,12 @@ RUN NODE_VERSION=24.18.0 \
 
 # Install the PGDG apt repository so Ubuntu Noble can install the same pg_dump
 # minor version as the pinned Postgres server image.
+# @spec TOOLCHAIN-PIN-054
 RUN install -d /usr/share/postgresql-common/pgdg \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 10 \
+      --connect-timeout 15 --max-time 120 \
+      -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+      https://www.postgresql.org/media/keys/ACCC4CF8.asc \
     && . /etc/os-release \
     && printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources
 
@@ -170,8 +174,18 @@ RUN mkdir -p "$COREPACK_HOME" \
     && corepack enable \
     && corepack prepare yarn@1.22.22 --activate
 
+# Shared release-asset downloader: every GitHub-hosted release asset below is
+# fetched through this wrapper, which retries a bounded number of times with an
+# escalating delay so transient release-CDN 5xx responses (observed as repeated
+# 504s inside a few seconds in CI) do not fail the whole image build. Checksum
+# verification stays with each pinned download below.
+# @spec TOOLCHAIN-PIN-053
+COPY docker/agent/scripts/fetch-release-asset /usr/local/bin/fetch-release-asset
+RUN chmod +x /usr/local/bin/fetch-release-asset
+
 # Install ast-grep (AST-based code search/lint)
 # https://github.com/ast-grep/ast-grep/releases
+# @spec TOOLCHAIN-PIN-053
 RUN AST_GREP_VERSION=0.45.1 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
@@ -180,7 +194,7 @@ RUN AST_GREP_VERSION=0.45.1 \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && ZIPFILE="app-${RUST_TRIPLE}.zip" \
-    && curl -fsSL -o "${ZIPFILE}" "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" \
+    && fetch-release-asset "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" "${ZIPFILE}" \
     && echo "${EXPECTED_CHECKSUM}  ${ZIPFILE}" | sha256sum -c - \
     && unzip -o "${ZIPFILE}" ast-grep sg -d /usr/local/bin \
     && chmod +x /usr/local/bin/ast-grep /usr/local/bin/sg \
@@ -196,7 +210,7 @@ RUN SCC_VERSION=3.7.0 \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && TARBALL="scc_Linux_${SCC_ARCH}.tar.gz" \
-    && curl -fsSL -o "${TARBALL}" "https://github.com/boyter/scc/releases/download/v${SCC_VERSION}/${TARBALL}" \
+    && fetch-release-asset "https://github.com/boyter/scc/releases/download/v${SCC_VERSION}/${TARBALL}" "${TARBALL}" \
     && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
     && tar -xzf "${TARBALL}" -C /usr/local/bin scc \
     && chmod +x /usr/local/bin/scc \
@@ -211,7 +225,7 @@ RUN RATHOLE_VERSION=0.5.0 \
         arm64) RATHOLE_ASSET="rathole-aarch64-unknown-linux-musl.zip"; EXPECTED_CHECKSUM="fa4a6fc63d86f8f1faa7c103a845e4715ce79a048455c0eec897b27237576564" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
-    && curl -fsSL -o "${RATHOLE_ASSET}" "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/${RATHOLE_ASSET}" \
+    && fetch-release-asset "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/${RATHOLE_ASSET}" "${RATHOLE_ASSET}" \
     && echo "${EXPECTED_CHECKSUM}  ${RATHOLE_ASSET}" | sha256sum -c - \
     && unzip -j -o "${RATHOLE_ASSET}" rathole -d /usr/local/bin \
     && chmod +x /usr/local/bin/rathole \
@@ -229,7 +243,7 @@ RUN RTK_VERSION=0.45.0 \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && TARBALL="${RTK_ASSET}" \
-    && curl -fsSL -o "${TARBALL}" "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_ASSET}" \
+    && fetch-release-asset "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_ASSET}" "${TARBALL}" \
     && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
     && tar -xzf "${TARBALL}" -C /usr/local/bin rtk \
     && chmod +x /usr/local/bin/rtk \
@@ -473,13 +487,13 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
         arm64) BUN_ASSET="bun-linux-aarch64.zip" ;; \
         *) echo "ERROR: Unsupported architecture for Bun: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
-    && curl -fsSL "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt" -o "${OMP_BUN_TMPDIR}/SHASUMS256.txt" \
+    && fetch-release-asset "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt" "${OMP_BUN_TMPDIR}/SHASUMS256.txt" \
     && BUN_CHECKSUM="$(awk -v asset="${BUN_ASSET}" '$2 == asset { print $1 }' "${OMP_BUN_TMPDIR}/SHASUMS256.txt")" \
     && if [ -z "${BUN_CHECKSUM}" ]; then \
         echo "ERROR: No Bun checksum found for ${BUN_ASSET}" >&2; \
         exit 1; \
     fi \
-    && curl -fsSL "${BUN_RELEASE_BASE_URL}/${BUN_ASSET}" -o "${OMP_BUN_TMPDIR}/${BUN_ASSET}" \
+    && fetch-release-asset "${BUN_RELEASE_BASE_URL}/${BUN_ASSET}" "${OMP_BUN_TMPDIR}/${BUN_ASSET}" \
     && echo "${BUN_CHECKSUM}  ${OMP_BUN_TMPDIR}/${BUN_ASSET}" | sha256sum -c - \
     && unzip -oq "${OMP_BUN_TMPDIR}/${BUN_ASSET}" -d "${OMP_BUN_TMPDIR}" \
     && install -m 0755 "${OMP_BUN_TMPDIR}/${BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun" \
@@ -557,7 +571,7 @@ ARG CURSOR_BINARY_NAME=cursor-agent
 ARG CURSOR_GLOBAL_PATH=/usr/local/bin/cursor-agent
 RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL build-arg is required" >&2; exit 1; fi \
     && if [ -z "${CURSOR_ARTIFACT_SHA256}" ]; then echo "ERROR: CURSOR_ARTIFACT_SHA256 build-arg is required" >&2; exit 1; fi \
-    && curl -fsSL "${CURSOR_ARTIFACT_URL}" -o /tmp/cursor-artifact.tar.gz \
+    && fetch-release-asset "${CURSOR_ARTIFACT_URL}" /tmp/cursor-artifact.tar.gz \
     && echo "${CURSOR_ARTIFACT_SHA256}  /tmp/cursor-artifact.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/cursor-artifact.tar.gz -C /tmp \
     && mkdir -p /opt/cursor-agent "$(dirname "${CURSOR_GLOBAL_PATH}")" \

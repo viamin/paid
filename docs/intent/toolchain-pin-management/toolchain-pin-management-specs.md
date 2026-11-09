@@ -227,3 +227,20 @@
   *Tests:* `spec/lib/package_quarantine_spec.rb`,
   `spec/lib/update_script_spec.rb`.
   *Code:* `bin/update`, `scripts/lib/package_quarantine.rb`.
+
+- [x] **TOOLCHAIN-PIN-053** — When the agent image downloads a GitHub-hosted
+  release asset (ast-grep, scc, rathole, rtk, the OMP Bun runtime, or the
+  Cursor artifact), it SHALL retry bounded transient transport failures with
+  an escalating delay that outlasts a single curl invocation's retry window
+  before failing the build, and SHALL verify each downloaded asset against its
+  pinned SHA-256 checksum before installation.
+  *Tests:* `spec/config/agent_image_build_script_spec.rb`.
+  *Code:* `docker/agent/Dockerfile`, `docker/agent/scripts/fetch-release-asset`.
+
+- [x] **TOOLCHAIN-PIN-054** — When the agent image downloads the PostgreSQL
+  package repository signing key, it SHALL retry bounded transient transport
+  failures before failing the build, and SHALL write the retrieved key to the
+  repository's configured `Signed-By` path before installing packages from
+  that repository.
+  *Tests:* `spec/config/agent_image_build_script_spec.rb`.
+  *Code:* `docker/agent/Dockerfile`.

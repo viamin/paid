@@ -41,12 +41,125 @@ RSpec.describe CiWorkflowFile, :no_db do
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")
-    expect(job.fetch("needs")).to eq("test-shards")
+    expect(job.fetch("needs")).to eq([ "test-shards", "shard-status", "shard-recovery" ])
     expect(job.fetch("if")).to include("always()")
     gate = job.fetch("steps").first.fetch("run")
     %w[success failure cancelled skipped].each do |result|
       _stdout, _stderr, status = Open3.capture3({ "SHARD_RESULT" => result }, "sh", "-c", gate)
       expect(status.success?).to eq(result == "success")
+    end
+  end
+
+  # @spec TEST-SUITE-006 @spec TEST-SUITE-018
+  it "lets recovery satisfy only platform-dropped shards" do
+    gate = workflow.fetch("jobs").fetch("test").fetch("steps").first.fetch("run")
+    expectations = [
+      # shards result, classification, recovery, failing legs, check passes
+      [ "success", nil, nil, nil, true ],
+      [ "failure", "success", "success", "", true ],
+      [ "failure", "success", "skipped", "", false ],
+      [ "failure", "failure", "skipped", "", false ],
+      [ "failure", "success", "success", "2", false ],
+      [ "failure", "success", "failure", "", false ],
+      [ "cancelled", nil, nil, nil, false ]
+    ]
+
+    expectations.each do |shards, classification, recovery, failing, expected|
+      env = { "SHARD_RESULT" => shards }
+      env["SHARD_STATUS_RESULT"] = classification if classification
+      env["RECOVERY_RESULT"] = recovery if recovery
+      env["FAILING_SHARDS"] = failing unless failing.nil?
+
+      _stdout, _stderr, status = Open3.capture3(env, "sh", "-c", gate)
+      expect(status.success?).to eq(expected)
+    end
+  end
+
+  # @spec TEST-SUITE-018
+  it "classifies platform-dropped shard legs separately from failing legs" do
+    job = workflow.fetch("jobs").fetch("shard-status")
+    classify = job.fetch("steps").first
+
+    expect(job.fetch("needs")).to eq("test-shards")
+    expect(job.fetch("if")).to include("always()")
+    expect(job.fetch("if")).to include("needs.test-shards.result != 'success'")
+    expect(job.fetch("permissions")).to eq("actions" => "read")
+    expect(job.fetch("outputs")).to eq(
+      "recoverable" => "${{ steps.classify.outputs.recoverable }}",
+      "failing" => "${{ steps.classify.outputs.failing }}"
+    )
+    expect(classify.fetch("id")).to eq("classify")
+    expect(classify.fetch("env")).to include(
+      "SHARD_COUNT" => workflow.fetch("jobs").fetch("test-shards").fetch("env").fetch("RSPEC_SHARD_COUNT")
+    )
+    expect(classify.fetch("run")).to include("actions/runs/${GITHUB_RUN_ID}/jobs")
+  end
+
+  # @spec TEST-SUITE-018
+  it "records every expected shard leg as recoverable, succeeding, or failing" do
+    run = workflow.fetch("jobs").fetch("shard-status").fetch("steps").first.fetch("run")
+
+    expect(run).to include("for attempt in 1 2 3 4 5")
+    expect(run).to include("jq -e")
+    expect(run).to include('select(.name == $name)')
+    expect(run).to include('test-shard ($index)')
+    expect(run).to include("recoverable=")
+    expect(run).to include("failing=")
+  end
+
+  # @spec TEST-SUITE-018
+  it "gates shard recovery on a completed classification with recoverable legs" do
+    job = workflow.fetch("jobs").fetch("shard-recovery")
+
+    expect(job.fetch("needs")).to eq("shard-status")
+    expect(job.fetch("if")).to include("needs.shard-status.result == 'success'")
+    expect(job.fetch("if")).to include("needs.shard-status.outputs.recoverable != ''")
+    expect(job.fetch("services").keys).to include("postgres", "qdrant")
+    expect(job.fetch("env")).to include(
+      "RECOVERABLE" => "${{ needs.shard-status.outputs.recoverable }}",
+      "RSPEC_SHARD_COUNT" => workflow.fetch("jobs").fetch("test-shards").fetch("env").fetch("RSPEC_SHARD_COUNT")
+    )
+  end
+
+  # @spec TEST-SUITE-018 @spec POSTGRESQL-PERSISTENCE-002
+  it "recovers dropped legs under the restricted runtime role without a fixed shard index" do
+    env = workflow.fetch("jobs").fetch("shard-recovery").fetch("env")
+
+    expect(env).to include(
+      "DATABASE_URL" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
+      "PGUSER" => "paid_runtime",
+      "PGPASSWORD" => "paid_runtime"
+    )
+    expect(env).not_to have_key("RSPEC_SHARD_INDEX")
+  end
+
+  # @spec TEST-SUITE-018
+  it "re-runs exactly the recoverable legs keeping one coverage report per leg" do
+    run = workflow.fetch("jobs").fetch("shard-recovery").fetch("steps")
+      .find { |step| step["name"] == "Run recovered shards" }.fetch("run")
+
+    expect(run).to include("for index in $RECOVERABLE")
+    expect(run).to include('export RSPEC_SHARD_INDEX="$index"')
+    expect(run).to include("bin/rspec-shard")
+    expect(run).to include('--out "tmp/rspec-shard-$index.json"')
+    expect(run).to include("rm -f coverage/.resultset.json")
+    expect(run).to include("tmp/recovered/rspec-shard-$index/coverage/.resultset.json")
+    # Shard 0 also owns the query-performance slice in the matrix.
+    expect(run).to include("bin/rspec spec/performance")
+  end
+
+  # @spec TEST-SUITE-018 @spec TEST-SUITE-006
+  it "uploads each recovered leg under the matrix artifact contract" do
+    steps = workflow.fetch("jobs").fetch("shard-recovery").fetch("steps")
+
+    (0..3).each do |index|
+      upload = steps.find { |step| step["name"] == "Upload recovered shard #{index} report" }
+      expect(upload.fetch("if")).to include("contains(needs.shard-status.outputs.recoverable, '#{index}')")
+      expect(upload.fetch("with")).to include(
+        "name" => "rspec-shard-#{index}",
+        "if-no-files-found" => "error",
+        "include-hidden-files" => true
+      )
     end
   end
 

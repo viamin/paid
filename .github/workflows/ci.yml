@@ -54,14 +54,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -307,14 +307,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -522,9 +522,423 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006
-  test:
+  # A matrix leg the platform never created has no job or check run at all, so
+  # the aggregate reports failure without any test having run. Classify each
+  # expected leg from this run's job list: a missing job is recoverable, a job
+  # that ran and did not succeed is failing, and an unavailable jobs API fails
+  # closed instead of guessing.
+  # @spec TEST-SUITE-018
+  shard-status:
+    name: Classify test shard outcomes
     needs: test-shards
+    if: >-
+      always() && needs.test-shards.result != 'success' && needs.test-shards.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+    outputs:
+      recoverable: ${{ steps.classify.outputs.recoverable }}
+      failing: ${{ steps.classify.outputs.failing }}
+    steps:
+      - name: Classify shard outcomes
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHARD_COUNT: "4"
+        run: |
+          legs_json=""
+          for attempt in 1 2 3 4 5; do
+            if legs_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100"); then
+              break
+            fi
+            echo "::warning::Shard job lookup failed (attempt $attempt/5); retrying"
+            legs_json=""
+            sleep "$((attempt * 10))"
+          done
+          if [ -z "$legs_json" ]; then
+            echo "::error::Unable to list this run's test-shard jobs; failing closed"
+            exit 1
+          fi
+          # A malformed or unexpected payload must never look like dropped
+          # shards, so validate the job list shape before classifying.
+          printf '%s' "$legs_json" | jq -e '.jobs | type == "array"' >/dev/null
+          recoverable=""
+          failing=""
+          for index in $(seq 0 $((SHARD_COUNT - 1))); do
+            conclusion=$(printf '%s' "$legs_json" \
+              | jq -r --arg name "test-shard ($index)" '.jobs[] | select(.name == $name) | .conclusion // empty' \
+              | head -n 1)
+            if [ -z "$conclusion" ]; then
+              recoverable="$recoverable$index "
+              echo "shard $index: no job created (platform drop); recoverable"
+            elif [ "$conclusion" = "success" ]; then
+              echo "shard $index: success"
+            else
+              failing="$failing$index "
+              echo "shard $index: $conclusion; failing"
+            fi
+          done
+          echo "recoverable=${recoverable% }" >> "$GITHUB_OUTPUT"
+          echo "failing=${failing% }" >> "$GITHUB_OUTPUT"
+
+  # Re-runs exactly the legs the platform never created, using the same
+  # services, credentials, and per-leg artifact contract as the matrix. Legs
+  # that executed are never re-run here: their verdicts stand.
+  # @spec TEST-SUITE-018
+  shard-recovery:
+    name: Recover dropped test shards
+    needs: shard-status
+    if: >-
+      always() && needs.shard-status.result == 'success' && needs.shard-status.outputs.recoverable != ''
+    runs-on: ubuntu-24.04
+    # One dropped leg costs a normal shard runtime; allow for the worst case
+    # of recovering several legs serially in this single job.
+    timeout-minutes: 120
+
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      qdrant:
+        image: qdrant/qdrant:v1.13.2
+        ports:
+          - 6333:6333
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RECOVERABLE: ${{ needs.shard-status.outputs.recoverable }}
+      RSPEC_SHARD_COUNT: "4"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_DEVELOPMENT_DATABASE: paid_test
+      PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
+      PAID_TEST_DATABASE: paid_test
+      # Keep Rails, libpq shellouts, and any child processes on the same test
+      # database connection flow instead of relying on split DB_* / PG* vars.
+      # Keep the CI runtime role below PostgreSQL's SUPERUSER/BYPASSRLS guard.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
+      DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
+      DB_USERNAME: paid_runtime
+      PGUSER: paid_runtime
+      DB_PASSWORD: paid_runtime
+      PGPASSWORD: paid_runtime
+      # Tests can open additional PostgreSQL connections outside the example
+      # wrapper. Default those CI-only connections to system access; individual
+      # tenant-isolation examples explicitly set this false through TenantContext.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      PGOPTIONS: -c paid.bypass_tenant_rls=true
+      TMPDIR: ${{ github.workspace }}/.tmp-build
+      YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      QDRANT_URL: http://localhost:6333
+
+    steps:
+      - name: Verify Docker availability
+        # bin/setup builds the agent image and runtime checks need the Docker API.
+        run: docker info
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare workspace cache directories
+        run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
+
+      - name: Set up Ruby
+        id: setup_ruby
+        continue-on-error: true
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Recover Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: false
+
+      - name: Install Ruby dependencies after cache failure
+        if: steps.setup_ruby.outcome == 'failure'
+        run: bundle install --jobs 4 --retry 3
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        with:
+          node-version-file: .tool-versions
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install JavaScript dependencies
+        run: |
+          mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME"
+          retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
+            local attempt
+            for attempt in 1 2 3; do
+              if timeout "$timeout_limit" "$@"; then
+                return 0
+              fi
+              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            10m \
+            "JavaScript dependency install timed out or failed" \
+            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
+
+      - name: Install ast-grep
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          retry_with_backoff() {
+            local timeout_limit="$1"
+            local warning_message="$2"
+            shift 2
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if timeout "$timeout_limit" "$@"; then
+                return 0
+              fi
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          retry_with_backoff \
+            5m \
+            "ast-grep install timed out or failed" \
+            bash -lc 'INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep'
+
+      - name: Install PostgreSQL client
+        # @spec TOOLCHAIN-PIN-028
+        run: |
+          # The PGDG signing key download flakes on GitHub runners. Publishing an
+          # unverified key makes every later apt-get update fail with "The repository
+          # ... is not signed" and takes the whole job down, so fetch the key with
+          # retries, verify it, and only then trust the repository. Without a usable
+          # key the same major client is installed from the runner image's own archive.
+          keyring=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          key_download="$(mktemp)"
+          sudo install -d /usr/share/postgresql-common/pgdg
+          key_ready=false
+          for attempt in 1 2 3; do
+            if curl -fsSL --retry 3 --retry-delay 5 --max-time 60 \
+              https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key_download" \
+              && gpg --batch --with-colons --show-keys "$key_download" | awk -F: '$1 == "fpr" { valid = ($10 == "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"); exit } END { exit(valid ? 0 : 1) }'; then
+              sudo mv "$key_download" "$keyring"
+              key_ready=true
+              break
+            fi
+            echo "::warning::PGDG signing key download failed (attempt $attempt/3); retrying"
+            rm -f "$key_download"
+            sleep "$((attempt * 5))"
+          done
+          rm -f "$key_download"
+          . /etc/os-release
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: %s\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" "$keyring" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          # GitHub's Ubuntu runners sometimes ship unrelated Microsoft sources
+          # that transiently 403 and break apt-get update before PGDG installs.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
+          # Bound each apt command and retry so a stalled mirror costs minutes
+          # instead of the job dying at its overall timeout.
+          apt_with_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if sudo timeout 5m apt-get \
+                -o Acquire::http::Timeout=30 \
+                -o Acquire::https::Timeout=30 \
+                -o Acquire::Retries=3 "$@"; then
+                return 0
+              fi
+              echo "::warning::apt-get $* timed out or failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 10))"
+            done
+            return 1
+          }
+          if [ "$key_ready" != true ]; then
+            echo "::warning::PGDG signing key unavailable; installing postgresql-client-16 from the runner image archive"
+            sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"
+          fi
+          if ! apt_with_retry update; then
+            echo "::warning::apt-get update failed; retrying without the PGDG repository"
+            sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"
+            apt_with_retry update
+          fi
+          apt_with_retry install -y postgresql-client-16
+          psql --version
+
+      - name: Create application database role
+        # PostgreSQL's bootstrap user is always a superuser. Create the test
+        # runtime role explicitly so RuntimeRoleGuard exercises its real policy.
+        # @spec POSTGRESQL-PERSISTENCE-002
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          -- RLS regression specs create and revoke a restricted test role. This
+          -- grants that narrowly scoped setup capability while preserving the
+          -- runtime guard's non-superuser and non-BYPASSRLS invariants.
+          -- The recovery job receives a newly initialized PostgreSQL service,
+          -- so the role is declared once rather than conditionally through DO.
+          CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname = 'paid_runtime'
+                AND rolcanlogin
+                AND rolcreatedb
+                AND rolcreaterole
+                AND NOT rolsuper
+                AND NOT rolbypassrls
+            ) THEN
+              RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';
+            END IF;
+          END
+          $$;
+          SQL
+          # Exercise the configured connection rather than discovering a bad
+          # password or LOGIN attribute after every shard has started.
+          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+            -c "SELECT 1"
+
+      - name: Build assets
+        run: yarn build && yarn build:css
+
+      - name: Set up database
+        run: |
+          for attempt in 1 2 3; do
+            if bin/rails db:create db:schema:load; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Database setup failed (attempt $attempt/3); retrying"
+              sleep "$((attempt * 5))"
+            fi
+          done
+
+          exit 1
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
+      - name: Verify Qdrant health
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused "$QDRANT_URL/healthz"
+
+      - name: Run recovered shards
+        # Clear the coverage resultset before each leg so every recovered leg
+        # keeps exactly one shard identity in its own report, then stage the
+        # per-leg artifact layout the matrix job uploads.
+        # @spec TEST-SUITE-018
+        run: |
+          for index in $RECOVERABLE; do
+            export RSPEC_SHARD_INDEX="$index"
+            rm -f coverage/.resultset.json
+            bin/rspec-shard --format progress --format json --out "tmp/rspec-shard-$index.json"
+            mkdir -p "tmp/recovered/rspec-shard-$index/coverage" "tmp/recovered/rspec-shard-$index/tmp"
+            mv coverage/.resultset.json "tmp/recovered/rspec-shard-$index/coverage/.resultset.json"
+            mv "tmp/rspec-shard-$index.json" "tmp/recovered/rspec-shard-$index/tmp/rspec-shard-$index.json"
+            # Shard 0 also owns the query-performance slice.
+            if [ "$index" = "0" ]; then
+              COVERAGE=false bin/rspec spec/performance
+            fi
+          done
+
+      - name: Upload recovered shard 0 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '0')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-0
+          path: |
+            tmp/recovered/rspec-shard-0/coverage/.resultset.json
+            tmp/recovered/rspec-shard-0/tmp/rspec-shard-0.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload recovered shard 1 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '1')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-1
+          path: |
+            tmp/recovered/rspec-shard-1/coverage/.resultset.json
+            tmp/recovered/rspec-shard-1/tmp/rspec-shard-1.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload recovered shard 2 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '2')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-2
+          path: |
+            tmp/recovered/rspec-shard-2/coverage/.resultset.json
+            tmp/recovered/rspec-shard-2/tmp/rspec-shard-2.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload recovered shard 3 report
+        if: always() && contains(needs.shard-status.outputs.recoverable, '3')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-3
+          path: |
+            tmp/recovered/rspec-shard-3/coverage/.resultset.json
+            tmp/recovered/rspec-shard-3/tmp/rspec-shard-3.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006 @spec TEST-SUITE-018
+  test:
+    needs: [ test-shards, shard-status, shard-recovery ]
     if: ${{ always() && needs.test-shards.result != 'skipped' }}
     runs-on: ubuntu-24.04
     env:
@@ -532,9 +946,33 @@ jobs:
       RSPEC_SHARD_COUNT: "4"
     steps:
       - name: Require every test shard to succeed
+        # A shard that ran and failed (or was cancelled) always fails this
+        # check. Legs the platform never created are re-run by shard-recovery;
+        # only a completed green recovery satisfies those legs, and the
+        # coverage step below still requires every distinct shard report.
+        # @spec TEST-SUITE-006 @spec TEST-SUITE-018
         env:
           SHARD_RESULT: ${{ needs.test-shards.result }}
-        run: test "$SHARD_RESULT" = success
+          SHARD_STATUS_RESULT: ${{ needs.shard-status.result }}
+          RECOVERY_RESULT: ${{ needs.shard-recovery.result }}
+          FAILING_SHARDS: ${{ needs.shard-status.outputs.failing }}
+        run: |
+          if [ "$SHARD_RESULT" = "success" ]; then
+            exit 0
+          fi
+          if [ "$SHARD_STATUS_RESULT" != "success" ]; then
+            echo "::error::Test shard classification unavailable (shard-status: ${SHARD_STATUS_RESULT:-missing})"
+            exit 1
+          fi
+          if [ -n "${FAILING_SHARDS:-}" ]; then
+            echo "::error::Test shard(s)${FAILING_SHARDS} failed or were cancelled"
+            exit 1
+          fi
+          if [ "$RECOVERY_RESULT" = "success" ]; then
+            exit 0
+          fi
+          echo "::error::Dropped-shard recovery did not complete (recovery: ${RECOVERY_RESULT:-missing})"
+          exit 1
 
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -544,14 +982,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -644,14 +1082,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -800,14 +1238,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -996,14 +1434,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1036,14 +1474,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1130,14 +1568,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
         with:
           ruby-version: .tool-versions
           bundler-cache: false
