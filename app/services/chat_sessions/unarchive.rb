@@ -28,7 +28,20 @@ module ChatSessions
       chat_session.created_by.with_lock { restore_session }
     end
 
+    # @spec CHAT-API-030
     def restore_session
+      attempts = 0
+      begin
+        attempts += 1
+        restore_personal_draft_transaction
+      rescue ActiveRecord::RecordNotUnique
+        retry if attempts < 2
+
+        raise
+      end
+    end
+
+    def restore_personal_draft_transaction
       ActiveRecord::Base.transaction do
         discard_conflicting_personal_draft
         chat_session.update!(restore_attributes)
