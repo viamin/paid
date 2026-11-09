@@ -12,6 +12,9 @@ end
 class AgentImageDockerfile < Pathname
 end
 
+class AgentImageFetchHelper < Pathname
+end
+
 class RemoteDockerSetupGuide < Pathname
 end
 
@@ -158,8 +161,31 @@ RSpec.describe AgentImageBuildScript, :no_db do
     # @spec TOOLCHAIN-PIN-053
     it "retries the checksum-verified ast-grep release download" do
       expect(dockerfile_source).to include("# Install ast-grep (AST-based code search/lint)")
-      expect(dockerfile_source).to include('curl --fail --show-error --location --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 120')
+      expect(dockerfile_source).to include(
+        'fetch-release-asset "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" "${ZIPFILE}"'
+      )
       expect(dockerfile_source).to include('echo "${EXPECTED_CHECKSUM}  ${ZIPFILE}" | sha256sum -c -')
+    end
+
+    # @spec TOOLCHAIN-PIN-053
+    it "routes every GitHub release-asset download through the retrying fetch helper" do
+      expect(dockerfile_source).to include(
+        "COPY docker/agent/scripts/fetch-release-asset /usr/local/bin/fetch-release-asset"
+      )
+
+      %w[
+        https://github.com/ast-grep/ast-grep/releases/download
+        https://github.com/boyter/scc/releases/download
+        https://github.com/rathole-org/rathole/releases/download
+        https://github.com/rtk-ai/rtk/releases/download
+      ].each do |asset_base|
+        expect(dockerfile_source).to include("fetch-release-asset \"#{asset_base}")
+      end
+
+      expect(dockerfile_source).to include('fetch-release-asset "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt"')
+      expect(dockerfile_source).to include('fetch-release-asset "${BUN_RELEASE_BASE_URL}/${BUN_ASSET}"')
+      expect(dockerfile_source).to include('fetch-release-asset "${CURSOR_ARTIFACT_URL}" /tmp/cursor-artifact.tar.gz')
+      expect(dockerfile_source).not_to match(/curl[^\n]*github\.com[^\n]*\/releases\/download/)
     end
 
     it "keeps the pinned Node.js version in sync with .tool-versions" do
@@ -190,7 +216,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
 
     it "installs the pinned bun release with checksum verification before running the omp install command" do
       expect(dockerfile_source).to include('BUN_RELEASE_BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${OMP_BUN_VERSION}"')
-      expect(dockerfile_source).to include('curl -fsSL "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt"')
+      expect(dockerfile_source).to include('fetch-release-asset "${BUN_RELEASE_BASE_URL}/SHASUMS256.txt"')
       expect(dockerfile_source).to include('sha256sum -c -')
       expect(dockerfile_source).to include('install -m 0755 "${OMP_BUN_TMPDIR}/${BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun"')
       expect(dockerfile_source).not_to include('bash /tmp/omp-bun-install.sh')
@@ -292,6 +318,46 @@ RSpec.describe AgentImageBuildScript, :no_db do
 
       expect(wrapper).to include('export WARDEN_OPENAI_API_KEY="${WARDEN_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"')
       expect(wrapper).to include('export WARDEN_OPENAI_BASE_URL="${WARDEN_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-}}"')
+    end
+  end
+
+  describe AgentImageFetchHelper do
+    subject(:helper_path) { Rails.root.join("docker/agent/scripts/fetch-release-asset") }
+
+    # @spec TOOLCHAIN-PIN-053
+    it "exists and is executable so the image build can invoke it" do
+      expect(helper_path).to exist
+      expect(helper_path).to be_executable
+    end
+
+    # @spec TOOLCHAIN-PIN-053
+    it "fails fast per transfer via curl's own retry flags" do
+      helper = helper_path.read
+
+      expect(helper).to include("Usage: fetch-release-asset URL OUTPUT_PATH")
+      expect(helper).to include("--fail")
+      expect(helper).to include("--show-error")
+      expect(helper).to include("--location")
+      expect(helper).to include("--retry-all-errors")
+      expect(helper).to include("--connect-timeout")
+      expect(helper).to include("--max-time")
+    end
+
+    # @spec TOOLCHAIN-PIN-053
+    it "retries with a bounded escalating backoff between attempts" do
+      helper = helper_path.read
+
+      expect(helper).to include('attempts="${FETCH_RELEASE_ASSET_ATTEMPTS:-5}"')
+      expect(helper).to include('delay="${FETCH_RELEASE_ASSET_INITIAL_DELAY_SECONDS:-15}"')
+      expect(helper).to include("delay=$((delay * 2))")
+      expect(helper).to include("failed to download")
+    end
+
+    # @spec TOOLCHAIN-PIN-053
+    it "keeps checksum verification with the caller instead of trusting the transport" do
+      expect(helper_path.read).not_to include("sha256sum")
+
+      expect(Rails.root.join("docker/agent/Dockerfile").read).to include('sha256sum -c -')
     end
   end
 

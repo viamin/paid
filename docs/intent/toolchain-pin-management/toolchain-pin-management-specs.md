@@ -228,9 +228,11 @@
   `spec/lib/update_script_spec.rb`.
   *Code:* `bin/update`, `scripts/lib/package_quarantine.rb`.
 
-- [x] **TOOLCHAIN-PIN-053** — When the agent image downloads the pinned
-  `ast-grep` release asset, it SHALL retry bounded transient transport failures
-  before failing the build and SHALL verify the downloaded asset against its
-  architecture-specific SHA-256 checksum before installation.
+- [x] **TOOLCHAIN-PIN-053** — When the agent image downloads a GitHub-hosted
+  release asset (ast-grep, scc, rathole, rtk, the OMP Bun runtime, or the
+  Cursor artifact), it SHALL retry bounded transient transport failures with
+  an escalating delay that outlasts a single curl invocation's retry window
+  before failing the build, and SHALL verify each downloaded asset against its
+  pinned SHA-256 checksum before installation.
   *Tests:* `spec/config/agent_image_build_script_spec.rb`.
-  *Code:* `docker/agent/Dockerfile`.
+  *Code:* `docker/agent/Dockerfile`, `docker/agent/scripts/fetch-release-asset`.
