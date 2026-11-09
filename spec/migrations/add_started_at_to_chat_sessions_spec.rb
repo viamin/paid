@@ -19,11 +19,13 @@ RSpec.describe AddStartedAtToChatSessions, :aggregate_failures do
   around do |example|
     migration.down if connection.column_exists?(:chat_sessions, :started_at)
     migration_chat_session.reset_column_information
+    ChatSession.reset_column_information
 
     example.run
   ensure
     migration.up unless connection.column_exists?(:chat_sessions, :started_at)
     migration_chat_session.reset_column_information
+    ChatSession.reset_column_information
     cleanup_test_data
   end
 

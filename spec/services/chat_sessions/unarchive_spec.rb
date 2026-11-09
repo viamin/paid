@@ -46,6 +46,9 @@ RSpec.describe ChatSessions::Unarchive do
       replacement.update!(idle_timeout_at: 1.minute.ago)
       ChatSessions::ExpireIdleInline.call(chat_session: replacement)
       expect(replacement.reload).to be_closed
+      allow(Containers.backend).to receive(:get_volume)
+        .with("paid-chat-state-#{replacement.id}")
+        .and_raise(Docker::Error::NotFoundError, "not found")
 
       restored = described_class.call(chat_session: original)
 
