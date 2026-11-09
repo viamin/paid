@@ -14,6 +14,21 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
     )
   end
 
+  def threshold_passing_metrics
+    metric_result(available: true, metrics: {
+      material_reversals: 0, security_breaches: 0, tenant_breaches: 0, trust_breaches: 0,
+      missing_evidence: 0, decisions_per_completed_issue: 0.5,
+      median_decision_time_seconds: 100, completion_rate: 0.96,
+      baseline: { decisions_per_completed_issue: 1.0, median_decision_time_seconds: 100, completion_rate: 1.0 }
+    })
+  end
+
+  def enable_expansion_guards
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+    FeatureFlags.enable!(:project_delegation_expansion, project:)
+  end
+
   it "is default-disabled even when a pilot has not produced evidence" do
     expect(ProjectDelegation::PilotMetrics).not_to receive(:call)
 
@@ -135,6 +150,33 @@ RSpec.describe ProjectDelegation::ExpansionGuard do
     expect(first_queries).to be > cached_queries
     expect(cached_queries).to be <= 2
     expect(invalidated_queries).to be > cached_queries
+  ensure
+    Rails.cache = original_cache
+  end
+
+  it "pauses immediately when phase settings invalidate cached pilot evidence" do # @spec PROJECT-DELEGATION-007
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    create(:project_delegation_posture, project:, selected_by: owner, level: "bounded_delivery")
+    enable_expansion_guards
+    missing_metrics = metric_result(available: false, reason: "no_metric_evidence", metrics: { completed_issues: 0 })
+    allow(ProjectDelegation::PilotMetrics).to receive(:call).and_return(threshold_passing_metrics, missing_metrics)
+
+    expect(ProjectDelegation::Posture.resolve(project)).to be_bounded_delivery
+
+    project.update!(
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => true },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      }
+    )
+
+    posture = ProjectDelegation::Posture.resolve(project)
+
+    expect(posture).to be_conservative
+    expect(posture.source).to eq("expansion_paused")
+    expect(ProjectDelegation::PilotMetrics).to have_received(:call).twice
   ensure
     Rails.cache = original_cache
   end

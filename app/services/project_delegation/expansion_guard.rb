@@ -26,7 +26,8 @@ module ProjectDelegation
     def self.cache_key(project, now)
       latest_event_id = InboxHistoryEvent.where(project:, source: "project_delegation_pilot").maximum(:id)
       posture_version = project.delegation_posture&.cache_key_with_version
-      [ CACHE_PREFIX, project.id, posture_version, latest_event_id, now.to_i / CACHE_TTL.to_i ].compact
+      policy_signature = Posture.policy_signature(project)
+      [ CACHE_PREFIX, project.id, posture_version, policy_signature, latest_event_id, now.to_i / CACHE_TTL.to_i ].compact
     end
 
     def initialize(project:, metrics:)
