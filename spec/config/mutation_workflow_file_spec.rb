@@ -25,7 +25,7 @@ RSpec.describe MutationWorkflowFile, :no_db do
 
       expect(client_install_index).to be < role_creation_index
       expect(role_creation_index).to be < database_prepare_index
-      expect(steps.fetch(role_creation_index).fetch("run")).to include("ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;")
+      expect(steps.fetch(role_creation_index).fetch("run")).to include("ALTER ROLE paid CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS;")
     end
   end
 end
