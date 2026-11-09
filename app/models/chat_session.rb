@@ -327,13 +327,13 @@ class ChatSession < ApplicationRecord
 
   # @spec CHAT-API-030
   def start!
-    return self if started_at.present?
+    return self if started_at.present? && title.present?
 
     first_user_message = messages.where(role: "user").order(:created_at).first
     return self unless first_user_message&.content.present?
 
     update_columns(
-      started_at: Time.current,
+      started_at: started_at || Time.current,
       title: title.presence || first_user_message.content.to_s.tr("\n", " ").truncate(80)
     )
     self

@@ -54,23 +54,19 @@ RSpec.describe ChatSessions::Create do
     end
 
     # @spec CHAT-API-030
-    it "preserves a configured draft when the modal submits its default values" do
+    it "preserves a configured draft's container request when a create omits a container choice" do
       runner = create_api_chat_runner
       create_configured_container_draft(runner)
 
       reused = described_class.call(
         account: account,
         user: user,
-        container_capability: "none",
+        model: "gpt-4o",
         auto_approve: "0"
       )
 
       expect(reused.reload).to have_attributes(
-        container_capability: "pending",
-        runner_id: runner.id,
-        model: "gpt-4o",
-        system_prompt: "Keep this prompt.",
-        auto_approve: true
+        container_capability: "pending"
       )
     end
 

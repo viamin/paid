@@ -114,7 +114,9 @@ drafts SHALL NOT participate in the one-draft invariant;
   and restoring an archived blank draft SHALL discard the newer blank draft
   rather than collide with the invariant.
   Started chats and scoped Inbox or exploration chats SHALL remain
-  unaffected.
+  unaffected. If a duplicate draft gains dependent records during a rolling
+  deploy, the migration SHALL mark it started rather than delete it or fail on
+  its foreign-key references.
   *Tests:* `spec/system/chat_unstarted_draft_spec.rb`,
   `spec/services/chat_sessions/create_spec.rb`,
   `spec/services/chat_sessions/create_call_concurrency_spec.rb`,

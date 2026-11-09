@@ -5,6 +5,7 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
 
   def up
     add_column :chat_sessions, :started_at, :datetime,
+      if_not_exists: true,
       comment: "When the first user message started this chat session."
 
     safety_assured do
@@ -19,6 +20,7 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
           )
       SQL
 
+      mark_referenced_drafts_started
       deduplicate_unstarted_drafts
     end
 
@@ -37,7 +39,7 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
   private
 
   def add_unstarted_draft_index
-    add_index :chat_sessions, :created_by_id, **unstarted_draft_index_options
+    add_index :chat_sessions, :created_by_id, **unstarted_draft_index_options, if_not_exists: true
   rescue ActiveRecord::StatementInvalid => error
     raise unless error.cause.is_a?(PG::UniqueViolation)
 
@@ -80,6 +82,25 @@ class AddStartedAtToChatSessions < ActiveRecord::Migration[8.1]
       )
       DELETE FROM chat_sessions
       WHERE id IN (SELECT id FROM discarded_drafts)
+    SQL
+  end
+
+  # An application server from before this migration can attach records after
+  # the user-message backfill has run. Preserve those sessions rather than
+  # risking an FK violation or deleting work that arrived during deployment.
+  def mark_referenced_drafts_started
+    execute <<~SQL.squish
+      UPDATE chat_sessions
+      SET started_at = COALESCE(updated_at, created_at)
+      WHERE started_at IS NULL
+        AND (
+          EXISTS (SELECT 1 FROM chat_diagrams WHERE chat_diagrams.chat_session_id = chat_sessions.id)
+          OR EXISTS (SELECT 1 FROM chat_investigations WHERE chat_investigations.chat_session_id = chat_sessions.id)
+          OR EXISTS (SELECT 1 FROM chat_session_projects WHERE chat_session_projects.chat_session_id = chat_sessions.id)
+          OR EXISTS (SELECT 1 FROM chat_turn_lifecycle_events WHERE chat_turn_lifecycle_events.chat_session_id = chat_sessions.id)
+          OR EXISTS (SELECT 1 FROM chat_turns WHERE chat_turns.chat_session_id = chat_sessions.id)
+          OR EXISTS (SELECT 1 FROM clarifying_question_progresses WHERE clarifying_question_progresses.chat_session_id = chat_sessions.id)
+        )
     SQL
   end
 

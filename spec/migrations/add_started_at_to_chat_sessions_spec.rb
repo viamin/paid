@@ -46,6 +46,29 @@ RSpec.describe AddStartedAtToChatSessions, :aggregate_failures do
     )
   end
 
+  # @spec CHAT-API-030
+  it "can resume after the column has been added" do
+    migration.up
+
+    expect { migration.up }.not_to raise_error
+  end
+
+  # @spec CHAT-API-030
+  it "preserves a duplicate draft with dependent records created during deployment" do
+    retained_draft = create_legacy_draft(created_at: 2.minutes.ago)
+    referenced_draft = create_legacy_draft(created_at: 3.minutes.ago)
+    project = create(:project, account: account)
+    connection.execute(<<~SQL.squish)
+      INSERT INTO chat_session_projects (chat_session_id, project_id, context_type, created_at, updated_at)
+      VALUES (#{connection.quote(referenced_draft.id)}, #{connection.quote(project.id)}, 'reference', NOW(), NOW())
+    SQL
+
+    migration.up
+
+    expect(migration_chat_session.find(retained_draft.id)).to be_present
+    expect(migration_chat_session.find(referenced_draft.id).started_at).to be_present
+  end
+
   private
 
   def create_legacy_draft(created_at:, container_capability: "none", container_id: nil, workspace_volume: nil)
@@ -68,6 +91,10 @@ RSpec.describe AddStartedAtToChatSessions, :aggregate_failures do
   end
 
   def cleanup_test_data
+    connection.execute(<<~SQL.squish)
+      DELETE FROM chat_session_projects
+      WHERE chat_session_id IN (SELECT id FROM chat_sessions WHERE created_by_id = #{connection.quote(user.id)})
+    SQL
     connection.execute("DELETE FROM chat_sessions WHERE created_by_id = #{connection.quote(user.id)}")
     user.destroy!
     account.destroy!

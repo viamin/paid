@@ -96,6 +96,9 @@ message that would mark it started; closed and idle blank drafts remain
 reusable so idle cycles do not accumulate a new blank item per visit.
 Restoring an archived blank draft discards the newer blank draft first,
 keeping exactly one while preserving the session the user chose to restore.
+If a rolling-deploy writer attaches dependent records to a duplicate before
+cleanup, the migration marks that session started instead of deleting work or
+failing on its foreign-key references.
 Chat creation recovers a unique-index
 conflict by returning the committed draft. A configuration-free page load
 leaves that draft unchanged; an explicit create configuration is applied to

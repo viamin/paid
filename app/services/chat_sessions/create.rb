@@ -24,6 +24,7 @@ module ChatSessions
       feature_intent: nil)
       @account = account
       @user = user
+      @container_capability_param = container_capability
       @container_capability = container_capability.presence || "none"
       @runner_id = runner_id || provider_id
       @model = model
@@ -92,15 +93,27 @@ module ChatSessions
 
     # @spec CHAT-API-030
     def create_or_reuse_session
+      attempts = 0
+      begin
+        attempts += 1
+        create_new_session
+      rescue ActiveRecord::RecordNotUnique
+        raise unless reusable_personal_draft?
+
+        reconcile_existing_personal_draft
+      rescue ActiveRecord::RecordNotFound
+        retry if attempts < 2
+
+        raise
+      end
+    end
+
+    def create_new_session
       ActiveRecord::Base.transaction do
         created = create_session
         persist_system_message(created, build_system_prompt(created))
         [ created, true ]
       end
-    rescue ActiveRecord::RecordNotUnique
-      raise unless reusable_personal_draft?
-
-      reconcile_existing_personal_draft
     end
 
     def reusable_personal_draft?
@@ -135,14 +148,21 @@ module ChatSessions
 
     def draft_configuration
       {
-        container_capability: initial_container_capability,
-        container_requested_at: container_requested_at,
         runner_id: resolved_runner&.id,
         model: resolved_model,
         project_id: project_id,
         system_prompt: system_prompt,
         metadata: session_metadata,
         auto_approve: auto_approve || false
+      }.merge(container_configuration)
+    end
+
+    def container_configuration
+      return {} if @container_capability_param.blank?
+
+      {
+        container_capability: initial_container_capability,
+        container_requested_at: container_requested_at
       }
     end
 
