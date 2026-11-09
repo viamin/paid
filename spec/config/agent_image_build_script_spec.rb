@@ -155,6 +155,13 @@ RSpec.describe AgentImageBuildScript, :no_db do
   describe AgentImageDockerfile do
     subject(:dockerfile_source) { Rails.root.join("docker/agent/Dockerfile").read }
 
+    # @spec TOOLCHAIN-PIN-053
+    it "retries the checksum-verified ast-grep release download" do
+      expect(dockerfile_source).to include("# Install ast-grep (AST-based code search/lint)")
+      expect(dockerfile_source).to include('curl --fail --show-error --location --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 120')
+      expect(dockerfile_source).to include('echo "${EXPECTED_CHECKSUM}  ${ZIPFILE}" | sha256sum -c -')
+    end
+
     it "keeps the pinned Node.js version in sync with .tool-versions" do
       node_version = Rails.root.join(".tool-versions")
         .read

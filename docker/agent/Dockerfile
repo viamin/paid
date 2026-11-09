@@ -172,6 +172,7 @@ RUN mkdir -p "$COREPACK_HOME" \
 
 # Install ast-grep (AST-based code search/lint)
 # https://github.com/ast-grep/ast-grep/releases
+# @spec TOOLCHAIN-PIN-053
 RUN AST_GREP_VERSION=0.45.1 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
@@ -180,7 +181,8 @@ RUN AST_GREP_VERSION=0.45.1 \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && ZIPFILE="app-${RUST_TRIPLE}.zip" \
-    && curl -fsSL -o "${ZIPFILE}" "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" \
+    && curl --fail --show-error --location --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 120 \
+      -o "${ZIPFILE}" "https://github.com/ast-grep/ast-grep/releases/download/${AST_GREP_VERSION}/${ZIPFILE}" \
     && echo "${EXPECTED_CHECKSUM}  ${ZIPFILE}" | sha256sum -c - \
     && unzip -o "${ZIPFILE}" ast-grep sg -d /usr/local/bin \
     && chmod +x /usr/local/bin/ast-grep /usr/local/bin/sg \

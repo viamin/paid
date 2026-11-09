@@ -160,6 +160,10 @@ that already govern Paid's other pins apply to every pin this segment adds.
   the version came from, so version and checksum can never disagree.
 - **Verified existence.** A resolved version is only written when the artifact
   it names is confirmed to exist upstream.
+- **Resilient retrieval.** A checksum-verified release-asset download retries
+  bounded transient transport failures before failing the image build. Each
+  successful download still passes its pinned SHA-256 verification, so a retry
+  never weakens artifact integrity.
 - **Hold, do not silently skip.** A pin whose registry pattern no longer
   matches its file holds the whole group and surfaces as a warning at the end
   of the run, rather than being treated as up-to-date — a silently unmatched
