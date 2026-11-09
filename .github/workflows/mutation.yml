@@ -94,7 +94,7 @@ jobs:
             END IF;
           END
           $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          ALTER ROLE paid CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS;
           SQL
 
       - name: Prepare database
@@ -183,7 +183,7 @@ jobs:
             END IF;
           END
           $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          ALTER ROLE paid CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS;
           SQL
 
       - name: Prepare database
