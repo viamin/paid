@@ -14,6 +14,15 @@ RSpec.describe Account do
     it { is_expected.to have_many(:billing_periods).dependent(:destroy) }
     it { is_expected.to have_many(:billing_plans).dependent(:destroy) }
     it { is_expected.to have_many(:strategy_experiments).dependent(:destroy) }
+
+    # @spec PROJECT-DELEGATION-001
+    it "cascades direct account deletion to account memberships" do
+      account = create(:account)
+      membership = create(:account_membership, account: account)
+
+      expect { account.delete }.to change(AccountMembership, :count).by(-1)
+      expect(AccountMembership.exists?(membership.id)).to be(false)
+    end
   end
 
   describe "validations" do

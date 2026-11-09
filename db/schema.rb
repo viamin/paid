@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_212805) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_09_002535) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4772,7 +4772,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_212805) do
   add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_activity_events", "accounts", on_delete: :cascade
   add_foreign_key "account_activity_events", "users", column: "actor_id"
-  add_foreign_key "account_memberships", "accounts"
+  add_foreign_key "account_memberships", "accounts", on_delete: :cascade
   add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
