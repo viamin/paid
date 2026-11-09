@@ -12,9 +12,10 @@
   effective-posture projection, remaining-review display data, and immutable
   posture-selection audit event are implemented behind the required rollout
   guards. The shared admission contract also performs the initial boundary
-  rechecks described by `PROJECT-DELEGATION-004`. Intent checkpoints, the full
-  delegated action plan, and pilot measurement remain follow-on work described
-  by the unchecked EARS specs.
+  rechecks described by `PROJECT-DELEGATION-004`. Revision-aware pilot metrics
+  and the default-off expansion guard are implemented. Intent checkpoints and
+  the full delegated action plan remain follow-on work described by the
+  unchecked EARS specs.
 
 ## Decision
 
@@ -165,7 +166,8 @@ review.
 
 The completed slice includes the posture record, policy signature, immutable
 audit events, guarded effective-policy input, initial action-boundary rechecks,
-and shared projections for settings, Inbox, API, and MCP.
+shared projections for settings, Inbox, API, and MCP, plus revision-aware pilot
+metrics and the default-off expansion guard.
 
 Follow-on implementation must:
 
@@ -176,8 +178,8 @@ Follow-on implementation must:
    recording, and extend boundary assessment to the remaining explicit-hold,
    actor-policy, lineage, semantic-scope, ambiguity, conflicting-evidence, and
    material-risk conditions.
-3. Add revision-aware measurement, run the bounded pilot, and review its
-   results before any default change.
+3. Run the bounded pilot and review its revision-aware metric evidence before
+   any default change.
 
 Follow-on implementation issues must cite this accepted RDR and the EARS in
 `docs/intent/project-delegation/`.

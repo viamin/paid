@@ -4,13 +4,16 @@ require "rails_helper"
 
 # @spec FACET-CONFIDENCE-019
 RSpec.describe FeatureIntents::RespondToDecision do
-  it "records an attributable response on the existing decision" do
+  it "records an attributable response on the existing decision" do # @spec PROJECT-DELEGATION-007
     decision = create(:feature_intent_decision)
     actor = create(:user, account: decision.feature_intent.project.account)
+    FeatureFlags.enable!(:project_delegation, project: decision.feature_intent.project)
 
     described_class.call(decision:, actor:, answer: "Use CSV exports only.")
 
     expect(decision.reload).to have_attributes(status: "resolved", answer: "Use CSV exports only.", resolved_by: actor)
+    expect(InboxHistoryEvent.find_by(source: "project_delegation_pilot", result: "human_decision"))
+      .to have_attributes(project: decision.feature_intent.project)
   end
 
   it "rejects blank and repeated responses without changing the decision" do

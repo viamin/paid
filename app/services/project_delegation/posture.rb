@@ -52,6 +52,15 @@ module ProjectDelegation
 
     class << self
       def resolve(project)
+        state = resolve_without_expansion(project)
+        return state unless state.bounded_delivery?
+        return state unless FeatureFlags.enabled?(:project_delegation_expansion, project:)
+        return state if ExpansionGuard.call(project:).allowed?
+
+        default_state(project).with(source: "expansion_paused")
+      end
+
+      def resolve_without_expansion(project)
         record = project.delegation_posture
         return default_state(project) if record.nil?
         return selected_state(record) if record.level == CONSERVATIVE

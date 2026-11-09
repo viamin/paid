@@ -77,9 +77,26 @@ conditions remain planned until that reassessment path lands.
 The implementation is behind the existing `automation_phases` flag and a
 default-off project `project_delegation` gate. Rolling back selects
 `conservative`, preserves evidence/audit history, blocks future delegated
-boundaries, and creates focused recovery requests. Metric events are revision
-aware and measure decision volume/time, completion, and later reversals for
-the bounded pilot defined by RDR-080.
+boundaries, and creates focused recovery requests. Metric events use the
+tenant-scoped Inbox history ledger and snapshot posture, policy, intent,
+acceptance, and evidence revisions. The pilot evaluator measures decision
+volume/time, completion, reversals, and security/tenant/trust/evidence stop
+signals. The separate expansion guard is default-off and permits broadening
+only after the RDR-080 sample, observation, baseline, and threshold checks
+pass. When expansion is enabled, posture resolution consumes that guard at the
+admission boundary and falls back to `conservative` after a reversal or safety,
+trust, tenant, or evidence stop. Issue lifecycle transitions, resolved human
+decisions, and delegated-boundary stops write the metric ledger through their
+production choke points; aggregation admits only the current posture/policy
+authority and each subject's latest revision tuple.
+
+The delegated boundary requires a canonical `security` assessment input before
+expansion. No such producer currently supplies the expansion admission
+snapshot, so its absence fails closed and records `security_breach` in the
+pilot ledger. A future producer must supply an explicit current result; an
+explicit failed assessment uses the same pause signal. This keeps expansion
+disabled until security evidence is available rather than treating unavailable
+evidence as healthy.
 
 ## Decisions & alternatives
 

@@ -46,13 +46,16 @@ RSpec.describe Activities::MarkAgentRunCompleteActivity do
       expect(log.content).to include("no_changes")
     end
 
-    it "updates issue paid_state to completed for non-PR goals" do
+    it "updates issue paid_state to completed for non-PR goals" do # @spec PROJECT-DELEGATION-007
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, :create_issue_goal, project: project, issue: issue)
+      FeatureFlags.enable!(:project_delegation, project:)
 
       activity.execute(agent_run_id: agent_run.id)
 
       expect(issue.reload.paid_state).to eq("completed")
+      expect(InboxHistoryEvent.find_by(source: "project_delegation_pilot", result: "issue_completed"))
+        .to have_attributes(project: project, subject_key: "issue:#{issue.id}")
     end
 
     it "updates issue paid_state to analyzed for analyze_issue goals" do

@@ -123,6 +123,7 @@ module ProjectDelegation
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] },
         signature: signature
       }
+      payload[:expansion_guard] = ProjectDelegation::ExpansionGuard.call(project:).to_h
       payload[:phase_authority] = serialized_phase_authority if work_issue
       payload
     end

@@ -32,6 +32,7 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       account_id: account.id,
       project_id: project.id,
       issue_id: issue.id,
+      security: true,
       trust: true,
       budget: true,
       repository_controls: true,
@@ -92,7 +93,8 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     expect(Notification.last.metadata["reasons"]).to include("phase_policy")
   end
 
-  it "fails closed for tenant, trust, budget, repository, or assessment failures" do # @spec PROJECT-DELEGATION-004
+  it "fails closed for tenant, trust, budget, repository, or assessment failures" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-007
+    FeatureFlags.enable!(:project_delegation, project:)
     %i[account_id project_id trust budget repository_controls assessment_available].each do |key|
       result = recheck(key => key == :account_id ? account.id + 1 : false)
 
@@ -106,6 +108,19 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       end
       expect(result.reasons).to include(expected_reason)
     end
+    expect(InboxHistoryEvent.where(source: "project_delegation_pilot").pluck(:result))
+      .to include("tenant_breach", "trust_breach", "evidence_missing")
+  end
+
+  it "fails closed and records a security pause when security assessment is unavailable" do # @spec PROJECT-DELEGATION-007
+    FeatureFlags.enable!(:project_delegation, project:)
+
+    result = described_class.call(authorization:, boundary: :retry, snapshot: snapshot.except(:security))
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:security)
+    expect(InboxHistoryEvent.where(source: "project_delegation_pilot").pluck(:result))
+      .to include("security_breach")
   end
 
   it "rejects unsupported boundaries" do

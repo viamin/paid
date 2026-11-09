@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe DependencyCycleReconciliationJob do
+  let!(:initial_account_boundary) { Account.maximum(:id) }
+
   before do
     allow(Rails.logger).to receive(:info)
     allow(Rails.logger).to receive(:warn)
@@ -10,8 +12,8 @@ RSpec.describe DependencyCycleReconciliationJob do
   end
 
   # @spec AUTO-PICK-QUEUE-014
-  it "logs an empty root page when no accounts exist" do
-    described_class.perform_now
+  it "logs an empty page when no accounts remain after the cursor" do
+    described_class.perform_now(after_account_id: initial_account_boundary)
 
     expect(Rails.logger).to have_received(:info).with(
       hash_including(
@@ -19,7 +21,7 @@ RSpec.describe DependencyCycleReconciliationJob do
         account_count: 0,
         reconciled_count: 0,
         unavailable_count: 0,
-        through_account_id: nil,
+        through_account_id: initial_account_boundary,
         duration_ms: a_kind_of(Integer),
         allocations: a_kind_of(Integer)
       )
@@ -35,7 +37,7 @@ RSpec.describe DependencyCycleReconciliationJob do
     allow(Issues::DependencyCycles).to receive(:call) { |account:| calls << account.id }
     allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
 
-    described_class.perform_now
+    described_class.perform_now(after_account_id: initial_account_boundary)
     described_class.perform_now(**continuations.shift)
 
     expect(calls).to eq(accounts.map(&:id))
@@ -63,7 +65,7 @@ RSpec.describe DependencyCycleReconciliationJob do
     end
     stub_first_retry_delay(continuations)
 
-    described_class.perform_now
+    described_class.perform_now(after_account_id: initial_account_boundary)
 
     expect(continuations).to contain_exactly(after_account_id: first.id, through_account_id: later.id, unavailable_retries: 1)
     expect(described_class).not_to have_received(:perform_later)
@@ -91,11 +93,11 @@ RSpec.describe DependencyCycleReconciliationJob do
     end
     stub_backoff_delays(continuations, waits)
 
-    described_class.perform_now
+    described_class.perform_now(after_account_id: initial_account_boundary)
     5.times { described_class.perform_now(**continuations.shift) }
 
     expect(waits).to eq([ 1.minute, 2.minutes, 4.minutes, 8.minutes, 10.minutes, 10.minutes ])
-    expect(continuations).to contain_exactly(after_account_id: nil, through_account_id: later.id, unavailable_retries: 6)
+    expect(continuations).to contain_exactly(after_account_id: initial_account_boundary, through_account_id: later.id, unavailable_retries: 6)
     expect(calls).to all(eq(unavailable.id))
     expect(described_class).not_to have_received(:perform_later)
   end
@@ -109,14 +111,14 @@ RSpec.describe DependencyCycleReconciliationJob do
     allow(Issues::DependencyCycles).to receive(:call) { |account:| calls << account.id }
     allow(described_class).to receive(:perform_later) { |**arguments| continuations << arguments }
 
-    described_class.perform_now
+    described_class.perform_now(after_account_id: initial_account_boundary)
     added_during_cycle = create(:account)
     described_class.perform_now(**continuations.shift)
 
     expect(calls).to eq([ first.id, second.id ])
     expect(continuations).to be_empty
 
-    described_class.perform_now
+    described_class.perform_now(after_account_id: initial_account_boundary)
     described_class.perform_now(**continuations.shift)
     described_class.perform_now(**continuations.shift)
 

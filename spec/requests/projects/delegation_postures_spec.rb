@@ -75,6 +75,17 @@ RSpec.describe "Project delegation posture settings" do
     expect(project.delegation_posture).to be_nil
   end
 
+  it "explains when expansion evidence pauses a selected posture" do # @spec PROJECT-DELEGATION-001 PROJECT-DELEGATION-007
+    create(:project_delegation_posture, project:, level: "bounded_delivery", selected_by: owner)
+    FeatureFlags.enable!(:project_delegation_expansion, project:)
+
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Expansion is paused")
+    expect(response.body).to include("select the posture again")
+  end
+
   it "keeps narrowing to conservative available as the rollback path" do
     create(:project_delegation_posture, project: project, level: "bounded_delivery", revision: 1,
       selected_by: owner)

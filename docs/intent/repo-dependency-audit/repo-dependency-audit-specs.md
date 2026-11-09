@@ -65,6 +65,14 @@
   `bin/bundler-audit`.
   *Code:* `.github/workflows/security.yml`.
 
+- [x] **REPO-DEPENDENCY-AUDIT-009** — When the Security workflow's audit
+  command fails transiently on a CI runner, the workflow SHALL retry the full
+  audit up to three total attempts with bounded delays. The workflow SHALL
+  still fail when all attempts fail, so persistent scanner errors and security
+  findings remain blocking.
+  *Tests:* `spec/config/security_workflow_file_spec.rb`.
+  *Code:* `.github/workflows/security.yml`.
+
 ## Output Handling
 
 - [x] **REPO-DEPENDENCY-AUDIT-008** — Regardless of the invoking shell's
