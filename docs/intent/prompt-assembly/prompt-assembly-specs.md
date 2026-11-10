@@ -214,11 +214,15 @@
   is assembled, it SHALL include a required trusted section that renders the
   effective execution-time auto-merge mode, bot-authored merge permission,
   enabled review methods, manual-review state, applicable human-approval
-  posture, and TDD gate. The section SHALL state that CI, bot review,
-  screenshots, and merge checks remain in force, and that auto-merge never
-  overrides a human-only decision, repository protection, or structured hold.
-  Its provenance SHALL record the resolved non-secret policy values so a run
-  can be audited after settings change between queueing and execution.
+  posture, and TDD gate. Each value SHALL resolve through the effective
+  runtime predicates (`auto_merge_enabled?`, `auto_merge_bot_authored?`,
+  `review_enabled?`), so a project whose runtime gates disable automation —
+  including an upstream-target project holding legacy stored enabled values —
+  SHALL see the gated-off posture. The section SHALL state that CI, bot
+  review, screenshots, and merge checks remain in force, and that auto-merge
+  never overrides a human-only decision, repository protection, or structured
+  hold. Its provenance SHALL record the resolved non-secret policy values so
+  a run can be audited after settings change between queueing and execution.
   *Code:* `PromptAssembly::Sections::EffectiveMergeReviewPosture`,
   `PromptAssembly::BuildIssuePrompt`.
   *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`.

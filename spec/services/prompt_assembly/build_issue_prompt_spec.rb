@@ -93,9 +93,20 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  # Mirrors the effective Project predicates (including the upstream-mode
+  # gates) so the double resolves posture values the way the real model does.
   def configure_merge_posture(project, settings)
+    upstream_target = settings.fetch(:upstream_target, false)
     project.define_singleton_method(:auto_merge_mode) { settings[:auto_merge_mode] }
-    project.define_singleton_method(:allow_bot_authored_pr_auto_merge?) { settings[:bot_authored_pr_auto_merge] }
+    project.define_singleton_method(:auto_merge_enabled?) do
+      !upstream_target && settings[:auto_merge_mode] != "off"
+    end
+    project.define_singleton_method(:auto_merge_bot_authored?) do
+      !upstream_target && settings[:bot_authored_pr_auto_merge] == true
+    end
+    project.define_singleton_method(:review_enabled?) do
+      !upstream_target && settings[:review_settings]["enabled"] == true
+    end
     project.define_singleton_method(:effective_review_settings) { settings[:review_settings] }
     project.define_singleton_method(:tdd_mode) { settings[:tdd_mode] }
   end
@@ -451,6 +462,36 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).to include("Enabled review methods: none")
       expect(result.text).to include("Manual review: disabled")
       expect(result.text).to include("TDD gate: non_strict")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders the runtime-gated posture for an upstream-target project with legacy stored settings" do
+      upstream_project = create(:project, :upstream_pr_target)
+      # The save-time gate rejects enabling these while upstream, but legacy or
+      # directly persisted values can remain stored; the runtime predicates
+      # (auto_merge_enabled?, auto_merge_bot_authored?, review_enabled?) still
+      # disable them, and the posture must report the gated-off policy.
+      upstream_project.update_columns(
+        auto_merge_mode: "all",
+        allow_bot_authored_pr_auto_merge: true,
+        review_settings: { "enabled" => true, "methods" => { "manual" => { "enabled" => true } } }
+      )
+      upstream_project.reload
+
+      result = described_class.call(issue: issue, project: upstream_project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(upstream_project.auto_merge_mode).to eq("all")
+      expect(result.text).to include("Auto-merge mode: off")
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(result.text).to include("Enabled review methods: none")
+      expect(result.text).to include("Manual review: disabled")
+      expect(section.metadata).to include(
+        auto_merge_mode: "off",
+        bot_authored_pr_auto_merge: false,
+        review_methods: [],
+        manual_review_enabled: false
+      )
     end
 
     # @spec PROMPT-ASSEMBLY-025

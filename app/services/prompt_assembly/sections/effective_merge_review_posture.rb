@@ -48,12 +48,25 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
     }
   end
 
+  # Stored settings can outlive the runtime gates (an upstream-target project
+  # may still hold legacy enabled values), so each posture value resolves
+  # through the same effective Project predicates the merge/review runtime
+  # uses — auto_merge_enabled?, auto_merge_bot_authored?, and review_enabled?
+  # — never the raw columns.
   def auto_merge_mode
+    return "off" unless auto_merge_enabled?
+
     project.respond_to?(:auto_merge_mode) ? project.auto_merge_mode.to_s : "off"
   end
 
+  def auto_merge_enabled?
+    return true unless project.respond_to?(:auto_merge_enabled?)
+
+    project.auto_merge_enabled?
+  end
+
   def bot_authored_pr_auto_merge?
-    project.respond_to?(:allow_bot_authored_pr_auto_merge?) && project.allow_bot_authored_pr_auto_merge?
+    project.respond_to?(:auto_merge_bot_authored?) && project.auto_merge_bot_authored?
   end
 
   def bot_authored_merge_permission
@@ -66,8 +79,14 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
     project.effective_review_settings.to_h.deep_stringify_keys
   end
 
+  def review_automation_enabled?
+    return review_settings["enabled"] == true unless project.respond_to?(:review_enabled?)
+
+    project.review_enabled?
+  end
+
   def enabled_review_methods_list
-    return [] unless review_settings["enabled"] == true
+    return [] unless review_automation_enabled?
 
     review_settings.fetch("methods", {}).filter_map do |name, settings|
       name if settings.is_a?(Hash) && settings["enabled"] == true
