@@ -67,7 +67,7 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
   end
 
   def bot_authored_pr_auto_merge?
-    auto_merge_phase_authorized? && project.respond_to?(:auto_merge_bot_authored?) && project.auto_merge_bot_authored?
+    auto_merge_mode == "all" && project.respond_to?(:auto_merge_bot_authored?) && project.auto_merge_bot_authored?
   end
 
   def auto_merge_phase_authorized?

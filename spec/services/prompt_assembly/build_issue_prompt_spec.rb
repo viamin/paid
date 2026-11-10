@@ -471,6 +471,30 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     # @spec PROMPT-ASSEMBLY-025
+    it "does not permit bot-authored PR auto-merge while auto-merge is off" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(auto_merge_mode: "off"))
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(section.metadata).to include(auto_merge_mode: "off", bot_authored_pr_auto_merge: false)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "does not permit bot-authored PR auto-merge in Dependabot-only mode" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(auto_merge_mode: "dependabot_only"))
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(section.metadata).to include(auto_merge_mode: "dependabot_only", bot_authored_pr_auto_merge: false)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
     it "reports the effective TDD mode rather than the run's TDD phase" do
       project = assembly_project
       configure_merge_posture(project, all_merge_settings)

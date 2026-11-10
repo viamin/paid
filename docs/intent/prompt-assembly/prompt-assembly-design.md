@@ -214,8 +214,12 @@ once and assembles ordered, provenance-tracked sections:
   `auto_merge_bot_authored?`, `review_enabled?`,
   `Automation::FeatureActivation.phase_authorized?`, and
   `Automation::FeatureActivation.issue_tdd_mode`), never the raw stored
-  columns, so an upstream-target project holding legacy enabled values or a
-  project with its merge phase disabled still sees its gated-off posture. Its
+  columns. Bot-authored merge permission additionally requires mode `all`,
+  because Paid-authored implementation PRs use the human-PR merge path rather
+  than the Dependabot-only path. An upstream-target project holding legacy
+  enabled values, a project with its merge phase disabled, or a project whose
+  effective mode is `off` or `dependabot_only` therefore sees the gated-off
+  posture. Its
   provenance records these non-secret values, so operators can audit the
   policy visible to a run when project settings changed after queueing. The
   rendered section keeps normal CI, bot review, screenshots, and merge checks
