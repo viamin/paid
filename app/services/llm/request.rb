@@ -5,7 +5,8 @@ module Llm
   class Request
     def self.call(...) = new(...).call
 
-    def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil, harness: AgentHarness)
+    def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil,
+      fallback_runner_identifiers: [], per_runner_timeout: nil, harness: AgentHarness)
       @runner_identifier = runner
       @model = model
       @harness = harness
@@ -15,16 +16,20 @@ module Llm
       @user = @project&.effective_owner || user || account&.fallback_owner || Current.user || @account&.fallback_owner
       @prompt = prompt
       @timeout = timeout
+      @fallback_runner_identifiers = fallback_runner_identifiers
+      @per_runner_timeout = per_runner_timeout
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-046
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
       runners = if @runner_identifier
         [ Runner.for_identifier(@user, @runner_identifier) ].compact
       elsif agent_run&.effective_runner_record
-        [ agent_run.effective_runner_record ]
+        [ agent_run.effective_runner_record, *Array(@fallback_runner_identifiers).filter_map { |identifier|
+          Runner.for_identifier(@user, identifier)
+        } ].uniq
       else
         selected_runners
       end
@@ -46,12 +51,12 @@ module Llm
         remaining = (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)).ceil
         raise AgentHarness::TimeoutError, "LLM request timeout exhausted" if remaining <= 0
 
-        response = perform_request(runner, timeout: remaining)
+        response = perform_request(runner, timeout: @per_runner_timeout ? [ remaining, @per_runner_timeout ].min : remaining)
         error = nil
         return response if !response.respond_to?(:success?) || response.success?
       rescue AgentHarness::Error => failure
         Rails.logger.warn(message: "llm.request_runner_failed", runner_id: runner.id,
-          project_id: @project&.id, error_class: failure.class.name)
+          project_id: @project&.id, agent_run_id: agent_run&.id, error_class: failure.class.name)
         error = failure
       end
       raise error if error

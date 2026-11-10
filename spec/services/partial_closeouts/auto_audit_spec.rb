@@ -41,13 +41,60 @@ RSpec.describe PartialCloseouts::AutoAudit do
   end
 
   # @spec PARTIAL-CLOSEOUT-037
-  it "does not retry a failed audit for the same evidence generation" do
+  it "retries a transiently failed audit for the same evidence after backoff" do
     first = described_class.call(issue:)
-    first.agent_run.update!(status: "failed", completed_at: Time.current)
+    first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment transport failed. Retry after runner recovery.", completed_at: 2.hours.ago)
 
     result = described_class.call(issue:)
 
-    expect(result.code).to eq(:already_audited)
+    expect(result).to be_scheduled
+    expect(issue.agent_runs.count).to eq(2)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "waits before retrying a transient failure" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment timed out. Retry after runner recovery.", completed_at: Time.current)
+
+    expect(described_class.call(issue:).code).to eq(:retry_backoff)
+    expect(issue.agent_runs.count).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "retries a timed-out audit run after backoff" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "timeout", completed_at: 2.hours.ago)
+
+    expect(described_class.call(issue:)).to be_scheduled
+    expect(issue.agent_runs.count).to eq(2)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "uses the typed failure category for new audit attempts" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed", error_message: "Audit failed",
+      reconciliation: { "acceptance_audit_failure" => { "category" => "transport_error" } }, completed_at: 2.hours.ago)
+
+    expect(described_class.call(issue:)).to be_scheduled
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "stops automatic retries after a bounded number of transient failures" do
+    3.times do
+      result = Issues::RequestAcceptanceAudit.call(issue:, actor: owner)
+      result.agent_run.update!(status: "failed", error_message: "Partial closeout assessment transport failed. Retry after runner recovery.", completed_at: 2.hours.ago)
+    end
+
+    expect(described_class.call(issue:).code).to eq(:retry_exhausted)
+    expect(issue.agent_runs.count).to eq(3)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "does not automatically repeat a non-transient failure" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment could not authenticate with the configured runner.", completed_at: 2.hours.ago)
+
+    expect(described_class.call(issue:).code).to eq(:already_audited)
     expect(issue.agent_runs.count).to eq(1)
   end
 

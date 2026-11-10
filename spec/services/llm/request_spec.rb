@@ -50,6 +50,34 @@ RSpec.describe Llm::Request do
     expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
   end
 
+  # @spec PARTIAL-CLOSEOUT-046
+  it "tries an explicit audit fallback after the run's pinned runner fails" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
+      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ])).to eq(response)
+
+    expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
+  end
+
+  # @spec PARTIAL-CLOSEOUT-046
+  it "does not use a fallback runner owned by another account" do
+    foreign_runner = create(:runner, user: create(:user), runner_key: "gemini")
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(AgentHarness.conductor).to receive(:execute_direct)
+      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ foreign_runner.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError)
+    expect(AgentHarness.conductor).to have_received(:execute_direct).once
+  end
+
   # @spec LLM-ROUTING-001 MODEL-POLICY-024
   it "does not let a ZDR fallback disqualify the non-ZDR primary" do
     fallback = create(:runner, user: owner, runner_key: "gemini", zero_data_retention: true,

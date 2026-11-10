@@ -818,9 +818,9 @@
   no-code evidence and its acceptance assessment is missing or stale, Paid
   SHALL automatically queue one report-only acceptance audit for that evidence
   generation after normal auto-pick, budget, trust, pause, dependency, and
-  continuation guards pass. A completed, failed, cancelled, or operator-requested
+  continuation guards pass. A completed, cancelled, or non-transient failed
   audit for the same generation SHALL prevent another automatic attempt; new
-  terminal evidence MAY permit one new audit. The sweep SHALL bound new audits
+  terminal evidence MAY permit a new bounded audit. The sweep SHALL bound new audits
   per project and SHALL not close the GitHub issue, authorize implementation,
   or bypass a human prerequisite. A GitHub-sync repair of a merged, non-closing
   source PR SHALL enter this evidence-backed lane rather than treating a
@@ -830,6 +830,27 @@
   `app/services/issues/request_acceptance_audit.rb`.
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
   `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-045** — When an acceptance audit for the current
+  source revision fails because assessment transport failed or timed out, and
+  the issue remains eligible for an audit, Paid SHALL retry after bounded
+  increasing delays, with at most three attempts for that revision including
+  operator-requested attempts. It SHALL NOT automatically repeat a completed,
+  cancelled, or non-transient failed audit, bypass admission guards, or treat a
+  failed attempt as acceptance evidence.
+  *Code:* `app/services/partial_closeouts/auto_audit.rb`.
+  *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-046** — When a report-only acceptance audit runs and
+  the project owner's fallback setting is enabled, Paid SHALL try the run's
+  selected runner first, then configured issue-analysis and agent-run fallback
+  runners in order within bounded per-runner and overall deadlines. Every
+  candidate SHALL retain its normal account, authorization, model, and privacy
+  policy checks; an unavailable candidate SHALL NOT establish acceptance.
+  *Code:* `app/temporal/activities/run_acceptance_audit_activity.rb`,
+  `app/services/llm/request.rb`, `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
+  `spec/services/llm/request_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-041** — When the automatic acceptance-audit sweep has
   more than one project or more than 50 candidate issues in a project, each
