@@ -10,6 +10,21 @@ class LinearTokensController < ApplicationController
     @linear_connection = connection if connection&.tracker_type == "linear"
   end
 
+  def sync_settings
+    @linear_connection = current_account.tracker_configuration
+    raise ActiveRecord::RecordNotFound unless @linear_connection&.tracker_type == "linear"
+
+    authorize @linear_connection, :update?
+    minutes = Integer(params.require(:sync_interval_minutes), exception: false)
+    if minutes && @linear_connection.update(sync_interval_seconds: minutes * 60)
+      redirect_to linear_tokens_path, notice: "Linear sync interval updated."
+    else
+      @linear_connection.errors.add(:sync_interval_seconds, "must be a whole number of minutes") unless minutes
+      @linear_tokens = policy_scope(LinearToken).order(created_at: :desc)
+      render :index, status: :unprocessable_content
+    end
+  end
+
   def show
     authorize @linear_token
   end

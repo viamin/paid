@@ -71,6 +71,60 @@ RSpec.describe "LinearTokens" do
 
         expect(response.body).to include("Selected key")
       end
+
+      it "shows the cadence control to an account admin" do
+        # @spec UNIFIED-WORK-ITEMS-002
+        user.add_role(:admin, account)
+        token = create(:linear_token, account:)
+        create(:tracker_configuration, :linear, configurable: account, linear_token: token)
+
+        get linear_tokens_path
+
+        expect(response.body).to include("Sync every (minutes)")
+      end
+    end
+  end
+
+  describe "PATCH /linear_tokens/sync_settings" do
+    let(:user) { create(:user, :admin, account:) }
+    let(:token) { create(:linear_token, account:) }
+    let!(:connection) { create(:tracker_configuration, :linear, configurable: account, linear_token: token) }
+
+    before { sign_in user }
+
+    it "lets an account admin change the sync interval" do
+      # @spec UNIFIED-WORK-ITEMS-002
+      patch sync_settings_linear_tokens_path, params: { sync_interval_minutes: 30 }
+
+      expect(response).to redirect_to(linear_tokens_path)
+      expect(connection.reload.sync_interval_seconds).to eq(1800)
+    end
+
+    it "rejects a sync interval below the supported minimum" do
+      # @spec UNIFIED-WORK-ITEMS-002
+      patch sync_settings_linear_tokens_path, params: { sync_interval_minutes: 1 }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(connection.reload.sync_interval_seconds).to eq(900)
+    end
+
+    it "rejects a sync interval above one day" do
+      # @spec UNIFIED-WORK-ITEMS-002
+      patch sync_settings_linear_tokens_path, params: { sync_interval_minutes: 1441 }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(connection.reload.sync_interval_seconds).to eq(900)
+    end
+
+    it "does not let a member change the sync interval" do
+      # @spec UNIFIED-WORK-ITEMS-002
+      sign_out user
+      sign_in create(:user, :member, account:)
+      patch sync_settings_linear_tokens_path, params: { sync_interval_minutes: 30 }
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to include("not authorized")
+      expect(connection.reload.sync_interval_seconds).to eq(900)
     end
   end
 
@@ -103,6 +157,17 @@ RSpec.describe "LinearTokens" do
 
     context "when authenticated" do
       before { sign_in user }
+
+      it "limits account Linear connection setup to admins" do
+        # @spec UNIFIED-WORK-ITEMS-002
+        sign_out user
+        sign_in create(:user, :member, account:)
+
+        expect {
+          post linear_tokens_path, params: { linear_token: { name: "Member key", token: "lin_api_#{'a' * 32}" } }
+        }.not_to change(LinearToken, :count)
+        expect(response).to redirect_to(root_path)
+      end
 
       context "with valid parameters" do
         let(:valid_token) { "lin_api_#{'a' * 32}" }

@@ -92,12 +92,14 @@ integration boundary.
 The Linear adapter uses the account configuration's selected active `LinearToken`
 for GraphQL requests. Saving a key in the existing account Linear API-key
 screen selects it for the account configuration; revoking the selected key
-disconnects synchronization. It pages through issues including archived
+disconnects synchronization. Only account owners and admins may add or revoke
+keys or change the sync interval. It pages through issues including archived
 issues, retains the source response, and reports authentication, rate-limit,
 transport, and GraphQL failures explicitly. A guarded sync upserts tickets by
 account, provider, resource type, and external ID; it updates connection health
 only after a complete import. The API-key page shows connection health, last
-successful sync, and cadence. The account sync job checks the configured
+successful sync, and cadence; account admins can change the cadence there in
+whole minutes, from five minutes to one day. The account sync job checks the configured
 interval (15 minutes by default) and selects a project with the unified-work-item
 flag enabled before contacting Linear. The local ticket record does not itself
 grant project assignment, trust, or workflow access.
