@@ -46,7 +46,8 @@ RSpec.describe Issues::AutoResolveCloseout do
     expect(client).to have_received(:update_issue).once
     event = account.account_activity_events.find_by!(action: "issue.closeout_resolved", subject: issue)
     expect(event.actor).to be_nil
-    expect(event.metadata).to include("initiator" => "delegated_acceptance_audit", "agent_run_id" => run.id)
+    expect(event.metadata).to include("initiator" => "delegated_acceptance_audit", "agent_run_id" => run.id,
+      "assessment_source_revision" => run.reconciliation.dig("assessment", "source_revision"))
     expect(account.account_activity_events.find_by!(action: "issue.auto_closeout_attempted", subject: issue).metadata)
       .to include("result" => "closed", "agent_run_id" => run.id)
   end

@@ -85,7 +85,10 @@ module Issues
       { "initiator" => "delegated_acceptance_audit", "agent_run_id" => agent_run.id,
         "continuation_request_id" => request.id, "policy_revision" => posture.revision,
         "policy_signature" => request.evidence["closeout_policy_signature"],
-        "selected_by_id" => posture.selected_by_id }
+        "selected_by_id" => posture.selected_by_id,
+        "assessment_source_revision" => agent_run.reconciliation.dig("assessment", "source_revision"),
+        "assessment_intent_revision" => agent_run.reconciliation.dig("assessment", "intent_revision"),
+        "assessment_assessed_at" => agent_run.reconciliation.dig("assessment", "assessed_at") }
     end
 
     def record_attempt(result)
