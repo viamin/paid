@@ -56,6 +56,20 @@ RSpec.describe ChatSessions::CheckTokenLimit do
         expect(result[:within_limit]).to be false
         expect(result[:remaining_tokens]).to eq(0)
       end
+
+      it "reads a setting created after the account association cached its absence" do
+        TenantSetting.where(account: account).delete_all
+        chat_session.account.association(:tenant_setting).reset
+        chat_session.account.tenant_setting
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+        create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 20)
+
+        # @spec CHAT-API-014
+        result = described_class.call(chat_session: chat_session)
+
+        expect(result).to include(within_limit: false, limit: 100, used_tokens: 100)
+      end
     end
 
     context "with monthly token limit" do
