@@ -538,11 +538,12 @@ acceptance-audit sweep revisits open partial closeouts after merge. For active
 auto-pick projects, it queues a report-only `analyze_issue` acceptance audit
 when the current assessment is missing or stale and ordinary continuation
 guards permit it. It records at most three audit attempts per issue and current
-source revision, including operator-requested attempts. Only transport and
-timeout failures are eligible for another automatic attempt; retries wait 30
-and then 60 minutes. A completed, cancelled, or non-transient failed audit
-stops automatic attempts for that revision. New terminal or technical evidence
-may create a new source revision and permit a new bounded audit. The existing auto-pick control governs this work;
+source and approved-intent revisions, including operator-requested attempts.
+Only transport and timeout failures are eligible for another automatic attempt;
+retries wait 30 and then 60 minutes. A completed, cancelled, or non-transient
+failed audit stops automatic attempts for those revisions. New terminal or
+technical evidence or changed approved intent may permit a new bounded audit.
+The existing auto-pick control governs this work;
 there is no separate audit setting. The GitHub-sync repair places merged
 non-closing source PRs in this lane rather than treating their premerge
 source-closure disposition as final acceptance. Operator-requested audits use the same
@@ -703,7 +704,8 @@ evidence; the audit still does not create a follow-up run, change the issue
 state, create a pull request, or authorize implementation. The normal
 request/run lifecycle remains the durable progress, cancellation, failure, and
 retry surface. Audits use the selected runner and configured fallback runners,
-with a per-runner limit and an overall deadline. The existing one-open-request and active-run constraints
+with a per-runner limit and an overall deadline. The existing one-open-request
+and active-run constraints
 deduplicate audit requests for an evidence generation. Deduplication only
 reuses an open request whose persisted mode and run goal match the requested
 operation: a request that would authorize a different operation is refused with

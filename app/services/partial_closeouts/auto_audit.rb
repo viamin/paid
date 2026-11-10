@@ -47,12 +47,19 @@ module PartialCloseouts
 
     attr_reader :issue
 
-    # @spec PARTIAL-CLOSEOUT-045
+    # @spec PARTIAL-CLOSEOUT-046
     def prior_attempt_status(source_revision)
       requests = IssueContinuationRequest.where(issue:)
         .where("evidence->>'source_revision' = ?", source_revision)
         .where("evidence->>'continuation_mode' = ?", "acceptance_audit")
-      runs = AgentRun.where(continuation_request_id: requests.select(:id)).order(id: :desc).limit(MAX_ATTEMPTS).to_a
+      intent_revision = Assessment.intent_revision_for(issue)
+      runs = AgentRun.where(continuation_request_id: requests.select(:id))
+        .joins(:continuation_request)
+        .where("issue_continuation_requests.evidence->>'intent_revision' = :revision OR " \
+          "(issue_continuation_requests.evidence->>'intent_revision' IS NULL AND " \
+          "(agent_runs.reconciliation #>> '{assessment,intent_revision}' = :revision OR " \
+          "agent_runs.reconciliation->'assessment' IS NULL))", revision: intent_revision)
+        .order(id: :desc).limit(MAX_ATTEMPTS).to_a
       return if runs.empty?
 
       return :already_audited if runs.any? { |run| !run.status.in?(%w[failed timeout]) || !transient_failure?(run) }

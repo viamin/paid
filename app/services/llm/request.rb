@@ -20,7 +20,7 @@ module Llm
       @per_runner_timeout = per_runner_timeout
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-046
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-047
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -39,7 +39,7 @@ module Llm
         runners.first.zero_data_retention?
 
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
-      response = error = nil
+      response = error = unsuccessful_response = nil
       eligible_route = false
       runners.each do |runner|
         candidate_required_zdr = @required_zdr || runner.zero_data_retention?
@@ -52,13 +52,14 @@ module Llm
         raise AgentHarness::TimeoutError, "LLM request timeout exhausted" if remaining <= 0
 
         response = perform_request(runner, timeout: @per_runner_timeout ? [ remaining, @per_runner_timeout ].min : remaining)
-        error = nil
         return response if !response.respond_to?(:success?) || response.success?
+        unsuccessful_response ||= response
       rescue AgentHarness::Error => failure
         Rails.logger.warn(message: "llm.request_runner_failed", runner_id: runner.id,
           project_id: @project&.id, agent_run_id: agent_run&.id, error_class: failure.class.name)
-        error = failure
+        error = failure if error.nil? || retryable_failure?(failure) || !retryable_failure?(error)
       end
+      return unsuccessful_response if unsuccessful_response && error && !retryable_failure?(error)
       raise error if error
       unless eligible_route
         raise AgentHarness::ConfigurationError,
@@ -69,6 +70,10 @@ module Llm
     end
 
     private
+
+    def retryable_failure?(failure)
+      !failure.is_a?(AgentHarness::AuthenticationError) && !failure.is_a?(AgentHarness::ConfigurationError)
+    end
 
     def perform_request(runner, timeout:)
       unless runner && !runner.discarded? && runner.user_id == @user&.id && permitted_usage?(runner)
