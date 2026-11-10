@@ -372,6 +372,168 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "#repair_completed_open_issues" do
+    def audit_pending_reconciliation(issue)
+      {
+        "source_closure" => { "disposition" => "track" },
+        "assessment" => {
+          "classification" => "awaiting_final_audit",
+          "gaps" => [],
+          "criteria" => [ { "state" => "unknown", "criterion" => "Audit shipped change" } ],
+          "next_action" => { "kind" => "audit_shipped_change" },
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+          "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue)
+        }
+      }
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "waits for an open source PR when Paid recorded a gap-free final audit" do
+      issue = create(:issue, :completed, project: project, github_number: 3490, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3590,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3590",
+        reconciliation: audit_pending_reconciliation(issue))
+      create(:issue, :pull_request, project: project, github_number: 3590,
+        body: "Tracks #3490", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.manual_review_reason).to be_nil
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "releases an existing sync-created manual review while its audit-pending PR is open" do
+      issue = create(:issue, :completed, project: project, github_number: 3491, github_state: "open")
+      issue.update!(paid_state: "manual_review",
+        manual_review_reason: "Paid closeout is waiting on its source pull request: #3591 is draft. Review and merge the PR before final acceptance can be audited.")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3591,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3591",
+        reconciliation: audit_pending_reconciliation(issue))
+      create(:issue, :pull_request, project: project, github_number: 3591,
+        body: "Tracks #3491", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.manual_review_reason).to be_nil
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "routes the audit-pending source issue to acceptance audit after its PR merges" do
+      issue = create(:issue, :completed, project: project, github_number: 3492, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3592,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3592",
+        reconciliation: audit_pending_reconciliation(issue))
+      pull_request = create(:issue, :pull_request, project: project, github_number: 3592,
+        body: "Tracks #3492", pr_review_phase: "draft")
+      activity.send(:repair_completed_open_issues, project, github_client)
+
+      pull_request.update!(github_state: "closed", pr_review_phase: "merged")
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("analyzed")
+      expect(issue.manual_review_reason).to be_nil
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "keeps a closed, unmerged source PR in manual review" do
+      issue = create(:issue, :completed, project: project, github_number: 3493, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3593,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3593",
+        reconciliation: audit_pending_reconciliation(issue))
+      create(:issue, :pull_request, :closed, project: project, github_number: 3593,
+        body: "Tracks #3493", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "keeps an open PR with a recorded human gap in manual review" do
+      issue = create(:issue, :completed, project: project, github_number: 3494, github_state: "open")
+      reconciliation = audit_pending_reconciliation(issue)
+      reconciliation["assessment"]["gaps"] = [ { "kind" => "human", "criterion" => "Approve scope" } ]
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3594,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3594",
+        reconciliation:)
+      create(:issue, :pull_request, project: project, github_number: 3594,
+        body: "Tracks #3494", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "does not trust a recorded audit decision for a different repository's PR" do
+      issue = create(:issue, :completed, project: project, github_number: 3495, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3595,
+        pull_request_url: "https://github.com/other/repo/pull/3595",
+        reconciliation: audit_pending_reconciliation(issue))
+      create(:issue, :pull_request, project: project, github_number: 3595,
+        body: "Tracks #3495", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "does not hide a new source requirement behind an old audit decision" do
+      issue = create(:issue, :completed, project: project, github_number: 3496, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3596,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3596",
+        reconciliation: audit_pending_reconciliation(issue))
+      create(:issue, :pull_request, project: project, github_number: 3596,
+        body: "Tracks #3496", pr_review_phase: "draft")
+      issue.update!(body: "A newly added requirement")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("source issue changed")
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "keeps changed closeout evidence in the automatic audit path" do
+      issue = create(:issue, :completed, project: project, github_number: 3497, github_state: "open")
+      reconciliation = audit_pending_reconciliation(issue)
+      reconciliation["assessment"]["source_revision"] = "previous-evidence-revision"
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3597,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3597", reconciliation:)
+      create(:issue, :pull_request, project: project, github_number: 3597,
+        body: "Tracks #3497", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "does not hide an unmet criterion when the gap list is malformed" do
+      issue = create(:issue, :completed, project: project, github_number: 3498, github_state: "open")
+      reconciliation = audit_pending_reconciliation(issue)
+      reconciliation["assessment"]["criteria"] << { "state" => "unmet", "criterion" => "Add missing behavior" }
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3598,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3598", reconciliation:)
+      create(:issue, :pull_request, project: project, github_number: 3598,
+        body: "Tracks #3498", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+    end
+
     # @spec GITHUB-SYNC-016
     it "routes a merged non-closing PR to the acceptance-audit lane, not recommend-close" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
