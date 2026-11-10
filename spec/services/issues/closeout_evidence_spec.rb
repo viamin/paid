@@ -149,6 +149,33 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(result.merged_prs.map(&:url)).to contain_exactly(upstream_pr_url)
   end
 
+  # @spec PARTIAL-CLOSEOUT-047
+  it "keeps same-number merged PRs in different repositories distinct" do
+    fork_url = "https://github.com/acme/alpha/pull/42"
+    upstream_url = "https://github.com/upstream/repo/pull/42"
+    merged_pr(project:, number: 42, parent_issue_id: issue.id, github_html_url: fork_url, body: "Fork evidence")
+    merged_pr(project:, number: 42, parent_issue_id: issue.id, github_html_url: upstream_url,
+      source: Issue::UPSTREAM_PULL_REQUEST_SOURCE, body: "Upstream evidence")
+    run = completed_create_pr_run(project:, issue:, number: 42, url: fork_url)
+
+    result = described_class.call(issue)
+
+    expect(result.merged_prs.map(&:url)).to contain_exactly(fork_url, upstream_url)
+    expect(result.merged_prs.find { |pr| pr.url == fork_url }.run_id).to eq(run.id)
+    expect(result.merged_prs.find { |pr| pr.url == upstream_url }.run_id).to be_nil
+    expect(described_class.merged_pull_requests(issue).map(&:url)).to contain_exactly(fork_url, upstream_url)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-001
+  it "preserves the existing outcome digest for a unique PR number" do
+    pr = merged_pr(project:, number: 12, parent_issue_id: issue.id)
+
+    result = described_class.call(issue)
+    canonical = "merged:12@#{pr.created_at.utc.iso8601};;no_code:"
+
+    expect(result.digest).to eq(Digest::SHA256.hexdigest(canonical))
+  end
+
   it "includes a no-code-required declaration as terminal-run evidence" do
     issue.update!(no_code_required_at: 3.hours.ago)
 

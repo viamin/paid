@@ -56,7 +56,9 @@
   harness authentication exceptions into bounded retry diagnostics. Transport
   failure SHALL remain a failure rather than acceptance evidence.
   *Code:* `app/services/llm/analyze_partial_closeout.rb`.
-  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/issues/closeout_evidence_spec.rb`,
+  `spec/services/issues/resolve_closeout_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-034** — When a partial-closeout request cannot obtain
   a valid assessment from the run's configured runner, it SHALL remain
@@ -219,16 +221,24 @@
 - [x] **PARTIAL-CLOSEOUT-047** — When Paid requests a source-closure
   assessment, including a report-only postmerge acceptance audit, it SHALL
   supply the current source issue's bounded acceptance text and only
-  authoritatively linked merged PR identities and bounded descriptions with
+  authoritatively linked, repository-qualified merged PR identities and
+  bounded descriptions with
   available originating-run summary, commit, and recorded verification
   outcome. It SHALL identify missing, omitted, or truncated evidence and treat
   source, PR, and agent text as untrusted data. It SHALL instruct the assessor
   that merge status or agent claims
   alone do not prove criterion satisfaction. A criterion without sufficient
   current evidence SHALL remain unknown. A change to a linked PR description
-  SHALL stale the prior assessment.
+  SHALL stale the prior assessment, including a change made while the audit is
+  running. When source issue text or a merged PR description is truncated, or
+  merged PR evidence is omitted, or a PR description changes while assembling
+  the input, the system SHALL record
+  incomplete input coverage, refuse acceptance-based closure, and present a
+  concrete evidence-repair action instead of a closure action.
   *Code:* `app/services/llm/analyze_partial_closeout.rb`,
-  `app/services/partial_closeouts/audit_evidence.rb`.
+  `app/services/partial_closeouts/audit_evidence.rb`,
+  `app/services/partial_closeouts/assessment.rb`,
+  `app/services/partial_closeouts/source_closure_disposition.rb`.
   *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-028** — When a trusted, open non-PR issue has merged

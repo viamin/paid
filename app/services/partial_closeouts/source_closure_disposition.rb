@@ -43,7 +43,8 @@ module PartialCloseouts
     attr_reader :issue, :assessment
 
     def closes?
-      issue.present? && current_revisions? && gaps.empty? && criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" }
+      issue.present? && Assessment.input_complete?(assessment) && current_revisions? && gaps.empty? &&
+        criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" }
     end
 
     def current_revisions?

@@ -89,15 +89,83 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     end
 
     # @spec PARTIAL-CLOSEOUT-047
+    it "keeps the assessment bound to the PR text seen before a concurrent edit" do
+      merged = create(:issue, :pull_request, project:, parent_issue: issue,
+        pr_review_phase: "merged", github_html_url: "#{project.github_url}/pull/123", body: "Original evidence")
+      allow(provider).to receive(:send_message) do |**|
+        merged.update!(body: "Changed during audit")
+        llm_response
+      end
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Dispatch", state: "satisfied", evidence: [ { label: "PR #123" } ]
+      } ] }.to_json)
+
+      result = described_class.call(agent_run:)
+      snapshot = PartialCloseouts::Assessment.snapshot(agent_run, result)
+
+      expect(snapshot.fetch("source_revision")).not_to eq(PartialCloseouts::Assessment.source_revision_for(issue))
+      expect(PartialCloseouts::SourceClosureDisposition.call(issue:, assessment: snapshot).fetch("disposition")).to eq("track")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-047
+    it "refuses closure when a PR description changes while gathering evidence" do
+      merged = create(:issue, :pull_request, project:, parent_issue: issue,
+        pr_review_phase: "merged", github_html_url: "#{project.github_url}/pull/123", body: "Original evidence")
+      allow(PartialCloseouts::AuditEvidence).to receive(:pr_bodies_for).and_wrap_original do |method, *args|
+        merged.update!(body: "Changed before the body query")
+        method.call(*args)
+      end
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Dispatch", state: "satisfied", evidence: [ { label: "PR #123" } ]
+      } ] }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.dig("input_coverage", "reasons")).to include("merged_pr_body_changed_during_audit")
+      expect(PartialCloseouts::SourceClosureDisposition.call(issue:,
+        assessment: PartialCloseouts::Assessment.snapshot(agent_run, result)).fetch("disposition")).to eq("track")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-047
     it "makes missing and truncated source evidence explicit" do
       issue.update!(body: "A" * 20_000)
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Visible criterion", state: "satisfied", evidence: [ { label: "Merged PR" } ]
+      } ] }.to_json)
 
-      described_class.call(agent_run:)
+      result = described_class.call(agent_run:)
 
       expect(provider).to have_received(:send_message) do |prompt:, **|
         expect(prompt).to include('"body_truncated":true', '"merged_prs":[]')
         expect(prompt).not_to include("A" * 20_000)
       end
+      expect(result.dig("input_coverage", "complete")).to be(false)
+      snapshot = PartialCloseouts::Assessment.snapshot(agent_run, result)
+      expect(PartialCloseouts::SourceClosureDisposition.call(issue:, assessment: snapshot).fetch("disposition")).to eq("track")
+      agent_run.update!(reconciliation: { "assessment" => snapshot })
+      presented = PartialCloseouts::Assessment.call(issue)
+      expect(presented.closeout_state).to eq("unmet_criteria")
+      expect(presented.next_action.fetch("kind")).to eq("supply_evidence")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-047
+    it "does not authorize closure when merged PR evidence is omitted" do
+      stub_const("PartialCloseouts::AuditEvidence::MAX_MERGED_PRS", 1)
+      2.times do |number|
+        create(:issue, :pull_request, project:, parent_issue: issue,
+          github_number: 100 + number, pr_review_phase: "merged",
+          github_html_url: "#{project.github_url}/pull/#{100 + number}")
+      end
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Dispatch", state: "satisfied", evidence: [ { label: "PR" } ]
+      } ] }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.dig("input_coverage", "complete")).to be(false)
+      expect(result.dig("input_coverage", "reasons")).to include("merged_prs_omitted")
+      expect(PartialCloseouts::SourceClosureDisposition.call(issue:,
+        assessment: PartialCloseouts::Assessment.snapshot(agent_run, result)).fetch("disposition")).to eq("track")
     end
 
     # @spec PARTIAL-CLOSEOUT-032

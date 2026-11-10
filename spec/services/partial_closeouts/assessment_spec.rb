@@ -116,6 +116,23 @@ RSpec.describe PartialCloseouts::Assessment do
     expect(result.next_action.fetch("explanation")).to be_present
   end
 
+  # @spec PARTIAL-CLOSEOUT-047
+  it "fails closed when persisted input coverage has an invalid shape" do
+    pull_request
+    run = create(:agent_run, :completed, project:, issue:)
+    assessment = described_class.snapshot(run, {
+      "gaps" => [], "criteria" => [ { "criterion" => "Measure latency", "state" => "satisfied" } ],
+      "input_coverage" => "invalid"
+    })
+    run.update!(reconciliation: { "assessment" => assessment })
+
+    result = described_class.call(issue)
+
+    expect(result.closeout_state).to eq("unmet_criteria")
+    expect(result.next_action.fetch("kind")).to eq("supply_evidence")
+    expect(PartialCloseouts::SourceClosureDisposition.call(issue:, assessment:).fetch("disposition")).to eq("track")
+  end
+
   # @spec PARTIAL-CLOSEOUT-023 — defense-in-depth: a `criteria` array that
   # contains a non-Hash entry would otherwise NoMethodError on
   # `String#merge`, crashing the Inbox pane and authorized chat context.

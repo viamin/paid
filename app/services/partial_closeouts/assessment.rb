@@ -15,6 +15,7 @@ module PartialCloseouts
 
       def closeout_state
         return "audit_pending" if stale?
+        return "unmet_criteria" unless PartialCloseouts::Assessment.input_complete?(assessment)
         return "accepted_awaiting_github_closure" if criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" } && Array(assessment["gaps"]).empty?
 
         "unmet_criteria"
@@ -24,15 +25,25 @@ module PartialCloseouts
     def self.call(...) = new(...).call
 
     def self.snapshot(agent_run, assessment)
-      assessment.to_h.deep_stringify_keys.merge(
-        "source_revision" => source_revision_for(agent_run.issue),
-        "intent_revision" => intent_revision_for(agent_run.issue),
+      payload = assessment.to_h.deep_stringify_keys
+      input_revisions = payload.delete("audit_input_revisions")
+      input_revisions = {} unless input_revisions.is_a?(Hash)
+      payload.merge(
+        "source_revision" => input_revisions["source"].presence || source_revision_for(agent_run.issue),
+        "intent_revision" => input_revisions["intent"].presence || intent_revision_for(agent_run.issue),
         "assessed_at" => Time.current.iso8601
       )
     end
 
     def self.intent_revision_for(issue)
       Digest::SHA256.hexdigest([ issue.title, issue.body ].map(&:to_s).join("\0"))
+    end
+
+    def self.input_complete?(assessment)
+      return true unless assessment.key?("input_coverage")
+
+      coverage = assessment["input_coverage"]
+      coverage.is_a?(Hash) && coverage["complete"] == true
     end
 
     # @spec PARTIAL-CLOSEOUT-047
@@ -139,6 +150,9 @@ module PartialCloseouts
 
     def next_action
       return { "kind" => "fresh_audit", "explanation" => "The recorded assessment is stale; request a bounded acceptance audit before treating work as complete." } if stale?
+      unless self.class.input_complete?(assessment)
+        return { "kind" => "supply_evidence", "explanation" => "The audit input was truncated or omitted; narrow the source issue or delivery evidence before requesting another audit." }
+      end
 
       # Defense-in-depth: a non-Hash `next_action` value would NoMethodError
       # on `String#to_h` and crash every Inbox render that touches the

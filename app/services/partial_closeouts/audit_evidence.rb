@@ -10,6 +10,8 @@ module PartialCloseouts
     MAX_RUN_SUMMARY = 3_000
     MAX_VERIFICATION_SUMMARY = 1_000
 
+    attr_reader :coverage, :source_revision, :intent_revision
+
     def self.call(...) = new(...).call
 
     def self.pr_bodies_for(issue, closeout)
@@ -40,17 +42,38 @@ module PartialCloseouts
       pr_bodies = self.class.pr_bodies_for(@issue, closeout)
       runs = AgentRun.where(project_id: @issue.project_id, issue_id: @issue.id,
         goal: "create_pr", id: merged_prs.filter_map(&:run_id)).index_by(&:id)
+      source = source_issue
+      @source_revision = Assessment.source_revision_for(@issue, closeout_evidence: closeout)
+      @intent_revision = source.fetch(:intent_revision)
+      delivery = merged_prs.map { |pr| merged_pr(pr, runs[pr.run_id], pr_bodies[[ pr.number, pr.url ]]) }
+      current = current_run_summary
+      omitted = closeout.merged_prs.size - merged_prs.size
+      @coverage = coverage_for(source, delivery, current, omitted)
 
       {
-        source_issue: source_issue,
-        merged_prs: merged_prs.map { |pr| merged_pr(pr, runs[pr.run_id], pr_bodies[[ pr.number, pr.url ]]) },
-        omitted_merged_pr_count: closeout.merged_prs.size - merged_prs.size,
+        source_issue: source,
+        merged_prs: delivery,
+        omitted_merged_pr_count: omitted,
         closeout_evidence_revision: closeout.digest,
-        current_run_summary: current_run_summary
+        pr_body_revision: closeout.pr_body_revision,
+        current_run_summary: current
       }.to_json
     end
 
     private
+
+    def coverage_for(source, delivery, current, omitted)
+      reasons = []
+      reasons << "source_issue_body_truncated" if source[:body_truncated]
+      reasons << "merged_prs_omitted" if omitted.positive?
+      reasons << "merged_pr_body_truncated" if delivery.any? { |pr| pr[:body_truncated] }
+      reasons << "merged_pr_body_changed_during_audit" if delivery.any? { |pr| pr[:body_changed_during_audit] }
+      warnings = []
+      warnings << "merged_run_summary_truncated" if delivery.any? { |pr| pr[:run_summary_truncated] }
+      warnings << "verification_summary_truncated" if delivery.any? { |pr| pr[:verification_summary_truncated] }
+      warnings << "current_run_summary_truncated" if current && current[:truncated]
+      { "complete" => reasons.empty?, "reasons" => reasons, "warnings" => warnings }
+    end
 
     def source_issue
       body = @issue.body.to_s
@@ -74,6 +97,7 @@ module PartialCloseouts
         body: body.first(MAX_PR_BODY),
         body_missing: body.empty?,
         body_truncated: body.length > MAX_PR_BODY,
+        body_changed_during_audit: Digest::SHA256.hexdigest(body) != pr.body_digest,
         originating_run_id: run&.id,
         run_status: run&.status,
         commit: run&.result_commit_sha,

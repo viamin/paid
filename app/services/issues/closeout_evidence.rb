@@ -13,6 +13,8 @@ module Issues
   # generation.
   # @spec PARTIAL-CLOSEOUT-001 PARTIAL-CLOSEOUT-047
   class CloseoutEvidence
+    ISSUE_BODY_DIGEST_SQL = Arel.sql("encode(sha256(convert_to(COALESCE(issues.body, ''), 'UTF8')), 'hex')")
+    MERGED_PR_BODY_DIGEST_SQL = Arel.sql("encode(sha256(convert_to(COALESCE(merged_prs.body, ''), 'UTF8')), 'hex')")
     MergedPullRequest = Struct.new(:number, :url, :terminal_at, :run_id, :body_digest, keyword_init: true)
 
     Result = Struct.new(:merged_prs, :no_code_required_at, :terminal_at, :digest, :pr_body_revision, keyword_init: true) do
@@ -34,7 +36,7 @@ module Issues
       issue_ids = issues_by_id.keys
       linked = Issue.where(project_id: issues.map(&:project_id).uniq, is_pull_request: true,
         pr_review_phase: "merged", parent_issue_id: issue_ids)
-        .pluck(:parent_issue_id, :github_number, :github_html_url, :created_at, :body)
+        .pluck(:parent_issue_id, :github_number, :github_html_url, :created_at, ISSUE_BODY_DIGEST_SQL)
       run_linked = linked_runs(issue_ids)
       merged_prs_by_issue_id = merged_prs_by_issue_id(issues_by_id, linked, run_linked)
 
@@ -44,8 +46,12 @@ module Issues
     end
 
     def self.digest_for(merged_prs, no_code_at)
+      duplicate_numbers = merged_prs.group_by(&:number).filter_map { |number, prs| number if prs.size > 1 }.to_set
       canonical = [
-        merged_prs.map { |pr| "merged:#{pr.number}@#{pr.terminal_at&.utc&.iso8601}" }.sort.join("|"),
+        merged_prs.map do |pr|
+          identity = duplicate_numbers.include?(pr.number) ? "#{pr.number}:#{pr.url}" : pr.number
+          "merged:#{identity}@#{pr.terminal_at&.utc&.iso8601}"
+        end.sort.join("|"),
         "no_code:#{no_code_at&.utc&.iso8601}"
       ].join(";;")
 
@@ -65,7 +71,7 @@ module Issues
         is_pull_request: true,
         pr_review_phase: "merged",
         parent_issue_id: issue.id
-      ).pluck(:github_number, :github_html_url, :created_at, :id, :body)
+      ).pluck(:github_number, :github_html_url, :created_at, :id, ISSUE_BODY_DIGEST_SQL)
 
       run_linked = AgentRun.where(project_id: issue.project_id, goal: "create_pr", issue_id: issue.id)
         .where.not(pull_request_number: nil)
@@ -92,27 +98,29 @@ module Issues
            AND merged_prs.is_pull_request = TRUE
            AND merged_prs.pr_review_phase = 'merged'
         SQL
-        .pluck("agent_runs.id", "agent_runs.pull_request_number", "agent_runs.pull_request_url", "agent_runs.completed_at", "merged_prs.created_at", "merged_prs.body")
+        .pluck("agent_runs.id", "agent_runs.pull_request_number", "agent_runs.pull_request_url", "agent_runs.completed_at", "merged_prs.created_at", MERGED_PR_BODY_DIGEST_SQL)
 
-      run_terminal_by_number = run_linked.each_with_object({}) do |(_run_id, number, _url, completed_at, _pr_created_at), map|
-        existing = map[number]
-        map[number] = completed_at if existing.nil? || (completed_at && completed_at > existing)
+      run_terminal_by_identity = run_linked.each_with_object({}) do |(_run_id, number, url, completed_at, _pr_created_at), map|
+        identity = [ number, url ]
+        existing = map[identity]
+        map[identity] = completed_at if existing.nil? || (completed_at && completed_at > existing)
       end
 
-      by_number = {}
+      by_identity = {}
 
-      linked.each do |number, html_url, pr_created_at, _pr_id, body|
-        by_number[number] ||= MergedPullRequest.new(
+      linked.each do |number, html_url, pr_created_at, _pr_id, body_digest|
+        url = html_url.presence || "#{issue.project.github_url}/pull/#{number}"
+        by_identity[[ number, url ]] ||= MergedPullRequest.new(
           number: number,
-          url: html_url.presence || "#{issue.project.github_url}/pull/#{number}",
-          terminal_at: run_terminal_by_number[number] || pr_created_at,
+          url: url,
+          terminal_at: run_terminal_by_identity[[ number, url ]] || pr_created_at,
           run_id: nil,
-          body_digest: Digest::SHA256.hexdigest(body.to_s)
+          body_digest: body_digest
         )
       end
 
-      run_linked.each do |run_id, number, pull_request_url, completed_at, pr_created_at, body|
-        pr = by_number[number]
+      run_linked.each do |run_id, number, pull_request_url, completed_at, pr_created_at, body_digest|
+        pr = by_identity[[ number, pull_request_url ]]
         if pr.nil?
           # Use the run's recorded URL — the same field the join above
           # correlated — rather than reconstructing from issue.project.github_url,
@@ -120,25 +128,25 @@ module Issues
           # lives in upstream_full_name, not in the project's own repo, so the
           # constructed fork URL would send the operator to a fork PR with
           # the same number that may be unrelated or open (#4130 review).
-          by_number[number] = MergedPullRequest.new(
+          by_identity[[ number, pull_request_url ]] = MergedPullRequest.new(
             number: number,
             url: pull_request_url.presence || "#{issue.project.github_url}/pull/#{number}",
             terminal_at: completed_at || pr_created_at,
             run_id: run_id,
-            body_digest: Digest::SHA256.hexdigest(body.to_s)
+            body_digest: body_digest
           )
         else
           pr.run_id = run_id
         end
       end
 
-      by_number.values
+      by_identity.values
     end
 
     def self.build_result(merged_prs, no_code_at)
       terminal_at = (merged_prs.map(&:terminal_at).compact + [ no_code_at ]).compact.max
       Result.new(
-        merged_prs: merged_prs.sort_by { |pr| [ pr.terminal_at || Time.at(0), pr.number ] },
+        merged_prs: merged_prs.sort_by { |pr| [ pr.terminal_at || Time.at(0), pr.url, pr.number ] },
         no_code_required_at: no_code_at,
         terminal_at: terminal_at,
         digest: digest_for(merged_prs, no_code_at),
@@ -162,21 +170,23 @@ module Issues
            AND merged_prs.is_pull_request = TRUE AND merged_prs.pr_review_phase = 'merged'
         SQL
         .pluck("agent_runs.issue_id", "agent_runs.id", "agent_runs.pull_request_number",
-          "agent_runs.pull_request_url", "agent_runs.completed_at", "merged_prs.created_at", "merged_prs.body")
+          "agent_runs.pull_request_url", "agent_runs.completed_at", "merged_prs.created_at", MERGED_PR_BODY_DIGEST_SQL)
     end
     private_class_method :linked_runs
 
     def self.merged_prs_by_issue_id(issues_by_id, linked, run_linked)
       result = Hash.new { |hash, key| hash[key] = {} }
-      run_times = run_linked.group_by { |issue_id, _run_id, number, *_rest| [ issue_id, number ] }
+      run_times = run_linked.group_by { |issue_id, _run_id, number, url, *_rest| [ issue_id, number, url ] }
         .transform_values { |rows| rows.map { |row| row[4] }.compact.max }
-      linked.each do |issue_id, number, url, created_at, body|
+      linked.each do |issue_id, number, url, created_at, body_digest|
         issue = issues_by_id.fetch(issue_id)
-        result[issue_id][number] ||= MergedPullRequest.new(number:, url: url.presence || "#{issue.project.github_url}/pull/#{number}", terminal_at: run_times[[ issue_id, number ]] || created_at, run_id: nil, body_digest: Digest::SHA256.hexdigest(body.to_s))
+        url = url.presence || "#{issue.project.github_url}/pull/#{number}"
+        result[issue_id][[ number, url ]] ||= MergedPullRequest.new(number:, url:, terminal_at: run_times[[ issue_id, number, url ]] || created_at, run_id: nil, body_digest:)
       end
-      run_linked.each do |issue_id, run_id, number, url, completed_at, created_at, body|
-        pr = result[issue_id][number]
-        result[issue_id][number] = MergedPullRequest.new(number:, url: url.presence || "#{issues_by_id.fetch(issue_id).project.github_url}/pull/#{number}", terminal_at: completed_at || created_at, run_id:, body_digest: Digest::SHA256.hexdigest(body.to_s)) if pr.nil?
+      run_linked.each do |issue_id, run_id, number, url, completed_at, created_at, body_digest|
+        url = url.presence || "#{issues_by_id.fetch(issue_id).project.github_url}/pull/#{number}"
+        pr = result[issue_id][[ number, url ]]
+        result[issue_id][[ number, url ]] = MergedPullRequest.new(number:, url:, terminal_at: completed_at || created_at, run_id:, body_digest:) if pr.nil?
         pr.run_id = run_id if pr
       end
       result
