@@ -206,13 +206,16 @@ once and assembles ordered, provenance-tracked sections:
 - `issue_task` (required) — the rendered `coding.issue_implementation` template
   (title, body, and instructions).
 - `effective_merge_review_posture` (required) — the execution-time effective
-  auto-merge mode, bot-authored merge permission, enabled review methods,
-  manual-review state, applicable human-approval posture, and TDD gate. Every
-  value resolves through the same effective Project predicates the
+  auto-merge mode, including merge-phase authorization, bot-authored merge
+  permission, enabled review methods, manual-review state, applicable
+  human-approval posture, and effective TDD mode. Every value resolves through
+  the same effective Project predicates and phase authorization the
   merge/review runtime uses (`auto_merge_enabled?`,
-  `auto_merge_bot_authored?`, `review_enabled?`), never the raw stored
-  columns, so an upstream-target project holding legacy enabled values still
-  sees its gated-off posture. Its
+  `auto_merge_bot_authored?`, `review_enabled?`,
+  `Automation::FeatureActivation.phase_authorized?`, and
+  `Automation::FeatureActivation.issue_tdd_mode`), never the raw stored
+  columns, so an upstream-target project holding legacy enabled values or a
+  project with its merge phase disabled still sees its gated-off posture. Its
   provenance records these non-secret values, so operators can audit the
   policy visible to a run when project settings changed after queueing. The
   rendered section keeps normal CI, bot review, screenshots, and merge checks

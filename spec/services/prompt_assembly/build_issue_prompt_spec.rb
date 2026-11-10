@@ -34,6 +34,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
       content: "", sections: [], total_tokens: 0, queries_made: 0
     )
+    allow(Automation::FeatureActivation).to receive(:phase_authorized?).and_return(true)
   end
 
   def assembly_project(detected_languages: [], feature_flags_pattern: false)
@@ -43,7 +44,8 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       allowed_github_usernames: [ "viamin" ],
       service_containers: service_containers_relation,
       lid_mode: nil,
-      detected_languages: detected_languages
+      detected_languages: detected_languages,
+      tdd_mode: "off"
     ).tap do |p|
       def p.trusted_github_user?(login)
         return false if login.nil?
@@ -54,6 +56,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         login == "paid-code-reviewer[bot]"
       end
 
+      p.define_singleton_method(:paid_local_activation?) { true }
       p.define_singleton_method(:uses_feature_flags_pattern?) { feature_flags_pattern }
     end
   end
@@ -78,7 +81,8 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       allowed_github_usernames: [ "viamin" ],
       service_containers: service_containers,
       lid_mode: nil,
-      detected_languages: detected_languages
+      detected_languages: detected_languages,
+      tdd_mode: "off"
     ).tap do |p|
       def p.trusted_github_user?(login)
         return false if login.nil?
@@ -89,6 +93,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         login == "paid-code-reviewer[bot]"
       end
 
+      p.define_singleton_method(:paid_local_activation?) { true }
       p.define_singleton_method(:uses_feature_flags_pattern?) { false }
     end
   end
@@ -108,7 +113,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       !upstream_target && settings[:review_settings]["enabled"] == true
     end
     project.define_singleton_method(:effective_review_settings) { settings[:review_settings] }
-    project.define_singleton_method(:tdd_mode) { settings[:tdd_mode] }
+    project.tdd_mode = settings[:tdd_mode]
   end
 
   def all_merge_settings
@@ -135,12 +140,13 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     }
   end
 
-  def apply_execution_settings!(settings)
+  def apply_execution_settings!(settings, project:)
     settings.merge!(
       auto_merge_mode: "dependabot_only",
       review_settings: { "enabled" => true, "methods" => { "manual" => { "enabled" => true } } },
       tdd_mode: "strict"
     )
+    project.tdd_mode = settings[:tdd_mode]
   end
 
   describe ".call" do
@@ -434,7 +440,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       settings = queued_merge_settings
       configure_merge_posture(project, settings)
       queued_auto_merge_mode = project.auto_merge_mode
-      apply_execution_settings!(settings)
+      apply_execution_settings!(settings, project: project)
 
       result = described_class.call(issue: issue, project: project)
 
@@ -462,6 +468,57 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       expect(result.text).to include("Enabled review methods: none")
       expect(result.text).to include("Manual review: disabled")
       expect(result.text).to include("TDD gate: non_strict")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "reports the effective TDD mode rather than the run's TDD phase" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings)
+      agent_run = create(:agent_run, goal: "create_pr", tdd_phase: "test_writing")
+      allow(Automation::FeatureActivation).to receive(:issue_tdd_mode)
+        .with(project: project, issue: issue)
+        .and_return("strict")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("TDD gate: strict")
+      expect(result.text).not_to include("TDD gate: test_writing")
+      expect(section.metadata).to include(tdd_mode: "strict")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders auto-merge as off when the merge phase is disabled" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings)
+      allow(Automation::FeatureActivation).to receive(:phase_authorized?)
+        .with(project: project, capability: "auto_merge")
+        .and_return(false)
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Auto-merge mode: off")
+      expect(result.text).to include("Auto-merge automation: disabled by merge phase")
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(section.metadata).to include(
+        auto_merge_mode: "off",
+        auto_merge_phase_authorized: false,
+        bot_authored_pr_auto_merge: false
+      )
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "treats null review methods as no enabled review methods" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(
+        review_settings: { "enabled" => true, "methods" => nil }
+      ))
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to include("Enabled review methods: none")
+      expect(result.text).to include("Manual review: disabled")
     end
 
     # @spec PROMPT-ASSEMBLY-025

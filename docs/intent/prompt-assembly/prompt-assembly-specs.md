@@ -212,12 +212,15 @@
 
 - [x] **PROMPT-ASSEMBLY-025** — When a create_pr issue-implementation prompt
   is assembled, it SHALL include a required trusted section that renders the
-  effective execution-time auto-merge mode, bot-authored merge permission,
-  enabled review methods, manual-review state, applicable human-approval
-  posture, and TDD gate. Each value SHALL resolve through the effective
-  runtime predicates (`auto_merge_enabled?`, `auto_merge_bot_authored?`,
-  `review_enabled?`), so a project whose runtime gates disable automation —
-  including an upstream-target project holding legacy stored enabled values —
+  effective execution-time auto-merge mode and merge-phase authorization,
+  bot-authored merge permission, enabled review methods, manual-review state,
+  applicable human-approval posture, and effective TDD mode. Each value SHALL
+  resolve through the effective runtime predicates (`auto_merge_enabled?`,
+  `auto_merge_bot_authored?`, `review_enabled?`,
+  `Automation::FeatureActivation.phase_authorized?`, and
+  `Automation::FeatureActivation.issue_tdd_mode`), so a project whose runtime
+  gates disable automation — including an upstream-target project holding
+  legacy stored enabled values or a project with its merge phase disabled —
   SHALL see the gated-off posture. The section SHALL state that CI, bot
   review, screenshots, and merge checks remain in force, and that auto-merge
   never overrides a human-only decision, repository protection, or structured
