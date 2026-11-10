@@ -14,11 +14,13 @@ module Issues
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, actor:, reason:, client: nil)
+    def initialize(issue:, actor:, reason:, client: nil, authorization_metadata: {}, authorization_check: nil)
       @issue = issue
       @actor = actor
       @reason = reason.to_s.strip
       @client = client
+      @authorization_metadata = authorization_metadata
+      @authorization_check = authorization_check
     end
 
     def call # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037 UPSTREAM-ISSUE-008
@@ -36,7 +38,7 @@ module Issues
       return result unless result.success?
 
       issue.project.account.account_activity_events.create!(action: "issue.closeout_resolved", actor:, subject: issue,
-        metadata: { "reason" => reason, "evidence_digest" => issue.closeout_resolution_digest })
+        metadata: { "reason" => reason, "evidence_digest" => issue.closeout_resolution_digest }.merge(authorization_metadata))
       Result.new(issue:)
     ensure
       clear_closing_marker
@@ -44,13 +46,16 @@ module Issues
 
     private
 
-    attr_reader :actor, :issue, :reason
+    attr_reader :actor, :issue, :reason, :authorization_metadata, :authorization_check
 
     def canned_reason?
       reason.match?(LEGACY_CANNED_REASON)
     end
 
     def validate_closeout(allow_observed_closure: false)
+      if authorization_check && !authorization_check.call
+        return failure(:authorization_changed, "Delegated closure authority changed; review the current project policy.")
+      end
       return failure(:upstream_managed, "Paid does not mutate upstream issues; close this issue directly on the upstream repository.") if issue.project.upstream_pr_target?
 
       evidence = CloseoutEvidence.call(issue)
@@ -86,6 +91,9 @@ module Issues
       return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless remote_state.in?(%w[open closed])
 
       if remote_state == "open"
+        if authorization_check && !authorization_check.call
+          return failure(:authorization_changed, "Delegated closure authority changed; review the current project policy.")
+        end
         updated = client.update_issue(issue.project.full_name, issue.github_number, state: "closed", state_reason: "completed")
         return failure(:github_unavailable, "GitHub did not confirm closure; retry Close on GitHub from this Inbox item.") unless github_closed?(updated)
       end
@@ -121,7 +129,7 @@ module Issues
       issue.project.account.account_activity_events.create!(
         action: "issue.closeout_revalidation_failed", actor:, subject: issue,
         metadata: { "reason" => reason, "evidence_digest" => @attempted_evidence_digest,
-                    "blocker" => validation.code.to_s }
+                    "blocker" => validation.code.to_s }.merge(authorization_metadata)
       )
       @closing_marker = nil
     end

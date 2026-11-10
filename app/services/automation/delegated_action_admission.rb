@@ -32,7 +32,8 @@ module Automation
     ACTION_PHASES = {
       "review" => Automation::Phases::CODING,
       "repair" => Automation::Phases::CODING,
-      "merge" => Automation::Phases::MERGE
+      "merge" => Automation::Phases::MERGE,
+      "issue_closure" => Automation::Phases::MERGE
     }.freeze
 
     STOP_BEFORE_PHASES = {

@@ -20,6 +20,7 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     expect(run.reload.reconciliation).to include("status" => "reconciled")
     expect(run.reload.status).to eq("completed")
     expect(issue.reload.paid_state).to eq("in_progress")
+    expect(AutoResolveCloseoutJob).to have_been_enqueued.with(run.id)
   end
 
   # @spec PARTIAL-CLOSEOUT-035

@@ -113,3 +113,18 @@ Status markers: `[ ]` planned implementation gap.
   closeout blocked while a material follow-up is open, and SHALL NOT execute
   that follow-up under the delegated authority; the follow-up's own execution
   SHALL require its own admission, policy snapshot, and boundary rechecks.
+
+- [x] **PROJECT-DELEGATION-009** — When a completed report-only acceptance
+  audit captured an effective `bounded_delivery` posture with delegated issue
+  closure and an enabled Merge phase, the system SHALL attempt one evidence-
+  gated GitHub closure only if that same authority and a current fully accepted
+  assessment still hold. A conservative or newly broadened project, stale or
+  partial assessment, active hold or prerequisite, upstream-managed issue,
+  scanner record, or failed GitHub write SHALL leave the source issue visible
+  for human recovery. Successful closure SHALL record the system initiator,
+  audit run, policy revision, evidence digest, and evidence-linked rationale.
+  *Code:* `app/services/issues/auto_resolve_closeout.rb`,
+  `app/jobs/auto_resolve_closeout_job.rb`,
+  `app/temporal/activities/run_acceptance_audit_activity.rb`.
+  *Tests:* `spec/services/issues/auto_resolve_closeout_spec.rb`,
+  `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`.

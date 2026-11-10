@@ -35,11 +35,31 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(result).to be_success
     expect(result.agent_run.goal).to eq("analyze_issue")
     expect(result.request.evidence).to include("continuation_mode" => "acceptance_audit")
+    expect(result.request.evidence).to include(
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+      "closeout_policy_signature" => nil
+    )
     expect(result.request.evidence_digest).to eq(
       PartialCloseouts::Assessment.source_revision_for(
         issue,
         closeout_evidence: Issues::CloseoutEvidence.call(issue)
       )
+    )
+  end
+
+  # @spec PROJECT-DELEGATION-009
+  it "captures delegated closeout authority at audit admission" do
+    merged_partial_pr
+    project.update!(auto_merge_mode: "all")
+    FeatureFlags.enable!(:automation_phases, project:)
+    FeatureFlags.enable!(:project_delegation, project:)
+    create(:project_delegation_posture, project:, selected_by: user)
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result).to be_success
+    expect(result.request.evidence["closeout_policy_signature"]).to eq(
+      Automation::DelegatedActionAdmission.posture_signature_for(project:, action: "issue_closure")
     )
   end
 

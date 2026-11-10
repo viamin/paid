@@ -19,6 +19,7 @@ module Activities
         PartialCloseouts::SourceClosureDisposition.record!(agent_run, assessment: snapshot)
         PartialCloseouts::Reconcile.call(agent_run:, assessment: snapshot)
         agent_run.complete!
+        AutoResolveCloseoutJob.perform_later(agent_run.id)
         ProcessRunQueueJob.perform_later
         { agent_run_id: agent_run.id, assessment_recorded: true }
       end
