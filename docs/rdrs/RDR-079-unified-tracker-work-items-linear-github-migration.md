@@ -9,9 +9,11 @@
 - **Type**: Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-010](RDR-010-multi-tenancy-rbac.md), [RDR-012](RDR-012-github-integration.md), [RDR-051](RDR-051-lid-aware-agent-runs.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md)
-- **Tracking issue**: #4854
+- **Tracking issues**: #4854 (umbrella), #4855–#4860 (phases), #4861 (closeout)
 - **Implementation status**: Phase 1 provider-contract and rollout-guard
-  work is implemented by #4855; the remaining phases are planned.
+  work is present in code and checked EARS claims, while #4855 remains open
+  for issue-level reconciliation. Phases #4856–#4861 remain open. The design
+  is still Draft; partial foundation work is not final design acceptance.
 - **LID**: Full mode, version 1.3.0; the linked LLD and EARS artifacts record
   the implementation cascade.
 

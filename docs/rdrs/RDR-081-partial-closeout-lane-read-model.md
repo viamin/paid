@@ -8,7 +8,7 @@
 - **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implementation pending
 - **Type**: Architecture
 - **Related RDRs**: [RDR-074](RDR-074-project-readiness.md) (the persisted project-readiness snapshot this read model mirrors), [RDR-032](RDR-032-eager-queue-seeding.md) (auto-pick admission authority)
-- **Related Issues**: #4558 (this decision), #4120 (partial-closeout recovery umbrella), #4119 (gap ownership), #4556 (eligible-scope query optimization)
+- **Related Issues**: #4558 (this decision), #4912 (persisted projection implementation), #4120 (partial-closeout recovery umbrella), #4119 (gap ownership), #4556 (eligible-scope query optimization)
 
 ## Problem
 

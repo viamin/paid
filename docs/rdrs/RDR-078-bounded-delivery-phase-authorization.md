@@ -5,9 +5,15 @@
 - **Date**: 2026-10-24
 - **Status**: Proposed
 - **Type**: Architecture + Authorization + Delivery UX
+- **Related Issues**: #4624 (delivered proposal); #4995 (tracking umbrella), #4996 (design acceptance), #4997–#4999 (implementation), #5000 (closeout)
 - **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), and [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md)
 - **Related intent**: `docs/intent/bounded-phase-authorization/`, `docs/intent/automation-phases/`, `docs/intent/auto-merge-strategy/`, and `docs/intent/inbox-phase-relevance/`
-- **Implementation status**: Design proposal only. It changes neither approval freshness nor any project setting, including Forager's `auto_merge_mode`.
+- **Implementation status**: The narrower bounded-action foundation and
+  deterministic boundary rechecks (`BOUNDED-PHASE-AUTHORIZATION-010`, `-011`,
+  and `-004`) are checked in the linked EARS. The eight phase-lifecycle claims
+  remain proposed and are tracked under #4995. No exclusive stop is accepted
+  or enabled; approval freshness and project settings, including Forager's
+  `auto_merge_mode`, remain unchanged.
 
 ## Decision required
 
