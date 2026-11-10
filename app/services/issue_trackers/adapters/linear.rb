@@ -114,8 +114,7 @@ module IssueTrackers
       end
 
       def execute(query, variables = {})
-        api_key = credential&.api_secret
-        raise AuthenticationError, "Active Linear credential is required" unless credential&.active? && credential.service_key == "linear" && api_key.present?
+        api_key = authentication_key
 
         response = connection.post do |request|
           request.headers["Authorization"] = api_key
@@ -141,6 +140,13 @@ module IssueTrackers
         raise ResponseError, "Linear request failed: #{error.message}"
       rescue JSON::ParserError
         raise ResponseError, "Linear returned invalid JSON"
+      end
+
+      def authentication_key
+        token = tracker_configuration.linear_token
+        return token.token if token&.active?
+
+        raise AuthenticationError, "Active Linear credential is required"
       end
 
       def connection

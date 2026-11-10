@@ -5,8 +5,8 @@ require "rails_helper"
 RSpec.describe WorkItems::SyncLinear do
   let(:project) { create(:project) }
   let(:account) { project.account }
-  let(:credential) { create(:integration_credential, account:, service_key: "linear", secret: "lin_api_#{'a' * 40}") }
-  let(:configuration) { create(:tracker_configuration, :linear, configurable: account, integration_credential: credential) }
+  let(:token) { create(:linear_token, account:) }
+  let(:configuration) { create(:tracker_configuration, :linear, configurable: account, linear_token: token) }
   let(:ticket) do
     { id: "issue-1", identifier: "ENG-1", title: "Build feature", description: "Details",
       url: "https://linear.app/acme/issue/ENG-1", priority: 2, updatedAt: "2026-11-10T12:00:00.000Z",

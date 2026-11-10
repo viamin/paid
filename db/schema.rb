@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_193710) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_195604) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4584,6 +4584,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_193710) do
     t.bigint "integration_credential_id", comment: "Credential used to authenticate to the external tracker when one is required."
     t.string "last_sync_error"
     t.datetime "last_synced_at"
+    t.bigint "linear_token_id", comment: "Selected account Linear API key for the single workspace connection."
     t.jsonb "log_data"
     t.jsonb "project_mapping", default: {}, comment: "Mapping data between Paid entities and tracker-specific project identifiers."
     t.integer "sync_interval_seconds", default: 900, null: false
@@ -4593,6 +4594,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_193710) do
     t.index ["configurable_type", "configurable_id"], name: "index_tracker_configurations_on_configurable", unique: true
     t.index ["created_by_id"], name: "index_tracker_configurations_on_created_by_id"
     t.index ["integration_credential_id"], name: "index_tracker_configurations_on_integration_credential_id"
+    t.index ["linear_token_id"], name: "index_tracker_configurations_on_linear_token_id"
     t.index ["tracker_type"], name: "index_tracker_configurations_on_tracker_type"
     t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
   end
@@ -5263,6 +5265,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_193710) do
   add_foreign_key "token_usages", "chat_sessions", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"
+  add_foreign_key "tracker_configurations", "linear_tokens"
   add_foreign_key "tracker_configurations", "users", column: "created_by_id"
   add_foreign_key "trusted_measurement_attempts", "accounts"
   add_foreign_key "trusted_measurement_attempts", "issues"

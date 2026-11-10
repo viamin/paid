@@ -6,6 +6,8 @@ class LinearTokensController < ApplicationController
 
   def index
     @linear_tokens = policy_scope(LinearToken).order(created_at: :desc)
+    connection = current_account.tracker_configuration
+    @linear_connection = connection if connection&.tracker_type == "linear"
   end
 
   def show
@@ -22,16 +24,20 @@ class LinearTokensController < ApplicationController
     @linear_token.created_by = current_user
     authorize @linear_token
 
-    if @linear_token.save
+    if Integrations::ConnectLinearToken.call(token: @linear_token)
       redirect_to linear_token_path(@linear_token), notice: "Linear API key saved."
-    else
-      render :new, status: :unprocessable_content
     end
+  rescue ActiveRecord::RecordInvalid => error
+    @linear_token.errors.add(:base, error.record.errors.full_messages.join(", ")) unless error.record == @linear_token
+    render :new, status: :unprocessable_content
+  rescue Integrations::ConnectLinearToken::ConfigurationConflict => error
+    @linear_token.errors.add(:base, error.message)
+    render :new, status: :unprocessable_content
   end
 
   def destroy
     authorize @linear_token
-    @linear_token.revoke!
+    Integrations::RevokeLinearToken.call(token: @linear_token)
     redirect_to linear_tokens_path, notice: "Linear API key was successfully deactivated."
   end
 

@@ -5,8 +5,8 @@ require "rails_helper"
 RSpec.describe LinearTicketSyncJob do
   let(:project) { create(:project) }
   let(:account) { project.account }
-  let(:credential) { create(:integration_credential, account:, service_key: "linear", secret: "lin_api_#{'a' * 40}") }
-  let!(:configuration) { create(:tracker_configuration, :linear, configurable: account, integration_credential: credential) }
+  let(:token) { create(:linear_token, account:) }
+  let!(:configuration) { create(:tracker_configuration, :linear, configurable: account, linear_token: token) }
 
   it "synchronizes only due accounts with an enabled project" do
     # @spec UNIFIED-WORK-ITEMS-002 UNIFIED-WORK-ITEMS-009

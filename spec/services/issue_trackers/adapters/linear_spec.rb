@@ -4,8 +4,8 @@ require "rails_helper"
 
 RSpec.describe IssueTrackers::Adapters::Linear do
   let(:account) { create(:account) }
-  let(:credential) { create(:integration_credential, account:, service_key: "linear", secret: "lin_api_#{'a' * 40}") }
-  let(:configuration) { create(:tracker_configuration, :linear, configurable: account, integration_credential: credential) }
+  let(:token) { create(:linear_token, account:) }
+  let(:configuration) { create(:tracker_configuration, :linear, configurable: account, linear_token: token) }
   let(:adapter) { described_class.new(configuration) }
   let(:endpoint) { "https://api.linear.app/graphql" }
 
@@ -18,7 +18,7 @@ RSpec.describe IssueTrackers::Adapters::Linear do
     request = stub_graphql({ data: { viewer: { id: "user-1" } } })
 
     expect(adapter.validate_connection!).to be(true)
-    expect(request).to have_been_requested.with(headers: { "Authorization" => credential.secret })
+    expect(request).to have_been_requested.with(headers: { "Authorization" => token.token })
   end
 
   it "lists all ticket pages and retains provider payloads" do
@@ -47,10 +47,18 @@ RSpec.describe IssueTrackers::Adapters::Linear do
 
   it "rejects a missing credential before making a request" do
     # @spec UNIFIED-WORK-ITEMS-002
-    configuration.update!(integration_credential: nil)
+    configuration.update!(linear_token: nil)
 
     expect { adapter.validate_connection! }.to raise_error(IssueTrackers::Adapters::Linear::AuthenticationError)
     expect(a_request(:post, endpoint)).not_to have_been_made
+  end
+
+  it "does not use a separate generic integration credential for Linear" do
+    # @spec UNIFIED-WORK-ITEMS-002
+    credential = create(:integration_credential, account:, service_key: "linear")
+    configuration.update!(linear_token: nil, integration_credential: credential)
+
+    expect { adapter.validate_connection! }.to raise_error(IssueTrackers::Adapters::Linear::AuthenticationError)
   end
 
   it "updates a ticket using a Linear workflow-state ID" do

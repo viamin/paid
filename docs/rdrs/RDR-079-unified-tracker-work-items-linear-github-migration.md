@@ -12,8 +12,9 @@
 - **Tracking issue**: #4854
 - **Implementation status**: Phase 1 provider-contract and rollout-guard
   work is implemented by #4855. Phase 2's adapter transport, account ticket
-  store, guarded sync, and cadence are in progress under #4856; its full data
-  coverage and connection experience remain open, as do later phases.
+  store, selected account API key, guarded sync, and cadence are in progress
+  under #4856; its full data coverage and live workspace validation remain
+  open, as do later phases.
 - **LID**: Full mode, version 1.3.0; the linked LLD and EARS artifacts record
   the implementation cascade.
 
@@ -92,13 +93,12 @@ evidence:
    for listing and fetching issues, adding comments, updating native workflow
    state, linking pull requests, and validating credentials. The adapter and
    account ticket store still lack the complete supported data surface and
-   connection setup needed for Linear workflows.
-5. Account-wide Linear credentials already have a local representation:
-   `Account#linear_tokens`, `LinearToken`, the Linear integration provider, and
-   `linear_tokens` routes/controllers/views. `LinearToken` validates the
-   `lin_api_...` format and supports revocation. The brief's one-connection
-   requirement is therefore a new usage constraint over an existing credential
-   surface, not evidence that synchronization already exists.
+   workflow integration needed for Linear tickets.
+5. Account-wide Linear credentials use `Account#linear_tokens`, `LinearToken`,
+   the Linear integration provider, and `linear_tokens` routes/controllers/views.
+   `LinearToken` validates the `lin_api_...` format and supports revocation.
+   The account's Linear `TrackerConfiguration` selects one active token; saving
+   a new key rotates that selection without duplicating the secret.
 6. `app/models/issue.rb` is the current Paid issue aggregate. Its associations
    include agent runs, parent/sub-issues, dependencies, and feature-intent
    links; it also contains GitHub-specific source constants, GitHub trust

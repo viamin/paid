@@ -47,6 +47,30 @@ RSpec.describe "LinearTokens" do
         get linear_tokens_path
         expect(response.body).to include("Revoked")
       end
+
+      it "shows connection health and the last successful sync" do
+        # @spec UNIFIED-WORK-ITEMS-002
+        token = create(:linear_token, account:)
+        create(:tracker_configuration, :linear, configurable: account, linear_token: token,
+          connection_health: "rate_limited", last_synced_at: Time.utc(2026, 11, 10, 12),
+          last_sync_error: "rate_limited")
+
+        get linear_tokens_path
+
+        expect(response.body).to include("Rate limited")
+        expect(response.body).to include("Last successful sync")
+        expect(response.body).to include("15 minutes")
+      end
+
+      it "identifies the key selected for the account connection" do
+        # @spec UNIFIED-WORK-ITEMS-002
+        token = create(:linear_token, account:)
+        create(:tracker_configuration, :linear, configurable: account, linear_token: token)
+
+        get linear_tokens_path
+
+        expect(response.body).to include("Selected key")
+      end
     end
   end
 
@@ -111,6 +135,37 @@ RSpec.describe "LinearTokens" do
           post linear_tokens_path, params: { linear_token: { name: "Test Key", token: valid_token } }
           created_token = LinearToken.where.not(id: existing_ids).sole
           expect(created_token.created_by).to eq(user)
+        end
+
+        it "selects the new key for the account Linear connection" do
+          # @spec UNIFIED-WORK-ITEMS-002
+          post linear_tokens_path, params: { linear_token: { name: "Test Key", token: valid_token } }
+
+          connection = account.reload.tracker_configuration
+          expect(connection.tracker_type).to eq("linear")
+          expect(connection.linear_token.token).to eq(valid_token)
+          expect(connection.sync_interval_seconds).to eq(900)
+        end
+
+        it "rotates the selected key without creating another connection" do
+          # @spec UNIFIED-WORK-ITEMS-002
+          first = create(:linear_token, account:)
+          connection = create(:tracker_configuration, :linear, configurable: account, linear_token: first)
+
+          post linear_tokens_path, params: { linear_token: { name: "New Key", token: valid_token } }
+
+          expect(account.tracker_configuration.reload.id).to eq(connection.id)
+          expect(connection.reload.linear_token.name).to eq("New Key")
+        end
+
+        it "rejects a conflicting account tracker configuration without saving a key" do
+          # @spec UNIFIED-WORK-ITEMS-002
+          create(:tracker_configuration, configurable: account, tracker_type: "jira")
+
+          expect {
+            post linear_tokens_path, params: { linear_token: { name: "Test Key", token: valid_token } }
+          }.not_to change(LinearToken, :count)
+          expect(response).to have_http_status(:unprocessable_content)
         end
       end
 
@@ -191,6 +246,17 @@ RSpec.describe "LinearTokens" do
           delete linear_token_path(token)
           expect(response).to redirect_to(linear_tokens_path)
           expect(flash[:notice]).to include("deactivated")
+        end
+
+        it "disconnects synchronization when the selected key is revoked" do
+          # @spec UNIFIED-WORK-ITEMS-002
+          token = create(:linear_token, account:)
+          connection = create(:tracker_configuration, :linear, configurable: account, linear_token: token)
+
+          delete linear_token_path(token)
+
+          expect(connection.reload).to have_attributes(enabled: false, linear_token_id: nil,
+            connection_health: "disconnected")
         end
       end
 
