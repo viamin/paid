@@ -203,11 +203,26 @@ are met. Each sync re-checks open issues carrying a stale completed or
 recommend-close state whose source `create_pr` run recorded a pull request. A
 GitHub closing reference on that source PR remains distinct closure evidence.
 Without one, the PR's lifecycle determines the next action rather than a
-completion verdict: an open or draft PR is parked in `manual_review` with its
-linked PR and review-or-merge action, while a merged PR enters the existing
-evidence-backed partial-closeout lane (`paid_state: "analyzed"`). The latter
-state remains blocking to dependencies and is eligible for the bounded,
+completion verdict. An open or draft PR whose producing run recorded its exact
+repository-qualified URL and a gap-free `awaiting_final_audit`
+assessment stays in `completed` while the PR review and merge pipeline runs.
+This assessment must have only satisfied or unknown criteria, with at least one
+unknown criterion pending audit and an intent revision matching the current
+source issue. Changes to closeout evidence remain for the post-merge audit to
+reassess. The source issue has no separate human action
+and must not enter the Inbox merely because Paid deliberately published
+`Tracks`. Other open or draft non-closing PRs are parked in `manual_review`
+with their linked PR and review-or-merge action. A merged non-closing PR enters
+the evidence-backed partial-closeout lane (`paid_state: "analyzed"`).
+That state remains blocking to dependencies and is eligible for the bounded,
 report-only acceptance-audit sweep; it is not a recommendation to close.
+
+The same repair releases a prior sync-created `manual_review` hold when the
+recorded audit-pending decision is now available. It does not clear a hold
+with a different producer or reason. If the source issue's intent changed after
+the recorded assessment, the Inbox reason names that change and asks for
+review against the current requirements. Changes to technical or closeout
+evidence remain in the automatic post-merge audit path.
 
 Before changing either state, the repair removes a stale recommend-close label
 when it is present. A failed label write leaves the existing state intact, and

@@ -39,7 +39,7 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     expect(issue.reload.paid_state).to eq("in_progress")
   end
 
-  # @spec PARTIAL-CLOSEOUT-047
+  # @spec PARTIAL-CLOSEOUT-049
   it "passes configured fallback runners to a bounded audit assessment" do
     primary = create(:runner, user: user, runner_key: "codex")
     create(:runner, user: user, runner_key: "gemini")
@@ -53,7 +53,7 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
       agent_run: run, fallback_runner_identifiers: array_including("gemini"), timeout: be_between(120, 300))
   end
 
-  # @spec PARTIAL-CLOSEOUT-047
+  # @spec PARTIAL-CLOSEOUT-049
   it "does not pass fallback runners when fallback is disabled" do
     user.settings.update!(fallback_enabled: false, issue_analysis_fallback_runners: [ "gemini" ])
     allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return({ "gaps" => [] })

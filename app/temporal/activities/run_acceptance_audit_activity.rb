@@ -9,7 +9,7 @@ module Activities
     activity_name "RunAcceptanceAudit"
     MAX_ASSESSMENT_TIMEOUT = 300
 
-    def execute(input) # @spec PARTIAL-CLOSEOUT-047
+    def execute(input) # @spec PARTIAL-CLOSEOUT-049
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       track_phase(agent_run_id: agent_run.id, phase_key: "run_acceptance_audit",
         phase_group: "agent", agent_run: agent_run) do
@@ -41,7 +41,7 @@ module Activities
       raise
     end
 
-    # @spec PARTIAL-CLOSEOUT-047
+    # @spec PARTIAL-CLOSEOUT-049
     def fallback_runner_identifiers(agent_run)
       settings = agent_run.project.effective_owner&.settings
       return [] unless settings&.fallback_enabled?

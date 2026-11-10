@@ -3,13 +3,17 @@
 module FacetConfidence
   module CloseoutEvaluation
     # Starts (or resumes) a facet-confidence closeout evaluation for one
-    # evidence generation: the tuple of the originating issue and the frozen
-    # corpus manifest digest. Repeated Start actions reuse the existing
-    # evaluation instead of duplicating it; a changed corpus digest starts a
-    # NEW generation, superseding the old one rather than mutating it. The
-    # entry point stays blocked while the closeout records unresolved
-    # blockers, and the operator who starts becomes the sole reference judge.
+    # evidence generation: the tuple of the originating issue, the frozen
+    # corpus manifest digest, and the closeout's recorded source revision.
+    # Repeated Start actions reuse the existing evaluation instead of
+    # duplicating it; a changed corpus digest or source revision starts a
+    # NEW generation, superseding the old one rather than mutating or
+    # refreezing it — that new generation is the recovery route a stale
+    # reconciliation points to. The entry point stays blocked while the
+    # closeout records unresolved blockers, and the operator who starts
+    # becomes the sole reference judge.
     # @spec FACET-CONFIDENCE-020
+    # @spec FACET-CONFIDENCE-023
     class Start
       Result = Data.define(:success, :error, :evaluation, :resumed) do
         def success? = success
@@ -34,7 +38,7 @@ module FacetConfidence
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
         identity = corpus.identity
         digest = corpus.content_digest
-        existing = FacetConfidenceEvaluation.find_by(issue: @issue, corpus_digest: digest)
+        existing = FacetConfidenceEvaluation.find_by(issue: @issue, corpus_digest: digest, source_revision: revision)
         return Result.new(success: true, error: nil, evaluation: existing, resumed: true) if existing
 
         evaluation = FacetConfidenceEvaluation.create!(
@@ -46,7 +50,7 @@ module FacetConfidence
           corpus_version: identity.fetch("corpus_version"),
           rubric_version: identity.fetch("rubric_version"),
           model_version: identity.fetch("model_version"),
-          source_revision: PartialCloseouts::Assessment.call(@issue).source_revision,
+          source_revision: revision,
           created_by: @actor
         )
         log_started(evaluation, resumed: false)
@@ -58,10 +62,11 @@ module FacetConfidence
         failure(error.record.errors.full_messages.to_sentence)
       rescue ActiveRecord::RecordNotUnique
         # Two operators starting the same evidence generation concurrently both
-        # pass the find_by above; the unique (issue, corpus_digest) index keeps
-        # exactly one evaluation, so the loser resumes the winner's row instead
-        # of surfacing the index race as a 500.
-        winner = FacetConfidenceEvaluation.find_by(issue: @issue, corpus_digest: digest)
+        # pass the find_by above; the unique (issue, corpus_digest,
+        # source_revision) index keeps exactly one evaluation, so the loser
+        # resumes the winner's row instead of surfacing the index race as a
+        # 500.
+        winner = FacetConfidenceEvaluation.find_by(issue: @issue, corpus_digest: digest, source_revision: revision)
         return failure("an evaluation for this evidence generation already exists; start again to resume it") if winner.nil?
 
         Result.new(success: true, error: nil, evaluation: winner, resumed: true)
@@ -70,6 +75,14 @@ module FacetConfidence
       private
 
       attr_reader :project, :issue, :actor, :status
+
+      # The generation key pins the revision the closeout's recorded
+      # assessment covers — the same revision the packet displays and the
+      # reconciliation compares against. find_by(source_revision: nil)
+      # matches IS NULL, so an unassessed closeout keeps one generation too.
+      def revision
+        @revision ||= PartialCloseouts::Assessment.call(@issue).source_revision
+      end
 
       def closeout_status
         @status || Issues::CloseoutStatus.call(@issue)

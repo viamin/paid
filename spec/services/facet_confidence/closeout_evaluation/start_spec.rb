@@ -56,6 +56,40 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::Start do
     expect(issue.facet_confidence_evaluations.count).to eq(1)
   end
 
+  it "resumes an already-frozen evaluation while its recorded revision has not moved" do
+    allow(PartialCloseouts::Assessment).to receive(:call).with(issue)
+      .and_return(instance_double(PartialCloseouts::Assessment::Result, source_revision: "intent-sha"))
+    first = described_class.call(project: project, issue: issue, actor: owner, status: ready_status)
+    first.evaluation.update!(status: "frozen", labels_frozen_at: 1.hour.ago)
+
+    second = described_class.call(project: project, issue: issue, actor: owner, status: ready_status)
+
+    expect(second).to be_success
+    expect(second.resumed).to be(true)
+    expect(second.evaluation.id).to eq(first.evaluation.id)
+    expect(issue.facet_confidence_evaluations.count).to eq(1)
+  end
+
+  # The stale reconciliation recovery route: a frozen report at a moved
+  # revision must not strand the operator on the frozen row.
+  it "starts a new evaluation generation when the recorded source revision changed" do # @spec FACET-CONFIDENCE-023
+    allow(PartialCloseouts::Assessment).to receive(:call).with(issue)
+      .and_return(instance_double(PartialCloseouts::Assessment::Result, source_revision: "intent-sha"))
+    first = described_class.call(project: project, issue: issue, actor: owner, status: ready_status)
+    first.evaluation.update!(status: "frozen", labels_frozen_at: 1.hour.ago)
+
+    allow(PartialCloseouts::Assessment).to receive(:call).with(issue)
+      .and_return(instance_double(PartialCloseouts::Assessment::Result, source_revision: "moved-sha"))
+    second = described_class.call(project: project, issue: issue, actor: owner, status: ready_status)
+
+    expect(second).to be_success
+    expect(second.resumed).to be(false)
+    expect(second.evaluation.id).not_to eq(first.evaluation.id)
+    expect(second.evaluation.source_revision).to eq("moved-sha")
+    expect(first.evaluation.reload).to be_frozen
+    expect(issue.facet_confidence_evaluations.latest_first.map(&:source_revision)).to eq([ "moved-sha", "intent-sha" ])
+  end
+
   it "refuses to start while the closeout records unresolved blockers" do
     result = described_class.call(project: project, issue: issue, actor: owner, status: blocked_status)
 

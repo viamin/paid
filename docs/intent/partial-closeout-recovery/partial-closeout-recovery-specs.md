@@ -831,7 +831,7 @@
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
   `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-046** — When an acceptance audit for the current
+- [x] **PARTIAL-CLOSEOUT-048** — When an acceptance audit for the current
   source and approved-intent revisions fails because assessment transport
   failed or timed out — including a Temporal activity timeout that ends the
   audit before it can record a typed failure, and an exhausted runner pool that
@@ -848,7 +848,7 @@
   `app/services/issues/request_continuation.rb`.
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-047** — When a report-only acceptance audit runs and
+- [x] **PARTIAL-CLOSEOUT-049** — When a report-only acceptance audit runs and
   the project owner's fallback setting is enabled, Paid SHALL try the run's
   selected runner first, then configured issue-analysis and agent-run fallback
   runners in order within bounded per-runner and overall deadlines. Every
@@ -871,6 +871,23 @@
   *Code:* `app/jobs/partial_closeout_acceptance_audit_sweep_job.rb`.
   *Test:* `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-046** — When a built-in, typed closeout evaluation
+  retains a report for its originating Inbox prerequisite, the system SHALL
+  record the report as revision-bound evidence for only the matching current
+  occurrence — located on whichever active prerequisite notification carries
+  the occurrence, including another owner's notification after reassessment
+  moves it, and typed at the occurrence level so a merged notification's
+  generic occurrences neither block reconciliation nor release early — and
+  SHALL release the scheduling guard only after every current occurrence is
+  sufficient. A report whose source revision changed SHALL be recorded as
+  stale and keep the notification active. Generic notification dismissal and
+  report completion SHALL remain distinct from whole-issue acceptance or
+  GitHub closure.
+  *Code:* `app/services/facet_confidence/closeout_evaluation/reconcile_report.rb`,
+  `app/models/notification.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+  *Test:* `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`,
+  `spec/services/facet_confidence/closeout_evaluation/reconcile_report_spec.rb`.
 - [x] **PARTIAL-CLOSEOUT-042** — When a current partial-closeout criterion
   names a reproducible performance comparison, Paid SHALL offer a reviewed
   performance-measurement recipe only when it records a pinned baseline and

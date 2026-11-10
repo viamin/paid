@@ -47,7 +47,7 @@ module PartialCloseouts
 
     attr_reader :issue
 
-    # @spec PARTIAL-CLOSEOUT-046
+    # @spec PARTIAL-CLOSEOUT-048
     def prior_attempt_status(source_revision)
       requests = acceptance_audit_requests(source_revision)
       intent_runs = audit_runs(requests, intent_revision: Assessment.intent_revision_for(issue))

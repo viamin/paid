@@ -323,12 +323,22 @@
   retain a genuine source-PR closing reference unchanged. For an open or draft
   non-closing source PR, it SHALL remove any stale recommend-close label before
   parking the issue in `manual_review` with the linked PR and its exact
-  review-or-merge action. For a merged non-closing source PR, it SHALL remove
-  any stale recommend-close label before moving the issue to `analyzed`, which
-  remains blocking to dependencies and exposes the existing bounded,
-  report-only acceptance-audit path. A failed label removal SHALL leave the
-  existing state intact; an operator's explicit label-removal reset remains
-  authoritative. Repeated sync SHALL be idempotent and SHALL not make a
-  synchronous semantic assessment or close the GitHub issue.
+  review-or-merge action, except when the producing run matches the source
+  PR's repository-qualified URL and has a persisted, gap-free
+  `awaiting_final_audit` source-closure assessment with a current intent
+  revision, only satisfied or unknown criteria, and at least one
+  unknown criterion: in that case it SHALL keep
+  the source issue completed while the source PR is open and leave PR review
+  and merge to the existing PR pipeline, including releasing a prior
+  sync-created manual-review hold for that same PR. A changed issue intent SHALL
+  remain in manual review with that change named in the reason; changed
+  closeout evidence SHALL remain eligible for the post-merge acceptance audit.
+  For a merged non-closing
+  source PR, it SHALL remove any stale recommend-close label before moving the
+  issue to `analyzed`, which remains blocking to dependencies and exposes the
+  existing bounded, report-only acceptance-audit path. A failed label removal
+  SHALL leave the existing state intact; an operator's explicit label-removal
+  reset remains authoritative. Repeated sync SHALL be idempotent and SHALL not
+  make a synchronous semantic assessment or close the GitHub issue.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.

@@ -24,7 +24,7 @@ module Llm
       @eligible_route = false
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-046 PARTIAL-CLOSEOUT-047
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end

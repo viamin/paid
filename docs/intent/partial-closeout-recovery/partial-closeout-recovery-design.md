@@ -550,10 +550,12 @@ technical evidence may permit a new bounded audit, and a changed approved
 intent may permit a further attempt against the same source revision without
 resetting that revision's attempt budget.
 The existing auto-pick control governs this work;
-there is no separate audit setting. The GitHub-sync repair places merged
-non-closing source PRs in this lane rather than treating their premerge
-source-closure disposition as final acceptance. Operator-requested audits use the same
-durable request and count toward the attempt limit for that generation.
+there is no separate audit setting. The GitHub-sync repair leaves a gap-free,
+audit-pending source issue out of manual review while its non-closing PR is
+open. After merge it places the source issue in this lane rather than treating
+its premerge source-closure disposition as final acceptance. Operator-requested
+audits use the same durable request and count toward the attempt limit for that
+generation.
 
 The acceptance-audit sweep processes one project and at most 50 candidate
 issues per job. Continuations carry stable project and issue IDs, with a
