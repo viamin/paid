@@ -33,6 +33,7 @@ RSpec.describe ApplicationJob, :no_db do
         AgentComboImageCleanupJob
         AutoPickEligibilitySweepJob
         AutoPickQueueBackfillJob
+        AutoResolveCloseoutJob
         AgentRunPatternDetectorJob
         AgentRunPatternDetectorContinuationJob
         AgentRunResourceJanitorJob
