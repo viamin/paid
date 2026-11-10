@@ -644,17 +644,18 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     end
   end
 
-  # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-020
+  # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-023 AUTO-PICK-QUEUE-024
   describe "dependency_cycle" do
     INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::DEPENDENCY_CYCLE_KIND
 
     let(:cycle_edge) do
-      Struct.new(:declaration_source, :declaration_url).new("issue_comment", "https://github.com/acme/widgets/issues/42#issuecomment-1")
+      Struct.new(:id, :from_id, :to_id, :declaration_source, :declaration_url)
+        .new(1, entry_issue.id, entry_issue.id, "issue_comment", "https://github.com/acme/widgets/issues/42#issuecomment-1")
     end
     let(:cycle) do
-      Struct.new(:path, :path_edges, :downstream_issues, :project, :fingerprint, :occurrence) do
+      Struct.new(:issues, :effective_edges, :downstream_issues, :project, :fingerprint, :occurrence) do
         def umbrella_for(_issue) = nil
-      end.new([ entry_issue, entry_issue ], [ cycle_edge ], [], entry_issue.project, "test-fingerprint", "state:dependency_cycle:test")
+      end.new([ entry_issue ], [ cycle_edge ], [], entry_issue.project, "test-fingerprint", "state:dependency_cycle:test")
     end
     let(:entry) do
       build_entry.call(Inbox::Queue::DEPENDENCY_CYCLE_KIND,
@@ -666,7 +667,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       assert_navigation_intent!(fragment, kind: "dependency_cycle")
     end
 
-    # A completed analysis run surfaces the "view run" link
+    # A completed analysis run surfaces the "Check analysis status" link
     # (`_inbox_detail_dependency_cycle.html.erb`); the example above never
     # exercises that branch because no AgentRun matches the cycle's
     # fingerprint. Regression coverage for #4823: that link must carry
@@ -681,7 +682,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "dependency_cycle")
 
-      view_run_link = fragment.css("a").find { |anchor| anchor.text.strip == "view run" }
+      view_run_link = fragment.css("a").find { |anchor| anchor.text.strip == "Check analysis status" }
       expect(view_run_link).to be_present
       expect(view_run_link["data-turbo-frame"]).to eq("_top")
     end

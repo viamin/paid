@@ -141,15 +141,53 @@ Missing, ambiguous, or changed declarations stop for operator action; later
 synchronization remains the authoritative confirmation that the cycle is
 resolved.
 
-Each path node also carries its own title, current labels, and (when a parent
-issue is linked and its project is within the viewer's authorized project set)
-the linked umbrella issue's number and title — all read from already-synced
-local issue data, so judging which declaration is wrong never requires opening
-every linked issue on GitHub first. An unlinked or not-yet-authorized parent
-simply omits umbrella context rather than failing the detail. The Mobile API
-cycle payload (`Api::V1::InboxEntrySerializer`) exposes the identical path,
-edge, and umbrella context so API and agent clients can inspect the same
-cycle the web Inbox renders.
+The Inbox occurrence explains itself before it offers an action. Its header
+names the blocked work — how many issues wait on each other in the loop and
+how much downstream open work is held — and, before any analysis exists, it
+states Paid's recommendation (one bounded repair analysis) and that a
+qualifying analysis run may edit one verified GitHub dependency declaration.
+Every action says what it does and appears only when the backend will
+perform it as described: a status check only navigates to the run; starting
+an analysis may change GitHub (the start action and its confirmation both
+say so); confirming a pending repair only re-checks the synchronized graph
+and never edits GitHub, and that confirm action appears only when the
+recorded completed run for the current occurrence can be resumed for the
+read-only confirmation — a cancelled run with an applied repair instead
+waits for the synchronization that requeues the confirmation automatically,
+and a run left stale by a re-occurred cycle falls back to the fresh-analysis
+path. A stopped automatic repair offers no start action, because the
+completed analysis for the unchanged occurrence blocks queueing a duplicate;
+its next action directs the operator to a manual GitHub edit until
+synchronization changes the cycle. Each repair state the detail can present —
+queued or running, safe repair awaiting synchronization, confirmed repair,
+ambiguous recommendation, stopped automatic repair, stale analysis graph,
+failed run, and unavailable evidence coverage — carries its own status line
+and next action. After a
+completed analysis the recommendation renders as readable fields: summary,
+each proposed source → target declaration change with its declaration
+source, supporting evidence, tradeoffs, missing or conflicting intent, and
+the expected resulting graph; the raw analysis and coverage objects stay
+inside collapsed technical detail. A manual repair action names the exact
+declaration it would remove and the source issue or comment carrying it,
+shows a reviewable before/after of that single declaration, and requires an
+explicit confirmation naming the declaration; submission keeps the live
+authority, occurrence, and graph rechecks above. The complete strongly
+connected cycle group appears once: every affected issue is listed once and
+every effective dependency declaration is nested under its source issue, so
+overlapping cycles cannot hide work or declarations behind a single witness
+path. Per-edge declaration links and diagnostic identifiers (occurrence,
+fingerprint, edge ids) remain in expandable detail, the affected-work count
+stays visible, and the group stays readable on narrow screens.
+
+Each cycle-group issue also carries its own title, current labels, and (when a
+parent issue is linked and its project is within the viewer's authorized
+project set) the linked umbrella issue's number and title — all read from
+already-synced local issue data, so judging which declaration is wrong never
+requires opening every linked issue on GitHub first. An unlinked or
+not-yet-authorized parent simply omits umbrella context rather than failing the
+detail. The Mobile API cycle payload (`Api::V1::InboxEntrySerializer`) exposes
+the witness path, edge, and umbrella context so API and agent clients can
+inspect the same underlying cycle group the web Inbox renders.
 
 ## Tier-infeasibility gating
 

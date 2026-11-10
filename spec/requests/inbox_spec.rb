@@ -62,20 +62,37 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
-  def cycle_analysis_run(status: "completed")
+  def cycle_analysis_run(status: "completed", recommendation: nil, repair: nil, coverage: nil)
     issues = Array.new(3) { create(:issue, project:, github_state: "open") }
-    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1])
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1],
+      declaration_source: "issue_comment", declaration_url: "https://github.com/acme/alpha/issues/1#issuecomment-42")
     create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
     create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
     cycle = Issues::DependencyCycles.call(account:).sole
-    result = { "recommendation" => "Remove the obsolete declaration.",
-               "coverage" => { "unavailable_provenance_edge_ids" => [ 41 ],
-                                 "unavailable_content_issue_ids" => [ issues.first.id ] } }
+    snapshot = CycleAnalyses::Snapshot.call(cycle:)
+    removal_edge = snapshot.fetch("effective_edges").find { |edge| edge["from_issue_id"] == issues[0].id }
+    result_recommendation = recommendation || {
+      "summary" => "The declaration on #{project.full_name}##{issues[0].github_number} is obsolete.",
+      "candidates" => [ {
+        "declaration_changes" => [ { "edge_id" => removal_edge.fetch("id"), "action" => "remove" } ],
+        "evidence" => [ "The target issue was closed as a duplicate." ],
+        "tradeoffs" => [ "The declaring issue may start earlier." ],
+        "missing_or_conflicting_intent" => [],
+        "resulting_graph" => {
+          "issue_ids" => snapshot.fetch("issues").map { |issue| issue.fetch("id") },
+          "edges" => snapshot.fetch("effective_edges").reject { |edge| edge["id"] == removal_edge.fetch("id") }
+            .map { |edge| edge.slice("from_issue_id", "to_issue_id") }
+        },
+        "acyclic" => true
+      } ]
+    }
     run = create(:agent_run, status:, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
-      external_metadata: { CycleAnalyses::METADATA_KEY => { "fingerprint" => cycle.fingerprint,
-        "occurrence" => cycle.occurrence, "graph_revision" => cycle.graph_revision } },
-      verification_result: { CycleAnalyses::RESULT_KEY => result })
-    [ issues, cycle, run ]
+      external_metadata: { CycleAnalyses::METADATA_KEY => snapshot },
+      verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => result_recommendation,
+                                                           "coverage" => coverage || { "unavailable_provenance_edge_ids" => [],
+                                                                                       "unavailable_content_issue_ids" => [] },
+                                                           "repair" => repair }.compact })
+    [ issues, cycle, run, removal_edge ]
   end
 
   # @spec AUTO-PICK-QUEUE-015
@@ -96,15 +113,291 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("declaration source unavailable")
   end
 
-  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-017
-  it "renders a completed cycle analysis with unavailable evidence coverage" do
+  # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-024
+  it "shows the multi-edge cycle once with declaration links in expandable detail" do
     _issues, cycle, = cycle_analysis_run
 
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Remove the obsolete declaration.", "Unavailable evidence coverage")
-    expect(response.body).to include("Edge IDs without declaration provenance: 41")
+    document = Nokogiri::HTML(response.body)
+    expect(document.css("[data-testid='cycle-group-issue']").size).to eq(3)
+    expect(document.css("details[data-testid='cycle-declaration-detail']").size).to eq(3)
+    expect(document.css("a[href='https://github.com/acme/alpha/issues/1#issuecomment-42']")).to be_present
+  end
+
+  # @spec AUTO-PICK-QUEUE-023 AUTO-PICK-QUEUE-024
+  it "shows every issue and declaration in a strongly connected group with overlapping cycles" do
+    issues = Array.new(3) { create(:issue, project:, github_state: "open") }
+    edges = [
+      create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1]),
+      create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[0]),
+      create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2]),
+      create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[1])
+    ]
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    blocked_work = document.at_css("[data-testid='cycle-blocked-work']").text
+    expect(blocked_work).to include("3 issues wait on each other")
+    issue_rows = document.css("[data-testid='cycle-group-issue']")
+    expect(issue_rows.size).to eq(3)
+    expect(issue_rows.map { |row| row["data-issue-id"].to_i }).to match_array(issues.map(&:id))
+    declaration_rows = document.css("[data-testid='cycle-declaration-detail']")
+    expect(declaration_rows.size).to eq(4)
+    expect(declaration_rows.map { |row| row["data-edge-id"].to_i }).to match_array(edges.map(&:id))
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "describes a self-loop as one issue waiting on itself" do
+    issue = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue:, depends_on_issue: issue)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    blocked_work = Nokogiri::HTML(response.body).at_css("[data-testid='cycle-blocked-work']").text
+    expect(blocked_work).to include("1 issue waits on itself in a closed loop")
+    expect(blocked_work).not_to include("issues wait on each other")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "explains the blocked work, the recommendation, and the possible GitHub edit before any analysis" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    third = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: third)
+    create_legacy_issue_dependency(issue: third, depends_on_issue: first)
+    downstream = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue: downstream, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("3 issues wait on each other")
+    expect(response.body).to include("1 downstream open issue")
+    expect(response.body).to include("Paid recommends one bounded repair analysis")
+    expect(response.body).to include("may edit one verified GitHub dependency declaration")
+    document = Nokogiri::HTML(response.body)
+    start_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
+    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Start repair analysis")
+    expect(start_form["data-turbo-confirm"]).to include("may edit one verified GitHub dependency declaration")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "offers only a status check while the analysis is queued" do
+    _issues, cycle, run, = cycle_analysis_run(status: "queued")
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Analysis queued")
+    expect(response.body).not_to include("Start repair analysis")
+    document = Nokogiri::HTML(response.body)
+    status_link = document.at_css("a[href='#{project_agent_run_path(project, run)}']")
+    expect(status_link.text).to include("Check analysis status")
+    expect(status_link["data-turbo-frame"]).to eq("_top")
+  end
+
+  # @spec AUTO-PICK-QUEUE-023
+  it "does not promise a GitHub edit while a requeued pending-sync confirmation is queued" do
+    _issues, cycle, = cycle_analysis_run(status: "queued",
+      repair: { "status" => "pending_sync", "reason" => "awaiting_github_synchronization" })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Analysis queued")
+    expect(response.body).to include("does not edit GitHub")
+    expect(response.body).not_to include("may edit one verified GitHub dependency declaration")
+  end
+
+  # @spec AUTO-PICK-QUEUE-017 AUTO-PICK-QUEUE-018 AUTO-PICK-QUEUE-024
+  it "renders the completed recommendation as readable fields and keeps raw JSON collapsed" do
+    issues, cycle, = cycle_analysis_run
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("The declaration on #{project.full_name}##{issues[0].github_number} is obsolete.")
+    expect(response.body).to include("Remove the dependency declared by", "declared in a trusted comment")
+    expect(response.body).to include("The target issue was closed as a duplicate.")
+    expect(response.body).to include("The declaring issue may start earlier.")
+    expect(response.body).to include("Missing or conflicting intent", "None recorded")
+    expect(response.body).to include("Expected result", "acyclic")
+    document = Nokogiri::HTML(response.body)
+    recommendation_text = document.at_css("[data-testid='cycle-recommendation']").text
+    expect(recommendation_text).not_to include('"declaration_changes"')
+    technical_details = document.at_css("details[data-testid='cycle-technical-details']").text
+    expect(technical_details).to include('"declaration_changes"')
+  end
+
+  # @spec AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-024
+  it "names the exact declaration and source with a reviewable before/after before a manual repair" do
+    issues, cycle, run, = cycle_analysis_run
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
+    from_ref = "#{project.full_name}##{issues[0].github_number}"
+    to_ref = "#{project.full_name}##{issues[1].github_number}"
+    expect(repair_form.at_css("input[type='submit']")["value"]).to eq("Remove the #{to_ref} dependency from #{from_ref}")
+    expect(repair_form["data-turbo-confirm"]).to include(from_ref, to_ref, "trusted comment", "edits GitHub")
+    expect(repair_form.at_css("input[name='agent_run_id']")["value"]).to eq(run.id.to_s)
+    expect(repair_form.at_css("input[name='candidate_index']")["value"]).to eq("0")
+    before_after = document.at_css("[data-testid='manual-repair']").text
+    expect(before_after).to include("Before:", "After:", "stops waiting on #{to_ref}")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-023
+  it "names the automatically repaired declaration and limits confirmation to the synced graph" do
+    issues, cycle, run, = cycle_analysis_run
+    result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY)
+    result["repair"] = { "status" => "pending_sync", "reason" => "awaiting_github_synchronization",
+                         "changed_edge_ids" => [ 41 ],
+                         "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } }
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => result })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Safe repair made, awaiting synchronization")
+    expect(response.body).to include("removed one dependency declaration on #{project.full_name}##{issues[0].github_number}")
+    document = Nokogiri::HTML(response.body)
+    confirm_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
+    expect(confirm_form.at_css("input[type='submit']")["value"]).to eq("Confirm cycle repair")
+    expect(confirm_form["data-turbo-confirm"]).to include("does not edit GitHub")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-023
+  it "keeps a cancelled pending-sync repair off the manual confirm action, which would start a fresh editing run" do
+    issues, cycle, run, = cycle_analysis_run(status: "cancelled")
+    result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY)
+    result["repair"] = { "status" => "pending_sync", "reason" => "awaiting_github_synchronization",
+                         "changed_edge_ids" => [ 41 ],
+                         "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } }
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => result })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Safe repair made, awaiting synchronization")
+    expect(response.body).to include("Wait for the next GitHub synchronization")
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("form[action='#{dashboard_cycle_analyses_path}']")).to be_nil
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-023
+  it "does not promise a read-only confirmation for a re-occurred cycle found by fingerprint" do
+    issues, cycle, run, = cycle_analysis_run
+    result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY)
+    result["repair"] = { "status" => "pending_sync", "reason" => "awaiting_github_synchronization",
+                         "changed_edge_ids" => [ 41 ],
+                         "details" => { "project_id" => project.id, "issue_number" => issues[0].github_number } }
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => result })
+    metadata = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY =>
+      metadata.merge("occurrence" => "#{metadata.fetch("occurrence")}:redeclared") })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Stale analysis")
+    expect(response.body).not_to include("Confirm cycle repair")
+    document = Nokogiri::HTML(response.body)
+    start_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
+    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Start fresh analysis")
+    expect(start_form["data-turbo-confirm"]).to include("may edit one verified GitHub dependency declaration")
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-021 AUTO-PICK-QUEUE-023
+  it "explains a stopped repair without offering an analysis start the queue would refuse as a duplicate" do
+    _issues, cycle, = cycle_analysis_run(repair: { "status" => "needs_operator_action", "reason" => "unauthorized" })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Automatic repair stopped")
+    expect(response.body).to include("authority for every project in this cycle")
+    expect(response.body).to include("Edit the declaration on GitHub yourself")
+    expect(response.body).not_to include("Start fresh analysis")
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("form[action='#{dashboard_cycle_analyses_path}']")).to be_nil
+  end
+
+  # @spec AUTO-PICK-QUEUE-019 AUTO-PICK-QUEUE-023
+  it "reports a confirmed repair" do
+    _issues, cycle, = cycle_analysis_run(repair: { "status" => "resolved", "reason" => "synchronization_confirmed",
+                                                   "changed_edge_ids" => [] })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Repair confirmed", "clears automatically")
+    expect(response.body).not_to include(dashboard_cycle_analysis_repairs_path)
+  end
+
+  # @spec AUTO-PICK-QUEUE-018 AUTO-PICK-QUEUE-023
+  it "gives an ambiguous recommendation its own status and next action" do
+    issues, cycle, run, removal_edge = cycle_analysis_run(repair: { "status" => "needs_operator_action", "reason" => "not_obvious" })
+    record_conflicting_recommendation!(run, removal_edge)
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("No single safe repair")
+    expect(response.body).to include("Owners disagree")
+    expect(response.body).to include("apply one reviewed removal")
+    expect(response.body).to include("Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}")
+  end
+
+  def record_conflicting_recommendation!(run, removal_edge)
+    snapshot = run.external_metadata.fetch(CycleAnalyses::METADATA_KEY)
+    result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY)
+    result["recommendation"] = {
+      "summary" => "Owners disagree about which declaration is wrong.",
+      "candidates" => [ {
+        "declaration_changes" => [ { "edge_id" => removal_edge.fetch("id"), "action" => "remove" } ],
+        "evidence" => [ "Both declarations look plausible." ],
+        "tradeoffs" => [ "Either removal unblocks the loop." ],
+        "missing_or_conflicting_intent" => [ "Owners disagree." ],
+        "resulting_graph" => {
+          "issue_ids" => snapshot.fetch("issues").map { |issue| issue.fetch("id") },
+          "edges" => snapshot.fetch("effective_edges").reject { |edge| edge["id"] == removal_edge.fetch("id") }
+            .map { |edge| edge.slice("from_issue_id", "to_issue_id") }
+        },
+        "acyclic" => true
+      } ]
+    }
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => result })
+  end
+
+  # @spec AUTO-PICK-QUEUE-017 AUTO-PICK-QUEUE-023
+  it "explains unavailable evidence with its own next action and keeps identifiers collapsed" do
+    issues, cycle, run, = cycle_analysis_run
+    missing_edge_id = run.id + 999
+    result = run.verification_result.fetch(CycleAnalyses::RESULT_KEY)
+    result["coverage"] = { "unavailable_provenance_edge_ids" => [ missing_edge_id ],
+                           "unavailable_content_issue_ids" => [ issues[2].id ] }
+    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => result })
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    warning = document.at_css("[data-testid='evidence-warning']")
+    expect(warning.text).to include("Some evidence was unavailable", "1 declaration", "1 issue", "Synchronize")
+    expect(warning.text).not_to include(missing_edge_id.to_s)
+    technical_details = document.at_css("details[data-testid='cycle-technical-details']").text
+    expect(technical_details).to include(missing_edge_id.to_s, issues[2].id.to_s)
   end
 
   # @spec AUTO-PICK-QUEUE-019
@@ -116,19 +409,11 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(current_cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Remove the obsolete declaration.", "stale")
-    expect(response.body).to include("Start cycle analysis")
-  end
-
-  # @spec AUTO-PICK-QUEUE-019
-  it "renders a pending synchronization repair as retryable" do
-    _issues, cycle, run = cycle_analysis_run
-    run.update!(verification_result: { CycleAnalyses::RESULT_KEY => { "repair" => { "status" => "pending_sync" } } })
-
-    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
-
-    expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Repair: Pending sync", "Confirm cycle repair")
+    expect(response.body).to include("Stale analysis", "Start fresh analysis")
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("[data-testid='cycle-recommendation']")).to be_nil
+    start_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
+    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Start fresh analysis")
   end
 
   # @spec AUTO-PICK-QUEUE-016
@@ -138,7 +423,18 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Retry cycle analysis")
+    expect(response.body).to include("Analysis failed", "Retry repair analysis")
+  end
+
+  # @spec AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-024
+  it "keeps the cycle group and status actions readable on narrow screens" do
+    _issues, cycle, = cycle_analysis_run
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("flex-col", "sm:flex-row")
+    expect(response.body).to include("flex-wrap", "min-w-0", "truncate")
   end
 
   # @spec AUTO-PICK-QUEUE-020
