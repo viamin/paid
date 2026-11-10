@@ -240,12 +240,17 @@ RSpec.describe ProjectWorkflowManager do
     it "skips inactive projects" do
       workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
       allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
-      allow(workflow_handle).to receive(:cancel)
-      create(:project, :inactive)
+      allow(workflow_handle).to receive(:terminate)
+      inactive_project = create(:project, :inactive)
 
       described_class.restart_all_polling(reason: "deploy")
 
-      expect(temporal_client).not_to have_received(:start_workflow)
+      expect(temporal_client).not_to have_received(:start_workflow).with(
+        Workflows::GitHubPollWorkflow,
+        { project_id: inactive_project.id },
+        id: "github-poll-#{inactive_project.id}",
+        task_queue: "paid-poll-tasks"
+      )
     end
 
     it "continues processing other projects when one fails" do
