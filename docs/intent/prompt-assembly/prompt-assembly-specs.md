@@ -210,8 +210,9 @@
   *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/services/prompts/build_for_issue_spec.rb`.
 
-- [x] **PROMPT-ASSEMBLY-025** — When a create_pr issue-implementation prompt
-  is assembled, it SHALL include a required trusted section that renders the
+- [x] **PROMPT-ASSEMBLY-025** — When a create_pr issue-implementation or
+  custom-prompt run is assembled, it SHALL include a required trusted section
+  that renders the
   effective execution-time auto-merge mode and merge-phase authorization,
   bot-authored merge permission, enabled review methods, manual-review state,
   applicable human-approval posture, and effective TDD mode. Each value SHALL
@@ -230,5 +231,6 @@
   hold. Its provenance SHALL record the resolved non-secret policy values so
   a run can be audited after settings change between queueing and execution.
   *Code:* `PromptAssembly::Sections::EffectiveMergeReviewPosture`,
-  `PromptAssembly::BuildIssuePrompt`.
-  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`.
+  `PromptAssembly::BuildIssuePrompt`, `PromptAssembly::BuildCustomPrompt`.
+  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/services/prompt_assembly/build_custom_prompt_spec.rb`.

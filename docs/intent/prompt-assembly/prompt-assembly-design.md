@@ -197,11 +197,13 @@ excluded from prompt instructions.
 
 ## Issue-Prompt Assembly (#3377)
 
-The create_pr issue-implementation prompt — previously assembled by
-`Prompts::BuildForIssue` via string concatenation — now flows through
-`PromptAssembly::Build` at runner time. `AgentRun#prompt_for_issue` delegates to
-`PromptAssembly::BuildIssuePrompt`, which pre-fetches the issue comment thread
-once and assembles ordered, provenance-tracked sections:
+Create_pr prompts — including issue-implementation and custom-prompt runs —
+flow through `PromptAssembly::Build` at runner time. `AgentRun#prompt_for_issue`
+delegates to `PromptAssembly::BuildIssuePrompt`, which pre-fetches the issue
+comment thread once and assembles the following ordered, provenance-tracked
+sections. `AgentRun#effective_prompt` delegates custom-prompt create_pr runs to
+`PromptAssembly::BuildCustomPrompt`, which preserves the custom task and also
+adds the required posture section without issue-specific context.
 
 - `issue_task` (required) — the rendered `coding.issue_implementation` template
   (title, body, and instructions).
