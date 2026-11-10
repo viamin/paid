@@ -3,7 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
-# @spec PROMPT-ASSEMBLY-014, PROMPT-ASSEMBLY-015, PROMPT-ASSEMBLY-024
+# @spec PROMPT-ASSEMBLY-014, PROMPT-ASSEMBLY-015, PROMPT-ASSEMBLY-024, PROMPT-ASSEMBLY-025
 RSpec.describe PromptAssembly::BuildIssuePrompt do
   let(:configured_containers) { [] }
 
@@ -91,6 +91,45 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       p.define_singleton_method(:uses_feature_flags_pattern?) { false }
     end
+  end
+
+  def configure_merge_posture(project, settings)
+    project.define_singleton_method(:auto_merge_mode) { settings[:auto_merge_mode] }
+    project.define_singleton_method(:allow_bot_authored_pr_auto_merge?) { settings[:bot_authored_pr_auto_merge] }
+    project.define_singleton_method(:effective_review_settings) { settings[:review_settings] }
+    project.define_singleton_method(:tdd_mode) { settings[:tdd_mode] }
+  end
+
+  def all_merge_settings
+    {
+      auto_merge_mode: "all",
+      bot_authored_pr_auto_merge: true,
+      review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "paid_agent" => { "enabled" => true },
+          "manual" => { "enabled" => false }
+        }
+      },
+      tdd_mode: "off"
+    }
+  end
+
+  def queued_merge_settings
+    {
+      auto_merge_mode: "off",
+      bot_authored_pr_auto_merge: false,
+      review_settings: { "enabled" => false, "methods" => {} },
+      tdd_mode: "off"
+    }
+  end
+
+  def apply_execution_settings!(settings)
+    settings.merge!(
+      auto_merge_mode: "dependabot_only",
+      review_settings: { "enabled" => true, "methods" => { "manual" => { "enabled" => true } } },
+      tdd_mode: "strict"
+    )
   end
 
   describe ".call" do
@@ -359,6 +398,69 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       result = described_class.call(issue: issue, project: project)
 
       expect(result.sections.map(&:key)).to include(:safety_rules)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders and records the effective merge posture at execution time" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings)
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Auto-merge mode: all")
+      expect(result.text).to include("Bot-authored PR auto-merge: permitted")
+      expect(result.text).to include("Enabled review methods: paid_agent")
+      expect(result.text).to include("Manual review: disabled")
+      expect(section).to be_required
+      expect(section.metadata).to include(auto_merge_mode: "all", bot_authored_pr_auto_merge: true)
+      expect(section.metadata).to include(review_methods: [ "paid_agent" ], manual_review_enabled: false, tdd_mode: "off")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "uses the current settings rather than a queue-time posture" do
+      project = assembly_project
+      settings = queued_merge_settings
+      configure_merge_posture(project, settings)
+      queued_auto_merge_mode = project.auto_merge_mode
+      apply_execution_settings!(settings)
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(queued_auto_merge_mode).to eq("off")
+      expect(result.text).to include("Auto-merge mode: dependabot_only")
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(result.text).to include("Enabled review methods: manual")
+      expect(result.text).to include("Manual review: enabled")
+      expect(result.text).to include("TDD gate: strict")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders an off posture with disabled review automation" do
+      project = assembly_project
+      configure_merge_posture(project, {
+        auto_merge_mode: "off",
+        bot_authored_pr_auto_merge: false,
+        review_settings: { "enabled" => false, "methods" => { "manual" => { "enabled" => true } } },
+        tdd_mode: "non_strict"
+      })
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to include("Auto-merge mode: off")
+      expect(result.text).to include("Enabled review methods: none")
+      expect(result.text).to include("Manual review: disabled")
+      expect(result.text).to include("TDD gate: non_strict")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "cannot be suppressed by a project prompt profile override" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :effective_merge_review_posture ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.sections.map(&:key)).to include(:effective_merge_review_posture)
     end
   end
 

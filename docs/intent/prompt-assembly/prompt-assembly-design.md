@@ -205,6 +205,14 @@ once and assembles ordered, provenance-tracked sections:
 
 - `issue_task` (required) — the rendered `coding.issue_implementation` template
   (title, body, and instructions).
+- `effective_merge_review_posture` (required) — the execution-time effective
+  auto-merge mode, bot-authored merge permission, enabled review methods,
+  manual-review state, applicable human-approval posture, and TDD gate. Its
+  provenance records these non-secret values, so operators can audit the
+  policy visible to a run when project settings changed after queueing. The
+  rendered section keeps normal CI, bot review, screenshots, and merge checks
+  explicit, and explains that automatic merge does not override a human-only
+  decision, repository protection, or `paid-hold-review`.
 - `trusted_comments` — collaborator comments, trust-classified via
   `Prompts::BuildForIssue.fetch_trusted_comments`; untrusted authors are
   excluded. If retrieval fails, the section remains empty and its skipped

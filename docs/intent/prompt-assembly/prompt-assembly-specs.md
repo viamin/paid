@@ -209,3 +209,16 @@
   `Prompts::BuildForIssue`.
   *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/services/prompts/build_for_issue_spec.rb`.
+
+- [x] **PROMPT-ASSEMBLY-025** — When a create_pr issue-implementation prompt
+  is assembled, it SHALL include a required trusted section that renders the
+  effective execution-time auto-merge mode, bot-authored merge permission,
+  enabled review methods, manual-review state, applicable human-approval
+  posture, and TDD gate. The section SHALL state that CI, bot review,
+  screenshots, and merge checks remain in force, and that auto-merge never
+  overrides a human-only decision, repository protection, or structured hold.
+  Its provenance SHALL record the resolved non-secret policy values so a run
+  can be audited after settings change between queueing and execution.
+  *Code:* `PromptAssembly::Sections::EffectiveMergeReviewPosture`,
+  `PromptAssembly::BuildIssuePrompt`.
+  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`.
