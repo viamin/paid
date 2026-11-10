@@ -68,7 +68,7 @@ class TrackerConfigurationsController < ApplicationController
 
   def tracker_configuration_params
     params.require(:tracker_configuration).permit(
-      :tracker_type, :base_url, :integration_credential_id, :enabled,
+      :tracker_type, :base_url, :integration_credential_id, :enabled, :sync_interval_seconds,
       project_mapping: {}
     )
   end

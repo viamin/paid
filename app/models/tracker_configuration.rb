@@ -14,6 +14,7 @@ class TrackerConfiguration < ApplicationRecord
   validates :configurable_id, uniqueness: { scope: :configurable_type,
     message: "already has a tracker configuration" }
   validates :integration_credential, presence: { message: "must exist" }, if: -> { integration_credential_id.present? }
+  validates :sync_interval_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 300 }
   validate :credential_belongs_to_same_account
   validate :credential_is_active, if: -> { integration_credential.present? && integration_credential_id_changed? }
 
