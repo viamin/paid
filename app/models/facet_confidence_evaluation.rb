@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
 # Facet-confidence closeout evaluation (#4596). One row per evidence
-# generation (originating issue, frozen corpus digest): repeated Start/Resume
-# clicks from the same Inbox item reuse the same evaluation, and a changed
-# corpus digest is a new generation that supersedes the old record rather than
-# mutating it. The lifecycle is labeling → frozen; blinded reference judgments
+# generation (originating issue, frozen corpus digest, closeout source
+# revision): repeated Start/Resume clicks from the same Inbox item reuse the
+# same evaluation, and a changed corpus digest or source revision is a new
+# generation that supersedes the old record rather than mutating or refreezing
+# it. The lifecycle is labeling → frozen; blinded reference judgments
 # live on the association records and the frozen expectations stay hidden from
 # the labeling surface until `labels_frozen_at` is set. The operator who
 # started the evaluation (`created_by`) is its sole reference judge.

@@ -156,9 +156,11 @@ evaluation neither closes the source issue nor enables delivery or changes the
 default 80/80 thresholds.
 
 Start/Resume begins one persisted evaluation per originating closeout, pinned
-to the frozen corpus digest: repeated clicks resume the same evaluation, and a
-changed corpus digest is a new evidence generation that supersedes the old
-record rather than mutating it. The operator who starts the evaluation is its
+to the frozen corpus digest and the closeout's recorded source revision:
+repeated clicks resume the same evaluation, and a changed corpus digest or
+recorded source revision is a new evidence generation that supersedes the old
+record rather than mutating or refreezing it. The operator who starts the
+evaluation is its
 sole reference judge. They record one blinded reference judgment per corpus
 case — verdict status, intent band, technical band, readiness, one cited
 evidence reference, and a reason — while the case shape, selection rationale,
@@ -186,3 +188,22 @@ evaluation's sole judge gets a view-only action and no judgment controls. Other
 Action Required notifications retain their generic remediation presentation;
 presentation selection never infers a workflow from free-form notification
 text.
+
+When that typed evaluation freezes its complete report, the system records the
+report digest, sole judge, and pinned source revision against only matching
+prerequisite occurrences. An occurrence is located on whichever active
+prerequisite notification carries it — reassessment can move an occurrence onto
+another owner's notification while its source issue stays recorded on the
+occurrence — and typing is decided per occurrence, so a merged notification
+that also carries generic occurrences still reconciles its typed occurrence
+while its release waits for every occurrence. It releases the notification only
+if every current occurrence is sufficient at that revision; a changed revision
+records stale evidence and retains the scheduling guard. A stale disposition is
+recoverable rather than terminal: because the evidence generation is keyed by the recorded
+source revision, a closeout whose evidence changed gets a fresh Start for the
+new generation once its reassessment records the moved revision, and the typed
+Inbox entry offers that Start instead of linking only the stale frozen report.
+This uses the established
+occurrence-level reconciliation path, refreshes its normal Inbox and
+eligibility readers, and neither attests whole-issue acceptance nor enables
+delivery.

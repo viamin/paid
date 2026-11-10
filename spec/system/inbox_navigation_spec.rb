@@ -20,7 +20,7 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     create(:issue, :needs_input, project:, title: "First question", body: questions_body,
       needs_input_since: 2.hours.ago)
   end
-  let!(:second_issue) do
+  let(:second_issue) do
     create(:issue, :needs_input, project:, title: "Second question", body: questions_body,
       needs_input_since: 1.hour.ago)
   end
@@ -41,33 +41,40 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
       project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
   end
 
+  def ordered_issues
+    second_issue
+    Inbox::Queue.call(user:, project:, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND).map(&:issue)
+  end
+
   it "keeps the first collection selection shareable and advances subsequent selection through browser history" do
+    initial_issue, next_issue = ordered_issues
     page.current_window.resize_to(1440, 1000)
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
 
-    expect(page).to have_css("#inbox-detail h2", text: "First question")
+    expect(page).to have_css("#inbox-detail h2", text: initial_issue.title)
     expect(page).to have_current_path(inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
 
-    within("#inbox-list") { click_link "Second question" }
-    expect(page).to have_css("#inbox-detail h2", text: "Second question")
-    expect(page).to have_current_path(member_path(second_issue))
+    within("#inbox-list") { click_link next_issue.title }
+    expect(page).to have_css("#inbox-detail h2", text: next_issue.title)
+    expect(page).to have_current_path(member_path(next_issue))
 
     page.go_back
     expect(page).to have_current_path(inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
-    expect(page).to have_css("#inbox-detail h2", text: "First question")
+    expect(page).to have_css("#inbox-detail h2", text: initial_issue.title)
 
     page.go_forward
-    expect(page).to have_current_path(member_path(second_issue))
-    expect(page).to have_css("#inbox-detail h2", text: "Second question")
+    expect(page).to have_current_path(member_path(next_issue))
+    expect(page).to have_css("#inbox-detail h2", text: next_issue.title)
   end
 
   it "copies the canonical member URL for the first collection selection" do
+    initial_issue = ordered_issues.first
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
-    expect(page).to have_css("#inbox-detail h2", text: "First question")
+    expect(page).to have_css("#inbox-detail h2", text: initial_issue.title)
 
     copy_button = find_button("Copy link to this item")
     expect(copy_button["aria-describedby"]).to eq("inbox-copy-link-status")
-    expect(copy_button["data-inbox-master-detail-copy-link-url"]).to eq(member_path(first_issue))
+    expect(copy_button["data-inbox-master-detail-copy-link-url"]).to eq(member_path(initial_issue))
     click_button "Copy link to this item"
 
     expect(page).to have_css("#inbox-copy-link-status", text: "Link copied.")

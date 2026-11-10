@@ -17,7 +17,12 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
       @issue = @project.issues.find(params[:issue_id])
       @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: Issues::CloseoutStatus.call(@issue))
-      @existing = @issue.facet_confidence_evaluations.find_by(corpus_digest: @packet.corpus_digest)
+      # The existing banner shows the generation Start would resume: the same
+      # corpus digest AND the closeout's currently recorded source revision.
+      # A moved revision leaves no current-generation row, so the start form
+      # offers the new generation instead of linking a stale frozen report.
+      @existing = @issue.facet_confidence_evaluations
+        .find_by(corpus_digest: @packet.corpus_digest, source_revision: @packet.source_revision)
       @inbox_context = inbox_context
     end
 
