@@ -276,7 +276,9 @@ RSpec.describe ToolchainPins, :no_db do
       package_json = JSON.parse(Rails.root.join("package.json").read)
       dependencies = package_json.fetch("dependencies")
 
-      expect(dependencies).to include("@tailwindcss/cli" => "4.3.4")
+      # Dependabot owns the version lever, so guard the pin's shape (an exact
+      # release, not a range) rather than duplicating the current literal here.
+      expect(dependencies).to include("@tailwindcss/cli" => match(/\A\d+\.\d+\.\d+\z/))
       expect(dependencies).not_to have_key("tailwindcss")
     end
   end
