@@ -49,7 +49,9 @@ module Issues
 
     def completed_audit?
       agent_run.status == "completed" && agent_run.goal == "analyze_issue" &&
-        request&.issue_id == issue&.id && request.evidence["continuation_mode"] == "acceptance_audit"
+        agent_run.project_id == issue&.project_id && request&.project_id == issue&.project_id &&
+        request.issue_id == issue.id && request.status == "consumed" &&
+        request.evidence["continuation_mode"] == "acceptance_audit"
     end
 
     def current_authority?
@@ -63,8 +65,9 @@ module Issues
 
     def current_acceptance?
       snapshot = agent_run.reconciliation.to_h["assessment"]
-      snapshot.present? && snapshot["assessed_at"] == assessment.assessed_at &&
+      snapshot.present? && snapshot == assessment.assessment &&
         assessment.closeout_state == "accepted_awaiting_github_closure" &&
+        assessment.criteria.all? { |criterion| citation_for(criterion).present? } &&
         PartialCloseouts::SourceClosureDisposition.call(issue:, assessment: assessment.assessment)["disposition"] ==
           PartialCloseouts::SourceClosureDisposition::CLOSE
     end
@@ -72,12 +75,19 @@ module Issues
     def assessment = PartialCloseouts::Assessment.call(issue)
 
     def rationale
-      evidence = Issues::CloseoutEvidence.call(issue)
-      links = evidence.merged_prs.first(5).map(&:url).compact
-      links << "#{evidence.merged_prs.size - 5} more merged PRs" if evidence.merged_prs.size > 5
-      links << "no-code declaration #{evidence.no_code_required_at.iso8601}" if evidence.no_code_required_at
-      "Acceptance audit run ##{agent_run.id} accepted all #{assessment.criteria.size} criteria for " \
-        "#{issue.project.full_name}##{issue.github_number}; evidence: #{links.join(', ')}."
+      criteria = assessment.criteria.map do |criterion|
+        citation = citation_for(criterion)
+        reference = [ citation.fetch("label"), citation["url"].presence ].compact.join(" ")
+        "#{criterion.fetch('criterion')}: #{reference}"
+      end
+      "Acceptance audit run ##{agent_run.id} accepted all #{criteria.size} criteria for " \
+        "#{issue.project.full_name}##{issue.github_number}; evidence by criterion: #{criteria.join('; ')}."
+    end
+
+    def citation_for(criterion)
+      return unless criterion["evidence"].is_a?(Array)
+
+      criterion["evidence"].find { |citation| citation.is_a?(Hash) && citation["label"].present? }
     end
 
     def audit_metadata

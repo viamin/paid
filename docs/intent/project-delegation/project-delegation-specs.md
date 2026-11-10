@@ -119,7 +119,7 @@ Status markers: `[ ]` planned implementation gap.
   closure and an enabled Merge phase, the system SHALL attempt one evidence-
   gated GitHub closure only if that same authority and a current fully accepted
   assessment still hold. A conservative or newly broadened project, stale or
-  partial assessment, active hold or prerequisite, upstream-managed issue,
+  partial assessment, satisfied criterion without cited evidence, active hold or prerequisite, upstream-managed issue,
   scanner record, or failed GitHub write SHALL leave the source issue visible
   for human recovery. Successful closure SHALL record the system initiator,
   audit run, policy revision, evidence digest, and evidence-linked rationale.

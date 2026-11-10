@@ -25,7 +25,8 @@ RSpec.describe Issues::AutoResolveCloseout do
         "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue) })
     run = create(:agent_run, :completed, project:, issue:, goal: "analyze_issue", continuation_request: request)
     run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run,
-      { "criteria" => [ { "criterion" => "Delivered feature", "state" => "satisfied" } ], "gaps" => [] }) })
+      { "criteria" => [ { "criterion" => "Delivered feature", "state" => "satisfied",
+        "evidence" => [ { "label" => "Merged implementation", "url" => "https://github.com/acme/alpha/pull/1234" } ] } ], "gaps" => [] }) })
     run
   end
 
@@ -48,6 +49,7 @@ RSpec.describe Issues::AutoResolveCloseout do
     expect(event.actor).to be_nil
     expect(event.metadata).to include("initiator" => "delegated_acceptance_audit", "agent_run_id" => run.id,
       "assessment_source_revision" => run.reconciliation.dig("assessment", "source_revision"))
+    expect(event.metadata.fetch("reason")).to include("Delivered feature: Merged implementation https://github.com/acme/alpha/pull/1234")
     expect(account.account_activity_events.find_by!(action: "issue.auto_closeout_attempted", subject: issue).metadata)
       .to include("result" => "closed", "agent_run_id" => run.id)
   end
@@ -58,6 +60,15 @@ RSpec.describe Issues::AutoResolveCloseout do
 
     expect(described_class.call(agent_run: run, client:)).to eq(:not_delegated)
     expect(issue.reload.github_state).to eq("open")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec PROJECT-DELEGATION-009
+  it "does not close an audit whose request was superseded" do
+    run = audit_run(captured_signature: authorize_closeout)
+    run.continuation_request.update!(status: "superseded")
+
+    expect(described_class.call(agent_run: run, client:)).to eq(:not_audit)
     expect(client).not_to have_received(:update_issue)
   end
 
@@ -88,6 +99,16 @@ RSpec.describe Issues::AutoResolveCloseout do
 
     expect(described_class.call(agent_run: run, client:)).to eq(:blocked)
     expect(issue.reload.github_state).to eq("open")
+    expect(client).not_to have_received(:update_issue)
+  end
+
+  # @spec PROJECT-DELEGATION-009
+  it "does not close a satisfied criterion with no cited evidence" do
+    run = audit_run(captured_signature: authorize_closeout)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run,
+      { "criteria" => [ { "criterion" => "Delivered feature", "state" => "satisfied" } ], "gaps" => [] }) })
+
+    expect(described_class.call(agent_run: run, client:)).to eq(:blocked)
     expect(client).not_to have_received(:update_issue)
   end
 

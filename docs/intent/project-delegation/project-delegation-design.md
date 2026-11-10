@@ -57,8 +57,9 @@ compares the captured policy signature with current policy and reuses the
 existing GitHub closeout boundary. A later posture change never grants closure
 to an older audit. Conservative projects retain the human Inbox action.
 
-The close attempt requires a current, fully satisfied criterion assessment and
-source-closure disposition; no open prerequisite, human hold, scanner check,
+The close attempt requires a current, fully satisfied criterion assessment with
+at least one cited evidence item per criterion and a source-closure disposition;
+no open prerequisite, human hold, scanner check,
 native child, or active run may remain. It records the audit run, evidence
 digest, policy revision, and an evidence-linked rationale with a system actor.
 The existing closeout lease serializes concurrent attempts and reconciles a
