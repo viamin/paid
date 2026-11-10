@@ -102,7 +102,7 @@ RSpec.describe PartialCloseouts::Assessment do
     pull_request
     run = create(:agent_run, :completed, project:, issue:, pull_request_number: pull_request.github_number)
     assessment = {
-      "source_revision" => Issues::CloseoutEvidence.call(issue).digest,
+      "source_revision" => described_class.source_revision_for(issue),
       "intent_revision" => described_class.intent_revision_for(issue),
       "assessed_at" => Time.current.iso8601,
       "criteria" => [ { "criterion" => "Measure latency", "state" => "satisfied" } ],

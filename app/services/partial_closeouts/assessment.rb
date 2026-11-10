@@ -35,11 +35,13 @@ module PartialCloseouts
       Digest::SHA256.hexdigest([ issue.title, issue.body ].map(&:to_s).join("\0"))
     end
 
+    # @spec PARTIAL-CLOSEOUT-047
     def self.source_revision_for(issue, closeout_evidence: Issues::CloseoutEvidence.call(issue), technical_evidence: nil,
       trusted_measurement_evidence: nil)
       prerequisite_revision = TechnicalPrerequisites::Evidence.revision_for(issue, records: technical_evidence)
       measurement_revision = TrustedMeasurements::Evidence.revision_for(issue, records: trusted_measurement_evidence)
-      revisions = [ closeout_evidence.digest, prerequisite_revision, measurement_revision ].compact
+      revisions = [ closeout_evidence.digest, closeout_evidence.pr_body_revision,
+        prerequisite_revision, measurement_revision ].compact
 
       return closeout_evidence.digest if revisions.one?
 

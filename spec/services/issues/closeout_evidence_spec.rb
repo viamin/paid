@@ -174,4 +174,16 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
 
     expect(described_class.call(issue).digest).to eq(described_class.call(issue.reload).digest)
   end
+
+  # @spec PARTIAL-CLOSEOUT-047
+  it "tracks changed PR descriptions without changing the terminal outcome generation" do
+    pr = merged_pr(project:, number: 12, parent_issue_id: issue.id, body: "Initial evidence")
+    before = described_class.call(issue)
+
+    pr.update!(body: "Corrected evidence")
+    after = described_class.call(issue)
+
+    expect(after.digest).to eq(before.digest)
+    expect(after.pr_body_revision).not_to eq(before.pr_body_revision)
+  end
 end

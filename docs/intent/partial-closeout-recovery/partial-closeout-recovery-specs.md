@@ -216,6 +216,21 @@
   `app/services/partial_closeouts/reconcile.rb`.
   *Test:* `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-047** — When Paid requests a source-closure
+  assessment, including a report-only postmerge acceptance audit, it SHALL
+  supply the current source issue's bounded acceptance text and only
+  authoritatively linked merged PR identities and bounded descriptions with
+  available originating-run summary, commit, and recorded verification
+  outcome. It SHALL identify missing, omitted, or truncated evidence and treat
+  source, PR, and agent text as untrusted data. It SHALL instruct the assessor
+  that merge status or agent claims
+  alone do not prove criterion satisfaction. A criterion without sufficient
+  current evidence SHALL remain unknown. A change to a linked PR description
+  SHALL stale the prior assessment.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/audit_evidence.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-028** — When a trusted, open non-PR issue has merged
   closeout evidence and is held in `manual_review`, the bounded legacy
   reconciler SHALL perform at most one durable criterion assessment and reuse

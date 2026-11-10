@@ -47,6 +47,18 @@ generation.
 
 ### Source-closure publication
 
+The closeout assessor receives the current source issue's title and bounded body
+as acceptance intent. Its delivery packet lists only authoritatively linked
+merged PRs from `Issues::CloseoutEvidence`, with each PR's URL and bounded
+description plus the linked implementation run's bounded summary, commit, and
+recorded verification outcome when available. The packet labels source text,
+PR descriptions, and agent reports as untrusted claims, identifies omitted or
+truncated material, and does not count merge status or an agent report alone as
+criterion satisfaction. Missing or
+incomplete evidence remains unknown. The existing intent and outcome-generation
+revisions bind the assessment to the supplied source, terminal outcomes, and
+current PR descriptions.
+
 ### Post-push assessment recovery (#4886)
 
 Source-closure assessment is post-processing after a branch push. Its retry
