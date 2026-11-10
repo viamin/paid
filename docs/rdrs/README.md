@@ -15,6 +15,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | Status | Meaning |
 |--------|---------|
 | Draft | During planning/research phase |
+| Proposed | Reviewable recommendation awaiting acceptance |
 | Accepted | Recommendation accepted but implementation not started |
 | Final | Locked, ready for or during implementation |
 | Partially Implemented | Adopted and partly shipped, with remaining implementation work tracked |
