@@ -12,16 +12,15 @@
   selected authentication mode, and validate structured output locally.
 - [x] **LLM-ROUTING-004** — Persisted model provenance SHALL identify the actual
   model returned by the selected runner rather than a hardcoded vendor model.
-- [x] **LLM-ROUTING-005** — Standalone text calls SHALL execute a CLI only when
-  its driver supports disabling tools, with external-sandbox bypass disabled.
-  Other drivers SHALL use the selected runner's API credentials through the
-  harness API transport, or fail explicitly requiring an isolated environment;
-  a subscription SHALL NOT silently switch to API billing. Candidate widening
-  SHALL retain credential-specific routing identifiers and exclude a
-  non-standalone subscription when an owned API-key credential is available.
-- [x] **LLM-ROUTING-006** — An isolated text request timeout SHALL terminate
-  the request process without stopping the run environment. Post-run background
-  summaries and diagnostics SHALL route independently of the cleaned-up environment.
+- [x] **LLM-ROUTING-005** — Standalone text calls SHALL execute through a
+  disposable restricted container with no repository or Rails-workspace mount,
+  using the selected runner, model, authentication mode, and harness provider;
+  a subscription SHALL NOT silently switch to API billing.
+- [x] **LLM-ROUTING-006** — A standalone isolated text request SHALL bound
+  prompt and output size, deadline, cancellation, and egress; it SHALL remove
+  its container after success, failure, timeout, provisioning failure, or
+  worker interruption, and SHALL never fall back to host execution. Post-run
+  background summaries and diagnostics SHALL route independently of a cleaned-up environment.
 - [x] **LLM-ROUTING-007** — Decision drafting SHALL honor the shared fallback
   permissions and each credential-specific runner's availability state. Invalid
   structured output SHALL be rejected without persisting malformed records or

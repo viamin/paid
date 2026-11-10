@@ -23,12 +23,13 @@ Text operations accept subscription and API-key runners. The existing chat-runne
 multiple configurations behind the same CLI to remain distinguishable. API credentials
 come from the selected runner; unrelated host environment keys cannot change
 billing mode. Managed subscription credentials need an isolated environment.
-Standalone API-key requests use the harness API transport directly, avoiding
-CLI startup and host repository instructions. Native host subscriptions unset
-conflicting API authentication variables. A
-host CLI must advertise reliable tool control; other drivers require API text
-transport with explicit runner credentials or an isolated environment. A
-`tools: none` option alone is not evidence that a driver disables its tools.
+Every standalone text request uses a disposable text-only container; it does
+not reuse a live run container, create a user-visible coding run, mount a
+repository, or mount the Rails workspace. The container receives the selected
+runner's materialized credentials through the existing container credential
+path and invokes the harness with tools disabled. A `tools: none` option alone
+is not evidence that a driver disables its tools; the container boundary is
+therefore required even when the driver advertises tool control.
 Embedding and interactive API chat keep their existing capability-specific
 transports and settings. Provider identifiers inside those protocol adapters
 are transport identities, not application-level provider preferences.
@@ -38,8 +39,11 @@ JSON locally. They do not require a vendor's schema-only API. Provenance records
 the actual response model rather than an assumed vendor model.
 
 Isolated text commands use a process-group deadline before the container
-watchdog, with a short cleanup margin. Timing out an assessment must not stop
-the run's container or make all retries fail.
+watchdog, with a short cleanup margin. Provisioning, command failure,
+cancellation, timeout, and worker interruption all remove the disposable
+container. Failed provisioning is terminal for that candidate and never falls
+back to host execution. Timing out an assessment must not stop a live run's
+container or make all retries fail.
 The closeout assessment allows 60 seconds for CLI startup and reasoning,
 within its 120-second activity budget including authentication and cleanup.
 Background session summaries and error diagnosis use project-owner text routing because run cleanup can precede

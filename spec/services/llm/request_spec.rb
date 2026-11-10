@@ -13,26 +13,32 @@ RSpec.describe Llm::Request do
   let(:provider_class) { class_double(AgentHarness::Providers::Codex) }
   let(:provider) { instance_double(AgentHarness::Providers::Codex) }
   let(:response) { instance_double(AgentHarness::Response, success?: true, output: "ok") }
+  let(:standalone_executor) { instance_double(Containers::StandaloneTextExecutor) }
 
   before do
     allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
     allow(provider_class).to receive(:new).and_return(provider)
     allow(provider).to receive_messages(supports_tool_control?: true, send_message: response)
     allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+    allow(Containers::StandaloneTextExecutor).to receive(:new).and_return(standalone_executor)
   end
 
-  # @spec LLM-ROUTING-001 LLM-ROUTING-003
-  it "uses a configured subscription when its driver can disable tools" do
+  # @spec LLM-ROUTING-001 LLM-ROUTING-003 LLM-ROUTING-005
+  it "uses a disposable text container for a configured subscription" do
     owner.settings.update!(kb_chat_runner: runner.routing_key)
     allow(provider).to receive(:subscription_unset_vars).and_return([ "OPENAI_API_KEY" ])
     stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "unrelated"))
 
     described_class.call(project: project, prompt: "Assess", timeout: 30)
 
-    expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(
-      provider: :codex, model: "runner-mid",
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: 30
+    )
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess",
+      tools: :none, dangerous_mode: false,
       provider_runtime: an_object_having_attributes(unset_env: [ "OPENAI_API_KEY" ])
     ))
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
@@ -42,12 +48,11 @@ RSpec.describe Llm::Request do
     owner.settings.update!(kb_chat_runner: runner.routing_key, kb_chat_fallback_runners: [ fallback.routing_key ], fallback_enabled: true)
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
-      .and_raise(AgentHarness::AuthenticationError, "Not logged in")
+    allow(provider).to receive(:send_message).and_raise(AgentHarness::AuthenticationError, "Not logged in").then_return(response)
 
     expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
 
-    expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess")).twice
   end
 
   # @spec LLM-ROUTING-001 MODEL-POLICY-024
@@ -78,11 +83,11 @@ RSpec.describe Llm::Request do
   it "honors disabled automatic fallback" do
     owner.settings.update!(kb_chat_runner: runner.routing_key, fallback_enabled: false)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::AuthenticationError, "Not logged in")
+    allow(provider).to receive(:send_message).and_raise(AgentHarness::AuthenticationError, "Not logged in")
 
     expect { described_class.call(project: project, prompt: "Assess", timeout: 30) }
       .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
-    expect(AgentHarness.conductor).to have_received(:execute_direct).once
+    expect(provider).to have_received(:send_message).once
   end
 
   # @spec LLM-ROUTING-002
@@ -127,13 +132,12 @@ RSpec.describe Llm::Request do
   end
 
   # @spec LLM-ROUTING-005
-  it "refuses host CLI execution when the driver cannot disable tools" do
+  it "uses the isolated route when the driver cannot disable tools" do
     allow(provider).to receive_messages(supports_tool_control?: false, subscription_unset_vars: [])
 
-    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }
-      .to raise_error(AgentHarness::ConfigurationError, /isolated environment or API credentials/)
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
-    expect(provider).not_to have_received(:send_message)
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess"))
   end
 
   # @spec LLM-ROUTING-005

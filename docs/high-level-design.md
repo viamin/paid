@@ -245,6 +245,11 @@ lets the control plane swap models and providers without scattered call sites.
 The secrets proxy forwards authenticated requests from containers; it is
 infrastructure, not an application-level LLM interface.
 
+Application text requests use the same isolation boundary even when they are
+not attached to a coding run. A disposable, text-only container has no
+repository or Rails-workspace mount, receives only the selected runner's
+scoped credential material, and is removed for every terminal outcome.
+
 ## Tenets
 
 The operating principles that tie the approaches above to day-to-day work:
