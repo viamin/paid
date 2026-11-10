@@ -833,11 +833,17 @@
 
 - [x] **PARTIAL-CLOSEOUT-046** — When an acceptance audit for the current
   source and approved-intent revisions fails because assessment transport
-  failed or timed out, and the issue remains eligible for an audit, Paid SHALL retry after bounded
-  increasing delays, with at most three attempts for those revisions including
-  operator-requested attempts. It SHALL NOT automatically repeat a completed,
-  cancelled, or non-transient failed audit, bypass admission guards, or treat a
-  failed attempt as acceptance evidence.
+  failed or timed out — including a Temporal activity timeout that ends the
+  audit before it can record a typed failure, and an exhausted runner pool that
+  never reached one — and the issue remains eligible for an audit, Paid SHALL
+  retry after bounded increasing delays, with at most three attempts for the
+  current source revision, counting operator-requested attempts and attempts
+  made under an earlier approved-intent revision. A changed approved intent MAY
+  permit a further attempt against the same source revision, but SHALL NOT
+  reset that revision's attempt budget. Paid SHALL NOT automatically repeat a
+  completed, cancelled, or non-transient failed audit for the same
+  approved-intent revision, bypass admission guards, or treat a failed attempt
+  as acceptance evidence.
   *Code:* `app/services/partial_closeouts/auto_audit.rb`,
   `app/services/issues/request_continuation.rb`.
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`.
@@ -847,7 +853,12 @@
   selected runner first, then configured issue-analysis and agent-run fallback
   runners in order within bounded per-runner and overall deadlines. Every
   candidate SHALL retain its normal account, authorization, model, and privacy
-  policy checks; an unavailable candidate SHALL NOT establish acceptance.
+  policy checks; an unavailable candidate SHALL NOT establish acceptance. A
+  candidate that cannot serve the request at all SHALL be skipped without
+  masking another candidate's failure, and a permanent failure — an expired
+  credential or a violated model policy — SHALL be surfaced ahead of an
+  earlier transport failure so the audit is not retried as if it were
+  transient.
   *Code:* `app/temporal/activities/run_acceptance_audit_activity.rb`,
   `app/services/llm/request.rb`, `app/services/llm/analyze_partial_closeout.rb`.
   *Test:* `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,

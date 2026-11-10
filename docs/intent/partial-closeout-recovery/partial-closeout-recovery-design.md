@@ -537,12 +537,18 @@ an advance attempt may correctly report `not_stalled`. A bounded periodic
 acceptance-audit sweep revisits open partial closeouts after merge. For active
 auto-pick projects, it queues a report-only `analyze_issue` acceptance audit
 when the current assessment is missing or stale and ordinary continuation
-guards permit it. It records at most three audit attempts per issue and current
-source and approved-intent revisions, including operator-requested attempts.
-Only transport and timeout failures are eligible for another automatic attempt;
-retries wait 30 and then 60 minutes. A completed, cancelled, or non-transient
-failed audit stops automatic attempts for those revisions. New terminal or
-technical evidence or changed approved intent may permit a new bounded audit.
+guards permit it. It records at most three audit attempts per source revision
+— the evidence generation — including operator-requested attempts and attempts
+made under an earlier approved-intent revision, because an issue-body edit
+changes the approved intent without changing the evidence. Only transport and
+timeout failures are eligible for another automatic attempt, including a
+Temporal activity timeout that ends the audit before it records a typed
+failure and an exhausted runner pool that never reached one; retries wait 30
+and then 60 minutes. A completed, cancelled, or non-transient failed audit
+stops automatic attempts for that approved-intent revision. New terminal or
+technical evidence may permit a new bounded audit, and a changed approved
+intent may permit a further attempt against the same source revision without
+resetting that revision's attempt budget.
 The existing auto-pick control governs this work;
 there is no separate audit setting. The GitHub-sync repair places merged
 non-closing source PRs in this lane rather than treating their premerge
@@ -704,7 +710,13 @@ evidence; the audit still does not create a follow-up run, change the issue
 state, create a pull request, or authorize implementation. The normal
 request/run lifecycle remains the durable progress, cancellation, failure, and
 retry surface. Audits use the selected runner and configured fallback runners,
-with a per-runner limit and an overall deadline. The existing one-open-request
+with a per-runner limit and an overall deadline. A candidate that cannot serve
+the request at all is skipped rather than failed, so an unavailable fallback
+neither masks another runner's failure nor turns a retryable transport failure
+into a permanent one. A permanent failure from any candidate — an expired
+credential or a violated model policy — outranks an earlier transport failure,
+so the audit reports the actionable cause instead of being retried as though
+it were transient. The existing one-open-request
 and active-run constraints
 deduplicate audit requests for an evidence generation. Deduplication only
 reuses an open request whose persisted mode and run goal match the requested

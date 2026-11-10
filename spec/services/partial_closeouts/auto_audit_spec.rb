@@ -119,6 +119,45 @@ RSpec.describe PartialCloseouts::AutoAudit do
   end
 
   # @spec PARTIAL-CLOSEOUT-046
+  it "bounds the retry budget per source revision when the approved intent keeps changing" do
+    2.times do |index|
+      result = described_class.call(issue:)
+      result.agent_run.update!(status: "failed",
+        error_message: "Partial closeout assessment transport failed. Retry after runner recovery.",
+        completed_at: 2.hours.ago)
+      issue.update!(body: "Changed acceptance criteria #{index}")
+    end
+
+    third = described_class.call(issue:)
+    expect(third).to be_scheduled
+    third.agent_run.update!(status: "failed",
+      error_message: "Partial closeout assessment transport failed. Retry after runner recovery.",
+      completed_at: 2.hours.ago)
+    issue.update!(body: "Changed acceptance criteria again")
+
+    expect(described_class.call(issue:).code).to eq(:retry_exhausted)
+    expect(issue.agent_runs.count).to eq(3)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-046
+  it "retries an audit that failed on a Temporal activity timeout" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed", error_message: "Activity task timed out", completed_at: 2.hours.ago)
+
+    expect(described_class.call(issue:)).to be_scheduled
+    expect(issue.agent_runs.count).to eq(2)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-046
+  it "retries an audit that never reached a runner" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed", error_message: "providers exhausted", completed_at: 2.hours.ago)
+
+    expect(described_class.call(issue:)).to be_scheduled
+    expect(issue.agent_runs.count).to eq(2)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-046
   it "does not automatically repeat a non-transient failure" do
     first = described_class.call(issue:)
     first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment could not authenticate with the configured runner.", completed_at: 2.hours.ago)

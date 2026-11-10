@@ -65,6 +65,45 @@ RSpec.describe Llm::Request do
     expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
   end
 
+  # @spec PARTIAL-CLOSEOUT-046 PARTIAL-CLOSEOUT-047
+  it "surfaces a later fallback's permanent failure over an earlier transient failure" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
+      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :gemini))
+      .and_raise(AgentHarness::AuthenticationError, "Not logged in")
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-046 PARTIAL-CLOSEOUT-047
+  it "surfaces the pinned runner's permanent failure over a later fallback's transport failure" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
+      .and_raise(AgentHarness::AuthenticationError, "Not logged in")
+    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :gemini))
+      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-047
+  it "fails with a timeout when the overall budget leaves no time for a candidate" do
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 0) }
+      .to raise_error(AgentHarness::TimeoutError, /timeout exhausted/)
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   # @spec PARTIAL-CLOSEOUT-047
   it "preserves a transient failure when a later fallback is unavailable" do
     fallback = create(:runner, user: owner, runner_key: "gemini", enabled_for_agent_runs: false)

@@ -34,7 +34,9 @@ module Activities
         timeout: [ Llm::AnalyzePartialCloseout::TIMEOUT * (fallbacks.size + 1), MAX_ASSESSMENT_TIMEOUT ].min)
     rescue Llm::AnalyzePartialCloseout::AssessmentFailure => error
       agent_run.update!(reconciliation: agent_run.reconciliation.merge(
-        "acceptance_audit_failure" => { "category" => error.diagnostic.fetch(:category), "at" => Time.current.iso8601 }
+        "acceptance_audit_failure" => {
+          "category" => error.diagnostic.fetch(:category, "transport_error"), "at" => Time.current.iso8601
+        }
       ))
       raise
     end
