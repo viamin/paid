@@ -14,11 +14,16 @@ Auto-Pick turns eligible project issues into queued automatic agent runs. The
 project toggle is the operator control for that lifecycle: enabling it seeds
 eligible work, and disabling it stops future automatic picks and drains queued
 automatic picks.
+An issue does not need the project's automation label (configurable per
+project via `automation_label_name`, `paid-automation` by default) when
+project Auto-Pick is enabled; open issues enter the candidate pool through the
+normal eligibility rules, including dependency and skip-label checks.
 
 The additive exception is tracked under
 `docs/intent/automation-activation-labels/`: when the project toggle is off,
-an issue-scoped activation label may still enable exactly one issue without
-changing the background queue semantics for every other issue.
+a trusted issue-scoped activation label (`paid-automation` by default) may
+still enable exactly one issue without changing the background queue
+semantics for every other issue.
 
 ## Disable Semantics
 
