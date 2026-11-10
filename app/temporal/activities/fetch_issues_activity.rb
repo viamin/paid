@@ -1126,20 +1126,16 @@ module Activities
       candidates = completed_open_issue_repair_candidates(project)
       return false if candidates.empty?
 
-      issue_pr_pairs = AgentRun.where(
+      source_runs = AgentRun.where(
         project: project, status: "completed", goal: "create_pr", issue_id: candidates.map(&:id)
       ).where.not(pull_request_number: nil)
-        .select("DISTINCT ON (issue_id) issue_id, pull_request_number")
+        .select("DISTINCT ON (issue_id) agent_runs.id, agent_runs.issue_id, agent_runs.pull_request_number")
         .order(:issue_id, completed_at: :desc, id: :desc)
-        .pluck(:issue_id, :pull_request_number)
-      return false if issue_pr_pairs.empty?
+        .index_by(&:issue_id)
+      return false if source_runs.empty?
 
-      issue_pr_numbers = issue_pr_pairs.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(issue_id, pr_number), memo|
-        memo[issue_id] << pr_number
-      end
-      issue_ids = issue_pr_numbers.keys
-      pr_numbers = issue_pr_numbers.values.flatten.uniq
-      candidates.select! { |issue| issue_ids.include?(issue.id) }
+      pr_numbers = source_runs.values.map(&:pull_request_number).uniq
+      candidates.select! { |issue| source_runs.key?(issue.id) }
       return false if candidates.empty?
 
       source_pull_requests = project.issues
@@ -1148,19 +1144,26 @@ module Activities
         .index_by(&:github_number)
 
       repaired = candidates.reject do |issue|
-        issue_pr_numbers.fetch(issue.id, []).any? do |pr_number|
-          source_pull_requests.fetch(pr_number, nil)&.closing_referenced_issue_numbers&.include?(issue.github_number)
-        end
+        pr_number = source_runs.fetch(issue.id).pull_request_number
+        source_pull_requests[pr_number]&.closing_referenced_issue_numbers&.include?(issue.github_number)
       end
       return false if repaired.empty?
 
+      # The reconciliation JSON can be large; only fetch it for issues whose
+      # source PR actually lacks a closing reference.
+      repair_runs = AgentRun.where(id: repaired.map { |issue| source_runs.fetch(issue.id).id })
+        .select(:id, :issue_id, :pull_request_number, :pull_request_url, :reconciliation)
+        .index_by(&:issue_id)
       repaired.map do |issue|
+        source_run = repair_runs[issue.id]
+        next false unless source_run
+
         repair_non_closing_source_issue(
           client,
           project,
           issue,
-          source_pull_requests.values_at(*issue_pr_numbers.fetch(issue.id)).compact,
-          issue_pr_numbers.fetch(issue.id)
+          source_pull_requests.values_at(source_run.pull_request_number).compact,
+          source_run
         )
       end.any?
     end
@@ -1173,27 +1176,63 @@ module Activities
       stale_states.or(review_holds).to_a
     end
 
-    def repair_non_closing_source_issue(client, project, issue, source_pull_requests, source_pr_numbers)
+    def repair_non_closing_source_issue(client, project, issue, source_pull_requests, source_run)
       return false unless remove_stale_recommend_close_label(client, project, issue)
 
       merged = source_pull_requests.any? { |pull_request| pull_request.pr_review_phase == "merged" }
       attributes = if merged
         { paid_state: "analyzed", manual_review_reason: nil }
+      elsif source_pull_requests.any? { |pull_request| pull_request.github_state == "open" &&
+          pull_request.github_url == source_run.pull_request_url } &&
+          awaiting_source_pr_audit?(issue, source_run)
+        { paid_state: "completed", manual_review_reason: nil }
       else
-        { paid_state: "manual_review", manual_review_reason: non_closing_pr_review_reason(source_pull_requests, source_pr_numbers) }
+        reason = non_closing_pr_review_reason(source_pull_requests, [ source_run.pull_request_number ])
+        reason += " The source issue changed since Paid assessed this PR; review the current requirements before merge." if source_intent_changed?(issue, source_run)
+        { paid_state: "manual_review", manual_review_reason: reason }
       end
       return false if issue.paid_state == attributes[:paid_state] && issue.manual_review_reason == attributes[:manual_review_reason]
 
       issue.update!(attributes)
+      next_action = if merged
+        "acceptance_audit"
+      elsif attributes[:paid_state] == "completed"
+        "await_source_pr"
+      else
+        "review_or_merge"
+      end
 
       logger.info(
         message: "github_sync.non_closing_source_pr_repaired",
         project_id: project.id,
         issue_number: issue.github_number,
         pull_request_numbers: source_pull_requests.map(&:github_number),
-        next_action: merged ? "acceptance_audit" : "review_or_merge"
+        next_action:
       )
       true
+    end
+
+    def awaiting_source_pr_audit?(issue, source_run)
+      reconciliation = source_run.reconciliation
+      assessment = reconciliation["assessment"]
+      return false unless assessment.is_a?(Hash)
+
+      criteria = assessment["criteria"]
+      source_closure = reconciliation["source_closure"]
+      source_closure.is_a?(Hash) && source_closure["disposition"] == "track" &&
+        assessment["classification"] == "awaiting_final_audit" && assessment["gaps"] == [] &&
+        criteria.is_a?(Array) && criteria.any? { |criterion| criterion.is_a?(Hash) && criterion["state"] == "unknown" } &&
+        criteria.all? { |criterion| criterion.is_a?(Hash) && criterion["state"].in?(%w[satisfied unknown]) } &&
+        assessment["next_action"].is_a?(Hash) && assessment["next_action"]["kind"] == "audit_shipped_change" &&
+        assessment["intent_revision"] == PartialCloseouts::Assessment.intent_revision_for(issue)
+    end
+
+    def source_intent_changed?(issue, source_run)
+      assessment = source_run.reconciliation["assessment"]
+      return false unless assessment.is_a?(Hash)
+
+      revision = assessment["intent_revision"]
+      revision.present? && revision != PartialCloseouts::Assessment.intent_revision_for(issue)
     end
 
     def non_closing_pr_review_reason_prefix = "Paid closeout is waiting on its source pull request:"
