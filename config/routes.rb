@@ -497,6 +497,7 @@ Rails.application.routes.draw do
     match "proxy/anthropic/*path", to: "secrets_proxy#anthropic", via: :post, format: false
     match "proxy/openai/*path", to: "secrets_proxy#openai", via: [ :get, :post ], format: false
     match "proxy/google/*path", to: "secrets_proxy#google", via: :post, format: false
+    post "proxy/standalone-text-credential", to: "standalone_text_credentials#show"
     match "proxy/github/*path", to: "github_proxy#proxy", via: [ :get, :post, :patch ], format: false
     get "proxy/knowledge/search", to: "proxy/knowledge_search#search"
     get "proxy/knowledge/map", to: "proxy/knowledge_map#show"
