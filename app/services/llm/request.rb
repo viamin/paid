@@ -81,6 +81,8 @@ module Llm
       validate_model_policy!(runner, @policy_model_id || runtime.model)
       provider.send_message(prompt: @prompt, timeout: timeout, tools: :none, dangerous_mode: false,
         mcp_servers: [], provider_runtime: runtime)
+    ensure
+      executor&.close
     end
 
     attr_reader :agent_run

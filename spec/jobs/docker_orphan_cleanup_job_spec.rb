@@ -7,6 +7,7 @@ RSpec.describe DockerOrphanCleanupJob do
   let(:agent_filter) { { label: [ "paid.agent_run_id" ] }.to_json }
   let(:pool_filter) { { label: [ "paid.container_pool=true" ] }.to_json }
   let(:collector_filter) { { label: [ "paid.resource=collector_container" ] }.to_json }
+  let(:standalone_text_filter) { { label: [ "paid.resource=standalone_text_container" ] }.to_json }
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
   let(:backend) { Containers.backend }
 
@@ -57,6 +58,12 @@ RSpec.describe DockerOrphanCleanupJob do
       .and_return(containers)
   end
 
+  def stub_standalone_text_containers(*containers)
+    allow(backend).to receive(:list_containers)
+      .with(all: true, filters: standalone_text_filter)
+      .and_return(containers)
+  end
+
   def stub_preview_containers(*containers)
     allow(backend).to receive(:list_preview_containers).and_return(containers)
   end
@@ -82,6 +89,7 @@ RSpec.describe DockerOrphanCleanupJob do
     allow(target_backend).to receive(:list_containers).with(all: true, filters: agent_filter).and_return(agent)
     allow(target_backend).to receive(:list_containers).with(all: true, filters: pool_filter).and_return(pool)
     allow(target_backend).to receive(:list_containers).with(all: true, filters: collector_filter).and_return(collector)
+    allow(target_backend).to receive(:list_containers).with(all: true, filters: standalone_text_filter).and_return([])
     allow(target_backend).to receive(:list_containers).with(all: true, filters: service_filter).and_return(service)
     allow(target_backend).to receive_messages(list_preview_containers: preview, list_volumes: volumes)
   end
@@ -521,6 +529,60 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(container).to have_received(:delete).with(force: true, v: true)
+      end
+    end
+
+    context "with standalone text containers" do
+      before do
+        stub_no_volumes
+        stub_agent_containers
+        stub_pool_containers
+        stub_collector_containers
+        stub_service_containers
+      end
+
+      # @spec LLM-ROUTING-006
+      it "removes containers left stale by an interrupted worker" do
+        container = make_container(
+          labels: { "paid.resource" => "standalone_text_container", "paid.account_id" => "42" },
+          running: true,
+          created_at: 10.minutes.ago
+        )
+        stub_standalone_text_containers(container)
+
+        job.perform
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
+      end
+
+      # @spec LLM-ROUTING-006
+      it "keeps recently provisioned standalone text containers" do
+        container = make_container(
+          labels: { "paid.resource" => "standalone_text_container", "paid.account_id" => "42" },
+          running: true
+        )
+        stub_standalone_text_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+
+      # @spec LLM-ROUTING-006
+      it "keeps a long-running container until its request deadline" do
+        container = make_container(
+          labels: {
+            "paid.resource" => "standalone_text_container", "paid.account_id" => "42",
+            "paid.expires_at" => 10.minutes.from_now.iso8601
+          },
+          running: true,
+          created_at: 10.minutes.ago
+        )
+        stub_standalone_text_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
       end
     end
 

@@ -21,6 +21,7 @@ RSpec.describe Llm::Request do
     allow(provider).to receive_messages(supports_tool_control?: true, send_message: response)
     allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
     allow(Containers::StandaloneTextExecutor).to receive(:new).and_return(standalone_executor)
+    allow(standalone_executor).to receive(:close)
   end
 
   # @spec LLM-ROUTING-001 LLM-ROUTING-003 LLM-ROUTING-005
@@ -39,6 +40,7 @@ RSpec.describe Llm::Request do
       provider_runtime: an_object_having_attributes(unset_env: [ "OPENAI_API_KEY" ])
     ))
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+    expect(standalone_executor).to have_received(:close)
   end
 
   # @spec LLM-ROUTING-001 LLM-ROUTING-002

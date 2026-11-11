@@ -11,7 +11,8 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   before do
     allow(Containers).to receive(:backend).and_return(backend)
-    allow(ExecutionRunners::LocalDockerRunner).to receive(:ensure_agent_network!)
+    allow(backend).to receive(:remote?).and_return(false)
+    allow(NetworkPolicy).to receive(:ensure_network!)
     allow(backend).to receive_messages(create_container: container, start_container: true,
       stop_container: true, delete_container: true)
   end
@@ -61,6 +62,62 @@ RSpec.describe Containers::StandaloneTextExecutor do
       expect(options.fetch(:Env)).to include('PAID_TEXT_PREPARATION=[{"path":"/tmp/request.json","content":"{}","mode":416}]')
       expect(options.fetch(:Env)).not_to include("OPENAI_API_KEY=")
     end
+  end
+
+  # @spec LLM-ROUTING-003 LLM-ROUTING-006
+  it "forwards stdin data to the isolated child without placing it in the command" do
+    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+    described_class.new(account: account, runner: runner, timeout: 30)
+      .execute([ "cursor", "-p" ], stdin_data: "private prompt")
+
+    expect(backend).to have_received(:exec_in_container) do |_, _, options|
+      expect(options.fetch(:Env)).to include("PAID_TEXT_STDIN=cHJpdmF0ZSBwcm9tcHQ=")
+    end
+  end
+
+  # @spec LLM-ROUTING-005 LLM-ROUTING-006
+  it "uses the outbound-capable runner network and resolves the proxy on it" do
+    allow(Containers::ProxyUrl).to receive(:resolve).and_return("http://web:3000")
+    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(hash_including(
+      "HostConfig" => hash_including("NetworkMode" => NetworkPolicy::INFRA_NETWORK_NAME)
+    ))
+    expect(Containers::ProxyUrl).to have_received(:resolve).with(backend: backend, restricted: false)
+  end
+
+  # @spec LLM-ROUTING-006
+  it "honors the caller timeout above two minutes" do
+    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+    described_class.new(account: account, runner: runner, timeout: 300).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:exec_in_container).with(container, anything, hash_including(wait: 300))
+  end
+
+  # @spec LLM-ROUTING-006
+  it "classifies Docker read timeouts as request timeouts" do
+    allow(backend).to receive(:exec_in_container).and_raise(Docker::Error::TimeoutError, "read timeout")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::TimeoutError, /timed out/)
+  end
+
+  # @spec LLM-ROUTING-005 LLM-ROUTING-006
+  it "reuses one container across executor commands until closed" do
+    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    executor = described_class.new(account: account, runner: runner, timeout: 30)
+
+    executor.execute([ "codex", "--version" ])
+    executor.execute([ "codex", "exec", "hello" ])
+    executor.close
+
+    expect(backend).to have_received(:create_container).once
+    expect(backend).to have_received(:delete_container).once
   end
 
   # @spec LLM-ROUTING-006

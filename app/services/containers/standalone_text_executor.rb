@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
+require "base64"
+
 module Containers
   # Executes one application text command in a disposable container. It never
   # mounts a checkout or the Rails workspace; credentials arrive only as exec
   # environment for the selected command and disappear with the container.
   class StandaloneTextExecutor
-    MAX_TIMEOUT = 120
     MAX_OUTPUT_BYTES = 2 * 1024 * 1024
     MAX_INPUT_BYTES = 1024 * 1024
     CLEANUP_MARGIN = 5
@@ -17,7 +18,7 @@ module Containers
     }.freeze
     OUTPUT_LIMIT_EXIT_CODE = 86
     MATERIALIZE_COMMAND = <<~'PYTHON'.freeze
-      import json, os, pathlib, selectors, signal, subprocess, sys, urllib.request
+      import base64, json, os, pathlib, selectors, signal, subprocess, sys, threading, urllib.request
 
       def write_file(name, content, allowed_roots, mode=0o600):
           path = pathlib.Path(os.path.realpath(name))
@@ -47,9 +48,17 @@ module Containers
 
       command = json.loads(os.environ["PAID_TEXT_COMMAND"])
       limit = int(os.environ["PAID_MAX_OUTPUT_BYTES"])
-      for name in ("PAID_CREDENTIAL_URL", "PAID_CREDENTIAL_IDENTITY", "PAID_TEXT_COMMAND", "PAID_TEXT_PREPARATION", "PAID_MAX_OUTPUT_BYTES"):
+      stdin_data = base64.b64decode(os.environ.get("PAID_TEXT_STDIN", ""))
+      for name in ("PAID_CREDENTIAL_URL", "PAID_CREDENTIAL_IDENTITY", "PAID_TEXT_COMMAND", "PAID_TEXT_PREPARATION", "PAID_TEXT_STDIN", "PAID_MAX_OUTPUT_BYTES"):
           environment.pop(name, None)
-      process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+      process = subprocess.Popen(command, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+      def feed_stdin():
+          try:
+              process.stdin.write(stdin_data)
+              process.stdin.close()
+          except BrokenPipeError:
+              pass
+      threading.Thread(target=feed_stdin, daemon=True).start()
       selector = selectors.DefaultSelector()
       selector.register(process.stdout, selectors.EVENT_READ, sys.stdout.buffer)
       selector.register(process.stderr, selectors.EVENT_READ, sys.stderr.buffer)
@@ -80,16 +89,20 @@ module Containers
     def initialize(account:, runner:, timeout:)
       @account = account
       @runner = runner
-      @timeout = [ timeout.to_i, MAX_TIMEOUT ].min
+      @timeout = timeout.to_i
     end
 
-    def execute(command, timeout: nil, env: {}, preparation: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
-      validate_input_size!(command, env, preparation)
-      with_container do
-        run(materialized_command(command), timeout: bounded_timeout(timeout),
-          env: materialized_env(command, env, preparation))
-      end
+    def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
+      validate_input_size!(command, env, preparation, stdin_data)
+      provision! unless @container
+      run(materialized_command(command), timeout: bounded_timeout(timeout),
+        env: materialized_env(command, env, preparation, stdin_data))
+    rescue StandardError
+      close
+      raise
     end
+
+    def close = cleanup!
 
     def which(binary)
       result = execute([ "sh", "-c", "command -v -- #{Shellwords.escape(binary.to_s)}" ])
@@ -104,9 +117,10 @@ module Containers
 
     attr_reader :account, :runner
 
-    def validate_input_size!(command, env, preparation)
+    def validate_input_size!(command, env, preparation, stdin_data)
       bytes = Array(command).sum { |part| part.to_s.bytesize } +
-        env.sum { |key, value| key.to_s.bytesize + value.to_s.bytesize } + preparation_json(preparation).bytesize
+        env.sum { |key, value| key.to_s.bytesize + value.to_s.bytesize } + preparation_json(preparation).bytesize +
+        stdin_data.to_s.bytesize
       return if bytes <= MAX_INPUT_BYTES
 
       raise AgentHarness::ConfigurationError, "Isolated text request exceeded the #{MAX_INPUT_BYTES}-byte input limit"
@@ -116,15 +130,16 @@ module Containers
       [ "python3", "-c", MATERIALIZE_COMMAND ]
     end
 
-    def materialized_env(command, env, preparation)
+    def materialized_env(command, env, preparation, stdin_data)
       credential_keys = credential_env_keys(env)
       wrapped = env.except(*credential_keys).compact.merge(
         "PAID_MAX_OUTPUT_BYTES" => MAX_OUTPUT_BYTES.to_s,
         "PAID_TEXT_COMMAND" => Array(command).to_json,
-        "PAID_TEXT_PREPARATION" => preparation_json(preparation)
+        "PAID_TEXT_PREPARATION" => preparation_json(preparation),
+        "PAID_TEXT_STDIN" => Base64.strict_encode64(stdin_data.to_s)
       )
       wrapped.merge(
-        "PAID_CREDENTIAL_URL" => "http://paid-proxy:#{Rails.application.config.x.paid_proxy_port}/api/proxy/standalone-text-credential",
+        "PAID_CREDENTIAL_URL" => "#{Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: false)}/api/proxy/standalone-text-credential",
         "PAID_CREDENTIAL_IDENTITY" => StandaloneTextCredential.issue(account: account, runner: runner,
           expires_in: @timeout + CLEANUP_MARGIN, env_keys: credential_keys)
       )
@@ -144,15 +159,8 @@ module Containers
       end.to_json
     end
 
-    def with_container
-      provision!
-      yield
-    ensure
-      cleanup!
-    end
-
     def provision!
-      ExecutionRunners::LocalDockerRunner.ensure_agent_network!(backend: Containers.backend)
+      NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend)
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
     rescue Docker::Error::DockerError, NetworkPolicy::Error => e
@@ -203,6 +211,8 @@ module Containers
 
       AgentHarness::CommandExecutor::Result.new(stdout: stdout, stderr: stderr,
         exit_code: exit_code.to_i, duration: nil)
+    rescue Docker::Error::TimeoutError
+      raise AgentHarness::TimeoutError, "Isolated text request timed out"
     rescue Docker::Error::DockerError => e
       raise AgentHarness::TimeoutError, "Isolated text request timed out" if timed_out
 
@@ -231,7 +241,7 @@ module Containers
     end
 
     def bounded_timeout(value)
-      [ (value || @timeout).to_i, @timeout, MAX_TIMEOUT ].min
+      [ (value || @timeout).to_i, @timeout ].min
     end
 
     def container_config
@@ -243,10 +253,14 @@ module Containers
           "Memory" => DEFAULTS[:memory_bytes], "MemorySwap" => DEFAULTS[:memory_bytes],
           "CpuPeriod" => 100_000, "CpuQuota" => DEFAULTS[:cpu_quota], "PidsLimit" => DEFAULTS[:pids_limit],
           "Tmpfs" => { "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777", "/home/agent" => "size=#{64 * 1024 * 1024},mode=0700,uid=1000,gid=1000" },
-          "NetworkMode" => NetworkPolicy::NETWORK_NAME
+          "NetworkMode" => NetworkPolicy::INFRA_NETWORK_NAME
         },
         "Env" => [ "HOME=/home/agent" ],
-        "Labels" => { "paid.managed" => "true", "paid.resource" => "standalone_text_container", "paid.account_id" => account.id.to_s, "paid.runner_id" => runner.id.to_s },
+        "Labels" => {
+          "paid.managed" => "true", "paid.resource" => "standalone_text_container",
+          "paid.account_id" => account.id.to_s, "paid.runner_id" => runner.id.to_s,
+          "paid.expires_at" => (@timeout + CLEANUP_MARGIN).seconds.from_now.iso8601
+        },
         "Tty" => false, "OpenStdin" => false, "Cmd" => [ "tail", "-f", "/dev/null" ]
       }
     end
