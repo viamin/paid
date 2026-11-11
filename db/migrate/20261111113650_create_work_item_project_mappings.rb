@@ -38,12 +38,34 @@ class CreateWorkItemProjectMappings < ActiveRecord::Migration[8.1]
           AS PERMISSIVE FOR ALL
           USING (paid_tenant_bypass() OR account_id = paid_current_account_id())
           WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id());
+
+        ALTER TABLE work_item_project_mapping_targets ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE work_item_project_mapping_targets FORCE ROW LEVEL SECURITY;
+        CREATE POLICY tenant_isolation ON work_item_project_mapping_targets
+          AS PERMISSIVE FOR ALL
+          USING (
+            paid_tenant_bypass() OR EXISTS (
+              SELECT 1 FROM work_item_project_mappings
+              WHERE work_item_project_mappings.id = work_item_project_mapping_targets.work_item_project_mapping_id
+                AND work_item_project_mappings.account_id = paid_current_account_id()
+            )
+          )
+          WITH CHECK (
+            paid_tenant_bypass() OR EXISTS (
+              SELECT 1 FROM work_item_project_mappings
+              WHERE work_item_project_mappings.id = work_item_project_mapping_targets.work_item_project_mapping_id
+                AND work_item_project_mappings.account_id = paid_current_account_id()
+            )
+          );
       SQL
     end
   end
 
   def down
     safety_assured do
+      execute "DROP POLICY IF EXISTS tenant_isolation ON work_item_project_mapping_targets"
+      execute "ALTER TABLE work_item_project_mapping_targets NO FORCE ROW LEVEL SECURITY"
+      execute "ALTER TABLE work_item_project_mapping_targets DISABLE ROW LEVEL SECURITY"
       execute "DROP POLICY IF EXISTS tenant_isolation ON work_item_project_mappings"
       execute "ALTER TABLE work_item_project_mappings NO FORCE ROW LEVEL SECURITY"
       execute "ALTER TABLE work_item_project_mappings DISABLE ROW LEVEL SECURITY"

@@ -79,6 +79,25 @@ RSpec.describe WorkItems::SyncLinear do
       lifecycle_sync_source: "provider")
   end
 
+  it "uses the syncing project lifecycle mapping instead of an assigned project's mapping" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    FeatureFlags.enable!(:unified_work_items, project:)
+    other_project = create(:project, account:)
+    create(:work_item_lifecycle_mapping, account:, project:, native_state: "In Progress", paid_state: "syncing_project")
+    create(:work_item_lifecycle_mapping, account:, project: other_project,
+      native_state: "In Progress", paid_state: "other_project")
+    item = create(:work_item, account:, tracker_configuration: configuration, external_id: "issue-1",
+      native_state: "Todo")
+    item.work_item_assignments.create!(account:, project: other_project, provenance: "manual")
+    item.work_item_assignments.create!(account:, project:, provenance: "manual")
+    ticket[:state][:name] = "In Progress"
+    stub_ticket
+
+    described_class.call(project:)
+
+    expect(item.reload.paid_lifecycle_state).to eq("syncing_project")
+  end
+
   it "records a conflict instead of overwriting a recent Paid lifecycle change" do
     # @spec UNIFIED-WORK-ITEMS-006
     FeatureFlags.enable!(:unified_work_items, project:)

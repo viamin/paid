@@ -14,9 +14,10 @@ module WorkItems
 
       def self.call(...) = new(...).call
 
-      def initialize(work_item:, native_state:)
+      def initialize(work_item:, native_state:, project: nil)
         @work_item = work_item
         @native_state = native_state
+        @project = project
       end
 
       def call
@@ -30,11 +31,11 @@ module WorkItems
 
       private
 
-      attr_reader :work_item, :native_state
+      attr_reader :work_item, :native_state, :project
 
       def mapped_paid_state
         @mapped_paid_state ||= WorkItemLifecycleMapping.paid_state_for(account: work_item.account,
-          provider: work_item.provider, native_state:, project: work_item.projects.first)
+          provider: work_item.provider, native_state:, project:)
       end
 
       def conflicting?

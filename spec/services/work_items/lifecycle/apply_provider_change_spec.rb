@@ -23,6 +23,22 @@ RSpec.describe WorkItems::Lifecycle::ApplyProviderChange do
       lifecycle_sync_source: "provider")
   end
 
+  it "uses the initiating project lifecycle mapping when assignments have different mappings" do
+    first_project = create(:project, account:)
+    initiating_project = create(:project, account:)
+    work_item.work_item_assignments.create!(account:, project: first_project, provenance: "manual")
+    work_item.work_item_assignments.create!(account:, project: initiating_project, provenance: "manual")
+    create(:work_item_lifecycle_mapping, account:, project: first_project,
+      native_state: "In Progress", paid_state: "first_project")
+    create(:work_item_lifecycle_mapping, account:, project: initiating_project,
+      native_state: "In Progress", paid_state: "initiating_project")
+
+    result = described_class.call(work_item:, native_state: "In Progress", project: initiating_project)
+
+    expect(result.status).to eq(:applied)
+    expect(work_item.reload.paid_lifecycle_state).to eq("initiating_project")
+  end
+
   it "reports unsupported without claiming success when no mapping covers the native state" do
     result = described_class.call(work_item:, native_state: "Weird State")
 

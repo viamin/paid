@@ -38,11 +38,28 @@ RSpec.describe WorkItems::Lifecycle::ApplyPaidChange do
     expect(a_request(:post, "https://api.linear.app/graphql")).to have_been_made
   end
 
+  it "uses the initiating project lifecycle mapping when assignments have different mappings" do
+    other_project = create(:project, account:)
+    work_item.work_item_assignments.create!(account:, project: other_project, provenance: "manual")
+    create(:work_item_lifecycle_mapping, account:, project:,
+      native_state: "first-project-state", paid_state: "in_progress")
+    create(:work_item_lifecycle_mapping, account:, project: other_project,
+      native_state: "initiating-project-state", paid_state: "in_progress")
+    stub_update
+
+    result = described_class.call(work_item:, paid_state: "in_progress", project: other_project)
+
+    expect(result.status).to eq(:applied)
+    expect(a_request(:post, "https://api.linear.app/graphql").with { |request|
+      JSON.parse(request.body).dig("variables", "input", "stateId") == "initiating-project-state"
+    }).to have_been_made
+  end
+
   it "skips an agent-run-driven write when the project disables agent-run lifecycle sync" do
     # @spec UNIFIED-WORK-ITEMS-006
     project.update!(agent_run_lifecycle_sync_enabled: false)
 
-    result = described_class.call(work_item:, paid_state: "in_progress", agent_run: build(:agent_run))
+    result = described_class.call(work_item:, paid_state: "in_progress", project:, agent_run: build(:agent_run))
 
     expect(result.status).to eq(:agent_run_sync_disabled)
     expect(work_item.reload.paid_lifecycle_state).to be_nil

@@ -14,9 +14,10 @@ module WorkItems
 
       def self.call(...) = new(...).call
 
-      def initialize(work_item:, paid_state:, agent_run: nil)
+      def initialize(work_item:, paid_state:, project: nil, agent_run: nil)
         @work_item = work_item
         @paid_state = paid_state
+        @project = project
         @agent_run = agent_run
       end
 
@@ -32,18 +33,17 @@ module WorkItems
 
       private
 
-      attr_reader :work_item, :paid_state, :agent_run
+      attr_reader :work_item, :paid_state, :project, :agent_run
 
       def agent_run_sync_disabled?
         return false unless agent_run
 
-        project = work_item.projects.first
         project.present? && !project.agent_run_lifecycle_sync_enabled
       end
 
       def mapped_native_state
         @mapped_native_state ||= WorkItemLifecycleMapping.native_state_for(account: work_item.account,
-          provider: work_item.provider, paid_state:, project: work_item.projects.first)
+          provider: work_item.provider, paid_state:, project:)
       end
 
       def conflicting?
