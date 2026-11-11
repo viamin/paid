@@ -18,6 +18,7 @@ module Containers
     # "NAME=" prefix and NUL terminator.
     MAX_ENV_ENTRY_BYTES = 64 * 1024
     CLEANUP_MARGIN = 5
+    STANDALONE_TEXT_MAX_LIFETIME = 10.minutes
     DEFAULTS = {
       image: Containers::ImageResolver::BASE_IMAGE,
       memory_bytes: 512 * 1024 * 1024,
@@ -104,17 +105,19 @@ module Containers
       validate_input_size!(command, env, preparation, stdin_data)
       provision! unless @container
       with_managed_credential_lease do
-        result = run(materialized_command(command), timeout: bounded_timeout(timeout),
+        run(materialized_command(command), timeout: bounded_timeout(timeout),
           env: materialized_env(env), input: input_payload(command, preparation, stdin_data))
-        harvest_managed_credential
-        result
       end
     rescue StandardError
       close
       raise
     end
 
-    def close = cleanup!
+    def close
+      harvest_managed_credential if @container
+    ensure
+      cleanup!
+    end
 
     def which(binary)
       result = execute([ "sh", "-c", "command -v -- #{Shellwords.escape(binary.to_s)}" ])
@@ -203,9 +206,11 @@ module Containers
       credential = rotating_subscription_credential
       return unless credential
 
-      result = Runners::ManagedCredentialLifecycle.harvest(credential: credential,
-        runner_key: runner.runner_key, backend: Containers.backend, container: @container)
-      log_harvest(result, credential)
+      with_managed_credential_lease do
+        result = Runners::ManagedCredentialLifecycle.harvest(credential: credential,
+          runner_key: runner.runner_key, backend: Containers.backend, container: @container)
+        log_harvest(result, credential)
+      end
     end
 
     def rotating_subscription_credential
@@ -324,7 +329,7 @@ module Containers
         "Labels" => {
           "paid.managed" => "true", "paid.resource" => "standalone_text_container",
           "paid.account_id" => account.id.to_s, "paid.runner_id" => runner.id.to_s,
-          "paid.expires_at" => (@timeout + CLEANUP_MARGIN).seconds.from_now.iso8601
+          "paid.expires_at" => STANDALONE_TEXT_MAX_LIFETIME.from_now.iso8601
         },
         "Tty" => false, "OpenStdin" => false, "Cmd" => [ "tail", "-f", "/dev/null" ]
       }

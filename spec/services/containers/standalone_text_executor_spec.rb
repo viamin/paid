@@ -174,6 +174,21 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-006
+  it "labels the container with a fixed orphan-sweep lifetime from creation" do
+    freeze_time do
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "--version" ])
+
+      expect(backend).to have_received(:create_container).with(hash_including(
+        "Labels" => hash_including(
+          "paid.expires_at" => described_class::STANDALONE_TEXT_MAX_LIFETIME.from_now.iso8601
+        )
+      ))
+    end
+  end
+
+  # @spec LLM-ROUTING-006
   it "resolves materialized paths before checking confinement" do
     expect(described_class::MATERIALIZE_COMMAND).to include("os.path.realpath(name)")
     expect(described_class::MATERIALIZE_COMMAND).not_to include('pathlib.Path("/home/agent") not in path.parents')
@@ -237,23 +252,29 @@ RSpec.describe Containers::StandaloneTextExecutor do
     end
 
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
-    it "harvests a rotated auth file back into the credential under the per-credential lease" do
+    it "harvests a rotated auth file once when the container closes" do
       stub_execs(rotation_stdout: Base64.strict_encode64(rotated_codex_auth))
+      executor = described_class.new(account: account, runner: runner, timeout: 30)
 
-      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+      executor.execute([ "codex", "--version" ])
+      executor.execute([ "codex", "exec", "hello" ])
+      expect(JSON.parse(credential.reload.token)).to eq(JSON.parse(valid_codex_auth))
+      executor.close
 
       parsed = JSON.parse(credential.reload.token)
       expect(parsed["tokens"]["access_token"]).to eq("eyJrotated-access-token")
       expect(File).to exist(lockfile)
       expect(backend).to have_received(:exec_in_container).with(container,
-        [ "sh", "-lc", "base64 -w0 /home/agent/.codex/auth.json" ], hash_including(user: "agent"))
+        [ "sh", "-lc", "base64 -w0 /home/agent/.codex/auth.json" ], hash_including(user: "agent")).once
     end
 
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
     it "keeps the run successful when the harvest finds no rotation" do
       stub_execs(rotation_stdout: nil)
 
-      result = described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+      executor = described_class.new(account: account, runner: runner, timeout: 30)
+      result = executor.execute([ "codex", "exec", "hello" ])
+      executor.close
 
       expect(result.exit_code).to eq(0)
       expect(credential.reload.token).to eq(valid_codex_auth)
@@ -269,7 +290,9 @@ RSpec.describe Containers::StandaloneTextExecutor do
         [ [], [], 0 ]
       end
 
-      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+      executor = described_class.new(account: account, runner: runner, timeout: 30)
+      executor.execute([ "codex", "exec", "hello" ])
+      executor.close
 
       expect(calls).to all(satisfy { |command| command.first == "python3" })
     end
@@ -285,7 +308,9 @@ RSpec.describe Containers::StandaloneTextExecutor do
         [ [], [], 0 ]
       end
 
-      described_class.new(account: account, runner: claude_runner, timeout: 30).execute([ "claude", "--version" ])
+      executor = described_class.new(account: account, runner: claude_runner, timeout: 30)
+      executor.execute([ "claude", "--version" ])
+      executor.close
 
       expect(calls).to all(satisfy { |command| command.first == "python3" })
     end

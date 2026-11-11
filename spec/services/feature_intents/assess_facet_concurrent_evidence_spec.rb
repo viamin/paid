@@ -22,7 +22,6 @@ RSpec.describe FeatureIntents::AssessFacet do
   let(:updated) { Queue.new }
   let(:commit_now) { Queue.new }
   let(:conductor) { instance_double(AgentHarness::Orchestration::Conductor, execute_direct: completed_response) }
-  let(:harness) { class_double(AgentHarness, conductor: conductor) }
   let(:completed_response) do
     double(success?: true, output: JSON.generate(
       "status" => "completed", "intent_score" => 90, "technical_score" => 75,
@@ -81,7 +80,7 @@ RSpec.describe FeatureIntents::AssessFacet do
     Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do
         TenantContext.with_system_access do
-          described_class.call(assessment: FeatureIntentFacetAssessment.find(assessment.id), agent_harness: harness)
+          described_class.call(assessment: FeatureIntentFacetAssessment.find(assessment.id))
         end
       end
     end

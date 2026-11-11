@@ -33,7 +33,7 @@ therefore required even when the driver advertises tool control.
 Rotating managed credentials (Codex, OpenCode, OMP) reuse the provisioner's
 refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so a
 standalone request materializes a refreshed token and writes an in-container
-rotation back into the canonical credential before the container is deleted.
+rotation back into the canonical credential once before the container is deleted.
 The command, preparation, and prompt travel on the Docker exec stdin stream,
 not as exec environment entries, because a single `execve` environment string
 is capped near 128 KiB; caller environment entries are bounded per entry.
@@ -46,7 +46,9 @@ JSON locally. They do not require a vendor's schema-only API. Provenance records
 the actual response model rather than an assumed vendor model.
 
 Isolated text commands use a process-group deadline before the container
-watchdog, with a short cleanup margin. Provisioning, command failure,
+watchdog, with a short cleanup margin. Their immutable orphan-sweep label uses
+a fixed ten-minute lifetime from creation, so it remains a worker-death safety
+net while a healthy executor reuses its container. Provisioning, command failure,
 cancellation, timeout, and worker interruption all remove the disposable
 container. Failed provisioning is terminal for that candidate and never falls
 back to host execution. Timing out an assessment must not stop a live run's
