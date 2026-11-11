@@ -11,8 +11,10 @@
   active artifacts after a full successful collection run for a newer commit.
   When concurrent collection contends for an artifact identity, it SHALL not
   wait indefinitely on a database advisory lock; it SHALL fail the collection
-  attempt promptly and retry through the job's bounded retry policy. During
-  artifact persistence, it SHALL use a transaction-scoped advisory lock so an
+  attempt promptly and retry through the job's bounded retry policy. When a
+  PostgreSQL connection is temporarily unavailable, including while the
+  database is recovering, it SHALL also retry through that bounded policy.
+  During artifact persistence, it SHALL use a transaction-scoped advisory lock so an
   interrupted collector cannot retain that lock through a pooled database
   session after its transaction ends. During those retryable attempts, it SHALL
   retain the project's `collecting` status;

@@ -33,9 +33,10 @@ chain per project commit and skip when a continuation is already pending;
 continuation jobs can enqueue despite that limit and share an execution key with
 legacy full collection. A queued batch stops when its branch has advanced to a
 newer commit, allowing the current commit's chain to use the knowledge worker.
-The import-time enqueue job retries transient worktree and PostgreSQL connection
-failures with bounded backoff; it reports the failure only when that retry
-policy is exhausted. Each collector releases its container before the
+The import-time enqueue job and collector-chain jobs retry transient PostgreSQL
+connection failures with bounded backoff; they retain the project's
+`collecting` status while retries are pending and report the failure only when
+that retry policy is exhausted. Each collector releases its container before the
 next starts; Ruby heap memory remains subject to garbage collection. The
 tree-sitter and symbol-index collectors scan at most 25 source files per
 continuation. Their stable relative-path cursor is persisted on the unique
@@ -117,11 +118,13 @@ knowledge base tracks what was known for each commit while still surfacing the
 latest active view. Artifact identity updates use a non-blocking PostgreSQL
 advisory lock: contention raises a retryable failure promptly instead of
 consuming the collection job's wall-clock budget. `RunCollectorsJob` retries
-that transient failure with its bounded backoff policy, preserving the
-project's `collecting` status while it waits. On exhaustion it marks the
-collection failed, reports the terminal exception, and re-raises it so the
-adapter records the failed execution. This preserves serialized replacement
-without allowing a stranded database lock to create a job timeout.
+that transient failure with its bounded backoff policy. It applies the same
+bounded retry policy to PostgreSQL connection failures, including recovery-mode
+rejections, preserving the project's `collecting` status while either retry is
+pending. On exhaustion it marks the collection failed, reports the terminal
+exception, and re-raises it so the adapter records the failed execution. This
+preserves serialized replacement without allowing a stranded database lock or a
+short database recovery to create a terminal collection failure.
 
 Full collection runs execute the registered collectors serially, and a large
 repository can legitimately require more than the individual command timeouts

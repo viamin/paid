@@ -127,6 +127,18 @@ RSpec.describe RunCollectorsJob do
         expect { job.perform_now }.not_to raise_error
         expect(project.reload.knowledge_status).to eq("collecting")
       end
+
+      # @spec KNOWLEDGE-001
+      it "keeps knowledge_status collecting when the database is recovering for retry" do
+        allow(Knowledge::CollectorRunner).to receive(:call)
+          .and_raise(ActiveRecord::ConnectionNotEstablished, "database system is in recovery mode")
+
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished]" => 0 }
+
+        expect { job.perform_now }.not_to raise_error
+        expect(project.reload.knowledge_status).to eq("collecting")
+      end
     end
 
     context "when Docker is available" do
@@ -230,7 +242,7 @@ RSpec.describe RunCollectorsJob do
       end
 
       # @spec KNOWLEDGE-001
-      # Reproduces the production timing gap directly on #mark_terminal_lock_failure:
+      # Reproduces the production timing gap directly on #mark_terminal_retry_failure:
       # by the time retry_on's exhaustion block runs, ApplicationJob's
       # around_perform has already unwound with_tenant_context, restoring the DB
       # session to no account/no bypass (TenantContext#with's ensure). The
@@ -245,11 +257,36 @@ RSpec.describe RunCollectorsJob do
         end
 
         bypass_before = current_bypass_setting
-        job.send(:mark_terminal_lock_failure)
+        job.send(:mark_terminal_retry_failure)
 
         expect(bypass_during_lookup).to eq("true")
         expect(current_bypass_setting).to eq(bypass_before)
         expect(project.reload.knowledge_status).to eq("failed")
+      end
+    end
+
+    context "when database recovery exhausts retries" do
+      let(:notifier) { instance_double(Paid::ExceptionNotifier) }
+
+      before do
+        allow(Knowledge::CollectorRunner).to receive(:call)
+          .and_raise(ActiveRecord::ConnectionNotEstablished, "database system is in recovery mode")
+        allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+        allow(notifier).to receive(:call)
+      end
+
+      # @spec KNOWLEDGE-001
+      it "marks the collection failed, notifies, and re-raises" do
+        job = described_class.new(project.id, commit_sha)
+        job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished]" => 4 }
+
+        expect { job.perform_now }.to raise_error(ActiveRecord::ConnectionNotEstablished, "database system is in recovery mode")
+
+        expect(project.reload.knowledge_status).to eq("failed")
+        expect(notifier).to have_received(:call).with(
+          an_instance_of(ActiveRecord::ConnectionNotEstablished),
+          data: hash_including(subsystem: "knowledge", project_id: project.id)
+        )
       end
     end
   end

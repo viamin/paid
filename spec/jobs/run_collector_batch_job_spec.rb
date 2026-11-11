@@ -130,4 +130,18 @@ RSpec.describe RunCollectorBatchJob do
   ensure
     RunCollectorContinuationJob.queue_adapter = original_adapter
   end
+
+  # @spec KNOWLEDGE-001 KNOWLEDGE-014
+  it "keeps the collection status while retrying a database recovery failure" do
+    allow(Knowledge::CollectorRunner).to receive(:call)
+      .and_raise(ActiveRecord::ConnectionNotEstablished, "database system is in recovery mode")
+    allow(Knowledge::ContainerizedRunner).to receive(:available?).and_return(false)
+    allow(Knowledge::CollectorRunner).to receive(:registry).and_return({ "first" => Object })
+
+    job = described_class.new(project.id, commit_sha)
+    job.exception_executions = { "[ActiveRecord::ConnectionNotEstablished]" => 0 }
+
+    expect { job.perform_now }.not_to raise_error
+    expect(project.reload.knowledge_status).to eq("collecting")
+  end
 end
