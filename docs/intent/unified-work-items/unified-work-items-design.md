@@ -5,8 +5,8 @@ prefix: UNIFIED-WORK-ITEMS
 
 # Low-Level Design: Unified Work Items
 
-RDR-079 Phase 1 establishes the contract and default-off rollout guard. The
-remaining delivery work is tracked by #4854.
+RDR-079 establishes the contract and default-off rollout guard. Delivery work
+is tracked by #4854.
 
 ## Purpose
 
@@ -65,6 +65,7 @@ GitHub issue behavior remains outside this new guard.
 | Add a parallel immutable contract | Replace `Data::Issue` immediately | A compatibility adapter avoids breaking current GitHub consumers while providers migrate independently. |
 | Preserve raw payloads | Normalize only | Normalization necessarily loses provider detail needed for audit, repair, and future mappings. |
 | Record lifecycle conflicts | Silently pick native or normalized state | A visible conflict prevents a failed mapping from looking like a successful state transition. |
+| Select an existing `LinearToken` from the account API-key screen | Copy its secret into a generic `IntegrationCredential` | One encrypted key record remains authoritative, and rotation does not create a second secret copy. |
 
 ## Context and problem
 
@@ -78,15 +79,30 @@ moving pull-request review semantics into the ticket model.
 
 `IssueTrackers::Adapters::Base` is the existing provider-neutral tracker
 operation seam; its Linear adapter is selected by
-`IssueTrackers::AdapterFactory` from `TrackerConfiguration`. Subsequent phases
-add a persisted `WorkItem` model as the local identity and reconciliation store, not
+`IssueTrackers::AdapterFactory` from `TrackerConfiguration`. The persisted
+`WorkItem` model is the local identity and reconciliation store, not
 a second automation provider interface. A Linear `WorkItem` records
 the provider resource and normalized state fetched through that adapter; it
 does not duplicate the account's credential or `project_mapping`.
 `TrackerConfiguration` remains authoritative for the account Linear
-connection, integration credential, configuration scope, and mapping. External
+connection, selected `LinearToken`, configuration scope, and mapping. External
 tracker data, comments, webhooks, and issue text remain untrusted at the
 integration boundary.
+
+The Linear adapter uses the account configuration's selected active `LinearToken`
+for GraphQL requests. Saving a key in the existing account Linear API-key
+screen selects it for the account configuration; revoking the selected key
+disconnects synchronization. Only account owners and admins may add or revoke
+keys or change the sync interval. It pages through issues including archived
+issues, retains the source response, and reports authentication, rate-limit,
+transport, and GraphQL failures explicitly. A guarded sync upserts tickets by
+account, provider, resource type, and external ID; it updates connection health
+only after a complete import. The API-key page shows connection health, last
+successful sync, and cadence; account admins can change the cadence there in
+whole minutes, from five minutes to one day. The account sync job checks the configured
+interval (15 minutes by default) and selects a project with the unified-work-item
+flag enabled before contacting Linear. The local ticket record does not itself
+grant project assignment, trust, or workflow access.
 
 ## Scope and boundaries
 

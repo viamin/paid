@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationJob, :no_db do
+RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
   let(:expected_queue_assignments) do
     {
       default: %w[
@@ -61,6 +61,7 @@ RSpec.describe ApplicationJob, :no_db do
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
         LegacyPartialCloseoutReconciliationSweepJob
+        LinearTicketSyncJob
         ModelHealthCheckJob
         OrphanBranchReaperJob
         PartialCloseoutAcceptanceAuditSweepJob

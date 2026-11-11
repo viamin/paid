@@ -72,7 +72,7 @@ RSpec.describe LinearTokenPolicy do
     end
 
     describe "#create?" do
-      it "permits owner" do
+      it "permits owner" do # @spec UNIFIED-WORK-ITEMS-002
         account = create(:account)
         owner = create(:user, account: account)
         linear_token = create(:linear_token, account: account, created_by: owner)
@@ -80,13 +80,22 @@ RSpec.describe LinearTokenPolicy do
         expect(described_class.new(owner, linear_token)).to be_create
       end
 
-      it "permits member" do
+      it "permits admin" do # @spec UNIFIED-WORK-ITEMS-002
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        admin = create(:user, :admin, account: account)
+        linear_token = create(:linear_token, account: account, created_by: admin)
+
+        expect(described_class.new(admin, linear_token)).to be_create
+      end
+
+      it "does not permit member" do # @spec UNIFIED-WORK-ITEMS-002
         account = create(:account)
         create(:user, account: account) # absorb owner role
         member = create(:user, :member, account: account)
         linear_token = create(:linear_token, account: account, created_by: member)
 
-        expect(described_class.new(member, linear_token)).to be_create
+        expect(described_class.new(member, linear_token)).not_to be_create
       end
 
       it "does not permit viewer" do
@@ -137,7 +146,7 @@ RSpec.describe LinearTokenPolicy do
     end
 
     describe "#destroy?" do
-      it "permits owner" do
+      it "permits owner" do # @spec UNIFIED-WORK-ITEMS-002
         account = create(:account)
         owner = create(:user, account: account)
         linear_token = create(:linear_token, account: account, created_by: owner)
@@ -145,13 +154,13 @@ RSpec.describe LinearTokenPolicy do
         expect(described_class.new(owner, linear_token)).to be_destroy
       end
 
-      it "does not permit admin" do
+      it "permits admin" do # @spec UNIFIED-WORK-ITEMS-002
         account = create(:account)
         create(:user, account: account) # absorb owner role
         admin = create(:user, :admin, account: account)
         linear_token = create(:linear_token, account: account, created_by: admin)
 
-        expect(described_class.new(admin, linear_token)).not_to be_destroy
+        expect(described_class.new(admin, linear_token)).to be_destroy
       end
 
       it "does not permit member" do

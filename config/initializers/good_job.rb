@@ -183,6 +183,11 @@ Rails.application.configure do
       class: "ProcessRunQueueJob",
       description: "Process queued agent runs"
     },
+    linear_ticket_sync: {
+      cron: "*/5 * * * *",
+      class: "LinearTicketSyncJob",
+      description: "Synchronize due Linear ticket connections"
+    },
     auto_pick_queue_backfill: {
       cron: "0 * * * *",
       class: "AutoPickQueueBackfillJob",

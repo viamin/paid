@@ -12,15 +12,18 @@
 - **Tracking issues**: #4854 (umbrella), #4855–#4860 (phases), #4861 (closeout)
 - **Implementation status**: Phase 1 provider-contract and rollout-guard
   work is present in code and checked EARS claims, while #4855 remains open
-  for issue-level reconciliation. Phases #4856–#4861 remain open. The design
-  is still Draft; partial foundation work is not final design acceptance.
+  for issue-level reconciliation. Phase 2's adapter transport, account ticket
+  store, selected account API key, guarded sync, and cadence foundation are
+  implemented by #4856; full data coverage and live workspace validation
+  remain open, as do later phases. The design is still Draft; partial
+  foundation work is not final design acceptance.
 - **LID**: Full mode, version 1.3.0; the linked LLD and EARS artifacts record
   the implementation cascade.
 
 ## Problem Statement
 
 Paid currently has GitHub-centric issue workflows and a tracker adapter layer
-whose Linear issue listing is not implemented. Users need to browse external
+that has no Linear browser or workflow integration. Users need to browse external
 tracker tickets, associate them with one or more repository-backed Paid
 projects, and start Paid issue workflows from the project page. Linear project
 mappings need bulk assignment while preserving issue-level overrides.
@@ -48,8 +51,8 @@ The feature brief supplies these observations:
 - Users need external-ticket browsing, project association, project-page run
   initiation, bulk mapping, and issue-level assignment overrides.
 - Repository inspection found a Linear-capable tracker configuration and
-  adapter interface, while Linear `list_issues` and `update_status` are
-  currently unimplemented.
+  adapter interface; provider operations alone do not make tickets available
+  to Paid workflows.
 - The existing Paid `Issue` model and project issue table are GitHub-oriented.
 
 Affected stakeholders named in the brief are account admins, project
@@ -88,16 +91,16 @@ evidence:
    pull-request links, and connection validation. The base adapter already
    exposes tracker configuration, credentials, project mapping, and quiet-mode
    comment suppression.
-4. `app/services/issue_trackers/adapters/linear.rb` currently raises
-   `NotImplementedError` for `list_issues`, `get_issue`, `add_comment`,
-   `update_status`, `link_pr`, and `validate_connection!`. This is the concrete
-   implementation gap for Linear.
-5. Account-wide Linear credentials already have a local representation:
-   `Account#linear_tokens`, `LinearToken`, the Linear integration provider, and
-   `linear_tokens` routes/controllers/views. `LinearToken` validates the
-   `lin_api_...` format and supports revocation. The brief's one-connection
-   requirement is therefore a new usage constraint over an existing credential
-   surface, not evidence that synchronization already exists.
+4. `app/services/issue_trackers/adapters/linear.rb` has GraphQL operations
+   for listing and fetching issues, adding comments, updating native workflow
+   state, linking pull requests, and validating credentials. The adapter and
+   account ticket store still lack the complete supported data surface and
+   workflow integration needed for Linear tickets.
+5. Account-wide Linear credentials use `Account#linear_tokens`, `LinearToken`,
+   the Linear integration provider, and `linear_tokens` routes/controllers/views.
+   `LinearToken` validates the `lin_api_...` format and supports revocation.
+   The account's Linear `TrackerConfiguration` selects one active token; saving
+   a new key rotates that selection without duplicating the secret.
 6. `app/models/issue.rb` is the current Paid issue aggregate. Its associations
    include agent runs, parent/sub-issues, dependencies, and feature-intent
    links; it also contains GitHub-specific source constants, GitHub trust
