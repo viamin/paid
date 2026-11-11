@@ -35,7 +35,7 @@ module AgentRuns
       )
     rescue Screenshots::ConfigError => e
       Section.new(
-        content: render_config_error_section(e) + render_criterion_section,
+        content: render_config_error_section(e) + journey_guide_section + render_criterion_section,
         fallback_result: {
           "status" => "skipped",
           "reason" => "verification_configuration_invalid",
@@ -179,7 +179,7 @@ module AgentRuns
 
     # @spec LIVE-PREVIEW-012
     def journey_guide_section
-      return "" unless issue_implementation? && journey_guide_available?
+      return "" unless @agent_run.create_pr_goal? && journey_guide_available?
 
       <<~SECTION
 
