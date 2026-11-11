@@ -29,11 +29,15 @@ RSpec.describe "Paid project detail verification journey", system_driver: :rack_
     expect(page).to have_content(project.name)
   end
 
-  it "keeps the documented launch command aligned with the runtime plan" do
-    runtime_plan = Screenshots::RuntimePlan.call(project:, repo_path: Rails.root)
+  # @spec LIVE-PREVIEW-012
+  it "keeps the documented launch command runnable in the agent's execution container" do
+    # Intentionally not derived from `Screenshots::RuntimePlan#start_command`:
+    # that derivation prefers `bin/dev` whenever the file exists in the repo,
+    # but the agent container (docker/agent/Dockerfile) ships neither `tmux`
+    # nor Overmind, so `bin/dev` cannot start anything there. The guide must
+    # keep documenting the command this container can actually run.
     journey_guide = Rails.root.join(".paid/journeys.md").read
 
-    expect(runtime_plan.start_command).to eq("PORT=3000 bin/dev")
-    expect(journey_guide).to include("(PORT=3000 bin/dev)")
+    expect(journey_guide).to include("(bundle exec bin/rails server -b 0.0.0.0 -p 3000)")
   end
 end

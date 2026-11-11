@@ -105,6 +105,11 @@
   accounts carrying that marker, so an unmarked account colliding on the
   journey slug or email SHALL be refused; agent-reported steps or screenshots
   alone SHALL remain unverified evidence under the existing result contract.
+  The guide's documented application-launch command SHALL remain one the
+  agent's own execution container can run directly; it SHALL NOT be derived
+  from `Screenshots::RuntimePlan`'s generic preference order, which prefers
+  `bin/dev` whenever the file exists and does not account for the agent
+  container lacking the `tmux`/Overmind supervisor that command requires.
   *Code:* `app/services/agent_runs/verification_prompt.rb`,
   `.paid/journeys.md`, `bin/paid-journey`,
   `app/services/screenshots/seed_data/paid_journey.rb`,
