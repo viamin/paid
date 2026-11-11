@@ -356,7 +356,13 @@ not the current implementation contract. See
 
 ## Creating New RDRs
 
-Use the template at the [RDR repository](https://github.com/cwensel/rdr/blob/main/TEMPLATE.md) as a starting point.
+Start from Paid's [future authoring contract](future-authoring-contract.md)
+and its [template overlay](future-authoring-template.md) — they define the
+status transitions, minimum decision/evidence content, rollout guards, and
+LID handoff that apply to every new RDR. The upstream
+[RDR repository template](https://github.com/cwensel/rdr/blob/main/TEMPLATE.md)
+is the underlying structure the overlay adapts; use it only as background,
+not as the starting document.
 
 Before assigning a number, check both merged RDRs and open PRs that add or rename
 `docs/rdrs/RDR-*.md` files. Use the next number after the highest reserved number across

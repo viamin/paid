@@ -32,16 +32,6 @@ Every LID project declares its mode in its instruction file (the project's `AGEN
 - **Full LID**: the workflow applies broadly — any prompt that could result in a code change is in scope.
 - **Scoped LID**: additionally checks whether the files or subsystems the prompt touches fall within the declared scope. Scope is declared in the instruction file under a `## LID Scope` section with include/exclude glob patterns. If every file the prompt touches is outside scope (in the exclude list, or not in the include list), the workflow does not apply. If any touched path is in scope, the workflow applies. For prompts that reference no specific paths, default to applying the workflow and ask the user to confirm when ambiguous. When the `## LID Scope` section is missing or empty in a Scoped-mode project (misconfiguration), fall back to treating all prompts as in-scope and surface a warning suggesting scope be declared.
 
-## Paid RDR handoff
-
-When an architectural decision needs an RDR, use Paid's
-[`docs/rdrs/future-authoring-contract.md`](../rdrs/future-authoring-contract.md)
-for the decision/evidence record and its owner-acceptance boundary. That RDR is
-not a substitute for this workflow: before runtime implementation, reconcile
-the HLD and create or update the owning LLD and EARS claims. The RDR links to
-those normative implementation artifacts rather than duplicating them. This is
-a Paid-specific overlay; the six phases below remain the LID procedure.
-
 ## The six phases
 
 ### Phase 1 — HLD check (with bootstrap when needed)

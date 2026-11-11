@@ -39,9 +39,17 @@ Rails-adapted reference implementation — adds `*.rb` to the scan and `vendor`,
 `tmp`, `.bundle`, `storage` to the excludes, plus `--color=never` to keep ANSI
 escapes out of the line parser), declared in `CLAUDE.md` under `## LID Tooling`.
 
-For Paid RDRs, `workflow.md` also carries a small Paid-specific handoff to
-`docs/rdrs/future-authoring-contract.md`. The RDR remains decision evidence;
-the LID arrow owns implementation intent.
+## Paid RDR handoff
+
+When an architectural decision needs an RDR, use Paid's
+[`docs/rdrs/future-authoring-contract.md`](../rdrs/future-authoring-contract.md)
+for the decision/evidence record and its owner-acceptance boundary. That RDR is
+not a substitute for the LID workflow in `workflow.md`: before runtime
+implementation, reconcile the HLD and create or update the owning LLD and EARS
+claims. The RDR links to those normative implementation artifacts rather than
+duplicating them. This overlay lives here, not in `workflow.md`, because
+`workflow.md` is vendored and re-synced from upstream (see Sync policy below);
+the six phases there remain the unmodified upstream LID procedure.
 
 ## How to use it (non-Claude tools)
 
