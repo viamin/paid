@@ -10,6 +10,7 @@ RSpec.describe WorkItems::Lifecycle::ApplyPaidChange do
   let(:work_item) { create(:work_item, account:, tracker_configuration: configuration, native_state: "Todo") }
 
   before do
+    create(:tenant_setting, account:, features: { "unified_work_items" => true })
     create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress")
     work_item.work_item_assignments.create!(account:, project:, provenance: "manual")
   end
@@ -83,12 +84,35 @@ RSpec.describe WorkItems::Lifecycle::ApplyPaidChange do
   end
 
   it "flags a simultaneous conflicting change for human review instead of silently overwriting it" do
-    work_item.update!(native_state: "Done", lifecycle_sync_source: "provider")
+    command = described_class.new(work_item:, paid_state: "in_progress")
+    work_item.update!(native_state: "Done", lifecycle_sync_source: "provider", lifecycle_synced_at: Time.current)
 
-    result = described_class.call(work_item:, paid_state: "in_progress")
+    result = command.call
 
     expect(result.status).to eq(:conflict)
     expect(result.conflict).to have_attributes(observed_native_state: "Done", requested_native_state: "In Progress")
+    expect(work_item.reload.paid_lifecycle_state).to be_nil
+    expect(a_request(:post, "https://api.linear.app/graphql")).not_to have_been_made
+  end
+
+  it "applies a sequential Paid transition after observing a provider transition" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    work_item.update!(native_state: "Todo", lifecycle_sync_source: "provider", lifecycle_synced_at: Time.current)
+    stub_update
+
+    result = described_class.call(work_item:, paid_state: "in_progress")
+
+    expect(result.status).to eq(:applied)
+    expect(work_item.reload.paid_lifecycle_state).to eq("in_progress")
+  end
+
+  it "does not write locally or to the provider while unified work items are disabled" do
+    # @spec UNIFIED-WORK-ITEMS-009
+    account.tenant_setting.update!(features: { "unified_work_items" => false })
+
+    result = described_class.call(work_item:, paid_state: "in_progress")
+
+    expect(result.status).to eq(:rollout_disabled)
     expect(work_item.reload.paid_lifecycle_state).to be_nil
     expect(a_request(:post, "https://api.linear.app/graphql")).not_to have_been_made
   end

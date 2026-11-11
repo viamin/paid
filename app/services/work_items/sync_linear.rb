@@ -54,7 +54,8 @@ module WorkItems
         native_project_id: payload.dig("project", "id"), native_project_name: payload.dig("project", "name"))
       item.save!
         WorkItems::ProjectMappings::AutoAssign.call(work_item: item, previous_native_project_id:)
-      WorkItems::Lifecycle::ApplyProviderChange.call(work_item: item, native_state: issue.status, project:)
+      WorkItems::Lifecycle::ApplyProviderChange.call(work_item: item, native_state: issue.status,
+        project:, observed_at: item.provider_updated_at)
     end
 
     def parse_time(value)

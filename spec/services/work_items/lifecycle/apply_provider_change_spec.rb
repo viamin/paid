@@ -6,7 +6,10 @@ RSpec.describe WorkItems::Lifecycle::ApplyProviderChange do
   let(:account) { create(:account) }
   let(:work_item) { create(:work_item, account:, native_state: "Todo") }
 
-  before { create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress") }
+  before do
+    create(:tenant_setting, account:, features: { "unified_work_items" => true })
+    create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress")
+  end
 
   it "is a no-op loop-safe when the native state has not changed" do
     # @spec UNIFIED-WORK-ITEMS-006
@@ -47,12 +50,34 @@ RSpec.describe WorkItems::Lifecycle::ApplyProviderChange do
   end
 
   it "flags a simultaneous conflicting change for human review instead of silently overwriting it" do
-    work_item.update!(paid_lifecycle_state: "blocked", lifecycle_sync_source: "paid")
+    command = described_class.new(work_item:, native_state: "In Progress")
+    work_item.update!(paid_lifecycle_state: "blocked", lifecycle_sync_source: "paid", lifecycle_synced_at: Time.current)
 
-    result = described_class.call(work_item:, native_state: "In Progress")
+    result = command.call
 
     expect(result.status).to eq(:conflict)
     expect(result.conflict).to have_attributes(observed_paid_state: "blocked", requested_paid_state: "in_progress")
     expect(work_item.reload.native_state).to eq("Todo")
+  end
+
+  it "applies a sequential provider transition after observing a Paid transition" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    work_item.update!(paid_lifecycle_state: "blocked", lifecycle_sync_source: "paid",
+      lifecycle_synced_at: Time.current)
+
+    result = described_class.call(work_item:, native_state: "In Progress")
+
+    expect(result.status).to eq(:applied)
+    expect(work_item.reload).to have_attributes(native_state: "In Progress", paid_lifecycle_state: "in_progress")
+  end
+
+  it "does not mutate lifecycle state while unified work items are disabled" do
+    # @spec UNIFIED-WORK-ITEMS-009
+    account.tenant_setting.update!(features: { "unified_work_items" => false })
+
+    result = described_class.call(work_item:, native_state: "In Progress")
+
+    expect(result.status).to eq(:rollout_disabled)
+    expect(work_item.reload).to have_attributes(native_state: "Todo", paid_lifecycle_state: nil)
   end
 end

@@ -151,7 +151,8 @@ RSpec.describe WorkItems::SyncLinear do
     FeatureFlags.enable!(:unified_work_items, project:)
     create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress")
     item = create(:work_item, account:, tracker_configuration: configuration, external_id: "issue-1",
-      native_state: "Todo", paid_lifecycle_state: "blocked", lifecycle_sync_source: "paid")
+      native_state: "Todo", paid_lifecycle_state: "blocked", lifecycle_sync_source: "paid",
+      lifecycle_synced_at: Time.zone.parse("2026-11-10T13:00:00Z"))
     ticket[:state][:name] = "In Progress"
     stub_ticket
 

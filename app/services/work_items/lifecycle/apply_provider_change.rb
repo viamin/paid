@@ -14,13 +14,22 @@ module WorkItems
 
       def self.call(...) = new(...).call
 
-      def initialize(work_item:, native_state:, project: nil)
+      def initialize(work_item:, native_state:, project: nil, observed_at: Time.current)
         @work_item = work_item
         @native_state = native_state
         @project = project
+        @observed_at = observed_at || Time.current
       end
 
       def call
+        return Result.new(status: :rollout_disabled, conflict: nil) unless rollout_enabled?
+
+        work_item.with_lock { apply_change }
+      end
+
+      private
+
+      def apply_change
         return Result.new(status: :unchanged, conflict: nil) if work_item.native_state == native_state
 
         return conflict_result if conflicting?
@@ -29,9 +38,12 @@ module WorkItems
         Result.new(status: mapped_paid_state ? :applied : :unsupported, conflict: nil)
       end
 
-      private
+      attr_reader :work_item, :native_state, :project, :observed_at
 
-      attr_reader :work_item, :native_state, :project
+      def rollout_enabled?
+        guard = Automation::Providers::UnifiedWorkItemsRolloutGuard
+        project ? guard.enabled?(project) : guard.enabled_for_account?(work_item.account)
+      end
 
       def mapped_paid_state
         @mapped_paid_state ||= WorkItemLifecycleMapping.paid_state_for(account: work_item.account,
@@ -39,7 +51,8 @@ module WorkItems
       end
 
       def conflicting?
-        work_item.lifecycle_sync_source == "paid" && work_item.paid_lifecycle_state.present? &&
+        work_item.lifecycle_synced_at.present? && work_item.lifecycle_synced_at > observed_at &&
+          work_item.lifecycle_sync_source == "paid" && work_item.paid_lifecycle_state.present? &&
           mapped_paid_state.present? && mapped_paid_state != work_item.paid_lifecycle_state
       end
 

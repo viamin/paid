@@ -12,12 +12,14 @@ module WorkItems
 
       def initialize(work_item:, projects:, actor: nil, note: nil)
         @work_item = work_item
-        @projects = Array(projects).select { |project| Automation::Providers::UnifiedWorkItemsRolloutGuard.enabled?(project) }
+        @projects = Array(projects)
         @actor = actor
         @note = note
       end
 
       def call
+        ensure_rollout_enabled!
+
         WorkItemAssignment.transaction do
           projects.each { |project| ensure_assignment(project) }
           work_item.work_item_assignments.update_all(locked: true)
@@ -30,6 +32,11 @@ module WorkItems
       private
 
       attr_reader :work_item, :projects, :actor, :note
+
+      def ensure_rollout_enabled!
+        enabled_projects = projects.select { |project| Automation::Providers::UnifiedWorkItemsRolloutGuard.enabled?(project) }
+        raise ArgumentError, "every target project must have unified work items enabled" if enabled_projects != projects
+      end
 
       def ensure_assignment(project)
         work_item.work_item_assignments.find_or_create_by!(project:) do |assignment|
