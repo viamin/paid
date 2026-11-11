@@ -3,7 +3,10 @@
 require "rails_helper"
 
 RSpec.describe StyleGuideCompressionJob do
-  before { configure_llm_routing() }
+  before do
+    configure_llm_routing
+  end
+
   after { Current.user = nil }
 
   let(:style_guide) { create(:style_guide, :global, raw_content: "# Ruby Style Guide\n\n- Use snake_case") }
@@ -22,7 +25,7 @@ RSpec.describe StyleGuideCompressionJob do
       end
 
       before do
-        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+        stub_isolated_llm_response(response)
       end
 
       it "compresses the style guide and persists the result" do
@@ -39,7 +42,7 @@ RSpec.describe StyleGuideCompressionJob do
 
     context "when AgentHarness raises an error" do
       before do
-        allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "LLM unavailable")
+        stub_isolated_llm_response(error: AgentHarness::Error.new("LLM unavailable"))
       end
 
       it "logs the error and does not raise" do
@@ -65,7 +68,7 @@ RSpec.describe StyleGuideCompressionJob do
       end
 
       before do
-        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+        stub_isolated_llm_response(response)
       end
 
       it "logs the compression error and does not raise" do

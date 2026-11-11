@@ -5,8 +5,9 @@ module Containers
   class StandaloneTextCredential
     PURPOSE = "standalone-text-credential"
 
-    def self.issue(account:, runner:, expires_in:)
-      verifier.generate({ account_id: account.id, runner_id: runner.id }, expires_in: expires_in, purpose: PURPOSE)
+    def self.issue(account:, runner:, expires_in:, env_keys: [])
+      verifier.generate({ account_id: account.id, runner_id: runner.id, env_keys: env_keys },
+        expires_in: expires_in, purpose: PURPOSE)
     end
 
     def self.verify(token)

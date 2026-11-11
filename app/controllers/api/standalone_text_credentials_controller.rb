@@ -1,13 +1,30 @@
 # frozen_string_literal: true
 
 module Api
-  # Materializes managed subscription auth for a short-lived text executor.
+  # Materializes selected runner auth for a short-lived text executor.
   class StandaloneTextCredentialsController < ActionController::API
     around_action :with_tenant_context
     before_action :authenticate_identity!
 
     def show # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
       response.set_header("Cache-Control", "no-store")
+      return render_api_key if runner.api_key?
+
+      render_subscription
+    end
+
+    private
+
+    attr_reader :account, :identity, :runner
+
+    def render_api_key
+      secret = runner.effective_api_secret
+      return render json: { error: "API credential is unavailable" }, status: :service_unavailable if secret.blank?
+
+      render json: { env: identity.fetch(:env_keys, []).index_with { secret }, files: {} }
+    end
+
+    def render_subscription
       credential = account.runner_credentials.active.for_runner(runner.runner_key)
         .order(created_at: :desc, id: :desc).first
       return render json: { error: "Managed subscription credential is unavailable" }, status: :service_unavailable unless credential
@@ -19,10 +36,6 @@ module Api
       render json: { env: materialization.env, files: materialization.files }
     end
 
-    private
-
-    attr_reader :account, :runner
-
     def with_tenant_context
       previous_account = Current.account
       previous_bypass = TenantContext.bypass_enabled?
@@ -33,12 +46,12 @@ module Api
     end
 
     def authenticate_identity!
-      identity = Containers::StandaloneTextCredential.verify(bearer_token)
+      @identity = Containers::StandaloneTextCredential.verify(bearer_token)
       return reject_identity unless identity
 
       TenantContext.with_system_access do
         @account = Account.find_by(id: identity[:account_id])
-        @runner = Runner.subscription.joins(:user)
+        @runner = Runner.joins(:user)
           .find_by(id: identity[:runner_id], users: { account_id: @account&.id })
       end
       return reject_identity unless @account && @runner

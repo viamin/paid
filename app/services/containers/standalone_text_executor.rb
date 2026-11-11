@@ -19,6 +19,14 @@ module Containers
     MATERIALIZE_COMMAND = <<~'PYTHON'.freeze
       import json, os, pathlib, selectors, signal, subprocess, sys, urllib.request
 
+      def write_file(name, content, allowed_roots, mode=0o600):
+          path = pathlib.Path(os.path.realpath(name))
+          if not path.is_absolute() or not any(path == root or root in path.parents for root in allowed_roots):
+              raise ValueError("materialized file path is outside its allowed roots")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(content, encoding="utf-8")
+          path.chmod(mode)
+
       environment = os.environ.copy()
       if "PAID_CREDENTIAL_IDENTITY" in os.environ:
           request = urllib.request.Request(
@@ -29,17 +37,17 @@ module Containers
           with urllib.request.urlopen(request, timeout=10) as response:
               material = json.load(response)
           for name, content in material.get("files", {}).items():
-              path = pathlib.Path(name)
-              if not path.is_absolute() or pathlib.Path("/home/agent") not in path.parents:
-                  raise ValueError("credential material path is outside the agent home")
-              path.parent.mkdir(parents=True, exist_ok=True)
-              path.write_text(content, encoding="utf-8")
-              path.chmod(0o600)
+              write_file(name, content, [pathlib.Path("/home/agent")])
           environment.update({str(key): str(value) for key, value in material.get("env", {}).items()})
+
+      preparation = json.loads(os.environ.get("PAID_TEXT_PREPARATION", "[]"))
+      for write in preparation:
+          mode = write["mode"] if write.get("mode") is not None else 0o600
+          write_file(write["path"], write["content"], [pathlib.Path("/home/agent"), pathlib.Path("/tmp")], mode)
 
       command = json.loads(os.environ["PAID_TEXT_COMMAND"])
       limit = int(os.environ["PAID_MAX_OUTPUT_BYTES"])
-      for name in ("PAID_CREDENTIAL_URL", "PAID_CREDENTIAL_IDENTITY", "PAID_TEXT_COMMAND", "PAID_MAX_OUTPUT_BYTES"):
+      for name in ("PAID_CREDENTIAL_URL", "PAID_CREDENTIAL_IDENTITY", "PAID_TEXT_COMMAND", "PAID_TEXT_PREPARATION", "PAID_MAX_OUTPUT_BYTES"):
           environment.pop(name, None)
       process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
       selector = selectors.DefaultSelector()
@@ -75,10 +83,11 @@ module Containers
       @timeout = [ timeout.to_i, MAX_TIMEOUT ].min
     end
 
-    def execute(command, timeout: nil, env: {}, **) # @spec LLM-ROUTING-005 LLM-ROUTING-006
-      validate_input_size!(command, env)
+    def execute(command, timeout: nil, env: {}, preparation: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
+      validate_input_size!(command, env, preparation)
       with_container do
-        run(materialized_command(command), timeout: bounded_timeout(timeout), env: materialized_env(command, env))
+        run(materialized_command(command), timeout: bounded_timeout(timeout),
+          env: materialized_env(command, env, preparation))
       end
     end
 
@@ -95,8 +104,9 @@ module Containers
 
     attr_reader :account, :runner
 
-    def validate_input_size!(command, env)
-      bytes = Array(command).sum { |part| part.to_s.bytesize } + env.sum { |key, value| key.to_s.bytesize + value.to_s.bytesize }
+    def validate_input_size!(command, env, preparation)
+      bytes = Array(command).sum { |part| part.to_s.bytesize } +
+        env.sum { |key, value| key.to_s.bytesize + value.to_s.bytesize } + preparation_json(preparation).bytesize
       return if bytes <= MAX_INPUT_BYTES
 
       raise AgentHarness::ConfigurationError, "Isolated text request exceeded the #{MAX_INPUT_BYTES}-byte input limit"
@@ -106,17 +116,32 @@ module Containers
       [ "python3", "-c", MATERIALIZE_COMMAND ]
     end
 
-    def materialized_env(command, env)
-      wrapped = env.merge(
+    def materialized_env(command, env, preparation)
+      credential_keys = credential_env_keys(env)
+      wrapped = env.except(*credential_keys).compact.merge(
         "PAID_MAX_OUTPUT_BYTES" => MAX_OUTPUT_BYTES.to_s,
-        "PAID_TEXT_COMMAND" => Array(command).to_json
+        "PAID_TEXT_COMMAND" => Array(command).to_json,
+        "PAID_TEXT_PREPARATION" => preparation_json(preparation)
       )
-      return wrapped if runner.api_key?
-
       wrapped.merge(
         "PAID_CREDENTIAL_URL" => "http://paid-proxy:#{Rails.application.config.x.paid_proxy_port}/api/proxy/standalone-text-credential",
-        "PAID_CREDENTIAL_IDENTITY" => StandaloneTextCredential.issue(account: account, runner: runner, expires_in: @timeout + CLEANUP_MARGIN)
+        "PAID_CREDENTIAL_IDENTITY" => StandaloneTextCredential.issue(account: account, runner: runner,
+          expires_in: @timeout + CLEANUP_MARGIN, env_keys: credential_keys)
       )
+    end
+
+    def credential_env_keys(env)
+      return [] unless runner.api_key?
+
+      provider = AgentHarness.provider_class(RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym)
+        .new(config: AgentHarness.build_config(RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym))
+      (provider.api_key_env_var_names + env.select { |_, value| value == runner.effective_api_secret }.keys).uniq
+    end
+
+    def preparation_json(preparation)
+      Array(preparation&.file_writes).map do |write|
+        { path: write.path, content: write.content, mode: write.mode }
+      end.to_json
     end
 
     def with_container

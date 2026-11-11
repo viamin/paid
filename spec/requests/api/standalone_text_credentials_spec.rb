@@ -25,6 +25,19 @@ RSpec.describe "Standalone text credentials" do
     expect(credential.reload.last_used_at).to be_present
   end
 
+  # @spec LLM-ROUTING-003 LLM-ROUTING-005
+  it "materializes an API key only under the signed identity's requested environment names" do
+    api_key = create(:runner_api_key, user: user, api_service_type: "openai", api_key: "selected-secret")
+    runner.update!(auth_type: "api_key", provider_api_key: api_key)
+    identity = Containers::StandaloneTextCredential.issue(account: account, runner: runner,
+      expires_in: 30, env_keys: [ "OPENAI_API_KEY" ])
+
+    post "/api/proxy/standalone-text-credential", headers: { "Authorization" => "Bearer #{identity}" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to eq("env" => { "OPENAI_API_KEY" => "selected-secret" }, "files" => {})
+  end
+
   # @spec LLM-ROUTING-002 LLM-ROUTING-006
   it "rejects an invalid identity without exposing credential material" do
     post "/api/proxy/standalone-text-credential", headers: { "Authorization" => "Bearer invalid" }

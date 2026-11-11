@@ -5,7 +5,7 @@ module Llm
   class Request
     def self.call(...) = new(...).call
 
-    def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil)
+    def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil, harness: AgentHarness)
       @runner_identifier = runner
       @model = model
       @agent_run = agent_run

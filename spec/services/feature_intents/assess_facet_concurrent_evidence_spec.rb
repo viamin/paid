@@ -5,7 +5,11 @@ require "rails_helper"
 # @spec FACET-CONFIDENCE-012
 RSpec.describe FeatureIntents::AssessFacet do
   self.use_transactional_tests = false
-  before { configure_llm_routing(project: project) }
+  before do
+    configure_llm_routing(project: project)
+    stub_isolated_llm_via_conductor
+    allow(AgentHarness).to receive(:conductor).and_return(conductor)
+  end
 
   let(:direction) { create(:feature_intent_facet_direction) }
   let(:facet) { direction.feature_intent_facet }

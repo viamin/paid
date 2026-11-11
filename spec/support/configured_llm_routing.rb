@@ -17,6 +17,40 @@ module ConfiguredLlmRouting
       create(:runner, user: owner, runner_key: "claude")
     runner.update!(enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
   end
+
+  def stub_isolated_llm_via_conductor
+    allow(AgentHarness).to receive(:provider_class).and_wrap_original do |method, key|
+      klass = method.call(key)
+      allow(klass).to receive(:new).and_wrap_original do |constructor, **options|
+        constructor.call(**options).tap do |provider|
+          allow(provider).to receive(:send_message) do |prompt:, **request_options|
+            AgentHarness.conductor.execute_direct(prompt, **request_options, provider: key)
+          end
+        end
+      end
+      klass
+    end
+  end
+
+  def stub_isolated_llm_response(response = nil, error: nil)
+    @isolated_llm_requests = []
+    allow(AgentHarness).to receive(:provider_class).and_wrap_original do |method, key|
+      klass = method.call(key)
+      allow(klass).to receive(:new).and_wrap_original do |constructor, **options|
+        constructor.call(**options).tap do |provider|
+          allow(provider).to receive(:send_message) do |prompt:, **request_options|
+            @isolated_llm_requests << { prompt: prompt, options: request_options, provider: key }
+            raise error if error
+
+            response
+          end
+        end
+      end
+      klass
+    end
+  end
+
+  attr_reader :isolated_llm_requests
 end
 
 RSpec.configure do |config|
