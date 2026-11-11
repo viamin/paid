@@ -512,6 +512,10 @@ module AgentRuns
       observed = recorder_observed_artifacts.find { |artifact| artifact_identity_matches?(artifact, identity) }
       return [ "unavailable", "artifact_not_recorder_owned" ] unless observed
       return [ "contradicted", "artifact_not_retained" ] unless observed["state"] == "retained"
+      return [ "unavailable", "artifact_revision_unavailable" ] if observed["tested_commit"].blank? || tested_commit.blank?
+      unless observed["tested_commit"].casecmp?(tested_commit)
+        return [ "stale", "artifact_revision_does_not_match_reviewed_head" ]
+      end
 
       [ "verified", nil ]
     end
@@ -528,10 +532,7 @@ module AgentRuns
     end
 
     def artifact_identity_matches?(artifact, identity)
-      return true if identity["storage_key"].present? && artifact["storage_key"] == identity["storage_key"]
-      return true if identity["path"].present? && artifact["path"] == identity["path"]
-
-      false
+      identity.all? { |field, value| artifact[field] == value }
     end
 
     def receipt_state(states)

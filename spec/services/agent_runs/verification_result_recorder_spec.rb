@@ -179,6 +179,13 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     }
   end
 
+  def retain_app_log(payload)
+    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
+    allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
+    write_verification_result(payload)
+    File.write(log_path, "request completed\n")
+  end
+
   def write_repository_file(relative_path, content)
     path = File.join(repo_path, relative_path)
     FileUtils.mkdir_p(File.dirname(path))
@@ -445,7 +452,9 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
 
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
 
-    expect(Open3).to have_received(:popen2e).exactly(described_class::MAX_REPOSITORY_INPUT_VALIDATIONS).times
+    expect(Open3).to have_received(:popen2e)
+      .with("git", "-C", repo_path, "show", anything)
+      .exactly(described_class::MAX_REPOSITORY_INPUT_VALIDATIONS).times
     references = agent_run.reload.verification_result.dig("evidence", "coverage").flat_map do |criterion|
       criterion.dig("input_receipt", "references")
     end
@@ -545,10 +554,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
 
   # @spec LIVE-PREVIEW-013
   it "verifies a run-owned artifact cited by the path the agent wrote" do
-    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
-    allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
-    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
-    File.write(log_path, "request completed\n")
+    retain_app_log(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
 
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
 
@@ -584,11 +590,22 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   end
 
   # @spec LIVE-PREVIEW-013
-  it "retains a verified artifact receipt when rebinding after transient files are cleaned up" do
-    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
-    allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
-    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
-    File.write(log_path, "request completed\n")
+  it "requires every supplied artifact identifier to match the retained artifact" do
+    retain_app_log(artifact_receipt_payload(
+      path: AgentRuns::VerificationPrompt::APP_LOG_PATH,
+      storage_key: "screenshots/another-run/app.log"
+    ))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "unavailable")
+    expect(receipt.fetch("references").sole).to include("verdict_reason" => "artifact_not_recorder_owned")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "marks an artifact receipt stale when rebinding after transient files are cleaned up" do
+    retain_app_log(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
 
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
     first_result = agent_run.reload.verification_result
@@ -603,9 +620,12 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
 
     receipt = input_receipt_for(agent_run.reload.verification_result)
-    expect(receipt).to include("state" => "verified")
-    expect(receipt.fetch("references").sole).to include(
-      "path" => AgentRuns::VerificationPrompt::APP_LOG_PATH, "state" => "verified", "provenance" => "recorder"
+    expect(receipt).to include(
+      "state" => "stale",
+      "references" => [ hash_including(
+        "path" => AgentRuns::VerificationPrompt::APP_LOG_PATH,
+        "state" => "stale", "verdict_reason" => "artifact_revision_does_not_match_reviewed_head"
+      ) ]
     )
   end
 
