@@ -42,4 +42,16 @@ RSpec.describe "Paid project detail verification journey", system_driver: :rack_
     # exists in the repository.
     expect(launch_command).to eq("bundle exec bin/rails server -b 0.0.0.0 -p 3000")
   end
+
+  # @spec LIVE-PREVIEW-012
+  it "overrides the verification prompt's generic preferred start command" do
+    journey_guide = Rails.root.join(".paid/journeys.md").read
+
+    # The prompt's generic derivation prefers `bin/dev`, which the agent
+    # container cannot run. The guide has to say it overrides that command,
+    # or the agent is left choosing between the prompt's launch pattern and
+    # the guide's.
+    expect(journey_guide).to include("verification prompt's generic preferred start command")
+    expect(journey_guide).to include("`bin/dev`")
+  end
 end

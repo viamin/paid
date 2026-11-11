@@ -114,7 +114,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
     end
 
     # @spec CONTAINER-RUNTIME-031
-    it "allows enough time for a cold contract-owned CLI rebuild and both smoke suites" do
+    it "allows enough time for a cold contract-owned CLI rebuild and every smoke suite" do
       expect(workflow.dig("jobs", "agent-image", "timeout-minutes")).to eq(90)
     end
 
@@ -155,7 +155,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("id: build-paid-agent")
       expect(workflow_source).to include("id: image-digest")
       expect(workflow_source).to include("bundle exec ruby scripts/generate-agent-image-metadata.rb")
-      expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,runner_contract_smoke_test")
+      expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,journey_launch_contract_smoke_test,runner_contract_smoke_test")
       expect(workflow_source).to include("uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2")
       expect(workflow_source).to include("path: tmp/agent-image-metadata.json")
     end
@@ -291,6 +291,8 @@ RSpec.describe AgentImageBuildScript, :no_db do
           candidate = File.join(entry, utility)
           File.executable?(candidate) ? candidate : nil
         end.first
+        raise "Unable to locate #{utility} on PATH" if source.nil?
+
         FileUtils.ln_s(source, File.join(stub_dir, utility))
       end
       File.write(File.join(stub_dir, "bundle"), "#!/usr/bin/env bash\nexit 0\n")

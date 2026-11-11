@@ -23,10 +23,12 @@ bin/paid-journey reset
 bin/paid-journey credentials
 ```
 
-Start the application directly with the Rails server, rather than the
-repository's generic `bin/dev` preference: the agent's own execution
-container ships the Ruby/Rails toolchain but not the `tmux`/Overmind
-supervisor `bin/dev` requires, so `bin/dev` cannot start anything there.
+Start the application directly with the Rails server. This overrides the
+verification prompt's generic preferred start command: that preference picks
+the repository's `bin/dev` whenever the file exists, and the agent's own
+execution container ships the Ruby/Rails toolchain but not the
+`tmux`/Overmind supervisor `bin/dev` requires, so `bin/dev` cannot start
+anything there.
 
 ```bash
 mkdir -p tmp

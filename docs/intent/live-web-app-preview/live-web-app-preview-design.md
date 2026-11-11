@@ -89,8 +89,11 @@ checkout does not provide — fails CI instead of surfacing as a broken journey
 at verification time. That command is intentionally independent of
 `Screenshots::RuntimePlan`'s generic `bin/dev`-preferring derivation, since
 the agent container does not ship the `tmux`/Overmind supervisor `bin/dev`
-needs. A separate Paid-managed implementation run remains required as
-inspectable operational evidence before the pilot can be expanded.
+needs, so the guide states that it overrides the verification prompt's
+generic preferred start command rather than leaving the agent to choose
+between two conflicting launch instructions. A separate Paid-managed
+implementation run remains required as inspectable operational evidence
+before the pilot can be expanded.
 
 ### Criterion verification references
 

@@ -110,8 +110,11 @@
   from `Screenshots::RuntimePlan`'s generic preference order, which prefers
   `bin/dev` whenever the file exists and does not account for the agent
   container lacking the `tmux`/Overmind supervisor that command requires. The
-  agent-image workflow SHALL resolve the documented command against that image
-  and SHALL fail when the container cannot run it.
+  guide SHALL state that it overrides the verification prompt's generic
+  preferred start command, so the agent is not left choosing between two
+  conflicting launch instructions. The agent-image workflow SHALL resolve the
+  documented command against that image and SHALL fail when the container
+  cannot run it.
   *Code:* `app/services/agent_runs/verification_prompt.rb`,
   `.paid/journeys.md`, `bin/paid-journey`,
   `app/services/screenshots/seed_data/paid_journey.rb`,
