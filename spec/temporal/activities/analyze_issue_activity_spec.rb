@@ -1396,6 +1396,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       api_runner = create(:runner, :api_key, user: owner, runner_key: "codex", enabled_for_chat: true,
         provider_api_key: credential)
       provider = instance_double(AgentHarness::Providers::Codex, supports_tool_control?: false)
+      allow(AgentHarness).to receive(:provider_class).and_call_original
       allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(class_double(AgentHarness::Providers::Codex, new: provider))
 
       expect(activity.send(:chat_providers, project).first).to eq(api_runner.routing_key)
