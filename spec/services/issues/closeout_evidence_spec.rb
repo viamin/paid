@@ -114,6 +114,17 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     expect(result.merged_prs.map(&:number)).to contain_exactly(77)
   end
 
+  # @spec PARTIAL-CLOSEOUT-047
+  it "normalizes blank URLs before merging parent and run-linked PR evidence" do
+    merged_pr(project:, number: 78, parent_issue_id: issue.id, github_html_url: "")
+    run = completed_create_pr_run(project:, issue:, number: 78, url: "")
+
+    result = described_class.call(issue)
+
+    expect(result.merged_prs.map(&:url)).to contain_exactly("#{project.github_url}/pull/78")
+    expect(result.merged_prs.first.run_id).to eq(run.id)
+  end
+
   it "does not fabricate terminal evidence from an unrelated upstream PR when the run's fork PR is open" do
     # The exact hazard called out in #4130's review: a run on the project's
     # fork produces PR #42, but PR #42 is also an upstream-synced PR that

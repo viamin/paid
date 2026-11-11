@@ -78,6 +78,34 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     end
 
     # @spec PARTIAL-CLOSEOUT-047
+    it "supplies a run-linked merged PR body before its URL is synced" do
+      merged = create(:issue, :pull_request, project:, github_number: 123,
+        pr_review_phase: "merged", body: "Run-linked evidence")
+      create(:agent_run, :completed, project:, issue:, goal: "create_pr",
+        pull_request_number: merged.github_number, pull_request_url: "#{project.github_url}/pull/123")
+
+      result = described_class.call(agent_run:)
+
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        expect(prompt).to include("Run-linked evidence")
+      end
+      expect(result.dig("input_coverage", "complete")).to be(true)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-047
+    it "supplies a parent-linked merged PR body when its URL is blank" do
+      create(:issue, :pull_request, project:, parent_issue: issue, github_number: 124,
+        pr_review_phase: "merged", github_html_url: "", body: "Blank-URL evidence")
+
+      result = described_class.call(agent_run:)
+
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        expect(prompt).to include("Blank-URL evidence")
+      end
+      expect(result.dig("input_coverage", "complete")).to be(true)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-047
     it "invalidates an assessment when the linked PR evidence text changes" do
       merged = create(:issue, :pull_request, project:, parent_issue: issue,
         pr_review_phase: "merged", github_html_url: "#{project.github_url}/pull/123", body: "Initial evidence")

@@ -24,8 +24,9 @@ module PartialCloseouts
         .pluck(:github_number, :github_html_url, :parent_issue_id, :body)
       rows_by_number = rows.group_by(&:first)
       selected.to_h do |pr|
-        row = rows_by_number.fetch(pr.number, []).find do |_number, url, parent_id, _body|
-          url == pr.url || (url.nil? && parent_id == issue.id)
+        candidates = rows_by_number.fetch(pr.number, [])
+        row = candidates.find do |_number, url, parent_id, _body|
+          url == pr.url || (url.blank? && (parent_id == issue.id || candidates.one?))
         end
         [ [ pr.number, pr.url ], row&.last ]
       end
