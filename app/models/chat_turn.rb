@@ -100,10 +100,12 @@ class ChatTurn < ApplicationRecord
     )
   end
 
+  # @spec CHAT-TURN-RECOVERY-008
   def fail!(error:)
+    classification = classify_failure(error)
     update!(
       status: "failed",
-      failure_classification: classify_failure(error),
+      failure_classification: classification,
       completed_at: Time.current,
       last_activity_at: Time.current
     )
@@ -112,6 +114,9 @@ class ChatTurn < ApplicationRecord
       chat_turn: self,
       metadata: { error_class: error.class.name }
     )
+    if classification != "rate_limited" && stall_detected_at.nil?
+      ChatTurns::PersistFailureNotice.call(chat_turn: self)
+    end
   end
 
   def mark_stalled!

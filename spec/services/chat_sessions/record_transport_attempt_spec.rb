@@ -8,6 +8,17 @@ RSpec.describe ChatSessions::RecordTransportAttempt do
   let(:message) { create(:chat_message, chat_session: chat_session, role: "user") }
 
   # @spec API-CONVERSATION-DELEGATION-002
+  it "records a later attempt when the session account association was cached as missing" do
+    chat_session.association(:account).target = nil
+    chat_session.association(:account).loaded!
+
+    attempt = described_class.call(chat_session:, actor:, message:, report: attempt_report)
+
+    expect(attempt.account_id).to eq(chat_session.account_id)
+    expect(attempt).to be_persisted
+  end
+
+  # @spec API-CONVERSATION-DELEGATION-002
   it "persists a failed reported attempt once and bills its provider-reported USD cost" do
     report = attempt_report(status: :failed)
 

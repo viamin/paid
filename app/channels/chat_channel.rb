@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
 class ChatChannel < ApplicationCable::Channel
-  # @spec CHAT-SESSION-REOPEN-005
+  # @spec CHAT-SESSION-REOPEN-005 CHAT-TURN-RECOVERY-009
   def subscribed
     session = find_session
     if session
       @chat_session = session
       stream_from stream_name
       transmit(ChatSessions::CapabilitySnapshot.call(chat_session: @chat_session))
+      turn = @chat_session.chat_turns.order(id: :desc).first
+      transmit({ type: "turn_status", status: turn&.status,
+        awaiting_confirmation: turn&.awaiting_confirmation? })
     else
       reject
     end

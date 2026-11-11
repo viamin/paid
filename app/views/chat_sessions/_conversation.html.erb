@@ -90,6 +90,15 @@
     </div>
   </div>
 
+  <%# @spec CHAT-TURN-RECOVERY-009 %>
+  <% latest_turn = chat_session.chat_turns.order(id: :desc).first %>
+  <% turn_failed = latest_turn&.status == "failed" %>
+  <% turn_active = latest_turn&.status.in?(ChatTurn::ACTIVE_STATUSES) && !latest_turn.awaiting_confirmation? %>
+  <div class="shrink-0 border-t px-4 py-2 text-sm font-medium <%= turn_failed ? 'border-rose-100 bg-rose-50 text-rose-800' : 'border-indigo-100 bg-indigo-50 text-indigo-800' %> <%= 'hidden' unless turn_active || turn_failed %>"
+       data-chat-target="progress" role="status" aria-live="polite">
+    <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-500 <%= 'hidden' if turn_failed %>" data-chat-progress-dot aria-hidden="true"></span>
+    <span data-chat-target="progressText"><%= turn_failed ? "Response stopped. See the notice in the transcript or send a new message." : "Assistant is working…" %></span>
+  </div>
   <div class="shrink-0 border-t border-gray-200 bg-white px-4 py-1.5 sm:px-6 sm:py-3">
     <% if can_create_chat_message %>
       <form data-controller="chat-input"

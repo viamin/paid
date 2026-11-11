@@ -1,0 +1,7 @@
+<%# @spec CHAT-TURN-RECOVERY-008 %>
+<div class="flex justify-center" data-message-id="<%= message.id %>" data-chat-turn-failure-notice>
+  <article class="mx-auto max-w-2xl rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200" role="alert">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-rose-600">Response stopped</div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content %></div>
+  </article>
+</div>

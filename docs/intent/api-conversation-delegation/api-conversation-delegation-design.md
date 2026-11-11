@@ -124,7 +124,10 @@ attempt ID, ordinal, runner/provider/model identity, outcome, timestamps, and
 reported usage/cost when available. Paid persists these reports idempotently
 on `(attempt_id, ordinal)` before aggregation. Project-backed conversations
 retain their project attribution; account-level conversations retain only their
-account/session attribution. Duplicate reports do not add tokens or cost.
+account/session attribution. The attempt recorder resolves the account from
+the session's durable account ID and establishes that tenant context for its
+write, so a stale association cache in a long chat turn cannot erase the
+account attribution. Duplicate reports do not add tokens or cost.
 Failed attempts are recorded when usage is reported. Missing usage remains
 `unknown`, never zero. After process restart, Paid reloads the durable attempt
 record and either accepts a matching terminal report or creates a new outbound

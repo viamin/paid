@@ -35,6 +35,9 @@
   retained loop supplies the actor and originating message when it builds the
   client, preserving runner/session attribution. The recorder's unique
   attempt identity and `token_usage_id` claim make report redelivery safe.
+  The recorder SHALL resolve the account from the session's durable account ID
+  and establish that tenant context for the write even if an association cache
+  became stale during a long tool-driven turn.
    *Tests:*
    `spec/services/chat_sessions/build_llm_client_spec.rb`,
    `spec/services/chat_sessions/record_transport_attempt_spec.rb`,
