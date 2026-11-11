@@ -10,6 +10,7 @@ module Issues
     MAX_NODES = 500
     MAX_PATHS_PER_ROOT = 25
     MAX_RANKED_ROOTS = 5
+    UNKNOWN_BLOCKER = :unknown_blocker
 
     Path = Data.define(:downstream_issue, :issues, :necessary, :completion_alone_makes_runnable, :stale)
     Ranking = Data.define(:root, :direct_reach, :transitive_reach, :paths, :actionable) do
@@ -42,14 +43,9 @@ module Issues
     attr_reader :account, :queue_issue_ids, :visible_project_ids
 
     def load_graph
-      @issues = Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
-        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).includes(:project).order(:id).limit(MAX_NODES).index_by(&:id)
-      @dependencies = IssueDependency.joins(:issue, :depends_on_issue)
-        .where(issues: { project_id: account.projects.select(:id), github_state: "open" })
-        .where(depends_on_issue: { github_state: "open" })
-        .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
-        .excluding_parent_references.pluck(:issue_id, :depends_on_issue_id)
-        .select { |from, to| issues.key?(from) && issues.key?(to) }
+      @issues = {}
+      @dependencies = []
+      load_queue_ancestors
       @upstream = dependencies.group_by(&:first).transform_values { |edges| edges.map(&:last) }
       @downstream = dependencies.group_by(&:last).transform_values { |edges| edges.map(&:first) }
       @cyclic_ids = cycle_ids
@@ -61,11 +57,42 @@ module Issues
       @exclusions = exclusion_rows
     end
 
+    def load_queue_ancestors
+      frontier = load_issues(queue_issue_ids).map(&:id)
+      until frontier.empty?
+        edges = dependency_edges_from(frontier)
+        parents = load_issues(edges.map(&:last) - issues.keys)
+        @dependencies.concat(edges.select { |_, parent_id| issues.key?(parent_id) })
+        frontier = parents.map(&:id)
+      end
+    end
+
+    def load_issues(ids)
+      return [] if ids.empty?
+
+      remaining = MAX_NODES - issues.size
+      records = blocking_issue_scope.where(id: ids).order(:id).limit(remaining + 1).to_a
+      @graph_truncated = true if records.size > remaining
+      records.first(remaining).each { |issue| issues[issue.id] = issue }
+    end
+
+    def blocking_issue_scope
+      Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).includes(:project)
+    end
+
+    def dependency_edges_from(issue_ids)
+      IssueDependency.joins(:depends_on_issue).where(issue_id: issue_ids)
+        .where(depends_on_issue: { github_state: "open" })
+        .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+        .excluding_parent_references.pluck(:issue_id, :depends_on_issue_id)
+    end
+
     attr_reader :issues, :dependencies, :upstream, :downstream, :cyclic_ids, :external_by_issue,
       :human_decision_ids, :assessments
 
     def ranked_roots
-      return [] if @cycle_coverage_unavailable
+      return [] if @cycle_coverage_unavailable || @graph_truncated
 
       load_actionable_root_ids
       rankings = candidate_roots.filter_map { |root| ranking_for(root) }.sort_by { |ranking|
@@ -134,12 +161,16 @@ module Issues
     end
 
     def all_blocking_roots_for(issue_id, seen = Set.new)
-      return Set.new if !seen.add?(issue_id) || cyclic_ids.include?(issue_id) || external_by_issue.key?(issue_id) || human_decision_ids.include?(issue_id)
+      return Set[UNKNOWN_BLOCKER] if !seen.add?(issue_id) || excluded_blocker?(issue_id)
 
       parents = upstream.fetch(issue_id, [])
       return Set[issue_id] if parents.empty?
 
       parents.each_with_object(Set.new) { |parent_id, roots| roots.merge(all_blocking_roots_for(parent_id, seen.dup)) }
+    end
+
+    def excluded_blocker?(issue_id)
+      cyclic_ids.include?(issue_id) || external_by_issue.key?(issue_id) || human_decision_ids.include?(issue_id)
     end
 
     def actionable?(issue)
@@ -170,6 +201,7 @@ module Issues
       return [ { kind: "graph_coverage_unavailable", issue: nil } ] if @cycle_coverage_unavailable
 
       rows = cyclic_ids.filter_map { |id| { kind: "cycle", issue: issues[id] } }
+      rows << { kind: "graph_coverage_truncated", issue: nil } if @graph_truncated
       external_by_issue.each_key { |id| rows << { kind: "unresolved_external", issue: issues[id] } }
       human_decision_ids.each { |id| rows << { kind: "human_decision", issue: issues[id] } }
       rows

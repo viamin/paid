@@ -95,6 +95,46 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "does not claim sole unblockability when an independent prerequisite has an excluded blocker" do
+    root = issue(1)
+    independent = issue(2)
+    blocked = issue(3)
+    depends(blocked, root)
+    depends(blocked, independent)
+    create(:issue_dependency, issue: independent, depends_on_issue: nil,
+      depends_on_owner: "outside", depends_on_repo: "missing", depends_on_number: 7)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).find { |item| item.root == root }
+
+    expect(ranking.paths.sole).to have_attributes(
+      necessary: true, completion_alone_makes_runnable: false
+    )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "seeds bounded graph loading from visible queue work" do
+    500.times { |number| issue(number + 10) }
+    root = issue(1_000)
+    blocked = issue(1_001)
+    depends(blocked, root)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
+
+    expect(ranking).to have_attributes(root: root, direct_reach: 1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "reports unavailable coverage instead of ranking a truncated relevant graph" do
+    blocked = issue(1)
+    500.times { |number| depends(blocked, issue(number + 10)) }
+
+    result = described_class.call(account:, queue_issue_ids: [ blocked.id ])
+
+    expect(result).to be_empty
+    expect(result.exclusions).to include(a_hash_including(kind: "graph_coverage_truncated"))
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "does not cross account boundaries" do
     root = issue(1)
     local = issue(2)
