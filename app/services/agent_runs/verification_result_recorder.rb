@@ -16,6 +16,7 @@ module AgentRuns
     MAX_CRITERION_INPUTS = 20
     MAX_INPUT_EXCERPT_BYTES = 2_000
     GIT_SHA = /\A[0-9a-f]{40}\z/i
+    SHA256_DIGEST = /\A[0-9a-f]{64}\z/i
     # Agent-supplied criterion inputs. Every field is bounded before it is
     # persisted, and the free-text fields are redacted as well.
     INPUT_FIELDS = %w[type locator path revision digest excerpt result command storage_key url reason].freeze
@@ -450,15 +451,19 @@ module AgentRuns
       return [ "unavailable", "repository_input_incomplete" ] if input.values_at("path", "revision", "digest").any?(&:blank?)
       return [ "unavailable", "reviewed_revision_unavailable" ] if tested_commit.blank?
       return [ "unavailable", "repository_revision_invalid" ] unless input["revision"].match?(GIT_SHA)
-      return [ "stale", "revision_does_not_match_reviewed_head" ] unless input["revision"] == tested_commit
+      return [ "unavailable", "repository_digest_invalid" ] unless input["digest"].match?(SHA256_DIGEST)
+
+      revision = input["revision"].downcase
+      expected_digest = input["digest"].downcase
+      return [ "stale", "revision_does_not_match_reviewed_head" ] unless revision == tested_commit.downcase
 
       path = repo_path_candidate(input["path"])
       return [ "contradicted", "path_outside_repository" ] unless path
       relative_path = Pathname.new(path).relative_path_from(repo_base).to_s
-      digest = repository_blob_digest(input["revision"], relative_path)
+      digest = repository_blob_digest(revision, relative_path)
       return [ "contradicted", "path_missing_or_inaccessible" ] if digest.blank?
 
-      return [ "contradicted", "content_digest_mismatch" ] unless ActiveSupport::SecurityUtils.secure_compare(digest, input["digest"].to_s)
+      return [ "contradicted", "content_digest_mismatch" ] unless ActiveSupport::SecurityUtils.secure_compare(digest, expected_digest)
 
       [ "verified", nil ]
     rescue Errno::EACCES

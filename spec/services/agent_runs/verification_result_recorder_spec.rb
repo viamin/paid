@@ -249,6 +249,23 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   end
 
   # @spec LIVE-PREVIEW-013
+  it "accepts uppercase hexadecimal repository identities" do
+    relative_path = "spec/system/settings_spec.rb"
+    path = write_repository_file(relative_path, "RSpec.describe 'settings' do; end\n")
+    revision = commit_repository_file(relative_path)
+    payload = repository_receipt_payload(Digest::SHA256.file(path).hexdigest.upcase)
+    input = payload.dig(:acceptance_criteria, 0, :verification, :inputs, 0)
+    input[:revision] = revision.upcase
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "verified")
+    expect(receipt.fetch("references").sole).to include("state" => "verified", "path" => relative_path)
+  end
+
+  # @spec LIVE-PREVIEW-013
   it "bounds repository input validation and retained receipts" do
     inputs = 21.times.map do |index|
       relative_path = "spec/system/settings_#{index}.rb"
