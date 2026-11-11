@@ -17,9 +17,10 @@
   `Automation::Providers::Github::WorkItemProvider`
 
 - [ ] **UNIFIED-WORK-ITEMS-002** — When an account configures Linear, the
-  system SHALL support one workspace connection with observable health,
-  configurable synchronization defaulting to 15 minutes, pagination and
-  rate-limit outcomes, and clearly reported unsupported operations.
+  system SHALL permit only account owners and admins to configure or revoke its
+  one workspace connection, with observable health, configurable synchronization
+  defaulting to 15 minutes, pagination and rate-limit outcomes, and clearly
+  reported unsupported operations.
 
 - [ ] **UNIFIED-WORK-ITEMS-003** — During Linear synchronization, the system
   SHALL idempotently retain all supported ticket metadata, comments, projects,

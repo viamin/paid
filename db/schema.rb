@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_002535) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -107,6 +107,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_002535) do
     t.string "plan", default: "trial", null: false
     t.jsonb "remediation_policy", default: {}, null: false, comment: "Per-action self-heal remediation modes and thresholds for this account."
     t.datetime "scheduler_paused_at"
+    t.string "seed_owner", comment: "Seed tool that owns this account (paid-journey); NULL for accounts not created by a seed tool."
     t.string "slug", null: false
     t.integer "status", default: 0, null: false
     t.datetime "suspended_at"
@@ -4577,18 +4578,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_002535) do
     t.string "base_url", comment: "Tracker base URL used when the integration targets a self-hosted or custom endpoint."
     t.bigint "configurable_id", null: false, comment: "Polymorphic owner id for the account, user, or project that owns the tracker configuration."
     t.string "configurable_type", null: false, comment: "Polymorphic owner type for the tracker configuration: Account, User, or Project."
+    t.string "connection_health", default: "unknown", null: false
     t.datetime "created_at", null: false
     t.bigint "created_by_id", comment: "User who created the tracker configuration."
     t.boolean "enabled", default: true, null: false, comment: "Whether this tracker configuration is active for automation."
     t.bigint "integration_credential_id", comment: "Credential used to authenticate to the external tracker when one is required."
+    t.string "last_sync_error"
+    t.datetime "last_synced_at"
+    t.bigint "linear_token_id", comment: "Selected account Linear API key for the single workspace connection."
     t.jsonb "log_data"
     t.jsonb "project_mapping", default: {}, comment: "Mapping data between Paid entities and tracker-specific project identifiers."
+    t.integer "sync_interval_seconds", default: 900, null: false
     t.string "tracker_type", null: false, comment: "External tracker implementation, such as github_issues, jira, linear, azure_devops, mcp, or generic_webhook."
     t.datetime "updated_at", null: false
     t.uuid "uuid", default: -> { "gen_random_uuid()" }, null: false
     t.index ["configurable_type", "configurable_id"], name: "index_tracker_configurations_on_configurable", unique: true
     t.index ["created_by_id"], name: "index_tracker_configurations_on_created_by_id"
     t.index ["integration_credential_id"], name: "index_tracker_configurations_on_integration_credential_id"
+    t.index ["linear_token_id"], name: "index_tracker_configurations_on_linear_token_id"
     t.index ["tracker_type"], name: "index_tracker_configurations_on_tracker_type"
     t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
   end
@@ -4724,6 +4731,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_002535) do
     t.index ["project_id", "issue_id", "endpoint"], name: "index_continuation_grants_work_item_endpoint"
     t.index ["project_id"], name: "index_work_item_continuation_grants_on_project_id"
     t.index ["revoked_by_id"], name: "index_work_item_continuation_grants_on_revoked_by_id"
+  end
+
+  create_table "work_items", comment: "Account-scoped provider tickets retained for reconciliation and workflow assignment.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "archived_at"
+    t.text "body"
+    t.datetime "created_at", null: false
+    t.string "external_id", null: false
+    t.datetime "last_synced_at", null: false
+    t.string "native_state"
+    t.integer "priority"
+    t.string "provider", null: false
+    t.datetime "provider_created_at"
+    t.datetime "provider_updated_at"
+    t.jsonb "raw_payload", default: {}, null: false
+    t.string "resource_type", default: "issue", null: false
+    t.string "title", null: false
+    t.bigint "tracker_configuration_id"
+    t.datetime "updated_at", null: false
+    t.string "url"
+    t.index ["account_id", "provider", "resource_type", "external_id"], name: "index_work_items_on_provider_identity", unique: true
+    t.index ["account_id"], name: "index_work_items_on_account_id"
+    t.index ["tracker_configuration_id"], name: "index_work_items_on_tracker_configuration_id"
   end
 
   create_table "workflow_states", force: :cascade do |t|
@@ -5236,6 +5266,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_002535) do
   add_foreign_key "token_usages", "chat_sessions", on_delete: :cascade
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"
+  add_foreign_key "tracker_configurations", "linear_tokens"
   add_foreign_key "tracker_configurations", "users", column: "created_by_id"
   add_foreign_key "trusted_measurement_attempts", "accounts"
   add_foreign_key "trusted_measurement_attempts", "issues"
@@ -5248,6 +5279,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_002535) do
   add_foreign_key "work_item_continuation_grants", "projects"
   add_foreign_key "work_item_continuation_grants", "users", column: "created_by_id"
   add_foreign_key "work_item_continuation_grants", "users", column: "revoked_by_id"
+  add_foreign_key "work_items", "accounts"
+  add_foreign_key "work_items", "tracker_configurations"
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade

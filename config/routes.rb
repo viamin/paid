@@ -113,7 +113,9 @@ Rails.application.routes.draw do
   get "github_app/callback", to: "github_app/installations#callback", as: :github_app_callback
 
   # Linear tokens management
-  resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
+  resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ] do
+    patch :sync_settings, on: :collection
+  end
 
   # Issue tracker configurations (account/user/project-level)
   resources :tracker_configurations, only: [ :index, :show, :create, :update, :destroy ]

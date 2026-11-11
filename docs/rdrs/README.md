@@ -6,20 +6,27 @@ This directory contains Recommendation Decision Records for Paid's major archite
 
 RDRs are specification prompts built through iterative research and refinement. Unlike Architecture Decision Records (ADRs), which document completed decisions, RDRs evolve during the planning phase as understanding deepens and viable options crystallize into a recommended approach.
 
-The central objective is to capture both the final solution and supporting evidence to prevent purpose drift during implementation.
+The central objective is to capture both the final solution and supporting evidence to prevent purpose drift during implementation. For future records, the Paid-owned [authoring contract](future-authoring-contract.md) defines the status transitions, finalization record, LID handoff, and post-mortem trigger; it does not retrofit historical RDRs.
 
 For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 ## RDR Status
 
+The "Meaning" column states the future authoring contract's semantics for
+RDRs created under it. Historical RDRs predate that contract and use these
+same status labels without meeting its evidence bar (e.g. criterion-level
+closeout for `Implemented`/`Partially Implemented`, or HLD/LLD/EARS linkage
+for `Final`); see [the note above](#what-are-rdrs) — do not read a historical
+RDR's status against this stricter meaning.
+
 | Status | Meaning |
 |--------|---------|
-| Draft | During planning/research phase |
-| Proposed | Reviewable recommendation awaiting acceptance |
-| Accepted | Recommendation accepted but implementation not started |
-| Final | Locked, ready for or during implementation |
-| Partially Implemented | Adopted and partly shipped, with remaining implementation work tracked |
-| Implemented | Implementation complete |
+| Draft | Research or recommendation is mutable; it authorizes nothing. |
+| Proposed | Reviewable recommendation awaiting an owner decision on its exact revision. |
+| Accepted | Owner accepted the recommendation, but LID handoff is not yet implementation-eligible. |
+| Final | Accepted, finalized, and linked to HLD/LLD/EARS; ordinary guarded delivery may begin. |
+| Partially Implemented | Criterion closeout proves some criteria shipped and names every remaining owner/dependency. |
+| Implemented | Criterion closeout proves every required criterion shipped; later post-mortem is separate. |
 | Abandoned | RDR not implemented |
 | Superseded | Replaced by another RDR |
 
@@ -42,6 +49,11 @@ incomplete RDR ship safely:
 
 Issue implementations for an RDR must preserve the stated guard until the RDR's
 closeout audit marks the guarded behavior complete and safe to make default.
+
+An RDR draft, merged document, or filed implementation issue does not authorize
+runtime work. Future implementation issues may be filed early, but must carry a
+concrete RDR/LID prerequisite and explicit dependency. See the
+[authoring contract](future-authoring-contract.md#authority-and-status-transitions).
 
 ## Implementation Issues and Closeout
 
@@ -344,7 +356,13 @@ not the current implementation contract. See
 
 ## Creating New RDRs
 
-Use the template at the [RDR repository](https://github.com/cwensel/rdr/blob/main/TEMPLATE.md) as a starting point.
+Start from Paid's [future authoring contract](future-authoring-contract.md)
+and its [template overlay](future-authoring-template.md) — they define the
+status transitions, minimum decision/evidence content, rollout guards, and
+LID handoff that apply to every new RDR. The upstream
+[RDR repository template](https://github.com/cwensel/rdr/blob/main/TEMPLATE.md)
+is the underlying structure the overlay adapts; use it only as background,
+not as the starting document.
 
 Before assigning a number, check both merged RDRs and open PRs that add or rename
 `docs/rdrs/RDR-*.md` files. Use the next number after the highest reserved number across

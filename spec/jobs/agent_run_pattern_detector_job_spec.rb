@@ -42,6 +42,10 @@ RSpec.describe AgentRunPatternDetectorJob do
   end
 
   before do
+    # The detector intentionally sweeps every account, so isolate its examples
+    # from stable fixture graphs established by earlier randomized groups.
+    # Transactional fixtures restore those graphs when the example ends.
+    TenantContext.with_system_access { Account.destroy_all }
     allow(AgentRunPatterns::Detect).to receive(:call).and_return([])
     allow(AgentRunPatterns::Diagnose).to receive(:call)
     allow(AgentRunPatterns::DailyDiagnosisBudget).to receive(:remaining_for).and_return(5)

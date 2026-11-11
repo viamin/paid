@@ -93,8 +93,10 @@ module Llm
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:)
+    def initialize(agent_run:, fallback_runner_identifiers: [], timeout: TIMEOUT)
       @agent_run = agent_run
+      @fallback_runner_identifiers = fallback_runner_identifiers
+      @timeout = timeout
     end
 
     def call # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-034
@@ -264,7 +266,8 @@ module Llm
     end
 
     def parse_response # @spec PARTIAL-CLOSEOUT-031
-      response = Request.call(agent_run: agent_run, prompt: prompt, timeout: TIMEOUT)
+      response = Request.call(agent_run: agent_run, prompt: prompt, timeout: @timeout,
+        per_runner_timeout: TIMEOUT, fallback_runner_identifiers: @fallback_runner_identifiers)
       retain_provenance(response)
       if response.respond_to?(:success?) && !response.success?
         raise assessment_failure("unsuccessful_response")

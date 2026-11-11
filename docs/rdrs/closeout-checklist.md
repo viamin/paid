@@ -20,6 +20,11 @@ implementation chain shipped, stalled, was superseded, or was abandoned. Do
 **not** run a closeout for ongoing implementation work — use the normal issue
 chain for that.
 
+This is a criterion-level implementation closeout, not a plan-versus-reality
+post-mortem. It is required before claiming **Partially Implemented** or
+**Implemented**. A later post-mortem after use is separately risk-triggered by
+the [future RDR authoring contract](future-authoring-contract.md#closeout-and-post-mortem-are-different).
+
 ## The checklist
 
 Every RDR closeout issue must complete all of these steps. Copy this list into

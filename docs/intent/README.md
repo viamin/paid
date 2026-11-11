@@ -48,7 +48,9 @@ stays walkable from that point forward.
   then cascade to tests and code.
 - **Proposed architecture decision** → add a proposed RDR plus its LLD and
   unchecked EARS claims; do not represent the proposal as shipped behavior or
-  change runtime policy before review accepts it.
+  change runtime policy before owner acceptance, finalization, and the
+  RDR-to-LID handoff described in
+  [`docs/rdrs/future-authoring-contract.md`](../rdrs/future-authoring-contract.md).
 - **Bug fix** → find where intent diverged (which spec/LLD it traces to), fix
   the intent there, and cascade. No short-circuit straight to code.
 - **Trivial change** (typo, formatting, broken link) → no segment work needed.

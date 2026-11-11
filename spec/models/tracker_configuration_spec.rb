@@ -86,6 +86,26 @@ RSpec.describe TrackerConfiguration do
       expect(tracker_config).not_to be_valid
       expect(tracker_config.errors[:integration_credential]).to include("must be active (not revoked or expired)")
     end
+
+    it "rejects a Linear key from another account" do
+      # @spec UNIFIED-WORK-ITEMS-002
+      account = create(:account)
+      token = create(:linear_token)
+      configuration = build(:tracker_configuration, :linear, configurable: account, linear_token: token)
+
+      expect(configuration).not_to be_valid
+      expect(configuration.errors[:linear_token]).to include("must belong to the same account")
+    end
+
+    it "rejects a revoked Linear key" do
+      # @spec UNIFIED-WORK-ITEMS-002
+      account = create(:account)
+      token = create(:linear_token, :revoked, account:)
+      configuration = build(:tracker_configuration, :linear, configurable: account, linear_token: token)
+
+      expect(configuration).not_to be_valid
+      expect(configuration.errors[:linear_token]).to include("must be active (not revoked or expired)")
+    end
   end
 
   describe "#account" do

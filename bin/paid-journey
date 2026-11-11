@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+command_name="${1:-}"
+
+case "${RAILS_ENV:-development}" in
+  development|test) ;;
+  *)
+    echo "paid-journey only supports isolated development or test environments" >&2
+    exit 1
+    ;;
+esac
+
+cleanup_seed_data() {
+  bundle exec bin/rails runner 'TenantContext.with_system_access { Screenshots::SeedData::PaidJourney.cleanup! }'
+}
+
+case "$command_name" in
+  setup)
+    bin/setup --skip-server
+    bundle exec bin/rails db:prepare
+    ;;
+  reset)
+    cleanup_seed_data
+    bundle exec bin/rails runner 'TenantContext.with_system_access { Screenshots::SeedData::PaidJourney.call }'
+    ;;
+  credentials)
+    printf '%s\n' 'email: paid-journey@example.com' 'password: paid-journey-password-123'
+    ;;
+  cleanup)
+    cleanup_seed_data
+    ;;
+  check)
+    bundle exec rspec spec/system/paid_project_journey_spec.rb
+    ;;
+  *)
+    echo "usage: bin/paid-journey {setup|reset|credentials|cleanup|check}" >&2
+    exit 64
+    ;;
+esac
