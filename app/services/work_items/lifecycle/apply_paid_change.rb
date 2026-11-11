@@ -26,9 +26,9 @@ module WorkItems
         return Result.new(status: :agent_run_sync_disabled, conflict: nil) if agent_run_sync_disabled?
         return conflict_result if conflicting?
 
+        push_to_provider if provider_sync_supported?
         apply
-        push_to_provider
-        Result.new(status: mapped_native_state ? :applied : :unsupported, conflict: nil)
+        Result.new(status: provider_sync_supported? ? :applied : :unsupported, conflict: nil)
       end
 
       private
@@ -65,11 +65,12 @@ module WorkItems
       end
 
       def push_to_provider
-        return unless mapped_native_state
-        return unless work_item.tracker_configuration&.enabled?
-
         work_item.tracker_configuration.adapter.update_status(external_id: work_item.external_id,
           status: mapped_native_state)
+      end
+
+      def provider_sync_supported?
+        mapped_native_state.present? && work_item.tracker_configuration&.enabled?
       end
     end
   end

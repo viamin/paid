@@ -38,6 +38,22 @@ RSpec.describe WorkItems::Lifecycle::ApplyPaidChange do
     expect(a_request(:post, "https://api.linear.app/graphql")).to have_been_made
   end
 
+  it "keeps the local lifecycle state retryable when the provider write fails" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    stub_request(:post, "https://api.linear.app/graphql").to_return(status: 500, body: "unavailable")
+
+    expect { described_class.call(work_item:, paid_state: "in_progress") }
+      .to raise_error(IssueTrackers::Adapters::Linear::ResponseError)
+    expect(work_item.reload.paid_lifecycle_state).to be_nil
+
+    stub_update
+
+    result = described_class.call(work_item:, paid_state: "in_progress")
+
+    expect(result.status).to eq(:applied)
+    expect(work_item.reload).to have_attributes(paid_lifecycle_state: "in_progress", lifecycle_sync_source: "paid")
+  end
+
   it "uses the initiating project lifecycle mapping when assignments have different mappings" do
     other_project = create(:project, account:)
     work_item.work_item_assignments.create!(account:, project: other_project, provenance: "manual")

@@ -79,6 +79,54 @@ RSpec.describe WorkItems::SyncLinear do
       lifecycle_sync_source: "provider")
   end
 
+  it "replaces unlocked mapping assignments when Linear moves a ticket to another mapped project" do
+    # @spec UNIFIED-WORK-ITEMS-004
+    FeatureFlags.enable!(:unified_work_items, project:)
+    first_target = create(:project, account:)
+    second_target = create(:project, account:)
+    FeatureFlags.enable!(:unified_work_items, project: first_target)
+    FeatureFlags.enable!(:unified_work_items, project: second_target)
+    first_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-1")
+    first_mapping.work_item_project_mapping_targets.create!(project: first_target)
+    second_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-2")
+    second_mapping.work_item_project_mapping_targets.create!(project: second_target)
+    stub_ticket
+
+    described_class.call(project:)
+    ticket[:project] = { id: "linear-project-2", name: "Delivery" }
+    stub_ticket
+
+    described_class.call(project:)
+
+    item = WorkItem.find_by!(account:, provider: "linear", external_id: "issue-1")
+    expect(item.projects).to contain_exactly(second_target)
+    expect(item.work_item_assignments.sole.work_item_project_mapping).to eq(second_mapping)
+  end
+
+  it "flags locked assignments when Linear moves a ticket to another mapped project" do
+    # @spec UNIFIED-WORK-ITEMS-004
+    FeatureFlags.enable!(:unified_work_items, project:)
+    first_target = create(:project, account:)
+    second_target = create(:project, account:)
+    FeatureFlags.enable!(:unified_work_items, project: first_target)
+    FeatureFlags.enable!(:unified_work_items, project: second_target)
+    first_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-1")
+    first_mapping.work_item_project_mapping_targets.create!(project: first_target)
+    second_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-2")
+    second_mapping.work_item_project_mapping_targets.create!(project: second_target)
+    stub_ticket
+    described_class.call(project:)
+    item = WorkItem.find_by!(account:, provider: "linear", external_id: "issue-1")
+    item.work_item_assignments.update_all(locked: true)
+    ticket[:project] = { id: "linear-project-2", name: "Delivery" }
+    stub_ticket
+
+    described_class.call(project:)
+
+    expect(item.reload.projects).to contain_exactly(first_target)
+    expect(item).to be_needs_review
+  end
+
   it "uses the syncing project lifecycle mapping instead of an assigned project's mapping" do
     # @spec UNIFIED-WORK-ITEMS-006
     FeatureFlags.enable!(:unified_work_items, project:)
