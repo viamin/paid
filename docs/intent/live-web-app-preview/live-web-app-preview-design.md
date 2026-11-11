@@ -97,6 +97,32 @@ browser flow cannot disappear behind a green broad suite. Runtime
 configuration, browser claims, and app-log evidence remain conditional on the
 project's interactive-verification setting.
 
+### Criterion input receipts
+
+An issue implementation run may additionally supply a bounded rationale,
+limitations, and inspected inputs for each criterion. The recorder validates
+only mechanical properties of those inputs: a repository path's containment,
+existence, pinned reviewed revision, and digest; a recorder-owned test or
+artifact result when one exists; or the shape of an explicit external/human
+reference. It labels each input `verified`, `contradicted`, `stale`, or
+`unavailable`, and produces a receipt only when every cited input is verified.
+The receipt remains separate from the agent's semantic conclusion: validating
+inputs never changes criterion coverage from `unverified` or grants merge
+authority. Inputs and excerpts are bounded and redacted before persistence.
+
+The receipt path is additive. Existing criterion reports without inputs retain
+their reported-only behavior. When a project has the layered-verification
+add-on, its append-only `LayeredVerificationCheckResult` remains the durable
+record for recorder-owned execution outcomes; the run result references those
+observations rather than creating a second evidence store.
+
+The initial receipt pilot is observational and non-blocking. Its serialized
+per-run metrics count mechanically caught false input claims and record
+validation runtime and retained receipt bytes. Valid-claim rejection and review
+usefulness are explicitly `unavailable` until reviewers supply adjudication
+and feedback; these measures must be available before proposing any CI or
+merge policy.
+
 ## Trace Artifact Contract
 
 Real agent-run trace viewing is tied to the same durable storage contract used

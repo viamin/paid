@@ -3,6 +3,7 @@
 require "json"
 require "open3"
 require "pathname"
+require "digest"
 
 module AgentRuns
   # @spec LIVE-PREVIEW-005 LIVE-PREVIEW-011
@@ -12,6 +13,8 @@ module AgentRuns
     LOG_TAIL_LINES = 40
     LOG_TAIL_CHUNK_BYTES = 4096
     LOG_TAIL_MAX_BYTES = ApplicationLog::MAX_BYTES
+    MAX_CRITERION_INPUTS = 20
+    MAX_INPUT_EXCERPT_BYTES = 2_000
 
     def self.call(...)
       new(...).call
@@ -214,18 +217,22 @@ module AgentRuns
     # accidentally treat a reported pass as accepted evidence.
     # @spec LIVE-PREVIEW-010
     def evidence_for(payload)
+      @receipt_validation_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      @current_observed_artifacts = interactive_verification? ? observed_artifacts : []
+      coverage = coverage_for(payload["acceptance_criteria"] || payload["reported_acceptance_criteria"])
       evidence = {
         "tested_commit" => tested_commit,
         "freshness" => freshness,
         "reported_artifact_assessments" => reported_artifact_assessments(payload["artifacts"]),
-        "coverage" => coverage_for(payload["acceptance_criteria"] || payload["reported_acceptance_criteria"]),
+        "coverage" => coverage,
+        "criterion_receipt_pilot" => criterion_receipt_pilot(coverage),
         "limitations" => evidence_limitations
       }.compact
       return evidence unless interactive_verification?
 
       evidence.merge(
         "runtime_configuration" => runtime_configuration,
-        "observed_artifacts" => observed_artifacts
+        "observed_artifacts" => @current_observed_artifacts
       )
     end
 
@@ -281,6 +288,7 @@ module AgentRuns
           "reported_assertions" => normalize_string_array(criterion["assertions"]),
           "reported_steps" => normalize_string_array(criterion["steps"]),
           "reported_verification" => normalize_criterion_verification(criterion["verification"]),
+          "input_receipt" => criterion_input_receipt(criterion),
           "state" => coverage_state(reported_status),
           "reason" => coverage_reason(reported_status)
         }.compact
@@ -304,14 +312,123 @@ module AgentRuns
     def normalize_criterion_verification(value)
       return unless value.is_a?(Hash)
 
-      verification = value.deep_stringify_keys.slice("kind", "reason")
+      verification = value.deep_stringify_keys.slice("kind", "reason", "rationale", "limitations")
       verification["references"] = Array(value["references"] || value[:references]).filter_map do |reference|
         next unless reference.is_a?(Hash)
 
         reference.deep_stringify_keys.slice("locator", "result", "reason", "url").presence
       end.first(20).presence
+      verification["inputs"] = Array(value["inputs"] || value[:inputs]).filter_map do |input|
+        normalize_criterion_input(input)
+      end.first(MAX_CRITERION_INPUTS).presence
       verification.compact.presence
     end
+
+    # Input receipts validate bounded mechanical facts only. They deliberately
+    # leave the agent's semantic conclusion in the reported coverage state.
+    # @spec LIVE-PREVIEW-013
+    def criterion_input_receipt(criterion)
+      verification = criterion["verification"]
+      return unless verification.is_a?(Hash) && verification["rationale"].present?
+
+      inputs = Array(verification["inputs"] || verification[:inputs]).filter_map { |input| normalize_criterion_input(input) }
+      return { "state" => "unavailable", "reason" => "no_bounded_inputs" } if inputs.empty?
+
+      references = inputs.map { |input| verify_criterion_input(input) }
+      state = receipt_state(references.map { |reference| reference["state"] })
+      { "state" => state, "references" => references, "limitations" => normalize_string_array(verification["limitations"]) }
+        .compact
+    end
+
+    def criterion_receipt_pilot(coverage)
+      receipts = coverage.filter_map { |criterion| criterion["input_receipt"] }
+      references = receipts.flat_map { |receipt| Array(receipt["references"]) }
+      {
+        "false_claims_caught" => references.count { |reference| reference["state"] == "contradicted" },
+        "valid_claims_rejected" => { "state" => "unavailable", "reason" => "requires_human_adjudication" },
+        "validation_runtime_ms" => elapsed_receipt_validation_ms,
+        "storage_bytes" => receipts.sum { |receipt| JSON.generate(receipt).bytesize },
+        "review_usefulness" => { "state" => "unavailable", "reason" => "requires_reviewer_feedback" }
+      }
+    end
+
+    def elapsed_receipt_validation_ms
+      ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - @receipt_validation_started_at) * 1000).round
+    end
+
+    def normalize_criterion_input(input)
+      return unless input.is_a?(Hash)
+
+      value = input.deep_stringify_keys.slice("type", "locator", "path", "revision", "digest", "excerpt", "result", "command", "storage_key", "url", "reason")
+      value["excerpt"] = redact_input_excerpt(value["excerpt"])
+      value.compact.presence
+    end
+
+    def redact_input_excerpt(value)
+      text = value.to_s.byteslice(0, MAX_INPUT_EXCERPT_BYTES)
+      return if text.blank?
+
+      ApplicationLog.redact_and_bound(text, agent_run: @agent_run).content
+    end
+
+    def verify_criterion_input(input)
+      case input["type"]
+      when "repository_file" then verify_repository_input(input)
+      when "artifact" then verify_artifact_input(input)
+      when "test_run" then verify_test_input(input)
+      when "human_or_external" then unavailable_input(input, "external_evidence_not_recorder_owned")
+      else unavailable_input(input, "unsupported_input_type")
+      end
+    end
+
+    def verify_repository_input(input)
+      return unavailable_input(input, "repository_input_incomplete") if input.values_at("path", "revision", "digest").any?(&:blank?)
+      return stale_input(input, "revision_does_not_match_reviewed_head") unless input["revision"] == tested_commit
+
+      path = repo_path_candidate(input["path"])
+      return contradicted_input(input, "path_outside_repository") unless path
+      resolved = resolve_repo_path(path)
+      return contradicted_input(input, "path_missing_or_inaccessible") unless resolved && File.file?(resolved)
+
+      digest = Digest::SHA256.file(resolved).hexdigest
+      return contradicted_input(input, "content_digest_mismatch") unless ActiveSupport::SecurityUtils.secure_compare(digest, input["digest"].to_s)
+
+      input.merge("state" => "verified")
+    rescue Errno::EACCES
+      unavailable_input(input, "path_inaccessible")
+    end
+
+    def verify_artifact_input(input)
+      key = input["storage_key"].to_s
+      return unavailable_input(input, "artifact_identity_missing") if key.blank?
+
+      observed = Array(@current_observed_artifacts || previous_verification_result.dig("evidence", "observed_artifacts"))
+        .find { |artifact| artifact["storage_key"] == key && artifact["provenance"] == "recorder" }
+      return unavailable_input(input, "artifact_not_recorder_owned") unless observed
+      return contradicted_input(input, "artifact_not_retained") unless observed["state"] == "retained"
+
+      input.merge("state" => "verified", "provenance" => "recorder")
+    end
+
+    def verify_test_input(input)
+      return contradicted_input(input, "test_not_passed") if input["result"].in?(%w[failed skipped not_run])
+
+      unavailable_input(input, "recorder_owned_test_result_unavailable")
+    end
+
+    def receipt_state(states)
+      return "contradicted" if states.include?("contradicted")
+      return "stale" if states.include?("stale")
+      return "unavailable" if states.include?("unavailable")
+
+      "verified"
+    end
+
+    def unavailable_input(input, reason) = input.merge("state" => "unavailable", "reason" => reason)
+
+    def contradicted_input(input, reason) = input.merge("state" => "contradicted", "reason" => reason)
+
+    def stale_input(input, reason) = input.merge("state" => "stale", "reason" => reason)
 
     def coverage_state(status)
       return "not_run" if status == "not_run"
@@ -412,7 +529,7 @@ module AgentRuns
     end
 
     def evidence_limitations
-      limitations = [ "agent_reported_references_are_not_recorder_owned_evidence" ]
+      limitations = [ "agent_reported_references_are_not_recorder_owned_evidence", "validated_inputs_do_not_prove_semantic_coverage" ]
       return limitations unless interactive_verification?
 
       limitations.concat([

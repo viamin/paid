@@ -94,6 +94,28 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
+  def write_verification_result(payload)
+    File.write(result_path, JSON.generate(payload))
+  end
+
+  def input_receipt_for(result)
+    result.dig("evidence", "coverage").sole.fetch("input_receipt")
+  end
+
+  def repository_receipt_payload(digest)
+    {
+      status: "passed",
+      acceptance_criteria: [ {
+        id: "AC-1", status: "passed",
+        verification: {
+          kind: "permanent_system_test", rationale: "Exercises settings persistence.",
+          limitations: [ "Does not prove all settings variants." ],
+          inputs: [ { type: "repository_file", path: "spec/system/settings_spec.rb", revision: "a" * 40, digest: } ]
+        }
+      } ]
+    }
+  end
+
   it "persists the recorded verification result and app log tail onto the run" do
     File.write(result_path, JSON.generate(
       status: "passed",
@@ -163,6 +185,53 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(result.dig("evidence", "tested_commit")).to eq("a" * 40)
     expect_criterion_coverage(result)
     expect(result.dig("evidence", "limitations")).to include("agent_reported_browser_steps_are_not_observed_evidence")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "records a mechanically verified repository input without promoting semantic coverage" do
+    path = File.join(repo_path, "spec", "system", "settings_spec.rb")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "RSpec.describe 'settings' do; end\n")
+    digest = Digest::SHA256.file(path).hexdigest
+    write_verification_result(repository_receipt_payload(digest))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    result = agent_run.reload.verification_result
+    coverage = result.dig("evidence", "coverage").sole
+    expect(coverage).to include("state" => "unverified")
+    expect(coverage.dig("input_receipt", "state")).to eq("verified")
+    expect(coverage.dig("input_receipt", "references", 0)).to include("state" => "verified", "path" => "spec/system/settings_spec.rb")
+    expect(result.dig("evidence", "criterion_receipt_pilot")).to include(
+      "false_claims_caught" => 0,
+      "valid_claims_rejected" => { "state" => "unavailable", "reason" => "requires_human_adjudication" },
+      "review_usefulness" => { "state" => "unavailable", "reason" => "requires_reviewer_feedback" }
+    )
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "labels fabricated, stale, skipped, and unavailable criterion inputs without issuing a receipt" do
+    write_verification_result(
+      status: "passed",
+      acceptance_criteria: [ {
+        id: "AC-1", status: "passed",
+        verification: {
+          kind: "unit_or_service_test", rationale: "Reported inputs.",
+          inputs: [
+            { type: "repository_file", path: "spec/missing_spec.rb", revision: "a" * 40, digest: "0" * 64 },
+            { type: "repository_file", path: "spec/stale_spec.rb", revision: "b" * 40, digest: "0" * 64 },
+            { type: "test_run", command: "bin/rspec spec/services/x_spec.rb", result: "skipped" },
+            { type: "artifact", storage_key: "verification/missing.log" }
+          ]
+        }
+      } ]
+    )
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt.fetch("state")).to eq("contradicted")
+    expect(receipt.fetch("references").map { |reference| reference.fetch("state") }).to eq(%w[contradicted stale contradicted unavailable])
   end
 
   # @spec LIVE-PREVIEW-011

@@ -76,6 +76,21 @@
   *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
   `spec/services/agent_runs/verification_result_recorder_spec.rb`.
 
+- [x] **LIVE-PREVIEW-013** — When an issue implementation run supplies a
+  criterion rationale and bounded inspected inputs, the recorder SHALL retain
+  the rationale and limitations separately from the semantic criterion result
+  and SHALL mechanically label each input `verified`, `contradicted`, `stale`,
+  or `unavailable`. Repository inputs SHALL require a contained path, the
+  reviewed revision, and a matching digest; recorder-owned test and artifact
+  claims SHALL be checked when available. A missing path, changed digest,
+  wrong revision, skipped result, or inaccessible artifact SHALL not produce a
+  valid receipt. Input validation SHALL NOT promote the criterion's semantic
+  coverage or grant merge authority, and legacy reports without inputs SHALL
+  remain reported-only.
+  *Code:* `app/services/agent_runs/verification_result_recorder.rb`.
+  *Test:* `spec/services/agent_runs/verification_result_recorder_spec.rb`,
+  `spec/views/agent_runs/criterion_evidence_partial_spec.rb`.
+
 - [x] **LIVE-PREVIEW-012** — When an interactive create-PR run's checkout
   contains the conventional `.paid/journeys.md` guide, the verification prompt
   SHALL direct the agent to read it and select the journey covering the changed

@@ -1,0 +1,30 @@
+<%# @spec LIVE-PREVIEW-013 %>
+<% coverage = Array(agent_run.verification_result.dig("evidence", "coverage")) %>
+<% if coverage.any? %>
+  <section class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+    <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Acceptance criterion evidence</h2>
+    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Input receipts are mechanical checks. The reported conclusion remains reviewable.</p>
+    <ul class="mt-3 space-y-3">
+      <% coverage.each do |criterion| %>
+        <% receipt = criterion["input_receipt"].to_h %>
+        <li class="rounded border border-gray-200 p-3 text-sm dark:border-gray-700">
+          <p class="font-medium text-gray-900 dark:text-gray-100"><%= criterion["id"] %> — reported <%= criterion["reported_status"].to_s.humanize.downcase %></p>
+          <p class="mt-1 text-gray-700 dark:text-gray-300">Semantic coverage: <%= criterion["state"].to_s.humanize %>.</p>
+          <% if receipt.present? %>
+            <p class="mt-1 text-gray-700 dark:text-gray-300">Input receipt: <%= receipt["state"].to_s.humanize %>.</p>
+            <% if receipt["reason"].present? %><p class="text-xs text-gray-500"><%= receipt["reason"].humanize %>.</p><% end %>
+            <% if receipt["references"].present? %>
+              <ul class="mt-2 list-disc pl-5 text-xs text-gray-600 dark:text-gray-400">
+                <% receipt["references"].each do |reference| %>
+                  <li><%= reference["path"] || reference["storage_key"] || reference["command"] || reference["url"] || reference["type"] %>: <%= reference["state"].to_s.humanize.downcase %></li>
+                <% end %>
+              </ul>
+            <% end %>
+          <% else %>
+            <p class="mt-1 text-gray-700 dark:text-gray-300">Input receipt: unavailable.</p>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  </section>
+<% end %>

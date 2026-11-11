@@ -48,6 +48,8 @@
     <% end %>
   </div>
 
+  <%= render "agent_runs/criterion_evidence", agent_run: agent_run %>
+
   <% if (recovery = agent_run.reconciliation.to_h["source_closure_recovery"]).present? %>
     <% recovery_state = if agent_run.waiting_recovery?
                           recovery["claimed_at"].present? ? "Retrying" : "Waiting for recovery"

@@ -76,6 +76,9 @@ module AgentRuns
             "status": "passed",
             "verification": {
               "kind": "permanent_system_test",
+              "rationale": "The test exercises the persisted onboarding path.",
+              "limitations": ["It does not establish external-provider behavior."],
+              "inputs": [{ "type": "repository_file", "path": "spec/system/onboarding_spec.rb", "revision": "<PR_HEAD>", "digest": "<SHA256>" }],
               "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
             }
           }]
@@ -173,7 +176,11 @@ module AgentRuns
         artifact, or external evidence explicitly. Do not infer a pass from a test name, agent prose, a broad suite,
         or browser steps. Criterion `status` must be `passed`, `failed`, `skipped`, or `not_run`. Record blocked,
         skipped, missing browser coverage, and human or external criteria without attached evidence as `skipped` or
-        `not_run` with a reason.
+        `not_run` with a reason. For a recorder input receipt, separately provide a concise `rationale`, limitations,
+        and bounded `inputs`: use `repository_file` with `path`, reviewed `revision`, and SHA-256 `digest`; use
+        `test_run` only for an actual recorder-owned result; use `artifact` with its recorder-owned `storage_key`; or
+        use `human_or_external` with an explicit URL/reason. Paid validates inputs mechanically but never treats a
+        valid receipt as proof of the semantic coverage judgment.
       INSTRUCTIONS
     end
 
