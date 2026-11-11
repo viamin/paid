@@ -219,12 +219,14 @@ adds the required posture section without issue-specific context.
   (`auto_merge_enabled?`,
   `auto_merge_bot_authored?`, `review_enabled?`,
   and `Automation::FeatureActivation.phase_authorized?`), never the raw stored
-  columns. Bot-authored merge permission additionally requires mode `all`,
-  because Paid-authored implementation PRs use the human-PR merge path rather
-  than the Dependabot-only path. An upstream-target project holding legacy
-  enabled values, a project with its merge phase disabled, or a project whose
-  effective mode is `off` or `dependabot_only` therefore sees the gated-off
-  posture. Its
+  columns. Bot-authored merge permission follows the human-PR merge path:
+  label-mode projects require mode `all`, while paid-local-activation projects
+  enable that path whenever auto-merge is enabled, including
+  `dependabot_only`. A paid-local `dependabot_only` project therefore renders
+  bot merge as permitted when its owner-approval exemption is enabled, and
+  renders owner approval as required for ordinary human-authored PRs. An
+  upstream-target project holding legacy enabled values or a project with its
+  merge phase disabled sees the gated-off posture. Its
   provenance records these non-secret values, so operators can audit the
   policy visible to a run when project settings changed after queueing. The
   rendered section keeps normal CI, bot review, screenshots, and merge checks

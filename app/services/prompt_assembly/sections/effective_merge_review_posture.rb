@@ -67,7 +67,18 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
   end
 
   def bot_authored_pr_auto_merge?
-    auto_merge_mode == "all" && project.respond_to?(:auto_merge_bot_authored?) && project.auto_merge_bot_authored?
+    human_merge_path_enabled? && project.respond_to?(:auto_merge_bot_authored?) && project.auto_merge_bot_authored?
+  end
+
+  # The scanner enables the human-PR merge path at mode "all" for label-mode
+  # projects, but uses the enabled project setting for paid-local activation.
+  # The latter intentionally includes dependabot_only.
+  def human_merge_path_enabled?
+    if project.respond_to?(:paid_local_activation?) && project.paid_local_activation?
+      return auto_merge_mode != "off" && project.auto_merge_enabled?
+    end
+
+    auto_merge_mode == "all"
   end
 
   def auto_merge_phase_authorized?
@@ -114,7 +125,7 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
 
   def human_approval_posture
     return "not applicable while project auto-merge is off" if auto_merge_mode == "off"
-    return "not applicable to the Dependabot-only merge path" if auto_merge_mode == "dependabot_only"
+    return "not applicable to the Dependabot-only merge path" unless human_merge_path_enabled?
 
     "required for ordinary human-authored PRs before automatic merge"
   end

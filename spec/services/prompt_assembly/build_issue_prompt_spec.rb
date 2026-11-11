@@ -37,7 +37,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     allow(Automation::FeatureActivation).to receive(:phase_authorized?).and_return(true)
   end
 
-  def assembly_project(detected_languages: [], feature_flags_pattern: false)
+  def assembly_project(detected_languages: [], feature_flags_pattern: false, paid_local_activation: true)
     OpenStruct.new(
       full_name: "owner-1/repo-1",
       account: OpenStruct.new(id: 7),
@@ -56,7 +56,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         login == "paid-code-reviewer[bot]"
       end
 
-      p.define_singleton_method(:paid_local_activation?) { true }
+      p.define_singleton_method(:paid_local_activation?) { paid_local_activation }
       p.define_singleton_method(:uses_feature_flags_pattern?) { feature_flags_pattern }
     end
   end
@@ -483,14 +483,28 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     # @spec PROMPT-ASSEMBLY-025
-    it "does not permit bot-authored PR auto-merge in Dependabot-only mode" do
+    it "renders paid-local Dependabot-only bot and human PR approval posture" do
       project = assembly_project
       configure_merge_posture(project, all_merge_settings.merge(auto_merge_mode: "dependabot_only"))
 
       result = described_class.call(issue: issue, project: project)
       section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
 
+      expect(result.text).to include("Bot-authored PR auto-merge: permitted")
+      expect(result.text).to include("Human approval: required for ordinary human-authored PRs before automatic merge")
+      expect(section.metadata).to include(auto_merge_mode: "dependabot_only", bot_authored_pr_auto_merge: true)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "does not permit bot-authored PR auto-merge for label-mode Dependabot-only projects" do
+      project = assembly_project(paid_local_activation: false)
+      configure_merge_posture(project, all_merge_settings.merge(auto_merge_mode: "dependabot_only"))
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
       expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(result.text).to include("Human approval: not applicable to the Dependabot-only merge path")
       expect(section.metadata).to include(auto_merge_mode: "dependabot_only", bot_authored_pr_auto_merge: false)
     end
 

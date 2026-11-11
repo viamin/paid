@@ -226,10 +226,11 @@
   and `Automation::FeatureActivation.phase_authorized?`), so a project whose runtime
   gates disable automation — including an upstream-target project holding
   legacy stored enabled values or a project with its merge phase disabled —
-  SHALL see the gated-off posture. Bot-authored merge permission SHALL also
-  require effective auto-merge mode `all`; modes `off` and `dependabot_only`
-  SHALL render it as not permitted even when the independently stored owner-
-  approval exemption flag is enabled. The section SHALL state that CI, bot
+  SHALL see the gated-off posture. Bot-authored merge permission and
+  human-approval posture SHALL follow the human-PR merge path: label-mode
+  projects require effective auto-merge mode `all`, while paid-local-activation
+  projects enable that path whenever effective auto-merge is enabled, including
+  `dependabot_only`. The section SHALL state that CI, bot
   review, screenshots, and merge checks remain in force, and that auto-merge
   never overrides a human-only decision, repository protection, or structured
   hold. Its provenance SHALL record the resolved non-secret policy values so
