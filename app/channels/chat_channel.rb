@@ -7,12 +7,11 @@ class ChatChannel < ApplicationCable::Channel
     if session
       @chat_session = session
       stream_from stream_name
-      transmit(ChatSessions::CapabilitySnapshot.call(chat_session: @chat_session))
-      turn = TenantContext.with_system_access do
-        @chat_session.chat_turns.order(id: :desc).first
+      account = TenantContext.with_system_access { Account.find(@chat_session.account_id) }
+      TenantContext.with(account) do
+        transmit(ChatSessions::CapabilitySnapshot.call(chat_session: @chat_session))
+        transmit(turn_status)
       end
-      transmit({ type: "turn_status", status: turn&.status,
-        awaiting_confirmation: turn&.awaiting_confirmation? })
     else
       reject
     end
@@ -118,6 +117,12 @@ class ChatChannel < ApplicationCable::Channel
 
   def stream_name
     "chat_session:#{@chat_session.id}"
+  end
+
+  def turn_status
+    turn = @chat_session.chat_turns.order(id: :desc).first
+    { type: "turn_status", status: turn&.status,
+      awaiting_confirmation: turn&.awaiting_confirmation? }
   end
 
   def authorized_to_send_messages?

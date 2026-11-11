@@ -37,12 +37,14 @@ RSpec.describe ChatChannel do
     it "sends the latest durable turn status without a channel tenant context" do
       message = create(:chat_message, chat_session: chat_session, role: "user")
       create(:chat_turn, chat_session: chat_session, user_message: message, status: "streaming")
+      create(:chat_message, chat_session: chat_session, role: "assistant", content: nil,
+        tool_name: "list_projects", tool_call_id: "call_1", tool_arguments: {}, tool_status: "pending")
 
       TenantContext.clear!
       subscribe(session_id: chat_session.id)
 
       expect(transmissions.last).to include("type" => "turn_status", "status" => "streaming",
-        "awaiting_confirmation" => false)
+        "awaiting_confirmation" => true)
     end
 
     it "rejects subscription for non-existent session" do
