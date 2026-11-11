@@ -76,6 +76,17 @@
   *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
   `spec/services/agent_runs/verification_result_recorder_spec.rb`.
 
+- [x] **LIVE-PREVIEW-012** — When an interactive create-PR run's checkout
+  contains the conventional `.paid/journeys.md` guide, the verification prompt
+  SHALL direct the agent to read it and select the journey covering the changed
+  surface. The guide SHALL reuse screenshot configuration for routes,
+  authentication, and seed data; agent-reported steps or screenshots alone
+  SHALL remain unverified evidence under the existing result contract.
+  *Code:* `app/services/agent_runs/verification_prompt.rb`,
+  `.paid/journeys.md`, `bin/paid-journey`.
+  *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
+  `spec/system/paid_project_journey_spec.rb`.
+
 - [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
   agent run, the system SHALL publish it through the same durable key contract
   that the trace viewer UI expects.

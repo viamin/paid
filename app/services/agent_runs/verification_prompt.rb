@@ -9,6 +9,7 @@ module AgentRuns
     RESULT_PATH = "tmp/paid-agent-verification.json".freeze
     APP_LOG_PATH = "tmp/paid-agent-verification-app.log".freeze
     APP_PID_PATH = "tmp/paid-agent-verification-app.pid".freeze
+    JOURNEY_GUIDE_PATH = ".paid/journeys.md".freeze
 
     Section = Data.define(:content, :fallback_result)
 
@@ -150,6 +151,8 @@ module AgentRuns
         }
         ```
 
+        #{journey_guide_section}
+
         #{criterion_evidence_instructions}
 
         Allowed `status` values:
@@ -172,6 +175,22 @@ module AgentRuns
         skipped, missing browser coverage, and human or external criteria without attached evidence as `skipped` or
         `not_run` with a reason.
       INSTRUCTIONS
+    end
+
+    # @spec LIVE-PREVIEW-012
+    def journey_guide_section
+      return "" unless issue_implementation? && journey_guide_available?
+
+      <<~SECTION
+
+        # Paid journey guide
+
+        This checkout provides `#{JOURNEY_GUIDE_PATH}`. Read it before browser verification, select the journey that covers the changed surface, and follow its setup, seed, navigation, observation, and cleanup instructions. Record the actual steps and observed result in the verification JSON; the guide, a screenshot, or a claim alone is not proof of a criterion.
+      SECTION
+    end
+
+    def journey_guide_available?
+      File.file?(File.join(@repo_path, JOURNEY_GUIDE_PATH))
     end
 
     def render_config_error_section(error)
