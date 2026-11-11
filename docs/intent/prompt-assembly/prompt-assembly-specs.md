@@ -209,3 +209,29 @@
   `Prompts::BuildForIssue`.
   *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/services/prompts/build_for_issue_spec.rb`.
+
+- [x] **PROMPT-ASSEMBLY-026** — When an issue-implementation prompt is built
+  through either the fallback/legacy task template or
+  `PromptAssembly::BuildIssuePrompt`, the rendered task SHALL carry
+  review-hold criteria limited to specific unresolved human-only decisions
+  (explicit design or intent approval gates, material scope or authority
+  changes, decisions explicitly reserved for a human), SHALL name the
+  non-reasons that never justify a discretionary hold (user-facing change,
+  screenshot/review/confirmation request, pending CI or bot review, general
+  caution), SHALL scope discretionary holds to the pull request the run
+  creates or materially changes unless the assigned task explicitly requires
+  reviewing another PR, and SHALL require a durable operator-visible record
+  of the concrete decision and evidence when a hold is warranted. The
+  rendered task SHALL state the project's effective merge delegation posture
+  resolved at render time (`all` + bot-authored auto-merge ⇒ delegated;
+  otherwise not delegated; unknown posture neutral), and a rendered task
+  template missing the criteria — a project prompt override or a pinned run
+  version — SHALL have the criteria and posture note appended. The seeded
+  `coding.issue_implementation` template and the in-code fallback SHALL be
+  byte-identical.
+  *Code:* `PromptAssembly::Sections::IssueTask`,
+  `db/seeds/prompts.rb`,
+  `db/migrate/20261111120000_sync_issue_implementation_prompt_hold_scope.rb`.
+  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/db/prompt_seeds_spec.rb`,
+  `spec/migrations/sync_issue_implementation_prompt_hold_scope_spec.rb`.

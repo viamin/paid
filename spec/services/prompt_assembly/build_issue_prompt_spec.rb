@@ -422,6 +422,110 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  # Discretionary review holds are for specific human-only decisions, not
+  # normal review or verification work (#4974). The posture note tells the
+  # agent whether the project's effective merge policy already delegates
+  # ordinary merge decisions — the #4922 false-positive guard — while the
+  # #4181 genuine case (an unresolved design decision) keeps its hold path.
+  describe "review hold scope guidance (#4974)" do
+    let(:delegated_project) do
+      assembly_project.tap do |p|
+        p.define_singleton_method(:auto_merge_mode) { "all" }
+        p.define_singleton_method(:auto_merge_bot_authored?) { true }
+      end
+    end
+
+    let(:non_delegated_project) do
+      assembly_project.tap do |p|
+        p.define_singleton_method(:auto_merge_mode) { "off" }
+        p.define_singleton_method(:auto_merge_bot_authored?) { false }
+      end
+    end
+
+    it "tells delegated-merge runs that ordinary merge decisions are delegated", :aggregate_failures do # @spec AUTO-MERGE-009 @spec PROMPT-ASSEMBLY-026
+      result = described_class.call(issue: issue, project: delegated_project)
+
+      expect(result.text).to match(/delegates\s+auto-merge\s+for\s+agent\s+pull\s+requests/)
+      expect(result.text).to match(/Ordinary\s+merge\s+decisions\s+are\s+delegated/)
+      # The #4922 non-reasons are named so operator-facing copy, screenshot
+      # requests, pending CI/bot review, and general caution cannot justify
+      # a discretionary hold.
+      expect(result.text).to include("user-facing")
+      expect(result.text).to match(/asks\s+for\s+screenshots,\s+review,\s+or\s+confirmation/)
+      expect(result.text).to match(/CI\s+or\s+an\s+automated\s+bot\s+review\s+is\s+still\s+running/)
+      expect(result.text).to match(/generally\s+cautious/)
+      expect(result.text).to match(/not\s+a\s+review\s+hold/)
+    end
+
+    it "keeps the genuine human-decision hold path while not delegating merges", :aggregate_failures do # @spec AUTO-MERGE-009
+      result = described_class.call(issue: issue, project: non_delegated_project)
+
+      expect(result.text).to match(/does\s+not\s+delegate\s+auto-merge\s+for\s+agent\s+pull\s+requests/)
+      # #4181-style explicit human-only decisions still justify a hold.
+      expect(result.text).to match(/specific\s+unresolved\s+decision\s+that\s+automation\s+is\s+not\s+authorized\s+to\s+make/)
+      expect(result.text).to match(/explicit\s+design\s+or\s+intent\s+approval\s+gate/)
+      expect(result.text).to include('"$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels"')
+      expect(result.text).to include('--data-binary \'{"labels":["paid-hold-review"]}\'')
+    end
+
+    it "uses the posture-neutral note when the project posture is unknown", :aggregate_failures do # @spec AUTO-MERGE-009
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to match(/When\s+the\s+project's\s+effective\s+merge\s+policy\s+delegates\s+auto-merge/)
+      expect(result.text).not_to match(/Ordinary\s+merge\s+decisions\s+are\s+delegated/)
+    end
+
+    it "scopes holds to PRs the run creates or materially changes", :aggregate_failures do # @spec AUTO-MERGE-009
+      result = described_class.call(issue: issue, project: delegated_project)
+
+      expect(result.text).to match(/Hold\s+only\s+the\s+pull\s+request\s+your\s+run\s+creates\s+or\s+materially\s+changes/)
+      expect(result.text).to match(/dependency\s+or\s+bookkeeping\s+issue/)
+      expect(result.text).to match(/unless\s+your\s+assigned\s+task\s+explicitly\s+requires\s+reviewing\s+or\s+holding/)
+    end
+
+    it "requires a durable operator-visible record when a hold is warranted", :aggregate_failures do # @spec AUTO-MERGE-009
+      result = described_class.call(issue: issue, project: delegated_project)
+
+      expect(result.text).to match(/record\s+the\s+concrete\s+unresolved\s+decision/)
+      expect(result.text).to match(/why\s+the\s+normal\s+delegated\s+checks\s+cannot\s+settle\s+it/)
+      expect(result.text).to match(/PR\/run\/issue\s+evidence/)
+    end
+
+    it "does not duplicate the hold block when the template already carries it" do # @spec AUTO-MERGE-009
+      result = described_class.call(issue: issue, project: delegated_project)
+
+      expect(result.text.scan("# Review Holds").length).to eq(1)
+      expect(result.text.scan(/repos\/<owner>\/<repo>\/issues\/<pr_number>\/labels/).length).to eq(1)
+    end
+
+    it "appends the narrowed criteria to a project prompt override with the pre-#4974 wording" do # @spec AUTO-MERGE-009 @spec PROMPT-ASSEMBLY-026
+      prompt = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |record|
+        record.name = "Issue implementation"
+        record.category = "coding"
+        record.active = true
+      end
+      prompt.create_version!(
+        template: <<~'TEMPLATE',
+          # Task
+
+          Implement {{title}}.
+
+          If you open a pull request that requires human judgment before it can land,
+          apply the structured review hold through the GitHub API proxy.
+        TEMPLATE
+        variables: []
+      )
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt.current_version)
+
+      result = described_class.call(issue: issue, project: delegated_project, agent_run: agent_run)
+
+      expect(result.text).to include("Implement Fix login redirect.")
+      expect(result.text).to match(/specific\s+unresolved\s+decision\s+that\s+automation\s+is\s+not\s+authorized\s+to\s+make/)
+      expect(result.text).to match(/delegates\s+auto-merge\s+for\s+agent\s+pull\s+requests/)
+      expect(result.text).to match(/creates\s+or\s+materially\s+changes/)
+    end
+  end
+
   describe "TDD boundaries" do # @spec PROMPT-ASSEMBLY-020 # @spec PROMPT-ASSEMBLY-023
     let(:real_issue) { create(:issue) }
 

@@ -19,15 +19,60 @@ The current implementation splits that policy into:
 - a Dependabot-specific execution path for dependency updates
 - project configuration that keeps auto-merge owner-controlled
 
-An agent that determines its own PR needs a human decision applies the
-`paid-hold-review` label. This is a structured, per-PR hold — never an
-interpretation of prose — and it blocks both scan-time eligibility and the
-last-mile merge activity. Held PRs appear in the Inbox's merge-approval lane
-with a human-review summary, even if ordinary approval/check signals have not
-yet been evaluated. A human releases the hold by removing the label.
+An agent applies the `paid-hold-review` label only when its own assigned
+work leaves a specific unresolved decision that automation is not
+authorized to make under the project's effective merge policy — for
+example an explicit design or intent approval gate, a material scope or
+authority change, or a decision the issue, its approved design, or project
+policy explicitly reserves for a human. This is a structured, per-PR hold
+— never an interpretation of prose — and it blocks both scan-time
+eligibility and the last-mile merge activity. Held PRs appear in the
+Inbox's merge-approval lane with a human-review summary, even if ordinary
+approval/check signals have not yet been evaluated. A human releases the
+hold by removing the label.
 
 This segment captures the shipped behavior rather than the abandoned umbrella
 PR strategy discussed in RDR-022.
+
+## Discretionary hold criteria (#4974)
+
+The `coding.issue_implementation` prompt (seeded template, in-code fallback,
+and any project override, which receives the criteria appended) draws the
+line between a hold-worthy human-only decision and normal review or
+verification work:
+
+- **Hold:** a specific unresolved decision automation is not authorized to
+  make — explicit design or intent approval gates, material scope or
+  authority changes, or decisions explicitly reserved for a human by the
+  issue, its approved design, or project policy. #4181 (a design PR that
+  auto-merged while an explicit human decision was unresolved) is the
+  failure this path prevents.
+- **Do not hold:** a change being user-facing, the PR or a reviewer asking
+  for screenshots, review, or confirmation, CI or an automated bot review
+  still running, or general agent caution. These are delegated,
+  mechanically-settled checks; missing evidence follows the normal
+  verification/blocker path instead. Run #27986 holding PR #4922 (created
+  by another run) for operator-facing copy and an already-answered
+  screenshot request is the false positive this excludes.
+- **Scope:** a discretionary hold applies only to the pull request the run
+  creates or materially changes. An agent completing a dependency or
+  bookkeeping issue does not add holds to other existing PRs it merely
+  encounters, unless its assigned task explicitly requires reviewing or
+  holding them.
+- **Durability:** when a hold is warranted, the agent records the concrete
+  unresolved decision, why the normal delegated checks cannot settle it,
+  and the PR/run/issue evidence in the PR description or a PR comment. The
+  label — not prose — remains the structured merge blocker.
+
+The prompt fills a `{{merge_delegation_note}}` slot from the project's
+live merge posture at render time: when `auto_merge_mode` is `all` and
+bot-authored PR auto-merge is enabled, the note states that ordinary merge
+decisions are delegated and a hold must not reintroduce human review;
+otherwise it states that holds remain reserved for human-only decisions.
+Enforcement is unchanged and unchanged by settings: the scanner, the
+last-mile merge activity, and the Dependabot path all honor an existing
+hold — including under `auto_merge_mode: all` — and no settings change
+removes an existing hold; only a human does.
 
 ## Shipped behavior
 
@@ -130,3 +175,7 @@ and never generates a request.
   dependency-update bots the project explicitly supports.
 - **Not PR-body parsing.** A request for review in prose does not change merge
   authority; the explicit hold label is the only agent-controlled review gate.
+- **Not a review-request amplifier.** Ordinary review, screenshots, CI, and
+  bot-review signals are delegated checks, not hold triggers; delegated
+  ordinary merge decisions (`auto_merge_mode: all`) stay delegated unless a
+  specific human-only decision is genuinely unresolved.

@@ -144,20 +144,40 @@
   `spec/temporal/activities/evaluate_dependabot_auto_merge_activity_spec.rb`,
   `spec/jobs/dependabot_auto_merge_job_spec.rb`.
 
-- [x] **AUTO-MERGE-009** — When an agent-created pull request needs human
-  judgment before merging, the run-facing prompt SHALL instruct the agent to
-  apply the structured `paid-hold-review` label. The label SHALL block
-  scan-time auto-merge eligibility and the last-mile merge activity, SHALL
-  create an actionable `merge_approval` Inbox entry with a human-review
-  summary, and SHALL require a human to remove it before automatic merging can
-  resume. PR prose SHALL NOT be parsed as a merge-control signal.
+- [x] **AUTO-MERGE-009** — When an agent-created pull request leaves a
+  specific unresolved human-only decision that the effective merge policy
+  does not authorize automation to make — an explicit design or intent
+  approval gate, a material scope or authority change, or a decision the
+  issue, its approved design, or project policy explicitly reserves for a
+  human — the run-facing prompt SHALL instruct the agent to apply the
+  structured `paid-hold-review` label and SHALL also require a durable
+  operator-visible record (PR description or PR comment) of the concrete
+  unresolved decision, why the normal delegated checks cannot settle it,
+  and the PR/run/issue evidence. The prompt SHALL NOT instruct the agent
+  to hold merely because a change is user-facing, the PR or a reviewer
+  asks for screenshots, review, or confirmation, CI or an automated bot
+  review is still running, or the agent feels generally cautious; missing
+  evidence follows the normal verification/blocker path. Discretionary
+  holds SHALL be scoped to the pull request the run creates or materially
+  changes, unless the assigned task explicitly requires reviewing or
+  holding another pull request. The label SHALL block scan-time
+  auto-merge eligibility and the last-mile merge activity, SHALL create
+  an actionable `merge_approval` Inbox entry with a human-review summary,
+  and SHALL require a human to remove it before automatic merging can
+  resume, including under `auto_merge_mode: all`; a change to merge
+  settings SHALL NOT remove an existing hold. PR prose SHALL NOT be
+  parsed as a merge-control signal.
   *Code:* `app/services/automation/strategies/auto_merge.rb`,
   `app/temporal/activities/merge_pull_request_activity.rb`,
   `app/services/inbox/merge_approval.rb`,
-  `app/services/prompt_assembly/sections/issue_task.rb`.
+  `app/services/prompt_assembly/sections/issue_task.rb`,
+  `db/seeds/prompts.rb`,
+  `db/migrate/20261111120000_sync_issue_implementation_prompt_hold_scope.rb`.
   *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`,
   `spec/temporal/activities/merge_pull_request_activity_spec.rb`,
-  `spec/services/inbox/queue_spec.rb`, `spec/db/prompt_seeds_spec.rb`.
+  `spec/services/inbox/queue_spec.rb`, `spec/db/prompt_seeds_spec.rb`,
+  `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/migrations/sync_issue_implementation_prompt_hold_scope_spec.rb`.
 
 - [x] **AUTO-MERGE-010** — When an automatic existing-PR run is focused on a
   merge conflict, its trusted prompt SHALL limit work to base integration and

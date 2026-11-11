@@ -35,65 +35,16 @@ upsert_global_prompt.call(
 # Used by: Prompts::BuildForIssue, Activities::CreateAgentRunActivity,
 #          PromptAssembly::Sections::IssueTask
 # Safety rules are appended separately by the assembly/prompt builder paths.
+# The template is rendered from the shared IssueTask::FALLBACK_PROMPT constant
+# (including the #4974 review-hold criteria block) so the seeded live prompt
+# and the in-code fallback cannot drift.
 # ----------------------------------------------------------------------------
 upsert_global_prompt.call(
   slug: "coding.issue_implementation",
   name: "Issue Implementation",
   description: "Default prompt for implementing a GitHub issue. Includes task description and instructions. Safety rules are appended separately.",
   category: "coding",
-  template: <<~'TEMPLATE',
-    # Task
-
-    You are working on the following GitHub issue:
-
-    **{{title}}** (#{{issue_number}})
-
-    {{body}}
-
-    # Criterion-Level Verification
-
-    Human or external criteria require their actual inspectable evidence; an automated test cannot settle them.
-
-    If this is an epic umbrella final audit, verify shipped behavior, tests,
-    and documentation against its approved RDR/HLD/LLD/EARS and acceptance
-    criteria. Do not treat closed child issues as sufficient evidence. Make
-    bounded corrections where needed; otherwise record an evidence-backed,
-    GitHub-visible outcome and close only when no required gaps remain.
-
-    # Instructions
-
-    1. Install dependencies (`bundle install`, `yarn install`, etc.)
-    {{setup_database_instruction}}
-    2. Analyze the issue and understand what needs to be done
-    3. Before implementation, map every acceptance criterion to the smallest credible verification and record the plan in the PR/run evidence. Use a permanent system test for an important recurring user flow (for example provider API-key onboarding through welcome chat); use a focused unit/service test for a recurring rule or defect; use a PR-only ephemeral `.ephemeral-tests/` system/integration test for a complex one-off or non-essential flow, then remove it before merge; and use actual inspectable human or external evidence for human/external criteria. A broad green suite is not criterion coverage. Do not infer a pass from a test name, agent prose, or a skipped job. Write tests early enough to expose the failure.
-    4. Make the necessary code changes
-    5. Run lint and fix any violations: `{{lint_command}}`
-    6. Run the test suite and fix any failures: `{{test_command}}`
-    7. Commit your changes with a descriptive message
-
-    {{commit_message_guidance}}
-
-    If you open a pull request that requires human judgment before it can land,
-    apply the structured review hold through the GitHub API proxy; no `gh` CLI
-    exists in this environment. Use the repository and pull request number from
-    the PR URL:
-
-    ```bash
-    curl -X POST --connect-timeout 10 --max-time 30 \
-      "$GITHUB_API_URL/repos/<owner>/<repo>/issues/<pr_number>/labels" \
-      -H "Content-Type: application/json" \
-      -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-      -H "X-Proxy-Token: $PROXY_TOKEN" \
-      --data-binary '{"labels":["paid-hold-review"]}'
-    ```
-
-    Do not rely on prose in the pull request body: Paid auto-merge honors the
-    label and surfaces the pull request in the Inbox until a human removes it.
-
-    **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
-    If the commit is rejected, read the error output carefully, fix the issues, and commit again.
-    Keep iterating until the commit succeeds. Do not leave uncommitted changes.
-  TEMPLATE
+  template: PromptAssembly::Sections::IssueTask::FALLBACK_PROMPT,
   variables: [
     var.call("title", "Issue title"),
     var.call("issue_number", "GitHub issue number"),
@@ -101,7 +52,8 @@ upsert_global_prompt.call(
     var.call("test_command", "Test command for the project language", required: false),
     var.call("lint_command", "Lint command for the project language", required: false),
     var.call("setup_database_instruction", "Optional database setup line for projects with service containers", required: false),
-    var.call("commit_message_guidance", "Quiet-mode commit message guidance shown only when the project has quiet mode enabled (#4232)", required: false)
+    var.call("commit_message_guidance", "Quiet-mode commit message guidance shown only when the project has quiet mode enabled (#4232)", required: false),
+    var.call("merge_delegation_note", "Effective merge-policy delegation statement for review-hold decisions (#4974)", required: false)
   ]
 )
 

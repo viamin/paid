@@ -238,6 +238,28 @@ test that is removed before merge. Human and external criteria retain their
 actual inspectable evidence requirement. A broad green suite, test name, or
 agent prose is not criterion coverage.
 
+## Review-Hold Scope Guidance (#4974)
+
+The issue-task template carries the AUTO-MERGE-009 review-hold criteria as a
+shared block (`IssueTask::REVIEW_HOLD_GUIDANCE_BLOCK`) embedded byte-for-byte
+in both the in-code fallback and the seeded `coding.issue_implementation`
+prompt, so the two cannot drift. The criteria limit discretionary
+`paid-hold-review` holds to specific unresolved human-only decisions (explicit
+design or intent approval gates, material scope or authority changes,
+decisions explicitly reserved for a human), name the #4922 false-positive
+non-reasons (user-facing change, screenshot/review request, pending CI or bot
+review, general caution), scope holds to the pull request the run creates or
+materially changes, and require a durable operator-visible record of the
+concrete decision and evidence when a hold is warranted.
+
+A `{{merge_delegation_note}}` variable is filled at render time from the
+project's live merge posture (`auto_merge_mode: all` with bot-authored PR
+auto-merge enabled ⇒ ordinary merge decisions are delegated; otherwise holds
+stay reserved for human-only decisions; unknown posture renders a neutral
+note). A rendered task template that lacks the criteria — a project prompt
+override or a pinned run version predating #4974 — gets the block (with the
+live posture note) appended, mirroring the criterion-verification append.
+
 ## Remaining Direct Prompt Builders
 
 The full RDR-054 migration is phased. The runner-time goal wrappers (#3379)

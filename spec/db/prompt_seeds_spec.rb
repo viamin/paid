@@ -519,5 +519,56 @@ RSpec.describe Prompt, type: :model do
       expect(templates).to all(include('"X-Agent-Run-Id: $AGENT_RUN_ID"'))
       expect(templates).to all(include('"X-Proxy-Token: $PROXY_TOKEN"'))
     end
+
+    # A hold is a specific human-only decision, not normal review work. The
+    # #4922 false positive held a delegated-merge PR for operator-facing copy
+    # and a screenshot request; the #4181 genuine case (an unresolved design
+    # decision) must still hold. Both templates carry the same threshold.
+    it "limits holds to specific human-only decisions", :aggregate_failures do # @spec AUTO-MERGE-009
+      templates = [ seed_template, fallback_template ]
+
+      expect(templates).to all(match(/specific\s+unresolved\s+decision\s+that\s+automation\s+is\s+not\s+authorized\s+to\s+make/))
+      expect(templates).to all(match(/explicit\s+design\s+or\s+intent\s+approval\s+gate/))
+      expect(templates).to all(match(/material\s+change\s+to\s+the\s+pull\s+request's\s+scope\s+or\s+authority/))
+    end
+
+    it "names the #4922 false-positive non-reasons", :aggregate_failures do # @spec AUTO-MERGE-009
+      templates = [ seed_template, fallback_template ]
+
+      expect(templates).to all(include("user-facing"))
+      expect(templates).to all(match(/asks\s+for\s+screenshots,\s+review,\s+or\s+confirmation/))
+      expect(templates).to all(match(/CI\s+or\s+an\s+automated\s+bot\s+review\s+is\s+still\s+running/))
+      expect(templates).to all(match(/generally\s+cautious/))
+      expect(templates).to all(match(/not\s+a\s+review\s+hold/))
+    end
+
+    it "scopes discretionary holds to PRs the run creates or materially changes", :aggregate_failures do # @spec AUTO-MERGE-009
+      templates = [ seed_template, fallback_template ]
+
+      expect(templates).to all(match(/creates\s+or\s+materially\s+changes/))
+      expect(templates).to all(match(/dependency\s+or\s+bookkeeping\s+issue/))
+      expect(templates).to all(match(/unless\s+your\s+assigned\s+task\s+explicitly\s+requires\s+reviewing\s+or\s+holding/))
+    end
+
+    it "requires a durable operator-visible record when holding", :aggregate_failures do # @spec AUTO-MERGE-009
+      templates = [ seed_template, fallback_template ]
+
+      expect(templates).to all(match(/record\s+the\s+concrete\s+unresolved\s+decision/))
+      expect(templates).to all(match(/why\s+the\s+normal\s+delegated\s+checks\s+cannot\s+settle\s+it/))
+      expect(templates).to all(match(/PR\/run\/issue\s+evidence/))
+    end
+
+    it "delegates the merge-posture sentence to the runtime variable" do # @spec AUTO-MERGE-009 @spec PROMPT-ASSEMBLY-026
+      expect(seed_template).to include("{{merge_delegation_note}}")
+      expect(fallback_template).to include("{{merge_delegation_note}}")
+
+      declared = described_class.global.find_by(slug: "coding.issue_implementation")
+        .current_version.variables.map { |v| v["name"] || v[:name] }
+      expect(declared).to include("merge_delegation_note")
+    end
+
+    it "seeded template matches the in-code fallback exactly" do # @spec PROMPT-ASSEMBLY-026
+      expect(seed_template.strip).to eq(fallback_template.strip)
+    end
   end
 end
