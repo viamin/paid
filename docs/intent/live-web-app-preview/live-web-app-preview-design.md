@@ -97,6 +97,44 @@ browser flow cannot disappear behind a green broad suite. Runtime
 configuration, browser claims, and app-log evidence remain conditional on the
 project's interactive-verification setting.
 
+### Criterion input receipts
+
+An issue implementation run may additionally supply a bounded rationale,
+limitations, and inspected inputs for each criterion. The recorder validates
+only mechanical properties of those inputs: a repository path's containment,
+existence, pinned reviewed revision, and digest; the provenance of an artifact
+Paid retained for the run; or the shape of an explicit external/human
+reference. It labels each input `verified`, `contradicted`, `stale`, or
+`unavailable` and records the receipt state as the most severe of those labels,
+so a receipt reaches `verified` only when every cited input is verified. The
+receipt remains separate from the agent's semantic conclusion: validating
+inputs never changes criterion coverage from `unverified` or grants merge
+authority. Rationales, limitations, excerpts, and other agent text are bounded
+and redacted before persistence, and the receipt repeats only the checked
+identity and the mechanical verdict so the reported claim is stored once.
+
+Paid attests only to what it can check itself. A cited test execution is an
+agent report rather than a recorder-owned result, so it is not a receipt
+input: an agent cites the inspected test file as a `repository_file` input and
+reports the observed outcome as a reported reference. The one recorder-owned
+artifact an agent may cite is the run-owned application log, cited by the
+repository-relative path the agent wrote. The recorder matches that path
+against the artifacts it retained for the run, and the storage key it chose
+stays internal to Paid.
+
+The receipt path is additive. Existing criterion reports without inputs retain
+their reported-only behavior. The receipt creates no second evidence store: a
+project with the layered-verification add-on keeps its append-only
+`LayeredVerificationCheckResult` records as the durable record for
+recorder-owned execution outcomes.
+
+The initial receipt pilot is observational and non-blocking. Its serialized
+per-run metrics count mechanically caught false input claims and record
+validation runtime and retained receipt bytes. Valid-claim rejection and review
+usefulness are explicitly `unavailable` until reviewers supply adjudication
+and feedback; these measures must be available before proposing any CI or
+merge policy.
+
 ## Trace Artifact Contract
 
 Real agent-run trace viewing is tied to the same durable storage contract used

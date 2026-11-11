@@ -90,6 +90,27 @@ RSpec.describe AgentRuns::VerificationPrompt do
     expect(section.content).to include("Do not infer a pass from a test name")
   end
 
+  # @spec LIVE-PREVIEW-013
+  it "offers only inputs Paid can check when the run retains the application log" do
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include("use `repository_file` with `path`, the reviewed `revision`, and its SHA-256 `digest`")
+    expect(section.content).to include("use `artifact` with the run-owned app-log path `#{described_class::APP_LOG_PATH}`")
+    expect(section.content).not_to include("test_run")
+    expect(section.content).not_to include("storage_key")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "does not offer a retained artifact when interactive verification is disabled" do
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include("use `repository_file` with `path`")
+    expect(section.content).not_to include("use `artifact`")
+    expect(section.content).not_to include("test_run")
+  end
+
   # @spec LIVE-PREVIEW-011
   it "requires criterion evidence for issue runs when interactive verification is disabled" do
     project.update!(screenshot_settings: { "verification_enabled" => false })

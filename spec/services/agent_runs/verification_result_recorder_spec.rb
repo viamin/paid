@@ -94,6 +94,117 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
+  def write_verification_result(payload)
+    File.write(result_path, JSON.generate(payload))
+  end
+
+  def input_receipt_for(result)
+    result.dig("evidence", "coverage").sole.fetch("input_receipt")
+  end
+
+  def expect_verified_repository_receipt(result)
+    coverage = result.dig("evidence", "coverage").sole
+    expect(coverage).to include("state" => "unverified")
+    expect(coverage.fetch("reported_verification")).to include(
+      "rationale" => "Exercises settings persistence.",
+      "limitations" => [ "Does not prove all settings variants." ]
+    )
+    expect(coverage.dig("input_receipt", "state")).to eq("verified")
+    expect(coverage.dig("input_receipt", "references", 0)).to include("state" => "verified", "path" => "spec/system/settings_spec.rb")
+  end
+
+  def expect_redacted_criterion_text(result)
+    coverage = result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "rationale")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.dig("reported_verification", "limitations").first).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.dig("reported_verification", "limitations").last.bytesize).to be <= described_class::MAX_INPUT_EXCERPT_BYTES
+    expect(coverage.dig("reported_verification", "inputs", 0, "excerpt")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.fetch("reported_assertions")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+    expect(coverage.fetch("reported_steps")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+    reported_criterion = result.fetch("reported_acceptance_criteria").sole
+    expect(reported_criterion.fetch("assertions")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+    expect(reported_criterion.fetch("steps")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+  end
+
+  def add_secret_bearing_criterion_text(payload, secret)
+    text = "Contains token #{secret} inline"
+    criterion = payload.fetch(:acceptance_criteria).sole
+    criterion[:assertions] = [ text ]
+    criterion[:steps] = [ text ]
+    verification = criterion.fetch(:verification)
+    verification.merge!(kind: text, reason: text, rationale: text, limitations: [ text, "x" * 3_000 ])
+    verification[:references] = [ { locator: "spec/system/settings_spec.rb:42", result: text, reason: text } ]
+    verification[:inputs] = [ {
+      type: "repository_file", path: "spec/system/settings_spec.rb", revision: "a" * 40, digest: "0" * 64,
+      excerpt: text, result: text
+    } ]
+  end
+
+  def repository_input_criteria(count)
+    count.times.each_slice(described_class::MAX_CRITERION_INPUTS).with_index.map do |indexes, criterion_index|
+      inputs = indexes.map do |index|
+        { type: "repository_file", path: "spec/system/settings_#{index}.rb", revision: "a" * 40, digest: "0" * 64 }
+      end
+      {
+        id: "AC-#{criterion_index}", status: "passed",
+        verification: { kind: "unit_or_service_test", rationale: "Inspect inputs.", inputs: inputs }
+      }
+    end
+  end
+
+  def repository_receipt_payload(digest)
+    {
+      status: "passed",
+      acceptance_criteria: [ {
+        id: "AC-1", status: "passed",
+        verification: {
+          kind: "permanent_system_test", rationale: "Exercises settings persistence.",
+          limitations: [ "Does not prove all settings variants." ],
+          inputs: [ { type: "repository_file", path: "spec/system/settings_spec.rb", revision: "a" * 40, digest: } ]
+        }
+      } ]
+    }
+  end
+
+  def artifact_receipt_payload(identity)
+    {
+      status: "passed",
+      acceptance_criteria: [ {
+        id: "AC-1", status: "passed",
+        verification: {
+          kind: "unit_or_service_test", rationale: "The retained log records the exercised request.",
+          inputs: [ { type: "artifact", **identity } ]
+        }
+      } ]
+    }
+  end
+
+  def retain_app_log(payload)
+    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
+    allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
+    write_verification_result(payload)
+    File.write(log_path, "request completed\n")
+  end
+
+  def write_repository_file(relative_path, content)
+    path = File.join(repo_path, relative_path)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, content)
+    path
+  end
+
+  def commit_repository_file(relative_path)
+    system("git", "-C", repo_path, "init", "--quiet", exception: true)
+    system("git", "-C", repo_path, "config", "user.email", "verification@example.test", exception: true)
+    system("git", "-C", repo_path, "config", "user.name", "Verification Spec", exception: true)
+    system("git", "-C", repo_path, "add", relative_path, exception: true)
+    system("git", "-C", repo_path, "commit", "--quiet", "-m", "test fixture", exception: true)
+    revision, status = Open3.capture2("git", "-C", repo_path, "rev-parse", "HEAD")
+    raise "fixture commit unavailable" unless status.success?
+
+    revision.strip
+  end
+
   it "persists the recorded verification result and app log tail onto the run" do
     File.write(result_path, JSON.generate(
       status: "passed",
@@ -165,6 +276,225 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(result.dig("evidence", "limitations")).to include("agent_reported_browser_steps_are_not_observed_evidence")
   end
 
+  # @spec LIVE-PREVIEW-013
+  it "records a mechanically verified repository input without promoting semantic coverage" do
+    path = File.join(repo_path, "spec", "system", "settings_spec.rb")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, "RSpec.describe 'settings' do; end\n")
+    digest = Digest::SHA256.file(path).hexdigest
+    revision = commit_repository_file("spec/system/settings_spec.rb")
+    payload = repository_receipt_payload(digest)
+    payload.dig(:acceptance_criteria, 0, :verification, :inputs, 0)[:revision] = revision
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
+
+    result = agent_run.reload.verification_result
+    expect_verified_repository_receipt(result)
+    expect(result.dig("evidence", "criterion_receipt_pilot")).to include(
+      "false_claims_caught" => 0,
+      "valid_claims_rejected" => { "state" => "unavailable", "reason" => "requires_human_adjudication" },
+      "review_usefulness" => { "state" => "unavailable", "reason" => "requires_reviewer_feedback" }
+    )
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "accepts uppercase hexadecimal repository identities" do
+    relative_path = "spec/system/settings_spec.rb"
+    path = write_repository_file(relative_path, "RSpec.describe 'settings' do; end\n")
+    revision = commit_repository_file(relative_path)
+    payload = repository_receipt_payload(Digest::SHA256.file(path).hexdigest.upcase)
+    input = payload.dig(:acceptance_criteria, 0, :verification, :inputs, 0)
+    input[:revision] = revision.upcase
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "verified")
+    expect(receipt.fetch("references").sole).to include("state" => "verified", "path" => relative_path)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "bounds repository input validation and retained receipts" do
+    inputs = 21.times.map do |index|
+      relative_path = "spec/system/settings_#{index}.rb"
+      path = File.join(repo_path, relative_path)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, "RSpec.describe 'settings #{index}' do; end\n")
+      { type: "repository_file", path: relative_path, revision: "a" * 40, digest: Digest::SHA256.file(path).hexdigest }
+    end
+    payload = repository_receipt_payload(inputs.first.fetch(:digest))
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = inputs
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "inputs").size).to eq(20)
+    expect(coverage.dig("input_receipt", "references").size).to eq(20)
+    expect(coverage.dig("input_receipt", "references").pluck("path")).not_to include("spec/system/settings_20.rb")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "rejects nested criterion input fields before persistence" do
+    payload = repository_receipt_payload("0" * 64)
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = [ {
+      type: "repository_file",
+      path: { payload: [ "x" * 3_000 ] },
+      revision: [ "a" * 40 ],
+      digest: { value: "0" * 64 }
+    } ]
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "inputs").sole).to eq("type" => "repository_file")
+    expect(coverage.dig("input_receipt", "references").sole).to include(
+      "type" => "repository_file", "state" => "unavailable", "verdict_reason" => "repository_input_incomplete"
+    )
+    expect(coverage.to_json).not_to include("x" * 3_000)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "verifies repository content from the reviewed commit instead of dirty working-tree bytes" do
+    relative_path = "spec/system/settings_spec.rb"
+    committed_content = "RSpec.describe 'committed settings' do; end\n"
+    path = write_repository_file(relative_path, committed_content)
+    revision = commit_repository_file(relative_path)
+    File.write(path, "RSpec.describe 'dirty settings' do; end\n")
+    payload = repository_receipt_payload(Digest::SHA256.hexdigest(committed_content))
+    payload.dig(:acceptance_criteria, 0, :verification, :inputs, 0)[:revision] = revision
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "verified")
+    expect(receipt.fetch("references").sole).to include("state" => "verified", "path" => relative_path)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "labels fabricated, stale, external, and unsupported criterion inputs without issuing a receipt" do
+    write_verification_result(
+      status: "passed",
+      acceptance_criteria: [ {
+        id: "AC-1", status: "passed",
+        verification: {
+          kind: "unit_or_service_test", rationale: "Reported inputs.",
+          inputs: [
+            { type: "repository_file", path: "spec/missing_spec.rb", revision: "a" * 40, digest: "0" * 64 },
+            { type: "repository_file", path: "spec/stale_spec.rb", revision: "b" * 40, digest: "0" * 64 },
+            { type: "human_or_external", url: "https://example.test/report", reason: "provider confirmed" },
+            { type: "test_run", command: "bin/rspec spec/services/x_spec.rb", result: "skipped" }
+          ]
+        }
+      } ]
+    )
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt.fetch("state")).to eq("contradicted")
+    expect(receipt.fetch("references").map { |reference| reference.fetch("state") }).to eq(%w[contradicted stale unavailable unavailable])
+    expect(receipt.fetch("references").last).to include("verdict_reason" => "unsupported_input_type")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "redacts and bounds agent-supplied criterion text before persistence" do
+    secret = "AKIAIOSFODNN7EXAMPLE"
+    payload = repository_receipt_payload("0" * 64)
+    add_secret_bearing_criterion_text(payload, secret)
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    result = agent_run.reload.verification_result
+    expect_redacted_criterion_text(result)
+    reported = result.dig("evidence", "coverage", 0, "reported_verification")
+    expect(reported.values_at("kind", "reason")).to all(eq("Contains token [REDACTED:aws_key] inline"))
+    expect(reported.fetch("references").sole.values_at("result", "reason")).to all(eq("Contains token [REDACTED:aws_key] inline"))
+    expect(reported.dig("inputs", 0, "result")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(result.to_json).not_to include(secret)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "reuses repository validation across criteria that cite the same input" do
+    relative_path = "spec/system/settings_spec.rb"
+    content = "RSpec.describe 'settings' do; end\n"
+    write_repository_file(relative_path, content)
+    revision = commit_repository_file(relative_path)
+    input = {
+      type: "repository_file", path: relative_path, revision: revision,
+      digest: Digest::SHA256.hexdigest(content)
+    }
+    payload = repository_receipt_payload(input.fetch(:digest))
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = [ input ]
+    payload[:acceptance_criteria] << payload.fetch(:acceptance_criteria).sole.deep_dup.merge(id: "AC-2")
+    allow(Open3).to receive(:popen2e).and_call_original
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
+
+    expect(Open3).to have_received(:popen2e).with("git", "-C", repo_path, "show", "#{revision}:#{relative_path}").once
+    receipts = agent_run.reload.verification_result.dig("evidence", "coverage").pluck("input_receipt")
+    expect(receipts.pluck("state")).to eq(%w[verified verified])
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "bounds distinct repository validation work across the complete result" do
+    input_count = described_class::MAX_REPOSITORY_INPUT_VALIDATIONS + 1
+    git_status = instance_double(Process::Status, success?: false)
+    wait_thread = instance_double(Thread, value: git_status)
+    allow(Open3).to receive(:popen2e).and_yield(StringIO.new, StringIO.new, wait_thread)
+    write_verification_result(status: "passed", acceptance_criteria: repository_input_criteria(input_count))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    expect(Open3).to have_received(:popen2e)
+      .with("git", "-C", repo_path, "show", anything)
+      .exactly(described_class::MAX_REPOSITORY_INPUT_VALIDATIONS).times
+    references = agent_run.reload.verification_result.dig("evidence", "coverage").flat_map do |criterion|
+      criterion.dig("input_receipt", "references")
+    end
+    expect(references.last).to include(
+      "state" => "unavailable", "verdict_reason" => "repository_validation_limit_exceeded"
+    )
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "records a criterion whose cited text splits a multi-byte character at the byte cap" do
+    payload = repository_receipt_payload("0" * 64)
+    payload.dig(:acceptance_criteria, 0, :verification)[:rationale] = "a" * 1_999 + "é"
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "rationale")).to be_valid_encoding
+    expect(coverage.dig("input_receipt", "state")).to eq("contradicted")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "resolves the reviewed revision once per recording" do
+    git_status = instance_double(Process::Status, success?: true)
+    allow(Open3).to receive(:capture2e).and_return([ "a" * 40, git_status ])
+    inputs = 5.times.map do |index|
+      relative_path = "spec/system/settings_#{index}.rb"
+      path = write_repository_file(relative_path, "RSpec.describe 'settings' do; end\n")
+      { type: "repository_file", path: relative_path, revision: "a" * 40, digest: Digest::SHA256.file(path).hexdigest }
+    end
+    payload = repository_receipt_payload(inputs.first.fetch(:digest))
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = inputs
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(Open3).to have_received(:capture2e).with("git", "-C", repo_path, "rev-parse", "HEAD").once
+    expect(agent_run.reload.verification_result.dig("evidence", "tested_commit")).to eq("a" * 40)
+  end
+
   # @spec LIVE-PREVIEW-011
   it "persists criterion evidence without browser evidence when interactive verification is disabled" do
     project.update!(screenshot_settings: { "verification_enabled" => false })
@@ -219,6 +549,83 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(result.dig("evidence", "tested_commit")).to eq("b" * 40)
     expect(result.dig("evidence", "coverage")).to include(
       hash_including("id" => "AC-1", "reported_status" => "passed", "state" => "unverified")
+    )
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "verifies a run-owned artifact cited by the path the agent wrote" do
+    retain_app_log(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "verified")
+    expect(receipt.fetch("references").sole).to include(
+      "path" => AgentRuns::VerificationPrompt::APP_LOG_PATH, "state" => "verified", "provenance" => "recorder"
+    )
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "contradicts an artifact the recorder observed but could not retain" do
+    allow(ArtifactStorage).to receive(:configured?).and_return(false)
+    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
+    File.write(log_path, "request completed\n")
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "contradicted")
+    expect(receipt.fetch("references").sole).to include("verdict_reason" => "artifact_not_retained")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "keeps an artifact the recorder never observed unavailable" do
+    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "unavailable")
+    expect(receipt.fetch("references").sole).to include("verdict_reason" => "artifact_not_recorder_owned")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "requires every supplied artifact identifier to match the retained artifact" do
+    retain_app_log(artifact_receipt_payload(
+      path: AgentRuns::VerificationPrompt::APP_LOG_PATH,
+      storage_key: "screenshots/another-run/app.log"
+    ))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "unavailable")
+    expect(receipt.fetch("references").sole).to include("verdict_reason" => "artifact_not_recorder_owned")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "marks an artifact receipt stale when rebinding after transient files are cleaned up" do
+    retain_app_log(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+    first_result = agent_run.reload.verification_result
+    expect(input_receipt_for(first_result)).to include("state" => "verified")
+
+    described_class.call(
+      agent_run:,
+      repo_path:,
+      fallback_result: first_result,
+      record_missing: false,
+      result_commit: "b" * 40
+    )
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include(
+      "state" => "stale",
+      "references" => [ hash_including(
+        "path" => AgentRuns::VerificationPrompt::APP_LOG_PATH,
+        "state" => "stale", "verdict_reason" => "artifact_revision_does_not_match_reviewed_head"
+      ) ]
     )
   end
 
