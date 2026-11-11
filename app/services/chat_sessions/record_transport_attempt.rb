@@ -25,7 +25,7 @@ module ChatSessions
       TenantContext.with(account) do
         ApiUsageAttempt.transaction do
           attempt = find_or_create_attempt
-          record_billable_usage(attempt)
+          TenantContext.with_system_access { record_billable_usage(attempt) }
           attempt
         end
       end
