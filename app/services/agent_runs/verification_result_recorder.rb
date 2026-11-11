@@ -322,9 +322,9 @@ module AgentRuns
 
         reference.deep_stringify_keys.slice("locator", "result", "reason", "url").presence
       end.first(20).presence
-      verification["inputs"] = Array(value["inputs"] || value[:inputs]).filter_map do |input|
+      verification["inputs"] = Array(value["inputs"] || value[:inputs]).first(MAX_CRITERION_INPUTS).filter_map do |input|
         normalize_criterion_input(input)
-      end.first(MAX_CRITERION_INPUTS).presence
+      end.presence
       verification.compact.presence
     end
 
@@ -335,7 +335,8 @@ module AgentRuns
       verification = criterion["verification"]
       return unless verification.is_a?(Hash) && verification["rationale"].present?
 
-      inputs = Array(verification["inputs"] || verification[:inputs]).filter_map { |input| normalize_criterion_input(input) }
+      inputs = Array(verification["inputs"] || verification[:inputs]).first(MAX_CRITERION_INPUTS)
+        .filter_map { |input| normalize_criterion_input(input) }
       return { "state" => "unavailable", "reason" => "no_bounded_inputs" } if inputs.empty?
 
       references = inputs.map { |input| verify_criterion_input(input) }

@@ -227,6 +227,27 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   end
 
   # @spec LIVE-PREVIEW-013
+  it "bounds repository input validation and retained receipts" do
+    inputs = 21.times.map do |index|
+      relative_path = "spec/system/settings_#{index}.rb"
+      path = File.join(repo_path, relative_path)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, "RSpec.describe 'settings #{index}' do; end\n")
+      { type: "repository_file", path: relative_path, revision: "a" * 40, digest: Digest::SHA256.file(path).hexdigest }
+    end
+    payload = repository_receipt_payload(inputs.first.fetch(:digest))
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = inputs
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "inputs").size).to eq(20)
+    expect(coverage.dig("input_receipt", "references").size).to eq(20)
+    expect(coverage.dig("input_receipt", "references").pluck("path")).not_to include("spec/system/settings_20.rb")
+  end
+
+  # @spec LIVE-PREVIEW-013
   it "labels fabricated, stale, skipped, and unavailable criterion inputs without issuing a receipt" do
     write_verification_result(
       status: "passed",
