@@ -788,9 +788,12 @@ visible rather than being implied away. Current closeout-assessment freshness
 is shown on each path, and stale assessment never establishes acceptance.
 
 Traversal is account-scoped, limited to visible current lane membership, and
-bounded by node and path limits. Persisted cycles, unresolved external edges,
-and human-decision prerequisites are explicitly excluded from the rank with a
-diagnostic count, so they cannot be mistaken for actionable roots.
+bounded by node, ranked-row, and path limits. Canonical auto-pick admission is
+evaluated only for roots in the bounded ranked result, so projects whose roots
+cannot be displayed do not add admission work to an Inbox render. Persisted
+cycles, unresolved external edges, and human-decision prerequisites are
+explicitly excluded from the rank with a diagnostic count, so they cannot be
+mistaken for actionable roots.
 
 ## Alternatives considered
 

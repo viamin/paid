@@ -147,10 +147,11 @@ module Issues
     def ranked_roots
       return [] if @graph_truncated
 
-      load_actionable_root_ids
       rankings = candidate_roots.filter_map { |root| ranking_for(root) }.sort_by { |ranking|
         [ -ranking.total_reach, -ranking.direct_reach, ranking.root.github_number, ranking.root.id ]
       }.first(MAX_RANKED_ROOTS)
+      load_actionable_root_ids(rankings.map(&:root))
+      rankings = rankings.map { |ranking| ranking.with(actionable: actionable?(ranking.root)) }
       add_freshness(rankings)
     end
 
@@ -171,7 +172,7 @@ module Issues
 
       direct_reach = path_ids.count { |ids| ids.size == 2 }
       paths = path_ids.first(MAX_PATHS_PER_ROOT).map { |ids| build_path(ids) }
-      Ranking.new(root:, direct_reach:, transitive_reach: path_ids.size - direct_reach, paths:, actionable: actionable?(root))
+      Ranking.new(root:, direct_reach:, transitive_reach: path_ids.size - direct_reach, paths:, actionable: nil)
     end
 
     def path_ids_from(root)
@@ -236,10 +237,10 @@ module Issues
       @actionable_root_ids.include?(issue.id)
     end
 
-    def load_actionable_root_ids
-      @actionable_root_ids = candidate_roots.group_by(&:project).values.flat_map do |roots|
+    def load_actionable_root_ids(roots)
+      @actionable_root_ids = roots.group_by(&:project).flat_map do |project, project_roots|
         Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(
-          roots.first.project, issue_ids: roots.map(&:id)
+          project, issue_ids: project_roots.map(&:id)
         ).pluck(:id)
       end.to_set
     end

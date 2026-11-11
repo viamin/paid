@@ -298,6 +298,28 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "evaluates admission only for roots that can appear in the bounded ranking" do
+    queue_issue_ids = 12.times.flat_map do |project_number|
+      candidate_project = create(:project, account:, auto_pick_enabled: true, active: true)
+      root = issue((project_number * 100) + 1, project: candidate_project)
+      (project_number + 1).times.map do |reach_number|
+        issue((project_number * 100) + reach_number + 2, project: candidate_project).tap do |blocked|
+          depends(blocked, root)
+        end.id
+      end
+    end
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.call(account:, queue_issue_ids:)
+    end
+
+    expect(result.rankings.size).to eq(described_class::MAX_RANKED_ROOTS)
+    expect(queries.grep(/FROM "design_amendment_pauses"/).size).to be <= described_class::MAX_RANKED_ROOTS
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "loads a maximum-depth linear graph in a bounded number of queries" do
     chain = 500.times.map { |number| issue(number + 1) }
     chain.each_cons(2) { |prerequisite, dependent| depends(dependent, prerequisite) }
