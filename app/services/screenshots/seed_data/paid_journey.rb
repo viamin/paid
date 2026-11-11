@@ -6,6 +6,9 @@ module Screenshots
     # screenshot seed remains responsible for screenshot-gallery coverage.
     # @spec LIVE-PREVIEW-012
     class PaidJourney
+      class AccountCollision < StandardError; end
+      class IdentityCollision < StandardError; end
+
       ACCOUNT_SLUG = "paid-journey-account".freeze
       USER_EMAIL = "paid-journey@example.com".freeze
       USER_PASSWORD = "paid-journey-password-123".freeze
@@ -13,14 +16,20 @@ module Screenshots
       PROJECT_GITHUB_ID = 9_999_997
 
       def self.call
-        account = account_for_journey
-        user = user_for(account)
-        project_for(account, user)
+        Account.transaction do
+          account = existing_journey_account
+          ensure_account_available!(account)
+          ensure_identity_available!(account)
+          account ||= account_for_journey
+          user = user_for(account)
+          project_for(account, user)
+        end
       end
 
       def self.cleanup!
         account = Account.find_by(slug: ACCOUNT_SLUG)
         return unless account
+        return unless account.users.exists?(email: USER_EMAIL)
 
         account.projects.destroy_all
         account.destroy!
@@ -32,6 +41,26 @@ module Screenshots
         end
       end
       private_class_method :account_for_journey
+
+      def self.existing_journey_account
+        Account.find_by(slug: ACCOUNT_SLUG)
+      end
+      private_class_method :existing_journey_account
+
+      def self.ensure_account_available!(account)
+        return if account.nil? || account.users.exists?(email: USER_EMAIL)
+
+        raise AccountCollision, "#{ACCOUNT_SLUG} is not a journey account"
+      end
+      private_class_method :ensure_account_available!
+
+      def self.ensure_identity_available!(account)
+        user = User.find_by(email: USER_EMAIL)
+        return if user.nil? || user.account_id == account&.id
+
+        raise IdentityCollision, "#{USER_EMAIL} belongs to another account"
+      end
+      private_class_method :ensure_identity_available!
 
       def self.user_for(account)
         user = User.find_or_initialize_by(email: USER_EMAIL)
