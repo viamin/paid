@@ -82,10 +82,23 @@ module Issues
     end
 
     def dependency_edges_from(issue_ids)
-      IssueDependency.joins(:depends_on_issue).where(issue_id: issue_ids)
+      local_dependency_edges_from(issue_ids) + resolved_external_dependency_edges_from(issue_ids)
+    end
+
+    def local_dependency_edges_from(issue_ids)
+      IssueDependency.joins(:issue, :depends_on_issue).where(issue_id: issue_ids)
         .where(depends_on_issue: { github_state: "open" })
         .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
         .excluding_parent_references.pluck(:issue_id, :depends_on_issue_id)
+    end
+
+    def resolved_external_dependency_edges_from(issue_ids)
+      IssueDependency.external_resolved_for_account(account.id).where(issue_id: issue_ids).joins(issue: :project)
+        .where(projects: { account_id: account.id })
+        .where("issues.parent_issue_id IS DISTINCT FROM ext_issue.id")
+        .where("ext_issue.github_state = 'open'")
+        .where.not("ext_issue.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .pluck("issue_dependencies.issue_id", "ext_issue.id")
     end
 
     attr_reader :issues, :dependencies, :upstream, :downstream, :cyclic_ids, :external_by_issue,
@@ -193,7 +206,8 @@ module Issues
     end
 
     def unresolved_external_by_issue
-      IssueDependency.where(issue_id: issues.keys).merge(IssueDependency.still_blocking_external_for_account(account.id))
+      IssueDependency.external_resolved_for_account(account.id).where(issue_id: issues.keys)
+        .where("ext_project.id IS NULL OR ext_issue.id IS NULL")
         .pluck(:issue_id, :depends_on_owner, :depends_on_repo, :depends_on_number).group_by(&:first)
     end
 

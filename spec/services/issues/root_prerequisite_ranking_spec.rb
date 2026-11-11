@@ -161,6 +161,20 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "traverses a resolved still-blocking external edge within the same account" do
+    upstream_project = create(:project, account:)
+    root = issue(1, project: upstream_project)
+    blocked = issue(2)
+    create(:issue_dependency, issue: blocked, depends_on_issue: nil,
+      depends_on_owner: upstream_project.owner, depends_on_repo: upstream_project.repo, depends_on_number: root.github_number)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
+
+    expect(ranking.root).to eq(root)
+    expect(ranking.paths.sole.issues).to eq([ root, blocked ])
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "marks human-decision prerequisites as excluded rather than actionable roots" do
     root = issue(1)
     blocked = issue(2)
