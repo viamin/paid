@@ -1543,14 +1543,18 @@ jobs:
       PAID_DEVELOPMENT_DATABASE: paid_test
       PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
       PAID_TEST_DATABASE: paid_test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      # Benchmark application code must run with the same tenant-safe runtime
+      # role policy as the test shards; PostgreSQL's bootstrap user bypasses
+      # row-level security and is rejected during application boot.
+      # @spec POSTGRESQL-PERSISTENCE-002
+      DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
-      DB_USERNAME: postgres
-      PGUSER: postgres
-      DB_PASSWORD: postgres
-      PGPASSWORD: postgres
+      DB_USERNAME: paid_runtime
+      PGUSER: paid_runtime
+      DB_PASSWORD: paid_runtime
+      PGPASSWORD: paid_runtime
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -1679,6 +1683,34 @@ jobs:
           fi
           apt_with_retry install -y postgresql-client-16
           psql --version
+
+      - name: Create application database role
+        # Keep benchmark application connections below PostgreSQL's
+        # SUPERUSER/BYPASSRLS guard while allowing Rails to create its test DB.
+        # @spec POSTGRESQL-PERSISTENCE-002
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          CREATE ROLE paid_runtime LOGIN CREATEDB NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname = 'paid_runtime'
+                AND rolcanlogin
+                AND rolcreatedb
+                AND NOT rolsuper
+                AND NOT rolbypassrls
+            ) THEN
+              RAISE EXCEPTION 'paid_runtime must not have SUPERUSER or BYPASSRLS';
+            END IF;
+          END
+          $$;
+          SQL
+          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+            -c "SELECT 1"
 
       - name: Set up database
         run: bin/rails db:create db:schema:load

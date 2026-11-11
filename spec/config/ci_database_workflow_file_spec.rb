@@ -17,10 +17,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "retries_database_setup" => true
       },
       "performance" => {
-        "db_username" => "postgres",
-        "db_password" => "postgres",
-        "database_url" => "postgres://postgres:postgres@localhost:5432/paid_test",
-        "creates_application_role" => false
+        "db_username" => "paid_runtime",
+        "db_password" => "paid_runtime",
+        "database_url" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
+        "creates_application_role" => true
       }
     },
     ".github/workflows/system_tests.yml" => {
@@ -208,6 +208,16 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       end
 
       if workflow_path == ".github/workflows/ci.yml"
+        # @spec POSTGRESQL-PERSISTENCE-002
+        it "runs performance benchmarks with a tenant-safe application role" do
+          job = workflow.fetch("jobs").fetch("performance")
+          role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
+
+          expect(role_step.fetch("run")).to include(
+            "CREATE ROLE paid_runtime LOGIN CREATEDB NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';"
+          )
+        end
+
         # @spec POSTGRESQL-PERSISTENCE-007
         it "replays this branch's migrations against the base schema in a dedicated CI job" do
           job = workflow.fetch("jobs").fetch("migrations")
