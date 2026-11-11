@@ -134,14 +134,6 @@ module Containers
     # access token a refresh must yield). Raised before the canonical
     # RunnerCredential is touched so a malformed upstream exchange is treated as
     # a failed refresh instead of bricking the stored credential (#2962 review).
-    class InvalidCodexRefreshResponse < Error
-      attr_reader :reason
-
-      def initialize(msg = "Codex refresh response is not a usable auth.json", reason: nil)
-        @reason = reason
-        super(msg)
-      end
-    end
 
     # Bundles watchdog shared state (mutex, refs, timeouts) into a single
     # object to keep start_watchdog's parameter list under 4.
@@ -3853,27 +3845,6 @@ module Containers
       @omp_managed_runner_credential = latest_non_revoked_managed_subscription_credential_for("omp")
     end
 
-    def codex_managed_secret
-      return @codex_managed_secret if defined?(@codex_managed_secret)
-
-      secret = codex_managed_runner_credential&.token.to_s
-      @codex_managed_secret = secret.present? ? CodexCredentials::Secret.parse(secret) : nil
-    end
-
-    def opencode_managed_secret
-      return @opencode_managed_secret if defined?(@opencode_managed_secret)
-
-      secret = opencode_managed_runner_credential&.token.to_s
-      @opencode_managed_secret = secret.present? ? CodexCredentials::Secret.parse(secret) : nil
-    end
-
-    def omp_managed_secret
-      return @omp_managed_secret if defined?(@omp_managed_secret)
-
-      secret = omp_managed_runner_credential&.token.to_s
-      @omp_managed_secret = secret.present? ? ClaudeCredentials::Secret.parse(secret) : nil
-    end
-
     def codex_managed_materialization
       return @codex_managed_materialization if defined?(@codex_managed_materialization)
 
@@ -3919,25 +3890,22 @@ module Containers
     # Clears the memoized managed Codex caches so a refresh/rotation is picked up
     # on the next read. Required because the memo guards use `defined?`, which
     # stays truthy after an explicit `= nil` assignment. The cached credential
-    # itself must also be dropped because `codex_managed_secret` and
-    # `codex_managed_materialization` derive from `credential.token`; an in-memory
-    # AR object that survived `with_lock` could still hold the pre-refresh token
-    # until a reload, leaving the re-derived caches stale (#2990 review).
+    # itself must also be dropped because `codex_managed_materialization`
+    # derives from `credential.token`; an in-memory AR object that survived
+    # `with_lock` could still hold the pre-refresh token until a reload,
+    # leaving the re-derived caches stale (#2990 review).
     def reset_codex_managed_caches
       remove_instance_variable(:@codex_managed_runner_credential) if defined?(@codex_managed_runner_credential)
-      remove_instance_variable(:@codex_managed_secret) if defined?(@codex_managed_secret)
       remove_instance_variable(:@codex_managed_materialization) if defined?(@codex_managed_materialization)
     end
 
     def reset_opencode_managed_caches
       remove_instance_variable(:@opencode_managed_runner_credential) if defined?(@opencode_managed_runner_credential)
-      remove_instance_variable(:@opencode_managed_secret) if defined?(@opencode_managed_secret)
       remove_instance_variable(:@opencode_managed_materialization) if defined?(@opencode_managed_materialization)
     end
 
     def reset_omp_managed_caches
       remove_instance_variable(:@omp_managed_runner_credential) if defined?(@omp_managed_runner_credential)
-      remove_instance_variable(:@omp_managed_secret) if defined?(@omp_managed_secret)
       remove_instance_variable(:@omp_managed_materialization) if defined?(@omp_managed_materialization)
     end
 
@@ -4217,46 +4185,24 @@ module Containers
       AgentHarness.provider(:codex)
     end
 
-    # Deterministic, per-credential lockfile for the managed Codex lease. Keyed
+    # Deterministic, per-credential lockfile for the managed auth lease. Keyed
     # on the RunnerCredential id so runs sharing a credential serialize while
-    # independent credentials stay fully parallel. Mirrors the host-path
-    # codex_auth_lockfile_path shape for the managed path.
-    CODEX_MANAGED_AUTH_LOCK_BASE_PATH = "/tmp/codex-managed-auth"
-
+    # independent credentials stay fully parallel. Delegates to
+    # Runners::ManagedCredentialLifecycle so standalone text execution and
+    # agent-run provisions resolve the identical lockfile for one credential.
     def codex_managed_auth_lockfile_path
-      managed_auth_lockfile_path(
-        runner_key: "codex",
-        credential: codex_managed_runner_credential,
-        base_path: CODEX_MANAGED_AUTH_LOCK_BASE_PATH
-      )
+      Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
+        runner_key: "codex", credential: codex_managed_runner_credential)
     end
-
-    OPENCODE_MANAGED_AUTH_LOCK_BASE_PATH = "/tmp/opencode-managed-auth"
 
     def opencode_managed_auth_lockfile_path
-      managed_auth_lockfile_path(
-        runner_key: "opencode",
-        credential: opencode_managed_runner_credential,
-        base_path: OPENCODE_MANAGED_AUTH_LOCK_BASE_PATH
-      )
+      Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
+        runner_key: "opencode", credential: opencode_managed_runner_credential)
     end
-
-    OMP_MANAGED_AUTH_LOCK_BASE_PATH = "/tmp/omp-managed-auth"
 
     def omp_managed_auth_lockfile_path
-      managed_auth_lockfile_path(
-        runner_key: "omp",
-        credential: omp_managed_runner_credential,
-        base_path: OMP_MANAGED_AUTH_LOCK_BASE_PATH
-      )
-    end
-
-    def managed_auth_lockfile_path(runner_key:, credential:, base_path:)
-      credential_id = credential&.id
-      return "#{base_path}-missing.lock" unless credential_id
-
-      digest = Digest::SHA256.hexdigest("#{runner_key}-managed:#{credential_id}")[0, 16]
-      "#{base_path}-#{digest}.lock"
+      Runners::ManagedCredentialLifecycle.managed_auth_lockfile_path(
+        runner_key: "omp", credential: omp_managed_runner_credential)
     end
 
     # Public boundary for the Codex managed refresh (RDR-041 / #2962). Refreshes
@@ -4296,8 +4242,6 @@ module Containers
       refresh_omp_managed_credential_with_lease!(credential, provision: provision)
     end
 
-    CODEX_CREDENTIAL_REFRESH_WINDOW = 10 * 60 # 10 minutes
-
     def refresh_codex_managed_credential_with_lease!(credential, provision: false)
       return nil unless codex_managed_credential_near_expiry?(credential)
 
@@ -4330,13 +4274,7 @@ module Containers
     end
 
     def codex_managed_credential_near_expiry?(credential = codex_managed_runner_credential)
-      return false unless credential
-
-      expiry = credential.expires_at
-      expiry = codex_managed_secret&.expires_at if expiry.nil?
-      return false if expiry.nil?
-
-      expiry <= (Time.now + CODEX_CREDENTIAL_REFRESH_WINDOW)
+      Runners::ManagedCredentialLifecycle.near_expiry?(credential, runner_key: "codex")
     end
 
     def refresh_opencode_managed_credential_with_lease!(credential, provision: false)
@@ -4365,13 +4303,7 @@ module Containers
     end
 
     def opencode_managed_credential_near_expiry?(credential = opencode_managed_runner_credential)
-      return false unless credential
-
-      expiry = credential.expires_at
-      expiry = opencode_managed_secret&.expires_at if expiry.nil?
-      return false if expiry.nil?
-
-      expiry <= (Time.now + CODEX_CREDENTIAL_REFRESH_WINDOW)
+      Runners::ManagedCredentialLifecycle.near_expiry?(credential, runner_key: "opencode")
     end
 
     def refresh_omp_managed_credential_with_lease!(credential, provision: false)
@@ -4398,13 +4330,7 @@ module Containers
     end
 
     def omp_managed_credential_near_expiry?(credential = omp_managed_runner_credential)
-      return false unless credential
-
-      expiry = credential.expires_at
-      expiry = omp_managed_secret&.expires_at if expiry.nil?
-      return false if expiry.nil?
-
-      expiry <= (Time.now + CODEX_CREDENTIAL_REFRESH_WINDOW)
+      Runners::ManagedCredentialLifecycle.near_expiry?(credential, runner_key: "omp")
     end
 
     # Serializes concurrent refresh attempts on the same managed credential.
@@ -4427,11 +4353,10 @@ module Containers
     end
 
     # Performs the actual Codex refresh-token exchange and writes the rotated
-    # auth.json back into the canonical RunnerCredential. Delegates to
-    # `AgentHarness::Authentication.exchange_refresh_token` when the upstream
-    # Codex exchange is supported (viamin/agent-harness#265); until then logs
-    # unsupported and returns false so the lease and telemetry stay wired while
-    # the harvest path remains the source of rotated state.
+    # auth.json back into the canonical RunnerCredential. The exchange and
+    # persist step are owned by Runners::ManagedCredentialLifecycle (shared
+    # with standalone text execution); this wrapper owns provisioner logging
+    # and the unsupported-exchange gate (viamin/agent-harness#265).
     def exchange_codex_refresh_token!(credential)
       unless codex_refresh_exchange_supported?
         log_system("container.codex_auth_refresh.unsupported",
@@ -4439,8 +4364,7 @@ module Containers
         return false
       end
 
-      refreshed = AgentHarness::Authentication.exchange_refresh_token(:codex)
-      apply_codex_refresh_result!(credential, refreshed.to_h)
+      Runners::ManagedCredentialLifecycle.exchange_refresh_token!(credential, runner_key: "codex")
       log_system("container.codex_auth_refreshed", credential_id: credential.id)
       true
     rescue AgentHarness::AuthenticationError => e
@@ -4449,7 +4373,7 @@ module Containers
         credential_id: credential.id,
         note: "classify as auth_expired via refresh_token_reused pattern if applicable")
       false
-    rescue InvalidCodexRefreshResponse => e
+    rescue Runners::ManagedCredentialLifecycle::InvalidRefreshResponse => e
       # Refresh returned a non-Codex payload (or one without an access token).
       # The canonical credential is left untouched; classify as a failed refresh
       # rather than persisting an unusable token (#2962 review).
@@ -4464,48 +4388,11 @@ module Containers
     end
 
     def codex_refresh_exchange_supported?
-      refresh_exchange_supported?(:codex)
+      Runners::ManagedCredentialLifecycle.refresh_supported?("codex")
     end
 
     def opencode_refresh_exchange_supported?
-      refresh_exchange_supported?(:opencode)
-    end
-
-    def refresh_exchange_supported?(runner_key)
-      AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
-        AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
-        AgentHarness::Authentication.exchange_refresh_token_supported?(runner_key)
-    end
-
-    def apply_codex_refresh_result!(credential, refreshed_payload)
-      token = refreshed_payload.is_a?(Hash) ? refreshed_payload.dig(:token) || JSON.generate(refreshed_payload) : refreshed_payload.to_s
-      parsed = CodexCredentials::Secret.parse(token.to_s)
-      # A successful refresh must yield a usable Codex auth.json (an access
-      # token). Reject blank/non-Codex payloads or refresh-token-only responses
-      # before touching the canonical credential, otherwise an unexpected
-      # upstream exchange overwrites the stored token with garbage (#2962 review).
-      unless valid_codex_refresh_response?(parsed)
-        raise InvalidCodexRefreshResponse.new(
-          "Codex refresh response is not a usable auth.json",
-          reason: parsed.codex_auth? ? "missing_access_token" : "not_codex_auth"
-        )
-      end
-
-      credential.assign_attributes(
-        token: token.to_s,
-        expires_at: parsed.expires_at || credential.expires_at,
-        revoked_at: nil,
-        metadata: credential.metadata.to_h.merge(
-          "source" => "server_refresh",
-          "storage_format" => "codex_auth_json",
-          "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
-        ).compact
-      )
-      credential.save!
-    end
-
-    def valid_codex_refresh_response?(parsed)
-      parsed.codex_auth? && parsed.access_token.present?
+      Runners::ManagedCredentialLifecycle.refresh_supported?("opencode")
     end
 
     def record_codex_refresh_attempt!(credential, started_at, refresh_state:, result:, failure_reason: nil)
@@ -4531,8 +4418,7 @@ module Containers
         return false
       end
 
-      refreshed = AgentHarness::Authentication.exchange_refresh_token(:opencode)
-      apply_opencode_refresh_result!(credential, refreshed.to_h)
+      Runners::ManagedCredentialLifecycle.exchange_refresh_token!(credential, runner_key: "opencode")
       log_system("container.opencode_auth_refreshed", credential_id: credential.id)
       true
     rescue AgentHarness::AuthenticationError => e
@@ -4541,7 +4427,7 @@ module Containers
         credential_id: credential.id,
         note: "classify as auth_expired via refresh_token_reused pattern if applicable")
       false
-    rescue InvalidCodexRefreshResponse => e
+    rescue Runners::ManagedCredentialLifecycle::InvalidRefreshResponse => e
       log_system("container.opencode_auth_refresh_failed",
         error: e.message,
         credential_id: credential.id,
@@ -4552,47 +4438,14 @@ module Containers
       false
     end
 
-    def apply_opencode_refresh_result!(credential, refreshed_payload)
-      token = refreshed_payload.is_a?(Hash) ? refreshed_payload.dig(:token) || JSON.generate(refreshed_payload) : refreshed_payload.to_s
-      parsed = OpencodeCredentials::Secret.parse(token.to_s)
-      canonical_auth = parsed.codex_auth_json
-      unless parsed.opencode_auth? && parsed.access_token.present? && canonical_auth.present?
-        raise InvalidCodexRefreshResponse.new(
-          "OpenCode refresh response is not a usable auth.json",
-          reason: parsed.opencode_auth? ? "missing_access_token" : "not_opencode_auth"
-        )
-      end
-
-      credential.assign_attributes(
-        token: canonical_auth,
-        expires_at: parsed.expires_at || credential.expires_at,
-        revoked_at: nil,
-        metadata: credential.metadata.to_h.merge(
-          "source" => "server_refresh",
-          "storage_format" => "codex_auth_json",
-          "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
-        ).compact
-      )
-      credential.save!
-    end
-
     def exchange_omp_refresh_token!(credential)
-      unless claude_refresh_exchange_supported?
+      unless Runners::ManagedCredentialLifecycle.refresh_supported?("omp")
         log_system("container.omp_auth_refresh.unsupported",
           note: "viamin/agent-harness#265 not yet available; skipping managed exchange")
         return false
       end
 
-      refreshed_payload = nil
-      Dir.mktmpdir("paid-omp-managed-auth-") do |dir|
-        File.write(File.join(dir, ".credentials.json"), credential.token.to_s)
-        with_env("CLAUDE_CONFIG_DIR", dir) do
-          AgentHarness::Authentication.exchange_refresh_token(:claude)
-        end
-        refreshed_payload = File.read(File.join(dir, ".credentials.json"))
-      end
-
-      apply_omp_refresh_result!(credential, refreshed_payload)
+      Runners::ManagedCredentialLifecycle.exchange_refresh_token!(credential, runner_key: "omp")
       log_system("container.omp_auth_refreshed", credential_id: credential.id)
       true
     rescue AgentHarness::AuthenticationError => e
@@ -4604,26 +4457,6 @@ module Containers
     rescue AgentHarness::Error, SystemCallError, JSON::ParserError, ArgumentError => e
       log_system("container.omp_auth_refresh_failed", error: e.message, credential_id: credential.id)
       false
-    end
-
-    def apply_omp_refresh_result!(credential, refreshed_payload)
-      parsed = ClaudeCredentials::Secret.parse(refreshed_payload.to_s)
-      raise ArgumentError, "OMP refresh response is not a Claude credentials payload" unless parsed.native_credentials_json?
-      raise ArgumentError, "OMP refresh response is missing an access token" if parsed.oauth_token.blank?
-
-      credential.assign_attributes(
-        token: parsed.credentials_json,
-        expires_at: parsed.expires_at || credential.expires_at,
-        revoked_at: nil,
-        metadata: credential.metadata.to_h.merge(
-          "source" => "server_refresh",
-          "storage_format" => "claude_credentials_json",
-          "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601,
-          "subscription_type" => parsed.subscription_type,
-          "scopes" => parsed.scopes.presence
-        ).compact
-      )
-      credential.save!
     end
 
     def harvest_managed_subscription_credential!(runner_key)
@@ -4674,73 +4507,73 @@ module Containers
     # the canonical credential would go stale after the first successful run.
     # Returns the provider Result contract so the adapter can report harvest state.
     def harvest_codex_managed_credential_impl!
-      credential = codex_managed_runner_credential
-      return unsupported_codex_harvest_result unless credential
+      harvest_managed_rotation(runner_key: "codex", credential: codex_managed_runner_credential,
+        unsupported_result: unsupported_codex_harvest_result)
+    end
+
+    # Shared managed-rotation harvest: reads the runner's native auth state from
+    # the run container and persists any rotation through
+    # Runners::ManagedCredentialLifecycle (the same primitive standalone text
+    # execution uses), keeping provisioner telemetry and cache resets here.
+    def harvest_managed_rotation(runner_key:, credential:, unsupported_result:)
+      return unsupported_result unless credential
 
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       stdout, stderr, status = backend.exec_in_container(
         container,
-        [ "sh", "-lc", "base64 -w0 /home/agent/.codex/auth.json" ],
+        Runners::ManagedCredentialLifecycle.rotation_read_command(runner_key),
         user: "agent"
       )
       raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
 
-      encoded = Array(stdout).join
-      if encoded.blank?
-        record_codex_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_SKIPPED, failure_reason: "no_rotated_credential")
-        return codex_harvest_result(performed: false, reason: "no_rotated_credential")
+      result = Runners::ManagedCredentialLifecycle.persist_rotation!(credential,
+        runner_key: runner_key, raw: Array(stdout).join)
+      if result.performed?
+        reset_managed_caches_for(runner_key)
+        log_system("container.#{runner_key}_managed_auth_harvested", credential_id: credential.id)
       end
-
-      rotated = Base64.strict_decode64(encoded)
-      parsed = CodexCredentials::Secret.parse(rotated)
-      unless parsed.codex_auth?
-        record_codex_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "malformed_rotated_credential")
-        return codex_harvest_result(performed: false, reason: "malformed_rotated_credential")
-      end
-
-      # CodexCredentials::Secret treats a refresh-token-only payload as a valid
-      # Codex auth, but a rotation without an access token is not harvestable:
-      # persisting it would brick the next materialization (no token for the CLI,
-      # and a nil expiry skips the pre-run refresh). Treat it as a harvest
-      # failure so telemetry matches what was actually persisted (#2962 review).
-      unless parsed.access_token.present?
-        record_codex_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "rotated_credential_missing_access_token")
-        return codex_harvest_result(performed: false, reason: "rotated_credential_missing_access_token")
-      end
-
-      update_codex_managed_credential_from_rotation!(credential, rotated, parsed)
-      reset_codex_managed_caches
-      log_system("container.codex_managed_auth_harvested", credential_id: credential.id)
-      record_codex_harvest_attempt!(credential, started_at, result: RunnerAuthAttempt::RESULT_HARVESTED)
-      codex_harvest_result(performed: true, reason: "harvested")
+      record_harvest_attempt_outcome!(runner_key: runner_key, credential: credential,
+        started_at: started_at, result: result)
+      result
     rescue Docker::Error::DockerError, SystemCallError, ArgumentError => e
-      log_system("container.codex_managed_auth_harvest_failed",
+      log_system("container.#{runner_key}_managed_auth_harvest_failed",
         error: e.message, credential_id: credential&.id)
-      record_codex_harvest_attempt!(credential, started_at,
-        result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "exec_failed")
-      codex_harvest_result(performed: false, reason: "harvest_failed")
+      record_harvest_attempt_outcome!(runner_key: runner_key, credential: credential, started_at: started_at,
+        result: Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: false, reason: "exec_failed"))
+      Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: false, reason: "harvest_failed")
     end
 
-    # Persists the harvested rotation. The caller (harvest_codex_managed_credential_impl!)
-    # validates that `parsed` is a Codex auth carrying an access token before
-    # reaching here, so this method applies directly rather than silently no-op'ing
-    # on an unusable payload (#2962 review).
-    def update_codex_managed_credential_from_rotation!(credential, rotated_auth_json, parsed)
-      credential.assign_attributes(
-        token: rotated_auth_json,
-        expires_at: parsed.expires_at || credential.expires_at,
-        last_used_at: Time.current,
-        revoked_at: nil,
-        metadata: credential.metadata.to_h.merge(
-          "source" => "container_rotation_harvest",
-          "storage_format" => "codex_auth_json",
-          "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
-        ).compact
-      )
-      credential.save!
+    def record_harvest_attempt_outcome!(runner_key:, credential:, started_at:, result:)
+      telemetry_result, failure_reason = case result.reason
+      when "harvested"
+        [ RunnerAuthAttempt::RESULT_HARVESTED, nil ]
+      when "no_rotated_credential"
+        [ RunnerAuthAttempt::RESULT_SKIPPED, result.reason ]
+      else
+        [ RunnerAuthAttempt::RESULT_HARVEST_FAILED, result.reason ]
+      end
+      harvest_recorder_for(runner_key).call(credential, started_at,
+        result: telemetry_result, failure_reason: failure_reason)
+    end
+
+    def harvest_recorder_for(runner_key)
+      case runner_key
+      when "codex" then method(:record_codex_harvest_attempt!)
+      when "opencode" then method(:record_opencode_harvest_attempt!)
+      when "omp" then method(:record_omp_harvest_attempt!)
+      else
+        raise ArgumentError, "Unsupported managed harvest runner: #{runner_key}"
+      end
+    end
+
+    def reset_managed_caches_for(runner_key)
+      case runner_key
+      when "codex" then reset_codex_managed_caches
+      when "opencode" then reset_opencode_managed_caches
+      when "omp" then reset_omp_managed_caches
+      else
+        raise ArgumentError, "Unsupported managed harvest runner: #{runner_key}"
+      end
     end
 
     def record_codex_harvest_attempt!(credential, started_at, result:, failure_reason: nil)
@@ -4758,168 +4591,18 @@ module Containers
       )
     end
 
-    def codex_harvest_result(performed:, reason:)
-      Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: performed, reason: reason)
-    end
-
     def unsupported_codex_harvest_result
       Runners::SubscriptionAuthProviders::Result.new(supported: false, performed: false, reason: "no_managed_credential")
     end
 
     def harvest_opencode_managed_credential_impl!
-      credential = opencode_managed_runner_credential
-      return unsupported_opencode_harvest_result unless credential
-
-      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      stdout, stderr, status = backend.exec_in_container(
-        container,
-        [ "sh", "-lc", "base64 -w0 /home/agent/.local/share/opencode/auth.json" ],
-        user: "agent"
-      )
-      raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
-
-      encoded = Array(stdout).join
-      if encoded.blank?
-        record_opencode_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_SKIPPED, failure_reason: "no_rotated_credential")
-        return opencode_harvest_result(performed: false, reason: "no_rotated_credential")
-      end
-
-      rotated = Base64.strict_decode64(encoded)
-      parsed = OpencodeCredentials::Secret.parse(rotated)
-      unless parsed.opencode_auth?
-        record_opencode_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "malformed_rotated_credential")
-        return opencode_harvest_result(performed: false, reason: "malformed_rotated_credential")
-      end
-
-      unless parsed.access_token.present?
-        record_opencode_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "rotated_credential_missing_access_token")
-        return opencode_harvest_result(performed: false, reason: "rotated_credential_missing_access_token")
-      end
-
-      update_opencode_managed_credential_from_rotation!(credential, rotated, parsed)
-      reset_opencode_managed_caches
-      log_system("container.opencode_managed_auth_harvested", credential_id: credential.id)
-      record_opencode_harvest_attempt!(credential, started_at, result: RunnerAuthAttempt::RESULT_HARVESTED)
-      opencode_harvest_result(performed: true, reason: "harvested")
-    rescue Docker::Error::DockerError, SystemCallError, ArgumentError => e
-      log_system("container.opencode_managed_auth_harvest_failed",
-        error: e.message, credential_id: credential&.id)
-      record_opencode_harvest_attempt!(credential, started_at,
-        result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "exec_failed")
-      opencode_harvest_result(performed: false, reason: "harvest_failed")
-    end
-
-    def update_opencode_managed_credential_from_rotation!(credential, _rotated_auth_json, parsed)
-      canonical_auth = parsed.codex_auth_json
-      raise ArgumentError, "OpenCode rotation is missing canonical auth material" if canonical_auth.blank?
-
-      credential.assign_attributes(
-        token: canonical_auth,
-        expires_at: parsed.expires_at || credential.expires_at,
-        last_used_at: Time.current,
-        revoked_at: nil,
-        metadata: credential.metadata.to_h.merge(
-          "source" => "container_rotation_harvest",
-          "storage_format" => "codex_auth_json",
-          "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
-        ).compact
-      )
-      credential.save!
+      harvest_managed_rotation(runner_key: "opencode", credential: opencode_managed_runner_credential,
+        unsupported_result: unsupported_opencode_harvest_result)
     end
 
     def harvest_omp_managed_credential_impl!
-      credential = omp_managed_runner_credential
-      return unsupported_omp_harvest_result unless credential
-
-      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      stdout, stderr, status = backend.exec_in_container(
-        container,
-        [ "python3", "-c", omp_harvest_python_script ],
-        user: "agent"
-      )
-      raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
-
-      payload = Array(stdout).join.strip
-      if payload.blank?
-        record_omp_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_SKIPPED, failure_reason: "no_rotated_credential")
-        return omp_harvest_result(performed: false, reason: "no_rotated_credential")
-      end
-
-      rotated = JSON.parse(payload)
-      unless rotated["access"].present?
-        record_omp_harvest_attempt!(credential, started_at,
-          result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "rotated_credential_missing_access_token")
-        return omp_harvest_result(performed: false, reason: "rotated_credential_missing_access_token")
-      end
-
-      update_omp_managed_credential_from_rotation!(credential, rotated)
-      reset_omp_managed_caches
-      log_system("container.omp_managed_auth_harvested", credential_id: credential.id)
-      record_omp_harvest_attempt!(credential, started_at, result: RunnerAuthAttempt::RESULT_HARVESTED)
-      omp_harvest_result(performed: true, reason: "harvested")
-    rescue Docker::Error::DockerError, SystemCallError, JSON::ParserError, ArgumentError => e
-      log_system("container.omp_managed_auth_harvest_failed",
-        error: e.message, credential_id: credential&.id)
-      record_omp_harvest_attempt!(credential, started_at,
-        result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "exec_failed")
-      omp_harvest_result(performed: false, reason: "harvest_failed")
-    end
-
-    def omp_harvest_python_script
-      <<~PY
-        import sqlite3
-        db = "/home/agent/.local/share/omp/agent/agent.db"
-        conn = sqlite3.connect(db)
-        try:
-          row = conn.execute(
-            "SELECT data FROM auth_credentials WHERE provider = ? AND credential_type = ? ORDER BY id DESC LIMIT 1",
-            ("anthropic", "oauth"),
-          ).fetchone()
-          print("" if row is None else row[0])
-        finally:
-          conn.close()
-      PY
-    end
-
-    def update_omp_managed_credential_from_rotation!(credential, rotated)
-      expires_at = parse_omp_rotation_expiry(rotated["expires"])
-      current = ClaudeCredentials::Secret.parse(credential.token.to_s)
-      payload = {
-        "claudeAiOauth" => {
-          "accessToken" => rotated["access"],
-          "refreshToken" => rotated["refresh"],
-          "expiresAt" => (expires_at || credential.expires_at)&.utc&.iso8601,
-          "subscriptionType" => current.subscription_type,
-          "scopes" => current.scopes.presence
-        }.compact
-      }
-
-      credential.assign_attributes(
-        token: JSON.generate(payload),
-        expires_at: expires_at || credential.expires_at,
-        last_used_at: Time.current,
-        revoked_at: nil,
-        metadata: credential.metadata.to_h.merge(
-          "source" => "container_rotation_harvest",
-          "storage_format" => "claude_credentials_json",
-          "access_token_expires_at" => (expires_at || credential.expires_at)&.iso8601,
-          "subscription_type" => current.subscription_type,
-          "scopes" => current.scopes.presence
-        ).compact
-      )
-      credential.save!
-    end
-
-    def parse_omp_rotation_expiry(raw)
-      return nil if raw.blank?
-
-      Time.at(Integer(raw) / 1000.0).utc
-    rescue ArgumentError, TypeError
-      nil
+      harvest_managed_rotation(runner_key: "omp", credential: omp_managed_runner_credential,
+        unsupported_result: unsupported_omp_harvest_result)
     end
 
     def record_omp_harvest_attempt!(credential, started_at, result:, failure_reason: nil)
@@ -4935,10 +4618,6 @@ module Containers
         duration_ms: duration_ms,
         metadata: { source: "managed" }
       )
-    end
-
-    def omp_harvest_result(performed:, reason:)
-      Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: performed, reason: reason)
     end
 
     def unsupported_omp_harvest_result
@@ -4958,10 +4637,6 @@ module Containers
         duration_ms: duration_ms,
         metadata: { source: "managed" }
       )
-    end
-
-    def opencode_harvest_result(performed:, reason:)
-      Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: performed, reason: reason)
     end
 
     def unsupported_opencode_harvest_result
@@ -5196,9 +4871,7 @@ module Containers
     end
 
     def claude_refresh_exchange_supported?
-      AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
-        AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
-        AgentHarness::Authentication.exchange_refresh_token_supported?(:claude)
+      Runners::ManagedCredentialLifecycle.refresh_supported?("claude")
     end
 
     def with_env(key, value)

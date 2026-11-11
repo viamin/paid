@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "base64"
+require "stringio"
 
 module Containers
   # Executes one application text command in a disposable container. It never
@@ -9,6 +9,14 @@ module Containers
   class StandaloneTextExecutor
     MAX_OUTPUT_BYTES = 2 * 1024 * 1024
     MAX_INPUT_BYTES = 1024 * 1024
+    # Linux caps a single execve argument or environment string at MAX_ARG_STRLEN
+    # (128 KiB), so any env entry larger than this fails inside Docker exec even
+    # when the aggregate input stays within MAX_INPUT_BYTES. Values that must
+    # reach the command travel on the exec stdin stream instead (see
+    # #input_payload); caller env entries stay in exec env and are rejected
+    # above this conservative per-entry bound, leaving headroom for the
+    # "NAME=" prefix and NUL terminator.
+    MAX_ENV_ENTRY_BYTES = 64 * 1024
     CLEANUP_MARGIN = 5
     DEFAULTS = {
       image: Containers::ImageResolver::BASE_IMAGE,
@@ -18,7 +26,7 @@ module Containers
     }.freeze
     OUTPUT_LIMIT_EXIT_CODE = 86
     MATERIALIZE_COMMAND = <<~'PYTHON'.freeze
-      import base64, json, os, pathlib, selectors, signal, subprocess, sys, threading, urllib.request
+      import json, os, pathlib, selectors, signal, subprocess, sys, threading, urllib.request
 
       def write_file(name, content, allowed_roots, mode=0o600):
           path = pathlib.Path(os.path.realpath(name))
@@ -41,15 +49,15 @@ module Containers
               write_file(name, content, [pathlib.Path("/home/agent")])
           environment.update({str(key): str(value) for key, value in material.get("env", {}).items()})
 
-      preparation = json.loads(os.environ.get("PAID_TEXT_PREPARATION", "[]"))
-      for write in preparation:
+      header = json.loads(sys.stdin.buffer.readline())
+      stdin_data = sys.stdin.buffer.read(int(header.get("stdin_bytes", 0)))
+      for write in header.get("preparation", []):
           mode = write["mode"] if write.get("mode") is not None else 0o600
           write_file(write["path"], write["content"], [pathlib.Path("/home/agent"), pathlib.Path("/tmp")], mode)
 
-      command = json.loads(os.environ["PAID_TEXT_COMMAND"])
+      command = header["command"]
       limit = int(os.environ["PAID_MAX_OUTPUT_BYTES"])
-      stdin_data = base64.b64decode(os.environ.get("PAID_TEXT_STDIN", ""))
-      for name in ("PAID_CREDENTIAL_URL", "PAID_CREDENTIAL_IDENTITY", "PAID_TEXT_COMMAND", "PAID_TEXT_PREPARATION", "PAID_TEXT_STDIN", "PAID_MAX_OUTPUT_BYTES"):
+      for name in ("PAID_CREDENTIAL_URL", "PAID_CREDENTIAL_IDENTITY", "PAID_MAX_OUTPUT_BYTES"):
           environment.pop(name, None)
       process = subprocess.Popen(command, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
       def feed_stdin():
@@ -95,8 +103,12 @@ module Containers
     def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
       validate_input_size!(command, env, preparation, stdin_data)
       provision! unless @container
-      run(materialized_command(command), timeout: bounded_timeout(timeout),
-        env: materialized_env(command, env, preparation, stdin_data))
+      with_managed_credential_lease do
+        result = run(materialized_command(command), timeout: bounded_timeout(timeout),
+          env: materialized_env(env), input: input_payload(command, preparation, stdin_data))
+        harvest_managed_credential
+        result
+      end
     rescue StandardError
       close
       raise
@@ -118,25 +130,51 @@ module Containers
     attr_reader :account, :runner
 
     def validate_input_size!(command, env, preparation, stdin_data)
+      validate_env_entry_sizes!(env)
       bytes = Array(command).sum { |part| part.to_s.bytesize } +
-        env.sum { |key, value| key.to_s.bytesize + value.to_s.bytesize } + preparation_json(preparation).bytesize +
+        env.sum { |key, value| key.to_s.bytesize + value.to_s.bytesize } + preparation_file_writes(preparation).to_json.bytesize +
         stdin_data.to_s.bytesize
       return if bytes <= MAX_INPUT_BYTES
 
       raise AgentHarness::ConfigurationError, "Isolated text request exceeded the #{MAX_INPUT_BYTES}-byte input limit"
     end
 
+    def validate_env_entry_sizes!(env)
+      oversized = env.find { |key, value| key.to_s.bytesize + value.to_s.bytesize > MAX_ENV_ENTRY_BYTES }
+      return unless oversized
+
+      raise AgentHarness::ConfigurationError,
+        "Isolated text request env entry #{oversized.first} exceeded the #{MAX_ENV_ENTRY_BYTES}-byte per-entry exec limit"
+    end
+
     def materialized_command(command)
       [ "python3", "-c", MATERIALIZE_COMMAND ]
     end
 
-    def materialized_env(command, env, preparation, stdin_data)
+    # Command, preparation, and stdin travel as one bounded payload on the exec
+    # stdin stream. The stream is not subject to the execve per-string limit
+    # that applies to Docker exec environment entries, so a prompt within
+    # MAX_INPUT_BYTES always reaches the container.
+    def input_payload(command, preparation, stdin_data)
+      input = stdin_data.to_s
+      header = { "command" => Array(command).map(&:to_s),
+                 "preparation" => preparation_file_writes(preparation),
+                 "stdin_bytes" => input.bytesize }.to_json
+      payload = header.dup.force_encoding(Encoding::BINARY)
+      payload << "\n" << input.b
+      StringIO.new(payload)
+    end
+
+    def preparation_file_writes(preparation)
+      Array(preparation&.file_writes).map do |write|
+        { "path" => write.path, "content" => write.content, "mode" => write.mode }
+      end
+    end
+
+    def materialized_env(env)
       credential_keys = credential_env_keys(env)
       wrapped = env.except(*credential_keys).compact.merge(
-        "PAID_MAX_OUTPUT_BYTES" => MAX_OUTPUT_BYTES.to_s,
-        "PAID_TEXT_COMMAND" => Array(command).to_json,
-        "PAID_TEXT_PREPARATION" => preparation_json(preparation),
-        "PAID_TEXT_STDIN" => Base64.strict_encode64(stdin_data.to_s)
+        "PAID_MAX_OUTPUT_BYTES" => MAX_OUTPUT_BYTES.to_s
       )
       wrapped.merge(
         "PAID_CREDENTIAL_URL" => "#{Containers::ProxyUrl.resolve(backend: Containers.backend, restricted: false)}/api/proxy/standalone-text-credential",
@@ -153,10 +191,37 @@ module Containers
       (provider.api_key_env_var_names + env.select { |_, value| value == runner.effective_api_secret }.keys).uniq
     end
 
-    def preparation_json(preparation)
-      Array(preparation&.file_writes).map do |write|
-        { path: write.path, content: write.content, mode: write.mode }
-      end.to_json
+    def with_managed_credential_lease
+      credential = rotating_subscription_credential
+      return yield unless credential
+
+      Runners::ManagedCredentialLifecycle.with_managed_auth_lease(runner_key: runner.runner_key,
+        credential: credential) { yield }
+    end
+
+    def harvest_managed_credential # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
+      credential = rotating_subscription_credential
+      return unless credential
+
+      result = Runners::ManagedCredentialLifecycle.harvest(credential: credential,
+        runner_key: runner.runner_key, backend: Containers.backend, container: @container)
+      log_harvest(result, credential)
+    end
+
+    def rotating_subscription_credential
+      return nil if runner.api_key?
+      return nil unless Runners::ManagedCredentialLifecycle.rotating?(runner.runner_key)
+
+      account.runner_credentials.active.for_runner(runner.runner_key)
+        .order(created_at: :desc, id: :desc).first
+    end
+
+    def log_harvest(result, credential)
+      degraded = !result.performed? && result.reason != "no_rotated_credential"
+      Rails.logger.public_send(degraded ? :warn : :info,
+        message: "containers.standalone_text_executor.credential_harvest",
+        runner_key: runner.runner_key, credential_id: credential.id, account_id: account.id,
+        outcome: result.reason)
     end
 
     def provision!
@@ -167,7 +232,7 @@ module Containers
       raise AgentHarness::ConfigurationError, "Unable to provision isolated text execution: #{e.message}"
     end
 
-    def run(command, timeout:, env:)
+    def run(command, timeout:, env:, input:)
       timed_out = false
       finished = false
       mutex = Mutex.new
@@ -185,7 +250,7 @@ module Containers
       stderr = +""
       output_exceeded = false
       result = Containers.backend.exec_in_container(@container, command,
-        wait: timeout, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
+        wait: timeout, Env: env.map { |key, value| "#{key}=#{value}" }, stdin: input) do |stream, chunk|
         next if output_exceeded
 
         target = stream == :stderr ? stderr : stdout

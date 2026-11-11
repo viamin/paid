@@ -23,13 +23,20 @@ Text operations accept subscription and API-key runners. The existing chat-runne
 multiple configurations behind the same CLI to remain distinguishable. API credentials
 come from the selected runner; unrelated host environment keys cannot change
 billing mode. Managed subscription credentials need an isolated environment.
-Every standalone text request uses a disposable text-only container; it does
-not reuse a live run container, create a user-visible coding run, mount a
+Every standalone text request uses a disposable text-only container; it does not
+reuse a live run container, create a user-visible coding run, mount a
 repository, or mount the Rails workspace. The container receives the selected
 runner's materialized credentials through the existing container credential
 path and invokes the harness with tools disabled. A `tools: none` option alone
 is not evidence that a driver disables its tools; the container boundary is
 therefore required even when the driver advertises tool control.
+Rotating managed credentials (Codex, OpenCode, OMP) reuse the provisioner's
+refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so a
+standalone request materializes a refreshed token and writes an in-container
+rotation back into the canonical credential before the container is deleted.
+The command, preparation, and prompt travel on the Docker exec stdin stream,
+not as exec environment entries, because a single `execve` environment string
+is capped near 128 KiB; caller environment entries are bounded per entry.
 Embedding and interactive API chat keep their existing capability-specific
 transports and settings. Provider identifiers inside those protocol adapters
 are transport identities, not application-level provider preferences.
