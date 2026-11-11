@@ -24,11 +24,11 @@ bin/paid-journey credentials
 ```
 
 Start the application using the verification prompt's derived start command.
-For Paid, it is normally:
+For Paid, the current derived command is:
 
 ```bash
 mkdir -p tmp
-(bundle exec bin/rails server -b 0.0.0.0 -p 3000) > tmp/paid-agent-verification-app.log 2>&1 &
+(PORT=3000 bin/dev) > tmp/paid-agent-verification-app.log 2>&1 &
 echo $! > tmp/paid-agent-verification-app.pid
 ```
 

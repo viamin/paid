@@ -28,4 +28,12 @@ RSpec.describe "Paid project detail verification journey", system_driver: :rack_
     expect(page).to have_current_path(project_path(project))
     expect(page).to have_content(project.name)
   end
+
+  it "keeps the documented launch command aligned with the runtime plan" do
+    runtime_plan = Screenshots::RuntimePlan.call(project:, repo_path: Rails.root)
+    journey_guide = Rails.root.join(".paid/journeys.md").read
+
+    expect(runtime_plan.start_command).to eq("PORT=3000 bin/dev")
+    expect(journey_guide).to include("(PORT=3000 bin/dev)")
+  end
 end
