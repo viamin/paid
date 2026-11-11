@@ -27,12 +27,15 @@
   `spec/services/knowledge/artifact_store_spec.rb`,
   `spec/jobs/run_collectors_job_spec.rb`.
 
-- [x] **KNOWLEDGE-015** — When import-time knowledge collection encounters a
-  transient PostgreSQL connection failure, it SHALL retry through the enqueue
-  job's bounded retry policy and SHALL defer exception notification until that
-  policy is exhausted.
-  *Code:* `app/jobs/enqueue_knowledge_collection_job.rb`.
-  *Test:* `spec/jobs/enqueue_knowledge_collection_job_spec.rb`.
+- [x] **KNOWLEDGE-015** — When import-time knowledge collection or collector
+  execution encounters a transient PostgreSQL connection failure, it SHALL
+  retry through its bounded job retry policy, retain the project's
+  `collecting` status while a retry remains, and defer exception notification
+  until that policy is exhausted.
+  *Code:* `app/jobs/enqueue_knowledge_collection_job.rb`,
+  `app/jobs/run_collectors_job.rb`.
+  *Test:* `spec/jobs/enqueue_knowledge_collection_job_spec.rb`,
+  `spec/jobs/run_collectors_job_spec.rb`.
 
 - [x] **KNOWLEDGE-014** — When GoodJob collects knowledge for a project commit,
   each perform SHALL execute at most one collector type and enqueue the next

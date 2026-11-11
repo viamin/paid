@@ -33,9 +33,9 @@ chain per project commit and skip when a continuation is already pending;
 continuation jobs can enqueue despite that limit and share an execution key with
 legacy full collection. A queued batch stops when its branch has advanced to a
 newer commit, allowing the current commit's chain to use the knowledge worker.
-The import-time enqueue job retries transient worktree and PostgreSQL connection
-failures with bounded backoff; it reports the failure only when that retry
-policy is exhausted. Each collector releases its container before the
+The import-time enqueue job and collector execution retry transient worktree
+and PostgreSQL connection failures with bounded backoff; they report the
+failure only when that retry policy is exhausted. Each collector releases its container before the
 next starts; Ruby heap memory remains subject to garbage collection. The
 tree-sitter and symbol-index collectors scan at most 25 source files per
 continuation. Their stable relative-path cursor is persisted on the unique
