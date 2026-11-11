@@ -67,6 +67,16 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(run).to include('sudo rm -f /etc/apt/sources.list.d/pgdg.sources "$keyring"')
   end
 
+  # @spec TOOLCHAIN-PIN-028
+  it "uses the runner postgres client when its major version matches" do
+    run = system_step("Install PostgreSQL client").fetch("run")
+
+    expect(run).to include(
+      "command -v psql",
+      "psql --version | grep -Eq '^psql \\(PostgreSQL\\) 16\\.'"
+    )
+  end
+
   it "installs a pinned Chrome binary for explicit browser specs" do
     setup_step = system_step("Set up Chrome")
     export_step = system_step("Export Chromium path")

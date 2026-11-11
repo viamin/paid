@@ -131,6 +131,17 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(install_step.fetch("run")).to include("postgresql-client-16")
         end
 
+        # @spec TOOLCHAIN-PIN-028
+        it "uses an already-installed matching postgres client for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+          install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
+
+          expect(install_step.fetch("run")).to include(
+            "command -v psql",
+            "psql --version | grep -Eq '^psql \\(PostgreSQL\\) 16\\.'"
+          )
+        end
+
         # A signing key that was downloaded but never verified leaves apt with
         # an unsigned repository, and every later apt-get update then fails
         # with "The repository ... is not signed" instead of a usable client.
