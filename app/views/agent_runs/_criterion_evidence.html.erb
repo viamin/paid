@@ -1,0 +1,64 @@
+<%# @spec LIVE-PREVIEW-014 %>
+<% verification_result = agent_run.verification_result || {} %>
+<% coverage = verification_result.dig("evidence", "coverage") || [] %>
+<% receipt_states = {
+  "verified" => "text-emerald-700 dark:text-emerald-400",
+  "contradicted" => "text-red-700 dark:text-red-400",
+  "stale" => "text-amber-700 dark:text-amber-400",
+  "unavailable" => "text-gray-500 dark:text-gray-400"
+} %>
+
+<section id="criterion-evidence" class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800" aria-labelledby="criterion-evidence-heading">
+  <h2 id="criterion-evidence-heading" class="text-sm font-semibold text-gray-900 dark:text-gray-100">Criterion evidence</h2>
+  <div class="mt-3 space-y-3">
+    <% coverage.each do |entry| %>
+      <% verification = entry["reported_verification"] || {} %>
+      <% receipt = entry["input_receipt"] %>
+      <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= entry["id"] %></p>
+          <div class="flex items-center gap-3 text-sm">
+            <span class="text-gray-600 dark:text-gray-300">reported: <%= entry["reported_status"] %></span>
+            <span data-testid="criterion-coverage-state" data-state="<%= entry["state"] %>" class="font-medium <%= receipt_states.fetch(entry["state"], "text-gray-500") %>">
+              semantic judgment: <%= entry["state"].humanize.downcase %>
+            </span>
+          </div>
+        </div>
+        <% if verification["kind"].present? %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">verification kind: <%= verification["kind"] %></p>
+        <% end %>
+        <% if verification["rationale"].present? %>
+          <p class="mt-2 text-sm text-gray-700 dark:text-gray-300"><span class="font-medium">Rationale:</span> <%= verification["rationale"] %></p>
+        <% end %>
+        <% if verification["limitations"].present? %>
+          <p class="mt-1 text-sm text-gray-700 dark:text-gray-300"><span class="font-medium">Limitations:</span> <%= verification["limitations"] %></p>
+        <% end %>
+        <% if receipt %>
+          <p class="mt-2 text-sm">
+            <span class="text-gray-600 dark:text-gray-300">Inputs:</span>
+            <span data-testid="criterion-input-receipt-state" data-state="<%= receipt["state"] %>" class="font-medium <%= receipt_states.fetch(receipt["state"], "text-gray-500") %>"><%= receipt["state"] %></span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">(<%= receipt.dig("counts", "verified") %> verified, <%= receipt.dig("counts", "contradicted") %> contradicted, <%= receipt.dig("counts", "stale") %> stale, <%= receipt.dig("counts", "unavailable") %> unavailable)</span>
+          </p>
+          <ul class="mt-1 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+            <% Array(receipt["references"]).each do |reference| %>
+              <li class="font-mono">
+                <%= reference["type"] %> · <%= reference["locator"] %> ·
+                <span class="<%= receipt_states.fetch(reference["state"], "text-gray-500") %>"><%= reference["state"] %></span>
+                (<%= reference["reason"] %>)
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">No input receipt recorded for this criterion.</p>
+        <% end %>
+        <% Array(verification["inputs"]).each do |input| %>
+          <p class="mt-1 font-mono text-xs text-gray-500 dark:text-gray-400">cited input: <%= [ input["type"], input["path"], input["command"], input["url"], input["storage_key"] ].compact.join(" · ") %></p>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+  <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+    Inputs verified do not prove the semantic coverage claim; each criterion's semantic judgment remains open to review.
+    Input receipts grant no merge authority.
+  </p>
+</section>

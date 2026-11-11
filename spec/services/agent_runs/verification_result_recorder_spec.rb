@@ -198,6 +198,81 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
+  # @spec LIVE-PREVIEW-012
+  it "preserves reported rationale, limitations, and bounded redacted input references" do
+    write_criterion_input_result([
+      { type: "repo_path", path: "spec/services/settings_spec.rb", commit: "a" * 40,
+        digest: "sha256:#{"f" * 64}", excerpt: "boot token=super-secret-value" },
+      { type: "test_run", command: "bin/rspec spec/services/settings_spec.rb", result: "passed" },
+      { type: "external", url: "https://example.test/signoff", description: "Manual sign-off" }
+    ], rationale: "The service spec exercises the changed rule.", limitations: "Does not cover the browser UI.")
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    verification = agent_run.reload.verification_result.fetch("reported_acceptance_criteria").first.fetch("verification")
+    expect(verification).to include(
+      "rationale" => "The service spec exercises the changed rule.",
+      "limitations" => "Does not cover the browser UI."
+    )
+    inputs = verification.fetch("inputs")
+    expect(inputs.length).to eq(3)
+    expect(inputs.first).to include("type" => "repo_path", "commit" => "a" * 40)
+    expect(inputs.first.fetch("excerpt")).to include("[REDACTED")
+    expect(inputs.first.fetch("excerpt")).not_to include("super-secret-value")
+    expect(inputs.third).to include("type" => "external", "url" => "https://example.test/signoff")
+  end
+
+  # @spec LIVE-PREVIEW-012 LIVE-PREVIEW-013
+  it "keeps input references reported-only when the receipt path is not enabled" do
+    write_spec_file
+    write_criterion_input_result([ genuine_repo_path_input ])
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").first
+    expect(coverage).to include("id" => "AC-1", "state" => "unverified")
+    expect(coverage).not_to include("input_receipt")
+    expect(agent_run.reload.verification_result.dig("evidence", "input_receipt_summary")).to be_nil
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "attaches recorder-owned input receipts without promoting the semantic conclusion" do
+    FeatureFlags.enable!(:criterion_input_receipts, project:)
+    write_spec_file
+    write_criterion_input_result([ genuine_repo_path_input, genuine_repo_path_input.merge(path: "spec/fabricated_spec.rb") ])
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").first
+    expect(coverage["state"]).to eq("unverified")
+    receipt = coverage.fetch("input_receipt")
+    expect(receipt["state"]).to eq("unavailable")
+    expect(receipt["reason"]).to eq("no_verifiable_input_references")
+    expect(receipt["references"]).to contain_exactly(
+      hash_including("locator" => "spec/services/settings_spec.rb", "state" => "verified"),
+      hash_including("locator" => "spec/fabricated_spec.rb", "state" => "unavailable", "reason" => "path_not_found")
+    )
+  ensure
+    FeatureFlags.disable!(:criterion_input_receipts)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "summarizes receipts for pilot measurement and keeps their meaning explicit" do
+    FeatureFlags.enable!(:criterion_input_receipts, project:)
+    write_spec_file
+    write_criterion_input_result([ genuine_repo_path_input ])
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    result = agent_run.reload.verification_result
+    expect(result.dig("evidence", "input_receipt_summary")).to include(
+      "criteria" => 1, "references" => 1, "verified" => 1, "contradicted" => 0
+    )
+    expect(result.dig("evidence", "limitations")).to include("input_receipts_verify_references_not_semantic_coverage")
+  ensure
+    FeatureFlags.disable!(:criterion_input_receipts)
+  end
+
   # @spec LIVE-PREVIEW-010
   it "retains reported criterion coverage when rebinding the result to the shipped commit" do
     File.write(result_path, JSON.generate(
@@ -478,5 +553,41 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
       "status" => "passed",
       "summary" => "Verified after resume."
     )
+  end
+
+  def spec_file_content
+    "it \"saves settings\" do\nend\n"
+  end
+
+  def write_spec_file
+    path = File.join(repo_path, "spec/services/settings_spec.rb")
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, spec_file_content)
+  end
+
+  def genuine_repo_path_input
+    {
+      type: "repo_path",
+      path: "spec/services/settings_spec.rb",
+      commit: "a" * 40,
+      digest: "sha256:#{Digest::SHA256.hexdigest(spec_file_content)}"
+    }
+  end
+
+  def write_criterion_input_result(inputs, rationale: nil, limitations: nil)
+    File.write(result_path, JSON.generate(
+      status: "passed",
+      acceptance_criteria: [
+        {
+          id: "AC-1", status: "passed",
+          verification: {
+            kind: "unit_or_service_test",
+            rationale:,
+            limitations:,
+            inputs:
+          }.compact
+        }
+      ]
+    ))
   end
 end

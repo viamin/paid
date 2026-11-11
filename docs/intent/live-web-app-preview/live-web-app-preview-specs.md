@@ -76,6 +76,53 @@
   *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
   `spec/services/agent_runs/verification_result_recorder_spec.rb`.
 
+- [x] **LIVE-PREVIEW-012** — When an issue implementation run is instructed to
+  record criterion evidence, the prompt SHALL require, per criterion, the
+  agent's concise coverage rationale, its stated limitations, and bounded
+  input references appropriate to the selected verification kind: a
+  repository path pinned to a commit with a content digest or excerpt, an
+  actual test command with its run result, a browser/artifact identity with
+  provenance, an explicit human/external reference, or a canonical
+  criterion/spec revision. The recorder SHALL preserve rationale,
+  limitations, and input references as bounded, secret-redacted reported
+  data without interpreting their meaning.
+  *Code:* `app/services/agent_runs/verification_prompt.rb`,
+  `app/services/agent_runs/verification_result_recorder.rb`.
+  *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
+  `spec/services/agent_runs/verification_result_recorder_spec.rb`.
+
+- [x] **LIVE-PREVIEW-013** — When the `criterion_input_receipts` flag is
+  enabled for a project, the recorder SHALL validate each cited repository
+  input reference against the reviewed revision for shape, existence, and
+  content match, and SHALL validate test and artifact claims against
+  recorder-owned execution and provenance where available, labeling every
+  reference `verified`, `contradicted`, `stale`, or `unavailable`. A
+  nonexistent path, changed content, wrong revision, skipped or non-passing
+  test claim, or artifact without recorder-owned provenance SHALL NOT yield
+  a verified reference. A verified receipt SHALL NOT promote the criterion's
+  semantic coverage state; receipts record only that the cited inputs were
+  mechanically verified. When the flag is disabled, the recorder SHALL
+  preserve input references as reported data without validation, matching
+  the pre-existing LIVE-PREVIEW-011 contract.
+  *Code:* `app/services/agent_runs/criterion_input_receipts.rb`,
+  `app/services/agent_runs/verification_result_recorder.rb`.
+  *Test:* `spec/services/agent_runs/criterion_input_receipts_spec.rb`,
+  `spec/services/agent_runs/verification_result_recorder_spec.rb`,
+  `spec/services/feature_flags_criterion_input_receipts_spec.rb`.
+
+- [x] **LIVE-PREVIEW-014** — When criterion evidence is recorded, the
+  serialized verification result and the agent-run review UI SHALL present
+  the agent's rationale and limitations, the cited inputs, the
+  recorder-owned reference receipts, and the unresolved semantic coverage
+  judgment together, keeping mechanically verified inputs distinguishable
+  from the still-reviewable semantic conclusion. Missing or unverifiable
+  evidence SHALL remain explicit; no receipt SHALL create merge authority
+  or a blocking CI or merge policy without a measured pilot (#4983).
+  *Code:* `app/views/agent_runs/_criterion_evidence.html.erb`,
+  `app/services/agent_runs/verification_result_recorder.rb`.
+  *Test:* `spec/views/agent_runs/criterion_evidence_partial_spec.rb`,
+  `spec/services/agent_runs/verification_result_recorder_spec.rb`.
+
 - [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
   agent run, the system SHALL publish it through the same durable key contract
   that the trace viewer UI expects.

@@ -75,6 +75,12 @@ module AgentRuns
             "status": "passed",
             "verification": {
               "kind": "permanent_system_test",
+              "rationale": "One or two sentences on why these inputs support the criterion",
+              "limitations": "What this evidence does not cover",
+              "inputs": [
+                { "type": "repo_path", "path": "spec/system/onboarding_spec.rb", "commit": "<full head commit>", "digest": "sha256:<content digest>" },
+                { "type": "test_run", "command": "bin/rspec spec/system/onboarding_spec.rb:42", "result": "passed" }
+              ],
               "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
             }
           }]
@@ -143,6 +149,12 @@ module AgentRuns
             "status": "passed",
             "verification": {
               "kind": "permanent_system_test",
+              "rationale": "One or two sentences on why these inputs support the criterion",
+              "limitations": "What this evidence does not cover",
+              "inputs": [
+                { "type": "repo_path", "path": "spec/system/onboarding_spec.rb", "commit": "<full head commit>", "digest": "sha256:<content digest>" },
+                { "type": "test_run", "command": "bin/rspec spec/system/onboarding_spec.rb:42", "result": "passed" }
+              ],
               "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
             }
           }],
@@ -166,11 +178,18 @@ module AgentRuns
         For every relevant acceptance criterion, include its `id`, `status`, and `verification` kind plus concrete
         inspectable references at this PR head. Use `permanent_system_test` for important user flows,
         `unit_or_service_test` for focused rules, `ephemeral_system_test` for PR-only one-off coverage, and
-        `human_or_external_evidence` where automation cannot settle the criterion. Reference each test result,
-        artifact, or external evidence explicitly. Do not infer a pass from a test name, agent prose, a broad suite,
-        or browser steps. Criterion `status` must be `passed`, `failed`, `skipped`, or `not_run`. Record blocked,
-        skipped, missing browser coverage, and human or external criteria without attached evidence as `skipped` or
-        `not_run` with a reason.
+        `human_or_external_evidence` where automation cannot settle the criterion. Under `verification`, record a short
+        `rationale` (why these inputs support the criterion), `limitations` (what the evidence does not cover), and the
+        exact `inputs` you inspected, bounded by evidence kind: `repo_path` with `path`, full `commit`, and `digest`
+        (`sha256:<hex>`) or a short `excerpt`; `test_run` with the actual `command` and its `result`;
+        `artifact` with its `storage_key` or in-repo `path`; `external` with `url` and `description` for human or
+        external evidence; or `spec_revision` with the canonical spec `path`, `revision`, and `digest`. Paid
+        mechanically validates cited inputs and labels each reference verified, contradicted, stale, or unavailable;
+        reference each test result, artifact, or external evidence explicitly. Do not infer a pass from a test name,
+        agent prose, a broad suite, or browser steps. Criterion `status` must be `passed`, `failed`, `skipped`, or
+        `not_run`. Record blocked, skipped, missing browser coverage, and human or external criteria without attached
+        evidence as `skipped` or `not_run` with a reason. A valid input receipt does not prove the semantic coverage
+        claim; the criterion remains open to human review.
       INSTRUCTIONS
     end
 

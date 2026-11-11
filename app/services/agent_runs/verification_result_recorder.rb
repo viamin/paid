@@ -12,6 +12,10 @@ module AgentRuns
     LOG_TAIL_LINES = 40
     LOG_TAIL_CHUNK_BYTES = 4096
     LOG_TAIL_MAX_BYTES = ApplicationLog::MAX_BYTES
+    MAX_RATIONALE_BYTES = 2000
+    MAX_INPUT_TEXT_BYTES = 2048
+    MAX_LOCATOR_BYTES = 200
+    MAX_IDENTITY_BYTES = 512
 
     def self.call(...)
       new(...).call
@@ -214,19 +218,61 @@ module AgentRuns
     # accidentally treat a reported pass as accepted evidence.
     # @spec LIVE-PREVIEW-010
     def evidence_for(payload)
+      criteria = payload["acceptance_criteria"] || payload["reported_acceptance_criteria"]
+      observed = interactive_verification? ? observed_artifacts : nil
+      receipts = criterion_input_receipts(criteria, observed)
       evidence = {
         "tested_commit" => tested_commit,
         "freshness" => freshness,
         "reported_artifact_assessments" => reported_artifact_assessments(payload["artifacts"]),
-        "coverage" => coverage_for(payload["acceptance_criteria"] || payload["reported_acceptance_criteria"]),
-        "limitations" => evidence_limitations
+        "coverage" => coverage_for(criteria, receipts),
+        "input_receipt_summary" => input_receipt_summary(receipts),
+        "limitations" => evidence_limitations(receipts.present?)
       }.compact
-      return evidence unless interactive_verification?
+      return evidence unless observed
 
       evidence.merge(
         "runtime_configuration" => runtime_configuration,
-        "observed_artifacts" => observed_artifacts
+        "observed_artifacts" => observed
       )
+    end
+
+    # Recorder-owned mechanical validation of the inputs cited behind each
+    # criterion claim. Gated by the project's criterion_input_receipts flag;
+    # a verified receipt never promotes the semantic coverage state.
+    # @spec LIVE-PREVIEW-013
+    def criterion_input_receipts(criteria, observed)
+      return {} unless input_receipts_enabled?
+
+      AgentRuns::CriterionInputReceipts.call(
+        agent_run: @agent_run,
+        repo_path: @repo_path,
+        criteria: Array(criteria).select { |criterion| criterion.is_a?(Hash) }.map(&:deep_stringify_keys),
+        tested_commit: tested_commit,
+        retained_storage_keys: retained_storage_keys(observed)
+      )
+    end
+
+    def input_receipts_enabled?
+      FeatureFlags.enabled?(:criterion_input_receipts, project: @agent_run.project)
+    end
+
+    def retained_storage_keys(observed)
+      Array(observed).filter_map { |artifact| artifact["storage_key"] if artifact["state"] == "retained" }
+    end
+
+    def input_receipt_summary(receipts)
+      return if receipts.blank?
+
+      counts = receipts.values.map { |receipt| receipt["counts"] }
+      {
+        "criteria" => receipts.size,
+        "references" => counts.sum { |count| count["total"] },
+        "verified" => counts.sum { |count| count["verified"] },
+        "contradicted" => counts.sum { |count| count["contradicted"] },
+        "stale" => counts.sum { |count| count["stale"] },
+        "unavailable" => counts.sum { |count| count["unavailable"] }
+      }
     end
 
     def tested_commit
@@ -265,7 +311,7 @@ module AgentRuns
       { "state" => "incomplete", "reason" => "runtime_configuration_unavailable", "details" => error.message }
     end
 
-    def coverage_for(value)
+    def coverage_for(value, receipts = {})
       Array(value).filter_map do |criterion|
         next unless criterion.is_a?(Hash)
 
@@ -281,6 +327,7 @@ module AgentRuns
           "reported_assertions" => normalize_string_array(criterion["assertions"]),
           "reported_steps" => normalize_string_array(criterion["steps"]),
           "reported_verification" => normalize_criterion_verification(criterion["verification"]),
+          "input_receipt" => receipts[id],
           "state" => coverage_state(reported_status),
           "reason" => coverage_reason(reported_status)
         }.compact
@@ -300,17 +347,52 @@ module AgentRuns
 
     # Criterion references are agent-reported claims. Preserve their structured
     # locator/result form for review without deriving coverage from their text.
-    # @spec LIVE-PREVIEW-011
+    # Rationale, limitations, and cited inputs ride along as bounded,
+    # secret-redacted reported data.
+    # @spec LIVE-PREVIEW-011 LIVE-PREVIEW-012
     def normalize_criterion_verification(value)
       return unless value.is_a?(Hash)
 
       verification = value.deep_stringify_keys.slice("kind", "reason")
+      verification["rationale"] = reported_text(value["rationale"])
+      verification["limitations"] = reported_text(value["limitations"])
+      verification["inputs"] = normalize_criterion_inputs(value["inputs"])
       verification["references"] = Array(value["references"] || value[:references]).filter_map do |reference|
         next unless reference.is_a?(Hash)
 
         reference.deep_stringify_keys.slice("locator", "result", "reason", "url").presence
       end.first(20).presence
       verification.compact.presence
+    end
+
+    # Bounded structural input references. Structural identity fields (path,
+    # commit, digest) keep their verbatim form so receipts can match them;
+    # free-text fields (excerpt, command, description) are secret-redacted.
+    # @spec LIVE-PREVIEW-012
+    def normalize_criterion_inputs(value)
+      Array(value).filter_map do |input|
+        next unless input.is_a?(Hash)
+
+        input = input.deep_stringify_keys
+        normalized = input.slice("type", "path", "commit", "revision", "digest", "result", "storage_key", "url")
+          .transform_values { |field| bounded_identity(field) }
+        normalized["excerpt"] = reported_text(input["excerpt"], max_bytes: MAX_INPUT_TEXT_BYTES)
+        normalized["command"] = reported_text(input["command"], max_bytes: MAX_LOCATOR_BYTES)
+        normalized["description"] = reported_text(input["description"], max_bytes: MAX_LOCATOR_BYTES)
+        normalized.compact.presence
+      end.first(AgentRuns::CriterionInputReceipts::MAX_INPUTS).presence
+    end
+
+    def bounded_identity(value)
+      value.to_s.strip.byteslice(0, MAX_IDENTITY_BYTES).to_s
+    end
+
+    def reported_text(value, max_bytes: MAX_RATIONALE_BYTES)
+      text = value.to_s.strip
+      return if text.blank?
+
+      AgentRuns::ApplicationLog.redact_and_bound(text, agent_run: @agent_run)
+        .content.to_s.byteslice(0, max_bytes).to_s
     end
 
     def coverage_state(status)
@@ -411,8 +493,9 @@ module AgentRuns
       }.compact
     end
 
-    def evidence_limitations
+    def evidence_limitations(input_receipts_recorded = false)
       limitations = [ "agent_reported_references_are_not_recorder_owned_evidence" ]
+      limitations << "input_receipts_verify_references_not_semantic_coverage" if input_receipts_recorded
       return limitations unless interactive_verification?
 
       limitations.concat([

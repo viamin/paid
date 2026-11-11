@@ -47,6 +47,29 @@ RSpec.describe AgentRuns::VerificationPrompt do
     expect(section.content).to include("Do not infer a pass from a test name")
   end
 
+  # @spec LIVE-PREVIEW-012
+  it "requires the coverage rationale and exact inspected inputs per criterion" do
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include('"rationale"')
+    expect(section.content).to include('"inputs"')
+    expect(section.content).to include('"limitations"')
+    expect(section.content).to include('"repo_path"')
+    expect(section.content).to include('"commit"')
+    expect(section.content).to include('"digest"')
+    expect(section.content).to include('"test_run"')
+  end
+
+  it "documents the bounded input reference kinds and receipt semantics" do
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include("`artifact`")
+    expect(section.content).to include("`external`")
+    expect(section.content).to include("`spec_revision`")
+    expect(section.content).to include("verified, contradicted, stale, or unavailable")
+    expect(section.content).to include("does not prove the semantic coverage")
+  end
+
   # @spec LIVE-PREVIEW-011
   it "requires criterion evidence for issue runs when interactive verification is disabled" do
     project.update!(screenshot_settings: { "verification_enabled" => false })

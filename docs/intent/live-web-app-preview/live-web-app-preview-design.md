@@ -74,6 +74,42 @@ browser flow cannot disappear behind a green broad suite. Runtime
 configuration, browser claims, and app-log evidence remain conditional on the
 project's interactive-verification setting.
 
+### Criterion input references and recorder-owned receipts
+
+The reported references above are agent claims; a plausible rationale can rest
+on stale or invented inputs. The criterion contract therefore also asks for,
+per criterion, the agent's concise coverage `rationale`, its stated
+`limitations`, and the exact `inputs` it inspected, bounded by evidence kind:
+a repository path pinned to a commit with a content digest or excerpt, an
+actual test command and its run result, a browser/artifact identity with
+provenance, an explicit human/external reference, or a canonical
+criterion/spec revision. Rationale, limitations, and input references are
+reported data: bounded in count and size and secret-redacted before
+persistence, never interpreted for meaning.
+
+When the `criterion_input_receipts` flag is enabled for the project
+(default-off; pilot-gated per `FeatureFlags`), the recorder additionally
+issues a recorder-owned *input receipt* per criterion. The receipt validates
+only what Paid can check mechanically: reference shape, repository path
+existence inside the checkout, content digest or excerpt match, cited-commit
+agreement with the reviewed revision, non-passing test claims, and artifact
+provenance against recorder-retained artifact identities. Each reference is
+labeled `verified`, `contradicted`, `stale`, or `unavailable`; a nonexistent
+path, changed content, wrong revision, skipped or non-passing test claim, or
+artifact without recorder-owned provenance cannot yield a verified reference.
+A valid receipt means the cited inputs were mechanically verified — it does
+not prove the semantic coverage judgment, and the criterion's coverage state
+is never promoted because its references validate (trust-but-verify). The
+receipt carries per-reference and per-criterion counts so a focused pilot can
+measure false claims caught, valid claims rejected, runtime, and storage cost
+before any blocking CI or merge policy is proposed; receipts grant no merge
+authority. When the flag is disabled the recorder preserves input references
+as reported data without validation, exactly matching the pre-existing
+contract. This reuses RDR-076's shared evidence vocabulary (revision and
+digest binding, provenance lanes) without creating a parallel evidence store;
+general layered-verification evidence revision and invalidation remains owned
+by the `layered-verification` segment (#4435).
+
 ## Trace Artifact Contract
 
 Real agent-run trace viewing is tied to the same durable storage contract used

@@ -128,6 +128,13 @@ class FeatureFlags
       rollout_plan: "Default-off; enable selected tenant projects only after shared UI, chat, MCP, authorization, and host-check paths are verified together.",
       cleanup_criteria: "Remove only after closeout establishes a safe default and migrates any remaining tenant configuration."
     ),
+    criterion_input_receipts: Definition.new(
+      name: :criterion_input_receipts,
+      owner: "live-web-app-preview",
+      intent: "Gate recorder-owned mechanical validation of criterion evidence input references while a focused pilot measures false claims caught, valid claims rejected, runtime, storage cost, and review usefulness.",
+      rollout_plan: "Default-off; enable only for the pilot project (#4983); receipts never gate merging or CI until the pilot reports.",
+      cleanup_criteria: "Remove after the pilot decides the receipt path's default posture."
+    ),
     unified_work_items: Definition.new(
       name: :unified_work_items,
       owner: "unified-work-items",
