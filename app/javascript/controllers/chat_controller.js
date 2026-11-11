@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import consumer from "../channels/consumer"
 
 export default class extends Controller {
-  static targets = ["backToTop", "stickyJumpToLatest", "container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
+  static targets = ["backToTop", "stickyJumpToLatest", "container", "messages", "input", "status", "progress", "progressText", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
   static values = { accountId: Number, sessionId: Number }
 
   connect() {
@@ -84,11 +84,13 @@ export default class extends Controller {
     this.disconnectedMidTurn = this.streaming
     this.resetStreamingState()
     this.setStatus("Disconnected")
+    if (this.disconnectedMidTurn) this.showProgress("Connection lost. Checking response status…")
   }
 
   handleRejected() {
     this.resetStreamingState()
     this.setStatus("Subscription rejected")
+    this.showProgress("Connection unavailable. Reload to check the response.")
   }
 
   resetStreamingState() {
@@ -288,6 +290,9 @@ export default class extends Controller {
     case "message_created":
       this.handleMessageCreated(data)
       break
+    case "turn_status":
+      this.handleTurnStatus(data)
+      break
       case "diagram_created":
         this.handleDiagramCreated(data)
         break
@@ -338,6 +343,7 @@ export default class extends Controller {
     this.streaming = true
     this.currentAttemptToolCards = []
     this.setStatus(`Streaming ${data.model || "assistant"} response…`)
+    this.showProgress("Assistant is working…")
     this.toggleTyping(true)
   }
 
@@ -357,6 +363,8 @@ export default class extends Controller {
       if (this.ignoredStreamIds.has(data.message_id)) return
       this.currentStreamId = data.message_id
       this.streaming = true
+      this.dispatchChatState("chat:busy")
+      this.showProgress("Assistant is working…")
     }
     if (this.ignoredStreamIds.has(data.message_id) || !this.streamEventMatches(data)) return
 
@@ -479,6 +487,7 @@ export default class extends Controller {
     // message_created broadcast, so restoring here would duplicate it.
     if (data.limit_type) this.restorePendingContent()
     this.setStatus(data.message || "An unexpected error occurred")
+    this.showFailure(data.message || "Response stopped. Please send a new message.")
   }
 
   handleOnboardingRetry(data) {
@@ -501,7 +510,45 @@ export default class extends Controller {
   setBusy(busy) {
     this.streaming = busy
     this.dispatchChatState(busy ? "chat:busy" : "chat:idle")
-    if (busy) this.setStatus("Waiting for assistant…")
+    if (busy) {
+      this.setStatus("Waiting for assistant…")
+      this.showProgress("Assistant is working…")
+    } else {
+      this.hideProgress()
+    }
+  }
+
+  // @spec CHAT-TURN-RECOVERY-009
+  handleTurnStatus(data) {
+    if (this.streaming) return
+    if (["pending", "streaming"].includes(data.status) && !data.awaiting_confirmation) {
+      this.setBusy(true)
+    } else if (data.status === "failed") {
+      this.showFailure("Response stopped. See the notice in the transcript or send a new message.")
+    } else {
+      this.hideProgress()
+    }
+  }
+
+  showProgress(message) {
+    if (!this.hasProgressTarget) return
+    this.progressTarget.classList.remove("hidden")
+    this.progressTarget.classList.remove("border-rose-100", "bg-rose-50", "text-rose-800")
+    this.progressTarget.classList.add("border-indigo-100", "bg-indigo-50", "text-indigo-800")
+    this.progressTarget.querySelector?.("[data-chat-progress-dot]")?.classList.remove("hidden")
+    if (this.hasProgressTextTarget) this.progressTextTarget.textContent = message
+  }
+
+  showFailure(message) {
+    if (!this.hasProgressTarget) return
+    this.progressTarget.classList.remove("hidden", "border-indigo-100", "bg-indigo-50", "text-indigo-800")
+    this.progressTarget.classList.add("border-rose-100", "bg-rose-50", "text-rose-800")
+    this.progressTarget.querySelector?.("[data-chat-progress-dot]")?.classList.add("hidden")
+    if (this.hasProgressTextTarget) this.progressTextTarget.textContent = message
+  }
+
+  hideProgress() {
+    if (this.hasProgressTarget) this.progressTarget.classList.add("hidden")
   }
 
   dispatchChatState(name) {
@@ -567,6 +614,7 @@ export default class extends Controller {
 
     this.appendToolCard(card)
     this.setStatus(`Running ${data.tool_name || "tool"}…`)
+    this.showProgress(`Running ${data.tool_name || "tool"}…`)
     this.scrollToBottom()
   }
 
@@ -577,6 +625,7 @@ export default class extends Controller {
     if (!card) return
 
     this.appendToolCard(card)
+    this.showProgress("Tool finished. Assistant is continuing…")
     this.scrollToBottom()
   }
 
@@ -757,6 +806,7 @@ export default class extends Controller {
 
     const messageElement = this.buildMessageElement(data.html)
     if (!messageElement) return
+    if (messageElement.matches?.("[data-chat-turn-failure-notice]")) this.hideProgress()
 
     if (data.message_id) {
       const existingMessage = this.messageElementById(data.message_id)

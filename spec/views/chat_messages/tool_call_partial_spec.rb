@@ -29,6 +29,8 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
 
       def stalled_turn_notice? = false
 
+      def chat_turn_failure_notice? = false
+
       def groupable_tool?
         (tool_name.present? || role == "tool") && !pending_confirmation? && !transcript_notice?
       end

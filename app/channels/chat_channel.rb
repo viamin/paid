@@ -1,13 +1,17 @@
 # frozen_string_literal: true
 
 class ChatChannel < ApplicationCable::Channel
-  # @spec CHAT-SESSION-REOPEN-005
+  # @spec CHAT-SESSION-REOPEN-005 CHAT-TURN-RECOVERY-009
   def subscribed
     session = find_session
     if session
       @chat_session = session
       stream_from stream_name
-      transmit(ChatSessions::CapabilitySnapshot.call(chat_session: @chat_session))
+      account = TenantContext.with_system_access { Account.find(@chat_session.account_id) }
+      TenantContext.with(account) do
+        transmit(ChatSessions::CapabilitySnapshot.call(chat_session: @chat_session))
+        transmit(turn_status)
+      end
     else
       reject
     end
@@ -113,6 +117,12 @@ class ChatChannel < ApplicationCable::Channel
 
   def stream_name
     "chat_session:#{@chat_session.id}"
+  end
+
+  def turn_status
+    turn = @chat_session.chat_turns.order(id: :desc).first
+    { type: "turn_status", status: turn&.status,
+      awaiting_confirmation: turn&.awaiting_confirmation? }
   end
 
   def authorized_to_send_messages?

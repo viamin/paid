@@ -370,6 +370,33 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       .with(hash_including(type: "error", message: "An unexpected error occurred"))
   end
 
+  # @spec CHAT-TURN-RECOVERY-008
+  it "persists and broadcasts a visible failure notice after a turn fails" do
+    allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(llm_client)
+    allow(llm_client).to receive(:call).and_raise(StandardError, "transport accounting failed")
+
+    expect {
+      described_class.perform_now(chat_session_id: chat_session.id, content: "Hello",
+        stream_message_id: stream_message_id)
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "system", html: include("could not finish")))
+
+    expect(chat_session.chat_turns.last.reload.status).to eq("failed")
+    expect(chat_session.messages.last.metadata).to include("chat_turn_failure_notice" => true)
+  end
+
+  # @spec CHAT-TURN-RECOVERY-008
+  it "keeps a provider failure visible after a page reload" do
+    allow(llm_client).to receive(:call).and_raise(AgentHarness::Error, "runner unavailable")
+
+    described_class.perform_now(chat_session_id: chat_session.id, content: "Hello",
+      stream_message_id: stream_message_id)
+
+    notice = chat_session.messages.order(id: :desc).first
+    expect(notice).to be_chat_turn_failure_notice
+    expect(notice.content).to include("could not finish")
+  end
+
   # Exercises the REAL SendMessage service (not mocked) through the job with a
   # streaming LLM client, asserting the complete broadcast contract a
   # ChatChannel subscriber depends on to render a reply. This is the path the

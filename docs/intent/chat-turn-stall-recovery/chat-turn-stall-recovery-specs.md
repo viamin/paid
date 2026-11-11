@@ -38,6 +38,30 @@
 
 ## Transcript notification
 
+- [x] **CHAT-TURN-RECOVERY-008** — When an active chat turn fails after its
+  user message was persisted, and no durable rate-limit or recovery notice
+  already explains the failure, Paid SHALL persist
+  and broadcast a non-collapsed transcript notice saying the response stopped,
+  that completed tool actions may have taken effect, and that the user can
+  send a new message. The original error SHALL remain in server logs, without
+  exposing its internal details in the notice.
+  *Code:* `ChatTurn#fail!`, `ChatTurns::PersistFailureNotice`,
+  `ChatMessage#chat_turn_failure_notice?`.
+  *Test:* `spec/jobs/chat_sessions/process_message_job_spec.rb`.
+
+- [x] **CHAT-TURN-RECOVERY-009** — While a chat turn is pending or streaming,
+  Paid SHALL show a visible progress line adjacent to the composer, including
+  after page reload or socket reconnection. A tool result SHALL change the
+  line from running that tool to waiting for the assistant. Completion and
+  approval pause SHALL clear the active progress line; failure SHALL change it
+  to a visible stopped state, including after reload. A connection loss SHALL
+  explain that response status is being checked.
+  *Code:* `ChatChannel#subscribed`,
+  `app/views/chat_sessions/_conversation.html.erb`,
+  `app/javascript/controllers/chat_controller.js`.
+  *Test:* `spec/lib/chat_controller_node_harness_spec.rb`,
+  `spec/channels/chat_channel_spec.rb`.
+
 - [x] **CHAT-TURN-RECOVERY-003** — When a turn is marked `stalled`, the
   system SHALL persist a durable, non-collapsed system `ChatMessage`
   (`stalled_turn_notice?`) explaining what is known (whether a write tool had

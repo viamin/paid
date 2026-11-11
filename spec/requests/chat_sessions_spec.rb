@@ -1233,6 +1233,36 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include("Message 50")
       end
 
+      # @spec CHAT-TURN-RECOVERY-009
+      it "shows active turn progress immediately on reload" do
+        user_message = create(:chat_message, chat_session: chat_session, role: "user")
+        create(:chat_turn, chat_session: chat_session, user_message: user_message, status: "streaming")
+
+        get chat_session_path(chat_session)
+
+        progress = Nokogiri::HTML(response.body).at_css("[data-chat-target='progress']")
+        expect(progress).to be_present
+        expect(progress["class"].split).not_to include("hidden")
+        expect(progress.text).to include("Assistant is working")
+      end
+
+      # @spec CHAT-TURN-RECOVERY-008
+      it "renders a persisted turn failure as a visible transcript notice" do
+        user_message = create(:chat_message, chat_session: chat_session, role: "user")
+        create(:chat_turn, chat_session: chat_session, user_message: user_message, status: "failed")
+        chat_session.messages.create!(role: "system", content: "The assistant could not finish this response.",
+          metadata: { "chat_turn_failure_notice" => true })
+
+        get chat_session_path(chat_session)
+
+        notice = Nokogiri::HTML(response.body).at_css("[data-chat-turn-failure-notice] [role='alert']")
+        expect(notice).to be_present
+        expect(notice.text).to include("could not finish")
+        progress = Nokogiri::HTML(response.body).at_css("[data-chat-target='progress']")
+        expect(progress["class"].split).to include("bg-rose-50")
+        expect(progress.text).to include("Response stopped")
+      end
+
       # @spec CHAT-API-027
       it "pins the active session with a bounded preview when it falls outside the first batch" do
         create(:chat_message, chat_session: chat_session, content: "x" * 1_000)

@@ -16,11 +16,18 @@ module ChatSessions
       new(...).call
     end
 
+    # @spec API-CONVERSATION-DELEGATION-002
     def call
-      ApiUsageAttempt.transaction do
-        attempt = find_or_create_attempt
-        record_billable_usage(attempt)
-        attempt
+      # A long tool-driven turn may outlive the job's original association
+      # cache. Resolve the owning account from the durable FK, then establish
+      # tenant context for both the attempt and its billing record.
+      account = TenantContext.with_system_access { Account.find(chat_session.account_id) }
+      TenantContext.with(account) do
+        ApiUsageAttempt.transaction do
+          attempt = find_or_create_attempt
+          TenantContext.with_system_access { record_billable_usage(attempt) }
+          attempt
+        end
       end
     end
 
@@ -34,7 +41,7 @@ module ChatSessions
 
     def attempt_attributes
       {
-        account: chat_session.account,
+        account_id: chat_session.account_id,
         project: chat_session.project,
         chat_session: chat_session,
         chat_message: message,

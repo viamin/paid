@@ -20,6 +20,8 @@ class ChatControllerNodeHarness
       const statusMessages = [];
       const controller = Object.create(ChatController.prototype);
 
+      controller.element = { querySelector: () => null };
+
       controller.messagesTarget = {
         querySelector: (sel) => null,
         querySelectorAll: (sel) => [],
@@ -147,6 +149,57 @@ class ChatControllerNodeHarness
 
       if (!controller.streaming) {
         throw new Error("Expected streaming to remain true after tool call");
+      }
+    }
+
+    // @spec CHAT-TURN-RECOVERY-009
+    function testProgressRemainsVisibleThroughToolResultsAndClearsOnFailure() {
+      const classes = new Set(["hidden"]);
+      const progress = { classList: {
+        add: (...names) => names.forEach((name) => classes.add(name)),
+        remove: (...names) => names.forEach((name) => classes.delete(name))
+      } };
+      const progressText = { textContent: "" };
+      const { controller } = makeController({
+        element: { querySelector: () => null },
+        hasProgressTarget: true, progressTarget: progress,
+        hasProgressTextTarget: true, progressTextTarget: progressText
+      });
+
+      controller.handleMessageToolCall({ html: "<div>call</div>", tool_name: "search_code" });
+      if (classes.has("hidden") || !progressText.textContent.includes("search_code")) {
+        throw new Error("Tool call should show named progress");
+      }
+      controller.handleMessageToolResult({ html: "<div>result</div>" });
+      if (classes.has("hidden") || !progressText.textContent.includes("continuing")) {
+        throw new Error("Tool result should continue showing assistant progress");
+      }
+      controller.handleError({ message_id: "test-id", message: "failed" });
+      if (classes.has("hidden") || !classes.has("bg-rose-50") || progressText.textContent !== "failed") {
+        throw new Error("Failed turn should show a visible error beside the composer");
+      }
+    }
+
+    function testSubscriptionRestoresActiveTurnProgress() {
+      const classes = new Set(["hidden"]);
+      const { controller } = makeController({
+        streaming: false,
+        element: { querySelector: () => null },
+        hasProgressTarget: true,
+        progressTarget: { classList: {
+          add: (...names) => names.forEach((name) => classes.add(name)),
+          remove: (...names) => names.forEach((name) => classes.delete(name))
+        } },
+        hasProgressTextTarget: true,
+        progressTextTarget: { textContent: "" }
+      });
+
+      controller.handleTurnStatus({ status: "streaming", awaiting_confirmation: false });
+      if (classes.has("hidden") || !controller.streaming) throw new Error("Active turn should restore progress and busy state");
+      controller.streaming = false;
+      controller.handleTurnStatus({ status: "failed", awaiting_confirmation: false });
+      if (classes.has("hidden") || !classes.has("bg-rose-50")) {
+        throw new Error("Reloaded failed turn should show a visible error");
       }
     }
 
@@ -2316,6 +2369,8 @@ class ChatControllerNodeHarness
     function run() {
       testChatSettingsAutosaveReportsResult();
       testToolCallAppendsCardAndUpdatesStatus();
+      testProgressRemainsVisibleThroughToolResultsAndClearsOnFailure();
+      testSubscriptionRestoresActiveTurnProgress();
       testToolCallWithUnknownToolName();
       testToolCallWithMissingHtmlDoesNotAppend();
       testToolResultAppendsCard();

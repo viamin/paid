@@ -210,6 +210,18 @@ its typing state immediately, while a reload cannot continue to show the stale
 
 ## Observability
 
+Active-turn failures without an existing rate-limit or recovery explanation
+also leave a durable, non-collapsed transcript notice. The notice states that
+the response stopped and that already displayed
+tool actions may have completed; internal exception text stays in the log.
+The chat panel shows turn progress next to the composer, including on reload,
+and a channel subscription sends the latest durable turn status so a reconnect
+can restore or clear the progress line. Tool results change the line to
+"Assistant is continuing" until the next tool, final response, or failure.
+A failed turn changes the line to a visible stopped state as well as leaving
+the durable transcript notice, so the outcome stays visible while the user
+scrolls through earlier tool actions.
+
 `ChatTurnLifecycleEvent` (append-only, `readonly?` once persisted, written
 through the fail-open `ChatTurns::Lifecycle.record` — mirrors
 `ExecutionAuditEvents::Lifecycle`) records `chat_turn.stall_detected`,
