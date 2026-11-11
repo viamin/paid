@@ -33,7 +33,7 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
     )
   end
 
-  def completed_create_pr_run(project:, issue:, number:, url:)
+  def completed_create_pr_run(project:, issue:, number:, url:, **attrs)
     create(
       :agent_run,
       :completed,
@@ -41,7 +41,8 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
       issue: issue,
       goal: "create_pr",
       pull_request_number: number,
-      pull_request_url: url
+      pull_request_url: url,
+      **attrs
     )
   end
 
@@ -116,13 +117,18 @@ RSpec.describe Issues::CloseoutEvidence do # @spec PARTIAL-CLOSEOUT-001
 
   # @spec PARTIAL-CLOSEOUT-047
   it "normalizes blank URLs before merging parent and run-linked PR evidence" do
-    merged_pr(project:, number: 78, parent_issue_id: issue.id, github_html_url: "")
-    run = completed_create_pr_run(project:, issue:, number: 78, url: "")
+    pr = merged_pr(project:, number: 78, parent_issue_id: issue.id, github_html_url: "", created_at: 2.days.ago)
+    run = completed_create_pr_run(project:, issue:, number: 78, url: "", completed_at: 1.hour.ago)
 
     result = described_class.call(issue)
+    direct_result = described_class.merged_pull_requests(issue)
 
     expect(result.merged_prs.map(&:url)).to contain_exactly("#{project.github_url}/pull/78")
     expect(result.merged_prs.first.run_id).to eq(run.id)
+    expect(result.terminal_at).to eq(run.completed_at)
+    expect(direct_result.map(&:url)).to contain_exactly("#{project.github_url}/pull/78")
+    expect(direct_result.first.terminal_at).to eq(run.completed_at)
+    expect(direct_result.first.terminal_at).not_to eq(pr.created_at)
   end
 
   it "does not fabricate terminal evidence from an unrelated upstream PR when the run's fork PR is open" do

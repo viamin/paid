@@ -101,7 +101,7 @@ module Issues
         .pluck("agent_runs.id", "agent_runs.pull_request_number", "agent_runs.pull_request_url", "agent_runs.completed_at", "merged_prs.created_at", MERGED_PR_BODY_DIGEST_SQL)
 
       run_terminal_by_identity = run_linked.each_with_object({}) do |(_run_id, number, url, completed_at, _pr_created_at), map|
-        identity = [ number, url ]
+        identity = [ number, url.presence || "#{issue.project.github_url}/pull/#{number}" ]
         existing = map[identity]
         map[identity] = completed_at if existing.nil? || (completed_at && completed_at > existing)
       end
@@ -120,17 +120,19 @@ module Issues
       end
 
       run_linked.each do |run_id, number, pull_request_url, completed_at, pr_created_at, body_digest|
+        # Use the run's recorded URL — the same field the join above
+        # correlated — rather than reconstructing from issue.project.github_url,
+        # which points at the fork. For pr_target: "upstream" the merged PR
+        # lives in upstream_full_name, not in the project's own repo, so the
+        # constructed fork URL would send the operator to a fork PR with
+        # the same number that may be unrelated or open (#4130 review).
+        # Reconstruct only a blank URL, so its identity matches the parent PR.
+        pull_request_url = pull_request_url.presence || "#{issue.project.github_url}/pull/#{number}"
         pr = by_identity[[ number, pull_request_url ]]
         if pr.nil?
-          # Use the run's recorded URL — the same field the join above
-          # correlated — rather than reconstructing from issue.project.github_url,
-          # which points at the fork. For pr_target: "upstream" the merged PR
-          # lives in upstream_full_name, not in the project's own repo, so the
-          # constructed fork URL would send the operator to a fork PR with
-          # the same number that may be unrelated or open (#4130 review).
           by_identity[[ number, pull_request_url ]] = MergedPullRequest.new(
             number: number,
-            url: pull_request_url.presence || "#{issue.project.github_url}/pull/#{number}",
+            url: pull_request_url,
             terminal_at: completed_at || pr_created_at,
             run_id: run_id,
             body_digest: body_digest
@@ -176,7 +178,8 @@ module Issues
 
     def self.merged_prs_by_issue_id(issues_by_id, linked, run_linked)
       result = Hash.new { |hash, key| hash[key] = {} }
-      run_times = run_linked.group_by { |issue_id, _run_id, number, url, *_rest| [ issue_id, number, url ] }
+      run_times = run_linked.group_by { |issue_id, _run_id, number, url, *_rest|
+        [ issue_id, number, url.presence || "#{issues_by_id.fetch(issue_id).project.github_url}/pull/#{number}" ] }
         .transform_values { |rows| rows.map { |row| row[4] }.compact.max }
       linked.each do |issue_id, number, url, created_at, body_digest|
         issue = issues_by_id.fetch(issue_id)
