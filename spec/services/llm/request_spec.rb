@@ -63,6 +63,106 @@ RSpec.describe Llm::Request do
     expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess")).twice
   end
 
+  # @spec PARTIAL-CLOSEOUT-049
+  it "tries an explicit audit fallback after the run's pinned runner fails" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    attempts = [ AgentHarness::TimeoutError.new("runner timed out"), response ]
+    allow(provider).to receive(:send_message) do
+      result = attempts.shift
+      raise result if result.is_a?(Exception)
+
+      result
+    end
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ])).to eq(response)
+
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess")).twice
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: fallback, timeout: 60
+    )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
+  it "surfaces a later fallback's permanent failure over an earlier transient failure" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    attempts = [
+      AgentHarness::TimeoutError.new("runner timed out"),
+      AgentHarness::AuthenticationError.new("Not logged in")
+    ]
+    allow(provider).to receive(:send_message) { raise attempts.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
+  it "surfaces the pinned runner's permanent failure over a later fallback's transport failure" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    attempts = [
+      AgentHarness::AuthenticationError.new("Not logged in"),
+      AgentHarness::TimeoutError.new("runner timed out")
+    ]
+    allow(provider).to receive(:send_message) { raise attempts.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-049
+  it "fails with a timeout when the overall budget leaves no time for a candidate" do
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 0) }
+      .to raise_error(AgentHarness::TimeoutError, /timeout exhausted/)
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-049
+  it "preserves a transient failure when a later fallback is unavailable" do
+    fallback = create(:runner, user: owner, runner_key: "gemini", enabled_for_agent_runs: false)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(provider).to receive(:send_message)
+      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError, "runner timed out")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-049
+  it "keeps an unsuccessful response retryable when a later fallback is unavailable" do
+    fallback = create(:runner, user: owner, runner_key: "gemini", enabled_for_agent_runs: false)
+    failed_response = instance_double(AgentHarness::Response, success?: false)
+    allow(provider).to receive_messages(subscription_unset_vars: [], send_message: failed_response)
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ])).to eq(failed_response)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-049
+  it "does not use a fallback runner owned by another account" do
+    foreign_runner = create(:runner, user: create(:user), runner_key: "gemini")
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(provider).to receive(:send_message)
+      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ foreign_runner.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError)
+    expect(provider).to have_received(:send_message).once
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).once
+  end
+
   # @spec LLM-ROUTING-001 MODEL-POLICY-024
   it "does not let a ZDR fallback disqualify the non-ZDR primary" do
     fallback = create(:runner, user: owner, runner_key: "gemini", zero_data_retention: true,

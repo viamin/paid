@@ -65,11 +65,16 @@ class AgentRun < ApplicationRecord
   QUALITY_EXCLUDED_STATUSES = %w[timeout token_budget_exceeded auth_expired rate_limited].freeze
   STDOUT_TAIL_LINES = 500
 
+  # The Temporal runtime's message for an activity that exceeded its
+  # start-to-close timeout. It names a transport-level interruption rather than
+  # a permanent cause, so callers may classify it as transient.
+  ACTIVITY_TIMEOUT_MESSAGE = "Activity task timed out"
+
   OPERATIONAL_FAILURE_KEYWORDS = [
     "providers exhausted",
     "runners exhausted",
     "Docker exec",
-    "Activity task timed out",
+    ACTIVITY_TIMEOUT_MESSAGE,
     "Activity task failed",
     "Activity canceled",
     "worktree",
