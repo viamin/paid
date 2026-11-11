@@ -5,6 +5,12 @@ class Project < ApplicationRecord
 
   has_many :chat_investigations, dependent: :destroy
   has_many :agent_planning_holds, dependent: :destroy
+  has_many :work_item_assignments, dependent: :destroy
+  has_many :work_items, through: :work_item_assignments
+  has_many :work_item_project_mapping_targets, dependent: :destroy
+  has_many :work_item_project_mappings, through: :work_item_project_mapping_targets
+  has_many :trusted_provider_identities, dependent: :destroy
+  has_many :work_item_lifecycle_mappings, dependent: :destroy
 
   self.ignored_columns += [ "pr_aggregation_enabled" ]
 

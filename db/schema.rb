@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_113702) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3682,6 +3682,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
   create_table "projects", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
+    t.boolean "agent_run_lifecycle_sync_enabled", default: true, null: false, comment: "Whether agent-run-driven lifecycle writes push to the mapped provider, independent of the general lifecycle-mapping sync."
     t.integer "agent_runs_count", default: 0, null: false, comment: "Counter cache for total agent runs"
     t.boolean "allow_bot_authored_pr_auto_merge", default: false, null: false, comment: "When true, PRs authored by the project's own GitHub App bot may auto-merge without explicit owner approval"
     t.jsonb "allowed_github_usernames", default: [], null: false
@@ -3877,6 +3878,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.index ["user_id", "api_service_type"], name: "index_provider_api_keys_on_user_id_and_api_service_type"
     t.index ["user_id", "name"], name: "index_provider_api_keys_on_user_id_and_name", unique: true
     t.index ["user_id"], name: "index_provider_api_keys_on_user_id"
+  end
+
+  create_table "provider_identity_mappings", comment: "Explicit Paid-to-provider (Linear, GitHub) identity mapping used for trust admission and comment authorship.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.string "external_id", null: false
+    t.string "external_name"
+    t.string "provider", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["account_id", "provider", "external_id"], name: "index_provider_identity_mappings_on_provider_identity", unique: true
+    t.index ["account_id", "user_id", "provider"], name: "index_provider_identity_mappings_on_user_and_provider", unique: true
+    t.index ["account_id"], name: "index_provider_identity_mappings_on_account_id"
+    t.index ["created_by_id"], name: "index_provider_identity_mappings_on_created_by_id"
+    t.index ["user_id"], name: "index_provider_identity_mappings_on_user_id"
   end
 
   create_table "provisioning_intents", comment: "Execution-resource provisioning-intent ledger rows recording runner intent before provider create calls so orphaned resources remain reconcileable (RDR-060).", force: :cascade do |t|
@@ -4623,6 +4640,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.index ["project_id"], name: "index_trusted_measurement_attempts_on_project_id"
   end
 
+  create_table "trusted_provider_identities", comment: "Account trusted-team/user defaults with project-level additions/overrides, an additional admission path for non-GitHub providers.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.string "external_id", null: false
+    t.string "external_name"
+    t.string "identity_type", null: false, comment: "team or user."
+    t.bigint "project_id", comment: "Null means an account-wide default; present overrides/adds for that project."
+    t.string "provider", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "project_id", "provider", "identity_type", "external_id"], name: "index_trusted_identities_on_scope", unique: true
+    t.index ["account_id", "provider", "identity_type", "external_id"], name: "index_trusted_identities_on_account_default", unique: true, where: "(project_id IS NULL)"
+    t.index ["account_id"], name: "index_trusted_provider_identities_on_account_id"
+    t.index ["created_by_id"], name: "index_trusted_provider_identities_on_created_by_id"
+    t.index ["project_id"], name: "index_trusted_provider_identities_on_project_id"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
     t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
@@ -4713,6 +4747,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
+  create_table "work_item_assignment_overrides", comment: "Append-only audit trail of explicit human customize/replace decisions on a work item's assignment.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "actor_id"
+    t.datetime "created_at", null: false
+    t.string "mode", null: false, comment: "customized or replaced."
+    t.text "note"
+    t.datetime "updated_at", null: false
+    t.bigint "work_item_id", null: false
+    t.index ["account_id"], name: "index_work_item_assignment_overrides_on_account_id"
+    t.index ["actor_id"], name: "index_work_item_assignment_overrides_on_actor_id"
+    t.index ["work_item_id"], name: "index_work_item_assignment_overrides_on_work_item_id"
+  end
+
+  create_table "work_item_assignments", comment: "Join between a work item and the repository-backed Paid project(s) it is assigned to.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assigned_by_id"
+    t.datetime "created_at", null: false
+    t.boolean "default_execution", default: false, null: false, comment: "Issue-level default execution project among this item's assigned projects."
+    t.boolean "locked", default: false, null: false, comment: "Set once a human customizes or replaces this item's assignment; future mapping changes must not silently alter it."
+    t.bigint "project_id", null: false
+    t.string "provenance", default: "manual", null: false, comment: "mapping or manual."
+    t.datetime "updated_at", null: false
+    t.bigint "work_item_id", null: false
+    t.bigint "work_item_project_mapping_id"
+    t.index ["account_id"], name: "index_work_item_assignments_on_account_id"
+    t.index ["assigned_by_id"], name: "index_work_item_assignments_on_assigned_by_id"
+    t.index ["project_id", "work_item_id"], name: "index_work_item_assignments_on_project_and_work_item"
+    t.index ["project_id"], name: "index_work_item_assignments_on_project_id"
+    t.index ["work_item_id", "project_id"], name: "index_work_item_assignments_on_work_item_and_project", unique: true
+    t.index ["work_item_id"], name: "index_work_item_assignments_on_work_item_id"
+    t.index ["work_item_project_mapping_id"], name: "index_work_item_assignments_on_work_item_project_mapping_id"
+  end
+
   create_table "work_item_continuation_grants", force: :cascade do |t|
     t.datetime "completed_at", comment: "When the endpoint's work landed. A completed grant is not reactivated by reopening work."
     t.datetime "created_at", null: false
@@ -4733,14 +4800,85 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.index ["revoked_by_id"], name: "index_work_item_continuation_grants_on_revoked_by_id"
   end
 
+  create_table "work_item_lifecycle_conflicts", comment: "Simultaneous conflicting lifecycle changes (native vs. Paid) surfaced for human review.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "detected_at", null: false
+    t.string "observed_native_state"
+    t.string "observed_paid_state"
+    t.string "requested_native_state"
+    t.string "requested_paid_state"
+    t.string "resolution"
+    t.datetime "resolved_at"
+    t.bigint "resolved_by_id"
+    t.datetime "updated_at", null: false
+    t.bigint "work_item_id", null: false
+    t.index ["account_id", "resolved_at"], name: "index_lifecycle_conflicts_on_account_and_resolved"
+    t.index ["account_id"], name: "index_work_item_lifecycle_conflicts_on_account_id"
+    t.index ["resolved_by_id"], name: "index_work_item_lifecycle_conflicts_on_resolved_by_id"
+    t.index ["work_item_id"], name: "index_work_item_lifecycle_conflicts_on_work_item_id"
+  end
+
+  create_table "work_item_lifecycle_mappings", comment: "Bidirectional provider-native/Paid lifecycle state mapping, with account defaults and project overrides.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.string "native_state", null: false
+    t.string "paid_state", null: false
+    t.bigint "project_id", comment: "Null means an account-wide default; present overrides for that project."
+    t.string "provider", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "project_id", "provider", "native_state"], name: "index_lifecycle_mappings_on_native_state", unique: true
+    t.index ["account_id", "project_id", "provider", "paid_state"], name: "index_lifecycle_mappings_on_paid_state", unique: true
+    t.index ["account_id", "provider", "native_state"], name: "index_lifecycle_mappings_on_account_native_state", unique: true, where: "(project_id IS NULL)"
+    t.index ["account_id", "provider", "paid_state"], name: "index_lifecycle_mappings_on_account_paid_state", unique: true, where: "(project_id IS NULL)"
+    t.index ["account_id"], name: "index_work_item_lifecycle_mappings_on_account_id"
+    t.index ["created_by_id"], name: "index_work_item_lifecycle_mappings_on_created_by_id"
+    t.index ["project_id"], name: "index_work_item_lifecycle_mappings_on_project_id"
+  end
+
+  create_table "work_item_project_mapping_targets", comment: "The repository-backed Paid projects a Linear project mapping assigns tickets to.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "work_item_project_mapping_id", null: false
+    t.index ["project_id"], name: "index_work_item_project_mapping_targets_on_project_id"
+    t.index ["work_item_project_mapping_id", "project_id"], name: "index_mapping_targets_on_mapping_and_project", unique: true
+    t.index ["work_item_project_mapping_id"], name: "index_mapping_targets_on_mapping"
+  end
+
+  create_table "work_item_project_mappings", comment: "Maps one provider-native project (e.g. a Linear project) to one or more repository-backed Paid projects.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "assignment_mode", default: "current_and_future", null: false, comment: "current_and_future, future_only, or none."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.bigint "default_execution_project_id"
+    t.string "native_project_id", null: false
+    t.string "native_project_name"
+    t.string "provider", null: false
+    t.bigint "tracker_configuration_id"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "provider", "native_project_id"], name: "index_work_item_project_mappings_on_native_identity", unique: true
+    t.index ["account_id"], name: "index_work_item_project_mappings_on_account_id"
+    t.index ["created_by_id"], name: "index_work_item_project_mappings_on_created_by_id"
+    t.index ["default_execution_project_id"], name: "idx_on_default_execution_project_id_1e58c0e691"
+    t.index ["tracker_configuration_id"], name: "index_work_item_project_mappings_on_tracker_configuration_id"
+  end
+
   create_table "work_items", comment: "Account-scoped provider tickets retained for reconciliation and workflow assignment.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "archived_at"
+    t.datetime "assignment_review_flagged_at", comment: "Set when a mapping or native project change affects this item's existing override and needs human review."
     t.text "body"
     t.datetime "created_at", null: false
     t.string "external_id", null: false
     t.datetime "last_synced_at", null: false
+    t.string "lifecycle_sync_source", comment: "Which side last wrote the lifecycle state (provider or paid), used to prevent synchronization loops."
+    t.datetime "lifecycle_synced_at"
+    t.string "native_project_id", comment: "Provider-native project identifier (e.g. a Linear project) used to resolve mapping-driven assignment."
+    t.string "native_project_name"
     t.string "native_state"
+    t.string "paid_lifecycle_state", comment: "Normalized Paid lifecycle state, kept separately from native_state to detect simultaneous conflicting changes."
     t.integer "priority"
     t.string "provider", null: false
     t.datetime "provider_created_at"
@@ -4753,6 +4891,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.string "url"
     t.index ["account_id", "provider", "resource_type", "external_id"], name: "index_work_items_on_provider_identity", unique: true
     t.index ["account_id"], name: "index_work_items_on_account_id"
+    t.index ["native_project_id"], name: "index_work_items_on_native_project_id"
     t.index ["tracker_configuration_id"], name: "index_work_items_on_tracker_configuration_id"
   end
 
@@ -5192,6 +5331,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "provider_api_keys", "users", on_delete: :cascade
+  add_foreign_key "provider_identity_mappings", "accounts"
+  add_foreign_key "provider_identity_mappings", "users"
+  add_foreign_key "provider_identity_mappings", "users", column: "created_by_id"
   add_foreign_key "provisioning_intents", "accounts"
   add_foreign_key "provisioning_intents", "agent_runs"
   add_foreign_key "provisioning_intents", "projects"
@@ -5271,14 +5413,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
   add_foreign_key "trusted_measurement_attempts", "accounts"
   add_foreign_key "trusted_measurement_attempts", "issues"
   add_foreign_key "trusted_measurement_attempts", "projects"
+  add_foreign_key "trusted_provider_identities", "accounts"
+  add_foreign_key "trusted_provider_identities", "projects"
+  add_foreign_key "trusted_provider_identities", "users", column: "created_by_id"
   add_foreign_key "user_settings", "provider_api_keys", column: "kb_chat_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "provider_api_keys", column: "kb_embedding_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
+  add_foreign_key "work_item_assignment_overrides", "accounts"
+  add_foreign_key "work_item_assignment_overrides", "users", column: "actor_id"
+  add_foreign_key "work_item_assignment_overrides", "work_items"
+  add_foreign_key "work_item_assignments", "accounts"
+  add_foreign_key "work_item_assignments", "projects"
+  add_foreign_key "work_item_assignments", "users", column: "assigned_by_id"
+  add_foreign_key "work_item_assignments", "work_item_project_mappings"
+  add_foreign_key "work_item_assignments", "work_items"
   add_foreign_key "work_item_continuation_grants", "issues"
   add_foreign_key "work_item_continuation_grants", "projects"
   add_foreign_key "work_item_continuation_grants", "users", column: "created_by_id"
   add_foreign_key "work_item_continuation_grants", "users", column: "revoked_by_id"
+  add_foreign_key "work_item_lifecycle_conflicts", "accounts"
+  add_foreign_key "work_item_lifecycle_conflicts", "users", column: "resolved_by_id"
+  add_foreign_key "work_item_lifecycle_conflicts", "work_items"
+  add_foreign_key "work_item_lifecycle_mappings", "accounts"
+  add_foreign_key "work_item_lifecycle_mappings", "projects"
+  add_foreign_key "work_item_lifecycle_mappings", "users", column: "created_by_id"
+  add_foreign_key "work_item_project_mapping_targets", "projects"
+  add_foreign_key "work_item_project_mapping_targets", "work_item_project_mappings"
+  add_foreign_key "work_item_project_mappings", "accounts"
+  add_foreign_key "work_item_project_mappings", "projects", column: "default_execution_project_id"
+  add_foreign_key "work_item_project_mappings", "tracker_configurations"
+  add_foreign_key "work_item_project_mappings", "users", column: "created_by_id"
   add_foreign_key "work_items", "accounts"
   add_foreign_key "work_items", "tracker_configurations"
   add_foreign_key "workflow_states", "projects"
