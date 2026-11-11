@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_195604) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -107,6 +107,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_195604) do
     t.string "plan", default: "trial", null: false
     t.jsonb "remediation_policy", default: {}, null: false, comment: "Per-action self-heal remediation modes and thresholds for this account."
     t.datetime "scheduler_paused_at"
+    t.string "seed_owner", comment: "Seed tool that owns this account (paid-journey); NULL for accounts not created by a seed tool."
     t.string "slug", null: false
     t.integer "status", default: 0, null: false
     t.datetime "suspended_at"

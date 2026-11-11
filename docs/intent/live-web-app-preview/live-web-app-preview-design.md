@@ -61,6 +61,29 @@ explicit states. Evidence becomes stale when its commit differs from the run's
 reviewed commit. This supplements RDR-076's shared evidence contract; it does
 not create merge authority or a separate acceptance model.
 
+## Repository-Owned Verification Journeys
+
+An application repository may provide `.paid/journeys.md` as concise,
+versioned guidance for interactive verification. The guide complements, rather
+than duplicates, `.paid/screenshots.yml`: screenshot configuration remains the
+source of routes, test authentication, and seed-data setup. A create-PR agent
+whose checkout contains the guide receives its path in the verification prompt
+and selects the journey that covers its changed surface. The prompt requires
+the agent to record the actual browser steps, observed result, and available
+run-owned artifacts through the existing verification result contract.
+
+For Paid's own checkout, the pilot guide covers sign-in, the Projects index,
+and a project-detail page. Its helper commands prepare the isolated database,
+reset only the seeded verification account, and remove that account during
+cleanup. Seed creation stamps the account with a persisted `seed_owner`
+marker (`accounts.seed_owner`); journey reuse and cleanup require that marker,
+so an unmarked account that merely collides on the journey slug or email is
+refused with `AccountCollision`/`IdentityCollision` instead of being adopted
+or destroyed. The helper refuses to run outside the development and test
+environments. The permanent system journey is the maintenance check for the
+guide's login and routes; a separate Paid-managed implementation run remains
+required as inspectable operational evidence before the pilot can be expanded.
+
 ### Criterion verification references
 
 Every issue implementation run receives the criterion-result schema and may
