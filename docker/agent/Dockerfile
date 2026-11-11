@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     iptables \
     jq \
+    tmux \
     unzip \
     wget \
     ca-certificates \
@@ -112,6 +113,11 @@ RUN if [ -z "${BUNDLER_VERSION}" ]; then \
         exit 1; \
     fi \
     && gem install --no-document "bundler:${BUNDLER_VERSION}"
+
+# `bin/dev` is the runtime-derived launch command for Paid's verification
+# journey. Install its process supervisor during image build so an agent can
+# start the seeded application without mutating the image at verification time.
+RUN gem install --no-document overmind
 
 # Install agent-harness globally so lightweight utility scripts inside the
 # agent container can use the same transport layer as the Rails app.

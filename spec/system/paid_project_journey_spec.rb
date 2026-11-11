@@ -30,28 +30,12 @@ RSpec.describe "Paid project detail verification journey", system_driver: :rack_
   end
 
   # @spec LIVE-PREVIEW-012
-  it "documents a launch command the agent's execution container can run" do
+  it "documents the runtime-derived launch command" do
     journey_guide = Rails.root.join(".paid/journeys.md").read
     log_path = Regexp.escape(AgentRuns::VerificationPrompt::APP_LOG_PATH)
     launch_command = journey_guide[/^\((.+)\) > #{log_path}/, 1]
+    runtime_plan = Screenshots::RuntimePlan.call(project:, repo_path: Rails.root)
 
-    # The agent execution container (docker/agent/Dockerfile) ships the
-    # Ruby/Rails toolchain but neither tmux nor Overmind, so `bin/dev` cannot
-    # start the application there. `Screenshots::RuntimePlan` cannot supply this
-    # command: its generic preference order picks `bin/dev` whenever the file
-    # exists in the repository.
-    expect(launch_command).to eq("bundle exec bin/rails server -b 0.0.0.0 -p 3000")
-  end
-
-  # @spec LIVE-PREVIEW-012
-  it "overrides the verification prompt's generic preferred start command" do
-    journey_guide = Rails.root.join(".paid/journeys.md").read
-
-    # The prompt's generic derivation prefers `bin/dev`, which the agent
-    # container cannot run. The guide has to say it overrides that command,
-    # or the agent is left choosing between the prompt's launch pattern and
-    # the guide's.
-    expect(journey_guide).to include("verification prompt's generic preferred start command")
-    expect(journey_guide).to include("`bin/dev`")
+    expect(launch_command).to eq(runtime_plan.start_command)
   end
 end

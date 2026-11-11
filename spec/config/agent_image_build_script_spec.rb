@@ -196,10 +196,10 @@ RSpec.describe AgentImageBuildScript, :no_db do
     end
 
     # @spec LIVE-PREVIEW-012
-    it "rejects a launch command that needs the tmux and Overmind supervisor the image lacks" do
-      expect(inner_script_source).to include("bin/dev")
-      expect(inner_script_source).to include("tmux")
-      expect(inner_script_source).to include("overmind")
+    it "requires bin/dev's supervisors in the managed image" do
+      expect(Rails.root.join("docker/agent/Dockerfile").read).to include("tmux")
+      expect(Rails.root.join("docker/agent/Dockerfile").read).to include("gem install --no-document overmind")
+      expect(inner_script_source).to include("tmux overmind")
     end
 
     # @spec LIVE-PREVIEW-012
@@ -236,15 +236,14 @@ RSpec.describe AgentImageBuildScript, :no_db do
     end
 
     # @spec LIVE-PREVIEW-012
-    it "rejects a bin/dev launch command when the image ships no supervisor" do
-      _stdout, stderr, status = run_launch_contract_check(
+    it "accepts the runtime-derived bin/dev launch command" do
+      stdout, stderr, status = run_launch_contract_check(
         launch_command: "PORT=3000 bin/dev",
         scripts: [ "bin/dev" ]
       )
 
-      expect(status).not_to be_success
-      expect(stderr).to include("'bin/dev' needs 'tmux', which this image does not ship")
-      expect(stderr).to include("'bin/dev' needs 'overmind', which this image does not ship")
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("PORT=3000 bin/dev")
     end
 
     # Runs the container-side check against a throwaway checkout so the
@@ -286,14 +285,19 @@ RSpec.describe AgentImageBuildScript, :no_db do
     def write_stub_bin(dir)
       stub_dir = File.join(dir, "stubbin")
       FileUtils.mkdir_p(stub_dir)
-      %w[bash sed dirname].each do |utility|
+      %w[bash sed dirname tmux overmind].each do |utility|
         source = ENV.fetch("PATH").split(File::PATH_SEPARATOR).filter_map do |entry|
           candidate = File.join(entry, utility)
           File.executable?(candidate) ? candidate : nil
         end.first
-        raise "Unable to locate #{utility} on PATH" if source.nil?
-
-        FileUtils.ln_s(source, File.join(stub_dir, utility))
+        if source
+          FileUtils.ln_s(source, File.join(stub_dir, utility))
+        elsif utility.in?(%w[tmux overmind])
+          File.write(File.join(stub_dir, utility), "#!/usr/bin/env bash\nexit 0\n")
+          FileUtils.chmod(0o755, File.join(stub_dir, utility))
+        else
+          raise "Unable to locate #{utility} on PATH"
+        end
       end
       File.write(File.join(stub_dir, "bundle"), "#!/usr/bin/env bash\nexit 0\n")
       FileUtils.chmod(0o755, File.join(stub_dir, "bundle"))

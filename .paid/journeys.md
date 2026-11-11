@@ -23,16 +23,13 @@ bin/paid-journey reset
 bin/paid-journey credentials
 ```
 
-Start the application directly with the Rails server. This overrides the
-verification prompt's generic preferred start command: that preference picks
-the repository's `bin/dev` whenever the file exists, and the agent's own
-execution container ships the Ruby/Rails toolchain but not the
-`tmux`/Overmind supervisor `bin/dev` requires, so `bin/dev` cannot start
-anything there.
+Start the application with the runtime-derived command. This keeps journey
+verification aligned with the application startup path that
+`Screenshots::RuntimePlan` uses for Paid.
 
 ```bash
 mkdir -p tmp
-(bundle exec bin/rails server -b 0.0.0.0 -p 3000) > tmp/paid-agent-verification-app.log 2>&1 &
+(PORT=3000 bin/dev) > tmp/paid-agent-verification-app.log 2>&1 &
 echo $! > tmp/paid-agent-verification-app.pid
 ```
 

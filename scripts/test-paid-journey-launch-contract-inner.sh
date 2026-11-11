@@ -93,9 +93,9 @@ for token in "${tokens[@]}"; do
     esac
 done
 
-# `bin/dev` supervises the application through Overmind on top of tmux. The
-# agent image ships neither, so a guide documenting `bin/dev` cannot start the
-# application in the container that runs Paid-managed agents.
+# Paid's runtime-derived `bin/dev` command supervises its processes through
+# Overmind and tmux. Verify both dependencies in the managed image before an
+# agent relies on the documented launch command.
 case "${launch_command}" in
     *bin/dev*)
         for supervisor in tmux overmind; do
