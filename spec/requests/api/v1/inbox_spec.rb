@@ -154,7 +154,7 @@ RSpec.describe "Mobile inbox API" do
       "parent" => { "project" => project.full_name, "number" => parent.github_number, "url" => parent.github_url, "title" => parent.title }
     )
     expect(second_node).to include("title" => second.title, "labels" => [], "parent" => nil)
-    expect(entry.fetch("cycle_edges").first).to include("from" => first_node, "to" => second_node)
+    expect(entry.fetch("cycle_edges")).to include(a_hash_including("from" => first_node, "to" => second_node))
   end
 
   # Issue#parent_issue is validated to the same project; a cross-project

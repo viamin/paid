@@ -3,9 +3,9 @@
 ## Metadata
 
 - **Date**: 2026-11-05
-- **Status**: Accepted
+- **Status**: Partially Implemented
 - **Type**: Product workflow + authorization + delivery UX
-- **Related issues**: #4863; [#4512](https://github.com/viamin/paid/issues/4512)
+- **Related issues**: #4863 (design/tracking), #4875–#4881 (implementation and pilot); [#4512](https://github.com/viamin/paid/issues/4512) (shared phase enforcement)
 - **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md), and [RDR-078](RDR-078-bounded-delivery-phase-authorization.md)
 - **Related intent**: `docs/intent/project-delegation/`
 - **Implementation status**: The default-conservative posture, authorized selection,
