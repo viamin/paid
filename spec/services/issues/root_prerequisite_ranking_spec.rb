@@ -52,6 +52,21 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "uses the direct path when queue work is also reachable through a longer path" do
+    root = issue(1)
+    middle = issue(2)
+    blocked = issue(3)
+    depends(middle, root)
+    depends(blocked, middle)
+    depends(blocked, root)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
+
+    expect(ranking).to have_attributes(direct_reach: 1, transitive_reach: 0, total_reach: 1)
+    expect(ranking.paths.sole.issues).to eq([ root, blocked ])
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "keeps recommend-close queue work as a dependent while filtering non-blocking prerequisites" do
     root = issue(1)
     blocked = issue(2)

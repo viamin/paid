@@ -178,18 +178,15 @@ module Issues
     def path_ids_from(root)
       found = {}
       visited = Set[root.id]
-      stack = [ [ root.id, [ root.id ] ] ]
-      until stack.empty?
-        current_id, path_ids = stack.pop
-        downstream.fetch(current_id, []).sort.reverse_each do |dependent_id|
+      frontier = [ [ root.id, [ root.id ] ] ]
+      frontier.each do |current_id, path_ids|
+        downstream.fetch(current_id, []).sort.each do |dependent_id|
           next unless visible_issue?(dependent_id)
           next if path_ids.include?(dependent_id) || excluded_blocker?(dependent_id)
 
           next_path = path_ids + [ dependent_id ]
-          if queue_issue_ids.include?(dependent_id)
-            found[dependent_id] ||= next_path
-          end
-          stack << [ dependent_id, next_path ] if visited.add?(dependent_id)
+          found[dependent_id] ||= next_path if queue_issue_ids.include?(dependent_id)
+          frontier << [ dependent_id, next_path ] if visited.add?(dependent_id)
         end
       end
       found.values
