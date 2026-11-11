@@ -63,8 +63,8 @@ criterion satisfaction. Missing evidence remains unknown. Omitted or truncated
 source intent or merged PR descriptions are recorded on the assessment and
 cannot authorize source closure. Shortened run summaries remain labeled in the
 packet for semantic evaluation without automatically blocking a complete
-source and PR description. If a PR description changes between the revision
-read and the body read, the input is incomplete and cannot authorize closure. The
+source and PR description. If source intent or a PR description changes after
+the audit reads it, the input is incomplete and cannot authorize closure. The
 Inbox names the need to narrow or complete the evidence before another audit.
 The existing intent and outcome-generation revisions bind the assessment to
 the supplied source, terminal outcomes, and current PR descriptions. The audit

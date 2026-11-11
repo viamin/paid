@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module PartialCloseouts
   # Builds the bounded, provenance-labeled inputs for a semantic closeout audit.
   # @spec PARTIAL-CLOSEOUT-047
@@ -10,7 +12,7 @@ module PartialCloseouts
     MAX_RUN_SUMMARY = 3_000
     MAX_VERIFICATION_SUMMARY = 1_000
 
-    attr_reader :coverage, :source_revision, :intent_revision
+    attr_reader :source_revision, :intent_revision
 
     def self.call(...) = new(...).call
 
@@ -44,6 +46,7 @@ module PartialCloseouts
       runs = AgentRun.where(project_id: @issue.project_id, issue_id: @issue.id,
         goal: "create_pr", id: merged_prs.filter_map(&:run_id)).index_by(&:id)
       source = source_issue
+      @source_digest = source.delete(:digest)
       @source_revision = Assessment.source_revision_for(@issue, closeout_evidence: closeout)
       @intent_revision = source.fetch(:intent_revision)
       delivery = merged_prs.map { |pr| merged_pr(pr, runs[pr.run_id], pr_bodies[[ pr.number, pr.url ]]) }
@@ -59,6 +62,15 @@ module PartialCloseouts
         pr_body_revision: closeout.pr_body_revision,
         current_run_summary: current
       }.to_json
+    end
+
+    def coverage
+      return @coverage unless @coverage
+
+      reasons = source_change_reason
+      return @coverage if reasons.empty?
+
+      @coverage.merge("complete" => false, "reasons" => (@coverage.fetch("reasons") + reasons).uniq)
     end
 
     private
@@ -83,9 +95,18 @@ module PartialCloseouts
         number: @issue.github_number,
         title: @issue.title,
         body: body.first(MAX_SOURCE_BODY),
+        digest: Digest::SHA256.hexdigest([ @issue.title, body ].join("\0")),
         body_truncated: body.length > MAX_SOURCE_BODY,
         intent_revision: Assessment.intent_revision_for(@issue)
       }
+    end
+
+    def source_change_reason
+      source = Issue.where(id: @issue.id).pick(:title, :body)
+      return [] if source.nil?
+
+      digest = Digest::SHA256.hexdigest([ source.first, source.second.to_s ].join("\0"))
+      digest == @source_digest ? [] : [ "source_issue_changed_during_audit" ]
     end
 
     def merged_pr(pr, run, body)

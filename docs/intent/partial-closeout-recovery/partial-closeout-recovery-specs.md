@@ -231,7 +231,7 @@
   current evidence SHALL remain unknown. A change to a linked PR description
   SHALL stale the prior assessment, including a change made while the audit is
   running. When source issue text or a merged PR description is truncated, or
-  merged PR evidence is omitted, or a PR description changes while assembling
+merged PR evidence is omitted, or source issue text or a PR description changes while assembling
   the input, the system SHALL record
   incomplete input coverage, refuse acceptance-based closure, and present a
   concrete evidence-repair action instead of a closure action.

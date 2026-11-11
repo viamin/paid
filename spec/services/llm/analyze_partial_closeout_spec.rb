@@ -136,6 +136,24 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     end
 
     # @spec PARTIAL-CLOSEOUT-047
+    it "marks source intent changed during an audit as incomplete input" do
+      issue.update!(body: "Original acceptance evidence")
+      allow(provider).to receive(:send_message) do |**|
+        issue.update!(body: "Changed during audit")
+        llm_response
+      end
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Dispatch", state: "satisfied", evidence: [ { label: "Source issue" } ]
+      } ] }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.dig("input_coverage", "reasons")).to include("source_issue_changed_during_audit")
+      expect(PartialCloseouts::SourceClosureDisposition.call(issue:,
+        assessment: PartialCloseouts::Assessment.snapshot(agent_run, result)).fetch("disposition")).to eq("track")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-047
     it "refuses closure when a PR description changes while gathering evidence" do
       merged = create(:issue, :pull_request, project:, parent_issue: issue,
         pr_review_phase: "merged", github_html_url: "#{project.github_url}/pull/123", body: "Original evidence")
