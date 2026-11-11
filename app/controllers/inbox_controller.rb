@@ -154,19 +154,20 @@ class InboxController < ApplicationController
   end
 
   def selected_entry_queue
-      [ inbox_queue.find_entry(params[:entry_id].to_s) ].compact
+    [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
+      project: @scoped_project, kind: @selected_kind) ].compact
   end
 
-    def inbox_queue
-      @inbox_queue ||= Inbox::Queue.new(user: current_user, project: @scoped_project,
-        kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
-    end
+  def inbox_queue
+    @inbox_queue ||= Inbox::Queue.new(user: current_user, project: @scoped_project,
+      kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
+  end
 
-    def queue_entry_kind
-      return @selected_kind unless single_entry_request?
+  def queue_entry_kind
+    return @selected_kind unless single_entry_request?
 
-      params[:entry_id].to_s.split(":", 2).first
-    end
+    @selected_kind.presence || params[:entry_id].to_s.split(":", 2).first
+  end
 
   # @spec INBOX-PHASE-RELEVANCE-002
   def valid_inbox_scope

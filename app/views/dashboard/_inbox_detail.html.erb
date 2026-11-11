@@ -101,7 +101,7 @@
           entry: entry,
           scoped_project: scoped_project,
           selected_kind: selected_kind,
-          root_prerequisite_ranking: root_prerequisite_ranking %>
+          root_prerequisite_ranking: local_assigns[:root_prerequisite_ranking] %>
   <% elsif entry.test_review_pending? %>
     <%= render "dashboard/inbox_detail_test_review_pending",
           entry: entry %>

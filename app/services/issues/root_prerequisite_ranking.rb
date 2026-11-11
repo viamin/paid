@@ -112,13 +112,7 @@ module Issues
 
     def blocking_external_dependency_condition
       Issue.sanitize_sql_array([ <<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES ])
-        (ext_issue.github_state = 'open' AND ext_issue.paid_state NOT IN (?))
-        OR (
-          issue_dependencies.requires_deployment = TRUE
-          AND ext_issue.is_pull_request = TRUE
-          AND ext_issue.deployed_at IS NULL
-          AND ext_issue.github_state <> 'open'
-        )
+        ext_issue.github_state = 'open' AND ext_issue.paid_state NOT IN (?)
       SQL
     end
 

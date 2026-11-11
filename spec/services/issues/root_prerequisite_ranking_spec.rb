@@ -80,7 +80,7 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
-  it "includes an undeployed merged PR reached through a resolved external dependency" do
+  it "does not treat an undeployed merged PR reached through an external dependency as a blocker" do
     upstream_project = create(:project, account:)
     root = issue(1)
     blocked = issue(2)
@@ -92,7 +92,7 @@ RSpec.describe Issues::RootPrerequisiteRanking do
 
     ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
 
-    expect(ranking.paths.sole.completion_alone_makes_runnable).to be(false)
+    expect(ranking.paths.sole.completion_alone_makes_runnable).to be(true)
   end
 
   # @spec PARTIAL-CLOSEOUT-048
