@@ -90,8 +90,12 @@
   *Tests:* `spec/requests/projects/agent_runs_continuation_spec.rb`
   *Code:* `Projects::AgentRunsController`
 
-- [x] **AUTOMATION-PHASES-012** — The system SHALL NOT offer a per-item
-  override that stops project automation beyond the chosen endpoint.
+- [x] **AUTOMATION-PHASES-012** — The system SHALL NOT offer a stop option on
+  continuation grants, project phase settings, or manual-start endpoints; a
+  per-lineage exclusive stop SHALL exist only through the separately
+  authorized bounded phase authorization
+  ([RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authorization.md)),
+  which never modifies continuation-grant endpoint semantics.
   *Tests:* `spec/services/automation/manual_start/plan_spec.rb`
   *Code:* `Automation::ManualStart::Plan`
 

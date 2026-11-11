@@ -110,7 +110,7 @@ would otherwise proceed; merge is included only when separately selected.
 Authorization does not extend through mentions, dependencies, child work,
 milestones, releases, deployments, or settings changes. Scope expansion,
 changed intent or policy, a newly discovered risk, and unknown correspondence
-require a visible reassessment before further work. The proposed design is
+require a visible reassessment before further work. The accepted design is
 recorded in [RDR-078](rdrs/RDR-078-bounded-delivery-phase-authorization.md).
 
 The same human review boundary applies when a completed issue is reopened:

@@ -221,9 +221,9 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-11-10
+    audited: 2026-11-11
     blockedBy: [automation-phases]
-    next: "RDR-078 remains proposed; obtain design acceptance #4996, then complete phase-lifecycle claims through #4997-#4999 and closeout #5000. Keep the exclusive stop disabled until accepted."
+    next: "Design accepted 2026-11-11 (#4996); shipped -010/-011/-004 foundation is the single authority. Implement phase-lifecycle claims through #4997-#4999 and close out via #5000; keep automation_phases default-off and the exclusive stop disabled until enforcement lands."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md

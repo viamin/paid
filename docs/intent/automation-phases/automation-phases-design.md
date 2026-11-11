@@ -108,6 +108,15 @@ Completion and revocation:
 - `revoke!` withdraws only the exception. Project defaults may still permit the
   work independently, which the revocation UI states explicitly.
 
+Grant endpoints are non-stopping by design: an endpoint bounds its grant
+without prohibiting independently enabled project automation, and no grant,
+phase setting, or manual-start surface offers a stop option
+(`AUTOMATION-PHASES-012`). A per-lineage exclusive stop exists only through
+the separately authorized bounded phase authorization of
+[RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authorization.md)
+(`docs/intent/bounded-phase-authorization/`), which composes with this policy
+and never modifies grant endpoint semantics.
+
 ## Manual starts
 
 `Automation::ManualStart::Plan` is the shared form/API contract:
@@ -126,8 +135,10 @@ submitted one: a mismatch returns the updated notice for review and creates no
 run (`AUTOMATION-PHASES-011`). Grant creation requires permission to delegate
 the covered actions; a merge endpoint requires permission to delegate merge.
 
-There is deliberately no per-item "stop after this phase" override
-(`AUTOMATION-PHASES-012`).
+There is deliberately no per-item "stop after this phase" override on these
+surfaces (`AUTOMATION-PHASES-012`); the only per-lineage exclusive stop is
+the bounded phase authorization composed with this policy (see
+[Continuation grants](#continuation-grants)).
 
 ## Execution enforcement
 

@@ -2,20 +2,22 @@
 
 ## Metadata
 
-- **Date**: 2026-10-24
-- **Status**: Proposed
+- **Date**: 2026-10-24 (accepted 2026-11-11)
+- **Status**: Partially Implemented
 - **Type**: Architecture + Authorization + Delivery UX
 - **Related Issues**: #4624 (delivered proposal); #4995 (tracking umbrella), #4996 (design acceptance), #4997–#4999 (implementation), #5000 (closeout)
-- **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), and [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md)
+- **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md), and [RDR-080](RDR-080-project-delegation-after-settled-intent.md)
 - **Related intent**: `docs/intent/bounded-phase-authorization/`, `docs/intent/automation-phases/`, `docs/intent/auto-merge-strategy/`, and `docs/intent/inbox-phase-relevance/`
-- **Implementation status**: The narrower bounded-action foundation and
-  deterministic boundary rechecks (`BOUNDED-PHASE-AUTHORIZATION-010`, `-011`,
-  and `-004`) are checked in the linked EARS. The eight phase-lifecycle claims
-  remain proposed and are tracked under #4995. No exclusive stop is accepted
-  or enabled; approval freshness and project settings, including Forager's
-  `auto_merge_mode`, remain unchanged.
+- **Implementation status**: The design is accepted (see
+  [Acceptance](#acceptance-2026-11-11)). The narrower bounded-action
+  foundation and deterministic boundary rechecks
+  (`BOUNDED-PHASE-AUTHORIZATION-010`, `-011`, and `-004`) are checked in the
+  linked EARS. The eight phase-lifecycle claims remain implementation gaps
+  tracked under #4995: #4997 (`-001`–`-003`), #4998 (`-005`–`-006`), #4999
+  (`-007`–`-009`). No exclusive stop is enabled; approval freshness and
+  project settings, including Forager's `auto_merge_mode`, remain unchanged.
 
-## Decision required
+## Decision (accepted 2026-11-11)
 
 Approve a separate explicit authorization action for a bounded delivery phase.
 The action delegates execution within a precisely identified work lineage; it
@@ -34,7 +36,7 @@ defined coding phase and stop before the next phase. Conversely, a stale owner
 review is evidence about an earlier head, not a delegation for future repairs
 or a current-head review attestation.
 
-## Proposed decision
+## Decision
 
 ### Identity and scope
 
@@ -90,20 +92,39 @@ it. It cannot silently broaden the scope.
 
 ### Enforceable stopping and lifecycle
 
-The selected boundary is exclusive: an active bounded authorization blocks
-automatic advancement of its identified lineage into the next phase even when
-project defaults permit that phase. It completes visibly when the selected
-endpoint is reached, is not revived by reopening, and is inspectable,
-auditable, revocable, and actor/tenant scoped. Revocation and completion are
-serialized with admission so a dequeued or follow-up action cannot escape the
-stop. Existing actions are not force-killed; no subsequent action begins after
-the recheck fails.
+The selected boundary is exclusive: a bounded authorization blocks automatic
+advancement of its identified lineage into its stop-before phase even when
+project defaults, a continuation grant covering that endpoint, or any other
+independently enabled automation would permit that phase. The stop is a
+visible `bounded_phase_stop` decision naming the governing authorization.
 
-This is a narrow exception to RDR-077's current “no per-item stop” rule. It
-must compose with the existing phase policy and continuation grants rather than
-introducing a parallel approval engine. Approval-gated and confidence-driven
-admission policies remain independently authoritative; this authorization
-adds neither a feature-design approval nor an issue-readiness exception.
+Lifecycle resolves the stop as follows:
+
+- **Active or reassessment-paused** — the stop holds for the identified
+  lineage. Reassessment pauses work; it never silently releases the stop.
+- **Completed at its endpoint** — completion is visible, reopening does not
+  revive the authorization, and the stop persists: entering the stop-before
+  phase still requires a new explicit authorization for that lineage.
+- **Expired** — admission fails closed to a visible reassessment decision; no
+  new action starts and the lineage does not silently advance past the stop
+  until an authorized actor resolves it.
+- **Revoked or superseded** — the whole instrument is withdrawn with its
+  stop, and ordinary project policy governs the lineage again, exactly as
+  RDR-077 grant revocation restores project defaults. Consent and revocation
+  surfaces show this effect before the action.
+
+Completion, revocation, and reassessment are serialized with admission so a
+dequeued or follow-up action cannot escape the stop. Existing actions are not
+force-killed; no subsequent action begins after the recheck fails.
+
+This is a narrow exception to RDR-077's current “no per-item stop” rule,
+scoped to this authorization type. It composes with the existing phase policy
+and continuation grants rather than introducing a parallel approval engine:
+the bounded stop outranks a continuation grant's endpoint for its identified
+lineage only, and never disables a grant, a project setting, or automation for
+any other lineage. Approval-gated and confidence-driven admission policies
+remain independently authoritative; this authorization adds neither a
+feature-design approval nor an issue-readiness exception.
 
 ## Alternatives considered
 
@@ -116,6 +137,16 @@ adds neither a feature-design approval nor an issue-readiness exception.
 | Allow coding authorization to imply merge | Rejected: merge has independent authority and repository requirements. |
 
 ## Focused implementation and validation plan
+
+The accepted revision maps the eight phase-lifecycle claims to focused,
+independently verifiable slices:
+
+| Slice | Claims | Content |
+| --- | --- | --- |
+| #4997 | `-001`–`-003` | Phase-lifecycle identity, same-work lineage, and exclusive stop composed through `Automation::EffectivePolicy` and the existing continuation lookup. |
+| #4998 | `-005`–`-006` | Reassessment lifecycle and bounded `agent_harness` scope assessment with fail-closed semantics. |
+| #4999 | `-007`–`-009` | One consent projection across Inbox/work-detail/chat/API/tool surfaces, merge gates, and terminal-transition races. |
+| #5000 | closeout | Evidence-based audit of every claim in this RDR against shipped code, tests, and docs. |
 
 1. Add a tenant-scoped durable authorization record and immutable audit events;
    reference existing phase/lineage records rather than duplicating them.
@@ -135,7 +166,53 @@ adds neither a feature-design approval nor an issue-readiness exception.
 
 ## Rollout guard
 
-RDR-077's `automation_phases` guard remains the required gate. This proposal
+RDR-077's `automation_phases` guard remains the required gate. This decision
 does not authorize enabling it, changing Forager settings, or merging PR #20
-or #21. A future accepted implementation must add a named enablement surface
-and keep it disabled until all execution paths and concurrency checks pass.
+or #21. Implementation must add a named enablement surface and keep it
+disabled until all execution paths and concurrency checks pass. The shipped
+`BOUNDED-PHASE-AUTHORIZATION-010`, `-011`, and `-004` foundation is inert by
+construction: no user-facing surface creates authorizations, admission only
+rechecks records that already exist, and no GitHub approval, run, or
+continuation grant mints one.
+
+## Acceptance (2026-11-11)
+
+This revision was submitted for acceptance through the #4996 review path: the
+PR delivering it carries the structured `paid-hold-review` hold, and
+acceptance is the owner releasing that hold — the status change above takes
+effect with that merge and not before. Acceptance reconciled the design
+against RDR-077, RDR-080, the HLD, the shipped implementation, and the
+unchecked EARS claims:
+
+- **RDR-077 exclusive-stop exception resolved.** The stop belongs only to
+  this authorization type. Continuation grants, project phase settings,
+  activation labels, and manual-start endpoints keep RDR-077's non-stopping
+  endpoint semantics; `AUTOMATION-PHASES-012` remains in force for those
+  surfaces, rescoped to make that explicit. Terminal lifecycle semantics are
+  recorded under [Enforceable stopping and
+  lifecycle](#enforceable-stopping-and-lifecycle): the stop persists after
+  completion, fails closed on expiry, and is withdrawn with the instrument on
+  revocation or supersession.
+- **RDR-080 consistency.** RDR-080's posture remains a decision-delegation
+  input; execution authority for an admitted lineage stays with the RDR-077
+  phase policy and this authorization, and this authorization remains the
+  only per-lineage exclusive stop.
+- **Shipped foundation reused, not duplicated.** The durable
+  `BoundedDelegatedAction` record (`-010`/`-011`), its write boundaries
+  (`Automation::AuthorizeBoundedAction`/`RevokeBoundedAction`), and the
+  shared admission contract (`Automation::DelegatedActionAdmission` +
+  `Automation::DelegatedWorkBoundary`, `-004`) are the single authority.
+  `-001`–`-003` and `-005`–`-009` extend those contracts; no parallel
+  authorization record, approval engine, or admission path may be added.
+- **Cross-segment vocabulary fixed.** Phase identity comes from
+  `Automation::Phases`; same-work lineage from
+  `Automation::ContinuationGrantLookup`'s chain; review freshness stays owned
+  by the existing merge policy (`docs/intent/auto-merge-strategy/`) — this
+  authorization never refreshes a stale approval; reassessment and semantic
+  scope correspondence are owned by this segment.
+- **Rollout guard unchanged.** `automation_phases` stays default-off; no
+  existing GitHub approval, review, run, or continuation grant grants this
+  authority, and no authorized user surface creates it yet.
+
+Implementation slices #4997–#4999 and closeout #5000 track the remaining
+claims under umbrella #4995.

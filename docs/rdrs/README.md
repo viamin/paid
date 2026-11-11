@@ -224,7 +224,7 @@ Scaling & Distribution above).
 | [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
 | [RDR-076](RDR-076.md) | Layered Verification of Business Intent and Implementation | Partially Implemented | P1 |
 | [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md) | Automation Phases and Work-Item Authorization | Partially Implemented | P1 |
-| [RDR-078](RDR-078-bounded-delivery-phase-authorization.md) | Bounded Delivery-Phase Authorization | Proposed | P2 |
+| [RDR-078](RDR-078-bounded-delivery-phase-authorization.md) | Bounded Delivery-Phase Authorization | Partially Implemented | P2 |
 | [RDR-080](RDR-080-project-delegation-after-settled-intent.md) | Project Delegation After Settled Intent | Partially Implemented | P1 |
 
 The [2026-11-10 RDR-074–081 tracking reconciliation](audit-report-2026-11-10-rdr-074-081-tracking.md)
