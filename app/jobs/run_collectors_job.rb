@@ -14,7 +14,13 @@ class RunCollectorsJob < ApplicationJob
 
   discard_on ActiveRecord::RecordNotFound
   retry_on Knowledge::ArtifactStore::LockUnavailable, wait: :polynomially_longer, attempts: 5 do |job, error|
-    job.mark_terminal_lock_failure
+    job.mark_terminal_collection_failure
+    job.notify_terminal_failure(error)
+    raise error
+  end
+  # @spec KNOWLEDGE-015
+  retry_on ActiveRecord::ConnectionNotEstablished, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.mark_terminal_collection_failure
     job.notify_terminal_failure(error)
     raise error
   end
@@ -31,13 +37,23 @@ class RunCollectorsJob < ApplicationJob
     arguments.first
   end
 
-  # retry_on intercepts lock contention before ApplicationJob's rescue_from
+  # retry_on intercepts transient failures before ApplicationJob's rescue_from
   # handler, so exhaustion must set the terminal status and report explicitly.
-  # @spec KNOWLEDGE-001 EXCEPTION-NOTIFY-003
-  def mark_terminal_lock_failure
+  # Best-effort by contract: the database may still be unreachable when retries
+  # are exhausted, and a failed lookup or status write here must never mask the
+  # original collection error or skip its terminal notification — log the
+  # secondary failure and let the exhaustion block notify and re-raise.
+  # @spec KNOWLEDGE-001 KNOWLEDGE-015 EXCEPTION-NOTIFY-003
+  def mark_terminal_collection_failure
     TenantContext.with_system_access do
       mark_knowledge_collection_failed(Project.find_by(id: notification_project_id))
     end
+  rescue StandardError => status_error
+    Rails.logger.error(
+      message: "knowledge.job_terminal_status_update_failed",
+      project_id: notification_project_id,
+      error: status_error.message
+    )
   end
 
   def perform(project_id, commit_sha, branch: "main", committed_at: nil, collector_type: nil, collector_cursor: nil)
@@ -71,6 +87,8 @@ class RunCollectorsJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
   rescue Knowledge::ArtifactStore::LockUnavailable
+    raise # Keep the project collecting while retry_on schedules a new attempt.
+  rescue ActiveRecord::ConnectionNotEstablished
     raise # Keep the project collecting while retry_on schedules a new attempt.
   rescue StandardError
     mark_knowledge_collection_failed(project)
