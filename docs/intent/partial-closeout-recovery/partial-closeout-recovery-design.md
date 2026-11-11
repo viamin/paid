@@ -43,9 +43,33 @@ row's `created_at`) — never `updated_at`, matching the immutability rationale
 of `merged_pr_terminal_audit_at_by_issue_id` in the auto-pick candidate
 source. The digest is a SHA-256 of the canonical evidence list (PR numbers +
 terminal times + no-code timestamp), so any *new* terminal outcome is a new
-generation.
+generation. Fork and upstream PRs may use the same number; their URLs keep
+their evidence and originating runs distinct, and qualify the digest identity
+only when numbers collide. The batch lookup
+computes a digest of each PR description in PostgreSQL, returning only the
+digest for Inbox freshness checks. The audit separately loads bounded text for
+its selected PRs.
 
 ### Source-closure publication
+
+The closeout assessor receives the current source issue's title and bounded body
+as acceptance intent. Its delivery packet lists only authoritatively linked
+merged PRs from `Issues::CloseoutEvidence`, with each PR's URL and bounded
+description plus the linked implementation run's bounded summary, commit, and
+recorded verification outcome when available. The packet labels source text,
+PR descriptions, and agent reports as untrusted claims, identifies omitted or
+truncated material, and does not count merge status or an agent report alone as
+criterion satisfaction. Missing evidence remains unknown. Omitted or truncated
+source intent or merged PR descriptions are recorded on the assessment and
+cannot authorize source closure. Shortened run summaries remain labeled in the
+packet for semantic evaluation without automatically blocking a complete
+source and PR description. If source intent or a PR description changes after
+the audit reads it, the input is incomplete and cannot authorize closure. The
+Inbox names the need to narrow or complete the evidence before another audit.
+The existing intent and outcome-generation revisions bind the assessment to
+the supplied source, terminal outcomes, and current PR descriptions. The audit
+snapshots the revisions read before the LLM call, so a concurrent edit makes
+its result stale rather than attaching that result to evidence it never saw.
 
 ### Post-push assessment recovery (#4886)
 

@@ -52,6 +52,14 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
+Development runs GoodJob in the web process to avoid the memory overhead of an
+additional Rails process. A small shell wrapper restarts the web process after
+exit 137, which commonly indicates a memory kill. It backs off and stops after
+three restarts within five minutes; other exits surface to Overmind normally.
+The existing development supervisor records lightweight process RSS and host
+memory samples before a crash, so a killed process's memory growth can be
+distinguished from pressure elsewhere in the workspace.
+
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
 fallback profile levels execute as a

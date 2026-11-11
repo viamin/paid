@@ -3,13 +3,16 @@
 ## Metadata
 
 - **Date**: 2026-10-17
-- **Status**: Accepted
+- **Status**: Partially Implemented
 - **Type**: Architecture + Automation + Inbox UX
-- **Related Issues**: #4509, #4510, #4511, #4512, #4513, #4514, #4515, #4516, #4517, #4518 (planning work; implementation remains subject to design and release gates)
+- **Related Issues**: #4509 (umbrella); #4510–#4517 (planning, implementation, and pilot); #4518 (closeout); #4638 (live pilot evidence)
 - **Related RDRs**: [RDR-023](RDR-023-automation-modularization-architecture.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-063](RDR-063-operational-supervisor-delivery-health.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), [RDR-074](RDR-074-project-readiness.md), [RDR-076](RDR-076.md).
-- **Implementation status**: Implemented behind the default-off
-  `automation_phases` rollout guard. Enablement, pilot operation, rollback
-  closeout, and flag removal remain separately authorized release work.
+- **Implementation status**: The phase-policy foundation and checked EARS
+  claims are implemented behind the default-off `automation_phases` guard.
+  Implementation child issues #4512–#4515 and #4517, live pilot evidence
+  #4638, and closeout #4518 remain open. Their completion and final acceptance
+  have not been established; enablement and flag removal remain separately
+  authorized release work.
 
 ## Problem Statement
 

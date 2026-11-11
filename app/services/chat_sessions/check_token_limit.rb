@@ -84,7 +84,7 @@ module ChatSessions
     end
 
     def tenant_setting
-      @tenant_setting ||= chat_session.account.tenant_setting
+      @tenant_setting ||= chat_session.account.reload.tenant_setting
     end
 
     def monthly_chat_tokens_used

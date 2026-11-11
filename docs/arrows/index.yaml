@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-05
+last_updated: 2026-11-11
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -102,8 +102,8 @@ arrows:
     parent: PAID
     taxonomy: configuration
     status: OK
-    audited: 2026-10-11
-    next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
+    audited: 2026-11-10
+    next: "RDR-074 and #4255 are closed with evaluator, persisted Inbox snapshot, and manual bootstrap evidence; add new prerequisite rules only when another setting requires them."
   project-dashboard-metrics:
     title: Project Dashboard Metrics
     path: docs/intent/project-dashboard-metrics/project-dashboard-metrics-design.md
@@ -205,6 +205,25 @@ arrows:
     audited: 2026-11-08
     blockedBy: [automation-phases, bounded-phase-authorization, confidence-driven-delivery]
     next: "Complete the intent-checkpoint/action-plan and pilot measurement slices from RDR-080; keep bounded_delivery opt-in until their evidence gates pass."
+  automation-phases:
+    title: Automation Phases and Work-Item Authorization
+    path: docs/intent/automation-phases/automation-phases-design.md
+    specs: docs/intent/automation-phases/automation-phases-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: PARTIAL
+    audited: 2026-11-10
+    next: "Reconcile open implementation children #4512-#4515 and #4517, collect pilot evidence #4638, and complete closeout #4518 before final acceptance of RDR-077."
+  bounded-phase-authorization:
+    title: Bounded Delivery-Phase Authorization
+    path: docs/intent/bounded-phase-authorization/bounded-phase-authorization-design.md
+    specs: docs/intent/bounded-phase-authorization/bounded-phase-authorization-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: PARTIAL
+    audited: 2026-11-10
+    blockedBy: [automation-phases]
+    next: "RDR-078 remains proposed; obtain design acceptance #4996, then complete phase-lifecycle claims through #4997-#4999 and closeout #5000. Keep the exclusive stop disabled until accepted."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md
@@ -456,6 +475,15 @@ arrows:
     taxonomy: foundation
     status: OK
     audited: 2026-08-04
+  agent-run-retry-contract:
+    title: Agent Run Retry Contract
+    path: docs/intent/agent-run-retry-contract/agent-run-retry-contract-design.md
+    specs: docs/intent/agent-run-retry-contract/agent-run-retry-contract-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    audited: 2026-11-11
+    next: "Second migration slice (timed-out-issue-goal retry, in-place rate-limit recovery, or Apple verification attempts) and the acceptance-audit multi-attempt adapter are tracked as separate follow-up work."
   postgresql-persistence:
     title: PostgreSQL Persistence
     path: docs/intent/postgresql-persistence/postgresql-persistence-design.md
@@ -777,8 +805,9 @@ arrows:
     specs: docs/intent/partial-closeout-recovery/partial-closeout-recovery-specs.md
     parent: PAID
     taxonomy: operations
-    status: OK
-    audited: 2026-10-05
+    status: PARTIAL
+    audited: 2026-11-10
+    next: "Implement RDR-081's accepted persisted display projection under #4912; keep live admission authoritative until its rollout guard is enabled."
   trusted-measurements:
     title: Trusted Post-Deploy Measurements
     path: docs/intent/trusted-measurements/trusted-measurements-design.md
@@ -830,9 +859,9 @@ arrows:
     specs: docs/intent/layered-verification/layered-verification-specs.md
     parent: PAID
     taxonomy: intelligence
-    status: MAPPED
-    sampled: 2026-10-23
-    next: "Implement Phase 1 intent and audit foundation (#4432), then Phase 2 manual audit and Inbox (#4433), per RDR-076's accepted design"
+    status: PARTIAL
+    audited: 2026-11-10
+    next: "Phase 1 #4432 is closed; continue manual audit milestone #4433, subsequent phases, and closeout #4438 under RDR-076."
   unified-work-items:
     title: Unified Work Items
     path: docs/intent/unified-work-items/unified-work-items-design.md

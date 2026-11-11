@@ -148,7 +148,7 @@ module AgentRuns
         )
     end
 
-    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-041
+    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-047
     def recheck_continuation
       issue.reload
       request = agent_run.continuation_request
@@ -174,7 +174,7 @@ module AgentRuns
     end
 
     def continuation_evidence_digest(request)
-      if request.evidence["continuation_mode"] == "acceptance_audit"
+      if request.evidence["continuation_mode"] == "acceptance_audit" && request.evidence["source_revision"].present?
         return PartialCloseouts::Assessment.source_revision_for(issue, technical_evidence: [])
       end
 

@@ -9,12 +9,14 @@
 - **Type**: Architecture
 - **Priority**: P1
 - **Related RDRs**: [RDR-010](RDR-010-multi-tenancy-rbac.md), [RDR-012](RDR-012-github-integration.md), [RDR-051](RDR-051-lid-aware-agent-runs.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md)
-- **Tracking issue**: #4854
+- **Tracking issues**: #4854 (umbrella), #4855–#4860 (phases), #4861 (closeout)
 - **Implementation status**: Phase 1 provider-contract and rollout-guard
-  work is implemented by #4855. Phase 2's adapter transport, account ticket
-  store, selected account API key, guarded sync, and cadence are in progress
-  under #4856; its full data coverage and live workspace validation remain
-  open, as do later phases.
+  work is present in code and checked EARS claims, while #4855 remains open
+  for issue-level reconciliation. Phase 2's adapter transport, account ticket
+  store, selected account API key, guarded sync, and cadence foundation are
+  implemented by #4856; full data coverage and live workspace validation
+  remain open, as do later phases. The design is still Draft; partial
+  foundation work is not final design acceptance.
 - **LID**: Full mode, version 1.3.0; the linked LLD and EARS artifacts record
   the implementation cascade.
 

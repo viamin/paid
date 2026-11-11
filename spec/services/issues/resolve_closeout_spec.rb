@@ -62,6 +62,24 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(github_client).to have_received(:update_issue).with("acme/alpha", issue.github_number, state: "closed", state_reason: "completed")
   end
 
+  # @spec PARTIAL-CLOSEOUT-047
+  it "refuses GitHub closure when the accepted audit omitted evidence" do
+    merged_partial_pr(number: 12)
+    accepted_audit
+    run = issue.agent_runs.order(id: :desc).first
+    assessment = run.reconciliation.fetch("assessment").merge("input_coverage" => {
+      "complete" => false, "reasons" => [ "source_issue_body_truncated" ]
+    })
+    run.update!(reconciliation: { "assessment" => assessment })
+
+    result = described_class.call(issue:, actor: user,
+      reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:audit_pending)
+    expect(github_client).not_to have_received(:issue)
+    expect(github_client).not_to have_received(:update_issue)
+  end
+
   it "performs GitHub reads and writes outside the database transaction" do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit

@@ -15,6 +15,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | Status | Meaning |
 |--------|---------|
 | Draft | During planning/research phase |
+| Proposed | Reviewable recommendation awaiting acceptance |
 | Accepted | Recommendation accepted but implementation not started |
 | Final | Locked, ready for or during implementation |
 | Partially Implemented | Adopted and partly shipped, with remaining implementation work tracked |
@@ -221,9 +222,13 @@ Scaling & Distribution above).
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Partially Implemented | P1 |
 | [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
-| [RDR-076](RDR-076.md) | Layered Verification of Business Intent and Implementation | Accepted | P1 |
-| [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md) | Automation Phases and Work-Item Authorization | Accepted | P1 |
-| [RDR-080](RDR-080-project-delegation-after-settled-intent.md) | Project Delegation After Settled Intent | Accepted | P1 |
+| [RDR-076](RDR-076.md) | Layered Verification of Business Intent and Implementation | Partially Implemented | P1 |
+| [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md) | Automation Phases and Work-Item Authorization | Partially Implemented | P1 |
+| [RDR-078](RDR-078-bounded-delivery-phase-authorization.md) | Bounded Delivery-Phase Authorization | Proposed | P2 |
+| [RDR-080](RDR-080-project-delegation-after-settled-intent.md) | Project Delegation After Settled Intent | Partially Implemented | P1 |
+
+The [2026-11-10 RDR-074–081 tracking reconciliation](audit-report-2026-11-10-rdr-074-081-tracking.md)
+records current issue ownership, partial work, and pending acceptance boundaries.
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
@@ -251,22 +256,24 @@ evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
 the umbrella's own final acceptance audit may close #4309.
 
 RDR-075, **General Maintenance Runs** (indexed above under Quality &
-Automation), is drafted in [PR #4308](https://github.com/viamin/paid/pull/4308).
-Its [2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) found
-it **Blocked**: the design remained an unmerged Draft, no approved maintenance
-LLD/EARS or runtime surface had shipped, the `maintenance_runs` default-off
-tenant guard must be retained when implemented, and the separate RDR-073 tool
-guard remains authoritative. The audit tracks #4326 rather than closing it;
-its observed closed GitHub state must be reconciled before the umbrella's own
-final acceptance can legitimately close it.
+Automation), remains Draft after [PR #4308](https://github.com/viamin/paid/pull/4308)
+merged. Its [2026-10-15 C75 audit](audit-report-2026-10-15-rdr-075.md)
+recorded the then-current blocked state. The current blockers are live tool
+validation [#4604](https://github.com/viamin/paid/issues/4604) and accepted
+maintenance intent [#4635](https://github.com/viamin/paid/issues/4635);
+runtime work #4328–#4333 remains open. The `maintenance_runs` default-off
+tenant guard and the separate RDR-073 tool guard remain authoritative.
+[Umbrella #4326](https://github.com/viamin/paid/issues/4326) is open for its
+final acceptance audit after the children and closeout resolve.
 
-[RDR-076](RDR-076.md) is the consolidated **Accepted** layered-verification
+[RDR-076](RDR-076.md) is the consolidated **Partially Implemented** layered-verification
 design. It covers correspondence between approved business intent and its
 representations, flexible verification selection, durable intent records,
 business validation and evidence coverage, and separate audit and repair
 operations. Initial delivery is a bounded user-directed audit, evaluated with
-and without formal models. The user accepted the design on 2026-10-14. Implementation follows LID
-planning; acceptance does not claim that the capability has shipped.
+and without formal models. The user accepted the design on 2026-10-14. The
+intent/audit foundation has shipped; later phases and final acceptance remain
+open under the issue tree below.
 
 The canonical tracking umbrella is
 [#4385](https://github.com/viamin/paid/issues/4385), with required replacement
