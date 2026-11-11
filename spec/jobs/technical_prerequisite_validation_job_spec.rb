@@ -26,6 +26,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
 
   # @spec PARTIAL-CLOSEOUT-032
   it "completes the run when the validation succeeds" do
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
     expect(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
       expect(Current.account).to eq(project.account)
       validation_result("completed")
@@ -42,6 +43,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
   it "executes a non-performance validation while the project scheduler is paused" do
     project.update!(scheduler_paused_at: Time.current)
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
 
     described_class.perform_now(agent_run.id)
 
@@ -55,6 +57,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
   it "marks the run failed with the recorded validation error" do
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_return(validation_result("failed", { "error" => "analyzer exited 3" }))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
 
     described_class.perform_now(agent_run.id)
 
@@ -76,6 +79,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
   it "does not re-execute a run that already reached a terminal state" do
     agent_run.update!(status: "failed", completed_at: Time.current)
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
 
     described_class.perform_now(agent_run.id)
 
@@ -91,6 +95,33 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
 
     expect(agent_run.reload.status).to eq("failed")
     expect(agent_run.error_message).to eq("no container provisioned")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "schedules the acceptance audit after a terminal native validation, not only performance measurement" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload.status).to eq("completed")
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "schedules the acceptance audit after a failed native validation" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+      .and_return(validation_result("failed", { "error" => "analyzer exited 3" }))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload.status).to eq("failed")
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
   end
 
   # @spec PARTIAL-CLOSEOUT-042

@@ -699,6 +699,66 @@ is pending persists a durable notice stating it is not an approval and
 nothing has run yet — a conversational "yes" is never displayed or recorded
 as an executed action.
 
+### Mixed prerequisites: authorization versus technical execution (#5007)
+
+A criterion's evidence/owner contract has exactly three shapes:
+
+- **Independent human judgment.** `prerequisite_kind: human` with no
+  `validation_kind`. No technical check can settle it; it is published and
+  released only through the existing human-prerequisite notification and
+  evidence-submission path (`PARTIAL-CLOSEOUT-033`/`036`). Nothing here
+  changes that path.
+- **Agent-owned technical validation.** `validation_kind` set with no
+  `prerequisite_kind`. It runs through `TechnicalPrerequisites` with no
+  operator step (`PARTIAL-CLOSEOUT-032`).
+- **Mixed: authorization gating a technical check.** Both fields are set on
+  the same criterion. The assessor emits a human gap whose `workflow` is
+  `TechnicalPrerequisites::AUTHORIZATION_WORKFLOW`
+  (`technical_prerequisite_authorization`) for the approval/setup step (e.g.
+  "approve the representative staging environment"), and a matching
+  `criteria[]` entry for the identical criterion text carrying
+  `prerequisite_kind: human` plus the `validation_kind`/
+  `validation_requirement_id`/`validation_tool_name` for the technical check
+  that depends on it. The two are never collapsed into one occurrence: the
+  authorization is real human evidence, scoped and released exactly like any
+  other prerequisite occurrence, and the technical check is a normal
+  `TechnicalPrerequisites` validation gated behind it.
+
+`TechnicalPrerequisites::InboxActions` withholds the run action for a mixed
+criterion — returning an explanatory setup action instead — until
+`TechnicalPrerequisites::Authorization.granted?` reports that the matching
+authorization occurrence (same criterion text, same `AUTHORIZATION_WORKFLOW`
+marker, found on the issue's existing partial-closeout prerequisite
+notification) has a current, `sufficient` evidence submission for the
+present source revision. A criterion with no matching authorization
+occurrence was never gated and is reported granted, so purely technical
+criteria are unaffected. The gate is read-only and advisory at the Inbox
+layer; the same `InboxActions.call` result the controller used to decide
+`ready?` is what it re-derives before invoking `StartValidation`
+(`app/controllers/projects/agent_runs_controller.rb#validate_technical_prerequisite`),
+so there is no second, divergent authorization check to keep in sync.
+
+Neither direction is inferred. A sufficient authorization submission never
+marks the mixed criterion `satisfied` by itself — only a fresh assessment,
+grounded in the technical check's actual result, decides that. Completing
+the technical validation never resolves the authorization occurrence and
+never fabricates an approval; the human evidence-submission pipeline is the
+sole authority over that occurrence, exactly as it is for an independent
+judgment.
+
+Once an authorized technical-prerequisite validation reaches any terminal
+state (`completed`, `failed`, or `unavailable`) for any `validation_kind` —
+not only `performance_measurement` — `TechnicalPrerequisiteValidationJob`
+schedules one fresh report-only acceptance audit through the existing
+`PartialCloseouts::AutoAudit` contract. `AutoAudit` is the sole
+deduplication authority: it reassesses from current evidence only when the
+closeout is still stalled and the current source revision (which already
+folds in `TechnicalPrerequisites::Evidence`'s projected record) differs from
+the last audited revision for this issue, so an unchanged terminal result —
+or a repeated retry against the same evidence — schedules no further audit
+and never loops. A cancelled validation is not terminal evidence and
+schedules nothing.
+
 ### Acceptance assessment evidence (#4186)
 
 Each semantic partial-closeout assessment persists criterion states and its

@@ -9,6 +9,14 @@ module TechnicalPrerequisites
   RECIPE_KEY = "technical_prerequisite_validation"
   # @spec PARTIAL-CLOSEOUT-032
   EVIDENCE_KEY = "technical_prerequisite_validation"
+  # Typed marker for a human prerequisite gap that authorizes a specific
+  # technical validation rather than standing on its own. The Inbox and
+  # {StartValidation} withhold that criterion's run action until the matching
+  # occurrence has current sufficient evidence; completing the technical
+  # check never resolves this occurrence, and resolving it never marks the
+  # criterion satisfied.
+  # @spec PARTIAL-CLOSEOUT-048
+  AUTHORIZATION_WORKFLOW = "technical_prerequisite_authorization"
 
   # @spec PARTIAL-CLOSEOUT-042
   def self.scheduler_pause_message(project)

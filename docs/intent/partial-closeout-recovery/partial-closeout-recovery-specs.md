@@ -908,6 +908,36 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
   `spec/services/partial_closeouts/auto_audit_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-048** — When a criterion needs both a real human
+  authorization/setup step and an agent-executable technical check, Paid
+  SHALL represent them as distinct prerequisites rather than one combined
+  human task: a human gap carrying `workflow: technical_prerequisite_authorization`
+  for the approval, and a matching criterion carrying `prerequisite_kind:
+  human` together with its `validation_kind` for the technical check. The
+  Inbox SHALL withhold that criterion's technical-prerequisite run action,
+  presenting an explanatory setup action instead, until the matching
+  authorization occurrence has a current `sufficient` evidence submission;
+  a criterion with no matching authorization occurrence SHALL be unaffected.
+  Paid SHALL NOT mark the criterion satisfied from a sufficient authorization
+  alone, and SHALL NOT resolve or infer the authorization occurrence from a
+  completed technical result. When an authorized technical-prerequisite
+  validation of any `validation_kind` reaches a terminal, non-cancelled
+  state, Paid SHALL schedule one fresh report-only acceptance audit for the
+  current evidence generation through the existing deduplicated
+  `PartialCloseouts::AutoAudit` contract; an unchanged evidence generation
+  SHALL NOT schedule another automatic attempt.
+  *Code:* `app/services/technical_prerequisites.rb`,
+  `app/services/technical_prerequisites/authorization.rb`,
+  `app/services/technical_prerequisites/inbox_actions.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/jobs/technical_prerequisite_validation_job.rb`.
+  *Test:* `spec/services/technical_prerequisites/authorization_spec.rb`,
+  `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
+  `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body
   digest as `pending_sync` and SHALL not report the repair as reconciled until

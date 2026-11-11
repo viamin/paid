@@ -40,6 +40,7 @@ module TechnicalPrerequisites
     end
 
     def setup_action(criterion, requirement)
+      return authorization_pending_message unless authorized?(criterion)
       return "Prepare a reviewed validation recipe for this criterion, then run a fresh acceptance audit." unless requirement
       return "Select an implementation run with a pinned checkout before validating this criterion." unless source_run&.base_commit_sha.present?
       return performance_setup_action(requirement) if criterion["validation_kind"] == "performance_measurement"
@@ -56,6 +57,22 @@ module TechnicalPrerequisites
       return if FeatureFlags.enabled?(:marketplace_tool_sidecars, project:)
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project."
+    end
+
+    # A mixed criterion carries both a human authorization requirement and a
+    # technical validation. The run action stays withheld until the
+    # authorization occurrence has current sufficient evidence — completing
+    # the technical check never substitutes for that human decision, and this
+    # gate never applies to a criterion that was never authorization-gated.
+    # @spec PARTIAL-CLOSEOUT-048
+    def authorized?(criterion)
+      return true unless criterion["prerequisite_kind"] == "human"
+
+      Authorization.granted?(issue: source_run&.issue, criterion: criterion["criterion"])
+    end
+
+    def authorization_pending_message
+      "Awaiting operator authorization of this prerequisite; the validation run becomes available once it is approved."
     end
 
     # @spec PARTIAL-CLOSEOUT-042

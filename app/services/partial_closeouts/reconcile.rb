@@ -9,7 +9,8 @@ module PartialCloseouts
     MAX_GAPS = 10
     MAX_SYNC_CONFIRMATION_ATTEMPTS = 3
     VALID_REFERENCE_KINDS = %w[policy evidence].freeze
-    VALID_WORKFLOWS = [ FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW ].freeze
+    VALID_WORKFLOWS = [ FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW,
+      TechnicalPrerequisites::AUTHORIZATION_WORKFLOW ].freeze
 
     def self.call(...)
       new(...).call

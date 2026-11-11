@@ -250,6 +250,32 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-048
+    it "accepts a mixed criterion carrying both human authorization and a technical validation" do
+      selected = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Staging smoke test", command: "bin/smoke-test")
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [ {
+          criterion: "Representative staging environment is approved", kind: "human",
+          next_step: "Approve the representative staging environment for this measurement.",
+          workflow: "technical_prerequisite_authorization",
+          attribution: { coverage: "established", source_issue_number: issue.github_number,
+                         owner_issue_number: issue.github_number,
+                         criterion: "Representative staging environment is approved" }
+        } ],
+        criteria: [ {
+          criterion: "Representative staging environment is approved", state: "unmet",
+          prerequisite_kind: "human", validation_kind: "native", validation_requirement_id: selected.id
+        } ]
+      }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "workflow")).to eq("technical_prerequisite_authorization")
+      expect(result.dig("criteria", 0)).to include("prerequisite_kind" => "human", "validation_kind" => "native",
+        "validation_requirement_id" => selected.id)
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,

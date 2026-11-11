@@ -50,4 +50,56 @@ RSpec.describe TechnicalPrerequisites::InboxActions do
     expect(action).to be_ready
     expect(action.setup_action).to be_nil
   end
+
+  context "when a criterion also requires human authorization" do
+    let(:native_requirement) do
+      create(:pre_commit_requirement, project:, account: project.account, check_type: "shell_command", command: "bin/check")
+    end
+    let(:mixed_criterion) do
+      {
+        "criterion" => "Representative staging environment is approved", "state" => "unmet",
+        "prerequisite_kind" => "human", "validation_kind" => "native", "validation_requirement_id" => native_requirement.id
+      }
+    end
+    let(:assessment) { instance_double(PartialCloseouts::Assessment::Result, stale?: false, criteria: [ mixed_criterion ]) }
+
+    def publish_authorization_notification!(sufficient:)
+      revision = PartialCloseouts::Assessment.source_revision_for(source_run.issue)
+      occurrence = { "identity" => "auth-1", "criterion" => mixed_criterion.fetch("criterion"), "kind" => "human",
+        "workflow" => TechnicalPrerequisites::AUTHORIZATION_WORKFLOW, "source_revision" => revision }
+      submissions = sufficient ? [ { "prerequisite_identity" => "auth-1", "source_revision" => revision, "outcome" => "sufficient" } ] : []
+      create(:notification, :error, account: project.account, subject: source_run.issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        title: "Approve the representative environment", description: "Approve it before Paid measures it.",
+        metadata: { "prerequisites" => [ occurrence ], "evidence_submissions" => submissions })
+    end
+
+    # @spec PARTIAL-CLOSEOUT-048
+    it "offers the run action when no authorization is required" do
+      action = described_class.call(project:, actor: project.created_by, assessment:, source_run:).sole
+
+      expect(action).to be_ready
+    end
+
+    # @spec PARTIAL-CLOSEOUT-048
+    it "withholds the run action while operator authorization is pending" do
+      publish_authorization_notification!(sufficient: false)
+
+      action = described_class.call(project:, actor: project.created_by, assessment:, source_run:).sole
+
+      expect(action).not_to be_ready
+      expect(action.setup_action).to eq(
+        "Awaiting operator authorization of this prerequisite; the validation run becomes available once it is approved."
+      )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-048
+    it "offers the run action once operator authorization is sufficient" do
+      publish_authorization_notification!(sufficient: true)
+
+      action = described_class.call(project:, actor: project.created_by, assessment:, source_run:).sole
+
+      expect(action).to be_ready
+    end
+  end
 end

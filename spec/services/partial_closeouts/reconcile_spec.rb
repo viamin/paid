@@ -357,6 +357,22 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(notification.metadata).to include("workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW)
   end
 
+  it "marks a technical-prerequisite authorization gap for its typed Inbox workflow" do # @spec PARTIAL-CLOSEOUT-048
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "Representative staging environment is approved", "kind" => "human",
+      "next_step" => "Approve the representative staging environment for this measurement.",
+      "attribution" => attributed_to(parent, "Representative staging environment is approved"),
+      "workflow" => TechnicalPrerequisites::AUTHORIZATION_WORKFLOW
+    } ]))
+
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata).to include("workflow" => TechnicalPrerequisites::AUTHORIZATION_WORKFLOW)
+    occurrence = notification.metadata.fetch("prerequisites").sole
+    expect(occurrence).to include("criterion" => "Representative staging environment is approved",
+      "workflow" => TechnicalPrerequisites::AUTHORIZATION_WORKFLOW)
+    expect(TechnicalPrerequisites::Authorization.granted?(issue: parent, criterion: occurrence.fetch("criterion"))).to be(false)
+  end
+
   it "publishes a stable identity for each human prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
     described_class.call(agent_run: run, assessment: gaps([
       human_gap("macOS acceptance"), human_gap("Accessibility sign-off")
