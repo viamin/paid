@@ -29,4 +29,17 @@ RSpec.describe "Paid project detail verification journey", system_driver: :rack_
     expect(page).to have_content(project.name)
   end
 
+  # @spec LIVE-PREVIEW-012
+  it "documents a launch command the agent's execution container can run" do
+    journey_guide = Rails.root.join(".paid/journeys.md").read
+    log_path = Regexp.escape(AgentRuns::VerificationPrompt::APP_LOG_PATH)
+    launch_command = journey_guide[/^\((.+)\) > #{log_path}/, 1]
+
+    # The agent execution container (docker/agent/Dockerfile) ships the
+    # Ruby/Rails toolchain but neither tmux nor Overmind, so `bin/dev` cannot
+    # start the application there. `Screenshots::RuntimePlan` cannot supply this
+    # command: its generic preference order picks `bin/dev` whenever the file
+    # exists in the repository.
+    expect(launch_command).to eq("bundle exec bin/rails server -b 0.0.0.0 -p 3000")
+  end
 end

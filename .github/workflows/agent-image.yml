@@ -14,6 +14,7 @@ on:
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
       - scripts/test-paid-journey-launch-contract.sh
+      - scripts/test-paid-journey-launch-contract-inner.sh
       - scripts/test-agent-runner-contracts.sh
       - scripts/test-agent-runner-contracts-inner.sh
       - .paid/journeys.md
@@ -33,6 +34,7 @@ on:
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
       - scripts/test-paid-journey-launch-contract.sh
+      - scripts/test-paid-journey-launch-contract-inner.sh
       - scripts/test-agent-runner-contracts.sh
       - scripts/test-agent-runner-contracts-inner.sh
       - .paid/journeys.md
@@ -99,6 +101,7 @@ jobs:
                 scripts/test-agent-image.sh|\
                 scripts/test-agent-image-inner.sh|\
                 scripts/test-paid-journey-launch-contract.sh|\
+                scripts/test-paid-journey-launch-contract-inner.sh|\
                 scripts/test-agent-runner-contracts.sh|\
                 scripts/test-agent-runner-contracts-inner.sh|\
                 .paid/journeys.md|\

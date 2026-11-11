@@ -81,10 +81,12 @@ so an unmarked account that merely collides on the journey slug or email is
 refused with `AccountCollision`/`IdentityCollision` instead of being adopted
 or destroyed. The helper refuses to run outside the development and test
 environments. The permanent system journey is the maintenance check for the
-guide's login and routes. The agent-image workflow separately executes the
-guide's documented launch command in the agent image after installing the
-checkout dependencies, so it detects missing toolchain or boot-time
-dependencies. That command is intentionally independent of
+guide's login and routes, and a permanent system assertion pins the guide's
+documented launch command. The agent-image workflow separately resolves that
+command inside the agent image, so a guide change the container cannot satisfy
+— a command needing tooling the image does not ship, or a repository script the
+checkout does not provide — fails CI instead of surfacing as a broken journey
+at verification time. That command is intentionally independent of
 `Screenshots::RuntimePlan`'s generic `bin/dev`-preferring derivation, since
 the agent container does not ship the `tmux`/Overmind supervisor `bin/dev`
 needs. A separate Paid-managed implementation run remains required as

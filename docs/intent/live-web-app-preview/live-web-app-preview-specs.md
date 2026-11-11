@@ -109,7 +109,9 @@
   agent's own execution container can run directly; it SHALL NOT be derived
   from `Screenshots::RuntimePlan`'s generic preference order, which prefers
   `bin/dev` whenever the file exists and does not account for the agent
-  container lacking the `tmux`/Overmind supervisor that command requires.
+  container lacking the `tmux`/Overmind supervisor that command requires. The
+  agent-image workflow SHALL resolve the documented command against that image
+  and SHALL fail when the container cannot run it.
   *Code:* `app/services/agent_runs/verification_prompt.rb`,
   `.paid/journeys.md`, `bin/paid-journey`,
   `app/services/screenshots/seed_data/paid_journey.rb`,
@@ -118,7 +120,8 @@
   `spec/services/screenshots/seed_data/paid_journey_spec.rb`,
   `spec/system/paid_project_journey_spec.rb`,
   `spec/config/agent_image_build_script_spec.rb`,
-  `scripts/test-paid-journey-launch-contract.sh`.
+  `scripts/test-paid-journey-launch-contract.sh`,
+  `scripts/test-paid-journey-launch-contract-inner.sh`.
 
 - [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
   agent run, the system SHALL publish it through the same durable key contract
