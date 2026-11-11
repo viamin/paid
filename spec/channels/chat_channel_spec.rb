@@ -34,10 +34,11 @@ RSpec.describe ChatChannel do
     end
 
     # @spec CHAT-TURN-RECOVERY-009
-    it "sends the latest durable turn status on subscription" do
+    it "sends the latest durable turn status without a channel tenant context" do
       message = create(:chat_message, chat_session: chat_session, role: "user")
       create(:chat_turn, chat_session: chat_session, user_message: message, status: "streaming")
 
+      TenantContext.clear!
       subscribe(session_id: chat_session.id)
 
       expect(transmissions.last).to include("type" => "turn_status", "status" => "streaming",

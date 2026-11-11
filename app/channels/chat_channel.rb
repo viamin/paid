@@ -8,7 +8,9 @@ class ChatChannel < ApplicationCable::Channel
       @chat_session = session
       stream_from stream_name
       transmit(ChatSessions::CapabilitySnapshot.call(chat_session: @chat_session))
-      turn = @chat_session.chat_turns.order(id: :desc).first
+      turn = TenantContext.with_system_access do
+        @chat_session.chat_turns.order(id: :desc).first
+      end
       transmit({ type: "turn_status", status: turn&.status,
         awaiting_confirmation: turn&.awaiting_confirmation? })
     else
