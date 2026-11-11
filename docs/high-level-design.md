@@ -35,6 +35,9 @@ have moved elsewhere:
 - **Design traceability.** Repository design records, tracked delivery work,
   and Paid's local links must be reconciled from explicit evidence. A failed
   repository read is unknown coverage, never proof that no work exists.
+  RDRs record proportionate decision evidence; the HLD → LLD → EARS arrow owns
+  implementation design and observable behavior, so an accepted RDR alone is
+  never runtime authority.
 - **Orchestration.** Turning a labeled issue into a merged PR is a multi-step
   workflow — plan, execute in an isolated container, open a PR, respond to
   review — that must be durable, resumable, and parallelizable.
