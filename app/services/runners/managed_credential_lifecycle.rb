@@ -27,6 +27,9 @@ module Runners
     ROTATING_RUNNER_KEYS = %w[codex opencode omp].freeze
     REFRESH_WINDOW_SECONDS = 600
     DEFAULT_LOCK_TIMEOUT_SECONDS = 30
+    # The harness reads CLAUDE_CONFIG_DIR from process-global ENV and does not
+    # accept request-local environment overrides, so OMP exchanges cannot overlap.
+    OMP_REFRESH_MUTEX = Mutex.new
     LOCKFILE_BASE_PATHS = {
       "codex" => "/tmp/codex-managed-auth",
       "opencode" => "/tmp/opencode-managed-auth",
@@ -203,16 +206,18 @@ module Runners
       end
 
       def exchange_omp_refresh_token(credential)
-        refreshed_payload = nil
-        Dir.mktmpdir("paid-omp-managed-auth-") do |dir|
-          credentials_path = File.join(dir, ".credentials.json")
-          File.write(credentials_path, credential.token.to_s)
-          with_env("CLAUDE_CONFIG_DIR", dir) do
-            AgentHarness::Authentication.exchange_refresh_token(:claude)
+        OMP_REFRESH_MUTEX.synchronize do
+          refreshed_payload = nil
+          Dir.mktmpdir("paid-omp-managed-auth-") do |dir|
+            credentials_path = File.join(dir, ".credentials.json")
+            File.write(credentials_path, credential.token.to_s)
+            with_env("CLAUDE_CONFIG_DIR", dir) do
+              AgentHarness::Authentication.exchange_refresh_token(:claude)
+            end
+            refreshed_payload = File.read(credentials_path)
           end
-          refreshed_payload = File.read(credentials_path)
+          refreshed_payload
         end
-        refreshed_payload
       end
 
       def with_env(key, value)

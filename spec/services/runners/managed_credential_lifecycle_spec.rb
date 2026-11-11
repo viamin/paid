@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "timeout"
 
 RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNER-AUTH-002 SUBSCRIPTION-RUNNER-AUTH-005
   let(:account) { create(:account) }
@@ -28,6 +29,24 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
   def stub_exchange_supported
     allow(AgentHarness::Authentication).to receive_messages(
       exchange_refresh_token_supported?: true, exchange_refresh_token: refreshed_codex_auth)
+  end
+
+  def create_omp_credential(account:, fixture:)
+    create(:runner_credential, account: account, created_by: create(:user, account: account), runner_key: "omp",
+      auth_kind: "oauth_token", token: file_fixture(fixture).read, expires_at: 1.minute.from_now)
+  end
+
+  def stub_blocking_omp_exchange(first_started:, second_started:, release:)
+    invocation_count = 0
+    allow(AgentHarness::Authentication).to receive(:exchange_refresh_token) do
+      invocation = invocation_count += 1
+      invocation == 1 ? first_started << true : second_started << true
+      release.pop if invocation == 1
+      path = File.join(ENV.fetch("CLAUDE_CONFIG_DIR"), ".credentials.json")
+      payload = JSON.parse(File.read(path))
+      payload.fetch("claudeAiOauth")["accessToken"] = "refreshed-#{invocation}"
+      File.write(path, JSON.generate(payload))
+    end
   end
 
   describe ".rotating?" do
@@ -113,6 +132,30 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
 
       expect(outcome).to eq(:refresh_failed)
       expect(credential.reload.token).to eq(valid_codex_auth)
+    end
+
+    it "serializes OMP exchanges across different credentials" do
+      first_credential = create_omp_credential(account: account, fixture: "claude_credentials_valid.json")
+      second_credential = create_omp_credential(account: create(:account), fixture: "claude_credentials_expired.json")
+      first_exchange_started = Queue.new
+      second_exchange_started = Queue.new
+      release_first_exchange = Queue.new
+      stub_blocking_omp_exchange(first_started: first_exchange_started,
+        second_started: second_exchange_started, release: release_first_exchange)
+
+      threads = [ Thread.new { described_class.exchange_refresh_token!(first_credential, runner_key: "omp") } ]
+      first_exchange_started.pop
+      threads << Thread.new { described_class.exchange_refresh_token!(second_credential, runner_key: "omp") }
+
+      begin
+        expect { Timeout.timeout(0.2) { second_exchange_started.pop } }.to raise_error(Timeout::Error)
+      ensure
+        release_first_exchange.push(true)
+        threads.each(&:value)
+      end
+
+      expect(JSON.parse(first_credential.reload.token).dig("claudeAiOauth", "accessToken")).to eq("refreshed-1")
+      expect(JSON.parse(second_credential.reload.token).dig("claudeAiOauth", "accessToken")).to eq("refreshed-2")
     end
   end
 
