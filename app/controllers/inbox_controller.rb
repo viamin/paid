@@ -21,6 +21,7 @@ class InboxController < ApplicationController
     @selected_entry = resolve_selected_entry(@inbox_entries) || hidden_or_removed_entry
     return redirect_to(inbox_path(**inbox_redirect_params), status: :see_other) unless @selected_entry
 
+    load_root_prerequisite_ranking
     @detail_view = true
     return render(:show) if detail_frame_request?
 
@@ -204,5 +205,16 @@ class InboxController < ApplicationController
   def resolve_selected_entry(entries)
     requested_id = params[:entry_id].to_s
     entries.find { |entry| entry.id == requested_id }
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  def load_root_prerequisite_ranking
+    return unless @selected_entry.partial_closeout?
+
+    projects = policy_scope(Project).to_a
+    queue_issue_ids = Issues::StalledCloseouts.call(projects).map { |pair| pair.issue.id }
+    @root_prerequisite_ranking = Issues::RootPrerequisiteRanking.call(
+      account: @selected_entry.project.account, queue_issue_ids:
+    )
   end
 end

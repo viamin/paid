@@ -771,6 +771,27 @@ continues to bind its criterion evidence to the current closeout digest and
 issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
+### Root prerequisite leverage ranking
+
+The selected partial-closeout detail provides a read-only, bounded ranking of
+open root prerequisites by the distinct current partial-closeout queue issues
+reachable through the persisted effective dependency graph. The ranking uses
+the same local dependency, blocking-state, and auto-pick eligibility contracts
+as scheduling; it does not synchronise GitHub, call an LLM, alter priorities,
+or mutate dependency links while rendering.
+
+Each entry separates direct from transitive reach, deduplicates shared
+downstream work, and exposes one concrete root-to-blocked-issue path. A path
+labels the root as necessary and separately states whether completing that root
+alone would make the downstream issue runnable; independent blockers remain
+visible rather than being implied away. Current closeout-assessment freshness
+is shown on each path, and stale assessment never establishes acceptance.
+
+Traversal is account-scoped, limited to visible current lane membership, and
+bounded by node and path limits. Persisted cycles, unresolved external edges,
+and human-decision prerequisites are explicitly excluded from the rank with a
+diagnostic count, so they cannot be mistaken for actionable roots.
+
 ## Alternatives considered
 
 - *Generic picker over project checks*: rejected because a check being enabled

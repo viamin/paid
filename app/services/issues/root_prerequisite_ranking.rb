@@ -1,0 +1,158 @@
+# frozen_string_literal: true
+
+module Issues
+  # Read-only, bounded ranking of dependency roots that can unlock current
+  # partial-closeout work. It consumes the persisted effective dependency
+  # graph and canonical auto-pick eligibility; it never syncs a provider or
+  # asks an LLM while an Inbox detail is rendered.
+  # @spec PARTIAL-CLOSEOUT-048
+  class RootPrerequisiteRanking
+    MAX_NODES = 500
+    MAX_PATHS_PER_ROOT = 25
+
+    Path = Data.define(:downstream_issue, :issues, :necessary, :completion_alone_makes_runnable, :stale)
+    Ranking = Data.define(:root, :direct_reach, :transitive_reach, :paths, :actionable) do
+      def total_reach = direct_reach + transitive_reach
+    end
+    Result = Data.define(:rankings, :exclusions) do
+      include Enumerable
+
+      def each(&) = rankings.each(&)
+      def empty? = rankings.empty?
+    end
+
+    def self.call(...) = new(...).call
+
+    def initialize(account:, queue_issue_ids:)
+      @account = account
+      @queue_issue_ids = queue_issue_ids.to_set
+    end
+
+    def call
+      return Result.new(rankings: [], exclusions: []) if queue_issue_ids.empty?
+
+      load_graph
+      Result.new(rankings: ranked_roots, exclusions: @exclusions)
+    end
+
+    private
+
+    attr_reader :account, :queue_issue_ids
+
+    def load_graph
+      @issues = Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).includes(:project).order(:id).limit(MAX_NODES).index_by(&:id)
+      @dependencies = IssueDependency.joins(:issue, :depends_on_issue)
+        .where(issues: { project_id: account.projects.select(:id), github_state: "open" })
+        .where(depends_on_issue: { github_state: "open" })
+        .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+        .excluding_parent_references.pluck(:issue_id, :depends_on_issue_id)
+        .select { |from, to| issues.key?(from) && issues.key?(to) }
+      @upstream = dependencies.group_by(&:first).transform_values { |edges| edges.map(&:last) }
+      @downstream = dependencies.group_by(&:last).transform_values { |edges| edges.map(&:first) }
+      @cyclic_ids = cycle_ids
+      @external_by_issue = unresolved_external_by_issue
+      @human_decision_ids = issues.values.filter_map do |issue|
+        assessment = PartialCloseouts::Assessment.call(issue)
+        issue.id if Array(assessment.assessment["gaps"]).any? { |gap| gap.is_a?(Hash) && gap["kind"] == "human" }
+      end.to_set
+      @exclusions = exclusion_rows
+    end
+
+    attr_reader :issues, :dependencies, :upstream, :downstream, :cyclic_ids, :external_by_issue, :human_decision_ids
+
+    def ranked_roots
+      return [] if @cycle_coverage_unavailable
+
+      load_actionable_root_ids
+      candidate_roots.filter_map { |root| ranking_for(root) }.sort_by { |ranking|
+        [ -ranking.total_reach, -ranking.direct_reach, ranking.root.github_number, ranking.root.id ]
+      }
+    end
+
+    def candidate_roots
+      issues.values.select do |issue|
+        upstream.fetch(issue.id, []).empty? && !cyclic_ids.include?(issue.id) && !external_by_issue.key?(issue.id)
+      end
+    end
+
+    def ranking_for(root)
+      paths = paths_from(root)
+      return if paths.empty?
+
+      direct_reach = paths.count { |path| path.issues.size == 2 }
+      Ranking.new(root:, direct_reach:, transitive_reach: paths.size - direct_reach, paths:, actionable: actionable?(root))
+    end
+
+    def paths_from(root)
+      found = {}
+      stack = [ [ root.id, [ root.id ] ] ]
+      until stack.empty? || found.size >= MAX_PATHS_PER_ROOT
+        current_id, path_ids = stack.pop
+        downstream.fetch(current_id, []).sort.reverse_each do |dependent_id|
+          next if path_ids.include?(dependent_id) || cyclic_ids.include?(dependent_id) || external_by_issue.key?(dependent_id) || human_decision_ids.include?(dependent_id)
+
+          next_path = path_ids + [ dependent_id ]
+          if queue_issue_ids.include?(dependent_id)
+            found[dependent_id] ||= build_path(next_path)
+          end
+          stack << [ dependent_id, next_path ] unless found.key?(dependent_id)
+        end
+      end
+      found.values
+    end
+
+    def build_path(ids)
+      downstream_issue = issues.fetch(ids.last)
+      Path.new(
+        downstream_issue:,
+        issues: ids.map { |id| issues.fetch(id) },
+        necessary: true,
+        completion_alone_makes_runnable: all_blocking_roots_for(downstream_issue.id) == Set[ids.first],
+        stale: PartialCloseouts::Assessment.call(downstream_issue).stale?
+      )
+    end
+
+    def all_blocking_roots_for(issue_id, seen = Set.new)
+      return Set.new if !seen.add?(issue_id) || cyclic_ids.include?(issue_id) || external_by_issue.key?(issue_id) || human_decision_ids.include?(issue_id)
+
+      parents = upstream.fetch(issue_id, [])
+      return Set[issue_id] if parents.empty?
+
+      parents.each_with_object(Set.new) { |parent_id, roots| roots.merge(all_blocking_roots_for(parent_id, seen.dup)) }
+    end
+
+    def actionable?(issue)
+      @actionable_root_ids.include?(issue.id)
+    end
+
+    def load_actionable_root_ids
+      @actionable_root_ids = candidate_roots.group_by(&:project).values.flat_map do |roots|
+        Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(
+          roots.first.project, issue_ids: roots.map(&:id)
+        ).pluck(:id)
+      end.to_set
+    end
+
+    def cycle_ids
+      Issues::DependencyCycles.call(account:).flat_map { |cycle| cycle.issues.map(&:id) }.to_set
+    rescue Issues::DependencyCycles::CoverageUnavailable
+      @cycle_coverage_unavailable = true
+      Set.new
+    end
+
+    def unresolved_external_by_issue
+      IssueDependency.where(issue_id: issues.keys).merge(IssueDependency.still_blocking_external_for_account(account.id))
+        .pluck(:issue_id, :depends_on_owner, :depends_on_repo, :depends_on_number).group_by(&:first)
+    end
+
+    def exclusion_rows
+      return [ { kind: "graph_coverage_unavailable", issue: nil } ] if @cycle_coverage_unavailable
+
+      rows = cyclic_ids.filter_map { |id| { kind: "cycle", issue: issues[id] } }
+      external_by_issue.each_key { |id| rows << { kind: "unresolved_external", issue: issues[id] } }
+      human_decision_ids.each { |id| rows << { kind: "human_decision", issue: issues[id] } }
+      rows
+    end
+  end
+end

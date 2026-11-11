@@ -4,6 +4,24 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-048** — When an operator opens a current
+  `partial_closeout` Inbox detail, the system SHALL present a read-only,
+  account-scoped, bounded ranking of actionable root prerequisites by distinct
+  current visible queue issues they directly and transitively unlock, with an
+  inspectable dependency path, assessment freshness, and a next-action label.
+  Shared downstream work SHALL be deduplicated; each path SHALL distinguish a
+  necessary blocker from a root whose completion alone makes work runnable.
+  Persisted cycles, unresolved external edges, and human-decision prerequisites
+  SHALL be excluded and visibly counted; a closed issue alone SHALL never be
+  represented as acceptance evidence. Rendering SHALL use persisted local
+  graph, blocker, eligibility, and assessment state only and SHALL make no
+  GitHub or LLM calls or change priorities or dependencies.
+  *Code:* `app/services/issues/root_prerequisite_ranking.rb`,
+  `app/controllers/inbox_controller.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/issues/root_prerequisite_ranking_spec.rb`,
+  `spec/system/partial_closeout_layout_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-044** — When source-closure assessment transport
   exhausts its bounded, backoff retry policy after a branch push, Paid SHALL
   retain the same AgentRun in `waiting_recovery` with the failed step, pushed
