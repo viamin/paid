@@ -16,9 +16,8 @@ module FeatureIntents
 
     def self.call(...) = new(...).call
 
-    def initialize(assessment:, agent_harness: AgentHarness)
+    def initialize(assessment:)
       @assessment = assessment
-      @agent_harness = agent_harness
     end
 
     attr_reader :cost_cents, :response_status
@@ -31,10 +30,10 @@ module FeatureIntents
 
     private
 
-    attr_reader :agent_harness, :assessment
+    attr_reader :assessment
 
     def response_payload
-      response = Llm::Request.call(prompt: prompt, project: facet.feature_intent.project, timeout: TIMEOUT, harness: agent_harness)
+      response = Llm::Request.call(prompt: prompt, project: facet.feature_intent.project, timeout: TIMEOUT)
       @response_model = response.respond_to?(:model) ? response.model.presence || "unknown" : "unknown"
       @cost_cents = cost_cents_from(response, @response_model)
       return unless response.respond_to?(:success?) && response.success?

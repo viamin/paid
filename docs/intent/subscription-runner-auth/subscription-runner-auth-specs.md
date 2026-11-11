@@ -19,8 +19,10 @@
   keep the canonical credential state in Paid through harvest/writeback, and
   SHALL emit managed auth telemetry for materialization, harvest, and lease
   stages.
-  *Tests:* `spec/services/containers/provision_codex_managed_auth_2962_spec.rb`.
-  *Code:* `Runners::SubscriptionAuthProviders`, `Containers::Provision`.
+  *Tests:* `spec/services/containers/provision_codex_managed_auth_2962_spec.rb`,
+  `spec/services/runners/managed_credential_lifecycle_spec.rb`.
+  *Code:* `Runners::SubscriptionAuthProviders`, `Runners::ManagedCredentialLifecycle`,
+  `Containers::Provision`.
 
 - [x] **SUBSCRIPTION-RUNNER-AUTH-003** — When Gemini or Copilot managed
   subscription auth is enabled, the system SHALL materialize the minimal native
@@ -50,14 +52,20 @@
   OpenCode's managed `auth.json` and OMP's managed Claude subscription
   credential, Paid SHALL also run the same pre-run refresh-plus-lease lifecycle
   as Codex and SHALL harvest rotated auth state back into the canonical
-  `RunnerCredential`.
+  `RunnerCredential`. Standalone text execution SHALL reuse that same
+  refresh/lease/harvest lifecycle (`Runners::ManagedCredentialLifecycle`) when
+  it materializes a rotating managed credential into a disposable container.
   *Tests:* `spec/requests/runner_login_flows_spec.rb`,
   `spec/services/claude_login_sessions/interactive_login_spec.rb`,
   `spec/services/codex_login_sessions/device_flow_spec.rb`,
-  `spec/services/containers/provision_runner_login_flows_3463_spec.rb`.
+  `spec/services/containers/provision_runner_login_flows_3463_spec.rb`,
+  `spec/services/runners/managed_credential_lifecycle_spec.rb`,
+  `spec/requests/api/standalone_text_credentials_spec.rb`,
+  `spec/services/containers/standalone_text_executor_spec.rb`.
   *Code:* `RunnerLoginFlows::Registry`, `ClaudeLoginSessionsController`,
   `CodexLoginSessionsController`, `Runners::SubscriptionAuthProviders`,
-  `Runners::SubscriptionAuthMaterializers`, `Containers::Provision`.
+  `Runners::SubscriptionAuthMaterializers`, `Runners::ManagedCredentialLifecycle`,
+  `Containers::Provision`.
 
 - [x] **RUNNER-LOGIN-NAV-001** — The application-wide Operations menu
   (desktop and mobile) SHALL expose a single provider-neutral "Runner

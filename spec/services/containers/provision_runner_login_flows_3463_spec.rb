@@ -412,10 +412,10 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-005
   end
 
   it "reads the rotated OMP broker state from the XDG data directory" do
-    svc = build_service(agent_run: create(:agent_run, project: project))
+    read_command = Runners::ManagedCredentialLifecycle.rotation_read_command("omp")
 
-    expect(svc.send(:omp_harvest_python_script)).to include("/home/agent/.local/share/omp/agent/agent.db")
-    expect(svc.send(:omp_harvest_python_script)).not_to include("/home/agent/.omp/agent/agent.db")
+    expect(read_command.join).to include("/home/agent/.local/share/omp/agent/agent.db")
+    expect(read_command.join).not_to include("/home/agent/.omp/agent/agent.db")
   end
 
   it "serializes omp runs sharing the same managed credential and harvests under the lock" do

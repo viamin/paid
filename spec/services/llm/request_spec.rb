@@ -13,26 +13,34 @@ RSpec.describe Llm::Request do
   let(:provider_class) { class_double(AgentHarness::Providers::Codex) }
   let(:provider) { instance_double(AgentHarness::Providers::Codex) }
   let(:response) { instance_double(AgentHarness::Response, success?: true, output: "ok") }
+  let(:standalone_executor) { instance_double(Containers::StandaloneTextExecutor) }
 
   before do
     allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
     allow(provider_class).to receive(:new).and_return(provider)
     allow(provider).to receive_messages(supports_tool_control?: true, send_message: response)
     allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+    allow(Containers::StandaloneTextExecutor).to receive(:new).and_return(standalone_executor)
+    allow(standalone_executor).to receive(:close)
   end
 
-  # @spec LLM-ROUTING-001 LLM-ROUTING-003
-  it "uses a configured subscription when its driver can disable tools" do
+  # @spec LLM-ROUTING-001 LLM-ROUTING-003 LLM-ROUTING-005
+  it "uses a disposable text container for a configured subscription" do
     owner.settings.update!(kb_chat_runner: runner.routing_key)
     allow(provider).to receive(:subscription_unset_vars).and_return([ "OPENAI_API_KEY" ])
     stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "unrelated"))
 
     described_class.call(project: project, prompt: "Assess", timeout: 30)
 
-    expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(
-      provider: :codex, model: "runner-mid",
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: 30
+    )
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess",
+      tools: :none, dangerous_mode: false,
       provider_runtime: an_object_having_attributes(unset_env: [ "OPENAI_API_KEY" ])
     ))
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+    expect(standalone_executor).to have_received(:close)
   end
 
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
@@ -42,12 +50,17 @@ RSpec.describe Llm::Request do
     owner.settings.update!(kb_chat_runner: runner.routing_key, kb_chat_fallback_runners: [ fallback.routing_key ], fallback_enabled: true)
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
-      .and_raise(AgentHarness::AuthenticationError, "Not logged in")
+    attempts = 0
+    allow(provider).to receive(:send_message) do
+      attempts += 1
+      raise AgentHarness::AuthenticationError, "Not logged in" if attempts == 1
+
+      response
+    end
 
     expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
 
-    expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess")).twice
   end
 
   # @spec PARTIAL-CLOSEOUT-049
@@ -56,13 +69,21 @@ RSpec.describe Llm::Request do
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
-      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+    attempts = [ AgentHarness::TimeoutError.new("runner timed out"), response ]
+    allow(provider).to receive(:send_message) do
+      result = attempts.shift
+      raise result if result.is_a?(Exception)
+
+      result
+    end
 
     expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
       per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ])).to eq(response)
 
-    expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess")).twice
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: fallback, timeout: 60
+    )
   end
 
   # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
@@ -71,10 +92,11 @@ RSpec.describe Llm::Request do
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
-      .and_raise(AgentHarness::TimeoutError, "runner timed out")
-    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :gemini))
-      .and_raise(AgentHarness::AuthenticationError, "Not logged in")
+    attempts = [
+      AgentHarness::TimeoutError.new("runner timed out"),
+      AgentHarness::AuthenticationError.new("Not logged in")
+    ]
+    allow(provider).to receive(:send_message) { raise attempts.shift }
 
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
       fallback_runner_identifiers: [ fallback.routing_key ]) }
@@ -87,10 +109,11 @@ RSpec.describe Llm::Request do
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :codex))
-      .and_raise(AgentHarness::AuthenticationError, "Not logged in")
-    allow(AgentHarness.conductor).to receive(:execute_direct).with(anything, hash_including(provider: :gemini))
-      .and_raise(AgentHarness::TimeoutError, "runner timed out")
+    attempts = [
+      AgentHarness::AuthenticationError.new("Not logged in"),
+      AgentHarness::TimeoutError.new("runner timed out")
+    ]
+    allow(provider).to receive(:send_message) { raise attempts.shift }
 
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
       fallback_runner_identifiers: [ fallback.routing_key ]) }
@@ -108,7 +131,7 @@ RSpec.describe Llm::Request do
   it "preserves a transient failure when a later fallback is unavailable" do
     fallback = create(:runner, user: owner, runner_key: "gemini", enabled_for_agent_runs: false)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct)
+    allow(provider).to receive(:send_message)
       .and_raise(AgentHarness::TimeoutError, "runner timed out")
 
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
@@ -120,8 +143,7 @@ RSpec.describe Llm::Request do
   it "keeps an unsuccessful response retryable when a later fallback is unavailable" do
     fallback = create(:runner, user: owner, runner_key: "gemini", enabled_for_agent_runs: false)
     failed_response = instance_double(AgentHarness::Response, success?: false)
-    allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(failed_response)
+    allow(provider).to receive_messages(subscription_unset_vars: [], send_message: failed_response)
 
     expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
       fallback_runner_identifiers: [ fallback.routing_key ])).to eq(failed_response)
@@ -131,13 +153,14 @@ RSpec.describe Llm::Request do
   it "does not use a fallback runner owned by another account" do
     foreign_runner = create(:runner, user: create(:user), runner_key: "gemini")
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct)
+    allow(provider).to receive(:send_message)
       .and_raise(AgentHarness::TimeoutError, "runner timed out")
 
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
       per_runner_timeout: 60, fallback_runner_identifiers: [ foreign_runner.routing_key ]) }
       .to raise_error(AgentHarness::TimeoutError)
-    expect(AgentHarness.conductor).to have_received(:execute_direct).once
+    expect(provider).to have_received(:send_message).once
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).once
   end
 
   # @spec LLM-ROUTING-001 MODEL-POLICY-024
@@ -150,9 +173,7 @@ RSpec.describe Llm::Request do
 
     expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
 
-    expect(AgentHarness.conductor).to have_received(:execute_direct).with(
-      "Assess", hash_including(provider: :codex, model: "runner-mid")
-    ).once
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess")).once
   end
 
   # @spec MODEL-POLICY-024
@@ -168,11 +189,11 @@ RSpec.describe Llm::Request do
   it "honors disabled automatic fallback" do
     owner.settings.update!(kb_chat_runner: runner.routing_key, fallback_enabled: false)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
-    allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::AuthenticationError, "Not logged in")
+    allow(provider).to receive(:send_message).and_raise(AgentHarness::AuthenticationError, "Not logged in")
 
     expect { described_class.call(project: project, prompt: "Assess", timeout: 30) }
       .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
-    expect(AgentHarness.conductor).to have_received(:execute_direct).once
+    expect(provider).to have_received(:send_message).once
   end
 
   # @spec LLM-ROUTING-002
@@ -198,6 +219,7 @@ RSpec.describe Llm::Request do
     runner.update!(tier_models: {}, tier_model_ids: {})
     create(:llm_model, :openai, tier: "mid")
     project.update!(model_preferences: { "max_tier" => "low" })
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
 
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }
       .to raise_error(AgentHarness::ConfigurationError, /policy/)
@@ -217,44 +239,44 @@ RSpec.describe Llm::Request do
   end
 
   # @spec LLM-ROUTING-005
-  it "refuses host CLI execution when the driver cannot disable tools" do
+  it "uses the isolated route when the driver cannot disable tools" do
     allow(provider).to receive_messages(supports_tool_control?: false, subscription_unset_vars: [])
 
-    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }
-      .to raise_error(AgentHarness::ConfigurationError, /isolated environment or API credentials/)
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
-    expect(provider).not_to have_received(:send_message)
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess"))
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: 30
+    )
   end
 
   # @spec LLM-ROUTING-005
-  it "uses API text transport when an API runner cannot disable CLI tools" do
+  it "uses a disposable text container when an API runner cannot disable CLI tools" do
     credential = create(:runner_api_key, user: owner, api_service_type: "openai")
     runner.update!(auth_type: "api_key", provider_api_key: credential)
     allow(provider).to receive_messages(supports_tool_control?: false,
       api_key_env_var_names: [ "OPENAI_API_KEY" ], api_key_unset_vars: [])
-    transport = instance_double(AgentHarness::Api::ChatTransport, call: { status: :succeeded, content: "assessment" })
-    allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(transport)
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
 
-    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to be_success
-
-    expect(transport).to have_received(:call) do |request|
-      expect(request[:candidates].first).to include(model: "runner-mid", credentials: { api_key: credential.api_key })
-    end
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: 30
+    )
+    expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess"))
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
   # @spec MODEL-POLICY-016
-  it "refuses host API execution when OpenRouter ZDR requires isolated request routing" do
+  it "isolates OpenRouter requests that require ZDR" do
     credential = create(:runner_api_key, user: owner, api_service_type: "openrouter")
     selected = create(:runner, :api_key, user: owner, runner_key: "opencode", provider_api_key: credential,
       zero_data_retention: true,
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } })
     owner.settings.update!(kb_chat_runner: selected.routing_key, fallback_enabled: false)
     allow(AgentHarness).to receive(:provider_class).with(:opencode).and_return(provider_class)
-    expect(AgentHarness::Api::ChatTransport).not_to receive(:new)
+    allow(provider).to receive_messages(api_key_env_var_names: [ "OPENROUTER_API_KEY" ], api_key_unset_vars: [])
 
-    expect { described_class.call(project: project, prompt: "Assess", timeout: 30) }
-      .to raise_error(AgentHarness::ConfigurationError, /requires isolated execution/)
+    expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
+    expect(provider).to have_received(:send_message)
   end
 
   # @spec MODEL-POLICY-015
@@ -265,24 +287,21 @@ RSpec.describe Llm::Request do
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } })
     owner.settings.update!(kb_chat_runner: selected.routing_key, fallback_enabled: false)
     allow(AgentHarness).to receive(:provider_class).with(:opencode).and_return(provider_class)
-    expect(AgentHarness::Api::ChatTransport).not_to receive(:new)
+    allow(provider).to receive_messages(api_key_env_var_names: [ "OPENROUTER_API_KEY" ], api_key_unset_vars: [])
 
-    expect { described_class.call(project: project, prompt: "Assess", timeout: 30) }
-      .to raise_error(AgentHarness::ConfigurationError, /requires isolated execution/)
+    expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
+    expect(provider).to have_received(:send_message)
   end
 
   # @spec PARTIAL-CLOSEOUT-031
-  it "uses the selected API credential for host requests" do
+  it "uses the selected API credential in isolated requests" do
     credential = create(:runner_api_key, user: owner, api_service_type: "openai")
     runner.update!(auth_type: "api_key", provider_api_key: credential)
-    transport = instance_double(AgentHarness::Api::ChatTransport, call: { status: :succeeded, content: "assessment" })
-    allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(transport)
+    allow(provider).to receive_messages(api_key_env_var_names: [ "OPENAI_API_KEY" ], api_key_unset_vars: [])
 
-    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to be_success
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
 
-    expect(transport).to have_received(:call) do |request|
-      expect(request[:candidates].first).to include(credentials: { api_key: credential.api_key })
-    end
+    expect(provider).to have_received(:send_message)
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
@@ -292,26 +311,25 @@ RSpec.describe Llm::Request do
     selected = create(:runner, :api_key, user: owner, runner_key: "opencode", provider_api_key: credential,
       config: { "opencode" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } })
     owner.settings.update!(kb_chat_runner: selected.routing_key, fallback_enabled: false)
-    transport = instance_double(AgentHarness::Api::ChatTransport, call: { status: :succeeded, content: "assessment" })
-    allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(transport)
-    allow(AgentHarness).to receive(:provider_class).with(:opencode).and_call_original
+    allow(AgentHarness).to receive(:provider_class).with(:opencode).and_return(provider_class)
+    allow(provider).to receive_messages(api_key_env_var_names: [ "DEEPSEEK_API_KEY" ], api_key_unset_vars: [])
 
-    expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to be_success
-
-    expect(transport).to have_received(:call) do |request|
-      expect(request[:candidates]).to contain_exactly(include(model: "deepseek-chat",
-        endpoint: "https://api.deepseek.com/v1", credentials: { api_key: credential.api_key }))
-    end
+    expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
+    expect(provider).to have_received(:send_message).with(hash_including(
+      provider_runtime: an_object_having_attributes(model: "deepseek/deepseek-chat",
+        env: hash_including("OPENAI_BASE_URL" => "https://api.deepseek.com/v1"))
+    ))
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
   # @spec PARTIAL-CLOSEOUT-031
-  it "refuses to substitute host auth for managed subscription credentials" do
+  it "provisions managed subscription credentials through the disposable executor" do
     create(:runner_credential, runner: runner, account: project.account)
 
-    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }
-      .to raise_error(AgentHarness::ConfigurationError, /Managed subscription credentials require/)
-    expect(provider).not_to have_received(:send_message)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
+    expect(provider).to have_received(:send_message)
   end
 
   # @spec PARTIAL-CLOSEOUT-031

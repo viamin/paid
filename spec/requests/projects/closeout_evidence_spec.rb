@@ -13,7 +13,9 @@ RSpec.describe "Project closeout evidence" do
       blocking: true, metadata: { "prerequisites" => [ { "identity" => identity } ] })
   end
 
-  before { sign_in user }
+  before do
+    sign_in user
+  end
 
   it "requires an authenticated operator" do # @spec PARTIAL-CLOSEOUT-033
     sign_out user
@@ -42,7 +44,7 @@ RSpec.describe "Project closeout evidence" do
     allow(AgentRuns::Research::HttpClient).to receive(:fetch).and_return(fetched)
     response = instance_double(AgentHarness::Response, success?: true,
       output: '{"outcome":"sufficient","reason":"The current pilot report satisfies the prerequisite."}')
-    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+    stub_isolated_llm_response(response)
 
     perform_enqueued_jobs do
       post project_closeout_evidence_index_path(project), params: evidence_params
@@ -52,9 +54,8 @@ RSpec.describe "Project closeout evidence" do
     expect(notification.metadata.fetch("evidence_submissions").sole).to include(
       "outcome" => "sufficient", "reason" => "The current pilot report satisfies the prerequisite."
     )
-    expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt, **|
-      expect(prompt).to include("The required pilot completed successfully for all acceptance criteria.")
-    end
+    expect(isolated_llm_requests.sole.fetch(:prompt))
+      .to include("The required pilot completed successfully for all acceptance criteria.")
   end
 
   it "records unavailable when trusted validation returns malformed output" do # @spec PARTIAL-CLOSEOUT-033
@@ -65,7 +66,7 @@ RSpec.describe "Project closeout evidence" do
     )
     allow(AgentRuns::Research::HttpClient).to receive(:fetch).and_return(fetched)
     response = instance_double(AgentHarness::Response, success?: true, output: "not json")
-    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+    stub_isolated_llm_response(response)
 
     perform_enqueued_jobs do
       post project_closeout_evidence_index_path(project), params: evidence_params

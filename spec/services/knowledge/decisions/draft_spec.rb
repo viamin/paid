@@ -137,20 +137,18 @@ allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_respons
     end
 
     # @spec KNOWLEDGE-CREDENTIAL-001
-    it "uses the API credential on the selected runner" do
+    it "routes the selected API-key runner through isolated text execution" do
       owner = project.effective_owner
       key = create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-selected")
       runner = create(:runner, :api_key, user: owner, runner_key: "claude", provider_api_key: key,
         tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
       owner.settings.update!(kb_chat_runner: runner.routing_key)
-      transport = instance_double(AgentHarness::Api::ChatTransport, call: { status: :succeeded, content: llm_json })
-      allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(transport)
 
       described_class.call(agent_run: agent_run)
 
-      expect(transport).to have_received(:call) do |request|
-        expect(request[:candidates].first).to include(credentials: { api_key: key.api_key })
-      end
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_matching(/Decision Record/), hash_including(provider: :claude, model: "configured-mid", tools: :none)
+      )
     end
 
     it "does not route non-claude providers through text mode (text transport is Anthropic-only)" do

@@ -5,7 +5,11 @@ require "rails_helper"
 # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004 FACET-CONFIDENCE-017
 # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
 RSpec.describe FeatureIntents::AssessFacet do
-  before { configure_llm_routing(project: facet.feature_intent.project) }
+  before do
+    configure_llm_routing(project: facet.feature_intent.project)
+    stub_isolated_llm_via_conductor
+  end
+
   after { Current.user = nil }
 
   let(:direction) { create(:feature_intent_facet_direction) }

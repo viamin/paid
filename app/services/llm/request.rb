@@ -6,10 +6,9 @@ module Llm
     def self.call(...) = new(...).call
 
     def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil,
-      fallback_runner_identifiers: [], per_runner_timeout: nil, harness: AgentHarness)
+      fallback_runner_identifiers: [], per_runner_timeout: nil)
       @runner_identifier = runner
       @model = model
-      @harness = harness
       @agent_run = agent_run
       @project = agent_run&.project || project
       @account = @project&.account || account || user&.account || Current.account
@@ -24,7 +23,7 @@ module Llm
       @eligible_route = false
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -130,30 +129,21 @@ module Llm
     end
 
     def perform_request(runner, timeout:)
+      if runner.api_key? && runner.effective_api_secret.blank?
+        raise AgentHarness::ConfigurationError, "Selected runner is missing its API credential"
+      end
       key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
       config = AgentHarness.build_config(key)
-      config.externally_sandboxed = isolated?
-      executor = Containers::DeadlineExecutor.new(Containers::HarnessExecutor.new(agent_run)) if isolated?
+      config.externally_sandboxed = true
+      executor = executor_for(runner, timeout: timeout)
       provider = AgentHarness.provider_class(key).new(config: config, executor: executor)
       runtime = runtime_for(runner)
+      runtime = subscription_runtime(provider, runtime) unless runner.api_key?
       validate_model_policy!(runner, @policy_model_id || runtime.model)
-      if !isolated? && runner.api_key?
-        if isolated_data_routing_required?(runner)
-          raise AgentHarness::ConfigurationError,
-            "The selected runner requires isolated execution to enforce zero data retention"
-        end
-
-        api_runtime = AgentHarness::ProviderRuntime.new(model: @policy_model_id || runtime.model, base_url: runtime.base_url)
-        return ApiRequest.call(runner: runner, runtime: api_runtime, prompt: @prompt, timeout: timeout)
-      end
-      runtime = host_subscription_runtime(runner, provider, runtime) unless isolated?
-      unless isolated? || provider.supports_tool_control?
-        raise AgentHarness::ConfigurationError, "The selected runner requires an isolated environment or API credentials for text requests"
-      end
-      options = { timeout: timeout, tools: :none, dangerous_mode: false, mcp_servers: [], provider_runtime: runtime }
-      return provider.send_message(prompt: @prompt, **options) if isolated?
-
-      @harness.conductor.execute_direct(@prompt, provider: key, model: runtime.model, **options, externally_sandboxed: false)
+      provider.send_message(prompt: @prompt, timeout: timeout, tools: :none, dangerous_mode: false,
+        mcp_servers: [], provider_runtime: runtime)
+    ensure
+      executor&.close
     end
 
     attr_reader :agent_run
@@ -177,26 +167,17 @@ module Llm
       agent_run&.effective_runner_record ? runner.enabled_for_agent_runs? : runner.enabled_for_chat?
     end
 
-    def isolated_data_routing_required?(runner)
-      runner.zero_data_retention_enforced? ||
-        (@project&.restricted? && runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER)
-    end
-
     def selected_runners
       return unless @user && (!@account || @user.account_id == @account.id)
 
       RunnerSelection.available_candidates(user: @user)
     end
 
-    def isolated?
-      agent_run && (agent_run.container_id.present? || agent_run.runner_handle.present?)
+    def executor_for(runner, timeout:)
+      Containers::StandaloneTextExecutor.new(account: @account, runner: runner, timeout: timeout)
     end
 
-    def host_subscription_runtime(runner, provider, runtime)
-      if @account&.runner_credentials&.for_runner(runner.runner_key)&.where(revoked_at: nil)&.exists?
-        raise AgentHarness::ConfigurationError, "Managed subscription credentials require an isolated execution environment"
-      end
-
+    def subscription_runtime(provider, runtime)
       AgentHarness::ProviderRuntime.new(model: runtime.model, api_provider: runtime.api_provider,
         base_url: runtime.base_url, env: runtime.env, unset_env: runtime.unset_env | provider.subscription_unset_vars,
         flags: runtime.flags, metadata: runtime.metadata)

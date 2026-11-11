@@ -27,11 +27,14 @@ class DockerOrphanCleanupJob < ApplicationJob
   COLLECTOR_VOLUME_PREFIX = "paid-collector-"
   COLLECTOR_CONTAINER_LABEL = "paid.resource=collector_container"
   COLLECTOR_STALE_AFTER = 1.hour
+  STANDALONE_TEXT_CONTAINER_LABEL = "paid.resource=standalone_text_container"
+  STANDALONE_TEXT_STALE_AFTER = 5.minutes
 
   def perform
     agent_removed = 0
     pool_removed = 0
     collector_removed = 0
+    standalone_text_removed = 0
     service_removed = 0
     volume_result = { found: 0, removed: 0, failed: 0, active: 0, retained: 0 }
 
@@ -39,6 +42,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       agent_removed += cleanup_agent_containers(backend: backend)
       pool_removed += cleanup_pool_containers(backend: backend)
       collector_removed += cleanup_collector_containers(backend: backend)
+      standalone_text_removed += cleanup_standalone_text_containers(backend: backend)
       service_removed += cleanup_service_containers(backend: backend)
       cleanup_preview_tunnel_reservations(backend: backend)
       backend_volume_result = cleanup_volumes(backend: backend)
@@ -50,6 +54,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       agent_containers_removed: agent_removed,
       pool_containers_removed: pool_removed,
       collector_containers_removed: collector_removed,
+      standalone_text_containers_removed: standalone_text_removed,
       service_containers_removed: service_removed,
       volumes_found: volume_result[:found],
       volumes_removed: volume_result[:removed],
@@ -122,6 +127,25 @@ class DockerOrphanCleanupJob < ApplicationJob
       removed += 1 if stop_and_remove_container(container, "collector", project_id, backend: backend)
     end
     removed
+  end
+
+  # Remove disposable text containers whose worker died before its ensure ran.
+  def cleanup_standalone_text_containers(backend:)
+    containers = list_containers_by_label(STANDALONE_TEXT_CONTAINER_LABEL, backend: backend)
+    containers.count do |container|
+      next false unless standalone_text_container_stale?(container)
+
+      account_id = container.info.dig("Labels", "paid.account_id")
+      stop_and_remove_container(container, "standalone_text", account_id, backend: backend)
+    end
+  end
+
+  def standalone_text_container_stale?(container)
+    expires_at = container.info.dig("Labels", "paid.expires_at")
+    deadline = expires_at.present? ? Time.zone.parse(expires_at) : container_created_at(container) + STANDALONE_TEXT_STALE_AFTER
+    deadline < Time.current
+  rescue ArgumentError
+    true
   end
 
   # Phase 4: Remove service containers with zero in-flight capacity runs.
@@ -363,6 +387,12 @@ class DockerOrphanCleanupJob < ApplicationJob
     return state["Running"] == true if state.is_a?(Hash)
 
     state == "running"
+  end
+
+  def container_created_at(container)
+    Time.zone.parse(container.info.fetch("Created").to_s)
+  rescue ArgumentError, KeyError
+    Time.zone.at(0)
   end
 
   def collector_volume_names_for(container)

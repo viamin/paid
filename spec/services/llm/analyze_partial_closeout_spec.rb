@@ -28,7 +28,8 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     agent_run.update!(runner: runner, container_id: "test-container", final_runner: runner.routing_key)
     allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
     allow(provider_class).to receive(:new).and_return(provider)
-    allow(provider).to receive_messages(supports_tool_control?: true, send_message: llm_response)
+    allow(provider).to receive_messages(supports_tool_control?: true, subscription_unset_vars: [],
+      send_message: llm_response)
   end
 
   describe ".call" do
@@ -280,7 +281,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       described_class.call(agent_run: agent_run)
 
       expect(provider_class).to have_received(:new).with(
-        config: an_object_having_attributes(externally_sandboxed: true), executor: an_instance_of(Containers::DeadlineExecutor)
+        config: an_object_having_attributes(externally_sandboxed: true), executor: an_instance_of(Containers::StandaloneTextExecutor)
       )
       expect(provider).to have_received(:send_message).with(
         prompt: a_string_including("Return only a JSON object"), timeout: described_class::TIMEOUT,
@@ -304,17 +305,15 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     end
 
     # @spec PARTIAL-CLOSEOUT-031
-    it "uses the same runner's native subscription for a report-only host call" do
+    it "uses the same runner's native subscription in a disposable container after run cleanup" do
       agent_run.update!(container_id: nil, runner_handle: nil)
       allow(provider).to receive(:subscription_unset_vars).and_return([ "OPENAI_API_KEY" ])
-      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
-
       described_class.call(agent_run: agent_run)
 
       expect(provider_class).to have_received(:new).with(
-        config: an_object_having_attributes(externally_sandboxed: false), executor: nil
+        config: an_object_having_attributes(externally_sandboxed: true), executor: an_instance_of(Containers::StandaloneTextExecutor)
       )
-      expect(AgentHarness.conductor).to have_received(:execute_direct).with(anything, hash_including(
+      expect(provider).to have_received(:send_message).with(hash_including(
         provider_runtime: an_object_having_attributes(model: "runner-mid", unset_env: [ "OPENAI_API_KEY" ])
       ))
     end
