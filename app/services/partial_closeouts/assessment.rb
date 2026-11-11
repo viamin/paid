@@ -32,7 +32,8 @@ module PartialCloseouts
         .select("DISTINCT ON (agent_runs.issue_id) agent_runs.issue_id, agent_runs.reconciliation")
         .order("agent_runs.issue_id, agent_runs.id DESC")
       AgentRun.from("(#{latest.to_sql}) agent_runs").pluck(:issue_id, :reconciliation).to_h.transform_values do |reconciliation|
-        reconciliation.to_h.fetch("assessment", {}).deep_stringify_keys
+        assessment = reconciliation.to_h["assessment"]
+        assessment.is_a?(Hash) ? assessment.deep_stringify_keys : {}
       end
     end
 

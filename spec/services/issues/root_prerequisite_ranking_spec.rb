@@ -52,6 +52,50 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "keeps recommend-close queue work as a dependent while filtering non-blocking prerequisites" do
+    root = issue(1)
+    blocked = issue(2)
+    blocked.update!(paid_state: "recommend_close")
+    depends(blocked, root)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
+
+    expect(ranking.root).to eq(root)
+    expect(ranking.paths.sole.issues).to eq([ root, blocked ])
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "does not claim sole unblockability while an undeployed merged PR also blocks the work" do
+    root = issue(1)
+    blocked = issue(2)
+    deployment = create(:issue, :pull_request, project:, github_number: 3, github_state: "closed", paid_state: "completed",
+      pr_review_phase: "merged", deployed_at: nil)
+    depends(blocked, root)
+    create(:issue_dependency, issue: blocked, depends_on_issue: deployment, requires_deployment: true)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
+
+    expect(ranking.root).to eq(root)
+    expect(ranking.paths.sole.completion_alone_makes_runnable).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "includes an undeployed merged PR reached through a resolved external dependency" do
+    upstream_project = create(:project, account:)
+    root = issue(1)
+    blocked = issue(2)
+    deployment = create(:issue, :pull_request, project: upstream_project, github_number: 3, github_state: "closed",
+      paid_state: "completed", pr_review_phase: "merged", deployed_at: nil)
+    depends(blocked, root)
+    create(:issue_dependency, issue: blocked, depends_on_issue: nil, depends_on_owner: upstream_project.owner,
+      depends_on_repo: upstream_project.repo, depends_on_number: deployment.github_number, requires_deployment: true)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ blocked.id ]).sole
+
+    expect(ranking.paths.sole.completion_alone_makes_runnable).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "deduplicates fan-out and marks a necessary root that cannot alone unblock independent work" do
     root = issue(1)
     other_root = issue(2)
@@ -145,6 +189,7 @@ RSpec.describe Issues::RootPrerequisiteRanking do
     result = described_class.call(account:, queue_issue_ids: [ local.id, other.id ])
 
     expect(result.map(&:root)).to eq([ root ])
+    expect(result.exclusions).to include(a_hash_including(kind: "queue_issue_unavailable", issue_id: other.id))
   end
 
   # @spec PARTIAL-CLOSEOUT-048

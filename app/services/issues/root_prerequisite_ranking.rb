@@ -59,6 +59,7 @@ module Issues
 
     def load_queue_ancestors
       frontier = load_issues(queue_issue_ids).map(&:id)
+      @unavailable_queue_issue_ids = queue_issue_ids - frontier.to_set
       until frontier.empty?
         edges = dependency_edges_from(frontier)
         parents = load_issues(edges.map(&:last) - issues.keys)
@@ -77,8 +78,7 @@ module Issues
     end
 
     def blocking_issue_scope
-      Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
-        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).includes(:project)
+      Issue.joins(:project).where(projects: { account_id: account.id }).includes(:project)
     end
 
     def dependency_edges_from(issue_ids)
@@ -86,19 +86,40 @@ module Issues
     end
 
     def local_dependency_edges_from(issue_ids)
-      IssueDependency.joins(:issue, :depends_on_issue).where(issue_id: issue_ids)
-        .where(depends_on_issue: { github_state: "open" })
+      dependency_scope(issue_ids).where(depends_on_issue: { github_state: "open" })
         .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
-        .excluding_parent_references.pluck(:issue_id, :depends_on_issue_id)
+        .or(deployment_dependency_scope(issue_ids))
+        .pluck(:issue_id, :depends_on_issue_id)
     end
 
     def resolved_external_dependency_edges_from(issue_ids)
       IssueDependency.external_resolved_for_account(account.id).where(issue_id: issue_ids).joins(issue: :project)
         .where(projects: { account_id: account.id })
         .where("issues.parent_issue_id IS DISTINCT FROM ext_issue.id")
-        .where("ext_issue.github_state = 'open'")
-        .where.not("ext_issue.paid_state IN (?)", Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .where(blocking_external_dependency_condition)
         .pluck("issue_dependencies.issue_id", "ext_issue.id")
+    end
+
+    def dependency_scope(issue_ids)
+      IssueDependency.joins(:issue, :depends_on_issue).where(issue_id: issue_ids).excluding_parent_references
+    end
+
+    def deployment_dependency_scope(issue_ids)
+      dependency_scope(issue_ids).where(requires_deployment: true)
+        .where(depends_on_issue: { is_pull_request: true, deployed_at: nil })
+        .where.not(depends_on_issue: { github_state: "open" })
+    end
+
+    def blocking_external_dependency_condition
+      Issue.sanitize_sql_array([ <<~SQL.squish, Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES ])
+        (ext_issue.github_state = 'open' AND ext_issue.paid_state NOT IN (?))
+        OR (
+          issue_dependencies.requires_deployment = TRUE
+          AND ext_issue.is_pull_request = TRUE
+          AND ext_issue.deployed_at IS NULL
+          AND ext_issue.github_state <> 'open'
+        )
+      SQL
     end
 
     attr_reader :issues, :dependencies, :upstream, :downstream, :cyclic_ids, :external_by_issue,
@@ -116,9 +137,13 @@ module Issues
 
     def candidate_roots
       issues.values.select do |issue|
-        visible_project_ids.include?(issue.project_id) && upstream.fetch(issue.id, []).empty? &&
+        visible_project_ids.include?(issue.project_id) && blocking_prerequisite?(issue) && upstream.fetch(issue.id, []).empty? &&
           !cyclic_ids.include?(issue.id) && !external_by_issue.key?(issue.id)
       end
+    end
+
+    def blocking_prerequisite?(issue)
+      issue.github_state == "open" && !issue.paid_state.in?(Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
     end
 
     def ranking_for(root)
@@ -216,9 +241,12 @@ module Issues
 
       rows = cyclic_ids.filter_map { |id| { kind: "cycle", issue: issues[id] } }
       rows << { kind: "graph_coverage_truncated", issue: nil } if @graph_truncated
+      unavailable_queue_issue_ids.each { |id| rows << { kind: "queue_issue_unavailable", issue: nil, issue_id: id } }
       external_by_issue.each_key { |id| rows << { kind: "unresolved_external", issue: issues[id] } }
       human_decision_ids.each { |id| rows << { kind: "human_decision", issue: issues[id] } }
       rows
     end
+
+    def unavailable_queue_issue_ids = @unavailable_queue_issue_ids || Set.new
   end
 end

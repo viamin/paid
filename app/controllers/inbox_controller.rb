@@ -124,8 +124,7 @@ class InboxController < ApplicationController
       return
     end
 
-    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind,
-      sort: @selected_sort, scope: @selected_scope)
+    @inbox_entries = inbox_queue.call
     load_inbox_presentations(entries: @inbox_entries)
     redirect_for_empty_filtered_combination
   end
@@ -155,9 +154,19 @@ class InboxController < ApplicationController
   end
 
   def selected_entry_queue
-    [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
-      project: @scoped_project, kind: @selected_kind) ].compact
+      [ inbox_queue.find_entry(params[:entry_id].to_s) ].compact
   end
+
+    def inbox_queue
+      @inbox_queue ||= Inbox::Queue.new(user: current_user, project: @scoped_project,
+        kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
+    end
+
+    def queue_entry_kind
+      return @selected_kind unless single_entry_request?
+
+      params[:entry_id].to_s.split(":", 2).first
+    end
 
   # @spec INBOX-PHASE-RELEVANCE-002
   def valid_inbox_scope
@@ -211,10 +220,9 @@ class InboxController < ApplicationController
   def load_root_prerequisite_ranking
     return unless @selected_entry.partial_closeout?
 
-    queue = Inbox::Queue.new(user: current_user, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
-    queue_issue_ids = queue.call.filter_map { |entry| entry.issue&.id }
+    queue_issue_ids = inbox_queue.entries.filter_map { |entry| entry.issue&.id if entry.partial_closeout? }
     @root_prerequisite_ranking = Issues::RootPrerequisiteRanking.call(
-      account: @selected_entry.project.account, queue_issue_ids:, visible_project_ids: queue.visible_project_ids
+      account: @selected_entry.project.account, queue_issue_ids:, visible_project_ids: inbox_queue.visible_project_ids
     )
   end
 end
