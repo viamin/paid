@@ -30,19 +30,16 @@ class RetryFailedManualRunJob < ApplicationJob
     [ RETRY_BASE_DELAY * (2**(attempt - 1)), RETRY_MAX_DELAY ].min
   end
 
-  def perform(agent_run_id, attempt) # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005 MANUAL-RUN-RETRY-008
-    agent_run = AgentRun.find_by(id: agent_run_id)
-    return unless agent_run
-
-    new_run = create_retry_run_in_transaction(agent_run, attempt)
-    return unless new_run
+  def perform(agent_run_id, attempt) # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005 MANUAL-RUN-RETRY-008 MANUAL-RUN-RETRY-009
+    result = retry_attempt.claim(agent_run_id: agent_run_id, attempt: attempt)
+    return unless result.claimed?
 
     Rails.logger.info(
       message: "agent_execution.manual_failed_run_auto_retry",
-      original_agent_run_id: agent_run.id,
-      new_agent_run_id: new_run.id,
-      project_id: agent_run.project_id,
-      goal: agent_run.goal,
+      original_agent_run_id: result.agent_run.id,
+      new_agent_run_id: result.successor.id,
+      project_id: result.agent_run.project_id,
+      goal: result.agent_run.goal,
       attempt: attempt
     )
 
@@ -51,69 +48,10 @@ class RetryFailedManualRunJob < ApplicationJob
 
   private
 
-  def create_retry_run_in_transaction(agent_run, attempt)
-    AgentRun.transaction do
-      locked_run = AgentRun.lock.find_by(id: agent_run.id)
-      next unless locked_run && eligible_for_retry?(locked_run, attempt)
-
-      created = create_retry_run(locked_run, attempt)
-      locked_run.retry!(
-        decision_point: "manual_failed_run_auto_retry",
-        signals: { attempt: attempt, max_attempts: AgentRun::MAX_MANUAL_RETRY_ATTEMPTS },
-        result: { new_agent_run_id: created.id }
-      )
-      created
-    end
-  rescue ActiveRecord::RecordNotUnique => e
-    raise unless lid_planning_active_run_conflict?(e)
-
-    # A planning run started while this delayed retry was pending. The
-    # transaction rolls back, leaving the original run failed as intended.
-    Rails.logger.info(
-      message: "agent_execution.manual_failed_run_auto_retry_skipped_existing_run",
-      original_agent_run_id: agent_run.id,
-      project_id: agent_run.project_id
-    )
-    nil
-  end
-
-  def lid_planning_active_run_conflict?(error)
-    (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_lid_planning")
-  end
-
-  # Re-checks eligibility under the row lock: state may have changed since
-  # the activity scheduled this job (the project toggle flipped off, the run
-  # was already retried, or an operator manually intervened).
-  # @spec MANUAL-RUN-RETRY-005 PROJECT-READINESS-007 LAYERED-VERIFY-011
-  # @spec LAYERED-VERIFY-013
-  def eligible_for_retry?(agent_run, attempt)
-    attempt <= AgentRun::MAX_MANUAL_RETRY_ATTEMPTS &&
-      agent_run.manual? &&
-      !agent_run.bootstrap_readiness_goal? &&
-      !agent_run.layered_verification_goal? &&
-      agent_run.issue_id.nil? &&
-      agent_run.source_pull_request_number.nil? &&
-      agent_run.status.in?(AgentRun::FAILURE_STATUSES) &&
-      !agent_run.recoverable_rate_limited? &&
-      agent_run.project&.retry_failed_manual_runs? &&
-      agent_run.no_observable_work?
-  end
-
-  def create_retry_run(original, attempt)
-    AgentRun.create!(
-      project: original.project,
-      initiating_user: original.initiating_user,
-      runner: original.runner,
-      agent_type: original.agent_type,
-      custom_prompt: original.custom_prompt,
-      plan_doc_source: original.plan_doc_source,
-      goal: original.goal,
-      trigger_type: "manual",
-      status: "queued",
-      external_metadata: original.external_metadata.merge(
-        AgentRun::MANUAL_RETRY_ATTEMPT_METADATA_KEY => attempt,
-        AgentRun::MANUAL_RETRY_PARENT_METADATA_KEY => original.id
-      )
+  def retry_attempt
+    AgentRuns::RetryAttempt.new(
+      policy: AgentRuns::ManualRunRetryPolicy.new,
+      decision_point: "manual_failed_run_auto_retry"
     )
   end
 end

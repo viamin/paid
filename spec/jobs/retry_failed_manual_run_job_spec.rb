@@ -17,7 +17,7 @@ RSpec.describe RetryFailedManualRunJob do
 
   describe "#perform" do
     it "mints a new queued run, marks the original retried, and re-queues processing" do
-      original = create(:agent_run, :failed, :manual, :with_custom_prompt, project: project, goal: "create_pr")
+      original = create(:agent_run, :failed, :manual, :with_custom_prompt, project: project, goal: "create_pr", priority_tier: "P1")
 
       expect {
         described_class.new.perform(original.id, 1)
@@ -29,6 +29,7 @@ RSpec.describe RetryFailedManualRunJob do
       new_run = AgentRun.order(:id).last
       expect(new_run.project).to eq(project)
       expect(new_run.goal).to eq("create_pr")
+      expect(new_run.priority_tier).to eq(original.priority_tier)
       expect(new_run.custom_prompt).to eq(original.custom_prompt)
       expect(new_run.trigger_type).to eq("manual")
       expect(new_run.status).to eq("queued")
@@ -100,6 +101,8 @@ RSpec.describe RetryFailedManualRunJob do
       expect {
         described_class.new.perform(original.id, 1)
       }.not_to change(AgentRun, :count)
+
+      expect(OrchestrationDecision.last.outputs["reason"]).to eq("not_failed")
     end
 
     it "does nothing when the project toggle has since been disabled" do
@@ -147,6 +150,16 @@ RSpec.describe RetryFailedManualRunJob do
       }.not_to change(AgentRun, :count)
 
       expect(original.reload.status).to eq("failed")
+      expect(OrchestrationDecision.last.outputs["reason"]).to eq("retry_budget_exhausted")
+    end
+
+    it "creates at most one successor when the delayed job is delivered twice" do # @spec MANUAL-RUN-RETRY-009
+      original = create(:agent_run, :failed, :manual, :with_custom_prompt, project: project, goal: "create_pr")
+
+      2.times { described_class.new.perform(original.id, 1) }
+
+      expect(AgentRun.where("external_metadata ->> ? = ?", AgentRun::MANUAL_RETRY_PARENT_METADATA_KEY, original.id.to_s).count).to eq(1)
+      expect(OrchestrationDecision.where(agent_run: original).pluck(:outputs)).to include(hash_including("reason" => "not_failed"))
     end
   end
 end

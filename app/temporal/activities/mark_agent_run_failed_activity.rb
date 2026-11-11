@@ -163,28 +163,16 @@ module Activities
     # that branch's issue-driven backoff re-enqueue, but mints a fresh
     # AgentRun (RetryFailedManualRunJob) since there is no issue to carry
     # the retry state.
-    # @spec MANUAL-RUN-RETRY-001
+    # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-009
     def schedule_manual_run_retry_if_eligible(agent_run)
-      return unless manual_run_retry_eligible?(agent_run)
-
-      attempt = agent_run.manual_retry_attempt + 1
-      return if attempt > AgentRun::MAX_MANUAL_RETRY_ATTEMPTS
-
-      RetryFailedManualRunJob
-        .set(wait: RetryFailedManualRunJob.retry_delay(attempt))
-        .perform_later(agent_run.id, attempt)
-    end
-
-    # @spec MANUAL-RUN-RETRY-002 MANUAL-RUN-RETRY-003 MANUAL-RUN-RETRY-004 PROJECT-READINESS-007
-    def manual_run_retry_eligible?(agent_run)
-      agent_run.manual? &&
-        !agent_run.bootstrap_readiness_goal? &&
-        agent_run.issue.nil? &&
-        agent_run.source_pull_request_number.nil? &&
-        agent_run.status.in?(AgentRun::FAILURE_STATUSES) &&
-        !agent_run.recoverable_rate_limited? &&
-        agent_run.project&.retry_failed_manual_runs? &&
-        agent_run.no_observable_work?
+      AgentRuns::RetryAttempt.new(
+        policy: AgentRuns::ManualRunRetryPolicy.new,
+        decision_point: "manual_failed_run_auto_retry"
+      ).schedule(
+        agent_run: agent_run,
+        job_class: RetryFailedManualRunJob,
+        delay: RetryFailedManualRunJob.method(:retry_delay)
+      )
     end
 
     def check_auth_failure(agent_run, error_message)

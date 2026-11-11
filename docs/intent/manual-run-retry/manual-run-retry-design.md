@@ -12,9 +12,9 @@ prefix: MANUAL-RUN-RETRY
 > backoff re-enqueue for issue-attached runs; this segment exists because
 > every mechanism there is issue-driven and does nothing for an issue-less
 > run. This is also the first implementation slice of the shared
-> `agent-run-retry-contract` segment (AGENT-RETRY-013): it already
-> satisfies that contract's cross-cutting safety requirements as shipped,
-> so adoption required no change here.
+> `agent-run-retry-contract` segment (AGENT-RETRY-013): it is the first
+> runtime adopter of the shared attempt mechanics while retaining its own
+> manual-run admission policy and successor shape.
 
 ## Purpose
 

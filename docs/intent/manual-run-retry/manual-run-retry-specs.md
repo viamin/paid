@@ -91,6 +91,16 @@
   *Code:* `RetryFailedManualRunJob#create_retry_run_in_transaction`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
+- [x] **MANUAL-RUN-RETRY-009** — The shared retry mechanism SHALL use the
+  manual-run policy to make both scheduling and locked delayed-job admission
+  decisions. Every applied retry, skipped retry, and exhausted retry budget
+  SHALL record an inspectable `OrchestrationDecision` reason; duplicate job
+  delivery or a scheduler restart SHALL create at most one successor without
+  inferring retryability from free-form failure text.
+  *Code:* `AgentRuns::RetryAttempt`, `AgentRuns::ManualRunRetryPolicy`.
+  *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
+
 - [x] **MANUAL-RUN-RETRY-006** — The retry chain SHALL be bounded at
   `AgentRun::MAX_MANUAL_RETRY_ATTEMPTS` (3). The attempt number SHALL be
   tracked via `external_metadata[AgentRun::MANUAL_RETRY_ATTEMPT_METADATA_KEY]`
