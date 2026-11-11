@@ -67,6 +67,7 @@ module PartialCloseouts
       reasons = []
       reasons << "source_issue_body_truncated" if source[:body_truncated]
       reasons << "merged_prs_omitted" if omitted.positive?
+      reasons << "merged_pr_body_missing" if delivery.any? { |pr| pr[:body_missing] }
       reasons << "merged_pr_body_truncated" if delivery.any? { |pr| pr[:body_truncated] }
       reasons << "merged_pr_body_changed_during_audit" if delivery.any? { |pr| pr[:body_changed_during_audit] }
       warnings = []

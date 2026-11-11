@@ -196,6 +196,22 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         assessment: PartialCloseouts::Assessment.snapshot(agent_run, result)).fetch("disposition")).to eq("track")
     end
 
+    # @spec PARTIAL-CLOSEOUT-047
+    it "does not authorize closure when a selected merged PR has no description" do
+      create(:issue, :pull_request, project:, parent_issue: issue, github_number: 125,
+        pr_review_phase: "merged", github_html_url: "#{project.github_url}/pull/125", body: nil)
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Dispatch", state: "satisfied", evidence: [ { label: "PR #125" } ]
+      } ] }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.dig("input_coverage", "complete")).to be(false)
+      expect(result.dig("input_coverage", "reasons")).to include("merged_pr_body_missing")
+      expect(PartialCloseouts::SourceClosureDisposition.call(issue:,
+        assessment: PartialCloseouts::Assessment.snapshot(agent_run, result)).fetch("disposition")).to eq("track")
+    end
+
     # @spec PARTIAL-CLOSEOUT-032
     it "grounds technical validation suggestions in enabled reviewed recipes" do
       selected = create(:pre_commit_requirement, project:, account: project.account,
