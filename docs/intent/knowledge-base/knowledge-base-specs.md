@@ -31,7 +31,10 @@
   execution encounters a transient PostgreSQL connection failure, it SHALL
   retry through its bounded job retry policy, retain the project's
   `collecting` status while a retry remains, and defer exception notification
-  until that policy is exhausted.
+  until that policy is exhausted. When that policy is exhausted while the
+  database connection is still unavailable, terminal status marking SHALL be
+  skipped and logged without suppressing notification or re-raising of the
+  original collection error.
   *Code:* `app/jobs/enqueue_knowledge_collection_job.rb`,
   `app/jobs/run_collectors_job.rb`.
   *Test:* `spec/jobs/enqueue_knowledge_collection_job_spec.rb`,

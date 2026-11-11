@@ -39,11 +39,21 @@ class RunCollectorsJob < ApplicationJob
 
   # retry_on intercepts transient failures before ApplicationJob's rescue_from
   # handler, so exhaustion must set the terminal status and report explicitly.
+  # Best-effort by contract: the database may still be unreachable when retries
+  # are exhausted, and a failed lookup or status write here must never mask the
+  # original collection error or skip its terminal notification — log the
+  # secondary failure and let the exhaustion block notify and re-raise.
   # @spec KNOWLEDGE-001 KNOWLEDGE-015 EXCEPTION-NOTIFY-003
   def mark_terminal_collection_failure
     TenantContext.with_system_access do
       mark_knowledge_collection_failed(Project.find_by(id: notification_project_id))
     end
+  rescue StandardError => status_error
+    Rails.logger.error(
+      message: "knowledge.job_terminal_status_update_failed",
+      project_id: notification_project_id,
+      error: status_error.message
+    )
   end
 
   def perform(project_id, commit_sha, branch: "main", committed_at: nil, collector_type: nil, collector_cursor: nil)
