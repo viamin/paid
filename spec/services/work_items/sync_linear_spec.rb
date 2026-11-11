@@ -63,4 +63,35 @@ RSpec.describe WorkItems::SyncLinear do
     expect(configuration.reload.connection_health).to eq("rate_limited")
     expect(existing.reload.title).to eq("Existing")
   end
+
+  it "reconciles a changed provider lifecycle state through the configured mapping" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    FeatureFlags.enable!(:unified_work_items, project:)
+    create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress")
+    item = create(:work_item, account:, tracker_configuration: configuration, external_id: "issue-1",
+      native_state: "Todo", paid_lifecycle_state: "todo")
+    ticket[:state][:name] = "In Progress"
+    stub_ticket
+
+    described_class.call(project:)
+
+    expect(item.reload).to have_attributes(native_state: "In Progress", paid_lifecycle_state: "in_progress",
+      lifecycle_sync_source: "provider")
+  end
+
+  it "records a conflict instead of overwriting a recent Paid lifecycle change" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    FeatureFlags.enable!(:unified_work_items, project:)
+    create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress")
+    item = create(:work_item, account:, tracker_configuration: configuration, external_id: "issue-1",
+      native_state: "Todo", paid_lifecycle_state: "blocked", lifecycle_sync_source: "paid")
+    ticket[:state][:name] = "In Progress"
+    stub_ticket
+
+    expect { described_class.call(project:) }.to change(WorkItemLifecycleConflict, :count).by(1)
+
+    expect(item.reload).to have_attributes(native_state: "Todo", paid_lifecycle_state: "blocked")
+    expect(item.work_item_lifecycle_conflicts.last).to have_attributes(requested_native_state: "In Progress",
+      requested_paid_state: "in_progress")
+  end
 end

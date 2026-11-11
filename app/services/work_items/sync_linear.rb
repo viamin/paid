@@ -10,7 +10,7 @@ module WorkItems
       @project = project
     end
 
-    # @spec UNIFIED-WORK-ITEMS-003 UNIFIED-WORK-ITEMS-004 UNIFIED-WORK-ITEMS-009
+    # @spec UNIFIED-WORK-ITEMS-003 UNIFIED-WORK-ITEMS-004 UNIFIED-WORK-ITEMS-006 UNIFIED-WORK-ITEMS-009
     def call
       return 0 unless Automation::Providers::UnifiedWorkItemsRolloutGuard.enabled?(project)
       return 0 unless configuration&.enabled? && configuration.tracker_type == "linear"
@@ -46,13 +46,14 @@ module WorkItems
       item = WorkItem.find_or_initialize_by(account: project.account, provider: "linear",
         resource_type: "issue", external_id: issue.external_id)
       item.assign_attributes(tracker_configuration: configuration, title: issue.title,
-        body: issue.body, native_state: issue.status, priority: payload["priority"], url: issue.url,
+        body: issue.body, priority: payload["priority"], url: issue.url,
         raw_payload: payload, provider_created_at: parse_time(payload["createdAt"]),
         provider_updated_at: parse_time(payload["updatedAt"]),
         archived_at: parse_time(payload["archivedAt"]), last_synced_at: synced_at,
         native_project_id: payload.dig("project", "id"), native_project_name: payload.dig("project", "name"))
       item.save!
       WorkItems::ProjectMappings::AutoAssign.call(work_item: item)
+      WorkItems::Lifecycle::ApplyProviderChange.call(work_item: item, native_state: issue.status)
     end
 
     def parse_time(value)
