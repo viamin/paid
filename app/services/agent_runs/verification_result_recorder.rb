@@ -312,7 +312,11 @@ module AgentRuns
     def normalize_criterion_verification(value)
       return unless value.is_a?(Hash)
 
-      verification = value.deep_stringify_keys.slice("kind", "reason", "rationale", "limitations")
+      verification = value.deep_stringify_keys.slice("kind", "reason")
+      verification["rationale"] = redact_input_excerpt(value["rationale"] || value[:rationale])
+      verification["limitations"] = Array(value["limitations"] || value[:limitations]).filter_map do |limitation|
+        redact_input_excerpt(limitation)
+      end.first(20).presence
       verification["references"] = Array(value["references"] || value[:references]).filter_map do |reference|
         next unless reference.is_a?(Hash)
 
@@ -402,7 +406,8 @@ module AgentRuns
       key = input["storage_key"].to_s
       return unavailable_input(input, "artifact_identity_missing") if key.blank?
 
-      observed = Array(@current_observed_artifacts || previous_verification_result.dig("evidence", "observed_artifacts"))
+      artifacts = @current_observed_artifacts.presence || previous_verification_result.dig("evidence", "observed_artifacts")
+      observed = Array(artifacts)
         .find { |artifact| artifact["storage_key"] == key && artifact["provenance"] == "recorder" }
       return unavailable_input(input, "artifact_not_recorder_owned") unless observed
       return contradicted_input(input, "artifact_not_retained") unless observed["state"] == "retained"

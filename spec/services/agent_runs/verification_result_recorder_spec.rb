@@ -116,6 +116,19 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     }
   end
 
+  def artifact_receipt_payload(storage_key)
+    {
+      status: "passed",
+      acceptance_criteria: [ {
+        id: "AC-1", status: "passed",
+        verification: {
+          kind: "unit_or_service_test", rationale: "The retained log records the exercised request.",
+          inputs: [ { type: "artifact", storage_key: } ]
+        }
+      } ]
+    }
+  end
+
   it "persists the recorded verification result and app log tail onto the run" do
     File.write(result_path, JSON.generate(
       status: "passed",
@@ -200,6 +213,10 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     result = agent_run.reload.verification_result
     coverage = result.dig("evidence", "coverage").sole
     expect(coverage).to include("state" => "unverified")
+    expect(coverage.fetch("reported_verification")).to include(
+      "rationale" => "Exercises settings persistence.",
+      "limitations" => [ "Does not prove all settings variants." ]
+    )
     expect(coverage.dig("input_receipt", "state")).to eq("verified")
     expect(coverage.dig("input_receipt", "references", 0)).to include("state" => "verified", "path" => "spec/system/settings_spec.rb")
     expect(result.dig("evidence", "criterion_receipt_pilot")).to include(
@@ -288,6 +305,33 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(result.dig("evidence", "tested_commit")).to eq("b" * 40)
     expect(result.dig("evidence", "coverage")).to include(
       hash_including("id" => "AC-1", "reported_status" => "passed", "state" => "unverified")
+    )
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "retains a verified artifact receipt when rebinding after transient files are cleaned up" do
+    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
+    allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
+    storage_key = "#{Screenshots::Storage.namespace_prefix(org: project.owner, repo: project.repo)}verification/#{agent_run.id}/#{"a" * 40}/app.log"
+    write_verification_result(artifact_receipt_payload(storage_key))
+    File.write(log_path, "request completed\n")
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+    first_result = agent_run.reload.verification_result
+    expect(input_receipt_for(first_result)).to include("state" => "verified")
+
+    described_class.call(
+      agent_run:,
+      repo_path:,
+      fallback_result: first_result,
+      record_missing: false,
+      result_commit: "b" * 40
+    )
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "verified")
+    expect(receipt.fetch("references").sole).to include(
+      "storage_key" => storage_key, "state" => "verified", "provenance" => "recorder"
     )
   end
 
