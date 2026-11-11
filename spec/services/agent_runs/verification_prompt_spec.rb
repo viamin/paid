@@ -39,6 +39,49 @@ RSpec.describe AgentRuns::VerificationPrompt do
     expect(section.fallback_result).to be_nil
   end
 
+  # @spec LIVE-PREVIEW-012
+  it "directs a Paid create-PR run to its repository-owned journey guide" do
+    File.write(File.join(repo_path, ".paid/journeys.md"), <<~MARKDOWN)
+      # Paid journeys
+
+      ## Project detail
+      Sign in, open Projects, and open a project detail.
+    MARKDOWN
+
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include("# Paid journey guide")
+    expect(section.content).to include("`.paid/journeys.md`")
+    expect(section.content).to include("select the journey that covers the changed surface")
+  end
+
+  # @spec LIVE-PREVIEW-012
+  it "directs an issue-less interactive create-PR run to its repository-owned journey guide" do
+    agent_run.update!(issue: nil)
+    File.write(File.join(repo_path, ".paid/journeys.md"), "# Paid journeys\n")
+
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include("# Paid journey guide")
+  end
+
+  # @spec LIVE-PREVIEW-012
+  it "does not invent a journey guide when the checkout does not provide one" do
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).not_to include("# Paid journey guide")
+  end
+
+  # @spec LIVE-PREVIEW-012
+  it "directs an interactive create-PR run to its journey guide when configuration is invalid" do
+    File.write(File.join(repo_path, ".paid/journeys.md"), "# Paid journeys\n")
+    File.write(File.join(repo_path, ".paid/screenshots.yml"), "routes: [\n")
+
+    section = described_class.call(agent_run:, repo_path:)
+
+    expect(section.content).to include("# Paid journey guide")
+  end
+
   it "requires criterion evidence references in the recorded result" do
     section = described_class.call(agent_run:, repo_path:)
 
