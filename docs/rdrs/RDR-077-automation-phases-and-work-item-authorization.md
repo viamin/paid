@@ -473,3 +473,10 @@ manual-start endpoints keep this RDR's non-stopping endpoint semantics
 (`AUTOMATION-PHASES-012` remains in force, rescoped to those surfaces), and no
 stop option is added to existing grants. RDR-078's terminal lifecycle rules
 govern how its own stop persists, expires, or is withdrawn.
+
+Those rules do not change this RDR's grant revocation semantics. A
+continuation grant is purely additive, so revoking it restores project
+defaults. A bounded phase authorization both delegates and suppresses, so
+revoking it does not silently release the phase it stopped; RDR-078 records
+the explicit authorized decision — a new authorization or an explicit return
+to ordinary project policy — that resolves that lineage instead.

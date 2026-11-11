@@ -78,11 +78,19 @@ path — and map to implementation slices #4997 (`-001`–`-003`), #4998
   continuation grant would otherwise permit that phase; the stop SHALL persist
   after the authorization completes at its endpoint (reopening SHALL NOT
   reactivate it), SHALL fail closed to a visible reassessment decision on
-  expiry, and SHALL be withdrawn with the instrument on revocation or
-  supersession so ordinary project policy governs the lineage again. Ordinary
-  RDR-077 grants, project phase settings, and manual-start endpoints SHALL
-  retain their current non-stopping behavior and SHALL NOT gain a stop
+  expiry, and SHALL be retained when the authorization is revoked or stopped
+  through reassessment — withdrawal never silently releases the suppressed
+  automation — until an authorized actor explicitly returns the lineage to
+  ordinary project policy or a newer explicit authorization supersedes it.
+  Ordinary RDR-077 grants, project phase settings, and manual-start endpoints
+  SHALL retain their current non-stopping behavior and SHALL NOT gain a stop
   option.
+  *Shipped foundation:* `Automation::DelegatedWorkBoundary` already blocks a
+  delegated action whose current phase equals the authorization's
+  stop-before phase (`bounded_stop`), and a revoked, completed, or expired
+  authorization already starts no new action (`-004`); this claim adds the
+  composition against continuation grants and project defaults, the visible
+  `bounded_phase_stop` result, and the terminal lifecycle above.
   *Planned tests (#4997):* effective-policy, queue, and lifecycle specs.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-005** — When pinned intent/acceptance
@@ -91,7 +99,10 @@ path — and map to implementation slices #4997 (`-001`–`-003`), #4998
   reassessment and SHALL not continue until an authorized actor stops the
   authorization, supersedes it with newly consented scope, or resumes only the
   unchanged authorization; a resume SHALL NOT broaden scope and SHALL be
-  re-evaluated when the triggering condition recurs.
+  re-evaluated when the triggering condition recurs. Stopping the
+  authorization SHALL retain the lineage's stop until a later explicit
+  authorization or an explicit return of the lineage to ordinary project
+  policy.
   *Planned tests (#4998):* invalidation and reassessment specs, including
   resumption of an unchanged authorization after a triggering condition
   resolves without scope expansion (for example a policy change that is

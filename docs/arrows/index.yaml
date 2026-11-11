@@ -212,7 +212,7 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-11-10
+    audited: 2026-11-11
     next: "Reconcile open implementation children #4512-#4515 and #4517, collect pilot evidence #4638, and complete closeout #4518 before final acceptance of RDR-077."
   bounded-phase-authorization:
     title: Bounded Delivery-Phase Authorization

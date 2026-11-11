@@ -4,18 +4,25 @@
 
 - **Date**: 2026-10-24 (accepted 2026-11-11)
 - **Status**: Partially Implemented
+- **Acceptance**: Owner acceptance of this exact revision is a human-only
+  decision taken through the #4996 review path: the delivering PR carries the
+  structured `paid-hold-review` hold, and acceptance is the owner releasing
+  that hold. The status, the decision below, and RDR-077's amendment take
+  effect with that merge and not before; see
+  [Acceptance](#acceptance-2026-11-11).
 - **Type**: Architecture + Authorization + Delivery UX
 - **Related Issues**: #4624 (delivered proposal); #4995 (tracking umbrella), #4996 (design acceptance), #4997–#4999 (implementation), #5000 (closeout)
 - **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md), and [RDR-080](RDR-080-project-delegation-after-settled-intent.md)
 - **Related intent**: `docs/intent/bounded-phase-authorization/`, `docs/intent/automation-phases/`, `docs/intent/auto-merge-strategy/`, and `docs/intent/inbox-phase-relevance/`
-- **Implementation status**: The design is accepted (see
+- **Implementation status**: This revision carries the accepted design (see
   [Acceptance](#acceptance-2026-11-11)). The narrower bounded-action
   foundation and deterministic boundary rechecks
   (`BOUNDED-PHASE-AUTHORIZATION-010`, `-011`, and `-004`) are checked in the
   linked EARS. The eight phase-lifecycle claims remain implementation gaps
   tracked under #4995: #4997 (`-001`–`-003`), #4998 (`-005`–`-006`), #4999
   (`-007`–`-009`). No exclusive stop is enabled; approval freshness and
-  project settings, including Forager's `auto_merge_mode`, remain unchanged.
+  project settings, including every project's `auto_merge_mode`, remain
+  unchanged.
 
 ## Decision (accepted 2026-11-11)
 
@@ -41,11 +48,11 @@ or a current-head review attestation.
 ### Identity and scope
 
 An authorization names an **automation phase**, never a delivery milestone.
-Forager's “Phase 2” is a project milestone and is not an authorization scope.
-PR #20 documentation work and PR #21 implementation work each need their own
-identified work item/PR and authorization unless an explicitly supported,
-reviewed scope later includes both. Mentioning the same milestone, parent,
-dependency, or issue does not join their scopes.
+A project's “Phase 2” is a milestone, not an authorization scope.
+Documentation work and implementation work each need their own identified
+work item/PR and authorization unless an explicitly supported, reviewed scope
+later includes both. Mentioning the same milestone, parent, dependency, or
+issue does not join their scopes.
 
 The initial supported scope is one project, one issue or PR, its pinned
 accepted intent/acceptance evidence, and the established issue → implementation
@@ -98,6 +105,12 @@ project defaults, a continuation grant covering that endpoint, or any other
 independently enabled automation would permit that phase. The stop is a
 visible `bounded_phase_stop` decision naming the governing authorization.
 
+An authorization has two separate effects on its one identified lineage: it
+delegates the selected phase's actions, and it suppresses automatic advancement
+into its stop-before phase. Every lifecycle state below resolves both effects
+explicitly, so withdrawing the delegation never silently releases the
+suppression, and suppressing a phase never silently withdraws the delegation.
+
 Lifecycle resolves the stop as follows:
 
 - **Active or reassessment-paused** — the stop holds for the identified
@@ -108,10 +121,25 @@ Lifecycle resolves the stop as follows:
 - **Expired** — admission fails closed to a visible reassessment decision; no
   new action starts and the lineage does not silently advance past the stop
   until an authorized actor resolves it.
-- **Revoked or superseded** — the whole instrument is withdrawn with its
-  stop, and ordinary project policy governs the lineage again, exactly as
-  RDR-077 grant revocation restores project defaults. Consent and revocation
-  surfaces show this effect before the action.
+- **Stopped through reassessment** — an authorized actor resolved a
+  reassessment by stopping the authorization; the stop holds and the lineage
+  remains parked until a later explicit authorization or an explicit return
+  to ordinary project policy.
+- **Revoked** — the instrument is withdrawn and the lineage fails closed: the
+  delegated actions it covered start no new action
+  (`BOUNDED-PHASE-AUTHORIZATION-004`), and the suppressed stop-before phase is
+  not entered automatically. Withdrawing an instrument that both delegates and
+  suppresses must never silently broaden authority, so — unlike RDR-077's
+  purely additive grants, whose revocation restores project defaults —
+  revocation routes one visible decision naming the recovery paths: a new
+  explicit authorization or an explicit return of the lineage to ordinary
+  project policy. Each recovery path is an explicit authorized act recorded as
+  the lineage's governing decision, so recovery never depends on a silent
+  fall-through to project defaults. Consent and revocation surfaces show this
+  effect before the action.
+- **Superseded** — the newer explicit authorization governs the lineage and
+  its boundary; the superseded instrument neither authorizes nor constrains
+  anything.
 
 Completion, revocation, and reassessment are serialized with admission so a
 dequeued or follow-up action cannot escape the stop. Existing actions are not
@@ -134,6 +162,7 @@ feature-design approval nor an issue-readiness exception.
 | Add a milestone-wide “Phase 2” switch | Rejected initially: milestone membership is too broad and changes independently of a work lineage. |
 | Add a stop option to existing continuation grants | Rejected: it changes their established endpoint semantics and makes policy source ambiguous. |
 | Let project defaults override the selected stop | Rejected: it defeats the reason for bounded authorization. |
+| Release the stop on revocation, mirroring grant revocation | Rejected: a bounded instrument delegates and suppresses; withdrawal must not silently release the automation it suppressed. Recovery is one explicit decision. |
 | Allow coding authorization to imply merge | Rejected: merge has independent authority and repository requirements. |
 
 ## Focused implementation and validation plan
@@ -167,9 +196,10 @@ independently verifiable slices:
 ## Rollout guard
 
 RDR-077's `automation_phases` guard remains the required gate. This decision
-does not authorize enabling it, changing Forager settings, or merging PR #20
-or #21. Implementation must add a named enablement surface and keep it
-disabled until all execution paths and concurrency checks pass. The shipped
+does not authorize enabling it or changing any project's settings, and no
+existing GitHub approval or review gains authority from it. Implementation
+must add a named enablement surface and keep it disabled until all execution
+paths and concurrency checks pass. The shipped
 `BOUNDED-PHASE-AUTHORIZATION-010`, `-011`, and `-004` foundation is inert by
 construction: no user-facing surface creates authorizations, admission only
 rechecks records that already exist, and no GitHub approval, run, or
@@ -191,8 +221,14 @@ unchecked EARS claims:
   surfaces, rescoped to make that explicit. Terminal lifecycle semantics are
   recorded under [Enforceable stopping and
   lifecycle](#enforceable-stopping-and-lifecycle): the stop persists after
-  completion, fails closed on expiry, and is withdrawn with the instrument on
-  revocation or supersession.
+  completion and after a reassessment stop, fails closed on expiry and on
+  revocation — withdrawal never silently releases the automation the
+  instrument suppressed, unlike RDR-077's purely additive grants, whose
+  revocation restores project defaults — and transfers to the superseding
+  instrument on supersession. The revoked case reuses the shipped
+  `BOUNDED-PHASE-AUTHORIZATION-004` fail-closed lifecycle instead of adding a
+  second admission rule, and recovery is one explicit authorized decision
+  rather than a silent fall-through to project defaults.
 - **RDR-080 consistency.** RDR-080's posture remains a decision-delegation
   input; execution authority for an admitted lineage stays with the RDR-077
   phase policy and this authorization, and this authorization remains the

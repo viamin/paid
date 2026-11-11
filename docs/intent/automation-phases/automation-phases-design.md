@@ -94,19 +94,23 @@ after the phase decision by the existing paths.
 and revocation. `WorkItemContinuationGrant#covers_phase?` walks the delivery
 chain; `#active?` requires neither completion nor revocation.
 
-`Automation::ContinuationGrantLookup.resolve(work_item:)` resolves the chain
-from any work item in the delivery chain — the issue, its pull requests'
-parent issue, or a run attached to either — so a grant survives issue →
-implementation run → PR → review → repair. It deliberately does **not** walk
-child issues, mentions, or dependency edges, so an additional or decomposed
-issue needs its own authorization.
+`Automation::ContinuationGrantLookup.resolve(project:, phase:, work_item:)`
+resolves the chain from any work item in the delivery chain — the issue, its
+pull requests' parent issue, or a run attached to either — so a grant survives
+issue → implementation run → PR → review → repair. It deliberately does
+**not** walk child issues, mentions, or dependency edges, so an additional or
+decomposed issue needs its own authorization.
 
 Completion and revocation:
 
 - `complete!` is called when the endpoint's work lands (PR merged for a merge
   endpoint, PR merge-ready for a coding endpoint); reopening never reactivates.
 - `revoke!` withdraws only the exception. Project defaults may still permit the
-  work independently, which the revocation UI states explicitly.
+  work independently, which the revocation UI states explicitly. A grant
+  suppresses nothing, so withdrawing one cannot broaden authority — unlike the
+  bounded phase authorization, whose revocation retains its stop until an
+  explicit recovery decision
+  ([RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authorization.md)).
 
 Grant endpoints are non-stopping by design: an endpoint bounds its grant
 without prohibiting independently enabled project automation, and no grant,

@@ -51,9 +51,13 @@ actor policy checks. Expiry, completion, revocation, and superseded are
 terminal for admission of the delegated action until a new explicit
 authorization; a revoked, expired, or terminal record never falls through to
 project defaults for that delegated action on that lineage
-(`BOUNDED-PHASE-AUTHORIZATION-004`). Reassessment-required pauses admission
-until an authorized actor resolves it by stopping, superseding, or resuming
-the unchanged authorization.
+(`BOUNDED-PHASE-AUTHORIZATION-004`). Recovery from a terminal record is
+always an explicit authorized act on that lineage — a new explicit
+authorization, or an explicit release that returns the lineage to ordinary
+project policy — recorded as the lineage's governing decision, never an
+implicit fall-through. Reassessment-required pauses admission until an
+authorized actor resolves it by stopping, superseding, or resuming the
+unchanged authorization.
 
 ## Policy composition
 
@@ -67,7 +71,10 @@ bounded-authorization input has three outcomes:
 | The authorization is revoked, expired, invalid, unknown, or outside scope | Block or require reassessment; never fall through to project defaults for that delegated action on that lineage. |
 
 The exclusive stop resolves against RDR-077's non-stopping continuation
-grants as follows, scoped to the authorization's identified lineage only:
+grants as follows, scoped to the authorization's identified lineage only. An
+authorization has two separate effects — it delegates the selected phase's
+actions and it suppresses automatic advancement into its stop-before phase —
+and each lifecycle state resolves both:
 
 - **Active or reassessment-paused** — the stop holds even when project
   defaults or a continuation grant covering the endpoint would advance the
@@ -77,9 +84,24 @@ grants as follows, scoped to the authorization's identified lineage only:
   revive the authorization.
 - **Expired** — admission fails closed to a visible reassessment decision;
   the lineage does not silently advance past the stop.
-- **Revoked or superseded** — the instrument and its stop are withdrawn
-  together; ordinary project policy governs the lineage again, mirroring
-  RDR-077 grant revocation. Consent and revocation surfaces show this effect.
+- **Stopped through reassessment** — an authorized actor resolved a
+  reassessment by stopping the authorization, so the unchanged authorization is
+  no longer resumable; the stop holds and the lineage stays parked until a
+  later explicit authorization or an explicit return of the lineage to ordinary
+  project policy.
+- **Revoked** — the delegation is withdrawn, so the delegated actions it
+  covered start no new action (`BOUNDED-PHASE-AUTHORIZATION-004`, the
+  shipped fail-closed lifecycle contract). The suppression is not silently
+  released: the stop-before phase is not entered automatically, and recovery
+  is one explicit authorized decision — a new explicit authorization or an
+  explicit return of the lineage to ordinary project policy — recorded as the
+  lineage's governing decision. This differs from RDR-077's purely additive
+  continuation grants, whose revocation restores project defaults: a grant
+  suppresses nothing, so withdrawing one cannot broaden authority.
+  Consent and revocation surfaces show this effect.
+- **Superseded** — a newer explicit authorization governs the lineage and its
+  boundary; the superseded instrument neither authorizes nor constrains
+  anything.
 
 Ordinary continuation grants keep their endpoint behavior everywhere else: a
 bounded authorization never disables a grant or project setting, and never
