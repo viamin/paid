@@ -15,6 +15,7 @@ module AgentRuns
     LOG_TAIL_MAX_BYTES = ApplicationLog::MAX_BYTES
     MAX_CRITERION_INPUTS = 20
     MAX_INPUT_EXCERPT_BYTES = 2_000
+    GIT_SHA = /\A[0-9a-f]{40}\z/i
     # Agent-supplied criterion inputs. Every field is bounded before it is
     # persisted, and the free-text fields are redacted as well.
     INPUT_FIELDS = %w[type locator path revision digest excerpt result command storage_key url reason].freeze
@@ -405,7 +406,7 @@ module AgentRuns
     end
 
     def bounded_input_value(key, entry)
-      return entry unless entry.is_a?(String)
+      return unless entry.is_a?(String)
       return redact_input_excerpt(entry) if REDACTED_INPUT_FIELDS.include?(key)
 
       truncate_input_text(entry)
@@ -448,14 +449,15 @@ module AgentRuns
     def repository_input_verdict(input)
       return [ "unavailable", "repository_input_incomplete" ] if input.values_at("path", "revision", "digest").any?(&:blank?)
       return [ "unavailable", "reviewed_revision_unavailable" ] if tested_commit.blank?
+      return [ "unavailable", "repository_revision_invalid" ] unless input["revision"].match?(GIT_SHA)
       return [ "stale", "revision_does_not_match_reviewed_head" ] unless input["revision"] == tested_commit
 
       path = repo_path_candidate(input["path"])
       return [ "contradicted", "path_outside_repository" ] unless path
-      resolved = resolve_repo_path(path)
-      return [ "contradicted", "path_missing_or_inaccessible" ] unless resolved && File.file?(resolved)
+      relative_path = Pathname.new(path).relative_path_from(repo_base).to_s
+      digest = repository_blob_digest(input["revision"], relative_path)
+      return [ "contradicted", "path_missing_or_inaccessible" ] if digest.blank?
 
-      digest = Digest::SHA256.file(resolved).hexdigest
       return [ "contradicted", "content_digest_mismatch" ] unless ActiveSupport::SecurityUtils.secure_compare(digest, input["digest"].to_s)
 
       [ "verified", nil ]
@@ -463,6 +465,19 @@ module AgentRuns
       [ "unavailable", "path_inaccessible" ]
     rescue Errno::ENOENT
       [ "contradicted", "path_missing_or_inaccessible" ]
+    end
+
+    def repository_blob_digest(revision, relative_path)
+      digest = Digest::SHA256.new
+      status = nil
+      Open3.popen2e("git", "-C", @repo_path, "show", "#{revision}:#{relative_path}") do |stdin, output, wait_thread|
+        stdin.close
+        digest.update(output.read(16.kilobytes)) until output.eof?
+        status = wait_thread.value
+      end
+      digest.hexdigest if status.success?
+    rescue SystemCallError
+      nil
     end
 
     # A recorder-owned artifact is cited by the path the agent wrote (the

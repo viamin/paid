@@ -136,6 +136,18 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     path
   end
 
+  def commit_repository_file(relative_path)
+    system("git", "-C", repo_path, "init", "--quiet", exception: true)
+    system("git", "-C", repo_path, "config", "user.email", "verification@example.test", exception: true)
+    system("git", "-C", repo_path, "config", "user.name", "Verification Spec", exception: true)
+    system("git", "-C", repo_path, "add", relative_path, exception: true)
+    system("git", "-C", repo_path, "commit", "--quiet", "-m", "test fixture", exception: true)
+    revision, status = Open3.capture2("git", "-C", repo_path, "rev-parse", "HEAD")
+    raise "fixture commit unavailable" unless status.success?
+
+    revision.strip
+  end
+
   it "persists the recorded verification result and app log tail onto the run" do
     File.write(result_path, JSON.generate(
       status: "passed",
@@ -213,9 +225,12 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     FileUtils.mkdir_p(File.dirname(path))
     File.write(path, "RSpec.describe 'settings' do; end\n")
     digest = Digest::SHA256.file(path).hexdigest
-    write_verification_result(repository_receipt_payload(digest))
+    revision = commit_repository_file("spec/system/settings_spec.rb")
+    payload = repository_receipt_payload(digest)
+    payload.dig(:acceptance_criteria, 0, :verification, :inputs, 0)[:revision] = revision
+    write_verification_result(payload)
 
-    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
 
     result = agent_run.reload.verification_result
     coverage = result.dig("evidence", "coverage").sole
@@ -252,6 +267,45 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(coverage.dig("reported_verification", "inputs").size).to eq(20)
     expect(coverage.dig("input_receipt", "references").size).to eq(20)
     expect(coverage.dig("input_receipt", "references").pluck("path")).not_to include("spec/system/settings_20.rb")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "rejects nested criterion input fields before persistence" do
+    payload = repository_receipt_payload("0" * 64)
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = [ {
+      type: "repository_file",
+      path: { payload: [ "x" * 3_000 ] },
+      revision: [ "a" * 40 ],
+      digest: { value: "0" * 64 }
+    } ]
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "inputs").sole).to eq("type" => "repository_file")
+    expect(coverage.dig("input_receipt", "references").sole).to include(
+      "type" => "repository_file", "state" => "unavailable", "verdict_reason" => "repository_input_incomplete"
+    )
+    expect(coverage.to_json).not_to include("x" * 3_000)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "verifies repository content from the reviewed commit instead of dirty working-tree bytes" do
+    relative_path = "spec/system/settings_spec.rb"
+    committed_content = "RSpec.describe 'committed settings' do; end\n"
+    path = write_repository_file(relative_path, committed_content)
+    revision = commit_repository_file(relative_path)
+    File.write(path, "RSpec.describe 'dirty settings' do; end\n")
+    payload = repository_receipt_payload(Digest::SHA256.hexdigest(committed_content))
+    payload.dig(:acceptance_criteria, 0, :verification, :inputs, 0)[:revision] = revision
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "verified")
+    expect(receipt.fetch("references").sole).to include("state" => "verified", "path" => relative_path)
   end
 
   # @spec LIVE-PREVIEW-013
