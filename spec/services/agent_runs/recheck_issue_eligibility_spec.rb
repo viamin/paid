@@ -247,7 +247,7 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(run.reload.status).to eq("queued")
     end
 
-    it "keeps a legacy acceptance audit queued without a technical evidence freshness snapshot" do # @spec PARTIAL-CLOSEOUT-041
+    it "keeps a legacy acceptance audit queued without a technical evidence freshness snapshot" do # @spec PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-047
       issue = create(:issue, project: project, github_state: "open")
       merged_partial_pr(issue: issue, number: 70)
       request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
