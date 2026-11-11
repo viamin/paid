@@ -164,6 +164,16 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("name: Journey launch-contract smoke test")
       expect(workflow_source).to include("run: ./scripts/test-paid-journey-launch-contract.sh")
     end
+
+    # @spec LIVE-PREVIEW-012
+    it "runs the journey launch contract when its guide or script changes on main" do
+      push_paths = workflow.fetch(true).fetch("push").fetch("paths")
+
+      expect(push_paths).to include(
+        ".paid/journeys.md",
+        "scripts/test-paid-journey-launch-contract.sh"
+      )
+    end
   end
 
   describe PaidJourneyLaunchContract do
