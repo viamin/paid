@@ -36,6 +36,22 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "continues through a queue issue to include downstream queue work" do
+    root = issue(1)
+    direct = issue(2)
+    transitive = issue(3)
+    depends(direct, root)
+    depends(transitive, direct)
+
+    ranking = described_class.call(account:, queue_issue_ids: [ direct.id, transitive.id ]).sole
+
+    expect(ranking).to have_attributes(direct_reach: 1, transitive_reach: 1, total_reach: 2)
+    expect(ranking.paths.map { |path| path.issues.map(&:id) }).to contain_exactly(
+      [ root.id, direct.id ], [ root.id, direct.id, transitive.id ]
+    )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "deduplicates fan-out and marks a necessary root that cannot alone unblock independent work" do
     root = issue(1)
     other_root = issue(2)
@@ -116,5 +132,21 @@ RSpec.describe Issues::RootPrerequisiteRanking do
 
     expect(result).to be_empty
     expect(result.exclusions).to include(a_hash_including(kind: "human_decision", issue: blocked))
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "batches persisted assessment reads across the bounded graph" do
+    root = issue(1)
+    blocked = issue(2)
+    depends(blocked, root)
+    8.times { |number| issue(number + 10) }
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.call(account:, queue_issue_ids: [ blocked.id ])
+    end
+
+    expect(queries.grep(/FROM "agent_runs".*reconciliation \? 'assessment'/m).size).to eq(1)
   end
 end

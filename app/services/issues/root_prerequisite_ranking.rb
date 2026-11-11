@@ -9,6 +9,7 @@ module Issues
   class RootPrerequisiteRanking
     MAX_NODES = 500
     MAX_PATHS_PER_ROOT = 25
+    MAX_RANKED_ROOTS = 5
 
     Path = Data.define(:downstream_issue, :issues, :necessary, :completion_alone_makes_runnable, :stale)
     Ranking = Data.define(:root, :direct_reach, :transitive_reach, :paths, :actionable) do
@@ -23,9 +24,10 @@ module Issues
 
     def self.call(...) = new(...).call
 
-    def initialize(account:, queue_issue_ids:)
+    def initialize(account:, queue_issue_ids:, visible_project_ids: nil)
       @account = account
       @queue_issue_ids = queue_issue_ids.to_set
+      @visible_project_ids = (visible_project_ids || account.project_ids).to_set
     end
 
     def call
@@ -37,7 +39,7 @@ module Issues
 
     private
 
-    attr_reader :account, :queue_issue_ids
+    attr_reader :account, :queue_issue_ids, :visible_project_ids
 
     def load_graph
       @issues = Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
@@ -52,27 +54,30 @@ module Issues
       @downstream = dependencies.group_by(&:last).transform_values { |edges| edges.map(&:first) }
       @cyclic_ids = cycle_ids
       @external_by_issue = unresolved_external_by_issue
-      @human_decision_ids = issues.values.filter_map do |issue|
-        assessment = PartialCloseouts::Assessment.call(issue)
-        issue.id if Array(assessment.assessment["gaps"]).any? { |gap| gap.is_a?(Hash) && gap["kind"] == "human" }
+      @assessments = PartialCloseouts::Assessment.persisted_for(issues.values)
+      @human_decision_ids = assessments.filter_map do |issue_id, assessment|
+        issue_id if Array(assessment["gaps"]).any? { |gap| gap.is_a?(Hash) && gap["kind"] == "human" }
       end.to_set
       @exclusions = exclusion_rows
     end
 
-    attr_reader :issues, :dependencies, :upstream, :downstream, :cyclic_ids, :external_by_issue, :human_decision_ids
+    attr_reader :issues, :dependencies, :upstream, :downstream, :cyclic_ids, :external_by_issue,
+      :human_decision_ids, :assessments
 
     def ranked_roots
       return [] if @cycle_coverage_unavailable
 
       load_actionable_root_ids
-      candidate_roots.filter_map { |root| ranking_for(root) }.sort_by { |ranking|
+      rankings = candidate_roots.filter_map { |root| ranking_for(root) }.sort_by { |ranking|
         [ -ranking.total_reach, -ranking.direct_reach, ranking.root.github_number, ranking.root.id ]
-      }
+      }.first(MAX_RANKED_ROOTS)
+      add_freshness(rankings)
     end
 
     def candidate_roots
       issues.values.select do |issue|
-        upstream.fetch(issue.id, []).empty? && !cyclic_ids.include?(issue.id) && !external_by_issue.key?(issue.id)
+        visible_project_ids.include?(issue.project_id) && upstream.fetch(issue.id, []).empty? &&
+          !cyclic_ids.include?(issue.id) && !external_by_issue.key?(issue.id)
       end
     end
 
@@ -86,6 +91,7 @@ module Issues
 
     def paths_from(root)
       found = {}
+      visited = Set[root.id]
       stack = [ [ root.id, [ root.id ] ] ]
       until stack.empty? || found.size >= MAX_PATHS_PER_ROOT
         current_id, path_ids = stack.pop
@@ -96,7 +102,7 @@ module Issues
           if queue_issue_ids.include?(dependent_id)
             found[dependent_id] ||= build_path(next_path)
           end
-          stack << [ dependent_id, next_path ] unless found.key?(dependent_id)
+          stack << [ dependent_id, next_path ] if visited.add?(dependent_id)
         end
       end
       found.values
@@ -109,8 +115,22 @@ module Issues
         issues: ids.map { |id| issues.fetch(id) },
         necessary: true,
         completion_alone_makes_runnable: all_blocking_roots_for(downstream_issue.id) == Set[ids.first],
-        stale: PartialCloseouts::Assessment.call(downstream_issue).stale?
+        stale: nil
       )
+    end
+
+    def add_freshness(rankings)
+      path_issues = rankings.flat_map(&:paths).map(&:downstream_issue).uniq
+      evidence = Issues::CloseoutEvidence.results_for(path_issues)
+      technical = TechnicalPrerequisites::Evidence.records_for_issues(path_issues)
+      measurements = TrustedMeasurements::Evidence.records_for_issues(path_issues)
+      stale_by_id = path_issues.to_h do |issue|
+        assessment = PartialCloseouts::Assessment.call(issue, persisted_assessment: assessments.fetch(issue.id, {}),
+          evidence: evidence.fetch(issue.id), technical_evidence: technical.fetch(issue.id),
+          trusted_measurement_evidence: measurements.fetch(issue.id))
+        [ issue.id, assessment.stale? ]
+      end
+      rankings.map { |ranking| ranking.with(paths: ranking.paths.map { |path| path.with(stale: stale_by_id.fetch(path.downstream_issue.id)) }) }
     end
 
     def all_blocking_roots_for(issue_id, seen = Set.new)

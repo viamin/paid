@@ -386,6 +386,11 @@ module Inbox
       nil
     end
 
+    # @spec PARTIAL-CLOSEOUT-048
+    def visible_project_ids
+      visible_projects.map(&:id)
+    end
+
     private
 
     attr_reader :kind, :project, :scope, :sort, :user

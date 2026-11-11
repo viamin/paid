@@ -164,7 +164,7 @@
   </div>
 
   <%# @spec PARTIAL-CLOSEOUT-048 %>
-  <% if root_prerequisite_ranking.present? %>
+  <% if root_prerequisite_ranking.rankings.any? || root_prerequisite_ranking.exclusions.any? %>
     <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-root-prerequisite-ranking>
       <h3 class="text-sm font-semibold text-indigo-900">Highest-leverage root prerequisites</h3>
       <p class="text-sm text-indigo-800">Counts include only current visible partial-closeout queue work. This is read-only: it does not change priorities or dependency links.</p>
