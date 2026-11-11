@@ -50,6 +50,15 @@ module Issues
 
     def self.call(...) = new(...).call
 
+    def self.cyclic_ids(node_ids:, edges:)
+      node_ids = node_ids.to_set
+      edges = edges.select { |from_id, to_id| node_ids.include?(from_id) && node_ids.include?(to_id) }
+      components = GraphComponents.new(node_ids:, edges:).call
+      self_edges = edges.select { |from_id, to_id| from_id == to_id }.map(&:first).to_set
+      components.filter_map { |component| component if component.size > 1 || self_edges.include?(component.first) }
+        .flatten.to_set
+    end
+
     def initialize(account:)
       @account = account
     end
@@ -91,48 +100,14 @@ module Issues
     # Kosaraju's two linear passes are intentionally iterative: a large legacy
     # import must not consume the Ruby stack while producing an operator alert.
     def components
-      order = finish_order(adjacency)
-      reverse = edges.group_by(&:to_id).transform_values { |group| group.map(&:from_id) }
-      visited = Set.new
-      order.reverse_each.each_with_object([]) do |id, result|
-        next unless visited.add?(id)
-
-        component = reachable_from(id, reverse, visited)
-        result << component if component.size > 1 || adjacency.fetch(id, []).include?(id)
+      cyclic_ids = self.class.cyclic_ids(
+        node_ids: nodes.keys,
+        edges: edges.map { |edge| [ edge.from_id, edge.to_id ] }
+      )
+      cycle_edges = edges.filter_map do |edge|
+        [ edge.from_id, edge.to_id ] if cyclic_ids.include?(edge.from_id) && cyclic_ids.include?(edge.to_id)
       end
-    end
-
-    def finish_order(graph)
-      visited = Set.new
-      order = []
-      nodes.each_key do |root|
-        next if visited.include?(root)
-
-        stack = [ [ root, false ] ]
-        until stack.empty?
-          id, expanded = stack.pop
-          if expanded
-            order << id
-          elsif visited.add?(id)
-            stack << [ id, true ]
-            graph.fetch(id, []).reverse_each { |child| stack << [ child, false ] unless visited.include?(child) }
-          end
-        end
-      end
-      order
-    end
-
-    def reachable_from(root, graph, visited)
-      result = [ root ]
-      stack = graph.fetch(root, []).dup
-      until stack.empty?
-        id = stack.pop
-        next unless visited.add?(id)
-
-        result << id
-        stack.concat(graph.fetch(id, []))
-      end
-      result
+      GraphComponents.new(node_ids: cyclic_ids, edges: cycle_edges).call
     end
 
     def cycle_for(component)
@@ -186,6 +161,58 @@ module Issues
         stack.concat(reverse.fetch(id, []))
       end
       (seen - cycle_ids).filter_map { |id| nodes[id] }
+    end
+
+    class GraphComponents
+      def initialize(node_ids:, edges:)
+        @node_ids = node_ids
+        @forward = edges.group_by(&:first).transform_values { |group| group.map(&:last) }
+        @reverse = edges.group_by(&:last).transform_values { |group| group.map(&:first) }
+      end
+
+      def call
+        visited = Set.new
+        finish_order.reverse_each.filter_map do |root|
+          reachable_from(root, reverse, visited) if visited.add?(root)
+        end
+      end
+
+      private
+
+      attr_reader :node_ids, :forward, :reverse
+
+      def finish_order
+        visited = Set.new
+        node_ids.each_with_object([]) do |root, order|
+          finish_from(root, visited, order) unless visited.include?(root)
+        end
+      end
+
+      def finish_from(root, visited, order)
+        stack = [ [ root, false ] ]
+        until stack.empty?
+          id, expanded = stack.pop
+          if expanded
+            order << id
+          elsif visited.add?(id)
+            stack << [ id, true ]
+            forward.fetch(id, []).reverse_each { |child| stack << [ child, false ] unless visited.include?(child) }
+          end
+        end
+      end
+
+      def reachable_from(root, graph, visited)
+        result = [ root ]
+        stack = graph.fetch(root, []).dup
+        until stack.empty?
+          id = stack.pop
+          next unless visited.add?(id)
+
+          result << id
+          stack.concat(graph.fetch(id, []))
+        end
+        result
+      end
     end
   end
 end

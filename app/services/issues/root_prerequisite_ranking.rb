@@ -126,7 +126,7 @@ module Issues
       :human_decision_ids, :assessments
 
     def ranked_roots
-      return [] if @cycle_coverage_unavailable || @graph_truncated
+      return [] if @graph_truncated
 
       load_actionable_root_ids
       rankings = candidate_roots.filter_map { |root| ranking_for(root) }.sort_by { |ranking|
@@ -147,25 +147,27 @@ module Issues
     end
 
     def ranking_for(root)
-      paths = paths_from(root)
-      return if paths.empty?
+      path_ids = path_ids_from(root)
+      return if path_ids.empty?
 
-      direct_reach = paths.count { |path| path.issues.size == 2 }
-      Ranking.new(root:, direct_reach:, transitive_reach: paths.size - direct_reach, paths:, actionable: actionable?(root))
+      direct_reach = path_ids.count { |ids| ids.size == 2 }
+      paths = path_ids.first(MAX_PATHS_PER_ROOT).map { |ids| build_path(ids) }
+      Ranking.new(root:, direct_reach:, transitive_reach: path_ids.size - direct_reach, paths:, actionable: actionable?(root))
     end
 
-    def paths_from(root)
+    def path_ids_from(root)
       found = {}
       visited = Set[root.id]
       stack = [ [ root.id, [ root.id ] ] ]
-      until stack.empty? || found.size >= MAX_PATHS_PER_ROOT
+      until stack.empty?
         current_id, path_ids = stack.pop
         downstream.fetch(current_id, []).sort.reverse_each do |dependent_id|
-          next if path_ids.include?(dependent_id) || cyclic_ids.include?(dependent_id) || external_by_issue.key?(dependent_id) || human_decision_ids.include?(dependent_id)
+          next unless visible_issue?(dependent_id)
+          next if path_ids.include?(dependent_id) || excluded_blocker?(dependent_id)
 
           next_path = path_ids + [ dependent_id ]
           if queue_issue_ids.include?(dependent_id)
-            found[dependent_id] ||= build_path(next_path)
+            found[dependent_id] ||= next_path
           end
           stack << [ dependent_id, next_path ] if visited.add?(dependent_id)
         end
@@ -224,11 +226,7 @@ module Issues
     end
 
     def cycle_ids
-      account_cycle_ids = Issues::DependencyCycles.call(account:).flat_map { |cycle| cycle.issues.map(&:id) }.to_set
-      account_cycle_ids & issues.keys.to_set
-    rescue Issues::DependencyCycles::CoverageUnavailable
-      @cycle_coverage_unavailable = true
-      Set.new
+      Issues::DependencyCycles.cyclic_ids(node_ids: issues.keys, edges: dependencies)
     end
 
     def unresolved_external_by_issue
@@ -238,15 +236,15 @@ module Issues
     end
 
     def exclusion_rows
-      return [ { kind: "graph_coverage_unavailable", issue: nil } ] if @cycle_coverage_unavailable
-
-      rows = cyclic_ids.filter_map { |id| { kind: "cycle", issue: issues[id] } }
+      rows = cyclic_ids.filter_map { |id| { kind: "cycle", issue: issues[id] } if visible_issue?(id) }
       rows << { kind: "graph_coverage_truncated", issue: nil } if @graph_truncated
       unavailable_queue_issue_ids.each { |id| rows << { kind: "queue_issue_unavailable", issue: nil, issue_id: id } }
-      external_by_issue.each_key { |id| rows << { kind: "unresolved_external", issue: issues[id] } }
-      human_decision_ids.each { |id| rows << { kind: "human_decision", issue: issues[id] } }
+      external_by_issue.each_key { |id| rows << { kind: "unresolved_external", issue: issues[id] } if visible_issue?(id) }
+      human_decision_ids.each { |id| rows << { kind: "human_decision", issue: issues[id] } if visible_issue?(id) }
       rows
     end
+
+    def visible_issue?(id) = visible_project_ids.include?(issues.fetch(id).project_id)
 
     def unavailable_queue_issue_ids = @unavailable_queue_issue_ids || Set.new
   end

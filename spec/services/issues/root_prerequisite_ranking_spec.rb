@@ -155,6 +155,24 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "detects cycles from the bounded loaded graph without an account-wide cycle query" do
+    root = issue(1)
+    blocked = issue(2)
+    depends(blocked, root)
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.call(account:, queue_issue_ids: [ blocked.id ])
+    end
+
+    account_wide_cycle_queries = queries.grep(
+      /\ASELECT "issues"\.\* FROM "issues".*"github_state" = 'open'.*"paid_state" NOT IN/m
+    )
+    expect(account_wide_cycle_queries).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "does not claim sole unblockability when an independent prerequisite has an excluded blocker" do
     root = issue(1)
     independent = issue(2)
@@ -222,6 +240,20 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "does not traverse a hidden intermediate between visible work" do
+    hidden_project = create(:project, account:)
+    root = issue(1)
+    hidden_middle = issue(2, project: hidden_project)
+    blocked = issue(3)
+    depends(blocked, hidden_middle)
+    depends(hidden_middle, root)
+
+    result = described_class.call(account:, queue_issue_ids: [ blocked.id ], visible_project_ids: [ project.id ])
+
+    expect(result).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "traverses a resolved still-blocking external edge within the same account" do
     upstream_project = create(:project, account:)
     root = issue(1, project: upstream_project)
@@ -263,5 +295,18 @@ RSpec.describe Issues::RootPrerequisiteRanking do
     end
 
     expect(queries.grep(/FROM "agent_runs".*reconciliation \? 'assessment'/m).size).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "counts every reachable queue issue while bounding rendered path samples" do
+    root = issue(1)
+    blocked = 30.times.map do |number|
+      issue(number + 10).tap { |downstream| depends(downstream, root) }
+    end
+
+    ranking = described_class.call(account:, queue_issue_ids: blocked.map(&:id)).sole
+
+    expect(ranking).to have_attributes(direct_reach: 30, transitive_reach: 0, total_reach: 30)
+    expect(ranking.paths.size).to eq(described_class::MAX_PATHS_PER_ROOT)
   end
 end

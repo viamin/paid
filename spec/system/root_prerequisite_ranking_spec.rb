@@ -14,6 +14,19 @@ RSpec.describe "Root prerequisite ranking", type: :system do
     issue
   end
 
+  def visibility_graph(visible_project:, hidden_project:)
+    visible_root = create(:issue, project: visible_project, github_number: 21, paid_state: "in_progress")
+    blocked = create(:issue, project: visible_project, github_number: 22, paid_state: "in_progress")
+    leaked_root = create(:issue, project: visible_project, github_number: 24, paid_state: "in_progress")
+    hidden_middle = create(:issue, project: hidden_project, github_number: 31, paid_state: "in_progress")
+    create(:issue_dependency, issue: blocked, depends_on_issue: visible_root)
+    create(:issue_dependency, issue: blocked, depends_on_issue: hidden_middle)
+    create(:issue_dependency, issue: hidden_middle, depends_on_issue: leaked_root)
+    create(:issue, :pull_request, project: visible_project, github_number: 23, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: blocked.id)
+    blocked
+  end
+
   # @spec PARTIAL-CLOSEOUT-048
   it "renders the current partial-closeout queue ranking without changing dependency state" do
     account = create(:account)
@@ -83,18 +96,12 @@ RSpec.describe "Root prerequisite ranking", type: :system do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
-  it "does not rank work from a project outside the operator's visible lane" do
+  it "does not rank or render paths through a project outside the operator's visible lane" do
     account = create(:account)
     user = create(:user, :owner, account:, password: "password123")
     visible_project = create(:project, account:, created_by: user, auto_pick_enabled: true, active: true)
     hidden_project = create(:project, account:, created_by: create(:user, account:), auto_pick_enabled: true, active: true)
-    visible_root = create(:issue, project: visible_project, github_number: 21, paid_state: "in_progress")
-    visible_blocked = create(:issue, project: visible_project, github_number: 22, paid_state: "in_progress")
-    hidden_root = create(:issue, project: hidden_project, github_number: 31, paid_state: "in_progress")
-    create(:issue_dependency, issue: visible_blocked, depends_on_issue: visible_root)
-    create(:issue_dependency, issue: visible_blocked, depends_on_issue: hidden_root)
-    create(:issue, :pull_request, project: visible_project, github_number: 23, github_state: "closed",
-      pr_review_phase: "merged", parent_issue_id: visible_blocked.id)
+    visible_blocked = visibility_graph(visible_project:, hidden_project:)
 
     Warden.test_mode!
     login_as(user, scope: :user)
@@ -103,6 +110,7 @@ RSpec.describe "Root prerequisite ranking", type: :system do
     within("[data-root-prerequisite-ranking]") do
       expect(page).to have_text("#21")
       expect(page).to have_no_text("#31")
+      expect(page).to have_no_text("#24")
     end
   ensure
     Warden.test_reset!
