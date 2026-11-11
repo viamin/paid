@@ -4,6 +4,7 @@
 require_relative "../config/environment"
 require_relative "../lib/paid/temporal_observability"
 require_relative "../lib/paid/worker_readiness"
+require_relative "../lib/paid/temporal_worker_shutdown"
 
 # Explicitly load temporalio — the initializer defers it for web process boot
 # performance, but the worker process needs the full gem loaded upfront.
@@ -136,11 +137,8 @@ if db_pool < min_required_pool
 end
 
 shutdown_cancellation, request_shutdown = Temporalio::Cancellation.new
-shutdown_state_mutex = Mutex.new
-shutdown_started = false
 forced_exit_buffer = ENV.fetch("TEMPORAL_FORCE_EXIT_BUFFER_SECONDS", "10").to_i
 forced_exit_timeout = graceful_shutdown + forced_exit_buffer
-force_exit_thread = nil
 
 activity_instances = activities.map(&:new)
 
@@ -220,33 +218,7 @@ else
   ]
 end
 
-%w[INT TERM].each do |signal|
-  Signal.trap(signal) do
-    force_exit_now = shutdown_state_mutex.synchronize do
-      if shutdown_started
-        true
-      else
-        shutdown_started = true
-        false
-      end
-    end
-
-    if force_exit_now
-      warn "Received #{signal} during shutdown, forcing Temporal worker exit"
-      exit! 1
-    end
-
-    warn "Received #{signal}, shutting down Temporal workers gracefully"
-    Paid::WorkerReadiness.mark_not_ready!
-    request_shutdown.call(reason: "#{signal} received")
-
-    force_exit_thread ||= Thread.new do
-      sleep(forced_exit_timeout)
-      warn "Temporal workers did not exit within #{forced_exit_timeout}s, forcing exit"
-      exit! 1
-    end
-  end
-end
+Paid::TemporalWorkerShutdown.install(request_shutdown:, forced_exit_timeout:)
 
 # Run the selected worker set in the same process, sharing the cancellation token.
 # Mark readiness just before blocking: the workers are constructed and the client

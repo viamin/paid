@@ -289,14 +289,38 @@ dev_supervisor_tmux_has_dead_panes() {
   return 1
 }
 
+# @spec RAILS-CONTROL-PLANE-015
+dev_supervisor_log_memory_sample() {
+  local puma_rss_kb temporal_rss_kb host_available_kb cgroup_current_bytes cgroup_max_bytes cgroup_oom_kills
+  read -r puma_rss_kb temporal_rss_kb < <(
+    ps -eo comm=,rss=,args= | awk '
+      $1 == "ruby" && /puma .*\[paid\]/ { puma += $2 }
+      $1 == "ruby" && /ruby bin\/temporal_worker/ { temporal += $2 }
+      END { printf "%d %d\n", puma, temporal }
+    '
+  )
+  host_available_kb="$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo 2>/dev/null)"
+  cgroup_current_bytes="$(cat /sys/fs/cgroup/memory.current 2>/dev/null)"
+  cgroup_max_bytes="$(cat /sys/fs/cgroup/memory.max 2>/dev/null)"
+  cgroup_oom_kills="$(awk '$1 == "oom_kill" { print $2 }' /sys/fs/cgroup/memory.events 2>/dev/null)"
+  dev_supervisor_log_line "$(dev_supervisor_overmind_log)" \
+    "memory_sample puma_rss_kb=${puma_rss_kb:-0} temporal_rss_kb=${temporal_rss_kb:-0} host_available_kb=${host_available_kb:-unknown} cgroup_current_bytes=${cgroup_current_bytes:-unknown} cgroup_max_bytes=${cgroup_max_bytes:-unknown} cgroup_oom_kills=${cgroup_oom_kills:-unknown}"
+}
+
 dev_supervisor_monitor_overmind() {
   local parent_pid="$1"
   local label_prefix="${2:-bin-dev-monitor}"
   local interval="${DEV_SUPERVISOR_MONITOR_INTERVAL:-2}"
   local started=0
   local status_output
+  local poll_count=0
 
   while kill -0 "$parent_pid" >/dev/null 2>&1; do
+    if (( poll_count % 5 == 0 )); then
+      dev_supervisor_log_memory_sample
+    fi
+    poll_count=$((poll_count + 1))
+
     if [ -S "${OVERMIND_SOCKET:-}" ]; then
       started=1
     fi

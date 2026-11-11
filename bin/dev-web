@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+set -u
+
+web_pid=""
+oom_count=0
+first_oom_at=0
+restart_delay_seconds="${PAID_WEB_RESTART_DELAY_SECONDS:-2}"
+if ! [[ "$restart_delay_seconds" =~ ^[0-9]+$ ]]; then
+  echo "PAID_WEB_RESTART_DELAY_SECONDS must be a non-negative integer" >&2
+  exit 2
+fi
+
+stop_web() {
+  trap - INT TERM
+  if [ -n "$web_pid" ]; then
+    kill -TERM "$web_pid" 2>/dev/null || true
+    wait "$web_pid" 2>/dev/null || true
+  fi
+  exit 0
+}
+
+trap 'stop_web' INT TERM
+
+# @spec RAILS-CONTROL-PLANE-014
+while true; do
+  bin/rails server -b 0.0.0.0 &
+  web_pid=$!
+  wait "$web_pid"
+  exit_code=$?
+  web_pid=""
+
+  if [ "$exit_code" -ne 137 ]; then
+    exit "$exit_code"
+  fi
+
+  now=$(date +%s)
+  if [ "$first_oom_at" -eq 0 ] || (( now - first_oom_at >= 300 )); then
+    first_oom_at=$now
+    oom_count=0
+  fi
+  if [ "$oom_count" -ge 3 ]; then
+    echo "web exited 137 four times within five minutes; stopping automatic recovery" >&2
+    exit 137
+  fi
+
+  oom_count=$((oom_count + 1))
+  echo "web exited 137; restarting in $((oom_count * restart_delay_seconds))s (attempt ${oom_count}/3)" >&2
+  sleep "$((oom_count * restart_delay_seconds))"
+done
