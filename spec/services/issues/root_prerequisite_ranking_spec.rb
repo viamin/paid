@@ -139,6 +139,22 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "does not report cycles outside the loaded queue graph" do
+    root = issue(1)
+    blocked = issue(2)
+    unrelated_one = issue(3)
+    unrelated_two = issue(4)
+    depends(blocked, root)
+    create_legacy_issue_dependency(issue: unrelated_one, depends_on_issue: unrelated_two)
+    create_legacy_issue_dependency(issue: unrelated_two, depends_on_issue: unrelated_one)
+
+    result = described_class.call(account:, queue_issue_ids: [ blocked.id ])
+
+    expect(result.sole.root).to eq(root)
+    expect(result.exclusions).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "does not claim sole unblockability when an independent prerequisite has an excluded blocker" do
     root = issue(1)
     independent = issue(2)
@@ -224,13 +240,13 @@ RSpec.describe Issues::RootPrerequisiteRanking do
     root = issue(1)
     blocked = issue(2)
     depends(blocked, root)
-    run = create(:agent_run, :completed, project:, issue: blocked)
+    run = create(:agent_run, :completed, project:, issue: root)
     run.update!(reconciliation: { "assessment" => { "gaps" => [ { "kind" => "human" } ] } })
 
     result = described_class.call(account:, queue_issue_ids: [ blocked.id ])
 
     expect(result).to be_empty
-    expect(result.exclusions).to include(a_hash_including(kind: "human_decision", issue: blocked))
+    expect(result.exclusions).to include(a_hash_including(kind: "human_decision", issue: root))
   end
 
   # @spec PARTIAL-CLOSEOUT-048

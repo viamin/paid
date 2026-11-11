@@ -6,6 +6,14 @@ require "warden/test/helpers"
 RSpec.describe "Root prerequisite ranking", type: :system do
   include Warden::Test::Helpers
 
+  def partial_closeout_issue(project:, number:, root:)
+    issue = create(:issue, project:, github_number: number, paid_state: "in_progress")
+    create(:issue_dependency, issue:, depends_on_issue: root)
+    create(:issue, :pull_request, project:, github_number: number + 10, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+    issue
+  end
+
   # @spec PARTIAL-CLOSEOUT-048
   it "renders the current partial-closeout queue ranking without changing dependency state" do
     account = create(:account)
@@ -26,6 +34,29 @@ RSpec.describe "Root prerequisite ranking", type: :system do
     expect(page).to have_css("[data-root-prerequisite-ranking]", text: "Highest-leverage root prerequisites")
     expect(page).to have_text("#1 → #2")
     expect(blocked.reload.blocking_issues).to contain_exactly(root)
+  ensure
+    Warden.test_reset!
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  it "excludes personally removed partial-closeout work from ranking reach" do
+    account = create(:account)
+    user = create(:user, :owner, account:, password: "password123")
+    project = create(:project, account:, created_by: user, auto_pick_enabled: true, active: true)
+    root = create(:issue, project:, github_number: 1, paid_state: "in_progress")
+    visible = partial_closeout_issue(project:, number: 2, root:)
+    removed = partial_closeout_issue(project:, number: 3, root:)
+    removed_entry = Inbox::Queue.find_entry(user:, entry_id: "partial_closeout:#{removed.id}")
+    Inbox::Removals::Remove.call(entry: removed_entry, user:)
+
+    Warden.test_mode!
+    login_as(user, scope: :user)
+    visit inbox_entry_path("partial_closeout:#{visible.id}", kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+
+    within("[data-root-prerequisite-ranking]") do
+      expect(page).to have_text("unlocks 1 blocked issue")
+      expect(page).to have_no_text("#1 → #3")
+    end
   ensure
     Warden.test_reset!
   end

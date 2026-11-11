@@ -138,7 +138,7 @@ module Issues
     def candidate_roots
       issues.values.select do |issue|
         visible_project_ids.include?(issue.project_id) && blocking_prerequisite?(issue) && upstream.fetch(issue.id, []).empty? &&
-          !cyclic_ids.include?(issue.id) && !external_by_issue.key?(issue.id)
+          !cyclic_ids.include?(issue.id) && !external_by_issue.key?(issue.id) && !human_decision_ids.include?(issue.id)
       end
     end
 
@@ -224,7 +224,8 @@ module Issues
     end
 
     def cycle_ids
-      Issues::DependencyCycles.call(account:).flat_map { |cycle| cycle.issues.map(&:id) }.to_set
+      account_cycle_ids = Issues::DependencyCycles.call(account:).flat_map { |cycle| cycle.issues.map(&:id) }.to_set
+      account_cycle_ids & issues.keys.to_set
     rescue Issues::DependencyCycles::CoverageUnavailable
       @cycle_coverage_unavailable = true
       Set.new

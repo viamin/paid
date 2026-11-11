@@ -220,7 +220,7 @@ class InboxController < ApplicationController
   def load_root_prerequisite_ranking
     return unless @selected_entry.partial_closeout?
 
-    queue_issue_ids = inbox_queue.entries.filter_map { |entry| entry.issue&.id if entry.partial_closeout? }
+    queue_issue_ids = inbox_queue.call.filter_map { |entry| entry.issue&.id if entry.partial_closeout? }
     @root_prerequisite_ranking = Issues::RootPrerequisiteRanking.call(
       account: @selected_entry.project.account, queue_issue_ids:, visible_project_ids: inbox_queue.visible_project_ids
     )
