@@ -104,6 +104,20 @@ RSpec.describe RunCollectorBatchJob do
     expect(project.reload.knowledge_status).to eq("failed")
   end
 
+  # @spec KNOWLEDGE-015
+  it "re-raises a transient database connection failure without marking the collection failed" do
+    allow(Knowledge::CollectorRunner).to receive_messages(registry: { "first" => Object })
+    allow(Knowledge::ContainerizedRunner).to receive(:available?).and_return(false)
+    allow(Knowledge::CollectorRunner).to receive(:call)
+      .and_raise(ActiveRecord::ConnectionNotEstablished, "database system is in recovery mode")
+
+    expect {
+      described_class.new.perform(project.id, commit_sha)
+    }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+
+    expect(project.reload.knowledge_status).to eq("collecting")
+  end
+
   # @spec KNOWLEDGE-014
   it "skips a queued collection after the branch advances" do
     allow(github_client).to receive(:ref)

@@ -14,7 +14,13 @@ class RunCollectorsJob < ApplicationJob
 
   discard_on ActiveRecord::RecordNotFound
   retry_on Knowledge::ArtifactStore::LockUnavailable, wait: :polynomially_longer, attempts: 5 do |job, error|
-    job.mark_terminal_lock_failure
+    job.mark_terminal_collection_failure
+    job.notify_terminal_failure(error)
+    raise error
+  end
+  # @spec KNOWLEDGE-015
+  retry_on ActiveRecord::ConnectionNotEstablished, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.mark_terminal_collection_failure
     job.notify_terminal_failure(error)
     raise error
   end
@@ -31,10 +37,11 @@ class RunCollectorsJob < ApplicationJob
     arguments.first
   end
 
-  # retry_on intercepts lock contention before ApplicationJob's rescue_from
-  # handler, so exhaustion must set the terminal status and report explicitly.
-  # @spec KNOWLEDGE-001 EXCEPTION-NOTIFY-003
-  def mark_terminal_lock_failure
+  # retry_on intercepts lock contention and transient database connection
+  # failures before ApplicationJob's rescue_from handler, so exhaustion must
+  # set the terminal status and report explicitly.
+  # @spec KNOWLEDGE-001 KNOWLEDGE-015 EXCEPTION-NOTIFY-003
+  def mark_terminal_collection_failure
     TenantContext.with_system_access do
       mark_knowledge_collection_failed(Project.find_by(id: notification_project_id))
     end
@@ -70,7 +77,7 @@ class RunCollectorsJob < ApplicationJob
     result
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
-  rescue Knowledge::ArtifactStore::LockUnavailable
+  rescue Knowledge::ArtifactStore::LockUnavailable, ActiveRecord::ConnectionNotEstablished
     raise # Keep the project collecting while retry_on schedules a new attempt.
   rescue StandardError
     mark_knowledge_collection_failed(project)

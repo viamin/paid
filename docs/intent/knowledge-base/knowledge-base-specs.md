@@ -30,9 +30,17 @@
 - [x] **KNOWLEDGE-015** — When import-time knowledge collection encounters a
   transient PostgreSQL connection failure, it SHALL retry through the enqueue
   job's bounded retry policy and SHALL defer exception notification until that
-  policy is exhausted.
-  *Code:* `app/jobs/enqueue_knowledge_collection_job.rb`.
-  *Test:* `spec/jobs/enqueue_knowledge_collection_job_spec.rb`.
+  policy is exhausted. The same transient-connection retry policy SHALL cover
+  the collector run, batch, and continuation chain: it SHALL retain the
+  project's `collecting` status across retries and SHALL mark the collection
+  failed and notify only once that policy is exhausted, so a database failover
+  during an in-progress collection does not page as an immediate terminal
+  failure.
+  *Code:* `app/jobs/enqueue_knowledge_collection_job.rb`,
+  `app/jobs/run_collectors_job.rb`, `app/jobs/run_collector_batch_job.rb`.
+  *Test:* `spec/jobs/enqueue_knowledge_collection_job_spec.rb`,
+  `spec/jobs/run_collectors_job_spec.rb`,
+  `spec/jobs/run_collector_batch_job_spec.rb`.
 
 - [x] **KNOWLEDGE-014** — When GoodJob collects knowledge for a project commit,
   each perform SHALL execute at most one collector type and enqueue the next

@@ -48,7 +48,7 @@ class RunCollectorBatchJob < RunCollectorsJob
 
     Project.find(project_id).update!(knowledge_status: "ready")
     KnowledgeArtifact.bust_artifact_counts_cache(project_id)
-  rescue ActiveRecord::RecordNotFound, Knowledge::ArtifactStore::LockUnavailable
+  rescue ActiveRecord::RecordNotFound, Knowledge::ArtifactStore::LockUnavailable, ActiveRecord::ConnectionNotEstablished
     raise
   rescue StandardError
     mark_knowledge_collection_failed(Project.find_by(id: project_id))
