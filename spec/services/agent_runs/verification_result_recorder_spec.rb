@@ -126,6 +126,32 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(reported_criterion.fetch("steps")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
   end
 
+  def add_secret_bearing_criterion_text(payload, secret)
+    text = "Contains token #{secret} inline"
+    criterion = payload.fetch(:acceptance_criteria).sole
+    criterion[:assertions] = [ text ]
+    criterion[:steps] = [ text ]
+    verification = criterion.fetch(:verification)
+    verification.merge!(kind: text, reason: text, rationale: text, limitations: [ text, "x" * 3_000 ])
+    verification[:references] = [ { locator: "spec/system/settings_spec.rb:42", result: text, reason: text } ]
+    verification[:inputs] = [ {
+      type: "repository_file", path: "spec/system/settings_spec.rb", revision: "a" * 40, digest: "0" * 64,
+      excerpt: text, result: text
+    } ]
+  end
+
+  def repository_input_criteria(count)
+    count.times.each_slice(described_class::MAX_CRITERION_INPUTS).with_index.map do |indexes, criterion_index|
+      inputs = indexes.map do |index|
+        { type: "repository_file", path: "spec/system/settings_#{index}.rb", revision: "a" * 40, digest: "0" * 64 }
+      end
+      {
+        id: "AC-#{criterion_index}", status: "passed",
+        verification: { kind: "unit_or_service_test", rationale: "Inspect inputs.", inputs: inputs }
+      }
+    end
+  end
+
   def repository_receipt_payload(digest)
     {
       status: "passed",
@@ -372,23 +398,60 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   it "redacts and bounds agent-supplied criterion text before persistence" do
     secret = "AKIAIOSFODNN7EXAMPLE"
     payload = repository_receipt_payload("0" * 64)
-    criterion = payload.fetch(:acceptance_criteria).sole
-    criterion[:assertions] = [ "Contains token #{secret} inline" ]
-    criterion[:steps] = [ "Contains token #{secret} inline" ]
-    verification = payload.dig(:acceptance_criteria, 0, :verification)
-    verification[:rationale] = "Contains token #{secret} inline"
-    verification[:limitations] = [ "Contains token #{secret} inline", "x" * 3_000 ]
-    verification[:inputs] = [ {
-      type: "repository_file", path: "spec/system/settings_spec.rb", revision: "a" * 40, digest: "0" * 64,
-      excerpt: "Contains token #{secret} inline"
-    } ]
+    add_secret_bearing_criterion_text(payload, secret)
     write_verification_result(payload)
 
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
 
     result = agent_run.reload.verification_result
     expect_redacted_criterion_text(result)
+    reported = result.dig("evidence", "coverage", 0, "reported_verification")
+    expect(reported.values_at("kind", "reason")).to all(eq("Contains token [REDACTED:aws_key] inline"))
+    expect(reported.fetch("references").sole.values_at("result", "reason")).to all(eq("Contains token [REDACTED:aws_key] inline"))
+    expect(reported.dig("inputs", 0, "result")).to eq("Contains token [REDACTED:aws_key] inline")
     expect(result.to_json).not_to include(secret)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "reuses repository validation across criteria that cite the same input" do
+    relative_path = "spec/system/settings_spec.rb"
+    content = "RSpec.describe 'settings' do; end\n"
+    write_repository_file(relative_path, content)
+    revision = commit_repository_file(relative_path)
+    input = {
+      type: "repository_file", path: relative_path, revision: revision,
+      digest: Digest::SHA256.hexdigest(content)
+    }
+    payload = repository_receipt_payload(input.fetch(:digest))
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = [ input ]
+    payload[:acceptance_criteria] << payload.fetch(:acceptance_criteria).sole.deep_dup.merge(id: "AC-2")
+    allow(Open3).to receive(:popen2e).and_call_original
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: revision)
+
+    expect(Open3).to have_received(:popen2e).with("git", "-C", repo_path, "show", "#{revision}:#{relative_path}").once
+    receipts = agent_run.reload.verification_result.dig("evidence", "coverage").pluck("input_receipt")
+    expect(receipts.pluck("state")).to eq(%w[verified verified])
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "bounds distinct repository validation work across the complete result" do
+    input_count = described_class::MAX_REPOSITORY_INPUT_VALIDATIONS + 1
+    git_status = instance_double(Process::Status, success?: false)
+    wait_thread = instance_double(Thread, value: git_status)
+    allow(Open3).to receive(:popen2e).and_yield(StringIO.new, StringIO.new, wait_thread)
+    write_verification_result(status: "passed", acceptance_criteria: repository_input_criteria(input_count))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    expect(Open3).to have_received(:popen2e).exactly(described_class::MAX_REPOSITORY_INPUT_VALIDATIONS).times
+    references = agent_run.reload.verification_result.dig("evidence", "coverage").flat_map do |criterion|
+      criterion.dig("input_receipt", "references")
+    end
+    expect(references.last).to include(
+      "state" => "unavailable", "verdict_reason" => "repository_validation_limit_exceeded"
+    )
   end
 
   # @spec LIVE-PREVIEW-013

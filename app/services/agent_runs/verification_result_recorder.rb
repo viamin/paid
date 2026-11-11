@@ -14,13 +14,14 @@ module AgentRuns
     LOG_TAIL_CHUNK_BYTES = 4096
     LOG_TAIL_MAX_BYTES = ApplicationLog::MAX_BYTES
     MAX_CRITERION_INPUTS = 20
+    MAX_REPOSITORY_INPUT_VALIDATIONS = 100
     MAX_INPUT_EXCERPT_BYTES = 2_000
     GIT_SHA = /\A[0-9a-f]{40}\z/i
     SHA256_DIGEST = /\A[0-9a-f]{64}\z/i
     # Agent-supplied criterion inputs. Every field is bounded before it is
     # persisted, and the free-text fields are redacted as well.
     INPUT_FIELDS = %w[type locator path revision digest excerpt result command storage_key url reason].freeze
-    REDACTED_INPUT_FIELDS = %w[excerpt command locator reason url].freeze
+    REDACTED_INPUT_FIELDS = %w[excerpt command locator reason result url].freeze
     # The receipt repeats the checked identity and the mechanical verdict. The
     # bulky agent excerpt stays with the reported claim it came from.
     RECEIPT_REFERENCE_FIELDS = (INPUT_FIELDS - %w[excerpt]).freeze
@@ -337,7 +338,9 @@ module AgentRuns
     def normalize_criterion_verification(value)
       return unless value.is_a?(Hash)
 
-      verification = value.deep_stringify_keys.slice("kind", "reason")
+      verification = value.deep_stringify_keys.slice("kind", "reason").each_with_object({}) do |(key, entry), bounded|
+        bounded[key] = redact_input_excerpt(entry) if entry.is_a?(String)
+      end
       verification["rationale"] = redact_input_excerpt(value["rationale"] || value[:rationale])
       verification["limitations"] = normalize_criterion_limitations(value["limitations"] || value[:limitations])
       verification["references"] = Array(value["references"] || value[:references]).filter_map do |reference|
@@ -463,6 +466,7 @@ module AgentRuns
       return [ "contradicted", "path_outside_repository" ] unless path
       relative_path = Pathname.new(path).relative_path_from(repo_base).to_s
       digest = repository_blob_digest(revision, relative_path)
+      return [ "unavailable", "repository_validation_limit_exceeded" ] if digest == :validation_limit_exceeded
       return [ "contradicted", "path_missing_or_inaccessible" ] if digest.blank?
 
       return [ "contradicted", "content_digest_mismatch" ] unless ActiveSupport::SecurityUtils.secure_compare(digest, expected_digest)
@@ -475,6 +479,17 @@ module AgentRuns
     end
 
     def repository_blob_digest(revision, relative_path)
+      key = [ revision, relative_path ]
+      # The recorder instance handles one result, which bounds the cache's
+      # lifetime and invalidates it before another result can be recorded.
+      cache = (@repository_blob_digests ||= {})
+      return cache[key] if cache.key?(key)
+      return :validation_limit_exceeded if cache.size >= MAX_REPOSITORY_INPUT_VALIDATIONS
+
+      cache[key] = read_repository_blob_digest(revision, relative_path)
+    end
+
+    def read_repository_blob_digest(revision, relative_path)
       digest = Digest::SHA256.new
       status = nil
       Open3.popen2e("git", "-C", @repo_path, "show", "#{revision}:#{relative_path}") do |stdin, output, wait_thread|
