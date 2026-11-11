@@ -84,6 +84,10 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
   def auto_merge_phase_authorized?
     return @auto_merge_phase_authorized unless @auto_merge_phase_authorized.nil?
 
+    # Lightweight prompt contexts have no effective auto-merge setting and
+    # therefore render an off mode. Avoid asking Flipper to identify them.
+    return true unless project.respond_to?(:auto_merge_enabled?)
+
     @auto_merge_phase_authorized = Automation::FeatureActivation.phase_authorized?(project:, capability: "auto_merge")
   end
 
