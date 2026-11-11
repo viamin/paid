@@ -12,6 +12,13 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 ## RDR Status
 
+The "Meaning" column states the future authoring contract's semantics for
+RDRs created under it. Historical RDRs predate that contract and use these
+same status labels without meeting its evidence bar (e.g. criterion-level
+closeout for `Implemented`/`Partially Implemented`, or HLD/LLD/EARS linkage
+for `Final`); see [the note above](#what-are-rdrs) — do not read a historical
+RDR's status against this stricter meaning.
+
 | Status | Meaning |
 |--------|---------|
 | Draft | Research or recommendation is mutable; it authorizes nothing. |
