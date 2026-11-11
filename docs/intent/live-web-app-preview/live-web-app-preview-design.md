@@ -75,9 +75,14 @@ run-owned artifacts through the existing verification result contract.
 For Paid's own checkout, the pilot guide covers sign-in, the Projects index,
 and a project-detail page. Its helper commands prepare the isolated database,
 reset only the seeded verification account, and remove that account during
-cleanup. The permanent system journey is the maintenance check for the guide's
-login and routes; a separate Paid-managed implementation run remains required
-as inspectable operational evidence before the pilot can be expanded.
+cleanup. Seed creation stamps the account with a persisted `seed_owner`
+marker (`accounts.seed_owner`); journey reuse and cleanup require that marker,
+so an unmarked account that merely collides on the journey slug or email is
+refused with `AccountCollision`/`IdentityCollision` instead of being adopted
+or destroyed. The helper refuses to run outside the development and test
+environments. The permanent system journey is the maintenance check for the
+guide's login and routes; a separate Paid-managed implementation run remains
+required as inspectable operational evidence before the pilot can be expanded.
 
 ### Criterion verification references
 

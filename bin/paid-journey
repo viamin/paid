@@ -3,10 +3,13 @@ set -euo pipefail
 
 command_name="${1:-}"
 
-if [ "${RAILS_ENV:-development}" = "production" ]; then
-  echo "paid-journey only supports isolated development or test environments" >&2
-  exit 1
-fi
+case "${RAILS_ENV:-development}" in
+  development|test) ;;
+  *)
+    echo "paid-journey only supports isolated development or test environments" >&2
+    exit 1
+    ;;
+esac
 
 cleanup_seed_data() {
   bundle exec bin/rails runner 'TenantContext.with_system_access { Screenshots::SeedData::PaidJourney.cleanup! }'

@@ -80,11 +80,17 @@
   contains the conventional `.paid/journeys.md` guide, the verification prompt
   SHALL direct the agent to read it and select the journey covering the changed
   surface. The guide SHALL reuse screenshot configuration for routes,
-  authentication, and seed data; agent-reported steps or screenshots alone
-  SHALL remain unverified evidence under the existing result contract.
+  authentication, and seed data; the journey seed SHALL persist an explicit
+  ownership marker on the account it creates and SHALL reuse or remove only
+  accounts carrying that marker, so an unmarked account colliding on the
+  journey slug or email SHALL be refused; agent-reported steps or screenshots
+  alone SHALL remain unverified evidence under the existing result contract.
   *Code:* `app/services/agent_runs/verification_prompt.rb`,
-  `.paid/journeys.md`, `bin/paid-journey`.
+  `.paid/journeys.md`, `bin/paid-journey`,
+  `app/services/screenshots/seed_data/paid_journey.rb`,
+  `db/migrate/20261111051641_add_seed_owner_to_accounts.rb`.
   *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
+  `spec/services/screenshots/seed_data/paid_journey_spec.rb`,
   `spec/system/paid_project_journey_spec.rb`.
 
 - [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real

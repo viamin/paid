@@ -4,12 +4,15 @@ module Screenshots
   module SeedData
     # Minimal, isolated data for Paid's browser-verification pilot. The broader
     # screenshot seed remains responsible for screenshot-gallery coverage.
+    # Ownership of the seeded account is proven only by the persisted
+    # seed_owner marker; identity collisions are refused, never adopted.
     # @spec LIVE-PREVIEW-012
     class PaidJourney
       class AccountCollision < StandardError; end
       class IdentityCollision < StandardError; end
 
       ACCOUNT_SLUG = "paid-journey-account".freeze
+      SEED_OWNER = "paid-journey".freeze
       USER_EMAIL = "paid-journey@example.com".freeze
       USER_PASSWORD = "paid-journey-password-123".freeze
       PROJECT_NAME = "Paid Journey Project".freeze
@@ -27,9 +30,8 @@ module Screenshots
       end
 
       def self.cleanup!
-        account = Account.find_by(slug: ACCOUNT_SLUG)
+        account = Account.find_by(slug: ACCOUNT_SLUG, seed_owner: SEED_OWNER)
         return unless account
-        return unless account.users.exists?(email: USER_EMAIL)
 
         account.projects.destroy_all
         account.destroy!
@@ -38,6 +40,7 @@ module Screenshots
       def self.account_for_journey
         Account.find_or_create_by!(slug: ACCOUNT_SLUG) do |record|
           record.name = "Paid Journey Account"
+          record.seed_owner = SEED_OWNER
         end
       end
       private_class_method :account_for_journey
@@ -48,7 +51,7 @@ module Screenshots
       private_class_method :existing_journey_account
 
       def self.ensure_account_available!(account)
-        return if account.nil? || account.users.exists?(email: USER_EMAIL)
+        return if account.nil? || account.seed_owner == SEED_OWNER
 
         raise AccountCollision, "#{ACCOUNT_SLUG} is not a journey account"
       end

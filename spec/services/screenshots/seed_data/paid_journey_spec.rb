@@ -8,12 +8,23 @@ RSpec.describe Screenshots::SeedData::PaidJourney do
     described_class.call
 
     account = Account.find_by!(slug: described_class::ACCOUNT_SLUG)
+    expect(account.seed_owner).to eq(described_class::SEED_OWNER)
     expect(account.users.find_by!(email: described_class::USER_EMAIL)).to be_present
     expect(account.projects.find_by!(name: described_class::PROJECT_NAME)).to be_present
 
     described_class.cleanup!
 
     expect(Account.find_by(slug: described_class::ACCOUNT_SLUG)).to be_nil
+  end
+
+  # @spec LIVE-PREVIEW-012
+  it "reuses the marked account from a previous journey run" do
+    described_class.call
+    account = Account.find_by!(slug: described_class::ACCOUNT_SLUG)
+
+    described_class.call
+
+    expect(Account.find_by!(slug: described_class::ACCOUNT_SLUG)).to eq(account)
   end
 
   # @spec LIVE-PREVIEW-012
@@ -51,5 +62,22 @@ RSpec.describe Screenshots::SeedData::PaidJourney do
     described_class.cleanup!
 
     expect(existing_account.reload).to be_present
+  end
+
+  # @spec LIVE-PREVIEW-012
+  it "refuses to adopt or destroy an unmarked account colliding on slug and email" do
+    existing_account = create(:account, slug: described_class::ACCOUNT_SLUG)
+    create(:user, account: existing_account, email: described_class::USER_EMAIL)
+
+    expect { described_class.call }.to raise_error(
+      described_class::AccountCollision,
+      /is not a journey account/
+    )
+
+    described_class.cleanup!
+
+    expect(existing_account.reload).to be_present
+    expect(existing_account.projects).to be_empty
+    expect(existing_account.users.exists?(email: described_class::USER_EMAIL)).to be(true)
   end
 end
