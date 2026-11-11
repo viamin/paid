@@ -57,7 +57,7 @@ module Api
 
       TenantContext.with_system_access do
         @account = Account.find_by(id: identity[:account_id])
-        @runner = Runner.joins(:user)
+        @runner = Runner.kept_only.joins(:user)
           .find_by(id: identity[:runner_id], users: { account_id: @account&.id })
       end
       return reject_identity unless @account && @runner

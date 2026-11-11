@@ -88,4 +88,16 @@ RSpec.describe "Standalone text credentials" do
     expect(response).to have_http_status(:forbidden)
     expect(response.parsed_body).to eq("error" => "Invalid standalone text credential")
   end
+
+  # @spec LLM-ROUTING-002 LLM-ROUTING-006
+  it "rejects an identity when its selected runner is discarded before materialization" do
+    create(:runner_credential, account: account, runner: runner)
+    identity = Containers::StandaloneTextCredential.issue(account: account, runner: runner, expires_in: 30)
+    runner.update_column(:discarded_at, Time.current)
+
+    post "/api/proxy/standalone-text-credential", headers: { "Authorization" => "Bearer #{identity}" }
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body).to eq("error" => "Invalid standalone text credential")
+  end
 end
