@@ -82,6 +82,7 @@ RSpec.describe DependencyCycleReconciliationJob do
   # @spec AUTO-PICK-QUEUE-014
   it "backs off repeated unavailable-account retries up to a bounded cap without advancing the cursor" do
     stub_const("DependencyCycleReconciliationJob::ACCOUNT_PAGE_SIZE", 1)
+    cursor_account = create(:account)
     unavailable = create(:account)
     later = create(:account)
     calls = []
@@ -93,11 +94,12 @@ RSpec.describe DependencyCycleReconciliationJob do
     end
     stub_backoff_delays(continuations, waits)
 
-    described_class.perform_now(after_account_id: initial_account_boundary)
+    described_class.perform_now(after_account_id: cursor_account.id)
+    expect_unavailable_continuation(continuations, cursor_account.id, later.id, 1)
     5.times { described_class.perform_now(**continuations.shift) }
 
     expect(waits).to eq([ 1.minute, 2.minutes, 4.minutes, 8.minutes, 10.minutes, 10.minutes ])
-    expect(continuations).to contain_exactly(after_account_id: initial_account_boundary, through_account_id: later.id, unavailable_retries: 6)
+    expect(continuations).to contain_exactly(after_account_id: cursor_account.id, through_account_id: later.id, unavailable_retries: 6)
     expect(calls).to all(eq(unavailable.id))
     expect(described_class).not_to have_received(:perform_later)
   end
@@ -140,5 +142,9 @@ RSpec.describe DependencyCycleReconciliationJob do
       allow(scheduler).to receive(:perform_later) { |**arguments| continuations << arguments }
       scheduler
     end
+  end
+
+  def expect_unavailable_continuation(continuations, after_account_id, through_account_id, unavailable_retries)
+    expect(continuations).to contain_exactly(after_account_id:, through_account_id:, unavailable_retries:)
   end
 end
