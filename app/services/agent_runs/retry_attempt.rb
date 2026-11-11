@@ -34,7 +34,7 @@ module AgentRuns
         successor = policy.build_successor!(agent_run, attempt)
         agent_run.retry!(
           decision_point: decision_point,
-          signals: { attempt: attempt, max_attempts: AgentRun::MAX_MANUAL_RETRY_ATTEMPTS },
+          signals: retry_signals(attempt),
           result: { new_agent_run_id: successor.id, reason: "retry_claimed" }
         )
         Result.new(:claimed, :retry_claimed, agent_run, successor)
@@ -58,16 +58,20 @@ module AgentRuns
     end
 
     def record_reason(agent_run, reason, attempt)
-      OrchestrationDecision.record!(
+      OrchestrationDecision.record(
         project: agent_run.project,
         agent_run: agent_run,
         decision_point: decision_point,
         action: "manual_failed_run_auto_retry",
         status: "noop",
-        signals: { attempt: attempt, max_attempts: AgentRun::MAX_MANUAL_RETRY_ATTEMPTS, reason: reason.to_s },
+        signals: retry_signals(attempt).merge(reason: reason.to_s),
         result: { reason: reason.to_s }
       )
       Result.new(:skipped, reason, agent_run, nil)
+    end
+
+    def retry_signals(attempt)
+      { attempt: attempt, max_attempts: policy.maximum_attempts }
     end
   end
 end

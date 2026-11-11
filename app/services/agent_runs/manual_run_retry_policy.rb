@@ -30,6 +30,10 @@ module AgentRuns
       agent_run.manual_retry_attempt + 1
     end
 
+    def maximum_attempts
+      AgentRun::MAX_MANUAL_RETRY_ATTEMPTS
+    end
+
     def build_successor!(original, attempt)
       AgentRun.create!(
         project: original.project,

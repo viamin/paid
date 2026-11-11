@@ -45,6 +45,7 @@ RSpec.describe RetryFailedManualRunJob do
       event = OrchestrationDecision.last
       expect(event.actor).to eq("manual_failed_run_auto_retry")
       expect(event.agent_run).to eq(original)
+      expect(event.inputs).to include("attempt" => 1, "max_attempts" => AgentRun::MAX_MANUAL_RETRY_ATTEMPTS)
       expect(event.outputs["new_agent_run_id"]).to eq(AgentRun.order(:id).last.id)
     end
 
