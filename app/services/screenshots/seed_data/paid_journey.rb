@@ -17,24 +17,30 @@ module Screenshots
       USER_PASSWORD = "paid-journey-password-123".freeze
       PROJECT_NAME = "Paid Journey Project".freeze
       PROJECT_GITHUB_ID = 9_999_997
+      JOURNEY_ACCOUNT_LOCK = 1_339_487_214
 
       def self.call
         Account.transaction do
+          lock_journey_account!
           account = existing_journey_account
           ensure_account_available!(account)
           ensure_identity_available!(account)
           account ||= account_for_journey
+          ensure_account_available!(account)
           user = user_for(account)
           project_for(account, user)
         end
       end
 
       def self.cleanup!
-        account = Account.find_by(slug: ACCOUNT_SLUG, seed_owner: SEED_OWNER)
-        return unless account
+        Account.transaction do
+          lock_journey_account!
+          account = Account.find_by(slug: ACCOUNT_SLUG, seed_owner: SEED_OWNER)
+          next unless account
 
-        account.projects.destroy_all
-        account.destroy!
+          account.projects.destroy_all
+          account.destroy!
+        end
       end
 
       def self.account_for_journey
@@ -51,11 +57,17 @@ module Screenshots
       private_class_method :existing_journey_account
 
       def self.ensure_account_available!(account)
-        return if account.nil? || account.seed_owner == SEED_OWNER
+        return if account.nil?
+        return if account.slug == ACCOUNT_SLUG && account.seed_owner == SEED_OWNER
 
         raise AccountCollision, "#{ACCOUNT_SLUG} is not a journey account"
       end
       private_class_method :ensure_account_available!
+
+      def self.lock_journey_account!
+        Account.connection.execute("SELECT pg_advisory_xact_lock(#{JOURNEY_ACCOUNT_LOCK})")
+      end
+      private_class_method :lock_journey_account!
 
       def self.ensure_identity_available!(account)
         user = User.find_by(email: USER_EMAIL)

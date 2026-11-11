@@ -28,6 +28,29 @@ RSpec.describe Screenshots::SeedData::PaidJourney do
   end
 
   # @spec LIVE-PREVIEW-012
+  it "keeps concurrent setup on the fixed journey identity" do
+    errors = Queue.new
+    ready = Queue.new
+    start = Queue.new
+    threads = 4.times.map do
+      Thread.new do
+        ready << true
+        start.pop
+        described_class.call
+      rescue StandardError => error
+        errors << error
+      end
+    end
+
+    4.times { ready.pop }
+    4.times { start << true }
+    threads.each(&:join)
+
+    expect(errors).to be_empty
+    expect(Account.where(seed_owner: described_class::SEED_OWNER).pluck(:slug)).to eq([ described_class::ACCOUNT_SLUG ])
+  end
+
+  # @spec LIVE-PREVIEW-012
   it "refuses to reuse a journey email owned by another account" do
     existing_user = create(
       :user,
