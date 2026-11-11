@@ -116,17 +116,24 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     }
   end
 
-  def artifact_receipt_payload(storage_key)
+  def artifact_receipt_payload(identity)
     {
       status: "passed",
       acceptance_criteria: [ {
         id: "AC-1", status: "passed",
         verification: {
           kind: "unit_or_service_test", rationale: "The retained log records the exercised request.",
-          inputs: [ { type: "artifact", storage_key: } ]
+          inputs: [ { type: "artifact", **identity } ]
         }
       } ]
     }
+  end
+
+  def write_repository_file(relative_path, content)
+    path = File.join(repo_path, relative_path)
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, content)
+    path
   end
 
   it "persists the recorded verification result and app log tail onto the run" do
@@ -248,7 +255,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   end
 
   # @spec LIVE-PREVIEW-013
-  it "labels fabricated, stale, skipped, and unavailable criterion inputs without issuing a receipt" do
+  it "labels fabricated, stale, external, and unsupported criterion inputs without issuing a receipt" do
     write_verification_result(
       status: "passed",
       acceptance_criteria: [ {
@@ -258,8 +265,8 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
           inputs: [
             { type: "repository_file", path: "spec/missing_spec.rb", revision: "a" * 40, digest: "0" * 64 },
             { type: "repository_file", path: "spec/stale_spec.rb", revision: "b" * 40, digest: "0" * 64 },
-            { type: "test_run", command: "bin/rspec spec/services/x_spec.rb", result: "skipped" },
-            { type: "artifact", storage_key: "verification/missing.log" }
+            { type: "human_or_external", url: "https://example.test/report", reason: "provider confirmed" },
+            { type: "test_run", command: "bin/rspec spec/services/x_spec.rb", result: "skipped" }
           ]
         }
       } ]
@@ -269,7 +276,64 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
 
     receipt = input_receipt_for(agent_run.reload.verification_result)
     expect(receipt.fetch("state")).to eq("contradicted")
-    expect(receipt.fetch("references").map { |reference| reference.fetch("state") }).to eq(%w[contradicted stale contradicted unavailable])
+    expect(receipt.fetch("references").map { |reference| reference.fetch("state") }).to eq(%w[contradicted stale unavailable unavailable])
+    expect(receipt.fetch("references").last).to include("verdict_reason" => "unsupported_input_type")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "redacts and bounds agent-supplied criterion text before persistence" do
+    secret = "AKIAIOSFODNN7EXAMPLE"
+    payload = repository_receipt_payload("0" * 64)
+    verification = payload.dig(:acceptance_criteria, 0, :verification)
+    verification[:rationale] = "Contains token #{secret} inline"
+    verification[:limitations] = [ "Contains token #{secret} inline", "x" * 3_000 ]
+    verification[:inputs] = [ {
+      type: "repository_file", path: "spec/system/settings_spec.rb", revision: "a" * 40, digest: "0" * 64,
+      excerpt: "Contains token #{secret} inline"
+    } ]
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    result = agent_run.reload.verification_result
+    coverage = result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "rationale")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.dig("reported_verification", "limitations").first).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.dig("reported_verification", "limitations").last.bytesize).to be <= described_class::MAX_INPUT_EXCERPT_BYTES
+    expect(coverage.dig("reported_verification", "inputs", 0, "excerpt")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(result.to_json).not_to include(secret)
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "records a criterion whose cited text splits a multi-byte character at the byte cap" do
+    payload = repository_receipt_payload("0" * 64)
+    payload.dig(:acceptance_criteria, 0, :verification)[:rationale] = "a" * 1_999 + "é"
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    coverage = agent_run.reload.verification_result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "rationale")).to be_valid_encoding
+    expect(coverage.dig("input_receipt", "state")).to eq("contradicted")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "resolves the reviewed revision once per recording" do
+    git_status = instance_double(Process::Status, success?: true)
+    allow(Open3).to receive(:capture2e).and_return([ "a" * 40, git_status ])
+    inputs = 5.times.map do |index|
+      relative_path = "spec/system/settings_#{index}.rb"
+      path = write_repository_file(relative_path, "RSpec.describe 'settings' do; end\n")
+      { type: "repository_file", path: relative_path, revision: "a" * 40, digest: Digest::SHA256.file(path).hexdigest }
+    end
+    payload = repository_receipt_payload(inputs.first.fetch(:digest))
+    payload.dig(:acceptance_criteria, 0, :verification)[:inputs] = inputs
+    write_verification_result(payload)
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(Open3).to have_received(:capture2e).with("git", "-C", repo_path, "rev-parse", "HEAD").once
+    expect(agent_run.reload.verification_result.dig("evidence", "tested_commit")).to eq("a" * 40)
   end
 
   # @spec LIVE-PREVIEW-011
@@ -330,11 +394,50 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   end
 
   # @spec LIVE-PREVIEW-013
+  it "verifies a run-owned artifact cited by the path the agent wrote" do
+    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
+    allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
+    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
+    File.write(log_path, "request completed\n")
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "verified")
+    expect(receipt.fetch("references").sole).to include(
+      "path" => AgentRuns::VerificationPrompt::APP_LOG_PATH, "state" => "verified", "provenance" => "recorder"
+    )
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "contradicts an artifact the recorder observed but could not retain" do
+    allow(ArtifactStorage).to receive(:configured?).and_return(false)
+    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
+    File.write(log_path, "request completed\n")
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "contradicted")
+    expect(receipt.fetch("references").sole).to include("verdict_reason" => "artifact_not_retained")
+  end
+
+  # @spec LIVE-PREVIEW-013
+  it "keeps an artifact the recorder never observed unavailable" do
+    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    receipt = input_receipt_for(agent_run.reload.verification_result)
+    expect(receipt).to include("state" => "unavailable")
+    expect(receipt.fetch("references").sole).to include("verdict_reason" => "artifact_not_recorder_owned")
+  end
+
+  # @spec LIVE-PREVIEW-013
   it "retains a verified artifact receipt when rebinding after transient files are cleaned up" do
     storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
     allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
-    storage_key = "#{Screenshots::Storage.namespace_prefix(org: project.owner, repo: project.repo)}verification/#{agent_run.id}/#{"a" * 40}/app.log"
-    write_verification_result(artifact_receipt_payload(storage_key))
+    write_verification_result(artifact_receipt_payload(path: AgentRuns::VerificationPrompt::APP_LOG_PATH))
     File.write(log_path, "request completed\n")
 
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
@@ -352,7 +455,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     receipt = input_receipt_for(agent_run.reload.verification_result)
     expect(receipt).to include("state" => "verified")
     expect(receipt.fetch("references").sole).to include(
-      "storage_key" => storage_key, "state" => "verified", "provenance" => "recorder"
+      "path" => AgentRuns::VerificationPrompt::APP_LOG_PATH, "state" => "verified", "provenance" => "recorder"
     )
   end
 

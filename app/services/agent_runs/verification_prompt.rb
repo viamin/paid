@@ -4,7 +4,7 @@ require "json"
 require "shellwords"
 
 module AgentRuns
-  # @spec LIVE-PREVIEW-005 LIVE-PREVIEW-011
+  # @spec LIVE-PREVIEW-005 LIVE-PREVIEW-011 LIVE-PREVIEW-013
   class VerificationPrompt
     RESULT_PATH = "tmp/paid-agent-verification.json".freeze
     APP_LOG_PATH = "tmp/paid-agent-verification-app.log".freeze
@@ -78,7 +78,7 @@ module AgentRuns
               "kind": "permanent_system_test",
               "rationale": "The test exercises the persisted onboarding path.",
               "limitations": ["It does not establish external-provider behavior."],
-              "inputs": [{ "type": "repository_file", "path": "spec/system/onboarding_spec.rb", "revision": "<PR_HEAD>", "digest": "<SHA256>" }],
+              "inputs": #{example_criterion_inputs},
               "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
             }
           }]
@@ -87,6 +87,17 @@ module AgentRuns
 
         #{criterion_evidence_instructions}
       SECTION
+    end
+
+    def example_criterion_inputs
+      inputs = [ {
+        "type" => "repository_file",
+        "path" => "spec/system/onboarding_spec.rb",
+        "revision" => "<PR_HEAD>",
+        "digest" => "<SHA256>"
+      } ]
+      inputs << { "type" => "artifact", "path" => APP_LOG_PATH } if interactive_verification?
+      JSON.generate(inputs)
     end
 
     def render_section(runtime_plan, fallback_result:)
@@ -147,6 +158,7 @@ module AgentRuns
             "status": "passed",
             "verification": {
               "kind": "permanent_system_test",
+              "rationale": "The system test exercises the persisted onboarding path.",
               "references": [{ "locator": "spec/system/onboarding_spec.rb:42", "result": "passed" }]
             }
           }],
@@ -177,11 +189,20 @@ module AgentRuns
         or browser steps. Criterion `status` must be `passed`, `failed`, `skipped`, or `not_run`. Record blocked,
         skipped, missing browser coverage, and human or external criteria without attached evidence as `skipped` or
         `not_run` with a reason. For a recorder input receipt, separately provide a concise `rationale`, limitations,
-        and bounded `inputs`: use `repository_file` with `path`, reviewed `revision`, and SHA-256 `digest`; use
-        `test_run` only for an actual recorder-owned result; use `artifact` with its recorder-owned `storage_key`; or
-        use `human_or_external` with an explicit URL/reason. Paid validates inputs mechanically but never treats a
-        valid receipt as proof of the semantic coverage judgment.
+        and bounded `inputs`: #{supported_input_types}. Cite the inspected test file itself as a `repository_file`
+        input and report the test outcome in `references`; Paid never re-runs or certifies a test command. Paid
+        validates inputs mechanically but never treats a valid receipt as proof of the semantic coverage judgment.
       INSTRUCTIONS
+    end
+
+    # Only inputs Paid can check itself belong in a receipt. Test executions
+    # and external references stay reported claims, and the recorder-owned
+    # artifact exists only when the run retains the application log.
+    def supported_input_types
+      types = [ "use `repository_file` with `path`, the reviewed `revision`, and its SHA-256 `digest`" ]
+      types << "use `artifact` with the run-owned app-log path `#{APP_LOG_PATH}`" if interactive_verification?
+      types << "use `human_or_external` with an explicit URL/reason for evidence Paid cannot check"
+      types.join("; ")
     end
 
     # @spec LIVE-PREVIEW-012

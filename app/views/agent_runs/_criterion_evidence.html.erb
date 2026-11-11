@@ -24,16 +24,18 @@
           <% end %>
           <% if receipt.present? %>
             <p class="mt-1 text-gray-700 dark:text-gray-300">Input receipt: <%= receipt["state"].to_s.humanize %>.</p>
-            <% if receipt["reason"].present? %><p class="text-xs text-gray-500"><%= receipt["reason"].humanize %>.</p><% end %>
+            <% if receipt["verdict_reason"].present? %><p class="text-xs text-gray-500"><%= receipt["verdict_reason"].humanize %>.</p><% end %>
             <% if receipt["references"].present? %>
               <ul class="mt-2 list-disc pl-5 text-xs text-gray-600 dark:text-gray-400">
                 <% receipt["references"].each do |reference| %>
-                  <li><%= reference["path"] || reference["storage_key"] || reference["command"] || reference["url"] || reference["type"] %>: <%= reference["state"].to_s.humanize.downcase %></li>
+                  <% identity = reference["path"] || reference["storage_key"] || reference["locator"] || reference["command"] || reference["url"] || reference["type"] %>
+                  <% verdict = reference["verdict_reason"].present? ? " — #{reference["verdict_reason"].humanize}" : "" %>
+                  <li><%= identity %>: <%= reference["state"].to_s.humanize.downcase %><%= verdict %></li>
                 <% end %>
               </ul>
             <% end %>
           <% else %>
-            <p class="mt-1 text-gray-700 dark:text-gray-300">Input receipt: unavailable.</p>
+            <p class="mt-1 text-gray-700 dark:text-gray-300">Input receipt: none recorded.</p>
           <% end %>
         </li>
       <% end %>
