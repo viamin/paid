@@ -58,14 +58,30 @@ module Issues
     end
 
     def load_queue_ancestors
-      frontier = load_issues(queue_issue_ids).map(&:id)
-      @unavailable_queue_issue_ids = queue_issue_ids - frontier.to_set
-      until frontier.empty?
-        edges = dependency_edges_from(frontier)
-        parents = load_issues(edges.map(&:last) - issues.keys)
-        @dependencies.concat(edges.select { |_, parent_id| issues.key?(parent_id) })
-        frontier = parents.map(&:id)
-      end
+      ancestor_ids = recursive_ancestor_ids
+      loaded_ids = load_issues(ancestor_ids).map(&:id).to_set
+      @unavailable_queue_issue_ids = queue_issue_ids - loaded_ids
+      @dependencies = dependency_edges_from(loaded_ids).select { |_, parent_id| loaded_ids.include?(parent_id) }
+    end
+
+    def recursive_ancestor_ids
+      ApplicationRecord.connection.select_values(recursive_ancestor_sql).map!(&:to_i)
+    end
+
+    def recursive_ancestor_sql
+      <<~SQL.squish
+        WITH RECURSIVE blocking_edges(issue_id, depends_on_issue_id) AS NOT MATERIALIZED (
+          #{local_dependency_edge_scope.select(:issue_id, :depends_on_issue_id).to_sql}
+          UNION ALL
+          #{resolved_external_dependency_edge_scope.select(:issue_id, "ext_issue.id AS depends_on_issue_id").to_sql}
+        ), ancestors(id) AS (
+          SELECT unnest(ARRAY[#{queue_issue_ids.map { |id| Integer(id) }.join(", ")}]::bigint[])
+          UNION
+          SELECT blocking_edges.depends_on_issue_id
+          FROM blocking_edges INNER JOIN ancestors ON blocking_edges.issue_id = ancestors.id
+        )
+        SELECT id FROM ancestors LIMIT #{MAX_NODES + 1}
+      SQL
     end
 
     def load_issues(ids)
@@ -86,22 +102,31 @@ module Issues
     end
 
     def local_dependency_edges_from(issue_ids)
+      local_dependency_edge_scope(issue_ids).pluck(:issue_id, :depends_on_issue_id)
+    end
+
+    def local_dependency_edge_scope(issue_ids = nil)
       dependency_scope(issue_ids).where(depends_on_issue: { github_state: "open" })
         .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
         .or(deployment_dependency_scope(issue_ids))
-        .pluck(:issue_id, :depends_on_issue_id)
     end
 
     def resolved_external_dependency_edges_from(issue_ids)
-      IssueDependency.external_resolved_for_account(account.id).where(issue_id: issue_ids).joins(issue: :project)
+      resolved_external_dependency_edge_scope(issue_ids).pluck("issue_dependencies.issue_id", "ext_issue.id")
+    end
+
+    def resolved_external_dependency_edge_scope(issue_ids = nil)
+      scope = IssueDependency.external_resolved_for_account(account.id).joins(issue: :project)
         .where(projects: { account_id: account.id })
         .where("issues.parent_issue_id IS DISTINCT FROM ext_issue.id")
         .where(blocking_external_dependency_condition)
-        .pluck("issue_dependencies.issue_id", "ext_issue.id")
+      issue_ids ? scope.where(issue_id: issue_ids) : scope
     end
 
-    def dependency_scope(issue_ids)
-      IssueDependency.joins(:issue, :depends_on_issue).where(issue_id: issue_ids).excluding_parent_references
+    def dependency_scope(issue_ids = nil)
+      scope = IssueDependency.joins(:depends_on_issue, issue: :project).where(projects: { account_id: account.id })
+        .excluding_parent_references
+      issue_ids ? scope.where(issue_id: issue_ids) : scope
     end
 
     def deployment_dependency_scope(issue_ids)

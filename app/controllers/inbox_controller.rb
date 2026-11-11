@@ -8,6 +8,7 @@ class InboxController < ApplicationController
   def index
     flash.keep if turbo_frame_request_id == "inbox-detail"
     @selected_entry = @inbox_entries.first
+    load_root_prerequisite_ranking if @selected_entry
     @detail_view = false
   end
 
@@ -221,9 +222,13 @@ class InboxController < ApplicationController
   def load_root_prerequisite_ranking
     return unless @selected_entry.partial_closeout?
 
-    queue_issue_ids = inbox_queue.call.filter_map { |entry| entry.issue&.id if entry.partial_closeout? }
+    queue_issue_ids = ranking_queue_entries.filter_map { |entry| entry.issue&.id if entry.partial_closeout? }
     @root_prerequisite_ranking = Issues::RootPrerequisiteRanking.call(
       account: @selected_entry.project.account, queue_issue_ids:, visible_project_ids: inbox_queue.visible_project_ids
     )
+  end
+
+  def ranking_queue_entries
+    action_name == "index" ? @inbox_entries : inbox_queue.call
   end
 end

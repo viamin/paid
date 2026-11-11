@@ -298,6 +298,24 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "loads a maximum-depth linear graph in a bounded number of queries" do
+    chain = 500.times.map { |number| issue(number + 1) }
+    chain.each_cons(2) { |prerequisite, dependent| depends(dependent, prerequisite) }
+    queries = []
+    subscriber = lambda do |*args|
+      payload = ActiveSupport::Notifications::Event.new(*args).payload
+      queries << payload[:sql] if payload[:name] != "SCHEMA" && payload[:sql].start_with?("SELECT")
+    end
+
+    result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.call(account:, queue_issue_ids: [ chain.last.id ])
+    end
+
+    expect(result.sole.root).to eq(chain.first)
+    expect(queries.size).to be <= 40
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "counts every reachable queue issue while bounding rendered path samples" do
     root = issue(1)
     blocked = 30.times.map do |number|
