@@ -197,14 +197,41 @@ excluded from prompt instructions.
 
 ## Issue-Prompt Assembly (#3377)
 
-The create_pr issue-implementation prompt — previously assembled by
-`Prompts::BuildForIssue` via string concatenation — now flows through
-`PromptAssembly::Build` at runner time. `AgentRun#prompt_for_issue` delegates to
-`PromptAssembly::BuildIssuePrompt`, which pre-fetches the issue comment thread
-once and assembles ordered, provenance-tracked sections:
+Create_pr prompts — including issue-implementation and custom-prompt runs —
+flow through `PromptAssembly::Build` at runner time. `AgentRun#prompt_for_issue`
+delegates to `PromptAssembly::BuildIssuePrompt`, which pre-fetches the issue
+comment thread once and assembles the following ordered, provenance-tracked
+sections. `AgentRun#effective_prompt` delegates custom-prompt create_pr runs to
+`PromptAssembly::BuildCustomPrompt`, which preserves the custom task and also
+adds the required posture section without issue-specific context.
 
 - `issue_task` (required) — the rendered `coding.issue_implementation` template
   (title, body, and instructions).
+- `effective_merge_review_posture` (required) — the execution-time effective
+  auto-merge mode, including merge-phase authorization, bot-authored merge
+  permission, enabled review methods, manual-review state, applicable
+  human-approval posture, and the enforced TDD gate. For an assembled run, the
+  TDD gate uses its persisted `tdd_phase`; a `nil` phase renders `off` because
+  that run has no TDD write boundary, even when the project setting changes
+  after queueing. Prompts assembled without a run render the current project
+  TDD mode. The remaining values resolve through the same effective Project
+  predicates and phase authorization the merge/review runtime uses
+  (`auto_merge_enabled?`,
+  `auto_merge_bot_authored?`, `review_enabled?`,
+  and `Automation::FeatureActivation.phase_authorized?`), never the raw stored
+  columns. Bot-authored merge permission follows the human-PR merge path:
+  label-mode projects require mode `all`, while paid-local-activation projects
+  enable that path whenever auto-merge is enabled, including
+  `dependabot_only`. A paid-local `dependabot_only` project therefore renders
+  bot merge as permitted when its owner-approval exemption is enabled, and
+  renders owner approval as required for ordinary human-authored PRs. An
+  upstream-target project holding legacy enabled values or a project with its
+  merge phase disabled sees the gated-off posture. Its
+  provenance records these non-secret values, so operators can audit the
+  policy visible to a run when project settings changed after queueing. The
+  rendered section keeps normal CI, bot review, screenshots, and merge checks
+  explicit, and explains that automatic merge does not override a human-only
+  decision, repository protection, or `paid-hold-review`.
 - `trusted_comments` — collaborator comments, trust-classified via
   `Prompts::BuildForIssue.fetch_trusted_comments`; untrusted authors are
   excluded. If retrieval fails, the section remains empty and its skipped

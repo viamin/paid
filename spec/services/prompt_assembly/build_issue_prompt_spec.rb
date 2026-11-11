@@ -3,7 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
-# @spec PROMPT-ASSEMBLY-014, PROMPT-ASSEMBLY-015, PROMPT-ASSEMBLY-024
+# @spec PROMPT-ASSEMBLY-014, PROMPT-ASSEMBLY-015, PROMPT-ASSEMBLY-024, PROMPT-ASSEMBLY-025
 RSpec.describe PromptAssembly::BuildIssuePrompt do
   let(:configured_containers) { [] }
 
@@ -34,16 +34,18 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
       content: "", sections: [], total_tokens: 0, queries_made: 0
     )
+    allow(Automation::FeatureActivation).to receive(:phase_authorized?).and_return(true)
   end
 
-  def assembly_project(detected_languages: [], feature_flags_pattern: false)
+  def assembly_project(detected_languages: [], feature_flags_pattern: false, paid_local_activation: true)
     OpenStruct.new(
       full_name: "owner-1/repo-1",
       account: OpenStruct.new(id: 7),
       allowed_github_usernames: [ "viamin" ],
       service_containers: service_containers_relation,
       lid_mode: nil,
-      detected_languages: detected_languages
+      detected_languages: detected_languages,
+      tdd_mode: "off"
     ).tap do |p|
       def p.trusted_github_user?(login)
         return false if login.nil?
@@ -54,6 +56,7 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         login == "paid-code-reviewer[bot]"
       end
 
+      p.define_singleton_method(:paid_local_activation?) { paid_local_activation }
       p.define_singleton_method(:uses_feature_flags_pattern?) { feature_flags_pattern }
     end
   end
@@ -78,7 +81,8 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       allowed_github_usernames: [ "viamin" ],
       service_containers: service_containers,
       lid_mode: nil,
-      detected_languages: detected_languages
+      detected_languages: detected_languages,
+      tdd_mode: "off"
     ).tap do |p|
       def p.trusted_github_user?(login)
         return false if login.nil?
@@ -89,8 +93,60 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         login == "paid-code-reviewer[bot]"
       end
 
+      p.define_singleton_method(:paid_local_activation?) { true }
       p.define_singleton_method(:uses_feature_flags_pattern?) { false }
     end
+  end
+
+  # Mirrors the effective Project predicates (including the upstream-mode
+  # gates) so the double resolves posture values the way the real model does.
+  def configure_merge_posture(project, settings)
+    upstream_target = settings.fetch(:upstream_target, false)
+    project.define_singleton_method(:auto_merge_mode) { settings[:auto_merge_mode] }
+    project.define_singleton_method(:auto_merge_enabled?) do
+      !upstream_target && settings[:auto_merge_mode] != "off"
+    end
+    project.define_singleton_method(:auto_merge_bot_authored?) do
+      !upstream_target && settings[:bot_authored_pr_auto_merge] == true
+    end
+    project.define_singleton_method(:review_enabled?) do
+      !upstream_target && settings[:review_settings]["enabled"] == true
+    end
+    project.define_singleton_method(:effective_review_settings) { settings[:review_settings] }
+    project.tdd_mode = settings[:tdd_mode]
+  end
+
+  def all_merge_settings
+    {
+      auto_merge_mode: "all",
+      bot_authored_pr_auto_merge: true,
+      review_settings: {
+        "enabled" => true,
+        "methods" => {
+          "paid_agent" => { "enabled" => true },
+          "manual" => { "enabled" => false }
+        }
+      },
+      tdd_mode: "off"
+    }
+  end
+
+  def queued_merge_settings
+    {
+      auto_merge_mode: "off",
+      bot_authored_pr_auto_merge: false,
+      review_settings: { "enabled" => false, "methods" => {} },
+      tdd_mode: "off"
+    }
+  end
+
+  def apply_execution_settings!(settings, project:)
+    settings.merge!(
+      auto_merge_mode: "dependabot_only",
+      review_settings: { "enabled" => true, "methods" => { "manual" => { "enabled" => true } } },
+      tdd_mode: "strict"
+    )
+    project.tdd_mode = settings[:tdd_mode]
   end
 
   describe ".call" do
@@ -359,6 +415,199 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       result = described_class.call(issue: issue, project: project)
 
       expect(result.sections.map(&:key)).to include(:safety_rules)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders and records the effective merge posture at execution time" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings)
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Auto-merge mode: all")
+      expect(result.text).to include("Bot-authored PR auto-merge: permitted")
+      expect(result.text).to include("Enabled review methods: paid_agent")
+      expect(result.text).to include("Manual review: disabled")
+      expect(section).to be_required
+      expect(section.metadata).to include(auto_merge_mode: "all", bot_authored_pr_auto_merge: true)
+      expect(section.metadata).to include(review_methods: [ "paid_agent" ], manual_review_enabled: false, tdd_mode: "off")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "uses the current settings rather than a queue-time posture" do
+      project = assembly_project
+      settings = queued_merge_settings
+      configure_merge_posture(project, settings)
+      queued_auto_merge_mode = project.auto_merge_mode
+      apply_execution_settings!(settings, project: project)
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(queued_auto_merge_mode).to eq("off")
+      expect(result.text).to include("Auto-merge mode: dependabot_only")
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(result.text).to include("Enabled review methods: manual")
+      expect(result.text).to include("Manual review: enabled")
+      expect(result.text).to include("TDD gate: strict")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders an off posture with disabled review automation" do
+      project = assembly_project
+      configure_merge_posture(project, {
+        auto_merge_mode: "off",
+        bot_authored_pr_auto_merge: false,
+        review_settings: { "enabled" => false, "methods" => { "manual" => { "enabled" => true } } },
+        tdd_mode: "non_strict"
+      })
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to include("Auto-merge mode: off")
+      expect(result.text).to include("Enabled review methods: none")
+      expect(result.text).to include("Manual review: disabled")
+      expect(result.text).to include("TDD gate: non_strict")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "does not permit bot-authored PR auto-merge while auto-merge is off" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(auto_merge_mode: "off"))
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(section.metadata).to include(auto_merge_mode: "off", bot_authored_pr_auto_merge: false)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders paid-local Dependabot-only bot and human PR approval posture" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(auto_merge_mode: "dependabot_only"))
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Bot-authored PR auto-merge: permitted")
+      expect(result.text).to include("Human approval: required for ordinary human-authored PRs before automatic merge")
+      expect(section.metadata).to include(auto_merge_mode: "dependabot_only", bot_authored_pr_auto_merge: true)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "does not permit bot-authored PR auto-merge for label-mode Dependabot-only projects" do
+      project = assembly_project(paid_local_activation: false)
+      configure_merge_posture(project, all_merge_settings.merge(auto_merge_mode: "dependabot_only"))
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(result.text).to include("Human approval: not applicable to the Dependabot-only merge path")
+      expect(section.metadata).to include(auto_merge_mode: "dependabot_only", bot_authored_pr_auto_merge: false)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "reports the persisted TDD phase when the current project setting changes" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(tdd_mode: "strict"))
+      agent_run = create(:agent_run, goal: "create_pr", tdd_phase: "test_writing")
+      project.tdd_mode = "off"
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("TDD gate: test_writing")
+      expect(result.text).not_to include("TDD gate: off")
+      expect(section.metadata).to include(tdd_mode: "test_writing")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "reports no TDD gate for a run without a persisted phase" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(tdd_mode: "strict"))
+      agent_run = create(:agent_run, goal: "create_pr", tdd_phase: nil)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("TDD gate: off")
+      expect(section.metadata).to include(tdd_mode: "off")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders auto-merge as off when the merge phase is disabled" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings)
+      allow(Automation::FeatureActivation).to receive(:phase_authorized?)
+        .with(project: project, capability: "auto_merge")
+        .and_return(false)
+
+      result = described_class.call(issue: issue, project: project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("Auto-merge mode: off")
+      expect(result.text).to include("Auto-merge automation: disabled by merge phase")
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(section.metadata).to include(
+        auto_merge_mode: "off",
+        auto_merge_phase_authorized: false,
+        bot_authored_pr_auto_merge: false
+      )
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "treats null review methods as no enabled review methods" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(
+        review_settings: { "enabled" => true, "methods" => nil }
+      ))
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to include("Enabled review methods: none")
+      expect(result.text).to include("Manual review: disabled")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "renders the runtime-gated posture for an upstream-target project with legacy stored settings" do
+      upstream_project = create(:project, :upstream_pr_target)
+      # The save-time gate rejects enabling these while upstream, but legacy or
+      # directly persisted values can remain stored; the runtime predicates
+      # (auto_merge_enabled?, auto_merge_bot_authored?, review_enabled?) still
+      # disable them, and the posture must report the gated-off policy.
+      upstream_project.update_columns(
+        auto_merge_mode: "all",
+        allow_bot_authored_pr_auto_merge: true,
+        review_settings: { "enabled" => true, "methods" => { "manual" => { "enabled" => true } } }
+      )
+      upstream_project.reload
+
+      result = described_class.call(issue: issue, project: upstream_project)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(upstream_project.auto_merge_mode).to eq("all")
+      expect(result.text).to include("Auto-merge mode: off")
+      expect(result.text).to include("Bot-authored PR auto-merge: not permitted")
+      expect(result.text).to include("Enabled review methods: none")
+      expect(result.text).to include("Manual review: disabled")
+      expect(section.metadata).to include(
+        auto_merge_mode: "off",
+        bot_authored_pr_auto_merge: false,
+        review_methods: [],
+        manual_review_enabled: false
+      )
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "cannot be suppressed by a project prompt profile override" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :effective_merge_review_posture ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.sections.map(&:key)).to include(:effective_merge_review_posture)
     end
   end
 

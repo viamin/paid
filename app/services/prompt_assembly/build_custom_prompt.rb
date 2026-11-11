@@ -7,15 +7,16 @@
 #
 # The custom task text is preserved verbatim as a `task.custom` section
 # (required). Required safety and settings-derived sections
-# (`service_environment`, `safety_rules`, and TDD boundaries when the run is
+# (`effective_merge_review_posture` for create-PR runs,
+# `service_environment`, `safety_rules`, and TDD boundaries when the run is
 # TDD-governed) are always contributed and marked `required: true`, so profile
-# suppression or template overrides cannot omit them. Optional sections
-# (style guides, project conventions, LID workflow, marketplace attachments)
-# are added when their backing project state is present, matching the
-# create_pr issue path.
+# suppression or template overrides cannot omit them. Optional sections (style
+# guides, project conventions, LID workflow, marketplace attachments) are
+# added when their backing project state is present, matching the create_pr
+# issue path.
 #
 # @spec PROMPT-ASSEMBLY-019, PROMPT-ASSEMBLY-020, PROMPT-ASSEMBLY-021,
-#       PROMPT-ASSEMBLY-022
+#       PROMPT-ASSEMBLY-022, PROMPT-ASSEMBLY-025
 #
 # @example
 #   result = PromptAssembly::BuildCustomPrompt.call(
@@ -69,8 +70,13 @@ class PromptAssembly::BuildCustomPrompt
       PromptAssembly::Sections::MarketplaceAttachments.call(context),
       PromptAssembly::Sections::SafetyRules.call(context)
     ]
+    sections.insert(1, PromptAssembly::Sections::EffectiveMergeReviewPosture.call(context)) if create_pr_run?
     sections << PromptAssembly::Sections::TddBoundaries.call(context) if agent_run&.tdd_governed?
     sections
+  end
+
+  def create_pr_run?
+    agent_run&.goal == "create_pr"
   end
 
   def task_custom_section
