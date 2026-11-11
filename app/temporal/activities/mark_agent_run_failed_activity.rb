@@ -115,7 +115,7 @@ module Activities
     PUSH_PERMISSION_COMMENT_MARKER = "<!-- paid: push-permission-rejection -->"
 
     def timeout_error_with_diagnostics(agent_run, error)
-      return error unless error == "Activity task timed out"
+      return error unless error == AgentRun::ACTIVITY_TIMEOUT_MESSAGE
       return error unless agent_run.analyze_issue_goal?
 
       agent_run.issue_analysis_timeout_message(error)

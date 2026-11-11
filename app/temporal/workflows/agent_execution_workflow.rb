@@ -173,7 +173,7 @@ module Workflows
 
         if goal == "analyze_issue" && continuation_mode == "acceptance_audit"
           run_activity(Activities::RunAcceptanceAuditActivity,
-            { agent_run_id: agent_run_id }, start_to_close_timeout: issue_goal_timeout_seconds,
+            { agent_run_id: agent_run_id }, start_to_close_timeout: [ issue_goal_timeout_seconds, 330 ].max,
             retry_policy: NO_RETRY)
           agent_step_succeeded = true
           return { success: true, agent_run_id: agent_run_id, acceptance_audit: true }

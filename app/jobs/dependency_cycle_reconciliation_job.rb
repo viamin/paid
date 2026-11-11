@@ -29,9 +29,10 @@ class DependencyCycleReconciliationJob < ApplicationJob
     accounts = account_page(after_account_id, through_account_id)
     last_successful_account_id, reconciled_count, unavailable_count = reconcile_page(accounts)
     log_page(started_at, allocated_before, accounts, after_account_id, through_account_id, reconciled_count, unavailable_count)
-    return unless next_page?(last_successful_account_id, through_account_id)
+    continuation_cursor = last_successful_account_id || after_account_id
+    return unless next_page?(continuation_cursor, through_account_id)
 
-    enqueue_continuation(last_successful_account_id, through_account_id,
+    enqueue_continuation(continuation_cursor, through_account_id,
       unavailable_retries: unavailable_count.positive? ? unavailable_retries + 1 : 0)
   end
 

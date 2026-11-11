@@ -561,16 +561,25 @@ an advance attempt may correctly report `not_stalled`. A bounded periodic
 acceptance-audit sweep revisits open partial closeouts after merge. For active
 auto-pick projects, it queues a report-only `analyze_issue` acceptance audit
 when the current assessment is missing or stale and ordinary continuation
-guards permit it. It records at most one automatic audit attempt per issue and
-closeout-evidence digest, including terminal attempts, so a failed audit does
-not loop. A later merged PR or no-code outcome creates a new evidence digest
-and can earn one new audit. The existing auto-pick control governs this work;
+guards permit it. It records at most three audit attempts per source revision
+— the evidence generation — including operator-requested attempts and attempts
+made under an earlier approved-intent revision, because an issue-body edit
+changes the approved intent without changing the evidence. Only transport and
+timeout failures are eligible for another automatic attempt, including a
+Temporal activity timeout that ends the audit before it records a typed
+failure and an exhausted runner pool that never reached one; retries wait 30
+and then 60 minutes. A completed, cancelled, or non-transient failed audit
+stops automatic attempts for that approved-intent revision. New terminal or
+technical evidence may permit a new bounded audit, and a changed approved
+intent may permit a further attempt against the same source revision without
+resetting that revision's attempt budget.
+The existing auto-pick control governs this work;
 there is no separate audit setting. The GitHub-sync repair leaves a gap-free,
 audit-pending source issue out of manual review while its non-closing PR is
 open. After merge it places the source issue in this lane rather than treating
 its premerge source-closure disposition as final acceptance. Operator-requested
-audits use the same durable request and count toward the one-attempt limit for
-that generation.
+audits use the same durable request and count toward the attempt limit for that
+generation.
 
 The acceptance-audit sweep processes one project and at most 50 candidate
 issues per job. Continuations carry stable project and issue IDs, with a
@@ -726,7 +735,15 @@ reconciler records any follow-up owner or operator prerequisite as durable
 evidence; the audit still does not create a follow-up run, change the issue
 state, create a pull request, or authorize implementation. The normal
 request/run lifecycle remains the durable progress, cancellation, failure, and
-retry surface, and the existing one-open-request and active-run constraints
+retry surface. Audits use the selected runner and configured fallback runners,
+with a per-runner limit and an overall deadline. A candidate that cannot serve
+the request at all is skipped rather than failed, so an unavailable fallback
+neither masks another runner's failure nor turns a retryable transport failure
+into a permanent one. A permanent failure from any candidate — an expired
+credential or a violated model policy — outranks an earlier transport failure,
+so the audit reports the actionable cause instead of being retried as though
+it were transient. The existing one-open-request
+and active-run constraints
 deduplicate audit requests for an evidence generation. Deduplication only
 reuses an open request whose persisted mode and run goal match the requested
 operation: a request that would authorize a different operation is refused with

@@ -208,9 +208,12 @@ module Issues
       }
       return snapshot unless continuation_mode == "acceptance_audit"
 
-      snapshot.merge("source_revision" => PartialCloseouts::Assessment.source_revision_for(
-        issue, closeout_evidence: evidence, technical_evidence: status.technical_evidence
-      ))
+      snapshot.merge(
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(
+          issue, closeout_evidence: evidence, technical_evidence: status.technical_evidence
+        ),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue)
+      )
     end
 
     def request_evidence_digest(status)
