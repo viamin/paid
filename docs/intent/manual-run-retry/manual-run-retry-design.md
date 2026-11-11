@@ -11,7 +11,10 @@ prefix: MANUAL-RUN-RETRY
 > `eager-queue-seeding` segment (EAGER-QUEUE-007) covers the equivalent
 > backoff re-enqueue for issue-attached runs; this segment exists because
 > every mechanism there is issue-driven and does nothing for an issue-less
-> run.
+> run. This is also the first implementation slice of the shared
+> `agent-run-retry-contract` segment (AGENT-RETRY-013): it already
+> satisfies that contract's cross-cutting safety requirements as shipped,
+> so adoption required no change here.
 
 ## Purpose
 

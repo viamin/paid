@@ -102,7 +102,7 @@ RSpec.describe PartialCloseouts::Assessment do
     pull_request
     run = create(:agent_run, :completed, project:, issue:, pull_request_number: pull_request.github_number)
     assessment = {
-      "source_revision" => Issues::CloseoutEvidence.call(issue).digest,
+      "source_revision" => described_class.source_revision_for(issue),
       "intent_revision" => described_class.intent_revision_for(issue),
       "assessed_at" => Time.current.iso8601,
       "criteria" => [ { "criterion" => "Measure latency", "state" => "satisfied" } ],
@@ -114,6 +114,23 @@ RSpec.describe PartialCloseouts::Assessment do
 
     expect(result.next_action.fetch("kind")).to eq("close_on_github")
     expect(result.next_action.fetch("explanation")).to be_present
+  end
+
+  # @spec PARTIAL-CLOSEOUT-047
+  it "fails closed when persisted input coverage has an invalid shape" do
+    pull_request
+    run = create(:agent_run, :completed, project:, issue:)
+    assessment = described_class.snapshot(run, {
+      "gaps" => [], "criteria" => [ { "criterion" => "Measure latency", "state" => "satisfied" } ],
+      "input_coverage" => "invalid"
+    })
+    run.update!(reconciliation: { "assessment" => assessment })
+
+    result = described_class.call(issue)
+
+    expect(result.closeout_state).to eq("unmet_criteria")
+    expect(result.next_action.fetch("kind")).to eq("supply_evidence")
+    expect(PartialCloseouts::SourceClosureDisposition.call(issue:, assessment:).fetch("disposition")).to eq("track")
   end
 
   # @spec PARTIAL-CLOSEOUT-023 — defense-in-depth: a `criteria` array that

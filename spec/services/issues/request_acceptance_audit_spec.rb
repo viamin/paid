@@ -63,8 +63,8 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     )
   end
 
-  # @spec PARTIAL-CLOSEOUT-042
-  it "keeps the closeout digest while snapshotting technical evidence freshness" do
+  # @spec PARTIAL-CLOSEOUT-042 PARTIAL-CLOSEOUT-047
+  it "binds the audit request to source and technical evidence freshness" do
     merged_partial_pr
     source_run = create(:agent_run, :completed, project:, issue:, goal: "analyze_issue",
       pull_request_url: nil, pull_request_number: nil)
@@ -74,7 +74,9 @@ RSpec.describe Issues::RequestAcceptanceAudit do
 
     result = described_class.call(issue:, actor: user)
 
-    expect(result.request.evidence_digest).to eq(Issues::CloseoutEvidence.call(issue).digest)
+    expect(result.request.evidence_digest).to eq(
+      PartialCloseouts::Assessment.source_revision_for(issue, technical_evidence: [])
+    )
     expect(result.request.evidence.fetch("source_revision"))
       .to eq(PartialCloseouts::Assessment.source_revision_for(issue))
     expect(AgentRuns::RecheckIssueEligibility.call(result.agent_run)).to be(false)

@@ -4,7 +4,7 @@ require "rails_helper"
 require "ostruct"
 
 # @spec PROMPT-ASSEMBLY-019, PROMPT-ASSEMBLY-020, PROMPT-ASSEMBLY-021,
-#       PROMPT-ASSEMBLY-022
+#       PROMPT-ASSEMBLY-022, PROMPT-ASSEMBLY-025
 RSpec.describe PromptAssembly::BuildCustomPrompt do
   let(:project) { create(:project, allowed_github_usernames: [ "viamin" ]) }
   let(:agent_run) { create(:agent_run, project: project, custom_prompt: "Do the thing") }
@@ -80,6 +80,46 @@ RSpec.describe PromptAssembly::BuildCustomPrompt do
       result = described_class.call(custom_prompt: "Do the thing", project: project, agent_run: agent_run)
 
       expect(result.sections.map(&:key)).to include(:service_environment)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "includes the effective merge and review posture for create-PR custom prompts" do
+      result = described_class.call(custom_prompt: "Do the thing", project: project, agent_run: agent_run)
+
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+      expect(result.text).to include("# Effective Merge and Review Posture")
+      expect(section).to be_required
+      expect(section.trust_level).to eq(:trusted)
+      expect(section.metadata).to include(
+        :auto_merge_mode,
+        :auto_merge_phase_authorized,
+        :bot_authored_pr_auto_merge,
+        :review_methods,
+        :manual_review_enabled,
+        :human_approval,
+        :tdd_mode
+      )
+      expect(result.provenance[:sections].map { |entry| entry[:key] }).to include(:effective_merge_review_posture)
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "keeps the effective merge and review posture when a profile disables it" do
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :effective_merge_review_posture ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = described_class.call(custom_prompt: "Do the thing", project: project, agent_run: agent_run)
+
+      expect(result.sections.map(&:key)).to include(:effective_merge_review_posture)
+      expect(result.skipped.map { |entry| entry[:key] }).not_to include(:effective_merge_review_posture)
+    end
+
+    it "omits the effective merge and review posture for non-create-PR custom prompts" do
+      review_run = agent_run.dup
+      review_run.goal = "review"
+
+      result = described_class.call(custom_prompt: "Review the change", project: project, agent_run: review_run)
+
+      expect(result.sections.map(&:key)).not_to include(:effective_merge_review_posture)
     end
   end
 

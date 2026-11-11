@@ -209,3 +209,33 @@
   `Prompts::BuildForIssue`.
   *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
   `spec/services/prompts/build_for_issue_spec.rb`.
+
+- [x] **PROMPT-ASSEMBLY-025** — When a create_pr issue-implementation or
+  custom-prompt run is assembled, it SHALL include a required trusted section
+  that renders the
+  effective execution-time auto-merge mode and merge-phase authorization,
+  bot-authored merge permission, enabled review methods, manual-review state,
+  applicable human-approval posture, and effective TDD gate. The TDD gate
+  SHALL use a TDD-governed run's persisted phase, because that phase controls
+  its enforced write boundary even if the project setting changes after
+  queueing; a run without a persisted phase SHALL render `off`, because it has
+  no enforced TDD write boundary. Prompts assembled without a run SHALL render
+  the current project TDD mode. The non-TDD values SHALL
+  resolve through the effective runtime predicates (`auto_merge_enabled?`,
+  `auto_merge_bot_authored?`, `review_enabled?`,
+  and `Automation::FeatureActivation.phase_authorized?`), so a project whose runtime
+  gates disable automation — including an upstream-target project holding
+  legacy stored enabled values or a project with its merge phase disabled —
+  SHALL see the gated-off posture. Bot-authored merge permission and
+  human-approval posture SHALL follow the human-PR merge path: label-mode
+  projects require effective auto-merge mode `all`, while paid-local-activation
+  projects enable that path whenever effective auto-merge is enabled, including
+  `dependabot_only`. The section SHALL state that CI, bot
+  review, screenshots, and merge checks remain in force, and that auto-merge
+  never overrides a human-only decision, repository protection, or structured
+  hold. Its provenance SHALL record the resolved non-secret policy values so
+  a run can be audited after settings change between queueing and execution.
+  *Code:* `PromptAssembly::Sections::EffectiveMergeReviewPosture`,
+  `PromptAssembly::BuildIssuePrompt`, `PromptAssembly::BuildCustomPrompt`.
+  *Test:* `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/services/prompt_assembly/build_custom_prompt_spec.rb`.

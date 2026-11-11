@@ -76,6 +76,21 @@
   *Tests:* `spec/config/good_job_configuration_spec.rb`.
   *Code:* `Paid::GoodJobConfig`, `config/initializers/good_job.rb`.
 
+- [x] **RAILS-CONTROL-PLANE-014** — When the development web process exits 137,
+  its wrapper SHALL restart it with bounded backoff without stopping the
+  Temporal workers. Other exit codes and repeated exit 137 SHALL surface as
+  failures. Development SHALL keep GoodJob in the web process to avoid the
+  memory overhead of another Rails boot.
+  *Tests:* `spec/lib/dev_script_spec.rb`.
+  *Code:* `Procfile.dev`, `bin/dev-web`.
+
+- [x] **RAILS-CONTROL-PLANE-015** — While the development supervisor monitors
+  Overmind, it SHALL periodically record Puma RSS, Temporal worker RSS, host
+  available memory, workspace cgroup usage and limit, and the OOM kill counter
+  without starting another long-running process.
+  *Tests:* `spec/lib/dev_script_spec.rb`.
+  *Code:* `bin/lib/dev_supervisor.sh`.
+
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping
   every cron enqueue with a `(cron_key, cron_at)` pair guarded by the unique

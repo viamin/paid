@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -475,6 +475,15 @@ arrows:
     taxonomy: foundation
     status: OK
     audited: 2026-08-04
+  agent-run-retry-contract:
+    title: Agent Run Retry Contract
+    path: docs/intent/agent-run-retry-contract/agent-run-retry-contract-design.md
+    specs: docs/intent/agent-run-retry-contract/agent-run-retry-contract-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    audited: 2026-11-11
+    next: "Second migration slice (timed-out-issue-goal retry, in-place rate-limit recovery, or Apple verification attempts) and the acceptance-audit multi-attempt adapter are tracked as separate follow-up work."
   postgresql-persistence:
     title: PostgreSQL Persistence
     path: docs/intent/postgresql-persistence/postgresql-persistence-design.md

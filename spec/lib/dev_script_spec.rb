@@ -94,6 +94,118 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "keeps GoodJob in the web process without enabling unconditional Overmind restarts" do # @spec RAILS-CONTROL-PLANE-014
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "SKIP_DEV_CLEANUP" => "1" }
+      _stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(overmind_invocation_log(dir)).to include("ARGS=start -f Procfile.dev -F config/overmind.tmux.conf")
+      expect(overmind_invocation_log(dir)).not_to include("--auto-restart")
+      procfile = File.read(File.expand_path("../../Procfile.dev", __dir__))
+      expect(procfile).to include("web: bin/dev-web")
+      expect(procfile).not_to include("jobs:")
+    end
+  end
+
+  it "stops after repeated exit 137" do # @spec RAILS-CONTROL-PLANE-014
+    with_dev_web do |dir|
+      write_executable(File.join(dir, "bin", "rails"), <<~BASH)
+        #!/usr/bin/env bash
+        count=$(cat count 2>/dev/null || echo 0)
+        count=$((count + 1))
+        echo "$count" > count
+        exit 137
+      BASH
+      _stdout, stderr, status = run_dev_web(dir)
+      expect(status.exitstatus).to eq(137)
+      expect(File.read(File.join(dir, "count"))).to eq("4\n")
+      expect(stderr).to include("stopping automatic recovery")
+    end
+  end
+
+  it "passes through a nonrecoverable web exit" do # @spec RAILS-CONTROL-PLANE-014
+    with_dev_web do |dir|
+      write_executable(File.join(dir, "bin", "rails"), <<~BASH)
+        #!/usr/bin/env bash
+        echo run >> count
+        exit 1
+      BASH
+      _stdout, _stderr, status = run_dev_web(dir)
+      expect(status.exitstatus).to eq(1)
+      expect(File.readlines(File.join(dir, "count"))).to eq([ "run\n" ])
+    end
+  end
+
+  it "recovers from an isolated exit 137" do # @spec RAILS-CONTROL-PLANE-014
+    with_dev_web do |dir|
+      write_executable(File.join(dir, "bin", "rails"), <<~BASH)
+        #!/usr/bin/env bash
+        count=$(cat count 2>/dev/null || echo 0)
+        count=$((count + 1))
+        echo "$count" > count
+        if [ "$count" -eq 1 ]; then exit 137; fi
+        exit 0
+      BASH
+      _stdout, _stderr, status = run_dev_web(dir)
+      expect(status.exitstatus).to eq(0)
+      expect(File.read(File.join(dir, "count"))).to eq("2\n")
+    end
+  end
+
+  it "stops the web child on TERM" do # @spec RAILS-CONTROL-PLANE-014
+    assert_web_stops_on("TERM")
+  end
+
+  it "stops the web child on INT" do # @spec RAILS-CONTROL-PLANE-014
+    assert_web_stops_on("INT")
+  end
+
+  def assert_web_stops_on(signal)
+    with_dev_web do |dir|
+      write_executable(File.join(dir, "bin", "rails"), <<~BASH)
+        #!/usr/bin/env bash
+        echo "$$"
+        exec sleep 30
+      BASH
+      Open3.popen3(File.join(dir, "bin", "dev-web"), chdir: dir) do |stdin, stdout, _stderr, waiter|
+        Timeout.timeout(5) do
+          child_pid = Integer(stdout.gets)
+          Process.kill(signal, waiter.pid)
+          expect(waiter.value.exitstatus).to eq(0)
+          expect { Process.kill(0, child_pid) }.to raise_error(Errno::ESRCH)
+        end
+      ensure
+        stdin.close unless stdin.closed?
+        Process.kill("KILL", waiter.pid) if waiter.alive?
+      end
+    end
+  end
+
+  it "samples memory in the existing supervisor" do # @spec RAILS-CONTROL-PLANE-015
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      prepare_script_fixture(dir)
+      FileUtils.mkdir_p(File.join(dir, "log", "dev-update"))
+      write_executable(File.join(dir, "stubbin", "ps"), <<~BASH)
+        #!/usr/bin/env bash
+        cat <<'OUTPUT'
+        ruby 100 puma 8.0.2 (tcp://0.0.0.0:3000) [paid]
+        ruby 200 ruby bin/temporal_worker
+        ruby 300 ruby bin/temporal_worker
+        ruby 400 unrelated ruby process
+        OUTPUT
+      BASH
+
+      _stdout, stderr, status = Open3.capture3({ "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }, "bash", "-c",
+        "source bin/lib/dev_supervisor.sh; dev_supervisor_log_memory_sample", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      sample = File.read(File.join(dir, "log", "dev-update", "overmind.log"))
+      expect(sample).to match(/memory_sample puma_rss_kb=100 temporal_rss_kb=500 host_available_kb=(?:\d+|unknown) cgroup_current_bytes=(?:\d+|unknown) cgroup_max_bytes=(?:\d+|unknown|max) cgroup_oom_kills=(?:\d+|unknown)/)
+    end
+  end
+
   it "exits cleanly when overmind is already running and healthy" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, overmind: { running: true }, tmux: { pane_dead: false })
@@ -241,6 +353,18 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     FileUtils.chmod("+x", path)
   end
 
+  def with_dev_web
+    Dir.mktmpdir("dev-web-spec", exec_tmpdir) do |dir|
+      FileUtils.mkdir_p(File.join(dir, "bin"))
+      FileUtils.cp(File.expand_path("../../bin/dev-web", __dir__), File.join(dir, "bin", "dev-web"))
+      yield dir
+    end
+  end
+
+  def run_dev_web(dir)
+    Open3.capture3({ "PAID_WEB_RESTART_DELAY_SECONDS" => "0" }, File.join(dir, "bin", "dev-web"), chdir: dir)
+  end
+
   def prepare_script_fixture(dir, overmind: {}, tmux: {})
     overmind_running = overmind.fetch(:running, false)
     overmind_process_dead = overmind.fetch(:process_dead, false)
@@ -270,6 +394,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
         #!/usr/bin/env bash
         {
           printf 'CMD=%s\n' "$1"
+          printf 'ARGS=%s\n' "$*"
           env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS)=' || true
           printf '%s\n' '--'
         } >> "#{dir}/stubbin/overmind-env.log"

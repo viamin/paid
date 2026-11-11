@@ -25,6 +25,14 @@
 
 ## Worker Resource Sizing
 
+- [x] **TEMPORAL-ORCHESTRATION-013** — When a Temporal worker receives a first
+  INT or TERM signal, it SHALL request graceful cancellation outside Ruby's
+  signal trap context and remove its readiness marker. A watchdog SHALL force
+  exit when cancellation blocks. A repeated signal SHALL remove readiness and
+  force exit.
+  *Tests:* `spec/lib/paid/temporal_worker_shutdown_spec.rb`.
+  *Code:* `Paid::TemporalWorkerShutdown`, `bin/temporal_worker`.
+
 - [x] **TEMPORAL-ORCHESTRATION-002** — The orchestration layer SHALL derive the
   minimum database connection pool for Temporal workers from the selected worker
   mode, activity-slot counts, and heartbeat-thread overhead.
