@@ -39,6 +39,10 @@ Rails-adapted reference implementation — adds `*.rb` to the scan and `vendor`,
 `tmp`, `.bundle`, `storage` to the excludes, plus `--color=never` to keep ANSI
 escapes out of the line parser), declared in `CLAUDE.md` under `## LID Tooling`.
 
+For Paid RDRs, `workflow.md` also carries a small Paid-specific handoff to
+`docs/rdrs/future-authoring-contract.md`. The RDR remains decision evidence;
+the LID arrow owns implementation intent.
+
 ## How to use it (non-Claude tools)
 
 1. Read `workflow.md` start-to-finish once — it is the procedure Claude Code

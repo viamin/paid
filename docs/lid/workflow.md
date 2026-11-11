@@ -27,6 +27,16 @@ If drift is detected, fix the docs first, then implement. A resumption check pre
 
 ## Mode-aware triggering
 
+## Paid RDR handoff
+
+When an architectural decision needs an RDR, use Paid's
+[`docs/rdrs/future-authoring-contract.md`](../rdrs/future-authoring-contract.md)
+for the decision/evidence record and its owner-acceptance boundary. That RDR is
+not a substitute for this workflow: before runtime implementation, reconcile
+the HLD and create or update the owning LLD and EARS claims. The RDR links to
+those normative implementation artifacts rather than duplicating them. This is
+a Paid-specific overlay; the six phases below remain the LID procedure.
+
 Every LID project declares its mode in its instruction file (the project's `AGENTS.md`, or `CLAUDE.md` under Claude Code) under the `## LID` block's `- Mode:` bullet. Defaults to Full if the block or bullet is missing or malformed (surface a one-line warning).
 
 - **Full LID**: the workflow applies broadly — any prompt that could result in a code change is in scope.

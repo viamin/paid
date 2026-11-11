@@ -6,7 +6,7 @@ This directory contains Recommendation Decision Records for Paid's major archite
 
 RDRs are specification prompts built through iterative research and refinement. Unlike Architecture Decision Records (ADRs), which document completed decisions, RDRs evolve during the planning phase as understanding deepens and viable options crystallize into a recommended approach.
 
-The central objective is to capture both the final solution and supporting evidence to prevent purpose drift during implementation.
+The central objective is to capture both the final solution and supporting evidence to prevent purpose drift during implementation. For future records, the Paid-owned [authoring contract](future-authoring-contract.md) defines the status transitions, finalization record, LID handoff, and post-mortem trigger; it does not retrofit historical RDRs.
 
 For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
@@ -14,12 +14,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | Status | Meaning |
 |--------|---------|
-| Draft | During planning/research phase |
-| Proposed | Reviewable recommendation awaiting acceptance |
-| Accepted | Recommendation accepted but implementation not started |
-| Final | Locked, ready for or during implementation |
-| Partially Implemented | Adopted and partly shipped, with remaining implementation work tracked |
-| Implemented | Implementation complete |
+| Draft | Research or recommendation is mutable; it authorizes nothing. |
+| Proposed | Reviewable recommendation awaiting an owner decision on its exact revision. |
+| Accepted | Owner accepted the recommendation, but LID handoff is not yet implementation-eligible. |
+| Final | Accepted, finalized, and linked to HLD/LLD/EARS; ordinary guarded delivery may begin. |
+| Partially Implemented | Criterion closeout proves some criteria shipped and names every remaining owner/dependency. |
+| Implemented | Criterion closeout proves every required criterion shipped; later post-mortem is separate. |
 | Abandoned | RDR not implemented |
 | Superseded | Replaced by another RDR |
 
@@ -42,6 +42,11 @@ incomplete RDR ship safely:
 
 Issue implementations for an RDR must preserve the stated guard until the RDR's
 closeout audit marks the guarded behavior complete and safe to make default.
+
+An RDR draft, merged document, or filed implementation issue does not authorize
+runtime work. Future implementation issues may be filed early, but must carry a
+concrete RDR/LID prerequisite and explicit dependency. See the
+[authoring contract](future-authoring-contract.md#authority-and-status-transitions).
 
 ## Implementation Issues and Closeout
 
