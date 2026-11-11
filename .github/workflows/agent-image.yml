@@ -13,8 +13,10 @@ on:
       - scripts/lib/install_contract_helpers.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
+      - scripts/test-paid-journey-launch-contract.sh
       - scripts/test-agent-runner-contracts.sh
       - scripts/test-agent-runner-contracts-inner.sh
+      - .paid/journeys.md
       - app/services/containers/provision.rb
       - lib/runner_support.rb
   push:
@@ -94,8 +96,10 @@ jobs:
                 scripts/lib/install_contract_helpers.rb|\
                 scripts/test-agent-image.sh|\
                 scripts/test-agent-image-inner.sh|\
+                scripts/test-paid-journey-launch-contract.sh|\
                 scripts/test-agent-runner-contracts.sh|\
                 scripts/test-agent-runner-contracts-inner.sh|\
+                .paid/journeys.md|\
                 app/services/containers/provision.rb|\
                 lib/runner_support.rb)
                   printf '%s\n' "$path"
@@ -480,6 +484,10 @@ jobs:
       - name: Smoke test paid-agent image
         if: steps.changes.outputs.image_relevant == 'true'
         run: ./scripts/test-agent-image.sh
+
+      - name: Journey launch-contract smoke test
+        if: steps.changes.outputs.image_relevant == 'true'
+        run: ./scripts/test-paid-journey-launch-contract.sh
 
       - name: Runner-contract smoke test
         if: steps.changes.outputs.image_relevant == 'true'

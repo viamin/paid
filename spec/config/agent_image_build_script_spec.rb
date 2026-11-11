@@ -15,6 +15,9 @@ end
 class AgentImageFetchHelper < Pathname
 end
 
+class PaidJourneyLaunchContract < Pathname
+end
+
 class RemoteDockerSetupGuide < Pathname
 end
 
@@ -152,6 +155,26 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,runner_contract_smoke_test")
       expect(workflow_source).to include("uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2")
       expect(workflow_source).to include("path: tmp/agent-image-metadata.json")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "runs the Paid journey launch contract in the built agent image" do
+      expect(workflow_source).to include("- .paid/journeys.md")
+      expect(workflow_source).to include("scripts/test-paid-journey-launch-contract.sh")
+      expect(workflow_source).to include("name: Journey launch-contract smoke test")
+      expect(workflow_source).to include("run: ./scripts/test-paid-journey-launch-contract.sh")
+    end
+  end
+
+  describe PaidJourneyLaunchContract do
+    subject(:script_source) { Rails.root.join("scripts/test-paid-journey-launch-contract.sh").read }
+
+    # @spec LIVE-PREVIEW-012
+    it "boots the launch command documented by the journey guide inside paid-agent" do
+      expect(script_source).to include('docker run --rm')
+      expect(script_source).to include('sed -n')
+      expect(script_source).to include('bundle install')
+      expect(script_source).to include('curl --fail --silent --show-error http://127.0.0.1:3000/up')
     end
   end
 

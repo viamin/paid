@@ -116,7 +116,9 @@
   `db/migrate/20261111051641_add_seed_owner_to_accounts.rb`.
   *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
   `spec/services/screenshots/seed_data/paid_journey_spec.rb`,
-  `spec/system/paid_project_journey_spec.rb`.
+  `spec/system/paid_project_journey_spec.rb`,
+  `spec/config/agent_image_build_script_spec.rb`,
+  `scripts/test-paid-journey-launch-contract.sh`.
 
 - [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
   agent run, the system SHALL publish it through the same durable key contract
