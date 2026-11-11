@@ -35,6 +35,12 @@ Paid runs separate Temporal task queues for polling and agent workloads. Poll
 work is isolated from long-running agent execution so time-sensitive repository
 polling does not compete with broader execution throughput.
 
+Worker shutdown signals request cancellation and remove the readiness marker
+from a normal Ruby thread. A watchdog starts before cancellation so a blocked
+callback cannot prevent the forced exit. A repeated signal removes readiness
+and forces exit. Signal traps avoid Ruby synchronization primitives, which
+cannot run in trap context.
+
 GoodJob still exists beside Temporal, but only for lightweight Rails job work.
 Temporal owns the durable multi-step orchestration paths.
 
