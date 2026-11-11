@@ -67,8 +67,9 @@ class TrackerConfigurationsController < ApplicationController
   end
 
   def tracker_configuration_params
+    # @spec UNIFIED-WORK-ITEMS-002
     params.require(:tracker_configuration).permit(
-      :tracker_type, :base_url, :integration_credential_id, :enabled, :sync_interval_seconds,
+      :tracker_type, :base_url, :integration_credential_id, :enabled,
       project_mapping: {}
     )
   end
