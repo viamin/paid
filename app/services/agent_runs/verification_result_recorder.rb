@@ -308,8 +308,8 @@ module AgentRuns
         {
           "id" => id,
           "reported_status" => reported_status,
-          "reported_assertions" => normalize_string_array(criterion["assertions"]),
-          "reported_steps" => normalize_string_array(criterion["steps"]),
+          "reported_assertions" => normalize_criterion_text_array(criterion["assertions"]),
+          "reported_steps" => normalize_criterion_text_array(criterion["steps"]),
           "reported_verification" => reported_verification,
           "input_receipt" => criterion_input_receipt(reported_verification),
           "state" => coverage_state(reported_status),
@@ -323,6 +323,8 @@ module AgentRuns
         next unless criterion.is_a?(Hash)
 
         criterion.deep_stringify_keys.slice("id", "status", "assertions", "steps", "verification").then do |normalized|
+          normalized["assertions"] = normalize_criterion_text_array(normalized["assertions"]) if normalized.key?("assertions")
+          normalized["steps"] = normalize_criterion_text_array(normalized["steps"]) if normalized.key?("steps")
           normalized["verification"] = normalize_criterion_verification(normalized["verification"])
           normalized.presence
         end
@@ -661,6 +663,10 @@ module AgentRuns
         text = truncate_input_text(entry.to_s.strip)
         text if text.present?
       end.first(20)
+    end
+
+    def normalize_criterion_text_array(value)
+      Array(value).filter_map { |entry| redact_input_excerpt(entry.to_s.strip) }.first(20).presence
     end
 
     def normalize_artifacts(value)

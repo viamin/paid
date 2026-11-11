@@ -102,6 +102,30 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     result.dig("evidence", "coverage").sole.fetch("input_receipt")
   end
 
+  def expect_verified_repository_receipt(result)
+    coverage = result.dig("evidence", "coverage").sole
+    expect(coverage).to include("state" => "unverified")
+    expect(coverage.fetch("reported_verification")).to include(
+      "rationale" => "Exercises settings persistence.",
+      "limitations" => [ "Does not prove all settings variants." ]
+    )
+    expect(coverage.dig("input_receipt", "state")).to eq("verified")
+    expect(coverage.dig("input_receipt", "references", 0)).to include("state" => "verified", "path" => "spec/system/settings_spec.rb")
+  end
+
+  def expect_redacted_criterion_text(result)
+    coverage = result.dig("evidence", "coverage").sole
+    expect(coverage.dig("reported_verification", "rationale")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.dig("reported_verification", "limitations").first).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.dig("reported_verification", "limitations").last.bytesize).to be <= described_class::MAX_INPUT_EXCERPT_BYTES
+    expect(coverage.dig("reported_verification", "inputs", 0, "excerpt")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect(coverage.fetch("reported_assertions")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+    expect(coverage.fetch("reported_steps")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+    reported_criterion = result.fetch("reported_acceptance_criteria").sole
+    expect(reported_criterion.fetch("assertions")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+    expect(reported_criterion.fetch("steps")).to eq([ "Contains token [REDACTED:aws_key] inline" ])
+  end
+
   def repository_receipt_payload(digest)
     {
       status: "passed",
@@ -233,14 +257,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     described_class.call(agent_run:, repo_path:, result_commit: revision)
 
     result = agent_run.reload.verification_result
-    coverage = result.dig("evidence", "coverage").sole
-    expect(coverage).to include("state" => "unverified")
-    expect(coverage.fetch("reported_verification")).to include(
-      "rationale" => "Exercises settings persistence.",
-      "limitations" => [ "Does not prove all settings variants." ]
-    )
-    expect(coverage.dig("input_receipt", "state")).to eq("verified")
-    expect(coverage.dig("input_receipt", "references", 0)).to include("state" => "verified", "path" => "spec/system/settings_spec.rb")
+    expect_verified_repository_receipt(result)
     expect(result.dig("evidence", "criterion_receipt_pilot")).to include(
       "false_claims_caught" => 0,
       "valid_claims_rejected" => { "state" => "unavailable", "reason" => "requires_human_adjudication" },
@@ -355,6 +372,9 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   it "redacts and bounds agent-supplied criterion text before persistence" do
     secret = "AKIAIOSFODNN7EXAMPLE"
     payload = repository_receipt_payload("0" * 64)
+    criterion = payload.fetch(:acceptance_criteria).sole
+    criterion[:assertions] = [ "Contains token #{secret} inline" ]
+    criterion[:steps] = [ "Contains token #{secret} inline" ]
     verification = payload.dig(:acceptance_criteria, 0, :verification)
     verification[:rationale] = "Contains token #{secret} inline"
     verification[:limitations] = [ "Contains token #{secret} inline", "x" * 3_000 ]
@@ -367,11 +387,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
 
     result = agent_run.reload.verification_result
-    coverage = result.dig("evidence", "coverage").sole
-    expect(coverage.dig("reported_verification", "rationale")).to eq("Contains token [REDACTED:aws_key] inline")
-    expect(coverage.dig("reported_verification", "limitations").first).to eq("Contains token [REDACTED:aws_key] inline")
-    expect(coverage.dig("reported_verification", "limitations").last.bytesize).to be <= described_class::MAX_INPUT_EXCERPT_BYTES
-    expect(coverage.dig("reported_verification", "inputs", 0, "excerpt")).to eq("Contains token [REDACTED:aws_key] inline")
+    expect_redacted_criterion_text(result)
     expect(result.to_json).not_to include(secret)
   end
 
