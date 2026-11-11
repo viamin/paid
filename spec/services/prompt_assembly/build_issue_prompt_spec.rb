@@ -495,20 +495,31 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
 
     # @spec PROMPT-ASSEMBLY-025
-    it "reports the effective TDD mode rather than the run's TDD phase" do
+    it "reports the persisted TDD phase when the current project setting changes" do
       project = assembly_project
-      configure_merge_posture(project, all_merge_settings)
+      configure_merge_posture(project, all_merge_settings.merge(tdd_mode: "strict"))
       agent_run = create(:agent_run, goal: "create_pr", tdd_phase: "test_writing")
-      allow(Automation::FeatureActivation).to receive(:issue_tdd_mode)
-        .with(project: project, issue: issue)
-        .and_return("strict")
+      project.tdd_mode = "off"
 
       result = described_class.call(issue: issue, project: project, agent_run: agent_run)
       section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
 
-      expect(result.text).to include("TDD gate: strict")
-      expect(result.text).not_to include("TDD gate: test_writing")
-      expect(section.metadata).to include(tdd_mode: "strict")
+      expect(result.text).to include("TDD gate: test_writing")
+      expect(result.text).not_to include("TDD gate: off")
+      expect(section.metadata).to include(tdd_mode: "test_writing")
+    end
+
+    # @spec PROMPT-ASSEMBLY-025
+    it "reports no TDD gate for a run without a persisted phase" do
+      project = assembly_project
+      configure_merge_posture(project, all_merge_settings.merge(tdd_mode: "strict"))
+      agent_run = create(:agent_run, goal: "create_pr", tdd_phase: nil)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+      section = result.sections.find { |entry| entry.key == :effective_merge_review_posture }
+
+      expect(result.text).to include("TDD gate: off")
+      expect(section.metadata).to include(tdd_mode: "off")
     end
 
     # @spec PROMPT-ASSEMBLY-025

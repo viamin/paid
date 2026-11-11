@@ -215,11 +215,15 @@
   that renders the
   effective execution-time auto-merge mode and merge-phase authorization,
   bot-authored merge permission, enabled review methods, manual-review state,
-  applicable human-approval posture, and effective TDD mode. Each value SHALL
+  applicable human-approval posture, and effective TDD gate. The TDD gate
+  SHALL use a TDD-governed run's persisted phase, because that phase controls
+  its enforced write boundary even if the project setting changes after
+  queueing; a run without a persisted phase SHALL render `off`, because it has
+  no enforced TDD write boundary. Prompts assembled without a run SHALL render
+  the current project TDD mode. The non-TDD values SHALL
   resolve through the effective runtime predicates (`auto_merge_enabled?`,
   `auto_merge_bot_authored?`, `review_enabled?`,
-  `Automation::FeatureActivation.phase_authorized?`, and
-  `Automation::FeatureActivation.issue_tdd_mode`), so a project whose runtime
+  and `Automation::FeatureActivation.phase_authorized?`), so a project whose runtime
   gates disable automation — including an upstream-target project holding
   legacy stored enabled values or a project with its merge phase disabled —
   SHALL see the gated-off posture. Bot-authored merge permission SHALL also

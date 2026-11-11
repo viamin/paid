@@ -210,12 +210,15 @@ adds the required posture section without issue-specific context.
 - `effective_merge_review_posture` (required) — the execution-time effective
   auto-merge mode, including merge-phase authorization, bot-authored merge
   permission, enabled review methods, manual-review state, applicable
-  human-approval posture, and effective TDD mode. Every value resolves through
-  the same effective Project predicates and phase authorization the
-  merge/review runtime uses (`auto_merge_enabled?`,
+  human-approval posture, and the enforced TDD gate. For an assembled run, the
+  TDD gate uses its persisted `tdd_phase`; a `nil` phase renders `off` because
+  that run has no TDD write boundary, even when the project setting changes
+  after queueing. Prompts assembled without a run render the current project
+  TDD mode. The remaining values resolve through the same effective Project
+  predicates and phase authorization the merge/review runtime uses
+  (`auto_merge_enabled?`,
   `auto_merge_bot_authored?`, `review_enabled?`,
-  `Automation::FeatureActivation.phase_authorized?`, and
-  `Automation::FeatureActivation.issue_tdd_mode`), never the raw stored
+  and `Automation::FeatureActivation.phase_authorized?`), never the raw stored
   columns. Bot-authored merge permission additionally requires mode `all`,
   because Paid-authored implementation PRs use the human-PR merge path rather
   than the Dependabot-only path. An upstream-target project holding legacy

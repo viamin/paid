@@ -120,9 +120,7 @@ class PromptAssembly::Sections::EffectiveMergeReviewPosture
   end
 
   def tdd_mode
-    if agent_run&.respond_to?(:tdd_governed?) && agent_run.tdd_governed?
-      return Automation::FeatureActivation.issue_tdd_mode(project:, issue:)
-    end
+    return agent_run.tdd_phase.presence || "off" if agent_run&.respond_to?(:tdd_phase)
 
     project.respond_to?(:tdd_mode) ? project.tdd_mode.to_s : "off"
   end
