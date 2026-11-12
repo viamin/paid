@@ -10,7 +10,7 @@ export default class extends Controller {
 
   connect() {
     this.renderActions()
-    this.observer = new MutationObserver(() => this.renderActions())
+    this.observer = new window.MutationObserver(() => this.renderActions())
     this.observer.observe(this.sourceTarget, {
       attributes: true,
       attributeFilter: ["aria-busy", "aria-disabled", "aria-label", "disabled", "value"],
