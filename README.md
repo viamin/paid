@@ -116,7 +116,7 @@ docker compose up --build
 # before using the app. `bin/setup` already runs `bin/rails db:prepare`.
 ```
 
-> **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `redis`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The compose file wires `DATABASE_URL`, `REDIS_URL`, Temporal, and Qdrant for the app so development-only dashboards such as `rails_performance` work out of the box. The `agent-test` service is profile-gated, so it only starts when its profile is explicitly enabled. Build `paid-agent:latest` with `./scripts/build-agent-image.sh`; that script extracts the Dockerfile build args from `Gemfile.lock` and `agent-harness`. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
+> **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `redis`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The compose file wires `DATABASE_URL`, `REDIS_URL`, Temporal, and Qdrant for the app so development-only dashboards such as `rails_performance` and PgHero work out of the box. The `agent-test` service is profile-gated, so it only starts when its profile is explicitly enabled. Build `paid-agent:latest` with `./scripts/build-agent-image.sh`; that script extracts the Dockerfile build args from `Gemfile.lock` and `agent-harness`. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
 
 **Database role note**: Compose creates the Rails `paid` role separately from the PostgreSQL admin role so tenant row-level security cannot be bypassed by a superuser connection. If you have an older `postgres-data` volume where `paid` was the bootstrap superuser, recreate that volume before running this branch.
 
@@ -165,6 +165,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | Service | URL | Description |
 | ------- | --- | ----------- |
 | Rails app | <http://localhost:3000> | Main application |
+| PgHero | <http://localhost:3000/pghero> | Development-only PostgreSQL dashboard |
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
 | PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
@@ -210,6 +211,15 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | `GEMINI_CONFIG_DIR` | Host path to `~/.gemini/` for Gemini subscription auth | _(none)_ |
 | `PAID_PROXY_PORT` | Port the secrets proxy listens on (used by agent containers) | `3000` |
 | `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |
+
+### PgHero
+
+PgHero is included only in the development bundle. Run `bin/setup` after
+pulling this change, then start Paid with `bin/dev` (or `docker compose up
+--build`) and open <http://localhost:3000/pghero>. PgHero runs inside the Rails
+web process and inspects the database configured by `DATABASE_URL`; it does not
+need a separate service or any PgHero-specific environment variables. It is not
+loaded or routed in production.
 
 ## Provider Auth Setup
 

@@ -184,6 +184,9 @@ group :development do
   # Request-level performance metrics dashboard [https://github.com/igorkasyanchuk/rails_performance]
   gem "rails_performance"
 
+  # PostgreSQL query and database inspection dashboard [https://github.com/ankane/pghero]
+  gem "pghero", require: false
+
   # Per-request profiler overlay backed by vernier + prosopite [https://github.com/codergeek121/dial]
   gem "dial", "~> 0.6"
 

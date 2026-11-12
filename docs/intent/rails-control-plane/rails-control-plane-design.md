@@ -60,6 +60,11 @@ The existing development supervisor records lightweight process RSS and host
 memory samples before a crash, so a killed process's memory growth can be
 distinguished from pressure elsewhere in the workspace.
 
+The development web process also exposes PgHero at `/pghero` for local
+PostgreSQL inspection. PgHero is a development-only dependency and its engine
+is mounted only in the development environment, where it uses the application's
+existing `DATABASE_URL` connection. Production does not load or route PgHero.
+
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
 fallback profile levels execute as a
