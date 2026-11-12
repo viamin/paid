@@ -3,6 +3,9 @@
 Rails.application.routes.draw do
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
+  if Rails.env.development? && defined?(PgHero::Engine) # @spec DEVELOPMENT-DATABASE-INSPECTION-001 # @spec DEVELOPMENT-DATABASE-INSPECTION-002
+    mount PgHero::Engine, at: "pghero"
+  end
 
   devise_for :users, controllers: { registrations: "users/registrations" }
 
