@@ -147,6 +147,27 @@ Terminal measurement evidence schedules the normal report-only acceptance
 audit; semantic interpretation remains in `agent_harness`, and no measurement
 can close the issue.
 
+### Distinct human and technical prerequisites (#5007)
+
+Closeout evidence has explicit owners. A human authorization or independent
+judgment is a human prerequisite: it is represented as an attributed human gap,
+remains in the human Inbox, and carries its exact human next step. A runnable
+check or measurement is a technical prerequisite: it is represented as a
+criterion-specific validation bound to one reviewed requirement and runs only
+through `TechnicalPrerequisites` under normal tenant, project, runner, and
+delegated-execution policy. A single criterion-level record cannot carry both a
+human/external prerequisite and a technical validation.
+
+When both are necessary, the assessor emits separate records that name their
+respective evidence and owners. The human record never becomes satisfied from
+technical execution. The technical record captures the selected environment,
+pinned revision, criterion, validation-run provenance, and terminal result;
+unavailable and failed outcomes remain visible with their setup/retry action.
+Each newly terminal technical record changes the evidence revision and offers
+the existing deduplicated, report-only acceptance audit. That audit reads the
+current combined evidence but cannot infer independent human approval or
+judgment from a successful check.
+
 ### Human prerequisite attribution (#4893)
 
 Human prerequisites are attributed before Inbox publication. The closeout

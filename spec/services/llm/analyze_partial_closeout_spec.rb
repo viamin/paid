@@ -251,6 +251,43 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-049
+    it "requires mixed human authorization and technical validation to be separate prerequisites" do
+      selected = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative environment check", command: "bin/validate")
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Representative environment approval and measurement", state: "unmet",
+        prerequisite_kind: "human", prerequisite: "Approve representative environment",
+        validation_kind: "native", validation_requirement_id: selected.id
+      } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /invalid fields/)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-049
+    it "accepts distinct human and technical prerequisites for one acceptance criterion" do
+      selected = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative environment check", command: "bin/validate")
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [ {
+          criterion: "Representative environment approval", kind: "human",
+          next_step: "Approve the representative environment.",
+          attribution: { coverage: "established", source_issue_number: issue.github_number,
+            owner_issue_number: issue.github_number, criterion: "Representative environment approval" }
+        } ],
+        criteria: [ {
+          criterion: "Measure the approved representative environment", state: "unmet",
+          validation_kind: "native", validation_requirement_id: selected.id
+        } ]
+      }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.fetch("gaps").sole).to include("kind" => "human")
+      expect(result.fetch("criteria").sole).to include("validation_kind" => "native")
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,

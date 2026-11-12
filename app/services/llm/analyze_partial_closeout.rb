@@ -221,11 +221,20 @@ module Llm
         optional_strings?(criterion, %w[prerequisite]) && valid_owner?(criterion) &&
         (criterion["prerequisite_kind"].nil? || %w[human external].include?(criterion["prerequisite_kind"])) &&
         (criterion["validation_kind"].nil? || %w[native tool_sidecar performance_measurement].include?(criterion["validation_kind"])) &&
+        distinct_prerequisite_owners?(criterion) &&
         (criterion["validation_tool_name"].nil? ||
           (criterion["validation_kind"] == "tool_sidecar" && criterion["validation_tool_name"].is_a?(String) && criterion["validation_tool_name"].present?)) &&
         (criterion["validation_requirement_id"].nil? ||
           (criterion["validation_kind"].present? && validation_recipe_ids.include?(criterion["validation_requirement_id"]))) &&
         valid_evidence?(criterion["evidence"])
+    end
+
+    # A human/external decision and a runnable check have different owners and
+    # lifecycles. Keeping them on one criterion lets a technical success look
+    # like authorization, so the assessor must emit a separate gap and
+    # criterion instead.
+    def distinct_prerequisite_owners?(criterion)
+      !(criterion["prerequisite_kind"].present? && criterion["validation_kind"].present?)
     end
 
     def optional_strings?(payload, keys)
@@ -369,7 +378,7 @@ module Llm
         Return only a JSON object matching this schema, without markdown or commentary:
         #{RESPONSE_SCHEMA.to_json}
         Return gaps only for unmet acceptance criteria, at most #{MAX_GAPS} gaps. Each gap must be agent work with a focused title/body, an owner_issue_number, or retain_on_source=true when the current source issue itself already owns the remaining task; human work with an exact next_step; or external work with an exact next_step and external_dependency owner/repo/number matching the blocking work. Do not create a child issue to repeat the current source issue's task. A source-retained agent gap keeps the source incomplete and available for continuation after its partial PR; do not set owner_issue_number on that gap. Every human gap must include attribution. Set coverage=established only when the supplied current source issue and exact criterion actually own the human evidence; provide source_issue_number, owner_issue_number, and the exact criterion. If that relationship cannot be established, set coverage=unknown with a concise reason: this records bounded reassessment work and must not create an Inbox human task. Never attach an independent evaluation to an implementation child merely because that child mentions it. When a human gap is specifically the independent facet-confidence closeout evaluation, set workflow to facet_confidence_closeout_evaluation; otherwise omit workflow. When a human gap cites policy or evidence, include its stable key, revision, label, and optional URL in references. If stale policy requires an operator choice, set policy_selection.required and provide its exact next_step; never silently substitute solo review for team policy.
-        Also return criterion-level assessments for every criterion you can identify: state is satisfied only with cited evidence, unmet for demonstrated missing work, and unknown whenever evidence is absent. Include evidence links only when supplied, current open owner issue numbers, and human or external prerequisites. Classify the closeout as awaiting_final_audit, blocked_implementation, missing_measured_results, or coordination_epic. State the supported next action and why it will not duplicate open work.
+        Also return criterion-level assessments for every criterion you can identify: state is satisfied only with cited evidence, unmet for demonstrated missing work, and unknown whenever evidence is absent. Include evidence links only when supplied, current open owner issue numbers, and human or external prerequisites. A human/external prerequisite and a runnable technical validation must be separate records, even when both support one acceptance criterion: emit the human/external authorization as a gap and the measurement/check as a separate criterion. Technical success is never approval or independent human evidence. Classify the closeout as awaiting_final_audit, blocked_implementation, missing_measured_results, or coordination_epic. State the supported next action and why it will not duplicate open work.
         For an unmet or unknown criterion that needs an isolated technical check, set validation_kind to native, tool_sidecar, or performance_measurement. Set performance_measurement only when an enabled reviewed recipe below explicitly provides its baseline revision, representative workload provenance, metrics, samples, environment, budget, and artifact contract. Set validation_requirement_id only when one enabled reviewed recipe below directly validates that criterion; leave it unset when none applies. Never select a recipe merely because it is available. For a tool_sidecar criterion, set validation_tool_name to the exact attached tool name when known. An unrelated tool does not satisfy the criterion. Tool sidecars additionally require an attached, allowlisted tool and scoped rollout authorization.
         Enabled reviewed validation recipes: #{validation_recipe_lines}
         Attached tool sidecars: #{agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") }.to_json}

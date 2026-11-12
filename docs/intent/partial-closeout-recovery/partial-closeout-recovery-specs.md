@@ -959,6 +959,30 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
   `spec/services/partial_closeouts/auto_audit_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-049** — When a partial-closeout acceptance criterion
+  needs both human authorization or independent judgment and a runnable
+  technical check, Paid SHALL represent them as separate prerequisites with
+  separate owners and next actions: the human prerequisite SHALL remain an
+  attributed, actionable human Inbox item, and the technical prerequisite SHALL
+  be a criterion-specific `TechnicalPrerequisites` validation subject to the
+  existing tenant, project, runner, and delegated-execution policy. A criterion
+  record SHALL NOT combine a human/external prerequisite with a technical
+  validation, and successful technical execution SHALL NOT establish human
+  approval or independent evidence. Technical evidence SHALL remain bound to
+  its environment, pinned revision, criterion, validation-run provenance, and
+  terminal result; failed and unavailable results SHALL remain visible and
+  retryable. Each non-cancelled terminal technical validation SHALL offer the
+  existing deduplicated acceptance audit against current evidence, while an
+  unchanged evidence generation SHALL not create an audit loop.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/technical_prerequisites/evidence.rb`,
+  `app/services/technical_prerequisites/start_validation.rb`,
+  `app/jobs/technical_prerequisite_validation_job.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body
   digest as `pending_sync` and SHALL not report the repair as reconciled until

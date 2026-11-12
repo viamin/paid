@@ -38,6 +38,18 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(agent_run.error_message).to be_nil
   end
 
+  # @spec PARTIAL-CLOSEOUT-049
+  it "schedules an evidence-bound acceptance audit after a terminal native validation" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "executes a non-performance validation while the project scheduler is paused" do
     project.update!(scheduler_paused_at: Time.current)
