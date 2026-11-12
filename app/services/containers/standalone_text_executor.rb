@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "stringio"
+require "rubygems/package"
 
 module Containers
   # Executes one application text command in a disposable container. It never
@@ -9,7 +10,6 @@ module Containers
   class StandaloneTextExecutor
     MAX_OUTPUT_BYTES = 2 * 1024 * 1024
     MAX_INPUT_BYTES = 1024 * 1024
-    INPUT_TMPFS_SIZE = 2 * 1024 * 1024
     # Linux caps a single execve argument or environment string at MAX_ARG_STRLEN
     # (128 KiB), so any env entry larger than this fails inside Docker exec even
     # when the aggregate input stays within MAX_INPUT_BYTES. Values that must
@@ -171,11 +171,22 @@ module Containers
 
     def stage_input(payload)
       basename = "paid-text-#{SecureRandom.hex(12)}"
-      tar = StringIO.new(Docker::Util.create_tar(basename => { content: payload.string, permissions: 0o644 }))
-      Containers.backend.archive_in_container(@container, "/paid-input") { tar.read(64 * 1024).to_s }
-      "/paid-input/#{basename}"
+      tar = private_input_tar(basename, payload.string)
+      Containers.backend.archive_in_container(@container, "/opt") { tar.read(64 * 1024).to_s }
+      "/opt/#{basename}"
     rescue Docker::Error::DockerError => e
       raise AgentHarness::Error, "Unable to stage isolated text request: #{e.message}"
+    end
+
+    def private_input_tar(name, content)
+      tar = StringIO.new("".b)
+      tar.write(Gem::Package::TarHeader.new(name: name, prefix: "", size: content.bytesize,
+        mode: 0o600, uid: @agent_uid, gid: @agent_gid, uname: "agent", gname: "agent"))
+      tar.write(content)
+      tar.write("\0" * ((512 - content.bytesize % 512) % 512))
+      tar.write("\0" * 1024)
+      tar.rewind
+      tar
     end
 
     def preparation_file_writes(preparation)
@@ -243,8 +254,12 @@ module Containers
       NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend)
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
-      result = Containers.backend.exec_in_container(@container, [ "chown", "agent:agent", "/home/agent" ], user: "root")
-      raise AgentHarness::ConfigurationError, "Unable to prepare isolated text home" unless Array(result).last == 0
+      result = Containers.backend.exec_in_container(@container,
+        [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      owner = Array(result).first.to_a.join.match(/\A(\d+):(\d+)\s*\z/) if Array(result).last == 0
+      raise AgentHarness::ConfigurationError, "Unable to prepare isolated text home" unless owner
+
+      @agent_uid, @agent_gid = owner.captures.map(&:to_i)
     rescue Docker::Error::DockerError, NetworkPolicy::Error => e
       raise AgentHarness::ConfigurationError, "Unable to provision isolated text execution: #{e.message}"
     end
@@ -335,7 +350,7 @@ module Containers
         "HostConfig" => {
           "Memory" => DEFAULTS[:memory_bytes], "MemorySwap" => DEFAULTS[:memory_bytes],
           "CpuPeriod" => 100_000, "CpuQuota" => DEFAULTS[:cpu_quota], "PidsLimit" => DEFAULTS[:pids_limit],
-          "Tmpfs" => { "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777", "/home/agent" => "size=#{64 * 1024 * 1024},mode=0700,uid=1000,gid=1000", "/paid-input" => "size=#{INPUT_TMPFS_SIZE},mode=1777" },
+          "Tmpfs" => { "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777", "/home/agent" => "size=#{64 * 1024 * 1024},mode=0700,uid=1000,gid=1000" },
           "NetworkMode" => NetworkPolicy::INFRA_NETWORK_NAME
         },
         "Env" => [ "HOME=/home/agent" ],

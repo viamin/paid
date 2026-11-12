@@ -35,13 +35,14 @@ refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so
 standalone request materializes a refreshed token and writes an in-container
 rotation back into the canonical credential once before the container is deleted.
 The command, preparation, and prompt travel in a bounded Docker archive to a
-temporary file in the disposable container's `/paid-input` writable tmpfs, not
-as exec environment entries, because a single `execve` environment string is
-capped near 128 KiB. The writable tmpfs permits Docker archive extraction while
-the container root filesystem remains read-only, and disappears when the
-container is deleted. Docker exec does not attach stdin: its hijack transport
-can return before the process has finished. An unavailable exit status is a
-transport failure, never success.
+temporary mode-0600 file owned by the agent in the disposable container's
+private layer, not as exec environment entries, because a single `execve`
+environment string is capped near 128 KiB. Docker archive extraction writes
+beneath tmpfs mounts, so the file is staged at `/opt` while the process root
+filesystem remains read-only. It disappears when the container is deleted.
+Docker exec does not attach stdin: its hijack transport can return before the
+process has finished. An unavailable exit status is a transport failure, never
+success.
 Caller environment entries are bounded per entry.
 Embedding and interactive API chat keep their existing capability-specific
 transports and settings. Provider identifiers inside those protocol adapters

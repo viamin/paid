@@ -8,6 +8,8 @@ RSpec.describe Containers::StandaloneTextExecutor do
   let(:runner) { create(:runner, user: user, runner_key: "codex") }
   let(:backend) { instance_double(Containers::Backends::LocalDocker) }
   let(:container) { instance_double(Docker::Container) }
+  let(:agent_owner) { "1001:1001\n" }
+  let(:captured_archive) { {} }
 
   before do
     allow(Containers).to receive(:backend).and_return(backend)
@@ -16,7 +18,16 @@ RSpec.describe Containers::StandaloneTextExecutor do
     allow(backend).to receive_messages(create_container: container, start_container: true,
       stop_container: true, delete_container: true)
     allow(backend).to receive(:exec_in_container).with(container,
-      [ "chown", "agent:agent", "/home/agent" ], user: "root").and_return([ [], [], 0 ])
+      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      .and_return([ [ agent_owner ], [], 0 ])
+  end
+
+  def stub_text_exec(&behavior)
+    allow(backend).to receive(:exec_in_container) do |selected, command, options = {}, &stream|
+      next [ [ agent_owner ], [], 0 ] if options[:user] == "root"
+
+      behavior.call(selected, command, options, &stream)
+    end
   end
 
   def input_header_of(archive)
@@ -28,17 +39,20 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   def captured_payload
-    archive = nil
     allow(backend).to receive(:archive_in_container) do |_, path, &stream|
-      expect(path).to eq("/paid-input")
+      expect(path).to eq("/opt")
       tar = StringIO.new
       while (chunk = stream.call).present?
         tar.write(chunk)
       end
       tar.rewind
-      Gem::Package::TarReader.new(tar) { |reader| archive = reader.first.read }
+      Gem::Package::TarReader.new(tar) do |reader|
+        entry = reader.first
+        captured_archive[:header] = entry.header
+        captured_archive[:payload] = entry.read
+      end
     end
-    -> { archive }
+    -> { captured_archive[:payload] }
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
@@ -46,7 +60,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
     payload = captured_payload
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
     inputs = []
-    allow(backend).to receive(:exec_in_container) do |_c, _command, options = {}|
+    stub_text_exec do |_c, _command, options = {}|
       inputs << options
       [ [], [], 0 ]
     end
@@ -57,22 +71,34 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(input_header_of(payload.call)).to include("command" => [ "codex", "exec", "hello" ])
     expect(text_options(inputs)).not_to have_key(:stdin)
     expect(backend).to have_received(:exec_in_container).with(container,
-      [ "chown", "agent:agent", "/home/agent" ], user: "root")
+      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
   end
 
   # @spec LLM-ROUTING-006
-  it "stages request input in a writable tmpfs while retaining a read-only root filesystem" do
+  it "stages request input readable only by the agent while retaining a read-only root filesystem" do
     captured_payload
-    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    stub_text_exec { [ [], [], 0 ] }
 
     described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
 
-    expect(backend).to have_received(:create_container).with(hash_including(
-      "ReadonlyRootfs" => true,
-      "HostConfig" => hash_including(
-        "Tmpfs" => hash_including("/paid-input" => "size=#{described_class::INPUT_TMPFS_SIZE},mode=1777")
-      )
-    ))
+    expect(backend).to have_received(:create_container).with(hash_including("ReadonlyRootfs" => true))
+    expect(captured_archive.fetch(:header).mode).to eq(0o600)
+    expect(captured_archive.fetch(:header).uid).to eq(1001)
+    expect(captured_archive.fetch(:header).gid).to eq(1001)
+  end
+
+  # @spec LLM-ROUTING-006
+  it "uses the container agent's actual ownership for the private input file" do
+    captured_payload
+    stub_text_exec { [ [], [], 0 ] }
+    allow(backend).to receive(:exec_in_container).with(container,
+      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      .and_return([ [ "2002:3003\n" ], [], 0 ])
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(captured_archive.fetch(:header).uid).to eq(2002)
+    expect(captured_archive.fetch(:header).gid).to eq(3003)
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
@@ -81,7 +107,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
     runner.update!(auth_type: "api_key", provider_api_key: create(:runner_api_key, user: user,
       api_service_type: "openai", api_key: "selected-secret"))
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
-    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    stub_text_exec { [ [], [], 0 ] }
 
     described_class.new(account: account, runner: runner, timeout: 30)
       .execute([ "codex", "exec", "hello" ], env: { "OPENAI_API_KEY" => "selected-secret" })
@@ -101,7 +127,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
       { path: "/tmp/request.json", content: "{}", mode: 0o640 }
     ])
     inputs = []
-    allow(backend).to receive(:exec_in_container) do |_c, _command, options = {}|
+    stub_text_exec do |_c, _command, options = {}|
       inputs << options
       [ [], [], 0 ]
     end
@@ -121,7 +147,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   it "forwards stdin data through the container archive, not the environment" do
     payload = captured_payload
     inputs = []
-    allow(backend).to receive(:exec_in_container) do |_c, _command, options = {}|
+    stub_text_exec do |_c, _command, options = {}|
       inputs << options
       [ [], [], 0 ]
     end
@@ -142,7 +168,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
     payload = captured_payload
     prompt = "x" * 300_000
     inputs = []
-    allow(backend).to receive(:exec_in_container) do |_c, _command, options = {}|
+    stub_text_exec do |_c, _command, options = {}|
       inputs << options
       [ [], [], 0 ]
     end
@@ -160,7 +186,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-006
   it "rejects a single environment entry above the per-entry exec limit" do
-    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    stub_text_exec { [ [], [], 0 ] }
 
     expect do
       described_class.new(account: account, runner: runner, timeout: 30)
@@ -174,7 +200,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   it "uses the outbound-capable runner network and resolves the proxy on it" do
     captured_payload
     allow(Containers::ProxyUrl).to receive(:resolve).and_return("http://web:3000")
-    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    stub_text_exec { [ [], [], 0 ] }
 
     described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
 
@@ -187,7 +213,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   # @spec LLM-ROUTING-006
   it "honors the caller timeout above two minutes" do
     captured_payload
-    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    stub_text_exec { [ [], [], 0 ] }
 
     described_class.new(account: account, runner: runner, timeout: 300).execute([ "codex", "exec", "hello" ])
 
@@ -230,7 +256,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
   it "reuses one container across executor commands until closed" do
     captured_payload
-    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+    stub_text_exec { [ [], [], 0 ] }
     executor = described_class.new(account: account, runner: runner, timeout: 30)
 
     executor.execute([ "codex", "--version" ])
@@ -245,7 +271,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   it "labels the container with a fixed orphan-sweep lifetime from creation" do
     captured_payload
     freeze_time do
-      allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+      stub_text_exec { [ [], [], 0 ] }
 
       described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "--version" ])
 
@@ -275,7 +301,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   it "stops collection and raises a classified failure when output exceeds the cap" do
     captured_payload
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
-    allow(backend).to receive(:exec_in_container) do |*, &stream|
+    stub_text_exec do |*, &stream|
       next [ [], [], 0 ] unless stream
 
       stream.call(:stdout, "x" * (described_class::MAX_OUTPUT_BYTES + 1)) if stream
@@ -306,7 +332,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
     end
 
     def stub_execs(rotation_stdout: nil, rotation_status: 0)
-      allow(backend).to receive(:exec_in_container) do |_c, command, _options = {}|
+      stub_text_exec do |_c, command, _options = {}|
         next [ Array(rotation_stdout), [], rotation_status ] if command.include?("base64 -w0 /home/agent/.codex/auth.json")
 
         [ [], [], 0 ]
@@ -358,7 +384,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
       runner.update!(auth_type: "api_key", provider_api_key: create(:runner_api_key, user: user,
         api_service_type: "openai", api_key: "selected-secret"))
       calls = []
-      allow(backend).to receive(:exec_in_container) do |_c, command, _options = {}|
+      stub_text_exec do |_c, command, _options = {}|
         calls << command
         [ [], [], 0 ]
       end
@@ -376,7 +402,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
       claude_runner = claude_user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
       credential.update!(runner_key: "claude")
       calls = []
-      allow(backend).to receive(:exec_in_container) do |_c, command, _options = {}|
+      stub_text_exec do |_c, command, _options = {}|
         calls << command
         [ [], [], 0 ]
       end
