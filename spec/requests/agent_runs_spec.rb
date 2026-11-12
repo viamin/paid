@@ -287,10 +287,12 @@ RSpec.describe "AgentRuns" do
 
         document = parsed_html
         expect(document.at_css("details[data-testid='agent-runs-filters']")["open"]).to be_nil
-        expect(document.at_css("select[name='q[status_eq]']")).to be_present
-        expect(document.at_css("select[name='q[agent_type_eq]']")).to be_present
-        expect(document.at_css("select[name='q[goal_eq]']")).to be_present
-        expect(document.at_css("select[name='q[effective_runner_eq]']")).to be_present
+        expect(document.at_css("select[name='q[status_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[agent_type_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[goal_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[effective_runner_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[trigger_type_in][]'][multiple]")).to be_present
+        expect(document.at_css("input[name='q[branch_name_or_custom_prompt_cont]']")).to be_present
       end
 
       # @spec AGENT-RUNS-INDEX-001
@@ -298,9 +300,9 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         document = parsed_html
-        expect(document.at_css("select[name='q[status_eq]']")).to be_nil
-        expect(document.at_css("select[name='q[agent_type_eq]']")).to be_nil
-        expect(document.at_css("select[name='q[goal_eq]']")).to be_nil
+        expect(document.at_css("select[name='q[status_in][]']")).to be_nil
+        expect(document.at_css("select[name='q[agent_type_in][]']")).to be_nil
+        expect(document.at_css("select[name='q[goal_in][]']")).to be_nil
         expect(document.at_css("select[name='sort']")).to be_present
       end
 
@@ -326,6 +328,70 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include(project_agent_run_path(project, issue_run))
       end
 
+      # @spec AGENT-RUNS-INDEX-004
+      it "composes multi-value categorical filters with allowlisted text search" do
+        matching_run = create(:agent_run, :with_custom_prompt, project: project,
+          status: "queued", agent_type: "claude_code", goal: "create_pr", trigger_type: "manual",
+          custom_prompt: "Repair OAuth callback")
+        selected_status_run = create(:agent_run, :with_custom_prompt, project: project,
+          status: "running", agent_type: "cursor", goal: "create_issue", trigger_type: "automatic",
+          custom_prompt: "Investigate a different task")
+        excluded_run = create(:agent_run, :with_custom_prompt, project: project,
+          status: "completed", agent_type: "claude_code", goal: "create_pr", trigger_type: "manual",
+          custom_prompt: "Repair OAuth callback")
+
+        get agent_runs_path, params: { q: {
+          status_in: %w[queued running], agent_type_in: %w[claude_code cursor],
+          goal_in: %w[create_pr create_issue], trigger_type_in: %w[manual automatic],
+          branch_name_or_custom_prompt_cont: "OAuth"
+        } }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(project_agent_run_path(project, matching_run))
+        expect(response.body).not_to include(project_agent_run_path(project, selected_status_run))
+        expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
+      end
+
+      # @spec AGENT-RUNS-INDEX-004
+      it "filters runs by multiple effective runners" do
+        cursor = create(:runner, user: project.effective_owner, runner_key: "cursor")
+        codex = create(:runner, user: project.effective_owner, runner_key: "codex")
+        selected_cursor_run = create(:agent_run, project: project, final_runner: cursor.routing_key)
+        selected_codex_run = create(:agent_run, project: project, final_runner: codex.routing_key)
+        excluded_run = create(:agent_run, project: project, final_runner: "api")
+
+        get agent_runs_path, params: { q: { effective_runner_in: [ cursor.routing_key, codex.routing_key ] } }
+
+        expect(response.body).to include(project_agent_run_path(project, selected_cursor_run))
+        expect(response.body).to include(project_agent_run_path(project, selected_codex_run))
+        expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
+      end
+
+      # @spec AGENT-RUNS-INDEX-005
+      it "keeps active multi-value filters in pagination URLs and exposes a reset action" do
+        26.times { create(:agent_run, project: project, status: "queued") }
+
+        get agent_runs_path, params: { page: 2, q: { status_in: %w[queued running] } }
+
+        document = parsed_html
+
+        expect(response.body).to include("Active filters")
+        expect(response.body).to include("Reset filters")
+        expect(document.at_css("details[data-testid='agent-runs-filters']")["open"]).not_to be_nil
+        expect(document.at_css("select[name='q[status_in][]'] option[value='queued']")["selected"]).to eq("selected")
+      end
+
+      # @spec AGENT-RUNS-INDEX-005
+      it "uses queue ordering only when every selected status is unfinished" do
+        queued_run = create(:agent_run, project: project, status: "queued")
+        completed_run = create(:agent_run, :completed, project: project)
+
+        get agent_runs_path, params: { sort: "queue", q: { status_in: %w[queued completed] } }
+
+        expect(response.body).to include(project_agent_run_path(project, queued_run))
+        expect(response.body).to include(project_agent_run_path(project, completed_run))
+      end
+
       it "shows named runner filter labels and omits unresolved routed ids" do
         kept_runner = create(:runner, user: project.effective_owner, runner_key: "opencode", name: "Kimi K2.5")
         create(:agent_run, project: project, final_runner: kept_runner.routing_key)
@@ -334,18 +400,18 @@ RSpec.describe "AgentRuns" do
 
         get agent_runs_path
 
-        option_text = parsed_html.css('select[name="q[effective_runner_eq]"] option').map { |option| option.text.squish }
+        option_text = parsed_html.css('select[name="q[effective_runner_in][]"] option').map { |option| option.text.squish }
 
         expect(option_text).to include("Kimi K2.5")
         expect(option_text).not_to include("runner:999999")
       end
 
-      it "shows the goal filter dropdown" do
+      it "shows the multi-select goal filter" do
         create(:agent_run, project: project, goal: "create_pr")
 
         get agent_runs_path
 
-        expect(response.body).to include("All Goals")
+        expect(parsed_html.at_css("select[name='q[goal_in][]'][multiple]")).to be_present
       end
 
       it "associates the sort label with the sort select" do
@@ -630,6 +696,25 @@ RSpec.describe "AgentRuns" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(project_agent_run_path(project, pr_run))
         expect(response.body).not_to include(project_agent_run_path(project, issue_run))
+      end
+
+      # @spec AGENT-RUNS-INDEX-004
+      it "filters the project list with multiple categorical values and text search" do
+        matching_run = create(:agent_run, :with_custom_prompt, project: project,
+          status: "queued", agent_type: "claude_code", goal: "create_pr", trigger_type: "manual",
+          custom_prompt: "Repair OAuth callback")
+        excluded_run = create(:agent_run, :with_custom_prompt, project: project,
+          status: "completed", agent_type: "cursor", goal: "create_issue", trigger_type: "automatic",
+          custom_prompt: "Repair OAuth callback")
+
+        get project_agent_runs_path(project), params: { q: {
+          status_in: %w[queued running], agent_type_in: %w[claude_code cursor],
+          goal_in: %w[create_pr create_issue], trigger_type_in: %w[manual automatic],
+          branch_name_or_custom_prompt_cont: "OAuth"
+        } }
+
+        expect(response.body).to include(project_agent_run_path(project, matching_run))
+        expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
       end
 
       it "sorts agent runs via Ransack sort params" do

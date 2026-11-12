@@ -5448,6 +5448,16 @@ RSpec.describe AgentRun do
     end
   end
 
+  # @spec AGENT-RUNS-INDEX-004
+  describe ".ransackable_attributes" do
+    it "limits Agent Runs index filtering to the approved categorical and text fields" do
+      expect(described_class.ransackable_attributes).to include(
+        "status", "agent_type", "goal", "effective_runner", "trigger_type", "branch_name", "custom_prompt"
+      )
+      expect(described_class.ransackable_attributes).not_to include("error_message", "external_metadata")
+    end
+  end
+
   describe "#effective_provider" do
     it "returns final_runner when present and not mapped" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_runner: "codex")
