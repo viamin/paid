@@ -80,7 +80,8 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_css("#inbox-copy-link-status", text: "Link copied.")
   end
 
-  it "uses the member URL for a dependency cycle and retains it on mobile" do
+  # @spec AUTO-PICK-QUEUE-023 AUTO-PICK-QUEUE-024
+  it "keeps the dependency-cycle explanation and its GitHub-edit warning readable on mobile" do
     first = create(:issue, project:, github_state: "open", title: "Cycle first")
     second = create(:issue, project:, github_state: "open", title: "Cycle second")
     create(:issue_dependency, issue: first, depends_on_issue: second)
@@ -93,6 +94,8 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
 
     within("#inbox-list") { click_link "Dependency cycle" }
     expect(page).to have_css("#inbox-detail h2", text: "Dependency cycle")
+    expect(page).to have_css("[data-testid='cycle-blocked-work']", text: "2 issues wait on each other")
+    expect(page).to have_button("Analyze cycle (may edit one GitHub declaration)")
 
     copy_button = find_button("Copy link to this item")
     expect(copy_button["data-inbox-master-detail-copy-link-url"]).to eq(inbox_entry_path(cycle_entry.id,

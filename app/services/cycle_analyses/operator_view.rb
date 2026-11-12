@@ -63,6 +63,10 @@ module CycleAnalyses
     end
 
     MAY_EDIT_COPY = "a qualifying run may edit one verified GitHub dependency declaration"
+    START_ANALYSIS_LABEL = "Analyze cycle (may edit one GitHub declaration)"
+    RETRY_ANALYSIS_LABEL = "Retry analysis (may edit one GitHub declaration)"
+    FRESH_ANALYSIS_LABEL = "Analyze current cycle (may edit one GitHub declaration)"
+    CONFIRM_REPAIR_LABEL = "Re-check synced graph (no GitHub edits)"
     START_CONFIRMATION = "Start a bounded repair analysis of this cycle? It reads GitHub first; " \
                          "#{MAY_EDIT_COPY}, only when every safeguard passes. " \
                          "Paid re-checks authority and the live graph before any write."
@@ -219,7 +223,7 @@ module CycleAnalyses
         description: "Paid recommends one bounded repair analysis: it reviews every declaration in the cycle and, " \
                      "only when strict safeguards pass, #{MAY_EDIT_COPY} — nothing else.",
         next_action: "Start the analysis below, or review the declarations yourself and edit the wrong one on GitHub.",
-        button: Button.new(:start_analysis, "Start repair analysis", START_CONFIRMATION))
+        button: Button.new(:start_analysis, START_ANALYSIS_LABEL, START_CONFIRMATION))
     end
 
     # A requeued pending-sync run keeps its applied repair and takes
@@ -252,7 +256,7 @@ module CycleAnalyses
         description: "Paid removed one dependency declaration on #{repaired_declaration_ref || 'GitHub'}. " \
                      "Nothing else changed. The next GitHub synchronization confirms whether the cycle is gone.",
         next_action: pending_sync_next_action(confirmable),
-        button: confirmable ? Button.new(:confirm_repair, "Confirm cycle repair", CONFIRM_REPAIR_CONFIRMATION) : nil)
+        button: confirmable ? Button.new(:confirm_repair, CONFIRM_REPAIR_LABEL, CONFIRM_REPAIR_CONFIRMATION) : nil)
     end
 
     def pending_sync_next_action(confirmable)
@@ -313,7 +317,7 @@ module CycleAnalyses
       Status.new(key: :failed, title: "Analysis failed",
         description: "The analysis did not complete (#{reason}). Its recorded result cannot confirm whether GitHub changed.",
         next_action: "Check the live GitHub declaration before retrying the analysis or editing it yourself.",
-        button: Button.new(:retry_analysis, "Retry repair analysis", RETRY_CONFIRMATION))
+        button: Button.new(:retry_analysis, RETRY_ANALYSIS_LABEL, RETRY_CONFIRMATION))
     end
 
     def completed_status
@@ -324,7 +328,7 @@ module CycleAnalyses
     end
 
     def fresh_analysis_button
-      Button.new(:start_analysis, "Start fresh analysis", START_CONFIRMATION)
+      Button.new(:start_analysis, FRESH_ANALYSIS_LABEL, START_CONFIRMATION)
     end
 
     def ambiguous?
