@@ -936,3 +936,19 @@
   *Test:* `spec/services/inbox/decision_brief_spec.rb`,
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-028** — When an operator opens an issue-backed Action
+  history, the header SHALL summarize known distinct processing attempts,
+  retry-limit entries, token-budget-exceeded runs, and return-to-Inbox count
+  from the durable agent-run and retry-abandonment records used by the history
+  projection. Repeated Inbox returns SHALL have an emphasized accessible
+  treatment. The summary SHALL not count a run twice when it matches more than
+  one history-run association, and it SHALL remain separate from the bounded
+  timeline page. When the persisted history coverage boundary is incomplete,
+  the detail SHALL continue to state that older activity is unavailable rather
+  than presenting the summary as a complete historical reconstruction.
+  *Code:* `app/services/inbox/action_history.rb`,
+  `app/services/inbox/action_history_page.rb`,
+  `app/views/inbox/_history_content.html.erb`.
+  *Test:* `spec/services/inbox/action_history_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/system/inbox_filters_dialog_spec.rb`.

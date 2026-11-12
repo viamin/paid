@@ -1357,6 +1357,26 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-frame"]).to eq("inbox-history")
   end
 
+  # @spec OPERATOR-INBOX-028
+  it "renders an accessible emphasized header for repeated returns without hiding incomplete history" do
+    issue = create_retry_limited_issue(title: "Repeated retry cap", github_number: 4640,
+      runner_retry_abandonment_count: 3)
+    create(:agent_run, project:, issue:, status: "token_budget_exceeded", completed_at: 1.hour.ago)
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    document = Nokogiri::HTML(response.body)
+    summary = document.at_css("[data-testid='inbox-history-summary']")
+    returns = document.at_css("[data-testid='inbox-history-repeated-returns']")
+
+    expect(summary.text).to include("1 processing attempt", "3 retry limits", "1 token budget exceeded")
+    expect(returns.text).to include("2 Inbox returns")
+    expect(returns["class"]).to include("bg-amber-100")
+    expect(summary["aria-label"]).to include("2 Inbox returns")
+    expect(response.body).to include("History before Paid recorded durable evidence is unavailable.")
+  end
+
   # @spec OPERATOR-INBOX-025
   it "returns an empty history frame after the item leaves the inbox" do
     issue = create(:issue, :needs_input, project:, body: questions_body)

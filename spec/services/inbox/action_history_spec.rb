@@ -85,7 +85,53 @@ RSpec.describe Inbox::ActionHistory do
 
   # @spec OPERATOR-INBOX-023
   it "marks a subject with no local evidence as legacy-incomplete" do
-    expect(described_class.call(entry:).incomplete).to be(true)
+    history = described_class.call(entry:)
+
+    expect(history.incomplete).to be(true)
+    expect(history.summary).to have_attributes(
+      processing_attempts: 0,
+      inbox_returns: 0,
+      retry_limits: 0,
+      token_budget_exceeded: 0
+    )
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "summarizes distinct processing attempts independently of the timeline page" do
+    create(:agent_run, project:, issue:, status: "completed", completed_at: 2.hours.ago)
+    second_run = create(:agent_run, project:, issue:, status: "failed", completed_at: 1.hour.ago)
+
+    history = described_class.call(entry:, limit: 1)
+
+    expect(history.events.size).to eq(1)
+    expect(history.summary).to have_attributes(
+      processing_attempts: 2,
+      inbox_returns: 0,
+      retry_limits: 0,
+      token_budget_exceeded: 0
+    )
+    expect(history.events.map(&:id)).to include("run-start:#{second_run.id}")
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "counts retry-limit entries and repeated Inbox returns from the durable retry counter" do
+    issue.update!(runner_retry_abandonment_count: 3)
+
+    expect(described_class.call(entry:).summary).to have_attributes(
+      retry_limits: 3,
+      inbox_returns: 2
+    )
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "counts token-budget-exceeded runs once when a run matches both issue associations" do
+    create(:agent_run, project:, issue:, source_pull_request_number: issue.github_number,
+      status: "token_budget_exceeded", completed_at: 1.hour.ago)
+
+    expect(described_class.call(entry:).summary).to have_attributes(
+      processing_attempts: 1,
+      token_budget_exceeded: 1
+    )
   end
 
   # @spec OPERATOR-INBOX-023
@@ -140,7 +186,7 @@ RSpec.describe Inbox::ActionHistory do
 
     expect(history.events.size).to eq(5)
     expect(history.next_cursor).to eq(history.events.last.id)
-    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
+    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/).reject { |sql| sql.include?("COUNT") }
     expect(history_selects).not_to be_empty
     expect(history_selects).to all(include("LIMIT"))
   end

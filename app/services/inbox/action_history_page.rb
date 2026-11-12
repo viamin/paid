@@ -6,6 +6,7 @@ module Inbox
   # @spec OPERATOR-INBOX-022
   class ActionHistoryPage
     Cursor = Data.define(:id, :occurred_at)
+    Projection = Data.define(:events, :summary)
     RUN_OUTCOMES = {
       "completed" => [ "Agent run completed", "completed" ],
       "no_output" => [ "Agent run completed with no output", "no_output" ],
@@ -20,6 +21,13 @@ module Inbox
 
     def self.call(...) = new(...).call
 
+    def self.projection_for(...)
+      page = new(...)
+      Projection.new(events: page.call,
+        summary: page.summary || ActionHistory::Summary.new(processing_attempts: 0, inbox_returns: 0, retry_limits: 0,
+          token_budget_exceeded: 0))
+    end
+
     def initialize(entry:, subject_key:, limit:, before:)
       @entry, @subject_key, @limit, @before = entry, subject_key, limit, before
     end
@@ -29,6 +37,20 @@ module Inbox
 
       (persisted_events + run_start_events + run_finish_events + feature_approval_events + feature_release_events)
         .sort_by { |event| [ -event.occurred_at.to_f, event.id ] }
+    end
+
+    # @spec OPERATOR-INBOX-028
+    def summary
+      return unless entry.issue
+
+      run_counts = runs.distinct.group(:status).count(:id)
+      retry_limits = entry.issue.runner_retry_abandonment_count.to_i
+      ActionHistory::Summary.new(
+        processing_attempts: run_counts.values.sum,
+        inbox_returns: [ retry_limits - 1, 0 ].max,
+        retry_limits:,
+        token_budget_exceeded: run_counts.fetch("token_budget_exceeded", 0)
+      )
     end
 
     private

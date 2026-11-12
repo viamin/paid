@@ -163,6 +163,21 @@ events; reapproval of a newer revision therefore remains visible after the
 invalidated attempt. Scanner replay of the same assessed revision is
 idempotent.
 
+### Action-history activity summary
+
+The Action history header summarizes known activity without adding another
+counter: it counts distinct agent runs linked to the issue as processing
+attempts, counts `token_budget_exceeded` among those runs, and reads the
+durable `runner_retry_abandonment_count` for retry-limit entries and repeated
+Inbox returns (entries after the first abandonment). The run relation is
+deduplicated even when a run matches both the issue and source-PR associations.
+These aggregate values are calculated independently of the bounded timeline,
+so paging older events cannot change the header. Two or more returns receive a
+visually emphasized, text-equivalent treatment that remains understandable to
+assistive technology. The existing coverage-boundary warning remains visible:
+the summary names known durable activity and does not reconstruct unavailable
+older history.
+
 Issue-backed lanes retain their project joins when project predicates or
 ordering require them, but preload projects separately. This keeps one shared
 project object per project while preventing a project audit-history payload

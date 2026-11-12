@@ -3,14 +3,15 @@
 module Inbox
   # Read-only projection for a stable issue/PR or feature identity. Queue list
   # construction never calls this service; it is intentionally detail-only.
-  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023
+  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023 OPERATOR-INBOX-028
   class ActionHistory
     Event = Data.define(:id, :action, :actor, :source, :result, :occurred_at, :revision, :evidence_url)
-    Result = Data.define(:events, :incomplete, :next_cursor)
+    Summary = Data.define(:processing_attempts, :inbox_returns, :retry_limits, :token_budget_exceeded)
+    Result = Data.define(:events, :incomplete, :next_cursor, :summary)
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
     CACHE_TTL = 20.seconds
-    CACHE_PREFIX = "inbox/history/v1"
+    CACHE_PREFIX = "inbox/history/v2"
 
     def self.call(...) = new(...).call
 
@@ -21,23 +22,24 @@ module Inbox
       @before = before
     end
 
-    # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
+    # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025 OPERATOR-INBOX-028
     def call
-      return Result.new(events: [], incomplete: false, next_cursor: nil) unless subject_key
+      return Result.new(events: [], incomplete: false, next_cursor: nil, summary: empty_summary) unless subject_key
 
       returned = capture_return!
-      candidates = if cacheable? && !returned
+      projection = if cacheable? && !returned
         Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
-          ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
+          ActionHistoryPage.projection_for(entry:, subject_key:, limit:, before:)
         end
       else
-        ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
+        ActionHistoryPage.projection_for(entry:, subject_key:, limit:, before:)
       end
-      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil) unless candidates
+      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil, summary: empty_summary) unless projection&.events
 
-      page = candidates.first(limit + 1)
+      page = projection.events.first(limit + 1)
       visible = page.first(limit)
-      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil)
+      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil,
+        summary: projection.summary)
     end
 
     def self.subject_key_for(entry)
@@ -80,6 +82,10 @@ module Inbox
     def legacy_coverage?
       entry.issue.present? &&
         (entry.issue.action_history_started_at.nil? || entry.issue.action_history_started_at > entry.issue.github_created_at)
+    end
+
+    def empty_summary
+      Summary.new(processing_attempts: 0, inbox_returns: 0, retry_limits: 0, token_budget_exceeded: 0)
     end
 
     # Cache only the default read-only page. Cursor pages are infrequent and
