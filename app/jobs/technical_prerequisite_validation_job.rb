@@ -6,7 +6,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
 
   discard_on ActiveRecord::RecordNotFound
 
-  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042 PARTIAL-CLOSEOUT-050
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
     start_result = start!(agent_run)
@@ -63,8 +63,11 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
 
       status = result.status == "completed" ? "completed" : "failed"
       agent_run.update!(status:, completed_at: Time.current, error_message: terminal_message(result))
-      measurement = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
-      audit_issue = agent_run.issue if result.status != "cancelled" && measurement.present?
+      # Every non-cancelled terminal record is new, revision-bound closeout
+      # evidence. AutoAudit deduplicates unchanged evidence generations, while
+      # the refreshed assessor — never this executor — decides whether it
+      # satisfies a criterion or leaves a human prerequisite outstanding.
+      audit_issue = agent_run.issue if result.status != "cancelled"
     end
     # Scheduled outside the run lock: audit admission takes the issue lock and
     # creates continuation/agent-run rows, so a scheduling failure here must
@@ -73,8 +76,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   end
 
   def handoff_terminal_measurement(agent_run)
-    measurement = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
-    return unless agent_run.finished? && measurement.present?
+    return unless agent_run.finished?
     return if agent_run.status == "cancelled" || agent_run.issue.nil?
 
     PartialCloseouts::AutoAudit.call(issue: agent_run.issue)

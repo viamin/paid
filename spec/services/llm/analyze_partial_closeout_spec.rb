@@ -251,6 +251,40 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-050
+    it "keeps human authorization and technical validation as separate closeout prerequisites" do
+      owner = create(:issue, :in_progress, project:, github_state: "open")
+      recipe = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative environment measurement", command: "bin/measure")
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [ {
+          criterion: "Approve the representative environment", kind: "human",
+          next_step: "Approve the representative environment for measurement.",
+          attribution: { coverage: "established", source_issue_number: owner.github_number,
+            owner_issue_number: owner.github_number, criterion: "Approve the representative environment" }
+        } ],
+        criteria: [ {
+          criterion: "Measure the approved representative environment", state: "unknown",
+          validation_kind: "performance_measurement", validation_requirement_id: recipe.id
+        } ]
+      }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.fetch("gaps").sole).to include("kind" => "human")
+      expect(result.fetch("criteria").sole).to include("validation_kind" => "performance_measurement")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-050
+    it "rejects a combined human and technical prerequisite on one criterion" do
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Approve and measure the environment", state: "unknown", prerequisite_kind: "human",
+        prerequisite: "Approve the environment.", validation_kind: "native"
+      } ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /assessment failed/)
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,

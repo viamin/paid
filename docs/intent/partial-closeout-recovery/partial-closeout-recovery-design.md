@@ -701,6 +701,32 @@ servers; native checks copy neither attachment type.
 Validation evidence remains evidence for a later assessment, not an automatic
 attestation that the criterion is satisfied.
 
+### Split prerequisite ownership
+
+A partial-closeout assessment represents each owner and evidence type as a
+separate prerequisite. A human authorization or setup decision is a `human`
+gap with an exact next step and attribution to the issue that owns that
+decision. An independent human judgment is another attributed `human` gap; it
+is never inferred from a technical result or attached to an implementation
+child merely because that child mentions the judgment. Runnable validation is
+a separate criterion with `validation_kind` and a reviewed requirement. A
+criterion may not combine `prerequisite_kind` with `validation_kind`.
+
+For example, approval of a representative environment, measuring that approved
+environment, and a blinded human review are three distinct entries. The first
+and third remain Action Required on their attributed human owners. The middle
+is offered only through `TechnicalPrerequisites::InboxActions`, subject to the
+existing delegated-execution and tenant/runner capability policy. Its record
+binds the environment, pinned revision, criterion, recipe/tool, result, and
+provenance. Failed and unavailable records remain visible with their exact
+recovery action and can be retried after that action.
+
+Every non-cancelled terminal technical validation record can request the
+bounded `AutoAudit` path. The path admits only changed source evidence and
+deduplicates an unchanged generation, so it cannot loop. The fresh acceptance
+audit, rather than the validation executor, decides what the evidence means;
+it never synthesizes an authorization or independent judgment.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation
