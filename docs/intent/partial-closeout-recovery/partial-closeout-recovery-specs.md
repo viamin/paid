@@ -876,8 +876,9 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
 
 - [x] **PARTIAL-CLOSEOUT-048** — When an acceptance audit for the current
   source and approved-intent revisions fails because assessment transport
-  failed or timed out — including a Temporal activity timeout that ends the
-  audit before it can record a typed failure, and an exhausted runner pool that
+  failed, timed out, or returned invalid JSON — including a Temporal activity
+  timeout that ends the audit before it can record a typed failure, and an
+  exhausted runner pool that
   never reached one — and the issue remains eligible for an audit, Paid SHALL
   retry after bounded increasing delays, with at most three attempts for the
   current source revision, counting operator-requested attempts and attempts

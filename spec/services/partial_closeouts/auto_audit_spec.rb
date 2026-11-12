@@ -108,6 +108,26 @@ RSpec.describe PartialCloseouts::AutoAudit do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "retries a bounded invalid JSON audit after the transport is repaired" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment returned invalid JSON.",
+      reconciliation: { "acceptance_audit_failure" => { "category" => "invalid_json" } }, completed_at: 2.hours.ago)
+
+    second = described_class.call(issue:)
+    expect(second).to be_scheduled
+    second.agent_run.update!(status: "failed", error_message: "Partial closeout assessment returned invalid JSON.",
+      reconciliation: { "acceptance_audit_failure" => { "category" => "invalid_json" } }, completed_at: 2.hours.ago)
+
+    third = described_class.call(issue:)
+    expect(third).to be_scheduled
+    third.agent_run.update!(status: "failed", error_message: "Partial closeout assessment returned invalid JSON.",
+      reconciliation: { "acceptance_audit_failure" => { "category" => "invalid_json" } }, completed_at: 2.hours.ago)
+
+    expect(described_class.call(issue:).code).to eq(:retry_exhausted)
+    expect(issue.agent_runs.count).to eq(3)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "stops automatic retries after a bounded number of transient failures" do
     3.times do
       result = Issues::RequestAcceptanceAudit.call(issue:, actor: owner)

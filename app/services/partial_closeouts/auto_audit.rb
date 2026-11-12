@@ -8,7 +8,7 @@ module PartialCloseouts
   class AutoAudit
     MAX_ATTEMPTS = 3
     RETRY_DELAY = 30.minutes
-    TRANSIENT_FAILURE_CATEGORIES = %w[transport_error timeout unsuccessful_response].freeze
+    TRANSIENT_FAILURE_CATEGORIES = %w[transport_error timeout unsuccessful_response invalid_json].freeze
     TRANSIENT_FAILURE_MESSAGES = [
       "Partial closeout assessment transport failed.",
       "Partial closeout assessment timed out.",

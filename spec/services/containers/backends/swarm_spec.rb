@@ -90,6 +90,15 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.identifier).to eq("swarm")
   end
 
+  it "streams request archives to the concrete task container" do
+    allow(concrete_container).to receive(:archive_in_stream).with("/opt").and_yield
+    service = backend.get_container(service_id)
+
+    backend.archive_in_container(service, "/opt") { "tar data" }
+
+    expect(concrete_container).to have_received(:archive_in_stream).with("/opt")
+  end
+
   it "uses overlay DNS rather than remote proxy routing" do
     expect(backend.remote?).to be(false)
   end

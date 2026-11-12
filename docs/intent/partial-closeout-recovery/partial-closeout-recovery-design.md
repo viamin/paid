@@ -564,9 +564,9 @@ when the current assessment is missing or stale and ordinary continuation
 guards permit it. It records at most three audit attempts per source revision
 — the evidence generation — including operator-requested attempts and attempts
 made under an earlier approved-intent revision, because an issue-body edit
-changes the approved intent without changing the evidence. Only transport and
-timeout failures are eligible for another automatic attempt, including a
-Temporal activity timeout that ends the audit before it records a typed
+changes the approved intent without changing the evidence. Transport, timeout,
+and invalid JSON failures are eligible for another automatic attempt, including
+a Temporal activity timeout that ends the audit before it records a typed
 failure and an exhausted runner pool that never reached one; retries wait 30
 and then 60 minutes. A completed, cancelled, or non-transient failed audit
 stops automatic attempts for that approved-intent revision. New terminal or

@@ -66,6 +66,10 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      def archive_in_container(_container, _path, &)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
       def container_stats(_container, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end

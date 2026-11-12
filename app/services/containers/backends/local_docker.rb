@@ -58,6 +58,10 @@ module Containers
         container.exec(command, **options, &block)
       end
 
+      def archive_in_container(container, path, &block)
+        container.archive_in_stream(path, &block)
+      end
+
       def container_stats(container, **options)
         container.stats(**options)
       end
