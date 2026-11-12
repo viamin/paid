@@ -76,6 +76,21 @@
   `spec/services/inbox/action_history_spec.rb`,
   `spec/services/inbox/removals_spec.rb`.
 
+- [x] **OPERATOR-INBOX-022A** — When an operator opens a selected Inbox
+  detail, the Action history header SHALL summarize durable processing attempts
+  and Inbox appearances. It SHALL derive attempts and token-budget outcomes
+  from the subject's agent runs, and derive Inbox returns from the retry
+  abandonment counter plus deduplicated durable return/restore events, without
+  double-counting either source. When two or more returns are known, the header
+  SHALL visually emphasize that recurrence. When the history coverage boundary
+  predates available activity, the header SHALL describe its appearance and
+  return counts as a lower bound rather than infer missing history.
+  *Code:* `app/services/inbox/action_history.rb`,
+  `app/services/inbox/action_history_page.rb`,
+  `app/views/inbox/_history_content.html.erb`.
+  *Test:* `spec/services/inbox/action_history_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
   project, the system SHALL expose that pending review as a `plan_review`

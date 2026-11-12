@@ -88,6 +88,37 @@ RSpec.describe Inbox::ActionHistory do
     expect(described_class.call(entry:).incomplete).to be(true)
   end
 
+  # @spec OPERATOR-INBOX-022A
+  it "summarizes a no-history Inbox appearance without inventing processing attempts" do
+    history = described_class.call(entry:)
+
+    expect(history.summary).to have_attributes(processing_attempts: 0, inbox_appearances: 1,
+      inbox_returns: 0, retry_limit_returns: 0, token_budget_exits: 0)
+  end
+
+  # @spec OPERATOR-INBOX-022A
+  it "summarizes ordinary processing and a durable Inbox return" do
+    create(:agent_run, :completed, project:, issue:)
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", metadata: { action: "Returned to Inbox" })
+
+    expect(described_class.call(entry:).summary).to have_attributes(processing_attempts: 1, inbox_appearances: 2,
+      inbox_returns: 1, retry_limit_returns: 0, token_budget_exits: 0)
+  end
+
+  # @spec OPERATOR-INBOX-022A
+  it "combines repeated retry-limit returns and token-budget exits without double-counting timeline events" do
+    issue.update!(runner_retry_abandonment_count: 3)
+    2.times { create(:agent_run, :token_budget_exceeded, project:, issue:) }
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", metadata: { action: "Restored to Inbox" })
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", metadata: { action: "Returned to Inbox" })
+
+    expect(described_class.call(entry:).summary).to have_attributes(processing_attempts: 2, inbox_appearances: 5,
+      inbox_returns: 4, retry_limit_returns: 2, token_budget_exits: 2)
+  end
+
   # @spec OPERATOR-INBOX-023
   it "keeps pre-ledger coverage incomplete after the first durable event" do
     issue.update_column(:action_history_started_at, issue.github_created_at + 1.hour)
@@ -142,7 +173,8 @@ RSpec.describe Inbox::ActionHistory do
     expect(history.next_cursor).to eq(history.events.last.id)
     history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
     expect(history_selects).not_to be_empty
-    expect(history_selects).to all(include("LIMIT"))
+    event_selects = history_selects.reject { |sql| sql.include?("COUNT") }
+    expect(event_selects).to all(include("LIMIT"))
   end
 
   # @spec OPERATOR-INBOX-025

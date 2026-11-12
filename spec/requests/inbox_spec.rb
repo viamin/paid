@@ -1357,6 +1357,22 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-frame"]).to eq("inbox-history")
   end
 
+  # @spec OPERATOR-INBOX-022A
+  it "shows an emphasized lower-bound history summary for repeated retry returns and token-budget exits" do
+    issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body,
+      runner_retry_abandonment_count: 3)
+    issue.update_column(:action_history_started_at, issue.github_created_at + 1.hour)
+    2.times { create(:agent_run, :token_budget_exceeded, project:, issue:) }
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    document = Nokogiri::HTML(response.body)
+    summary = document.at_css("[data-testid='inbox-history-summary']")
+    expect(summary.text).to include("2 processing attempts", "At least 3 Inbox appearances", "2 retry-limit returns", "2 token-budget exits")
+    expect(summary["class"]).to include("font-semibold")
+  end
+
   # @spec OPERATOR-INBOX-025
   it "returns an empty history frame after the item leaves the inbox" do
     issue = create(:issue, :needs_input, project:, body: questions_body)

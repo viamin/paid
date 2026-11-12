@@ -6,6 +6,10 @@ module Inbox
   # @spec OPERATOR-INBOX-022
   class ActionHistoryPage
     Cursor = Data.define(:id, :occurred_at)
+    Page = Data.define(:events, :summary)
+    Summary = Data.define(:processing_attempts, :inbox_appearances, :inbox_returns,
+      :retry_limit_returns, :token_budget_exits)
+    RETURN_ACTIONS = [ "Returned to Inbox", "Restored to Inbox" ].freeze
     RUN_OUTCOMES = {
       "completed" => [ "Agent run completed", "completed" ],
       "no_output" => [ "Agent run completed with no output", "no_output" ],
@@ -27,8 +31,17 @@ module Inbox
     def call
       return if before && cursor.nil?
 
-      (persisted_events + run_start_events + run_finish_events + feature_approval_events + feature_release_events)
+      events = (persisted_events + run_start_events + run_finish_events + feature_approval_events + feature_release_events)
         .sort_by { |event| [ -event.occurred_at.to_f, event.id ] }
+      Page.new(events:, summary: summary)
+    end
+
+    # @spec OPERATOR-INBOX-022A
+    def summary
+      retry_limit_returns = entry.issue ? [ entry.issue.runner_retry_abandonment_count.to_i - 1, 0 ].max : 0
+      inbox_returns = retry_limit_returns + durable_return_count
+      Summary.new(processing_attempts: run_counts.values.sum, inbox_appearances: inbox_returns + 1,
+        inbox_returns:, retry_limit_returns:, token_budget_exits: run_counts.fetch("token_budget_exceeded", 0))
     end
 
     private
@@ -137,6 +150,10 @@ module Inbox
       InboxHistoryEvent.for_subject(account: entry.project.account, subject_key:)
     end
 
+    def durable_return_count
+      history_scope.where("metadata ->> 'action' IN (?)", RETURN_ACTIONS).count
+    end
+
     def safe_evidence_url(url)
       url if ApplicationController.helpers.safe_github_url?(url)
     end
@@ -144,6 +161,12 @@ module Inbox
     def runs
       entry.project.agent_runs.where(issue: entry.issue)
         .or(entry.project.agent_runs.where(source_pull_request_number: entry.issue.github_number))
+    end
+
+    def run_counts
+      return {} unless entry.issue
+
+      @run_counts ||= runs.group(:status).count
     end
 
     def feature

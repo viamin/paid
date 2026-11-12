@@ -6,7 +6,7 @@ module Inbox
   # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023
   class ActionHistory
     Event = Data.define(:id, :action, :actor, :source, :result, :occurred_at, :revision, :evidence_url)
-    Result = Data.define(:events, :incomplete, :next_cursor)
+    Result = Data.define(:events, :summary, :incomplete, :next_cursor)
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
     CACHE_TTL = 20.seconds
@@ -23,21 +23,21 @@ module Inbox
 
     # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
     def call
-      return Result.new(events: [], incomplete: false, next_cursor: nil) unless subject_key
+      return Result.new(events: [], summary: empty_summary, incomplete: false, next_cursor: nil) unless subject_key
 
       returned = capture_return!
-      candidates = if cacheable? && !returned
+      page_result = if cacheable? && !returned
         Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
           ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
         end
       else
         ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
       end
-      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil) unless candidates
+      return Result.new(events: [], summary: empty_summary, incomplete: legacy_coverage?, next_cursor: nil) unless page_result
 
-      page = candidates.first(limit + 1)
+      page = page_result.events.first(limit + 1)
       visible = page.first(limit)
-      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil)
+      Result.new(events: visible, summary: page_result.summary, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil)
     end
 
     def self.subject_key_for(entry)
@@ -64,6 +64,11 @@ module Inbox
     attr_reader :before, :entry, :limit, :user
 
     def subject_key = self.class.subject_key_for(entry)
+
+    def empty_summary
+      ActionHistoryPage::Summary.new(processing_attempts: 0, inbox_appearances: 0, inbox_returns: 0,
+        retry_limit_returns: 0, token_budget_exits: 0)
+    end
 
     def capture_return!
       return unless user && entry.issue

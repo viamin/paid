@@ -1,7 +1,15 @@
-<%# @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025 %>
+<%# @spec OPERATOR-INBOX-022 OPERATOR-INBOX-022A OPERATOR-INBOX-025 %>
 <% history = Inbox::ActionHistory.call(entry: entry, user: current_user, before: params[:history_cursor]) %>
 <section class="mt-6 border-t border-gray-200 pt-4" aria-labelledby="inbox-history-heading">
   <h3 id="inbox-history-heading" class="text-sm font-semibold text-gray-900">Action history</h3>
+  <% summary = history.summary %>
+  <% appearances = history.incomplete ? "At least #{summary.inbox_appearances}" : summary.inbox_appearances %>
+  <p data-testid="inbox-history-summary" class="mt-1 text-sm text-gray-700<%= " rounded bg-amber-50 px-2 py-1 font-semibold text-amber-900" if summary.inbox_returns >= 2 %>">
+    <%= summary.processing_attempts %> <%= "processing attempt".pluralize(summary.processing_attempts) %>
+    · <%= appearances %> <%= "Inbox appearance".pluralize(summary.inbox_appearances) %>
+    <% if summary.retry_limit_returns.positive? %> · <%= summary.retry_limit_returns %> <%= "retry-limit return".pluralize(summary.retry_limit_returns) %><% end %>
+    <% if summary.token_budget_exits.positive? %> · <%= summary.token_budget_exits %> <%= "token-budget exit".pluralize(summary.token_budget_exits) %><% end %>
+  </p>
   <% if history.incomplete %><p class="mt-1 text-sm text-amber-800">History before Paid recorded durable evidence is unavailable.</p><% end %>
   <ol class="mt-3 space-y-3" aria-label="Action history timeline">
     <% history.events.each do |event| %>

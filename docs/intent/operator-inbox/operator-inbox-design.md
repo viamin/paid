@@ -85,6 +85,16 @@ recent run or external events briefly; new Paid-owned history writes invalidate 
 item's cache. Actionable state, permissions, and entry membership are always
 checked against current records and are never served from that cache.
 
+The Action history header is a compact projection of the same durable sources:
+it counts subject agent runs as processing attempts, and reports the current
+Inbox appearance plus returns recorded by the retry-abandonment counter and
+deduplicated Inbox return/restore history events. Token-budget exits remain a
+separate run-outcome count. A recurring return count receives an emphasized
+treatment so operators can identify a looping item without scanning the
+timeline. The header never manufactures older events: if the subject's history
+coverage begins after its lifetime, appearance and return totals are labelled as
+lower bounds.
+
 Inbox detail-frame requests resolve only the requested entry through its
 lane's existing visibility and admission rules and render only `inbox-detail`.
 They do not build filter availability or render the queue. Invalid, resolved,
