@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 Rails.application.routes.draw do
+  # @spec DEVELOPMENT-DATABASE-TOOLS-001 DEVELOPMENT-DATABASE-TOOLS-002
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
+  mount PgHero::Engine, at: "pghero" if defined?(PgHero)
 
   devise_for :users, controllers: { registrations: "users/registrations" }
 

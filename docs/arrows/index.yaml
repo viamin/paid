@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  development-database-tools:
+    title: Development Database Tools
+    path: docs/intent/development-database-tools/development-database-tools-design.md
+    specs: docs/intent/development-database-tools/development-database-tools-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    audited: 2026-11-12
   settings-visible-copy:
     title: Settings Visible Copy
     path: docs/intent/settings-visible-copy/settings-visible-copy-design.md

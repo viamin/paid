@@ -181,6 +181,9 @@ group :development do
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
 
+  # Local PostgreSQL inspection dashboard, mounted only in development routes.
+  gem "pghero"
+
   # Request-level performance metrics dashboard [https://github.com/igorkasyanchuk/rails_performance]
   gem "rails_performance"
 
