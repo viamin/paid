@@ -22,8 +22,9 @@
   *Test:* `spec/services/issues/root_prerequisite_ranking_spec.rb`,
   `spec/system/partial_closeout_layout_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-044** — When source-closure assessment transport
-  exhausts its bounded, backoff retry policy after a branch push, Paid SHALL
+- [x] **PARTIAL-CLOSEOUT-044** — When source-closure assessment transport,
+  including an unsuccessful runner response, exhausts its bounded, backoff
+  retry policy after a branch push, Paid SHALL
   retain the same AgentRun in `waiting_recovery` with the failed step, pushed
   branch and commit, attempt count, sanitized category, and next retry time;
   it SHALL retain the issue/PR work slot, release its idle execution environment,

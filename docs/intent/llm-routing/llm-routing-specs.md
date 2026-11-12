@@ -21,11 +21,10 @@
   its container after success, failure, timeout, provisioning failure, or
   worker interruption, and SHALL never fall back to host execution. Its
   worker-death orphan-sweep lifetime SHALL not expire during healthy reuse of
-  the container. Request input SHALL reach the container without attaching
-  Docker exec stdin, and a missing exec exit status SHALL fail explicitly.
-  The materializer SHALL delete each staged request input immediately after
-  consuming it, including when materialization fails, before the reusable
-  container accepts another command.
+  the container. Request input SHALL reach the container through an upgraded
+  Docker exec stdin connection that verifies its declared length and waits for command completion; a missing
+  exec exit status SHALL fail explicitly. The container root filesystem SHALL
+  remain read-only.
   Post-run
   background summaries and diagnostics SHALL route independently of a cleaned-up environment.
 - [x] **LLM-ROUTING-007** — Decision drafting SHALL honor the shared fallback

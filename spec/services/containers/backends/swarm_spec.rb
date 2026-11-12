@@ -90,13 +90,16 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.identifier).to eq("swarm")
   end
 
-  it "streams request archives to the concrete task container" do
-    allow(concrete_container).to receive(:archive_in_stream).with("/opt").and_yield
+  it "routes upgraded stdin exec to the concrete task container" do
+    input = StringIO.new("hello")
+    allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])
     service = backend.get_container(service_id)
 
-    backend.archive_in_container(service, "/opt") { "tar data" }
+    result = backend.exec_in_container_with_stdin(service, [ "cat" ], stdin: input, wait: 5)
 
-    expect(concrete_container).to have_received(:archive_in_stream).with("/opt")
+    expect(result).to eq([ [ "hello" ], [], 0 ])
+    expect(Containers::DockerExecWithStdin).to have_received(:call)
+      .with(container: concrete_container, command: [ "cat" ], stdin: input, wait: 5)
   end
 
   it "uses overlay DNS rather than remote proxy routing" do

@@ -41,20 +41,15 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
   end
 
   describe "source-closure assessment recovery" do
-    def source_closure_timeout_error
-      timeout = Temporalio::Error::TimeoutError.new(
-        "start to close timeout",
-        type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
-        last_heartbeat_details: []
-      )
+    def source_closure_activity_error(cause, retry_state:)
       begin
         begin
-          raise timeout
+          raise cause
         rescue
           raise Temporalio::Error::ActivityError.new(
             "activity failed", scheduled_event_id: 1, started_event_id: 2, identity: "worker-1",
             activity_type: "AssessSourceClosure", activity_id: "assessment-1",
-            retry_state: Temporalio::Error::RetryState::TIMEOUT
+            retry_state: retry_state
           )
         end
       rescue => error
@@ -62,9 +57,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       end
     end
 
+    def unsuccessful_source_closure_error
+      failure = Temporalio::Error::ApplicationError.new(
+        "transport returned an unsuccessful response", { "category" => "unsuccessful_response" },
+        type: "SourceClosureAssessmentFailure"
+      )
+      source_closure_activity_error(failure,
+        retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED)
+    end
+
     # @spec PARTIAL-CLOSEOUT-044
     it "parks an assessment whose Temporal activity retries time out" do
-      allow(workflow).to receive(:run_activity).and_raise(source_closure_timeout_error)
+      timeout = Temporalio::Error::TimeoutError.new(
+        "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT)
+      allow(workflow).to receive(:run_activity).and_raise(error)
       allow(workflow).to receive(:run_activity)
         .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30)
         .and_return({})
@@ -74,6 +83,34 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         Activities::ParkSourceClosureRecoveryActivity,
         { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
       )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044
+    it "parks a pushed branch when unsuccessful assessment responses exhaust retries" do
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("source-closure-unsuccessful-response-recovery-v1").and_return(true)
+      allow(workflow).to receive(:run_activity).and_raise(unsuccessful_source_closure_error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30)
+        .and_return({})
+
+      expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::ParkSourceClosureRecoveryActivity,
+        { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30
+      )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044
+    it "replays an existing unsuccessful response without changing its failure path" do
+      error = unsuccessful_source_closure_error
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("source-closure-unsuccessful-response-recovery-v1").and_return(false)
+      allow(workflow).to receive(:run_activity).and_raise(error)
+
+      expect { workflow.send(:assess_source_closure_or_park, 42) }.to raise_error(error)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ParkSourceClosureRecoveryActivity, any_args)
     end
   end
 

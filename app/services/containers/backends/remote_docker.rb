@@ -79,8 +79,8 @@ module Containers
         container.exec(command, **options, &block)
       end
 
-      def archive_in_container(container, path, &block)
-        container.archive_in_stream(path, &block)
+      def exec_in_container_with_stdin(container, command, stdin:, wait:, **options, &block)
+        DockerExecWithStdin.call(container:, command:, stdin:, wait:, **options, &block)
       end
 
       def container_stats(container, **options)
