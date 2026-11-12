@@ -80,6 +80,21 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_css("#inbox-copy-link-status", text: "Link copied.")
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "keeps the selected item's available action in the sticky header on desktop and narrow layouts" do
+    [ [1440, 1000], [390, 844] ].each do |width, height|
+      page.current_window.resize_to(width, height)
+      visit inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+      within("#inbox-detail") do
+        expect(page).to have_css("section[aria-labelledby='inbox-detail-actions-heading']")
+        within("[data-inbox-master-detail-target='actionArea']") do
+          expect(page).to have_button("Answer in chat")
+        end
+      end
+    end
+  end
+
   it "uses the member URL for a dependency cycle and retains it on mobile" do
     first = create(:issue, project:, github_state: "open", title: "Cycle first")
     second = create(:issue, project:, github_state: "open", title: "Cycle second")

@@ -69,7 +69,7 @@
 
   <div class="space-y-3 border-t border-gray-200 pt-4">
     <h3 class="text-sm font-semibold text-gray-900">Resolve this draft</h3>
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4" data-inbox-master-detail-target="actionSource">
       <% if can_review %>
         <%= button_to "Approve",
               approve_project_change_intent_path(change_intent.project, change_intent, return_to: return_to),

@@ -96,6 +96,31 @@ RSpec.describe InboxMasterDetailControllerNodeHarness do
     expect(result.fetch("status")).to eq("Copy failed.")
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "moves existing detail actions into the sticky header without recreating them" do
+    script = <<~JAVASCRIPT
+      const fs = require("node:fs")
+      const source = fs.readFileSync("app/javascript/controllers/inbox_master_detail_controller.js", "utf8")
+        .replace('import { Controller } from "@hotwired/stimulus"', "class Controller {}")
+        .replace("export default class extends Controller {", "return class InboxController extends Controller {")
+      const InboxController = new Function(source)()
+      const moved = []
+      const first = { id: "approve" }
+      const second = { id: "remove" }
+      const controller = Object.create(InboxController.prototype)
+      controller.hasActionAreaTarget = true
+      controller.actionAreaTarget = { append(source) { moved.push(source.id) } }
+      controller.actionSourceTargets = [first, second]
+      controller.moveDetailActions()
+      process.stdout.write(JSON.stringify(moved))
+    JAVASCRIPT
+
+    stdout, stderr, status = Open3.capture3("node", stdin_data: script)
+
+    expect(status).to be_success, stderr
+    expect(JSON.parse(stdout)).to eq(%w[approve remove])
+  end
+
   # @spec OPERATOR-INBOX-025
   it "leaves an in-flight detail replacement to Turbo" do
     source = File.read("app/javascript/controllers/inbox_master_detail_controller.js")

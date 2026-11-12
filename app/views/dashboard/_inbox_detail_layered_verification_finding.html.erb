@@ -19,7 +19,7 @@
   <div><dt class="font-medium text-gray-900">Contributing check results</dt><dd class="mt-1"><% if check_results.any? %><ul class="space-y-2"><% check_results.each do |result| %><li><span class="font-medium">State:</span> <%= result.execution_state %>; <span class="font-medium">Coverage:</span> <%= result.obligation_coverage %><br><span class="font-medium">Input revisions:</span> <%= result.input_revision.to_json %><br><span class="font-medium">Freshness:</span> <%= result.input_revision.values.map(&:to_s).include?(audit_revision.to_s) ? "matches audit revision" : "does not include audit revision" %></li><% end %></ul><% else %>No contributing result records are available.<% end %></dd></div>
 </dl>
 
-<nav class="mt-6 flex flex-wrap gap-3 text-sm" aria-label="Verification finding evidence">
+<nav class="mt-6 flex flex-wrap gap-3 text-sm" aria-label="Verification finding evidence" data-inbox-master-detail-target="actionSource">
   <%= link_to "View audit run", audit_path, class: "text-indigo-600 hover:text-indigo-500", data: { turbo_frame: "_top" } %>
   <%= link_to "View evidence", "#{audit_path}#layered-verification-coverage", class: "text-indigo-600 hover:text-indigo-500", data: { turbo_frame: "_top" } %>
   <% if intent_url %>

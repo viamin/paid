@@ -1,9 +1,11 @@
-<%# @spec OPERATOR-INBOX-015 %>
-<%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
-  <%= render "dashboard/inbox_detail",
-             entry: @selected_entry,
-             scoped_project: @scoped_project,
-             selected_kind: @selected_kind,
-             selected_scope: @selected_scope,
-             root_prerequisite_ranking: @root_prerequisite_ranking %>
+<%# @spec OPERATOR-INBOX-015 @spec OPERATOR-INBOX-027 %>
+<div data-controller="inbox-master-detail">
+  <%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
+    <%= render "dashboard/inbox_detail",
+               entry: @selected_entry,
+               scoped_project: @scoped_project,
+               selected_kind: @selected_kind,
+               selected_scope: @selected_scope,
+               root_prerequisite_ranking: @root_prerequisite_ranking %>
+  <% end %>
 <% end %>

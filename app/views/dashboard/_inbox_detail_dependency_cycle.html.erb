@@ -22,7 +22,7 @@
     </div>
     <p class="mt-1 text-sm text-indigo-800"><%= status.description %></p>
     <p class="mt-1 text-sm font-medium text-indigo-900">Next: <%= status.next_action %></p>
-    <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center" data-inbox-master-detail-target="actionSource">
       <% if status.button %>
         <%= form_with url: dashboard_cycle_analyses_path, data: { turbo_frame: "_top", turbo_confirm: status.button.confirm } do |form| %>
           <%= form.hidden_field :occurrence, value: cycle.occurrence %>

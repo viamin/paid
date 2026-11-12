@@ -1,7 +1,7 @@
 <%# @spec OPERATOR-INBOX-002I %>
 <% chat_action = Inbox::ChatAction.for(entry.kind) %>
 <% if chat_action.shared_detail? && Inbox::InteractiveChatAccess.allowed?(user: current_user, project: entry.project) %>
-  <div class="mt-6 border-t border-gray-200 pt-4">
+  <div class="mt-6 border-t border-gray-200 pt-4" data-inbox-master-detail-target="actionSource">
     <%= button_to chat_action.label,
           inbox_interactive_chat_path(entry),
           method: :post,

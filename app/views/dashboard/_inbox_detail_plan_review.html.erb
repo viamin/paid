@@ -13,7 +13,7 @@
     </ol>
   </div>
 
-  <div class="flex flex-wrap items-center gap-3">
+  <div class="flex flex-wrap items-center gap-3" data-inbox-master-detail-target="actionSource">
     <%= button_to approve_plan_review_path(entry.record),
           method: :post,
           params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },

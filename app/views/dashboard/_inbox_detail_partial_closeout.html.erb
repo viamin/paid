@@ -49,7 +49,7 @@
           Reviewer progress <%= shadow_evaluation.runs.where.not(verdict: "not_evaluated").count %>/<%= shadow_evaluation.corpus.case_ids.length %> evaluated.
           Repeated opens resume the same evaluation for its evidence generation.
         </p>
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3" data-inbox-master-detail-target="actionSource">
           <%= link_to shadow_evaluation.labeling? ? "Resume labeling" : "Open evaluation and report",
                 project_shadow_evaluation_path(entry.project, shadow_evaluation, **inbox_context),
                 data: { turbo_frame: "_top" },
@@ -112,7 +112,7 @@
           (skipped <%= facet_closeout_evaluation.progress[:skipped] %>).
           Repeated opens resume the same evaluation for the same evidence generation.
         </p>
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3" data-inbox-master-detail-target="actionSource">
           <%= link_to facet_closeout_evaluation.labeling? ? "Resume judgments" : "Open evaluation and report",
                 project_facet_confidence_evaluation_path(entry.project, facet_closeout_evaluation, **inbox_context),
                 data: { turbo_frame: "_top" },
@@ -402,7 +402,7 @@
     <% end %>
   </div>
 
-  <div class="flex flex-wrap items-center gap-3">
+  <div class="flex flex-wrap items-center gap-3" data-inbox-master-detail-target="actionSource">
     <%= link_to "View on GitHub",
           issue.github_url,
           target: "_blank",

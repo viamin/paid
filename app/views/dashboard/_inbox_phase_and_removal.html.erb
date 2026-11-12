@@ -2,7 +2,7 @@
 <% ownership = entry.phase_ownership %>
 <% personally_removed = Inbox::Removals::Suppression.call(user: current_user, entries: [entry]).include?(entry.id) %>
 
-<div class="mt-6 space-y-3 border-t border-gray-200 pt-4">
+<div class="mt-6 space-y-3 border-t border-gray-200 pt-4" data-inbox-master-detail-target="actionSource">
   <div class="flex flex-wrap items-center gap-2 text-xs">
     <% if ownership.phase_owned? %>
       <span class="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">

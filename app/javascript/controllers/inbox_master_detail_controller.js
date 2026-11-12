@@ -10,7 +10,7 @@ import { Controller } from "@hotwired/stimulus"
 // tweak to the shared active-row treatment lives in one place.
 // @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-003A @spec LIST-DETAIL-003
 export default class extends Controller {
-  static targets = ["list", "detailSection", "row", "copyStatus"]
+  static targets = ["list", "detailSection", "row", "copyStatus", "actionArea", "actionSource"]
   static values = { detailOpen: Boolean }
 
   // @spec OPERATOR-INBOX-003A
@@ -27,6 +27,19 @@ export default class extends Controller {
     this.boundReloadCollection = this.reloadCollection.bind(this)
     window.addEventListener("popstate", this.boundReloadCollection)
     this.syncPaneVisibility()
+    this.moveDetailActions()
+  }
+
+  // The detail partial owns each action's authorization, confirmation, and
+  // Turbo contract. Move those existing controls into the shared header rather
+  // than recreating a second, potentially divergent action implementation.
+  // @spec OPERATOR-INBOX-027
+  moveDetailActions() {
+    if (!this.hasActionAreaTarget) return
+
+    this.actionSourceTargets.forEach((source) => {
+      if (source.parentElement !== this.actionAreaTarget) this.actionAreaTarget.append(source)
+    })
   }
 
   disconnect() {
@@ -36,6 +49,16 @@ export default class extends Controller {
 
   detailOpenValueChanged() {
     this.syncPaneVisibility()
+  }
+
+  actionSourceTargetConnected(source) {
+    if (this.hasActionAreaTarget && source.parentElement !== this.actionAreaTarget) {
+      this.actionAreaTarget.append(source)
+    }
+  }
+
+  actionAreaTargetConnected() {
+    this.moveDetailActions()
   }
 
   // @spec OPERATOR-INBOX-025

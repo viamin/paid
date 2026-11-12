@@ -71,6 +71,17 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Selected-detail action area
+
+The selected detail has one sticky action area immediately below its heading.
+Each lane continues to render and authorize its own action controls; the
+Inbox master-detail controller moves those existing controls into the shared
+area after the detail frame loads. This preserves each action's endpoint,
+policy predicate, confirmation, disabled state, and Turbo navigation contract
+without creating a second action implementation that could drift. Controls
+wrap in the available width, while decision explanations and input-heavy
+decision forms remain in the detail body below the action area.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the

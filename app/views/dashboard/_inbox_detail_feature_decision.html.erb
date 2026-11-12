@@ -171,7 +171,7 @@
   <% end %>
 
   <% if !confidence_driven && policy(feature_intent).approve? %>
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-wrap items-center gap-3" data-inbox-master-detail-target="actionSource">
       <%= button_to "Mark approved",
             approve_feature_intent_path(feature_intent),
             method: :post,

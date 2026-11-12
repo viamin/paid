@@ -96,7 +96,7 @@
     </div>
   <% end %>
 
-  <div class="flex flex-wrap items-center gap-3">
+  <div class="flex flex-wrap items-center gap-3" data-inbox-master-detail-target="actionSource">
     <% if policy(entry.project).run_agent? && recovery.enhancement? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
@@ -110,6 +110,6 @@
           target: "_blank",
           rel: "noopener noreferrer",
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-    <%= render "inbox/supplement_content", entry: entry %>
   </div>
+  <%= render "inbox/supplement_content", entry: entry %>
 </div>

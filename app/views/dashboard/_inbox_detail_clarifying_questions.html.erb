@@ -13,10 +13,12 @@
       requirement. Do NOT "fix" this to `_top` — that re-introduces the
       Content-missing bug (see #4502). %>
   <% if Inbox::InteractiveChatAccess.allowed?(user: current_user, project: entry.project) %>
-    <%= button_to "Answer in chat",
+    <div data-inbox-master-detail-target="actionSource">
+      <%= button_to "Answer in chat",
           project_issue_clarifying_questions_chat_path(entry.project, entry.issue),
           class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
           form: { data: { turbo_frame_spec_whitelist: "answer-in-chat" } } %>
+    </div>
   <% end %>
   <% if entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
@@ -25,7 +27,7 @@
           selected_kind: selected_kind %>
   <% else %>
     <p class="text-sm text-gray-500">No clarifying questions are pending for this issue.</p>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3" data-inbox-master-detail-target="actionSource">
       <%= link_to inbox_issue_link_label(entry.issue),
             entry.issue.github_url,
             target: "_blank",

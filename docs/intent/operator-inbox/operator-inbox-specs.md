@@ -588,6 +588,18 @@
   *Test:* `spec/services/inbox/chat_action_spec.rb`,
   `spec/services/inbox/open_interactive_chat_spec.rb`.
 
+- [x] **OPERATOR-INBOX-027** — When an operator opens an Inbox detail on a
+  desktop or narrow viewport, the system SHALL keep a sticky action area below
+  the detail heading and SHALL place each available lane action in that area.
+  The area SHALL reuse the lane's existing controls so authorization,
+  confirmations, disabled/loading behavior, and Turbo navigation remain
+  unchanged. Action controls SHALL wrap without horizontal overflow; detailed
+  explanations and input-heavy decision forms remain below the action area.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_master_detail_controller.js`.
+  *Test:* `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
+  `spec/system/inbox_navigation_spec.rb`.
+
 - [x] **OPERATOR-INBOX-009** — When a signed-in user opens `/inbox/:entry_id`
   for a stale or invalid entry in their current queue scope, the system SHALL
   redirect to `/inbox` with `303 See Other` instead of silently selecting the
