@@ -104,6 +104,29 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_css("#inbox-detail h2", text: "Dependency cycle")
   end
 
+  # @spec AUTO-PICK-QUEUE-023 AUTO-PICK-QUEUE-024
+  it "keeps the first cycle-repair decision readable on a narrow screen" do
+    second_project = create(:project, account:, created_by: user, owner: "acme", repo: "beta", active: true)
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project: second_project, github_state: "open")
+    third = create(:issue, project:, github_state: "open")
+    downstream = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: third)
+    create_legacy_issue_dependency(issue: third, depends_on_issue: first)
+    create_legacy_issue_dependency(issue: downstream, depends_on_issue: first)
+    cycle_entry = Inbox::Queue.call(user:, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND).sole
+
+    page.current_window.resize_to(390, 844)
+    visit inbox_entry_path(cycle_entry.id, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
+
+    expect(page).to have_css("[data-testid='cycle-blocked-work']", text: "3 issues wait on each other")
+    expect(page).to have_css("[data-testid='cycle-blocked-work']", text: "1 downstream open issue")
+    expect(page).to have_button("Analyze and possibly repair on GitHub")
+    expect(page).to have_text("may edit one verified GitHub dependency declaration")
+    expect(page.evaluate_script("document.documentElement.scrollWidth")).to be <= page.evaluate_script("window.innerWidth")
+  end
+
   it "uses the existing safe fallback when a copied member URL is no longer actionable" do
     visit member_path(first_issue)
     expect(page).to have_css("#inbox-detail h2", text: "First question")
