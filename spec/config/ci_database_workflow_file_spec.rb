@@ -129,6 +129,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             job = workflow.fetch("jobs").fetch(job_name)
             role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
 
+            expect(role_step.fetch("env")).to include("PGPASSWORD" => "postgres")
             expect(role_step.fetch("run")).to include("for attempt in 1 2 3")
             expect(role_step.fetch("run")).to include("pg_isready -h \"$DB_HOST\" -U postgres -d postgres")
           end
