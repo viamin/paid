@@ -16,14 +16,16 @@ turning unrelated issue references into prerequisites.
 
 Explicit `Depends on`, `Blocked by`, and deployment directives continue to
 admit local and qualified `owner/repo#N` references wherever the parser already
-recognises them. Outside a dependency section, those directives do not apply
-when they appear as Markdown code examples or describe another numbered issue's
-prerequisites. A sentence about another issue's ordering cannot impose that
-ordering on the issue carrying the sentence. Negative and removal directives
-retain their ordered-comment semantics.
+recognises them. A directive or list item does not apply when it appears as a
+Markdown code example or describes another numbered issue's prerequisites,
+whether it is inside or outside a dependency section. A sentence about another
+issue's ordering cannot impose that ordering on the issue carrying the
+sentence. Negative and removal directives retain their ordered-comment
+semantics.
 
 Under a Markdown heading containing `Dependency` or `Dependencies`, a bare
-reference is a declaration only when it is in a Markdown list item: unordered
+reference is a declaration only when it is in a Markdown list item and does
+not describe another numbered issue's prerequisites: unordered
 `-`, `*`, or `+`, or ordered `N.` / `N)`, with an optional `[ ]` or `[x]`
 checklist marker. At section scope, an item marker indented by four or more
 spaces is an indented code block, not a declaration. A list item's continuation
