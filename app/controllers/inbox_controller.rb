@@ -8,7 +8,6 @@ class InboxController < ApplicationController
   def index
     flash.keep if turbo_frame_request_id == "inbox-detail"
     @selected_entry = @inbox_entries.first
-    load_root_prerequisite_ranking if @selected_entry
     @detail_view = false
   end
 

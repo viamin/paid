@@ -1,8 +1,7 @@
 <% content_for(:title) { "Inbox - Paid" } %>
-<%# The collection route renders its canonical first detail. Do not cache a
-    later row selection under that collection URL: browser Back must request
-    the collection again so its canonical first selection and detail stay
-    aligned.
+<%# The collection route renders its first detail asynchronously. Do not cache a
+    later row selection under that collection URL: browser Back must request the
+    collection again so its canonical first selection and detail stay aligned.
     @spec OPERATOR-INBOX-026 %>
 <% turbo_exempts_page_from_cache %>
 <%# @spec OPERATOR-INBOX-015 %>
@@ -143,13 +142,10 @@
     <% detail_content = capture do %>
       <% if action_name == "index" %>
         <%# @spec OPERATOR-INBOX-025 %>
-        <%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
-          <%= render "dashboard/inbox_detail",
-                     entry: @selected_entry,
-                     scoped_project: @scoped_project,
-                     selected_kind: @selected_kind,
-                     selected_scope: @selected_scope,
-                     root_prerequisite_ranking: @root_prerequisite_ranking %>
+        <%= turbo_frame_tag("inbox-detail",
+              src: inbox_entry_path(@selected_entry, **inbox_query_params(project: @scoped_project, kind: @selected_kind)),
+              loading: :eager, class: "block h-full") do %>
+          <p class="px-4 py-5 text-sm text-gray-500" data-inbox-detail-placeholder role="status">Loading item…</p>
         <% end %>
       <% else %>
         <%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>

@@ -52,7 +52,7 @@ RSpec.describe "Root prerequisite ranking", type: :system do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
-  it "renders ranking for the initially selected partial closeout on the index" do
+  it "loads ranking for the initially selected partial closeout through the index detail frame" do
     account = create(:account)
     user = create(:user, :owner, account:, password: "password123")
     project = create(:project, account:, created_by: user, auto_pick_enabled: true, active: true)
@@ -62,6 +62,11 @@ RSpec.describe "Root prerequisite ranking", type: :system do
     Warden.test_mode!
     login_as(user, scope: :user)
     visit inbox_path(project_id: project.id, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+
+    expect(page).to have_css("turbo-frame#inbox-detail[src*='partial_closeout:#{blocked.id}']")
+
+    visit inbox_entry_path("partial_closeout:#{blocked.id}", project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
 
     expect(page).to have_css("[data-root-prerequisite-ranking]", text: "Highest-leverage root prerequisites")
     expect(page).to have_text("#1 → #2")
