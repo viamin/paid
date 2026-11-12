@@ -131,6 +131,7 @@
   each carrying `chat_turn_id`, `chat_session_id`, the acting user when
   human-initiated, and event-specific metadata — and a failure writing this
   audit trail SHALL NOT abort the turn-lifecycle transition that triggered
-  it.
+  it. When a parent chat turn is deleted, the system SHALL remove its lifecycle
+  events without updating those immutable rows.
   *Code:* `ChatTurnLifecycleEvent`, `ChatTurns::Lifecycle.record`.
   *Test:* `spec/models/chat_turn_spec.rb`.

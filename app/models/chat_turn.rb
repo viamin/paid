@@ -23,7 +23,7 @@ class ChatTurn < ApplicationRecord
 
   belongs_to :chat_session
   belongs_to :user_message, class_name: "ChatMessage"
-  has_many :lifecycle_events, class_name: "ChatTurnLifecycleEvent", dependent: :destroy
+  has_many :lifecycle_events, class_name: "ChatTurnLifecycleEvent", dependent: :delete_all
 
   validates :status, inclusion: { in: STATUSES }
   validates :failure_classification, inclusion: { in: FAILURE_CLASSIFICATIONS }, allow_nil: true
