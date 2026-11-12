@@ -540,6 +540,26 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "next_step")).to eq("Run the approved macOS pilot.")
     end
 
+    # @spec PARTIAL-CLOSEOUT-049
+    it "preserves distinct human authorization and independent judgment alongside a technical criterion" do
+      requirement = create(:pre_commit_requirement, project:, account: project.account, command: "bin/measure")
+      authorization = human_gap("Representative environment authorization", next_step: "Approve the named environment.")
+      judgment = human_gap("Blinded acceptance judgment", next_step: "Record the blinded judgment.")
+      criterion = { criterion: "Representative environment measurement", state: "unknown",
+        validation_kind: "native", validation_requirement_id: requirement.id }
+      allow(llm_response).to receive(:output).and_return({ gaps: [ authorization, judgment ], criteria: [ criterion ] }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.fetch("gaps")).to contain_exactly(
+        include("criterion" => "Representative environment authorization", "kind" => "human"),
+        include("criterion" => "Blinded acceptance judgment", "kind" => "human")
+      )
+      expect(result.fetch("criteria")).to contain_exactly(include(
+        "criterion" => "Representative environment measurement", "validation_kind" => "native"
+      ))
+    end
+
     it "accepts external work only with its concrete dependency identity" do # @spec PARTIAL-CLOSEOUT-038
       gap = { criterion: "Agent harness support", kind: "external", next_step: "Wait for #517.",
         external_dependency: { owner: "viamin", repo: "agent-harness", number: 517 } }

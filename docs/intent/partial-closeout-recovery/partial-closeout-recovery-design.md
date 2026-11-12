@@ -701,6 +701,26 @@ servers; native checks copy neither attachment type.
 Validation evidence remains evidence for a later assessment, not an automatic
 attestation that the criterion is satisfied.
 
+Mixed prerequisites are represented as separate, recomposable records. A
+human authorization or representative-environment setup is a human occurrence
+with its own owner, attribution, and exact Inbox next step. A runnable check is
+a separate technical criterion action that enters only the reviewed
+`TechnicalPrerequisites` execution path. An independent human judgment is a
+separate human occurrence with its own owner and is never satisfied by the
+authorization or the technical result. The later acceptance audit receives the
+revision-bound technical record alongside current human occurrences, evaluates
+each independently, and may recombine them only through cited current
+evidence. Failed, unavailable, and stale technical records remain visible with
+their retry or setup action; no technical outcome grants human approval.
+
+Every technical record binds the criterion, requested and restored revision,
+planned execution host/environment, image and tool provenance, bounded command
+result, and cleanup outcome. A terminal non-cancelled technical validation
+hands its changed evidence generation to `PartialCloseouts::AutoAudit`, whose
+existing source-revision admission and attempt checks deduplicate unchanged
+evidence and prevent audit loops. Normal tenant scoping and the actor's
+effective reviewed-recipe permissions remain enforced at action submission.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation

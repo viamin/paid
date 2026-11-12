@@ -4,6 +4,29 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-049** — When a partial-closeout assessment contains
+  mixed human and technical prerequisites, Paid SHALL retain each human
+  authorization, setup, and independent judgment as a separately attributed
+  human Inbox occurrence with its own exact next action, and SHALL expose each
+  runnable measurement or check only as a criterion-specific
+  `TechnicalPrerequisites` action. A technical record SHALL bind its criterion,
+  environment, revision, execution provenance, and result; unavailable,
+  failed, and stale records SHALL remain visible and retryable. A terminal
+  non-cancelled technical validation SHALL offer a fresh acceptance audit only
+  through the existing evidence-generation deduplication path. Technical
+  success SHALL never synthesize a human judgment or approval, and all action
+  lookup and execution SHALL remain account-scoped and subject to the actor's
+  effective project permissions.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/technical_prerequisites/inbox_actions.rb`,
+  `app/services/technical_prerequisites/validate_execution.rb`,
+  `app/jobs/technical_prerequisite_validation_job.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+  `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/requests/projects/technical_prerequisite_validations_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-048** — When an operator opens a current
   `partial_closeout` Inbox detail, the system SHALL present a read-only,
   account-scoped, bounded ranking of actionable root prerequisites by distinct

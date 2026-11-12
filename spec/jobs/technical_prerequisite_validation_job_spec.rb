@@ -62,6 +62,19 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(agent_run.error_message).to eq("analyzer exited 3")
   end
 
+  # @spec PARTIAL-CLOSEOUT-049
+  it "schedules a fresh acceptance audit after a terminal native validation" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload.status).to eq("completed")
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "does not overwrite a run the operator cancelled while the validation ran" do
     agent_run.update!(status: "cancelled", completed_at: Time.current)

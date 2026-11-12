@@ -6,12 +6,12 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
 
   discard_on ActiveRecord::RecordNotFound
 
-  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042 PARTIAL-CLOSEOUT-049
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
     start_result = start!(agent_run)
     return if start_result == :paused
-    return handoff_terminal_measurement(agent_run) unless start_result == :started
+    return handoff_terminal_validation(agent_run) unless start_result == :started
 
     result = TechnicalPrerequisites::ValidateExecution.call(
       agent_run:, native_command: recipe(agent_run).fetch("command")
@@ -63,8 +63,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
 
       status = result.status == "completed" ? "completed" : "failed"
       agent_run.update!(status:, completed_at: Time.current, error_message: terminal_message(result))
-      measurement = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
-      audit_issue = agent_run.issue if result.status != "cancelled" && measurement.present?
+      audit_issue = agent_run.issue if result.status != "cancelled"
     end
     # Scheduled outside the run lock: audit admission takes the issue lock and
     # creates continuation/agent-run rows, so a scheduling failure here must
@@ -72,9 +71,8 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
     PartialCloseouts::AutoAudit.call(issue: audit_issue) if audit_issue
   end
 
-  def handoff_terminal_measurement(agent_run)
-    measurement = agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "performance_measurement")
-    return unless agent_run.finished? && measurement.present?
+  def handoff_terminal_validation(agent_run)
+    return unless agent_run.finished?
     return if agent_run.status == "cancelled" || agent_run.issue.nil?
 
     PartialCloseouts::AutoAudit.call(issue: agent_run.issue)
