@@ -43,6 +43,22 @@ RSpec.describe Llm::Request do
     expect(standalone_executor).to have_received(:close)
   end
 
+  # @spec LLM-ROUTING-001 LLM-ROUTING-005
+  it "routes an account request through its fallback owner's disposable executor" do
+    fallback_owner = project.account.fallback_owner
+    fallback_runner = create(:runner, user: fallback_owner, runner_key: "codex",
+      tier_models: { "mid" => { "model_id" => "runner-mid", "provider_id" => 17 } })
+    fallback_owner.settings.update!(kb_chat_runner: fallback_runner.routing_key)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(account: project.account, prompt: "Assess", timeout: 30)).to eq(response)
+
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: fallback_runner, timeout: 30
+    )
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
   it "tries an authorized configured fallback after authentication fails" do
     fallback = create(:runner, user: owner, runner_key: "gemini",

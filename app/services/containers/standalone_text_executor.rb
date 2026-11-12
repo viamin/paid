@@ -108,7 +108,7 @@ module Containers
         run(materialized_command(command), timeout: bounded_timeout(timeout),
           env: materialized_env(env), input: input_payload(command, preparation, stdin_data))
       end
-    rescue StandardError
+    rescue StandardError, SignalException
       close
       raise
     end

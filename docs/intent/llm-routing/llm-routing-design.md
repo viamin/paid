@@ -49,7 +49,7 @@ Isolated text commands use a process-group deadline before the container
 watchdog, with a short cleanup margin. Their immutable orphan-sweep label uses
 a fixed ten-minute lifetime from creation, so it remains a worker-death safety
 net while a healthy executor reuses its container. Provisioning, command failure,
-cancellation, timeout, and worker interruption all remove the disposable
+cancellation, timeout, and worker signal interruption all remove the disposable
 container. Failed provisioning is terminal for that candidate and never falls
 back to host execution. Timing out an assessment must not stop a live run's
 container or make all retries fail.

@@ -77,6 +77,9 @@ secrets proxy rather than long-lived tokens; they operate in isolated
 backend-selected workspaces (named-volume clones by default, legacy worktree
 bind mounts only when explicitly requested); and they cannot interfere with
 each other or reach the host.
+Application text requests use the same isolation boundary in disposable
+text-only containers, without a workspace or repository mount, including when
+no coding run is active or its container has already been removed.
 Isolation is the precondition for running multiple agents in parallel and for
 giving an agent broad permissions inside its container without broad
 permissions on the system.
