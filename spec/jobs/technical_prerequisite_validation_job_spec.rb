@@ -111,6 +111,19 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
   end
 
+  # @spec PARTIAL-CLOSEOUT-050
+  it "schedules the acceptance audit after a terminal native validation" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload.status).to eq("completed")
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
+  end
+
   # @spec PARTIAL-CLOSEOUT-042
   it "fails a queued performance measurement when the project scheduler is paused before it starts" do
     issue = create(:issue, project:)

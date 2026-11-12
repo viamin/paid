@@ -251,6 +251,35 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-050
+    it "accepts separately owned human authorization and technical validation prerequisites" do
+      recipe = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative environment check", command: "bin/measure")
+      response = {
+        gaps: [ human_gap("Authorize the representative environment", next_step: "Approve the production-like environment.") ],
+        criteria: [ {
+          criterion: "Measure the approved representative environment", state: "unknown",
+          validation_kind: "native", validation_requirement_id: recipe.id
+        } ]
+      }
+      allow(llm_response).to receive(:output).and_return(response.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.fetch("gaps").sole).to include("kind" => "human")
+      expect(result.fetch("criteria").sole).to include("validation_kind" => "native")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-050
+    it "rejects a criterion that conflates human evidence with technical validation" do
+      allow(llm_response).to receive(:output).and_return({ gaps: [], criteria: [ {
+        criterion: "Representative environment", state: "unknown", prerequisite_kind: "human",
+        prerequisite: "Approve the environment.", validation_kind: "native"
+      } ] }.to_json)
+
+      expect { described_class.call(agent_run:) }.to raise_error(AgentHarness::Error, /assessment failed/)
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,

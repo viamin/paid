@@ -147,6 +147,32 @@ Terminal measurement evidence schedules the normal report-only acceptance
 audit; semantic interpretation remains in `agent_harness`, and no measurement
 can close the issue.
 
+### Separate human decisions and technical evidence (#5007)
+
+A partial-closeout assessment represents each prerequisite with one owner and
+one next action. A human authorization or representative-environment setup is
+a human prerequisite: it stays in the human Inbox with its attributed source
+criterion and exact requested evidence. A runnable native, sidecar, or
+performance check is a separate technical criterion owned by
+`TechnicalPrerequisites`; it runs only its reviewed recipe in the delegated,
+tenant-scoped execution environment. The assessor must not encode a human
+prerequisite on a criterion that also names technical validation.
+
+The two entries recombine only in a later acceptance audit. Once the human
+authorization is inspectably current, a fresh audit may offer the named
+technical action. Each terminal technical result — completed, failed, or
+unavailable — remains revision-bound evidence and invokes the existing
+deduplicated report-only audit path. The audit decides whether the result
+satisfies its criterion; unchanged evidence cannot create an audit loop.
+
+Independent human judgments, including blinded evaluations, remain distinct
+human prerequisites with their own attribution and evidence. Technical success
+does not record, infer, or replace either an authorization or an independent
+judgment. Unavailable tools retain their exact setup action and retry surface;
+their evidence is never represented as a pass. Existing assessment validation,
+project-scoped recipe resolution, and tenant context remain the boundary that
+prevents a recipe or human prerequisite from another tenant being used here.
+
 ### Human prerequisite attribution (#4893)
 
 Human prerequisites are attributed before Inbox publication. The closeout
