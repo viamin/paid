@@ -953,12 +953,12 @@ module Containers
       end
     end
 
+    # @spec CONTAINER-RUNTIME-051
     def close_stdin_for_codex_exec(command)
       return command unless codex_exec_command?(command)
 
       parts = command.is_a?(Array) ? command : Shellwords.split(command.to_s)
-      escaped = parts.map { |part| Shellwords.escape(part.to_s) }.join(" ")
-      [ "sh", "-lc", "exec #{escaped} < /dev/null" ]
+      [ "sh", "-lc", 'exec "$@" < /dev/null', "--", *parts ]
     end
 
     # Stops and removes the container, cleaning up resources.

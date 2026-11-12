@@ -878,3 +878,11 @@
   *Tests:* `spec/temporal/activities/run_agent_activity_spec.rb`.
   *Code:* `Activities::RunAgentActivity#run_runner_preflight!`,
   `#container_unavailable_for_fallback?`.
+
+- [x] **CONTAINER-RUNTIME-051** — When the container runtime closes stdin for
+  a Codex exec command, it SHALL preserve each planned command argument as a
+  separate process argument and redirect stdin from `/dev/null`. Large prompt
+  arguments SHALL NOT be escaped into the shell script argument, including
+  when the planned command already uses an authentication shell wrapper.
+  *Tests:* `spec/services/containers/provision_spec.rb`.
+  *Code:* `Containers::Provision#close_stdin_for_codex_exec`.

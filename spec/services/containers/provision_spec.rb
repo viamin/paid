@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "open3"
 require "timeout"
 
 RSpec.describe Containers::Provision do
@@ -3733,25 +3734,23 @@ RSpec.describe Containers::Provision do
       it "redirects stdin from /dev/null for a bare codex exec command" do
         service.execute([ "codex", "exec", "--json", "prompt" ])
 
-        expect(captured.last.first(2)).to eq([ "sh", "-lc" ])
-        expect(captured.last.last).to end_with(" < /dev/null")
+        expect(captured.last).to eq([ "sh", "-lc", 'exec "$@" < /dev/null', "--", "codex", "exec", "--json", "prompt" ])
       end
 
       it "redirects stdin from /dev/null for an sh -c api-key auth codex command" do
         script = 'env OPENAI_API_KEY="$KEY" codex exec --json "$1"'
         service.execute([ "sh", "-c", script, "--", "prompt" ])
 
-        expect(captured.last.first(2)).to eq([ "sh", "-lc" ])
-        expect(captured.last.last).to end_with(" < /dev/null")
-        expect(captured.last.last).to include("codex")
+        expect(captured.last.first(4)).to eq([ "sh", "-lc", 'exec "$@" < /dev/null', "--" ])
+        expect(captured.last.drop(4)).to eq([ "sh", "-c", script, "--", "prompt" ])
       end
 
       it "redirects stdin from /dev/null for an sh -c subscription auth codex command" do
         script = 'if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then env -u OPENAI_API_KEY codex exec --json "$1"; else codex exec --json "$1"; fi'
         service.execute([ "sh", "-c", script, "--", "prompt" ])
 
-        expect(captured.last.first(2)).to eq([ "sh", "-lc" ])
-        expect(captured.last.last).to end_with(" < /dev/null")
+        expect(captured.last.first(4)).to eq([ "sh", "-lc", 'exec "$@" < /dev/null', "--" ])
+        expect(captured.last.drop(4)).to eq([ "sh", "-c", script, "--", "prompt" ])
       end
     end
   end
@@ -3813,42 +3812,61 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  # @spec CONTAINER-RUNTIME-051
   describe "#close_stdin_for_codex_exec" do
     it "rewrites a bare codex exec command to redirect stdin from /dev/null" do
       rewritten = service.send(:close_stdin_for_codex_exec, [ "codex", "exec", "--json", "prompt" ])
 
-      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
-      expect(rewritten.last).to end_with(" < /dev/null")
-      expect(rewritten.last).to include("codex")
+      expect(rewritten).to eq([ "sh", "-lc", 'exec "$@" < /dev/null', "--", "codex", "exec", "--json", "prompt" ])
     end
 
     it "rewrites an env -u wrapped codex exec command to redirect stdin from /dev/null" do
       rewritten = service.send(:close_stdin_for_codex_exec, [ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])
 
-      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
-      expect(rewritten.last).to end_with(" < /dev/null")
+      expect(rewritten.first(4)).to eq([ "sh", "-lc", 'exec "$@" < /dev/null', "--" ])
+      expect(rewritten.drop(4)).to eq([ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])
     end
 
     it "rewrites an env assignment wrapped codex exec command to redirect stdin from /dev/null" do
       rewritten = service.send(:close_stdin_for_codex_exec, [ "env", 'OPENAI_API_KEY="$KEY"', "codex", "exec", "--json", "prompt" ])
 
-      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
-      expect(rewritten.last).to end_with(" < /dev/null")
+      expect(rewritten.first(4)).to eq([ "sh", "-lc", 'exec "$@" < /dev/null', "--" ])
+      expect(rewritten.drop(4)).to eq([ "env", 'OPENAI_API_KEY="$KEY"', "codex", "exec", "--json", "prompt" ])
     end
 
     it "rewrites an sh -c codex wrapper to redirect stdin from /dev/null" do
       script = 'env OPENAI_API_KEY="$KEY" codex exec --json "$1"'
       rewritten = service.send(:close_stdin_for_codex_exec, [ "sh", "-c", script, "--", "prompt" ])
 
-      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
-      expect(rewritten.last).to end_with(" < /dev/null")
-      expect(rewritten.last).to include("codex")
+      expect(rewritten.first(4)).to eq([ "sh", "-lc", 'exec "$@" < /dev/null', "--" ])
+      expect(rewritten.drop(4)).to eq([ "sh", "-c", script, "--", "prompt" ])
     end
 
     it "preserves the prompt argument when rewriting an sh -c codex wrapper" do
       rewritten = service.send(:close_stdin_for_codex_exec, [ "sh", "-c", 'codex exec "$1"', "--", "build the feature" ])
 
-      expect(rewritten.last).to include("build\\ the\\ feature")
+      expect(rewritten.last).to eq("build the feature")
+      expect(rewritten[2]).to eq('exec "$@" < /dev/null')
+    end
+
+    it "keeps a large prompt out of the shell script argument" do
+      prompt = "a 'quoted' prompt\n" * 7_000
+      rewritten = service.send(:close_stdin_for_codex_exec, [ "sh", "-c", 'codex exec "$1"', "--", prompt ])
+
+      expect(rewritten[2].bytesize).to be < 100
+      expect(rewritten.last).to eq(prompt)
+    end
+
+    it "executes a large prompt unchanged with stdin closed" do
+      prompt = "a 'quoted' prompt\n" * 7_000
+      script = 'codex() { printf %s "$2" | wc -c; if read -r line; then echo stdin-open; else echo stdin-closed; fi; }; codex exec "$1"'
+      command = service.send(:close_stdin_for_codex_exec, [ "sh", "-c", script, "--", prompt ])
+
+      stdout, stderr, status = Open3.capture3(*command, stdin_data: "unexpected input\n")
+
+      expect(status).to be_success
+      expect(stderr).to be_empty
+      expect(stdout.lines.map(&:strip)).to eq([ prompt.bytesize.to_s, "stdin-closed" ])
     end
 
     it "leaves non-codex commands untouched" do
