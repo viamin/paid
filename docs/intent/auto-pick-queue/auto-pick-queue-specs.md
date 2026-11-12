@@ -226,10 +226,11 @@
   (issues in the loop and the downstream held-work count), state that Paid
   recommends one bounded repair analysis, and state that a qualifying
   analysis run may edit one verified GitHub dependency declaration; the start
-  action and its confirmation SHALL state that same possibility. While an
+  action label and its confirmation SHALL state that same possibility. While an
   analysis is queued or running, the primary next action SHALL only navigate
   to the run's status. A pending-sync confirmation SHALL state that it
-  re-checks the synchronized graph without editing GitHub, and SHALL be
+  re-checks the synchronized graph without editing GitHub, including on its
+  action label, and SHALL be
   offered only when the recorded run can be resumed for that read-only
   confirmation; a cancelled or stale pending-sync run SHALL NOT offer it.
   Each repair state the detail can present — queued or running, safe repair
@@ -250,7 +251,8 @@
   tradeoffs, missing or conflicting intent, and the expected resulting graph —
   and the raw recommendation and coverage objects SHALL appear only inside
   collapsed technical detail. A manual repair action SHALL name the exact
-  declaration it would remove and the source issue or comment carrying it,
+  declaration it would remove and the source issue or comment carrying it on
+  the action label,
   present a reviewable before/after of that single declaration, and require
   an explicit confirmation naming the declaration; submission SHALL keep the
   existing live authority, occurrence, and graph rechecks. The detail SHALL

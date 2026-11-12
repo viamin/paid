@@ -151,7 +151,7 @@ names the blocked work — how many issues wait on each other in the loop and
 how much downstream open work is held — and, before any analysis exists, it
 states Paid's recommendation (one bounded repair analysis) and that a
 qualifying analysis run may edit one verified GitHub dependency declaration.
-Every action says what it does and appears only when the backend will
+Every action label says what it does and appears only when the backend will
 perform it as described: a status check only navigates to the run; starting
 an analysis may change GitHub (the start action and its confirmation both
 say so); confirming a pending repair only re-checks the synchronized graph
