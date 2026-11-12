@@ -16,11 +16,12 @@ turning unrelated issue references into prerequisites.
 
 Explicit `Depends on`, `Blocked by`, and deployment directives continue to
 admit local and qualified `owner/repo#N` references wherever the parser already
-recognises them. Outside a dependency section, those directives do not apply
-when they appear as Markdown code examples or describe another numbered issue's
-prerequisites. A sentence about another issue's ordering cannot impose that
-ordering on the issue carrying the sentence. Negative and removal directives
-retain their ordered-comment semantics.
+recognises them. They do not apply when they describe another numbered issue's
+prerequisites, whether inside or outside a dependency section. Outside a
+dependency section, they also do not apply when they appear as Markdown code
+examples. A sentence about another issue's ordering cannot impose that ordering
+on the issue carrying the sentence. Negative and removal directives retain their
+ordered-comment semantics.
 
 Under a Markdown heading containing `Dependency` or `Dependencies`, a bare
 reference is a declaration only when it is in a Markdown list item: unordered
@@ -38,7 +39,9 @@ section body is code, not Markdown list structure, so list-style lines inside it
 are not declarations. A fenced block closes only on the same delimiter
 character with a run at least as long as its opening delimiter. A subsequent
 heading ends the dependency section; child/sub-issue sections remain excluded
-from inline parsing.
+from inline parsing. A list item that states another issue's dependencies is
+contextual prose, not a declaration by the item carrying it; direct list-item
+references and directives naming the current item remain declarations.
 
 ## Shared Consumers
 

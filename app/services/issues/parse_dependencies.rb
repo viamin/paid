@@ -284,7 +284,7 @@ module Issues
     # the captured String directly — without it, refs_str would be an Array.
     def extract_removal_refs(text, local_numbers, cross_refs)
       markdown_sections(text, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
-        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: false)
+        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: true)
       end
 
       inline_text = strip_markdown_sections(text, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
@@ -310,10 +310,10 @@ module Issues
     # sections are stripped before inline extraction so dependency phrases
     # describing inter-sub-issue relationships are not attributed to the
     # current issue.
-    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004
+    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004, DEPENDENCY-DECLARATIONS-009
       markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
-        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: false)
+        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: true)
       end
 
       inline_text = strip_markdown_sections(body, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
@@ -323,15 +323,21 @@ module Issues
     # Within a "## Dependencies" section, recognise deployment directives and
     # bare references only in Markdown list items. This keeps implementation
     # inventories in ordinary prose from becoming unintended prerequisites.
-    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003
+    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
       scratch = without_fenced_code(section_body)
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
+          match_start = Regexp.last_match.begin(0)
+          next if describes_another_issue?(scratch, deployment_directive_start(scratch, pattern, match_start))
+
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
-        scratch = scratch.gsub(pattern, "")
+        scratch = scratch.gsub(pattern) do
+          match_start = Regexp.last_match.begin(0)
+          describes_another_issue?(scratch, deployment_directive_start(scratch, pattern, match_start)) ? Regexp.last_match[0] : ""
+        end
       end
 
       extract_list_item_refs(scratch, local_deps, cross_deps)
@@ -366,10 +372,27 @@ module Issues
       flush_list_item(item, local_deps, cross_deps)
     end
 
-    def flush_list_item(item, local_deps, cross_deps)
+    def flush_list_item(item, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-009
       return unless item
+      return if describes_another_issue_dependency?(item)
 
       extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
+    end
+
+    def describes_another_issue_dependency?(text)
+      [ INLINE_DEPENDS_PATTERN, INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].any? do |pattern|
+        text.to_enum(:scan, pattern).any? do
+          describes_another_issue?(text, Regexp.last_match.begin(0))
+        end
+      end
+    end
+
+    def deployment_directive_start(text, pattern, match_start)
+      return match_start unless pattern == SECTION_DEPLOYMENT_PATTERN
+
+      prefix = text[0...match_start]
+      preceding = prefix.match(/\b(?:awaits|depends?\s+on|blocked?\s+by)\s+\z/i)
+      preceding ? match_start - preceding[0].length : match_start
     end
 
     def continuation_line?(line, indentation)
