@@ -2,6 +2,7 @@
 
 class AgentRunsController < ApplicationController
   include AgentRunFilterOptions
+  include AgentRunIndexOrdering
 
   # policy_scope handles authorization; verify_policy_scoped is enforced by ApplicationController
   skip_after_action :verify_authorized, only: :index
@@ -16,13 +17,8 @@ class AgentRunsController < ApplicationController
     @q = base_scope.ransack(params[:q])
     queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
 
-    if params[:sort] == "queue" && queue_sort_compatible?
-      @q.sorts.clear if @q.sorts.any?
-      @agent_runs = apply_ransack_filters(@q).queue_order_display(mode: queue_fairness_mode)
-    else
-      @q.sorts = "created_at desc" if @q.sorts.empty?
-      @agent_runs = @q.result
-    end
+    @q.sorts = "created_at desc" if @q.sorts.empty?
+    @agent_runs = ordered_agent_runs(@q, queue_fairness_mode:)
 
     @pagy, @agent_runs = pagy(@agent_runs)
     AgentRun.preload_final_runner_records(@agent_runs)
@@ -50,18 +46,4 @@ class AgentRunsController < ApplicationController
   end
 
   private
-
-  def apply_ransack_filters(search)
-    search.result
-  end
-
-  def queue_sort_compatible?
-    status_filter = params.dig(:q, :status_eq)
-    # Queue sort is only meaningful when already filtered to an unfinished
-    # status — otherwise queue_order_display's .unfinished scope silently
-    # hides completed/failed runs from the default (unfiltered) view.
-    return false if status_filter.blank?
-
-    AgentRun::UNFINISHED_STATUSES.include?(status_filter)
-  end
 end

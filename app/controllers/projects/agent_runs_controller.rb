@@ -4,6 +4,7 @@ module Projects
   class AgentRunsController < ApplicationController
     include AgentRunCancellable
     include AgentRunFilterOptions
+    include AgentRunIndexOrdering
     include AuditLogging
 
     NoRunnableRunnerError = Class.new(StandardError)
@@ -22,7 +23,8 @@ module Projects
       base_scope = @project.agent_runs.excluding_synthetic.includes(:runner, project: [ :created_by, :account ], issue: :project)
       @q = base_scope.ransack(params[:q])
       @q.sorts = "created_at desc" if @q.sorts.empty?
-      @pagy, @agent_runs = pagy(@q.result)
+      queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
+      @pagy, @agent_runs = pagy(ordered_agent_runs(@q, queue_fairness_mode:))
       AgentRun.preload_final_runner_records(@agent_runs)
       AgentRun.preload_source_pull_requests(@agent_runs)
       AgentRun.preload_created_issue_records(@agent_runs)

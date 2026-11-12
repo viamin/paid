@@ -10,6 +10,16 @@ RSpec.describe AgentRun do
     Rails.cache.clear
   end
 
+  describe ".ransackable_attributes" do
+    # @spec AGENT-RUNS-INDEX-004
+    it "allows only the run list's explicit search attributes" do
+      attributes = described_class.ransackable_attributes
+
+      expect(attributes).to include("branch_name", "temporal_workflow_id", "pull_request_url", "review_url", "created_issue_url")
+      expect(attributes).not_to include("custom_prompt", "error_message", "proxy_token")
+    end
+  end
+
   # @spec LAYERED-VERIFY-013
   it "keeps layered-verification audit and repair goals distinct" do
     expect(described_class::GOALS).to include("layered_verification_audit", "layered_verification_repair")

@@ -11,3 +11,11 @@
 - [x] **AGENT-RUNS-INDEX-003** — When the account-wide Agent Runs index loads a
   page of runs, it SHALL omit large run payload columns that are unused by the
   index while retaining the context text displayed in the table.
+- [x] **AGENT-RUNS-INDEX-004** — When an operator filters either Agent Runs
+  index, it SHALL use only the Agent Run Ransack allowlist to compose text
+  search with multi-select OR filters for available status, agent type, goal,
+  trigger type, and effective runner values, and retain that GET query state
+  through pagination.
+- [x] **AGENT-RUNS-INDEX-005** — When an operator requests queue-priority
+  sorting, it SHALL apply that ordering only when every selected status is an
+  unfinished status; otherwise it SHALL retain normal Ransack ordering.
