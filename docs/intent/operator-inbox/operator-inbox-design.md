@@ -101,6 +101,19 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+## Selected-detail action area
+
+Every selected Inbox detail projects its rendered action controls into one
+sticky action area immediately below the detail header. The projection reuses
+the rendered controls rather than creating alternate endpoints or policy
+decisions: a toolbar control activates its original form submitter or link, so
+the existing authorization, confirmation, loading, Turbo, and error behavior
+remain authoritative. Detailed form fields and explanatory content stay in
+the detail body; when an action requires input, browser validation and focus
+continue to lead the operator to that existing form. The action area wraps at
+narrow widths and remains keyboard accessible while the selected detail pane
+scrolls.
+
 ## Detail progress projection
 
 For an issue-backed selected detail only, `Inbox::ProgressProjection` returns
