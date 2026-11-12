@@ -65,6 +65,14 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.list_containers(all: true)).to eq([ container ])
   end
 
+  it "streams request archives through the remote container handle" do
+    allow(container).to receive(:archive_in_stream).with("/opt").and_yield
+
+    backend.archive_in_container(container, "/opt") { "tar data" }
+
+    expect(container).to have_received(:archive_in_stream).with("/opt")
+  end
+
   it "delegates network, image, and volume access through the remote connection" do
     allow(Docker::Network).to receive(:get).with("paid_agent", {}, connection).and_return(network)
     allow(Docker::Network).to receive(:create).with("paid_agent", { "Driver" => "bridge" }, connection).and_return(network)

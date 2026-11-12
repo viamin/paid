@@ -21,7 +21,9 @@
   its container after success, failure, timeout, provisioning failure, or
   worker interruption, and SHALL never fall back to host execution. Its
   worker-death orphan-sweep lifetime SHALL not expire during healthy reuse of
-  the container. Post-run
+  the container. Request input SHALL reach the container without attaching
+  Docker exec stdin, and a missing exec exit status SHALL fail explicitly.
+  Post-run
   background summaries and diagnostics SHALL route independently of a cleaned-up environment.
 - [x] **LLM-ROUTING-007** — Decision drafting SHALL honor the shared fallback
   permissions and each credential-specific runner's availability state. Invalid

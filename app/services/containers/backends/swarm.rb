@@ -154,6 +154,10 @@ module Containers
         concrete_container(container).exec(command, options, &block)
       end
 
+      def archive_in_container(container, path, &block)
+        concrete_container(container).archive_in_stream(path, &block)
+      end
+
       def container_stats(container, **options)
         concrete_container(container).stats(**options)
       end

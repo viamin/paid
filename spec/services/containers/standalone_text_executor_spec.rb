@@ -15,15 +15,35 @@ RSpec.describe Containers::StandaloneTextExecutor do
     allow(NetworkPolicy).to receive(:ensure_network!)
     allow(backend).to receive_messages(create_container: container, start_container: true,
       stop_container: true, delete_container: true)
+    allow(backend).to receive(:exec_in_container).with(container,
+      [ "chown", "agent:agent", "/home/agent" ], user: "root").and_return([ [], [], 0 ])
   end
 
-  def input_header_of(exec_call)
-    payload = exec_call[:stdin].read
-    JSON.parse(payload.split("\n", 2).first)
+  def input_header_of(archive)
+    JSON.parse(archive.split("\n", 2).first)
+  end
+
+  def text_options(inputs)
+    inputs.find { |options| options.key?(:Env) }
+  end
+
+  def captured_payload
+    archive = nil
+    allow(backend).to receive(:archive_in_container) do |_, path, &stream|
+      expect(path).to eq("/opt")
+      tar = StringIO.new
+      while (chunk = stream.call).present?
+        tar.write(chunk)
+      end
+      tar.rewind
+      Gem::Package::TarReader.new(tar) { |reader| archive = reader.first.read }
+    end
+    -> { archive }
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
   it "uses a proxy identity to materialize subscription credentials inside the container" do
+    payload = captured_payload
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
     inputs = []
     allow(backend).to receive(:exec_in_container) do |_c, _command, options = {}|
@@ -33,12 +53,16 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
     described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
 
-    expect(inputs.first.fetch(:Env)).to include("PAID_CREDENTIAL_IDENTITY=scoped-identity")
-    expect(input_header_of(inputs.first)).to include("command" => [ "codex", "exec", "hello" ])
+    expect(text_options(inputs).fetch(:Env)).to include("PAID_CREDENTIAL_IDENTITY=scoped-identity")
+    expect(input_header_of(payload.call)).to include("command" => [ "codex", "exec", "hello" ])
+    expect(text_options(inputs)).not_to have_key(:stdin)
+    expect(backend).to have_received(:exec_in_container).with(container,
+      [ "chown", "agent:agent", "/home/agent" ], user: "root")
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
   it "keeps API credentials out of the Docker exec environment" do
+    captured_payload
     runner.update!(auth_type: "api_key", provider_api_key: create(:runner_api_key, user: user,
       api_service_type: "openai", api_key: "selected-secret"))
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
@@ -50,13 +74,14 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(Containers::StandaloneTextCredential).to have_received(:issue).with(hash_including(
       account: account, runner: runner, env_keys: [ "OPENAI_API_KEY" ]
     ))
-    expect(backend).to have_received(:exec_in_container) do |_, _, options|
+    expect(backend).to have_received(:exec_in_container).with(container, anything, hash_including(:Env)) do |_, _, options|
       expect(options.fetch(:Env)).not_to include(a_string_including("selected-secret"))
     end
   end
 
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
   it "materializes request preparation and omits nil environment values" do
+    payload = captured_payload
     preparation = AgentHarness::ExecutionPreparation.new(file_writes: [
       { path: "/tmp/request.json", content: "{}", mode: 0o640 }
     ])
@@ -69,16 +94,17 @@ RSpec.describe Containers::StandaloneTextExecutor do
     described_class.new(account: account, runner: runner, timeout: 30)
       .execute([ "codex", "exec", "hello" ], env: { "OPENAI_API_KEY" => nil }, preparation: preparation)
 
-    header = input_header_of(inputs.first)
+    header = input_header_of(payload.call)
     expect(header.fetch("preparation")).to eq([
       { "path" => "/tmp/request.json", "content" => "{}", "mode" => 416 }
     ])
-    expect(inputs.first.fetch(:Env)).not_to include(a_string_including("PAID_TEXT_"))
-    expect(inputs.first.fetch(:Env)).not_to include("OPENAI_API_KEY=")
+    expect(text_options(inputs).fetch(:Env)).not_to include(a_string_including("PAID_TEXT_"))
+    expect(text_options(inputs).fetch(:Env)).not_to include("OPENAI_API_KEY=")
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-006
-  it "forwards stdin data through the exec stdin stream, not the environment" do
+  it "forwards stdin data through the container archive, not the environment" do
+    payload = captured_payload
     inputs = []
     allow(backend).to receive(:exec_in_container) do |_c, _command, options = {}|
       inputs << options
@@ -88,16 +114,17 @@ RSpec.describe Containers::StandaloneTextExecutor do
     described_class.new(account: account, runner: runner, timeout: 30)
       .execute([ "cursor", "-p" ], stdin_data: "private prompt")
 
-    payload = inputs.first.fetch(:stdin).read
-    header, body = payload.split("\n", 2)
+    header, body = payload.call.split("\n", 2)
     expect(JSON.parse(header).fetch("stdin_bytes")).to eq("private prompt".bytesize)
     expect(body).to eq("private prompt")
-    expect(inputs.first.fetch(:Env)).not_to include(a_string_including("PAID_TEXT_STDIN"))
-    expect(inputs.first.fetch(:Env)).not_to include(a_string_including("private prompt"))
+    expect(text_options(inputs)).not_to have_key(:stdin)
+    expect(text_options(inputs).fetch(:Env)).not_to include(a_string_including("PAID_TEXT_STDIN"))
+    expect(text_options(inputs).fetch(:Env)).not_to include(a_string_including("private prompt"))
   end
 
   # @spec LLM-ROUTING-006
   it "keeps every exec environment entry within the execve per-string limit for large prompts" do
+    payload = captured_payload
     prompt = "x" * 300_000
     inputs = []
     allow(backend).to receive(:exec_in_container) do |_c, _command, options = {}|
@@ -108,11 +135,10 @@ RSpec.describe Containers::StandaloneTextExecutor do
     described_class.new(account: account, runner: runner, timeout: 30)
       .execute([ "cursor", "-p" ], stdin_data: prompt)
 
-    inputs.first.fetch(:Env).each do |entry|
+    text_options(inputs).fetch(:Env).each do |entry|
       expect(entry.bytesize).to be <= 128 * 1024
     end
-    payload = inputs.first.fetch(:stdin).read
-    header, body = payload.split("\n", 2)
+    header, body = payload.call.split("\n", 2)
     expect(JSON.parse(header).fetch("stdin_bytes")).to eq(prompt.bytesize)
     expect(body.bytesize).to eq(prompt.bytesize)
   end
@@ -131,6 +157,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
   it "uses the outbound-capable runner network and resolves the proxy on it" do
+    captured_payload
     allow(Containers::ProxyUrl).to receive(:resolve).and_return("http://web:3000")
     allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
 
@@ -144,6 +171,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-006
   it "honors the caller timeout above two minutes" do
+    captured_payload
     allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
 
     described_class.new(account: account, runner: runner, timeout: 300).execute([ "codex", "exec", "hello" ])
@@ -153,15 +181,40 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-006
   it "classifies Docker read timeouts as request timeouts" do
-    allow(backend).to receive(:exec_in_container).and_raise(Docker::Error::TimeoutError, "read timeout")
+    captured_payload
+    allow(backend).to receive(:exec_in_container).with(container, anything, hash_including(:Env))
+      .and_raise(Docker::Error::TimeoutError, "read timeout")
 
     expect do
       described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
     end.to raise_error(AgentHarness::TimeoutError, /timed out/)
   end
 
+  # @spec LLM-ROUTING-006
+  it "rejects an incomplete Docker exec instead of reporting success" do
+    captured_payload
+    allow(backend).to receive(:exec_in_container).with(container, anything, hash_including(:Env))
+      .and_return([ [], [], nil ])
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::Error, /exit status unavailable/)
+  end
+
+  # @spec LLM-ROUTING-006
+  it "removes the container when archive staging fails" do
+    allow(backend).to receive(:archive_in_container).and_raise(Docker::Error::DockerError, "archive failed")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::Error, /Unable to stage isolated text request/)
+
+    expect(backend).to have_received(:delete_container).with(container, force: true)
+  end
+
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
   it "reuses one container across executor commands until closed" do
+    captured_payload
     allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
     executor = described_class.new(account: account, runner: runner, timeout: 30)
 
@@ -175,6 +228,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-006
   it "labels the container with a fixed orphan-sweep lifetime from creation" do
+    captured_payload
     freeze_time do
       allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
 
@@ -204,9 +258,12 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-006
   it "stops collection and raises a classified failure when output exceeds the cap" do
+    captured_payload
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
     allow(backend).to receive(:exec_in_container) do |*, &stream|
-      stream.call(:stdout, "x" * (described_class::MAX_OUTPUT_BYTES + 1))
+      next [ [], [], 0 ] unless stream
+
+      stream.call(:stdout, "x" * (described_class::MAX_OUTPUT_BYTES + 1)) if stream
       [ [], [], 137 ]
     end
 
@@ -235,7 +292,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
     def stub_execs(rotation_stdout: nil, rotation_status: 0)
       allow(backend).to receive(:exec_in_container) do |_c, command, _options = {}|
-        next [ Array(rotation_stdout), [], rotation_status ] unless command.first == "python3"
+        next [ Array(rotation_stdout), [], rotation_status ] if command.include?("base64 -w0 /home/agent/.codex/auth.json")
 
         [ [], [], 0 ]
       end
@@ -248,6 +305,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
     end
 
     before do
+      captured_payload
       credential.update!(token: valid_codex_auth)
     end
 
@@ -294,7 +352,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
       executor.execute([ "codex", "exec", "hello" ])
       executor.close
 
-      expect(calls).to all(satisfy { |command| command.first == "python3" })
+      expect(calls.count { |command| command.include?(described_class::MATERIALIZE_COMMAND) }).to eq(1)
     end
 
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
@@ -312,7 +370,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
       executor.execute([ "claude", "--version" ])
       executor.close
 
-      expect(calls).to all(satisfy { |command| command.first == "python3" })
+      expect(calls.count { |command| command.include?(described_class::MATERIALIZE_COMMAND) }).to eq(1)
     end
   end
 end

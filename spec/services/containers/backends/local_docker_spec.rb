@@ -72,6 +72,14 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(backend.get_container("abc123")).to eq(container)
   end
 
+  it "streams request archives to the selected container" do
+    allow(container).to receive(:archive_in_stream).with("/opt").and_yield
+
+    backend.archive_in_container(container, "/opt") { "tar data" }
+
+    expect(container).to have_received(:archive_in_stream).with("/opt")
+  end
+
   it "delegates network and volume access to docker-api" do
     allow(Docker::Network).to receive(:get).with("paid_agent").and_return(network)
     allow(Docker::Volume).to receive(:get).with("paid-workspace-1").and_return(volume)

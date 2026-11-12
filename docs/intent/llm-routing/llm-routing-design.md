@@ -34,9 +34,14 @@ Rotating managed credentials (Codex, OpenCode, OMP) reuse the provisioner's
 refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so a
 standalone request materializes a refreshed token and writes an in-container
 rotation back into the canonical credential once before the container is deleted.
-The command, preparation, and prompt travel on the Docker exec stdin stream,
-not as exec environment entries, because a single `execve` environment string
-is capped near 128 KiB; caller environment entries are bounded per entry.
+The command, preparation, and prompt travel in a bounded Docker archive to a
+temporary file in the disposable container's private writable layer, not as
+exec environment entries, because a single `execve` environment string is
+capped near 128 KiB. Docker's archive endpoint writes underneath tmpfs mounts,
+so the file uses `/opt` and disappears when the container is deleted. Docker
+exec does not attach stdin: its hijack transport can return before the process
+has finished. An unavailable exit status is a transport failure, never success.
+Caller environment entries are bounded per entry.
 Embedding and interactive API chat keep their existing capability-specific
 transports and settings. Provider identifiers inside those protocol adapters
 are transport identities, not application-level provider preferences.

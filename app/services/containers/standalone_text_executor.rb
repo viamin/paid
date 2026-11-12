@@ -12,7 +12,7 @@ module Containers
     # Linux caps a single execve argument or environment string at MAX_ARG_STRLEN
     # (128 KiB), so any env entry larger than this fails inside Docker exec even
     # when the aggregate input stays within MAX_INPUT_BYTES. Values that must
-    # reach the command travel on the exec stdin stream instead (see
+    # reach the command travel in a container archive instead (see
     # #input_payload); caller env entries stay in exec env and are rejected
     # above this conservative per-entry bound, leaving headroom for the
     # "NAME=" prefix and NUL terminator.
@@ -104,9 +104,9 @@ module Containers
     def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
       validate_input_size!(command, env, preparation, stdin_data)
       provision! unless @container
+      input_path = stage_input(input_payload(command, preparation, stdin_data))
       with_managed_credential_lease do
-        run(materialized_command(command), timeout: bounded_timeout(timeout),
-          env: materialized_env(env), input: input_payload(command, preparation, stdin_data))
+        run(materialized_command(input_path), timeout: bounded_timeout(timeout), env: materialized_env(env))
       end
     rescue StandardError
       close
@@ -150,14 +150,14 @@ module Containers
         "Isolated text request env entry #{oversized.first} exceeded the #{MAX_ENV_ENTRY_BYTES}-byte per-entry exec limit"
     end
 
-    def materialized_command(command)
-      [ "python3", "-c", MATERIALIZE_COMMAND ]
+    def materialized_command(input_path)
+      [ "sh", "-c", 'exec python3 -c "$1" < "$2"',
+        "paid-text", MATERIALIZE_COMMAND, input_path ]
     end
 
-    # Command, preparation, and stdin travel as one bounded payload on the exec
-    # stdin stream. The stream is not subject to the execve per-string limit
-    # that applies to Docker exec environment entries, so a prompt within
-    # MAX_INPUT_BYTES always reaches the container.
+    # Command, preparation, and stdin travel as one bounded archive payload.
+    # Docker exec does not attach stdin: its hijack transport can finish before
+    # the process and return a nil exit code while the command is still running.
     def input_payload(command, preparation, stdin_data)
       input = stdin_data.to_s
       header = { "command" => Array(command).map(&:to_s),
@@ -166,6 +166,18 @@ module Containers
       payload = header.dup.force_encoding(Encoding::BINARY)
       payload << "\n" << input.b
       StringIO.new(payload)
+    end
+
+    def stage_input(payload)
+      basename = "paid-text-#{SecureRandom.hex(12)}"
+      tar = StringIO.new(Docker::Util.create_tar(basename => { content: payload.string, permissions: 0o644 }))
+      # Docker's archive endpoint writes to the container layer beneath tmpfs
+      # mounts. /opt remains visible with ReadonlyRootfs enabled and disappears
+      # when this disposable container is deleted.
+      Containers.backend.archive_in_container(@container, "/opt") { tar.read(64 * 1024).to_s }
+      "/opt/#{basename}"
+    rescue Docker::Error::DockerError => e
+      raise AgentHarness::Error, "Unable to stage isolated text request: #{e.message}"
     end
 
     def preparation_file_writes(preparation)
@@ -233,11 +245,13 @@ module Containers
       NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend)
       @container = Containers.backend.create_container(container_config)
       Containers.backend.start_container(@container)
+      result = Containers.backend.exec_in_container(@container, [ "chown", "agent:agent", "/home/agent" ], user: "root")
+      raise AgentHarness::ConfigurationError, "Unable to prepare isolated text home" unless Array(result).last == 0
     rescue Docker::Error::DockerError, NetworkPolicy::Error => e
       raise AgentHarness::ConfigurationError, "Unable to provision isolated text execution: #{e.message}"
     end
 
-    def run(command, timeout:, env:, input:)
+    def run(command, timeout:, env:)
       timed_out = false
       finished = false
       mutex = Mutex.new
@@ -255,7 +269,7 @@ module Containers
       stderr = +""
       output_exceeded = false
       result = Containers.backend.exec_in_container(@container, command,
-        wait: timeout, Env: env.map { |key, value| "#{key}=#{value}" }, stdin: input) do |stream, chunk|
+        wait: timeout, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
         next if output_exceeded
 
         target = stream == :stderr ? stderr : stdout
@@ -278,6 +292,7 @@ module Containers
         raise AgentHarness::Error, "Isolated text request exceeded the #{MAX_OUTPUT_BYTES}-byte output limit"
       end
       raise AgentHarness::TimeoutError, "Isolated text request timed out" if timed_out || exit_code.to_i == 124
+      raise AgentHarness::Error, "Isolated text execution failed: exit status unavailable" if exit_code.nil?
 
       AgentHarness::CommandExecutor::Result.new(stdout: stdout, stderr: stderr,
         exit_code: exit_code.to_i, duration: nil)
