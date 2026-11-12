@@ -41,8 +41,9 @@ environment string is capped near 128 KiB. Docker archive extraction writes
 beneath tmpfs mounts, so the file is staged at `/opt` while the process root
 filesystem remains read-only. It disappears when the container is deleted.
 Docker exec does not attach stdin: its hijack transport can return before the
-process has finished. An unavailable exit status is a transport failure, never
-success.
+process has finished. An unavailable exit status, missing setup output, or
+Docker read timeout is a transport failure, never success or a permanent
+configuration failure.
 Caller environment entries are bounded per entry.
 Embedding and interactive API chat keep their existing capability-specific
 transports and settings. Provider identifiers inside those protocol adapters

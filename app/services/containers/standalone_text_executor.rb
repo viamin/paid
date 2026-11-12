@@ -172,6 +172,8 @@ module Containers
     def stage_input(payload)
       basename = "paid-text-#{SecureRandom.hex(12)}"
       tar = private_input_tar(basename, payload.string)
+      # Docker archives written to tmpfs paths land beneath the mount and are
+      # invisible to exec. /opt is visible and disappears with the container.
       Containers.backend.archive_in_container(@container, "/opt") { tar.read(64 * 1024).to_s }
       "/opt/#{basename}"
     rescue Docker::Error::DockerError => e
@@ -256,10 +258,16 @@ module Containers
       Containers.backend.start_container(@container)
       result = Containers.backend.exec_in_container(@container,
         [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
-      owner = Array(result).first.to_a.join.match(/\A(\d+):(\d+)\s*\z/) if Array(result).last == 0
-      raise AgentHarness::ConfigurationError, "Unable to prepare isolated text home" unless owner
+      status = Array(result).last
+      raise AgentHarness::Error, "Isolated text home preparation exit status unavailable" if status.nil?
+      raise AgentHarness::ConfigurationError, "Unable to prepare isolated text home" unless status == 0
+
+      owner = Array(Array(result).first).join.match(/\A(\d+):(\d+)\s*\z/)
+      raise AgentHarness::Error, "Isolated text home ownership unavailable" unless owner
 
       @agent_uid, @agent_gid = owner.captures.map(&:to_i)
+    rescue Docker::Error::TimeoutError
+      raise AgentHarness::TimeoutError, "Isolated text request timed out during provisioning"
     rescue Docker::Error::DockerError, NetworkPolicy::Error => e
       raise AgentHarness::ConfigurationError, "Unable to provision isolated text execution: #{e.message}"
     end

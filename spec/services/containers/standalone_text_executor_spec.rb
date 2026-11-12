@@ -243,6 +243,32 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-006
+  it "classifies incomplete home preparation as a transport failure and removes the container" do
+    allow(backend).to receive(:exec_in_container).with(container,
+      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      .and_return([ [], [], nil ])
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::Error, /home preparation exit status unavailable/)
+
+    expect(backend).to have_received(:delete_container).with(container, force: true)
+  end
+
+  # @spec LLM-ROUTING-006
+  it "classifies a Docker home preparation timeout as a request timeout" do
+    allow(backend).to receive(:exec_in_container).with(container,
+      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      .and_raise(Docker::Error::TimeoutError, "read timeout")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::TimeoutError, /timed out/)
+
+    expect(backend).to have_received(:delete_container).with(container, force: true)
+  end
+
+  # @spec LLM-ROUTING-006
   it "removes the container when archive staging fails" do
     allow(backend).to receive(:archive_in_container).and_raise(Docker::Error::DockerError, "archive failed")
 
