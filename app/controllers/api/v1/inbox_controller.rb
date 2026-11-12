@@ -17,7 +17,8 @@ module Api
         filters = inbox_filters
         return if conditional_response?(filters)
 
-        entries = Inbox::Queue.call(user: current_user, **filters.slice(:project, :kind, :sort, :scope))
+        entries = Inbox::Query.call(entries: Inbox::Queue.call(user: current_user, **filters.slice(:sort, :scope)),
+          projects: filters[:projects], kinds: filters[:kinds], search: filters[:search])
         page = paginated_entries(entries)
         listed_entries = page.first(inbox_limit)
         payload = { entries: InboxEntrySerializer.render_list_page(listed_entries) }
@@ -114,8 +115,9 @@ module Api
 
       def inbox_filters
         {
-          project: scoped_project,
-          kind: valid_kind,
+          projects: scoped_projects,
+          kinds: valid_kinds,
+          search: inbox_search,
           sort: valid_sort,
           scope: valid_scope,
           limit: inbox_limit,
@@ -131,17 +133,20 @@ module Api
         Inbox::Queue::SCOPES.include?(scope) ? scope : Inbox::Queue::ACTIONABLE_SCOPE
       end
 
-      def scoped_project
-        return if params[:project_id].blank?
-
-        project = policy_scope(Project).find(params[:project_id])
-        authorize project, :show?
-        project
+      def scoped_projects
+        ids = Array(params[:project_ids]).presence || Array(params[:project_id]).presence || []
+        projects = policy_scope(Project).where(id: ids.filter_map { |id| Integer(id, exception: false) }.uniq).to_a
+        projects.each { |project| authorize project, :show? }
+        projects
       end
 
-      def valid_kind
-        kind = params[:kind].to_s
-        Inbox::Queue::KINDS.include?(kind) ? kind : nil
+      def valid_kinds
+        values = Array(params[:kinds]).presence || Array(params[:kind]).presence || []
+        values.map(&:to_s).intersection(Inbox::Queue::KINDS)
+      end
+
+      def inbox_search
+        params.fetch(:q, {}).permit(Inbox::Query::TEXT_PREDICATE).to_h
       end
 
       def valid_sort
@@ -159,7 +164,8 @@ module Api
       end
 
       def inbox_etag(filters)
-        payload = [ current_user.id, filters.slice(:kind, :sort, :scope, :limit, :cursor).merge(project_id: filters[:project]&.id), inbox_version ]
+        payload = [ current_user.id, filters.slice(:kinds, :search, :sort, :scope, :limit, :cursor)
+          .merge(project_ids: filters.fetch(:projects, []).map(&:id)), inbox_version ]
         %Q("#{Digest::SHA256.hexdigest(payload.to_json)}")
       end
 

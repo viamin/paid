@@ -6,7 +6,10 @@ module Inbox
     def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], **overrides)
       {
         project_id: project&.id,
+        project_ids: params[:project_ids],
         kind: kind,
+        kinds: params[:kinds],
+        q: params[:q].respond_to?(:permit) ? params[:q].permit(Inbox::Query::TEXT_PREDICATE).to_h : nil,
         sort: sort,
         scope: scope
       }.compact.merge(overrides)

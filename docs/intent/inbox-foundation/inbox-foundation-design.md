@@ -21,6 +21,23 @@ behavior-preserving for the current `/dashboard/needs_input` page.
 
 ## Purpose
 
+## Query boundary
+
+Inbox entries are derived from multiple records (issues, plan reviews,
+notifications, readiness projections, and dependency cycles), so there is no
+single Active Record relation that can faithfully represent every entry.
+`Inbox::Queue` remains the authorization, phase-relevance, and personal-removal
+boundary. `Inbox::Query` runs after that boundary and exposes only the
+allowlisted `q[text_cont]` predicate plus selected project and kind IDs.
+
+The adapter uses Ransack against the authorized entry projects
+(`owner_or_repo_cont`) and entry issues (`title_cont`). For derived entry types
+whose rendered title/summary has no durable relational column, it applies the
+same allowlisted case-insensitive containment predicate to those server-built
+fields. It does not accept model attributes, SQL fragments, predicates, or
+arbitrary Ransack keys from callers. This preserves a single user-visible
+search contract without pretending the heterogeneous queue is one SQL relation.
+
 Two trends make the existing single-purpose queue untenable:
 
 - The `needs_input` label now fires from more places as review-gated features
@@ -129,14 +146,13 @@ issue, not a project-visibility filter, so it does not reintroduce the
 project-level `auto_pick_enabled` gate this section removes.
 
 The Inbox header keeps filtering controls compact as the number of entry kinds
-grows. A single collapsed trigger opens a filter panel with a single type
-selector, a searchable accessible-project selector, and an ordering selector.
-The URL remains the source of truth: `kind`, `project_id`, and `sort` restore
-the panel state and survive selection/action links. The panel is a focus-trapped
-popover on desktop and a native full-screen dialog on narrow screens; Escape
-closes it and Enter submits its GET form. Type deliberately remains
-single-select: that preserves the established `kind` URL contract while the
-team gathers evidence that combined kinds are needed.
+grows. A single collapsed trigger opens a filter panel with multi-select type
+and accessible-project selectors, a server-side text search, and an ordering
+selector. The URL remains the source of truth: `kinds[]`, `project_ids[]`,
+`q[text_cont]`, scope, and `sort` restore the panel state and survive
+selection/action links. The panel is a focus-trapped popover on desktop and a
+native full-screen dialog on narrow screens; Escape closes it and Enter
+submits its GET form.
 
 ### Filter availability and empty-combination fallback (#4276)
 

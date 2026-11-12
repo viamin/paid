@@ -83,6 +83,14 @@ class Issue < ApplicationRecord
   LEGACY_DEPENDABOT_ID_OFFSET = 900_000_000_000
 
   belongs_to :project
+
+  def self.ransackable_attributes(_auth_object = nil)
+    %w[title]
+  end
+
+  def self.ransackable_associations(_auth_object = nil)
+    []
+  end
   belongs_to :parent_issue, class_name: "Issue", optional: true
 
   has_many :sub_issues, class_name: "Issue", foreign_key: :parent_issue_id,

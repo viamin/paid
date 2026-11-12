@@ -1663,7 +1663,7 @@ RSpec.describe Project do
   describe ".ransackable_attributes" do
     it "returns the allowed sortable attributes" do
       expect(described_class.ransackable_attributes).to contain_exactly(
-        "name", "last_agent_run_at", "last_github_activity_at", "created_at"
+        "name", "owner", "repo", "last_agent_run_at", "last_github_activity_at", "created_at"
       )
     end
   end

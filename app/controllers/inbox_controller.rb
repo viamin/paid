@@ -115,8 +115,10 @@ class InboxController < ApplicationController
   # @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-010 @spec INBOX-FOUNDATION-011
   # @spec OPERATOR-INBOX-016
   def load_inbox
-    @scoped_project = scoped_needs_input_project
-    @selected_kind = valid_inbox_kind
+    @scoped_projects = scoped_inbox_projects
+    @selected_kinds = valid_inbox_kinds
+    @scoped_project = @scoped_projects.one? ? @scoped_projects.first : nil
+    @selected_kind = @selected_kinds.one? ? @selected_kinds.first : nil
     @selected_sort = valid_inbox_sort
     @selected_scope = valid_inbox_scope
     if single_entry_request?
@@ -124,7 +126,7 @@ class InboxController < ApplicationController
       return
     end
 
-    @inbox_entries = inbox_queue.call
+    @inbox_entries = Inbox::Query.call(entries: inbox_queue.call, projects: @scoped_projects, kinds: @selected_kinds, search: inbox_search)
     load_inbox_presentations(entries: @inbox_entries)
     redirect_for_empty_filtered_combination
   end
@@ -134,10 +136,12 @@ class InboxController < ApplicationController
   # single-entry render derives the matrix so the filter dialog still offers
   # every project with items.
   def load_inbox_presentations(entries: nil)
-    if entries && @scoped_project.nil? && @selected_kind.nil? && @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE
+    if entries && @scoped_projects.empty? && @selected_kinds.empty? && inbox_search.blank? && @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE
       @inbox_availability = Inbox::Availability.call(user: current_user, entries:)
     else
-      @inbox_availability = Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+      @inbox_availability = Inbox::Availability.call(user: current_user, entries: Inbox::Query.call(
+        entries: Inbox::Queue.call(user: current_user, scope: @selected_scope), projects: @scoped_projects, kinds: @selected_kinds, search: inbox_search
+      ))
     end
     @inbox_projects = @inbox_availability.available_projects
   end
@@ -159,8 +163,7 @@ class InboxController < ApplicationController
   end
 
   def inbox_queue
-    @inbox_queue ||= Inbox::Queue.new(user: current_user, project: @scoped_project,
-      kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
+    @inbox_queue ||= Inbox::Queue.new(user: current_user, kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
   end
 
   def queue_entry_kind
@@ -182,24 +185,36 @@ class InboxController < ApplicationController
   # the "nearest" non-empty combination (#4276).
   def redirect_for_empty_filtered_combination
     return if @inbox_entries.present?
-    return if @selected_kind.nil? && @scoped_project.nil?
-    return if @inbox_availability.total_count.zero?
+    return if @selected_kinds.empty? && @scoped_projects.empty? && inbox_search.blank?
+    return if unfiltered_inbox_availability.total_count.zero?
 
-    redirect_to inbox_path(sort: params[:sort].presence), status: :see_other,
+    redirect_to inbox_path(sort: params[:sort].presence,
+      scope: @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE ? nil : @selected_scope), status: :see_other,
       notice: "No inbox items matched that filter, so it was cleared. Showing every open item instead."
   end
 
-  def scoped_needs_input_project
-    return if params[:project_id].blank?
-
-    project = policy_scope(Project).find(params[:project_id])
-    authorize project, :show?
-    project
+  def unfiltered_inbox_availability
+    @unfiltered_inbox_availability ||= Inbox::Availability.call(user: current_user,
+      entries: Inbox::Queue.call(user: current_user, scope: @selected_scope))
   end
 
-  def valid_inbox_kind
-    kind = params[:kind].to_s
-    Inbox::Queue::KINDS.include?(kind) ? kind : nil
+  def scoped_inbox_projects
+    ids = Array(params[:project_ids]).presence || Array(params[:project_id]).presence || []
+    ids = ids.filter_map { |id| Integer(id, exception: false) }.uniq
+    return [] if ids.empty?
+
+    projects = policy_scope(Project).where(id: ids).to_a
+    projects.each { |project| authorize project, :show? }
+    projects
+  end
+
+  def valid_inbox_kinds
+    values = Array(params[:kinds]).presence || Array(params[:kind]).presence || []
+    values.map(&:to_s).intersection(Inbox::Queue::KINDS)
+  end
+
+  def inbox_search
+    @inbox_search ||= params.fetch(:q, {}).permit(Inbox::Query::TEXT_PREDICATE).to_h
   end
 
   def valid_inbox_sort
@@ -208,8 +223,8 @@ class InboxController < ApplicationController
   end
 
   def inbox_redirect_params
-    { project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence,
-      scope: @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE ? nil : @selected_scope }.compact
+    { project_ids: @scoped_projects.map(&:id), kinds: @selected_kinds, q: inbox_search.presence,
+      sort: params[:sort].presence, scope: @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE ? nil : @selected_scope }.compact
   end
 
   def resolve_selected_entry(entries)
