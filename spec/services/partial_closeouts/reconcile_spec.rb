@@ -257,6 +257,21 @@ RSpec.describe PartialCloseouts::Reconcile do
     )
   end
 
+  # @spec PARTIAL-CLOSEOUT-049
+  it "keeps approval and independent judgment in the human Inbox while recording technical validation separately" do
+    described_class.call(agent_run: run, assessment: gaps([
+      human_gap("Approve the representative environment", next_step: "Authorize the named environment."),
+      human_gap("Record blinded accessibility judgment", next_step: "Submit the independent judgment."),
+      technical_gap("Measure checkout latency")
+    ]))
+
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata.fetch("prerequisites").map { |occurrence| occurrence.fetch("kind") }).to contain_exactly("human", "human")
+    expect(notification.description).to include("Authorize the named environment.", "Submit the independent judgment.")
+    expect(notification.description).not_to include("Measure checkout latency")
+    expect(run.reload.reconciliation.dig("gaps", "2")).to include("status" => "awaiting_technical_validation")
+  end
+
   it "records unknown attribution as a bounded reassessment when the attributed owner is unavailable" do # @spec PARTIAL-CLOSEOUT-041
     closed_owner = create(:issue, :in_progress, project:, github_state: "closed")
 
@@ -721,6 +736,11 @@ RSpec.describe PartialCloseouts::Reconcile do
   def unattributed_gap(criterion, reason: "The owning issue could not be established.")
     { "criterion" => criterion, "kind" => "human", "next_step" => "Record the independent judgments.",
       "attribution" => { "coverage" => "unknown", "reason" => reason } }
+  end
+
+  def technical_gap(criterion)
+    { "criterion" => criterion, "kind" => "technical", "validation_kind" => "native",
+      "validation_requirement_id" => 1 }
   end
 
   def attributed_to(source, criterion = "Independent evaluation")

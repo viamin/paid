@@ -50,6 +50,20 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.agent_run).to be_nil
   end
 
+  # @spec PARTIAL-CLOSEOUT-049
+  it "refuses a reviewed recipe from another tenant" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
+    other_account = create(:account)
+    foreign_requirement = create(:pre_commit_requirement, account: other_account, command: "bin/foreign-check")
+
+    result = described_class.call(source_run:, requirement: foreign_requirement, actor: project.created_by)
+
+    expect(result).not_to be_success
+    expect(result.agent_run).to be_nil
+    expect(TechnicalPrerequisiteValidationJob).not_to have_been_enqueued
+  end
+
   # @spec PARTIAL-CLOSEOUT-042
   it "does not queue a reviewed performance comparison while project scheduling is paused" do
     project = create(:project, scheduler_paused_at: Time.current)

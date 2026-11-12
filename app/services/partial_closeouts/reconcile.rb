@@ -40,7 +40,7 @@ module PartialCloseouts
       @assessment = assessment.to_h.deep_stringify_keys
     end
 
-    def call # @spec NO-OUTPUT-ISSUE-007 PARTIAL-CLOSEOUT-041
+    def call # @spec NO-OUTPUT-ISSUE-007 PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-049
       validate!
       prerequisites_by_owner = reconcile_gaps
       publish_operator_prerequisites!(prerequisites_by_owner)
@@ -74,6 +74,7 @@ module PartialCloseouts
         # fallback would leave the prerequisite unactionable (#4119).
         raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
         validate_external_dependency!(gap) if external_gap?(gap)
+        validate_technical_prerequisite!(gap) if technical_gap?(gap)
         validate_human_references!(gap) if human_gap?(gap)
         validate_human_attribution!(gap) if human_gap?(gap)
         raise ArgumentError, "human gap workflow is invalid" if human_gap?(gap) && gap["workflow"].present? && !gap["workflow"].in?(VALID_WORKFLOWS)
@@ -119,9 +120,19 @@ module PartialCloseouts
       raise ArgumentError, "external dependency identity is invalid" unless valid
     end
 
+    def validate_technical_prerequisite!(gap)
+      kind = gap["validation_kind"]
+      valid = kind.in?(%w[native tool_sidecar performance_measurement]) &&
+        gap["validation_requirement_id"].is_a?(Integer) && gap["validation_requirement_id"].positive?
+      valid &&= kind == "tool_sidecar" ? gap["validation_tool_name"].to_s.strip.present? : gap["validation_tool_name"].nil?
+      raise ArgumentError, "technical prerequisite validation identity is invalid" unless valid
+    end
+
     def human_gap?(gap) = gap["kind"] == "human"
 
     def external_gap?(gap) = gap["kind"] == "external"
+
+    def technical_gap?(gap) = gap["kind"] == "technical"
 
     # Returns the non-agent gaps so every prerequisite is visible in one Inbox
     # notification: per-gap publishes dedup onto the same row and would
@@ -141,6 +152,8 @@ module PartialCloseouts
         elsif external_gap?(gap)
           reconcile_external_gap(gap, index)
           prerequisites_by_owner[agent_run.issue] << [ gap, agent_run.issue ]
+        elsif technical_gap?(gap)
+          record_gap!(index, gap, status: "awaiting_technical_validation")
         else
           reconcile_agent_gap(gap, index)
         end

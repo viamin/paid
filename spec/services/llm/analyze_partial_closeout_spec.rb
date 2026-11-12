@@ -251,6 +251,23 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-049
+    it "splits a runnable technical prerequisite into the existing reviewed-recipe criterion action" do
+      selected = create(:pre_commit_requirement, project:, account: project.account, command: "bin/measure")
+      allow(llm_response).to receive(:output).and_return({ gaps: [ {
+        criterion: "Checkout measurement", kind: "technical", validation_kind: "native",
+        validation_requirement_id: selected.id
+      } ] }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.fetch("gaps").sole).to include("kind" => "technical")
+      expect(result.fetch("criteria").sole).to include(
+        "criterion" => "Checkout measurement", "state" => "unmet", "validation_kind" => "native",
+        "validation_requirement_id" => selected.id
+      )
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,

@@ -701,6 +701,28 @@ servers; native checks copy neither attachment type.
 Validation evidence remains evidence for a later assessment, not an automatic
 attestation that the criterion is satisfied.
 
+### Mixed human and technical prerequisites
+
+A partial-closeout assessment represents human authorization/setup,
+agent-executable technical validation, and independent human judgment as
+separate typed occurrences. A mixed prerequisite therefore produces one human
+occurrence for the authorization, one technical occurrence carrying its
+criterion and reviewed-recipe identity, and a separate attributed human
+occurrence for the independent judgment. Only human occurrences publish to the
+human Inbox; technical occurrences project to the existing
+`TechnicalPrerequisites::InboxActions` path, which rechecks the actor's scoped
+recipe permissions and delegated execution policy before creating an isolated
+validation run.
+
+Technical evidence binds the criterion to the validation run's pinned revision,
+selected environment/image/tool provenance, and terminal result. Failed and
+unavailable records remain visible and retryable through the same prepared
+action. Every non-cancelled terminal technical run invalidates the closeout
+evidence generation and invokes the existing deduplicated auto-audit policy;
+where automation is not admitted, the stale assessment offers an explicit
+fresh acceptance audit. No terminal technical result authorizes setup or
+supplies an independent human judgment.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation

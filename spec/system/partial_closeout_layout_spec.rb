@@ -97,6 +97,28 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
     end
   end
 
+  # @spec PARTIAL-CLOSEOUT-049
+  it "keeps a prepared technical check out of the human prerequisite request" do
+    issue = create(:issue, project:, github_number: 225, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, github_number: 226, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+    requirement = create(:pre_commit_requirement, project:, account:, name: "Checkout measurement", command: "bin/measure")
+    run = create(:agent_run, :completed, project:, issue:, base_commit_sha: "a" * 40)
+    assessment = {
+      "criteria" => [ { "criterion" => "Measure checkout latency", "state" => "unmet",
+                          "validation_kind" => "native", "validation_requirement_id" => requirement.id } ],
+      "gaps" => [ { "criterion" => "Measure checkout latency", "kind" => "technical",
+                    "validation_kind" => "native", "validation_requirement_id" => requirement.id } ]
+    }
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, assessment) })
+
+    visit inbox_entry_path("partial_closeout:#{issue.id}", project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+
+    expect(page).to have_button("Run Checkout measurement")
+    expect(page).not_to have_text("Measure checkout latency needs operator action")
+  end
+
   it "shows inspectable root-prerequisite leverage without changing queue state" do # @spec PARTIAL-CLOSEOUT-048
     root = create(:issue, project:, github_number: 230, paid_state: "in_progress")
     issue = create(:issue, project:, github_number: 231, paid_state: "in_progress")
