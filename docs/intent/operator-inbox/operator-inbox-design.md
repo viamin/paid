@@ -71,6 +71,19 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Detail action toolbar
+
+Every selected Inbox detail renders a labeled action toolbar directly below its
+identity header and before explanatory or decision content. The toolbar stays
+at the top of the detail pane while that pane scrolls and wraps its controls on
+narrow screens. It is the shared home for item-level chat, GitHub, and
+Inbox-removal controls; those controls keep their existing endpoint, policy,
+confirmation, Turbo-frame, loading, and focus behavior. The toolbar also
+provides keyboard-accessible shortcuts for every type-specific detail action;
+each shortcut activates its existing control so no route or authorization rule
+is duplicated. Type-specific decision forms remain with the details they need
+to explain.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the

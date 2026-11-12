@@ -522,6 +522,20 @@
   `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-027** — When an operator selects an Inbox item, the
+  detail SHALL render a labeled action toolbar after the item identity and
+  before explanatory or decision content. The toolbar SHALL remain at the top
+  of the detail pane while it scrolls, wrap controls on narrow screens, and
+  preserve the existing authorization, endpoint, confirmation, Turbo-frame,
+  and accessible name for each item-level chat, GitHub, remove, restore, or
+  type-specific action it renders. A type-specific shortcut SHALL activate its
+  existing control rather than duplicate that control's route or policy.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/views/dashboard/_inbox_detail_actions.html.erb`,
+  `app/javascript/controllers/inbox_detail_actions_controller.js`.
+  *Test:* `spec/views/dashboard/inbox_detail_actions_partial_spec.rb`,
+  `spec/system/dashboard_inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
   workflow through the existing Temporal bridge and SHALL redirect back to the
@@ -583,7 +597,7 @@
   the shared Chat about this action. Opening the action SHALL reuse the
   existing item-scoped session and SHALL not mutate the inbox item.
   *Code:* `app/services/inbox/chat_action.rb`,
-  `app/views/dashboard/_inbox_chat_action.html.erb`,
+  `app/views/dashboard/_inbox_detail_actions.html.erb`,
   `app/services/inbox/open_interactive_chat.rb`.
   *Test:* `spec/services/inbox/chat_action_spec.rb`,
   `spec/services/inbox/open_interactive_chat_spec.rb`.

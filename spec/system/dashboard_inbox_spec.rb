@@ -76,6 +76,28 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     )
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "keeps item actions at the top of the detail before explanatory content and wraps them for narrow layouts" do
+    issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    sign_in_as(user)
+    visit inbox_entry_path("clarifying_questions:#{issue.id}",
+      project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+
+    document = Nokogiri::HTML(page.body)
+    toolbar = document.at_css("[data-testid='inbox-detail-actions']")
+    decision_brief = document.at_css("[data-testid='inbox-decision-brief']")
+
+    expect(toolbar).to be_present
+    expect(decision_brief).to be_present
+    expect(toolbar["aria-label"]).to eq("Item actions")
+    expect(toolbar["class"]).to include("sticky")
+    expect(toolbar.at_css("div.flex")["class"]).to include("flex-wrap")
+    expect(toolbar.at_css("form[action*='/remove']")).to be_present
+    expect(page.body.index('data-testid="inbox-detail-actions"')).to be < page.body.index('data-testid="inbox-decision-brief"')
+  end
+
   # @spec LIST-DETAIL-007
   it "renders Inbox in the shared viewport-bound shell with independent pane scroll regions" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)

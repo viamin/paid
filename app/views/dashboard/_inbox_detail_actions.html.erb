@@ -1,0 +1,35 @@
+<%# @spec OPERATOR-INBOX-002I @spec OPERATOR-INBOX-027 @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-003 @spec INBOX-PHASE-RELEVANCE-006 %>
+<% chat_action = Inbox::ChatAction.for(entry.kind) %>
+<% personally_removed = Inbox::Removals::Suppression.call(user: current_user, entries: [entry]).include?(entry.id) %>
+
+<section aria-label="Item actions" data-testid="inbox-detail-actions" class="sticky top-0 z-10 -mx-4 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+  <div data-inbox-detail-actions-target="actions" class="flex flex-wrap items-center gap-2">
+    <% if entry.issue %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50" %>
+    <% end %>
+
+    <% if chat_action.shared_detail? && Inbox::InteractiveChatAccess.allowed?(user: current_user, project: entry.project) %>
+      <%= button_to chat_action.label,
+            inbox_interactive_chat_path(entry),
+            method: :post,
+            class: "inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50",
+            form: { data: { turbo_frame: "_top" } } %>
+    <% end %>
+
+    <% if personally_removed %>
+      <%= button_to "Restore to Inbox", inbox_entry_restore_path(entry.id), method: :post,
+            class: "rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50",
+            form: { data: { turbo_frame: "_top" } } %>
+    <% elsif entry.actionable? %>
+      <%= button_to "Remove from Inbox", inbox_entry_remove_path(entry.id), method: :post,
+            class: "rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50",
+            form: { data: {
+              turbo_confirm: "Hide this request from your Inbox? The work, its questions, and its history stay unchanged.",
+              turbo_frame: "_top"
+            } } %>
+    <% end %>
+  </div>
+</section>

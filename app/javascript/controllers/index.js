@@ -28,11 +28,11 @@ application.register("chat-runner-model-options", ChatRunnerModelOptionsControll
 import ChatSessionListController from "./chat_session_list_controller"
 application.register("chat-session-list", ChatSessionListController)
 
-import ChatThinkingEffortController from "./chat_thinking_effort_controller"
-application.register("chat-thinking-effort", ChatThinkingEffortController)
-
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
+
+import ChatThinkingEffortController from "./chat_thinking_effort_controller"
+application.register("chat-thinking-effort", ChatThinkingEffortController)
 
 import ClarifyingChoiceController from "./clarifying_choice_controller"
 application.register("clarifying-choice", ClarifyingChoiceController)
@@ -64,11 +64,14 @@ application.register("form-submit", FormSubmitController)
 import GoalToggleController from "./goal_toggle_controller"
 application.register("goal-toggle", GoalToggleController)
 
-import InboxMasterDetailController from "./inbox_master_detail_controller"
-application.register("inbox-master-detail", InboxMasterDetailController)
+import InboxDetailActionsController from "./inbox_detail_actions_controller"
+application.register("inbox-detail-actions", InboxDetailActionsController)
 
 import InboxFiltersController from "./inbox_filters_controller"
 application.register("inbox-filters", InboxFiltersController)
+
+import InboxMasterDetailController from "./inbox_master_detail_controller"
+application.register("inbox-master-detail", InboxMasterDetailController)
 
 import LiveDashboardController from "./live_dashboard_controller"
 application.register("live-dashboard", LiveDashboardController)
@@ -90,6 +93,9 @@ application.register("mobile-menu", MobileMenuController)
 
 import NotificationDropdownController from "./notification_dropdown_controller"
 application.register("notification-dropdown", NotificationDropdownController)
+
+import PrCycleTimeController from "./pr_cycle_time_controller"
+application.register("pr-cycle-time", PrCycleTimeController)
 
 import ProjectCreationModeController from "./project_creation_mode_controller"
 application.register("project-creation-mode", ProjectCreationModeController)
