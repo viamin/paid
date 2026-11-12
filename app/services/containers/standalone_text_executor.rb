@@ -38,6 +38,13 @@ module Containers
           path.write_text(content, encoding="utf-8")
           path.chmod(mode)
 
+      input_path = sys.argv[1]
+      try:
+          header = json.loads(sys.stdin.buffer.readline())
+          stdin_data = sys.stdin.buffer.read(int(header.get("stdin_bytes", 0)))
+      finally:
+          os.unlink(input_path)
+
       environment = os.environ.copy()
       if "PAID_CREDENTIAL_IDENTITY" in os.environ:
           request = urllib.request.Request(
@@ -50,9 +57,6 @@ module Containers
           for name, content in material.get("files", {}).items():
               write_file(name, content, [pathlib.Path("/home/agent")])
           environment.update({str(key): str(value) for key, value in material.get("env", {}).items()})
-
-      header = json.loads(sys.stdin.buffer.readline())
-      stdin_data = sys.stdin.buffer.read(int(header.get("stdin_bytes", 0)))
       for write in header.get("preparation", []):
           mode = write["mode"] if write.get("mode") is not None else 0o600
           write_file(write["path"], write["content"], [pathlib.Path("/home/agent"), pathlib.Path("/tmp")], mode)
@@ -152,7 +156,7 @@ module Containers
     end
 
     def materialized_command(input_path)
-      [ "sh", "-c", 'exec python3 -c "$1" < "$2"',
+      [ "sh", "-c", 'exec python3 -c "$1" "$2" < "$2"',
         "paid-text", MATERIALIZE_COMMAND, input_path ]
     end
 

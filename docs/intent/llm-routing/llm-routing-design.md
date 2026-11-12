@@ -39,7 +39,10 @@ temporary mode-0600 file owned by the agent in the disposable container's
 private layer, not as exec environment entries, because a single `execve`
 environment string is capped near 128 KiB. Docker archive extraction writes
 beneath tmpfs mounts, so the file is staged at `/opt` while the process root
-filesystem remains read-only. It disappears when the container is deleted.
+filesystem remains read-only. The materializer unlinks each input immediately
+after consuming it, including on malformed payloads or materialization failure,
+so a reused container cannot retain earlier request data; any remaining input
+also disappears when the container is deleted.
 Docker exec does not attach stdin: its hijack transport can return before the
 process has finished. An unavailable exit status, missing setup output, or
 Docker read timeout is a transport failure, never success or a permanent

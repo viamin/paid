@@ -324,6 +324,12 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-006
+  it "removes staged input after consuming it" do
+    expect(described_class::MATERIALIZE_COMMAND).to include("input_path = sys.argv[1]")
+    expect(described_class::MATERIALIZE_COMMAND).to match(/finally:\n\s+os\.unlink\(input_path\)/)
+  end
+
+  # @spec LLM-ROUTING-006
   it "stops collection and raises a classified failure when output exceeds the cap" do
     captured_payload
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
