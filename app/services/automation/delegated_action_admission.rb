@@ -159,6 +159,7 @@ module Automation
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
+        explicit_hold: explicit_hold?,
         assessment_available: !current_assessment.stale?
       }
     end
@@ -174,6 +175,12 @@ module Automation
       return true unless FeatureFlags.enabled?(:project_delegation_expansion, project:)
 
       nil
+    end
+
+    def explicit_hold?
+      return false unless work_item.respond_to?(:held_for_review?)
+
+      work_item.held_for_review? || work_item.try(:hold_for_review) == true
     end
   end
 end

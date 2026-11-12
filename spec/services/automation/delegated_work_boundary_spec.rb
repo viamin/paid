@@ -74,7 +74,7 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     expect(Notification.last.metadata).to include(
       "authorization_id" => authorization.id,
       "boundary" => "retry",
-      "reasons" => [ "posture_signature" ]
+      "reasons" => [ "authorization_lifecycle", "posture_signature" ]
     )
   end
 
@@ -110,6 +110,51 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     end
     expect(InboxHistoryEvent.where(source: "project_delegation_pilot").pluck(:result))
       .to include("tenant_breach", "trust_breach", "evidence_missing")
+  end
+
+  it "blocks an explicit review hold before starting another action" do # @spec PROJECT-DELEGATION-006 BOUNDED-PHASE-AUTHORIZATION-005
+    result = recheck(explicit_hold: true)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:explicit_hold)
+    expect(Notification.last.metadata["reasons"]).to include("explicit_hold")
+    expect(authorization.reload).to be_held
+    expect(account.account_activity_events.by_action("bounded_action.held")).to exist
+  end
+
+  it "rolls back to reassessment when a pinned revision changes" do # @spec PROJECT-DELEGATION-006 BOUNDED-PHASE-AUTHORIZATION-005
+    original_evidence = authorization.evidence
+
+    result = recheck(posture_signature: "posture:changed")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:posture_signature)
+    expect(authorization.reload).to be_reassessment_required
+    expect(authorization.evidence).to eq(original_evidence)
+    expect(account.account_activity_events.by_action("bounded_action.reassessment_required")).to exist
+  end
+
+  it "expires the authorization under the boundary lock and preserves its snapshot" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-006
+    authorization.update!(expires_at: 1.minute.ago)
+    original_evidence = authorization.evidence
+
+    result = recheck
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:authorization_lifecycle)
+    expect(authorization.reload).to be_expired
+    expect(authorization.evidence).to eq(original_evidence)
+    expect(account.account_activity_events.by_action("bounded_action.expired")).to exist
+  end
+
+  it "records the exclusive bounded stop before routing recovery" do # @spec BOUNDED-PHASE-AUTHORIZATION-003 PROJECT-DELEGATION-006
+    result = recheck(phase: "merge")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:bounded_stop)
+    expect(authorization.reload).to be_stopped
+    expect(authorization.lifecycle_evidence).to include("boundary" => "retry")
+    expect(account.account_activity_events.by_action("bounded_action.stopped")).to exist
   end
 
   it "fails closed and records a security pause when security assessment is unavailable" do # @spec PROJECT-DELEGATION-007

@@ -27,8 +27,11 @@ module Automation
 
     def call
       validate_boundary!
+      authorization.expire_if_needed!
       reasons = failed_checks
       return Result.new(permitted: true, boundary:, reasons: [], notification: nil) if reasons.empty?
+
+      transition_authorization!(reasons)
 
       notification = FocusedDecision.call(
         account: authorization.account,
@@ -70,6 +73,7 @@ module Automation
         trust: truthy?(snapshot[:trust]),
         budget: allowed?(snapshot[:budget]),
         repository_controls: allowed?(snapshot[:repository_controls]),
+        explicit_hold: !truthy?(snapshot[:explicit_hold]),
         assessment_availability: truthy?(snapshot[:assessment_available])
       }
       checks.filter_map { |reason, passed| reason unless passed }
@@ -113,6 +117,28 @@ module Automation
 
     def truthy?(value)
       value == true || value == "true"
+    end
+
+    def transition_authorization!(reasons)
+      if reasons.include?(:bounded_stop)
+        authorization.bounded_stop!(
+          evidence: { "boundary" => boundary.to_s, "phase" => snapshot[:phase].to_s }
+        )
+      elsif reasons.include?(:explicit_hold)
+        authorization.hold!(reason: "explicit_hold", evidence: { "boundary" => boundary.to_s })
+      elsif reasons.any? { |reason| reassessment_reason?(reason) }
+        authorization.require_reassessment!(
+          reason: reasons.find { |reason| reassessment_reason?(reason) }.to_s,
+          evidence: { "boundary" => boundary.to_s, "reasons" => reasons.map(&:to_s) }
+        )
+      end
+    end
+
+    def reassessment_reason?(reason)
+      %i[
+        intent_revision acceptance_revision evidence_revision posture_signature phase phase_policy
+        tenant trust budget repository_controls assessment_availability security
+      ].include?(reason)
     end
   end
 

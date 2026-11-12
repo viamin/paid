@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -748,10 +748,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.jsonb "evidence", default: {}, null: false
     t.datetime "expires_at", null: false
     t.bigint "issue_id", null: false
+    t.datetime "lifecycle_changed_at"
+    t.jsonb "lifecycle_evidence", default: {}, null: false
     t.bigint "project_id", null: false
     t.datetime "revoked_at"
     t.bigint "revoked_by_id"
     t.string "status", default: "active", null: false
+    t.string "status_reason"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_bounded_delegated_actions_on_account_id"
     t.index ["created_by_id"], name: "index_bounded_delegated_actions_on_created_by_id"
@@ -760,6 +763,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.index ["project_id"], name: "index_bounded_delegated_actions_on_project_id"
     t.index ["revoked_by_id"], name: "index_bounded_delegated_actions_on_revoked_by_id"
     t.index ["status", "expires_at"], name: "index_bounded_actions_on_status_and_expiry"
+    t.index ["status", "lifecycle_changed_at"], name: "index_bounded_actions_on_status_and_lifecycle_change"
   end
 
   create_table "bundle_outcomes", comment: "Measured results from using a configuration bundle on an agent run", force: :cascade do |t|

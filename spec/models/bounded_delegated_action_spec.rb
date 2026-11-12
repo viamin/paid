@@ -116,6 +116,56 @@ RSpec.describe BoundedDelegatedAction do
     expect(action).not_to be_allowed
   end
 
+  it "records an explicit hold without changing the admission evidence" do # @spec BOUNDED-PHASE-AUTHORIZATION-005 PROJECT-DELEGATION-006
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+    original_evidence = action.evidence
+
+    expect(action.hold!(reason: "owner requested review", actor: user)).to be(true)
+
+    expect(action.reload).to have_attributes(status: "held", status_reason: "owner requested review")
+    expect(action.evidence).to eq(original_evidence)
+    expect(action.lifecycle_evidence).to include("reason" => "owner requested review")
+    expect(account.account_activity_events.by_action("bounded_action.held").last).to have_attributes(
+      actor: user,
+      subject: action
+    )
+  end
+
+  it "records reassessment without changing the admission snapshot" do # @spec BOUNDED-PHASE-AUTHORIZATION-005 PROJECT-DELEGATION-006
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+    original_evidence = action.evidence
+
+    expect(action.require_reassessment!(reason: "posture_changed", evidence: { "revision" => 2 }, actor: user))
+      .to be(true)
+
+    expect(action.reload).to have_attributes(status: "reassessment_required", status_reason: "posture_changed")
+    expect(action.evidence).to eq(original_evidence)
+    expect(action.lifecycle_evidence).to include("reason" => "posture_changed", "revision" => 2)
+    expect(account.account_activity_events.by_action("bounded_action.reassessment_required").last)
+      .to have_attributes(actor: user, subject: action)
+  end
+
+  it "records expiry as a terminal lifecycle state while retaining the snapshot" do # @spec BOUNDED-PHASE-AUTHORIZATION-004 PROJECT-DELEGATION-006
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user, expires_at: 1.minute.ago)
+    original_evidence = action.evidence
+
+    expect(action.expire_if_needed!).to be(true)
+
+    expect(action.reload).to have_attributes(status: "expired", status_reason: "authorization_expired")
+    expect(action.evidence).to eq(original_evidence)
+    expect(account.account_activity_events.by_action("bounded_action.expired").last).to have_attributes(subject: action)
+  end
+
+  it "records a bounded stop as a terminal recovery point" do # @spec BOUNDED-PHASE-AUTHORIZATION-003 PROJECT-DELEGATION-006
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+    expect(action.bounded_stop!(evidence: { "phase" => "merge" })).to be(true)
+
+    expect(action.reload).to have_attributes(status: "stopped", status_reason: "bounded_phase_stop")
+    expect(action.lifecycle_evidence).to include("phase" => "merge")
+    expect(account.account_activity_events.by_action("bounded_action.stopped").last).to have_attributes(subject: action)
+  end
+
   it "rejects revocation by a user from another account" do
     action = create(:bounded_delegated_action, project:, issue:, created_by: user)
     other_user = create(:user)

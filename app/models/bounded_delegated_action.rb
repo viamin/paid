@@ -4,13 +4,15 @@
 # It is execution authority only: product decisions, releases, deployments,
 # and project setting changes remain independently authorized.
 #
-# @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
+# @spec BOUNDED-PHASE-AUTHORIZATION-004 @spec BOUNDED-PHASE-AUTHORIZATION-005
+# @spec BOUNDED-PHASE-AUTHORIZATION-009 @spec BOUNDED-PHASE-AUTHORIZATION-010
+# @spec BOUNDED-PHASE-AUTHORIZATION-011 @spec PROJECT-DELEGATION-006
 class BoundedDelegatedAction < ApplicationRecord
   ACTIONS = %w[review repair merge].freeze
   RESERVED_ACTIONS = %w[
     product_decision feature_approval release deployment setting_enablement
   ].freeze
-  STATUSES = %w[active revoked completed].freeze
+  STATUSES = %w[active held reassessment_required revoked expired stopped completed].freeze
   INTENT_DIGEST_FORMAT = /\Asha256:[a-f0-9]{64}\z/
 
   belongs_to :account
@@ -37,6 +39,12 @@ class BoundedDelegatedAction < ApplicationRecord
     status == "active" && expires_at > Time.current
   end
 
+  def held? = status == "held"
+  def reassessment_required? = status == "reassessment_required"
+  def expired? = status == "expired"
+  def stopped? = status == "stopped"
+  def completed? = status == "completed"
+
   def revoked?
     status == "revoked"
   end
@@ -46,18 +54,28 @@ class BoundedDelegatedAction < ApplicationRecord
   # project policy before revocation. The model still fails closed on
   # cross-account revokers via revoker_belongs_to_account.
   def revoke!(user:)
-    with_lock do
-      return false unless status == "active"
+    transition!(status: "revoked", reason: "authorization_revoked", actor: user,
+      audit_action: "bounded_action.revoked", extra_attrs: { revoked_at: Time.current, revoked_by: user })
+  end
 
-      update!(status: "revoked", revoked_at: Time.current, revoked_by: user)
-      Audit::RecordEvent.call(
-        action: "bounded_action.revoked",
-        actor: user,
-        subject: self,
-        metadata: { "action" => action }
-      )
-    end
-    true
+  def hold!(reason:, evidence: {}, actor: nil)
+    transition!(status: "held", reason:, evidence:, actor:, audit_action: "bounded_action.held")
+  end
+
+  def require_reassessment!(reason:, evidence: {}, actor: nil)
+    transition!(status: "reassessment_required", reason:, evidence:, actor:,
+      audit_action: "bounded_action.reassessment_required")
+  end
+
+  def expire_if_needed!(actor: nil, now: Time.current)
+    return false unless status == "active" && expires_at <= now
+
+    transition!(status: "expired", reason: "authorization_expired", actor:, audit_action: "bounded_action.expired")
+  end
+
+  def bounded_stop!(evidence:, actor: nil)
+    transition!(status: "stopped", reason: "bounded_phase_stop", evidence:, actor:,
+      audit_action: "bounded_action.stopped")
   end
 
   private
@@ -94,5 +112,22 @@ class BoundedDelegatedAction < ApplicationRecord
 
   def revoker_belongs_to_account
     errors.add(:revoked_by, "must belong to the account") if revoked_by && account && revoked_by.account_id != account_id
+  end
+
+  def transition!(status:, reason:, evidence: {}, actor:, audit_action:, extra_attrs: {})
+    with_lock do
+      return false unless self.status == "active"
+
+      lifecycle_evidence = { "reason" => reason }.merge(self.lifecycle_evidence.to_h.stringify_keys)
+        .merge(evidence.to_h.stringify_keys)
+      update!(status:, status_reason: reason, lifecycle_evidence:, lifecycle_changed_at: Time.current, **extra_attrs)
+      Audit::RecordEvent.call(
+        action: audit_action,
+        actor:,
+        subject: self,
+        metadata: { "action" => action, "reason" => reason, "lifecycle_evidence" => lifecycle_evidence }
+      )
+    end
+    true
   end
 end

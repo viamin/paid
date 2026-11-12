@@ -175,6 +175,16 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(result.reasons).to include(:intent_revision)
   end
 
+  it "blocks an explicit work-item hold at the shared admission boundary" do # @spec PROJECT-DELEGATION-006 BOUNDED-PHASE-AUTHORIZATION-005
+    authorize(action: "review")
+    issue.update!(hold_for_review: true)
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:explicit_hold)
+  end
+
   it "blocks when the project posture narrows after admission" do # @spec PROJECT-DELEGATION-006
     authorize(action: "review")
     project.delegation_posture.update!(
