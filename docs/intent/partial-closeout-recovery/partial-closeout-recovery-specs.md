@@ -959,6 +959,28 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
   `spec/services/partial_closeouts/auto_audit_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-050** — When a partial closeout contains both a
+  human authorization or independent judgment and a runnable technical check,
+  Paid SHALL retain the human evidence as an attributed human Inbox
+  prerequisite with its exact next step and SHALL offer the technical check
+  only through the existing reviewed `TechnicalPrerequisites` action. The
+  technical run SHALL retain environment, revision, criterion, recipe/tool,
+  and terminal-result provenance; unavailable, failed, and stale outcomes
+  SHALL remain visible and retryable without implying human approval. Every
+  non-cancelled terminal technical validation SHALL offer one fresh
+  evidence-bound report-only acceptance audit through normal admission and
+  unchanged-evidence deduplication. Neither technical success nor any agent
+  output SHALL synthesize an independent human judgment.
+  *Issue:* #5007.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/technical_prerequisites/inbox_actions.rb`,
+  `app/jobs/technical_prerequisite_validation_job.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-039** — When reconciliation repairs a source issue's
   dependency declaration through GitHub, Paid SHALL persist the expected body
   digest as `pending_sync` and SHALL not report the repair as reconciled until

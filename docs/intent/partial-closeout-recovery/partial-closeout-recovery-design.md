@@ -751,6 +751,33 @@ the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
 
+### Split human and technical closeout prerequisites (#5007)
+
+An assessment represents each prerequisite by its actual evidence owner. A
+human authorization or an independent human judgment is a `human` gap with an
+exact operator next step and attributed evidence owner; it remains a human
+Inbox occurrence. A runnable check is criterion metadata (`validation_kind`,
+the directly matching reviewed requirement, and, when applicable, its attached
+tool) and is offered only through `TechnicalPrerequisites::InboxActions`. The
+two records may name related criteria, but neither is evidence for the other.
+
+For mixed work, the assessor emits both records: for example, an operator can
+authorize a representative environment while Paid runs its pinned measurement.
+The authorization stays pending until human evidence is submitted; a completed,
+failed, unavailable, or stale technical run stays revision-bound evidence with
+its environment, checkout, recipe, tool, and result provenance. Technical
+success never infers authorization or an independent judgment. Conversely, a
+human decision does not mark a measurement complete.
+
+Every non-cancelled terminal technical validation hands its current issue to
+the normal evidence-bound `AutoAudit` path. That path uses the changed evidence
+revision and ordinary continuation admission/deduplication, so it requests at
+most one fresh report-only audit for changed evidence and does not loop on an
+unchanged result. The audit may update the criterion assessment, but cannot
+close the issue or release an unresolved human occurrence. Unavailable tools,
+tenant visibility, and delegated-execution policy remain enforced by the
+existing validation action and isolated-run boundaries.
+
 ### Held-delivery reconciliation (#4614)
 
 A merged delivery record may coexist with `manual_review`, including a
