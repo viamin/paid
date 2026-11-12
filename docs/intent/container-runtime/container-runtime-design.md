@@ -41,6 +41,11 @@ matches the implementation rather than the older worktree-first design text.
 - seeds runner credentials and applies network restrictions after start, and
 - records the backend-owned `container_host` only from the created container.
 
+For Codex exec commands, the container boundary closes stdin to prevent the
+CLI from waiting for input. The wrapper forwards the planned command as
+separate arguments, preserving large prompts and shell-wrapper arguments
+without expanding them into a single shell script argument.
+
 An explicit `worktree_path` is still accepted as a legacy compatibility input
 for bind-mount and maintenance flows, but host-created worktrees are no longer
 the default execution workspace for normal agent runs.
