@@ -187,6 +187,12 @@ group :development do
   # Per-request profiler overlay backed by vernier + prosopite [https://github.com/codergeek121/dial]
   gem "dial", "~> 0.6"
 
+  # Postgres performance dashboard for the local development database
+  # [https://github.com/ankane/pghero]. Mounted at /pghero in development only;
+  # the gem stays in the development group so it is never loaded in test or
+  # production.
+  gem "pghero", "~> 4.1"
+
   # Developer tools for HTML+ERB templates [https://herb-tools.dev]
   gem "herb", require: false
 end

@@ -3,6 +3,13 @@
 Rails.application.routes.draw do
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
+  # PgHero is a Postgres performance dashboard for the local development
+  # database. The gem lives in the Gemfile's development group, so it is only
+  # loaded in development; the environment guard keeps the dashboard unmounted
+  # in test and production even if the gem is installed there.
+  # @spec DEV-TOOLING-001
+  # @spec DEV-TOOLING-002
+  mount PgHero::Engine, at: "pghero" if Rails.env.development? && defined?(PgHero::Engine)
 
   devise_for :users, controllers: { registrations: "users/registrations" }
 

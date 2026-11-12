@@ -1,0 +1,35 @@
+# PgHero configuration for the local development environment.
+#
+# PgHero is a Postgres performance dashboard. It is mounted at /pghero in the
+# development environment only (see config/routes.rb); the `pghero` gem lives in
+# the Gemfile's development group, so it is never loaded in test or production.
+#
+# The dashboard inspects the same PostgreSQL server the Rails app talks to in
+# development, so it works out of the box with no extra configuration.
+databases:
+  primary:
+    # Optional override. Set PGHERO_DATABASE_URL to inspect a different
+    # database, or to connect with a role that can perform privileged
+    # operations (for example terminating another user's backends).
+    <% if ENV["PGHERO_DATABASE_URL"].present? %>
+    url: "<%= ENV["PGHERO_DATABASE_URL"] %>"
+    <% else %>
+    # Default: reuse the app's development primary connection so worktree-aware
+    # database names and DATABASE_URL overrides keep working.
+    spec: primary
+    <% end %>
+
+# Minimum time for long running queries (seconds).
+long_running_query_sec: 60
+
+# Minimum average time for slow queries (milliseconds).
+slow_query_ms: 20
+
+# Minimum calls for slow queries.
+slow_query_calls: 100
+
+# Minimum connections for the high-connection warning.
+total_connections_threshold: 500
+
+# Statement timeout for the explain feature (seconds).
+explain_timeout_sec: 10

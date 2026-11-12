@@ -169,6 +169,43 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
 | Qdrant | <http://localhost:6333> | Vector store for semantic knowledge search |
+| PgHero | <http://localhost:3000/pghero> | Postgres dashboard for the development database |
+
+### PgHero (Postgres Dashboard)
+
+PgHero is a Postgres performance dashboard for the local development database.
+It ships as a development-only gem and is mounted at `/pghero` by the
+development-mode Rails server, so no extra process or container is needed.
+
+```bash
+# Install the gem (part of bin/setup)
+bundle install
+
+# Start the app the usual way, then open the dashboard
+bin/dev                                  # or: docker compose up --build
+open http://localhost:3000/pghero
+```
+
+The dashboard inspects the same database the app uses in development, so it
+works with no configuration: `config/pghero.yml` points PgHero at the app's
+development `primary` connection and therefore follows `DATABASE_URL`,
+`DB_HOST`, and the worktree-aware development database name.
+
+| Environment variable | Required | Description |
+| -------------------- | -------- | ----------- |
+| `PGHERO_DATABASE_URL` | No | Overrides the dashboard connection. Use it to inspect a different database, or to connect with a role that can perform privileged operations (for example terminating another user's backends). Unset by default, in which case the app's development connection is used. |
+
+Notes:
+
+- PgHero is development-only. The gem lives in the Gemfile's `development`
+  group, the route is mounted only when `Rails.env.development?`, and the
+  production image installs with `BUNDLE_WITHOUT="development"`. The dashboard
+  is never reachable in test or production.
+- The dashboard can kill queries and connections. Use it only against a local
+  development database.
+- The `Queries` view needs the `pg_stat_statements` extension. Without it
+  PgHero sends that link back to the overview and reports query statistics as
+  unavailable; the rest of the dashboard still works.
 
 ### First-Time Setup
 
@@ -199,6 +236,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | `TEMPORAL_AGENT_TASK_QUEUE` | Temporal agent execution task queue | `paid-agent-tasks` |
 | `TEMPORAL_UI_URL` | Temporal UI base URL for monitoring links | `http://localhost:8080` |
 | `REDIS_URL` | Redis endpoint used by development features such as `rails_performance` | `redis://localhost:6379/0` |
+| `PGHERO_DATABASE_URL` | Optional override for the development-only PgHero dashboard connection (defaults to the app's development database) | _(none; uses the development `primary` connection)_ |
 | `OPENAI_API_KEY` | OpenAI API key (for agents that use OpenAI) | _(none)_ |
 | `GOOGLE_API_KEY` | Google API key for Gemini proxy requests | _(none)_ |
 | `QDRANT_URL` | Qdrant REST endpoint for knowledge search | `http://localhost:6333` |
@@ -293,6 +331,10 @@ bin/rails console            # Rails console
 bin/temporal_worker          # Run the Temporal worker directly (`TEMPORAL_WORKER_MODE=poll|agent|both`; default is `both`)
 bin/dev-update --lightweight # Pull latest main without restarting the dev stack
 bin/dev-update --full        # Pull latest main, rerun setup, and restart the dev stack
+
+# Development dashboards (served by the development-mode Rails server)
+open http://localhost:3000/pghero          # PgHero — Postgres dashboard for the development database
+open http://localhost:3000/rails/performance # Request performance metrics
 
 # Testing
 bin/rspec                    # Run the full RSpec test suite

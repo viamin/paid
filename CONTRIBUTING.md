@@ -105,6 +105,14 @@ Common local endpoints:
 - Rails app: <http://localhost:3000>
 - Temporal UI: <http://localhost:8080>
 - Qdrant: <http://localhost:6333>
+- PgHero (Postgres dashboard for the development database): <http://localhost:3000/pghero>
+
+PgHero is a development-only gem mounted by the development-mode Rails server,
+so it is available as soon as `bin/dev` (or `docker compose up --build`) is
+running — there is no separate process to start. It reads the app's development
+database by default; set `PGHERO_DATABASE_URL` to inspect a different database
+or to connect with a role that can perform privileged operations. See
+[README.md](README.md#pghero-postgres-dashboard) for details.
 
 ## Daily Workflow
 
