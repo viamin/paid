@@ -249,7 +249,9 @@ RSpec.describe "Inbox" do
     repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
     from_ref = "#{project.full_name}##{issues[0].github_number}"
     to_ref = "#{project.full_name}##{issues[1].github_number}"
-    expect(repair_form.at_css("input[type='submit']")["value"]).to eq("Remove the #{to_ref} dependency from #{from_ref}")
+    expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
+      "Remove the #{to_ref} dependency from the trusted comment on #{from_ref}"
+    )
     expect(repair_form["data-turbo-confirm"]).to include(from_ref, to_ref, "trusted comment", "edits GitHub")
     expect(repair_form.at_css("input[name='agent_run_id']")["value"]).to eq(run.id.to_s)
     expect(repair_form.at_css("input[name='candidate_index']")["value"]).to eq("0")
@@ -356,7 +358,10 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("No single safe repair")
     expect(response.body).to include("Owners disagree")
     expect(response.body).to include("apply one reviewed removal")
-    expect(response.body).to include("Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}")
+    expect(response.body).to include(
+      "Remove the #{project.full_name}##{issues[1].github_number} dependency from the trusted comment on " \
+      "#{project.full_name}##{issues[0].github_number}"
+    )
   end
 
   def record_conflicting_recommendation!(run, removal_edge)

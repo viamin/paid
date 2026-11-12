@@ -40,7 +40,7 @@ module CycleAnalyses
       end
 
       def repair_button_label
-        "Remove the #{changes.first.to_ref} dependency from #{changes.first.from_ref}"
+        "Remove the #{changes.first.to_ref} dependency from #{declaration_source} on #{changes.first.from_ref}"
       end
 
       def repair_confirmation
@@ -59,6 +59,12 @@ module CycleAnalyses
         change = changes.first
         "That single declaration is removed; #{change.from_ref} stops waiting on #{change.to_ref}. " \
           "Every other declaration is unchanged."
+      end
+
+      private
+
+      def declaration_source
+        changes.first.source_description.sub(/\Adeclared in a /, "the ").delete_prefix("declared in ")
       end
     end
 

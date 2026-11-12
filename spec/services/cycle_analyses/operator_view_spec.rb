@@ -247,7 +247,8 @@ RSpec.describe CycleAnalyses::OperatorView do
     candidate = view_for(run).manual_repair_candidates.sole
 
     expect(candidate.repair_button_label).to eq(
-      "Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}"
+      "Remove the #{project.full_name}##{issues[1].github_number} dependency from the trusted comment on " \
+      "#{project.full_name}##{issues[0].github_number}"
     )
     expect(candidate.repair_confirmation).to include(
       "#{project.full_name}##{issues[0].github_number}", "#{project.full_name}##{issues[1].github_number}", "edits GitHub"
