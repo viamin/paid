@@ -4,6 +4,9 @@
 
 - **Date**: 2026-10-24
 - **Status**: Proposed
+- **Acceptance**: Pending explicit acceptance by an authorized owner through
+  the review of this exact revision. Until that happens, this RDR is neither
+  runtime authority nor an amendment to RDR-077.
 - **Type**: Architecture + Authorization + Delivery UX
 - **Related Issues**: #4624 (delivered proposal); #4995 (tracking umbrella), #4996 (design acceptance), #4997–#4999 (implementation), #5000 (closeout)
 - **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), and [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md)
@@ -14,6 +17,17 @@
   remain proposed and are tracked under #4995. No exclusive stop is accepted
   or enabled; approval freshness and project settings, including Forager's
   `auto_merge_mode`, remain unchanged.
+
+## Acceptance boundary
+
+An authorized owner must accept this exact RDR, the HLD statement, this
+segment's LLD, and its EARS through the normal review path before this RDR may
+be marked accepted or its exclusive-stop exception may take effect. The review
+record must identify the accepted repository revision. A GitHub approval, PR
+review, run, continuation grant, issue relationship, or milestone membership
+does not constitute this acceptance or mint a bounded authorization. Until the
+acceptance is recorded, the status remains `Proposed`, RDR-077's grant rules
+remain unchanged, and `automation_phases` remains default-off.
 
 ## Decision required
 
@@ -46,8 +60,9 @@ reviewed scope later includes both. Mentioning the same milestone, parent,
 dependency, or issue does not join their scopes.
 
 The initial supported scope is one project, one issue or PR, its pinned
-accepted intent/acceptance evidence, and the established issue → implementation
-run → PR → review → repair lineage. It records the selected starting phase,
+accepted intent/acceptance evidence, and the established same-work issue →
+implementation run → PR → review → repair lineage. It records the selected
+starting phase,
 the selected exclusive stop boundary, permitted actions, author, tenant,
 creation and expiry times, policy revision/signature, and intent evidence
 digest. New issues, child work, additional PRs, milestone-wide delegation,
@@ -90,14 +105,21 @@ it. It cannot silently broaden the scope.
 
 ### Enforceable stopping and lifecycle
 
-The selected boundary is exclusive: an active bounded authorization blocks
-automatic advancement of its identified lineage into the next phase even when
-project defaults permit that phase. It completes visibly when the selected
-endpoint is reached, is not revived by reopening, and is inspectable,
-auditable, revocable, and actor/tenant scoped. Revocation and completion are
-serialized with admission so a dequeued or follow-up action cannot escape the
-stop. Existing actions are not force-killed; no subsequent action begins after
-the recheck fails.
+The authorization has two independent effects: it delegates the selected
+actions and it suppresses automatic advancement into its selected stop-before
+phase. The stop is exclusive while the authorization is active: project
+defaults and an ordinary continuation grant cannot advance its identified
+lineage across that boundary. Completion leaves the stop in place, and
+reopening does not reactivate the authorization. Expiry and reassessment fail
+closed to a visible decision. Revocation stops new delegated actions and keeps
+the lineage from automatically entering the suppressed phase. Recovery from
+those terminal states requires either a new explicit authorization or an
+explicit, authorized decision to return the lineage to ordinary project policy;
+it is never a silent fall-through. Supersession transfers both effects to the
+newer authorization. Each transition is inspectable, auditable, actor/tenant
+scoped, and serialized with admission so a dequeued or follow-up action cannot
+escape the boundary. Existing actions are not force-killed; no subsequent
+action begins after the recheck fails.
 
 This is a narrow exception to RDR-077's current “no per-item stop” rule. It
 must compose with the existing phase policy and continuation grants rather than
@@ -117,15 +139,17 @@ adds neither a feature-design approval nor an issue-readiness exception.
 
 ## Focused implementation and validation plan
 
-1. Add a tenant-scoped durable authorization record and immutable audit events;
-   reference existing phase/lineage records rather than duplicating them.
-2. Add one composition layer to `Automation::EffectivePolicy` and the existing
-   continuation lookup; no path may evaluate a separate approval engine.
-3. Implement authorized Inbox/work-detail/chat/API/tool actions through one
-   command service and one consent projection.
-4. Enforce admission, dequeue, retry, and follow-up rechecks with locking or
-   compare-and-transition semantics; make completion, revocation, expiry, and
-   reassessment visible states.
+1. **#4997 (`-001`–`-003`)** extends the shipped action-specific record and
+   shared admission recheck (`-010`, `-011`, and `-004`) with phase identity,
+   same-work lineage, and exclusive-stop composition. It adds no second action
+   authorization source.
+2. **#4998 (`-005`–`-006`)** adds reassessment and bounded semantic scope
+   assessment to that same lifecycle and admission boundary.
+3. **#4999 (`-007`–`-009`)** provides the shared consent projection and command
+   service for Inbox, work detail, chat, API, and MCP/tool paths; it completes
+   fresh-review gates and terminal-race handling.
+4. **#5000** maps every claim to shipped code and test assertions before any
+   RDR status or rollout decision.
 5. Keep `automation_phases` default-off and do not expose the action until all
    enforcement paths are behind the RDR-077 rollout guard. No migration grants
    authority from existing reviews, runs, or continuation grants.

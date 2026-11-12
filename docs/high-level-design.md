@@ -103,18 +103,21 @@ that human decision for a particular PR by applying the structured
 actionable Inbox item until a human releases it.
 
 Execution delegation is distinct from an attestation that a particular pull
-request head was reviewed. A project may offer an authorized user an explicit,
-auditable authorization for one identified work item's bounded delivery phase
-and repair lineage. Such an authorization can let Paid perform in-scope review
-and repair iterations, but it never makes a stale GitHub approval current or
-waives repository review, CI, security, branch-protection, or tenant policy.
-Its selected endpoint is an enforceable stop, even where project defaults
-would otherwise proceed; merge is included only when separately selected.
+request head was reviewed. Subject to the pending owner acceptance of
+[RDR-078](rdrs/RDR-078-bounded-delivery-phase-authorization.md), a project may
+offer an authorized user an explicit, auditable authorization for one identified
+work item's `Automation::Phases` delivery phase and same-work repair lineage.
+A delivery phase is not a project milestone. Such an authorization can let Paid
+perform in-scope review and repair iterations, but it never makes a stale GitHub
+approval current or waives repository review, CI, security, branch-protection,
+or tenant policy. Its selected stop-before phase is enforceable even where
+project defaults would otherwise proceed; merge is included only when separately
+selected and repository-required fresh reviews still apply to the current head.
 Authorization does not extend through mentions, dependencies, child work,
 milestones, releases, deployments, or settings changes. Scope expansion,
 changed intent or policy, a newly discovered risk, and unknown correspondence
-require a visible reassessment before further work. The proposed design is
-recorded in [RDR-078](rdrs/RDR-078-bounded-delivery-phase-authorization.md).
+require a visible reassessment before further work. `automation_phases` remains
+default-off until separately enabled after accepted implementation evidence.
 
 The same human review boundary applies when a completed issue is reopened:
 Paid parks the reopened issue for validation of the prior closure and current

@@ -13,6 +13,8 @@ Implements accepted [RDR-080](../../rdrs/RDR-080-project-delegation-after-settle
 settled. It does not own feature approval, confidence assessment, phase
 selection, continuation grants, bounded stops, review freshness, or repository
 controls. It supplies one normalized input to `Automation::EffectivePolicy`.
+An RDR-078 stop is a proposed per-lineage boundary, not a posture choice;
+until its acceptance and implementation, the posture cannot create one.
 
 The durable posture record has project/account scope, an authorized actor,
 selected level, policy revision/signature, enabled action classes, timestamps,
