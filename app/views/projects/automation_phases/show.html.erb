@@ -46,8 +46,8 @@
               </label>
             </div>
           <% end %>
-        </section>
-      <% end %>
+  </section>
+  <% end %>
     </div>
 
     <div class="flex justify-end">
@@ -206,6 +206,34 @@
         <%= submit_tag "Save posture", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500" %>
       </div>
     <% end %>
+
+    <%# @spec PROJECT-DELEGATION-010 %>
+    <% if @delegation_projection&.held? %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+        <p class="font-semibold">Delegated work is on hold</p>
+        <p class="mt-1">
+          Held since <%= @delegation_projection.hold.held_at&.to_date %>:
+          <%= @delegation_projection.hold.reason %>.
+          No delegated action may start until the hold is released.
+        </p>
+        <%= button_to "Release hold", project_delegation_hold_path(@project), method: :delete,
+              class: "mt-2 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100" %>
+      </div>
+    <% else %>
+      <%= form_with url: project_delegation_hold_path(@project), method: :post,
+            scope: :project_delegation_hold, class: "mt-4 space-y-2" do %>
+        <label class="block text-sm text-gray-700">
+          Hold delegated work
+          <%= text_field_tag "project_delegation_hold[reason]", nil,
+                placeholder: "Why is delegated work on hold?",
+                class: "mt-1 block w-full rounded border-gray-300 text-sm" %>
+        </label>
+        <div class="flex justify-end">
+          <%= submit_tag "Hold delegated work",
+                class: "rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+        </div>
+      <% end %>
+    <% end %>
   </section>
   <% end %>
 
@@ -231,6 +259,9 @@
               <%= state.action %> in <%= Automation::Phases.label(state.phase) %>
               · stops before <%= Automation::Phases.label(state.stop_before_phase) %>
               · <%= state.in_force? ? "in force" : state.expired? ? "expired" : state.status %>
+              <% if state.admission.posture_revision %>
+                · admitted under <%= state.admission.posture_level %> posture revision <%= state.admission.posture_revision %>
+              <% end %>
               <% if state.expires_at %>
                 · expires <%= state.expires_at.to_date %>
               <% end %>

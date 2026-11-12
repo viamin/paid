@@ -18,7 +18,7 @@ module ProjectDelegation
     # action governs, and a terminal or expired one admits nothing until a
     # new explicit authorization exists.
     AuthorizationState = Data.define(:id, :work_item_id, :action, :phase, :stop_before_phase,
-      :status, :expires_at, :authority) do
+      :status, :expires_at, :authority, :admission) do
       def in_force?
         status == "active" && expires_at.present? && expires_at > Time.current
       end
@@ -37,7 +37,39 @@ module ProjectDelegation
           status: status,
           in_force: in_force?,
           expires_at: expires_at&.iso8601,
-          authority: authority.to_h
+          authority: authority.to_h,
+          admission: admission.to_h
+        }
+      end
+    end
+
+    # The admission snapshot a bounded authorization carries: the delegation
+    # posture it relied on and the intent, acceptance, and evidence revisions
+    # it was admitted against. It is written once and never rewritten by a
+    # later posture change.
+    AdmissionSnapshot = Data.define(:posture_level, :posture_revision, :posture_signature,
+      :intent_revision, :acceptance_revision, :evidence_revision) do
+      def to_h
+        {
+          posture_level: posture_level,
+          posture_revision: posture_revision,
+          posture_signature: posture_signature,
+          intent_revision: intent_revision,
+          acceptance_revision: acceptance_revision,
+          evidence_revision: evidence_revision
+        }
+      end
+    end
+
+    # The explicit hold on delegated work for the project, when one is
+    # active.
+    Hold = Data.define(:id, :reason, :held_at, :held_by_id) do
+      def to_h
+        {
+          id: id,
+          reason: reason,
+          held_at: held_at&.iso8601,
+          held_by_id: held_by_id
         }
       end
     end
@@ -113,6 +145,24 @@ module ProjectDelegation
       )
     end
 
+    # The explicit hold on delegated work for the project, when one is
+    # active. A held project keeps its posture and its evidence; only the
+    # next delegated action stops.
+    # @spec PROJECT-DELEGATION-010
+    def hold
+      return @hold if defined?(@hold)
+
+      @hold = begin
+        record = ProjectDelegationHold.held.where(project:).order(id: :desc).first
+        record && Hold.new(id: record.id, reason: record.reason, held_at: record.held_at,
+          held_by_id: record.held_by_id)
+      end
+    end
+
+    def held?
+      hold.present?
+    end
+
     # One serializable payload shared by the API and MCP surfaces.
     def to_h
       payload = {
@@ -121,6 +171,7 @@ module ProjectDelegation
         posture: posture.to_h,
         authorizations: authorizations.map(&:to_h),
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] },
+        hold: hold&.to_h,
         signature: signature
       }
       payload[:expansion_guard] = ProjectDelegation::ExpansionGuard.call(project:).to_h
@@ -173,7 +224,24 @@ module ProjectDelegation
         authority: effective_policy_decision(
           Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(record.action, record.action), record.issue,
           delegated_action: record.action
-        )
+        ),
+        admission: admission_snapshot_for(record)
+      )
+    end
+
+    # The admission snapshot the authorization carries: the delegation
+    # posture it relied on plus the intent, acceptance, and evidence
+    # revisions it was admitted against.
+    def admission_snapshot_for(record)
+      evidence = record.evidence.to_h
+      posture = evidence["posture_snapshot"].to_h
+      AdmissionSnapshot.new(
+        posture_level: posture["level"],
+        posture_revision: posture["revision"],
+        posture_signature: evidence["posture_signature"],
+        intent_revision: evidence["intent_revision"],
+        acceptance_revision: evidence["acceptance_revision"],
+        evidence_revision: evidence["evidence_revision"]
       )
     end
 
@@ -230,6 +298,7 @@ module ProjectDelegation
     def signature_source
       {
         posture: { level: posture.level, revision: posture.revision, policy_signature: posture.policy_signature },
+        hold: hold&.to_h,
         authorizations: authorizations.map(&:to_h),
         phase_authority: work_issue ? serialized_phase_authority : nil,
         posture_signatures: AUTHORIZED_ACTIONS.to_h { |action| [ action, posture_signature(action: action) ] }

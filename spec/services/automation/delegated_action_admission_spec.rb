@@ -112,7 +112,7 @@ RSpec.describe Automation::DelegatedActionAdmission do
       :intent_revision,
       :acceptance_revision,
       :evidence_revision,
-      :posture_signature,
+      :posture_binding,
       :phase,
       :bounded_stop
     )
@@ -151,10 +151,10 @@ RSpec.describe Automation::DelegatedActionAdmission do
     result = recheck(goal: "review")
 
     expect(result).to be_blocked
-    expect(result.reasons).to include(:authorization_lifecycle)
+    expect(result.reasons).to include(:authorization_revoked)
     notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
     expect(notification).to be_blocking
-    expect(notification.metadata).to include("boundary" => "dequeue", "reasons" => array_including("authorization_lifecycle"))
+    expect(notification.metadata).to include("boundary" => "dequeue", "reasons" => array_including("authorization_revoked"))
   end
 
   it "lets a newer explicit authorization supersede a revoked one" do
@@ -187,7 +187,7 @@ RSpec.describe Automation::DelegatedActionAdmission do
     result = recheck(goal: "review")
 
     expect(result).to be_blocked
-    expect(result.reasons).to include(:posture_signature, :phase_policy)
+    expect(result.reasons).to include(:posture_narrowed, :phase_policy)
   end
 
   it "blocks when a rollout guard rolls a bounded posture back" do # @spec PROJECT-DELEGATION-006
@@ -197,7 +197,83 @@ RSpec.describe Automation::DelegatedActionAdmission do
     result = recheck(goal: "review")
 
     expect(result).to be_blocked
-    expect(result.reasons).to include(:posture_signature, :phase_policy)
+    expect(result.reasons).to include(:posture_narrowed, :phase_policy)
+  end
+
+  it "binds the admission to the posture revision and the evidence revisions" do # @spec PROJECT-DELEGATION-009
+    authorization = authorize(action: "review")
+
+    evidence = authorization.evidence
+    expect(evidence["posture_snapshot"]).to include(
+      "level" => "bounded_delivery",
+      "revision" => 1
+    )
+    expect(evidence["posture_snapshot"]["enabled_action_classes"])
+      .to eq(ProjectDelegation::Posture::DELEGATED_ACTION_CLASSES)
+    expect(evidence).to include(
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+      "acceptance_revision" => be_present,
+      "evidence_revision" => be_present
+    )
+  end
+
+  it "keeps an in-flight admission current when the posture revision moves without changing the authority" do # @spec PROJECT-DELEGATION-009
+    authorize(action: "review")
+    project.delegation_posture.update!(
+      revision: 2,
+      policy_signature: ProjectDelegation::Posture.policy_signature(project)
+    )
+
+    expect(recheck(goal: "review")).to be_permitted
+  end
+
+  it "never rewrites the admission snapshot when the posture changes" do # @spec PROJECT-DELEGATION-009
+    authorization = authorize(action: "review")
+    project.delegation_posture.update!(
+      revision: 2,
+      policy_signature: ProjectDelegation::Posture.policy_signature(project)
+    )
+
+    recheck(goal: "review")
+
+    expect(authorization.reload.evidence["posture_snapshot"]).to include("revision" => 1)
+  end
+
+  it "never lets a broadened posture reach an in-flight admission" do # @spec PROJECT-DELEGATION-009
+    project.delegation_posture.update!(
+      level: "conservative",
+      revision: 2,
+      enabled_action_classes: [],
+      policy_signature: ProjectDelegation::Posture.policy_signature(project)
+    )
+    stale = authorize(action: "review")
+    expect(stale.evidence["posture_snapshot"]).to include("level" => "conservative")
+
+    project.delegation_posture.update!(
+      level: "bounded_delivery",
+      revision: 3,
+      enabled_action_classes: ProjectDelegation::Posture::DELEGATED_ACTION_CLASSES,
+      policy_signature: ProjectDelegation::Posture.policy_signature(project)
+    )
+    fresh = authorize(action: "review", work_item: pull_request)
+    expect(fresh.evidence["posture_snapshot"]).to include("level" => "bounded_delivery")
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:posture_broadened)
+    expect(recheck(action: "review", work_item: pull_request)).to be_permitted
+  end
+
+  it "stops delegated work while the project holds it" do # @spec PROJECT-DELEGATION-010
+    authorize(action: "review")
+    create(:project_delegation_hold, project:, reason: "Waiting for the security review")
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:delegation_hold)
+    expect(result.recovery).to eq("release_hold")
   end
 
   it "applies the shared effective policy to delegated repair boundaries" do # @spec PROJECT-DELEGATION-005

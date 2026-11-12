@@ -7,7 +7,10 @@ module ProjectDelegation
   # path, and every selection bumps the revision and records an immutable
   # audit event naming the actor, project, revision, and enabled action
   # classes. A later broadening never rewrites the history an admission
-  # pinned: it only produces a new revision.
+  # pinned: it only produces a new revision. Narrowing to conservative is the
+  # conservative rollback: it blocks every future delegated boundary for the
+  # project and routes the in-flight delegated work to a focused decision
+  # without touching the admission snapshots or the delegated evidence.
   # Intentionally exceeds the ~100-line class target: the guard checks, the
   # locked persist, and the audit record are one admission transaction and
   # read clearer together than as single-caller extractions.
@@ -36,8 +39,9 @@ module ProjectDelegation
       ensure_authorized!
       ensure_guard_permits!
 
-      _, record = persist_with_audit
+      previous_level, record = persist_with_audit
       project.delegation_posture = record
+      route_rollback(previous_level, record) if rollback?(previous_level)
 
       Posture.resolve(project)
     end
@@ -45,6 +49,37 @@ module ProjectDelegation
     private
 
     attr_reader :project, :actor, :level
+
+    # Narrowing back to conservative is the conservative rollback (RDR-080):
+    # it blocks every future delegated boundary for the project, keeps the
+    # admission snapshots and the delegated evidence, and routes the
+    # project's in-flight delegated work to one focused decision each.
+    def rollback?(previous_level)
+      level == Posture::CONSERVATIVE && previous_level == Posture::BOUNDED_DELIVERY
+    end
+
+    def route_rollback(previous_level, record)
+      Audit::RecordEvent.call(
+        action: "project_delegation.rolled_back",
+        actor: actor,
+        subject: project,
+        metadata: {
+          "project_id" => project.id,
+          "project_name" => project.full_name,
+          "previous_level" => previous_level,
+          "level" => level,
+          "revision" => record.revision
+        }
+      )
+      RouteAffectedWork.call(
+        project:,
+        reason: "posture_narrowed",
+        recovery: "re_admit",
+        title: "Delegated work was paused by a posture rollback",
+        description: "The delegation posture rolled back to conservative, so delegated work is paused. " \
+          "Recovery: re_admit."
+      )
+    end
 
     def ensure_level!
       raise UnknownLevel, "#{level} is not a supported delegation posture." unless Posture::LEVELS.include?(level)

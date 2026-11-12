@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_175216) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3615,6 +3615,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
     t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
   end
 
+  create_table "project_delegation_holds", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "held_at", null: false
+    t.bigint "held_by_id"
+    t.bigint "project_id", null: false
+    t.text "reason", null: false
+    t.datetime "released_at"
+    t.bigint "released_by_id"
+    t.string "status", default: "held", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_project_delegation_holds_on_account_id"
+    t.index ["held_by_id"], name: "index_project_delegation_holds_on_held_by_id"
+    t.index ["project_id"], name: "index_project_delegation_holds_on_active_project", unique: true, where: "((status)::text = 'held'::text)"
+    t.index ["project_id"], name: "index_project_delegation_holds_on_project_id"
+    t.index ["released_by_id"], name: "index_project_delegation_holds_on_released_by_id"
+  end
+
   create_table "project_delegation_postures", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -5169,6 +5187,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
   add_foreign_key "project_convention_recommendations", "projects"
   add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
   add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
+  add_foreign_key "project_delegation_holds", "accounts"
+  add_foreign_key "project_delegation_holds", "projects"
+  add_foreign_key "project_delegation_holds", "users", column: "held_by_id"
+  add_foreign_key "project_delegation_holds", "users", column: "released_by_id"
   add_foreign_key "project_delegation_postures", "accounts"
   add_foreign_key "project_delegation_postures", "projects"
   add_foreign_key "project_delegation_postures", "users", column: "selected_by_id"
@@ -6092,19 +6114,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_11_051641) do
        RETURNS trigger
        LANGUAGE plpgsql
       AS $function$
+      DECLARE
+        protected_actions constant text[] := ARRAY[
+          'project_delegation.posture_selected',
+          'project_delegation.rolled_back',
+          'project_delegation.hold_placed',
+          'project_delegation.hold_released'
+        ];
       BEGIN
-        IF OLD.action = 'project_delegation.posture_selected'
+        IF OLD.action = ANY(protected_actions)
            AND NOT (
              COALESCE(current_setting('paid.account_teardown_account_id', true), '') = OLD.account_id::text
              OR (pg_trigger_depth() > 1 AND NOT EXISTS (SELECT 1 FROM public.accounts WHERE id = OLD.account_id))
            ) THEN
-          RAISE EXCEPTION 'project delegation posture audit events are append-only; UPDATE and DELETE are rejected';
+          RAISE EXCEPTION 'project delegation audit events are append-only; UPDATE and DELETE are rejected';
         END IF;
 
         IF TG_OP = 'UPDATE'
-           AND OLD.action IS DISTINCT FROM 'project_delegation.posture_selected'
-           AND NEW.action = 'project_delegation.posture_selected' THEN
-          RAISE EXCEPTION 'existing account activity events cannot become project delegation posture audit events';
+           AND NOT (OLD.action = ANY(protected_actions))
+           AND NEW.action = ANY(protected_actions) THEN
+          RAISE EXCEPTION 'existing account activity events cannot become project delegation audit events';
         END IF;
 
         IF TG_OP = 'DELETE' THEN

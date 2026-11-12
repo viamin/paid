@@ -104,4 +104,50 @@ RSpec.describe "Project delegation posture settings" do
     expect(response).to have_http_status(:ok)
     expect(response.body).not_to include("Delegation posture")
   end
+
+  it "holds delegated work and shows the hold on the settings surface" do # @spec PROJECT-DELEGATION-010
+    post project_delegation_hold_path(project), params: {
+      project_delegation_hold: { reason: "Waiting for the security review" }
+    }
+
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    hold = ProjectDelegationHold.held.find_by(project:)
+    expect(hold).to have_attributes(reason: "Waiting for the security review", held_by: owner)
+
+    get project_automation_phases_path(project)
+    expect(response.body).to include("Delegated work is on hold")
+    expect(response.body).to include("Waiting for the security review")
+  end
+
+  it "refuses a hold without a reason and records nothing" do # @spec PROJECT-DELEGATION-010
+    post project_delegation_hold_path(project), params: {
+      project_delegation_hold: { reason: "  " }
+    }
+
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    follow_redirect!
+    expect(response.body).to include("A hold needs a reason")
+    expect(ProjectDelegationHold.count).to eq(0)
+  end
+
+  it "refuses a plain member a hold" do # @spec PROJECT-DELEGATION-010
+    sign_in create(:user, :member, account: account)
+
+    post project_delegation_hold_path(project), params: {
+      project_delegation_hold: { reason: "Waiting for the security review" }
+    }
+
+    expect(response).to redirect_to(root_path)
+    expect(ProjectDelegationHold.count).to eq(0)
+  end
+
+  it "releases a hold through the guarded write path" do # @spec PROJECT-DELEGATION-010
+    ProjectDelegation::PlaceHold.call(project:, actor: owner, reason: "Waiting for the security review")
+
+    delete project_delegation_hold_path(project)
+
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    expect(ProjectDelegationHold.held.where(project:)).to be_empty
+    expect(AccountActivityEvent.where(action: "project_delegation.hold_released")).to exist
+  end
 end

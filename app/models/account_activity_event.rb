@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
 class AccountActivityEvent < ApplicationRecord
-  IMMUTABLE_ACTIONS = %w[project_delegation.posture_selected].freeze
+  IMMUTABLE_ACTIONS = %w[
+    project_delegation.posture_selected
+    project_delegation.rolled_back
+    project_delegation.hold_placed
+    project_delegation.hold_released
+  ].freeze
 
   ACTION_CATEGORIES = {
     "account.updated" => "account",
@@ -60,6 +65,9 @@ class AccountActivityEvent < ApplicationRecord
     "bounded_action.authorized" => "approval",
     "bounded_action.revoked" => "approval",
     "project_delegation.posture_selected" => "project",
+    "project_delegation.rolled_back" => "project",
+    "project_delegation.hold_placed" => "project",
+    "project_delegation.hold_released" => "project",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
     "egress_allowlist.account_entry_created" => "egress_allowlist",
@@ -201,6 +209,12 @@ class AccountActivityEvent < ApplicationRecord
     when "project_delegation.posture_selected"
       "Selected the #{metadata_value('level').humanize.downcase} delegation posture for " \
         "#{metadata_value('project_name')} (revision #{metadata_value('revision')})"
+    when "project_delegation.rolled_back"
+      "Rolled the delegation posture for #{metadata_value('project_name')} back to conservative"
+    when "project_delegation.hold_placed"
+      "Held delegated work for #{metadata_value('project_name')}"
+    when "project_delegation.hold_released"
+      "Released the delegation hold for #{metadata_value('project_name')}"
     when "prompt_version.approved"
       "Approved prompt #{metadata_value('prompt_slug')} v#{metadata_value('version')}"
     when "prompt_version.rejected"
@@ -263,6 +277,13 @@ class AccountActivityEvent < ApplicationRecord
     when "project_delegation.posture_selected"
       [ "Previous posture: #{metadata_value('previous_level').humanize.downcase}",
         "Enabled action classes: #{Array(metadata.to_h['enabled_action_classes']).join(', ').presence || 'none'}" ]
+    when "project_delegation.rolled_back"
+      [ "Previous posture: #{metadata_value('previous_level').humanize.downcase}",
+        "Revision: #{metadata_value('revision')}" ]
+    when "project_delegation.hold_placed"
+      [ "Reason: #{metadata_value('reason')}" ]
+    when "project_delegation.hold_released"
+      [ "Reason: #{metadata_value('reason')}" ]
     when "prompt_version.approved"
       Array(metadata.to_h["notes"]).compact.map { |n| "Notes: #{n}" }
     when "prompt_version.rejected"

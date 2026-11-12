@@ -72,6 +72,61 @@ lineage, and the semantic scope, ambiguity, conflicting-evidence, and
 material-risk conditions owned by the bounded-phase reassessment design. Those
 conditions remain planned until that reassessment path lands.
 
+## Admission snapshot and revision boundaries
+
+Every delegated admission persists one snapshot in the bounded authorization's
+evidence: the delegation posture level and revision it relied on, the intent,
+acceptance, and evidence revisions, the effective policy signature, the
+admission phase, and the stop-before phase. The snapshot is written once and
+is never rewritten by a later posture change, so the consent an admission
+carried stays inspectable after the owner changes the project's posture.
+
+The boundary recheck compares the current posture with the pinned snapshot
+instead of comparing two opaque signatures:
+
+| Current posture vs. admitted snapshot | Outcome |
+| --- | --- |
+| Same authority (a re-selection at the same level) | The admission keeps its admitted scope and continues. |
+| Narrower authority (a rollback to `conservative`, a disabled guard, a paused expansion) | The next action is prevented and the admission snapshot, evidence, and audit history are preserved. |
+| Broader authority (a new broader posture) | The broadened authority applies only to new admissions. The in-flight admission never gains it and stops until it is admitted again. |
+
+The revisions an admission pinned stay the other half of the binding: intent,
+acceptance, and evidence revisions must still be current at the boundary, so a
+settlement that moved on cannot be executed under the old admission.
+
+## Delegation rollback, hold, and recovery
+
+The conservative rollback is the narrowing write path: selecting
+`conservative` records the selection and the rollback in the immutable audit
+history, blocks every future delegated boundary for the project, and routes
+the project's in-flight delegated work to one focused Inbox decision each. It
+never reinterprets or deletes the admission snapshots or evidence it stops.
+
+An explicit delegation hold is a separate durable record scoped to the
+project. It pauses the next delegated action without changing the posture or
+any admission, and it is released by an authorized actor rather than by a
+posture change. A held project keeps its posture selection and its evidence
+while no delegated action may start.
+
+Expiry, revocation, and the bounded stop are properties of the admitted
+authorization, not of the posture. Each one prevents the next action, keeps
+the authorization row, its snapshot, and the audit history, and routes one
+focused decision that names the recovery:
+
+| Stop | Reason | Recovery the decision names |
+| --- | --- | --- |
+| Authorization expired | `authorization_expired` | A new explicit authorization for the same lineage. |
+| Authorization revoked | `authorization_revoked` | A new explicit authorization; revocation is not reversed by the work itself. |
+| Posture rolled back to `conservative` | `posture_narrowed` | Re-admission under the current posture. |
+| Posture broadened after admission | `posture_broadened` | Re-admission under the current posture; the in-flight admission keeps its own scope. |
+| Explicit delegation hold | `delegation_hold` | Releasing the hold by an authorized actor. |
+| The admitted action reached its stop-before phase | `bounded_stop` | Technical-stop recovery inside the admitted lineage; never a new lineage. |
+
+Every recovery stays inside the admitted lineage: a stop may be recovered by
+re-admitting, re-authorizing, releasing a hold, or by a technical recovery of
+the same lineage. None of them opens new work, refreshes a stale review, or
+extends the delegated scope.
+
 ## Rollback and measurement
 
 The implementation is behind the existing `automation_phases` flag and a

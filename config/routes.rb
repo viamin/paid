@@ -305,6 +305,9 @@ Rails.application.routes.draw do
     # RDR-080: the project delegation posture selection.
     # @spec PROJECT-DELEGATION-001
     resource :delegation_posture, only: [ :update ], controller: "projects/delegation_postures"
+    # RDR-080: the explicit hold on delegated work.
+    # @spec PROJECT-DELEGATION-010
+    resource :delegation_hold, only: [ :create, :destroy ], controller: "projects/delegation_holds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resource :docker_host_preference, only: [ :update ], controller: "projects/docker_host_preferences"

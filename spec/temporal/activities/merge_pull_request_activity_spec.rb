@@ -87,7 +87,7 @@ RSpec.describe Activities::MergePullRequestActivity do
           )
           notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
           expect(notification.metadata).to include("boundary" => "closeout")
-          expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+          expect(notification.metadata["reasons"]).to include("authorization_revoked")
         end
 
         it "merges when the delegated merge authorization is still current" do # @spec PROJECT-DELEGATION-004

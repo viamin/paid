@@ -794,7 +794,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(AgentRun.where(project: delegated_project, goal: "review")).to be_empty
         notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
         expect(notification.metadata).to include("boundary" => "queue")
-        expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+        expect(notification.metadata["reasons"]).to include("authorization_revoked")
       end
 
       it "queues delegated work whose authorization is still current" do # @spec PROJECT-DELEGATION-004

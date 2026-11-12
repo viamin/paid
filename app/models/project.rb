@@ -313,6 +313,10 @@ class Project < ApplicationRecord
   # @spec PROJECT-DELEGATION-001
   has_one :delegation_posture, class_name: "ProjectDelegationPosture", dependent: :destroy,
     inverse_of: :project
+  # RDR-080: explicit holds on delegated work for this project.
+  # @spec PROJECT-DELEGATION-010
+  has_many :delegation_holds, class_name: "ProjectDelegationHold", dependent: :destroy,
+    inverse_of: :project
   has_many :trusted_measurement_attempts, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy

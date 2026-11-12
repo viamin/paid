@@ -142,4 +142,93 @@ RSpec.describe ProjectDelegation::SelectPosture do
     expect(project.delegation_posture).to be_nil
     expect(audit_events).to be_empty
   end
+
+  # The conservative rollback (RDR-080): narrowing back to conservative blocks
+  # every future delegated boundary for the project, routes the in-flight
+  # delegated work to one focused decision each, and preserves the admission
+  # snapshots, the delegated evidence, and the audit history.
+  # @spec PROJECT-DELEGATION-010
+  context "when the posture rolls back to conservative" do
+    let(:issue) { create(:issue, project:) }
+
+    before do
+      described_class.call(project: project, actor: owner, level: "bounded_delivery")
+      assessment_run = create(:agent_run, :completed, project:, issue:)
+      assessment_run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(
+        assessment_run, { "criteria" => [], "gaps" => [] }
+      ) })
+    end
+
+    def authorize
+      create(:bounded_delegated_action,
+        project:,
+        issue:,
+        action: "review",
+        created_by: owner,
+        evidence: Automation::DelegatedActionAdmission.admission_evidence(
+          work_item: issue, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+        ))
+    end
+
+    it "narrows the posture to conservative and records the rollback" do
+      described_class.call(project: project, actor: owner, level: "conservative")
+
+      expect(project.delegation_posture.reload).to have_attributes(level: "conservative", revision: 2)
+      event = AccountActivityEvent.where(action: "project_delegation.rolled_back").last
+      expect(event).to have_attributes(actor: owner)
+      expect(event.metadata).to include("previous_level" => "bounded_delivery", "level" => "conservative")
+    end
+
+    it "routes the in-flight delegated work to one focused decision" do
+      authorization = authorize
+
+      described_class.call(project: project, actor: owner, level: "conservative")
+
+      notification = Notification.find_by(source: ProjectDelegation::RouteAffectedWork::SOURCE)
+      expect(notification).to be_blocking
+      expect(notification.subject).to eq(issue)
+      expect(notification.metadata).to include(
+        "authorization_id" => authorization.id,
+        "reasons" => [ "posture_narrowed" ],
+        "recovery" => "re_admit"
+      )
+    end
+
+    it "keeps the admission snapshot and the delegated evidence" do
+      authorization = authorize
+
+      described_class.call(project: project, actor: owner, level: "conservative")
+
+      expect(authorization.reload.evidence).to include("posture_snapshot" => hash_including("revision" => 1))
+      expect(authorization.reload.status).to eq("active")
+    end
+
+    it "prevents the next delegated action after the rollback" do
+      authorize
+
+      described_class.call(project: project, actor: owner, level: "conservative")
+
+      result = Automation::DelegatedActionAdmission.call(project:, issue:, goal: "review", boundary: :dequeue)
+
+      expect(result).to be_blocked
+      expect(result.reasons).to include(:posture_narrowed)
+    end
+
+    it "does not route work that already stopped on its own" do
+      authorize.update!(status: "revoked")
+
+      described_class.call(project: project, actor: owner, level: "conservative")
+
+      expect(Notification.where(source: ProjectDelegation::RouteAffectedWork::SOURCE)).to be_empty
+    end
+
+    it "keeps the audit history of the rollback append-only" do
+      described_class.call(project: project, actor: owner, level: "conservative")
+
+      event = AccountActivityEvent.where(action: "project_delegation.rolled_back").last
+
+      expect { event.update!(metadata: { "level" => "bounded_delivery" }) }.to raise_error(ActiveRecord::ReadOnlyRecord)
+      expect { event.destroy! }.to raise_error(ActiveRecord::ReadOnlyRecord)
+    end
+  end
 end

@@ -87,14 +87,37 @@ module Automation
     # action must pin so every later boundary recheck can re-derive and match
     # it. Admission surfaces build their evidence through this helper so the
     # admission and recheck sides of the contract cannot drift.
+    #
+    # The posture snapshot is the admission's binding to the delegation
+    # posture it relied on: the level, the revision, and the enabled action
+    # classes at that moment. A later posture change never rewrites it, so
+    # the consent an admission carried stays inspectable, and the boundary
+    # can tell a broadening from a narrowing.
+    # @spec PROJECT-DELEGATION-009
     def self.admission_evidence(work_item:, action:, acceptance_refs:, stop_before_phase:)
       {
         "intent_digest" => "sha256:#{PartialCloseouts::Assessment.intent_revision_for(work_item)}",
         "acceptance_refs" => acceptance_refs,
         **revision_tokens(issue: work_item),
         "posture_signature" => posture_signature_for(project: work_item.project, action: action),
+        "posture_snapshot" => posture_snapshot_for(work_item.project),
         "phase" => ACTION_PHASES.fetch(action),
         "stop_before_phase" => stop_before_phase
+      }
+    end
+
+    # The delegation posture an admission relies on: the level, its revision,
+    # and the action classes it delegates. It is the structured half of the
+    # admission binding; the posture signature stays the effective-policy
+    # summary the read surfaces publish.
+    # @spec PROJECT-DELEGATION-009
+    def self.posture_snapshot_for(project)
+      posture = ProjectDelegation::Posture.resolve(project)
+      {
+        "level" => posture.level,
+        "revision" => posture.revision,
+        "enabled_action_classes" => posture.enabled_action_classes,
+        "policy_signature" => posture.policy_signature
       }
     end
 
@@ -152,6 +175,7 @@ module Automation
         issue_id: work_item.id,
         **self.class.revision_tokens(issue: work_item, assessment: current_assessment).transform_keys(&:to_sym),
         posture_signature: self.class.posture_signature_for(project:, action:),
+        posture_snapshot: self.class.posture_snapshot_for(project),
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
           work_item:, trigger:, delegated_action: action),
@@ -159,8 +183,16 @@ module Automation
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
-        assessment_available: !current_assessment.stale?
+        assessment_available: !current_assessment.stale?,
+        delegation_hold: delegation_hold?
       }
+    end
+
+    # An explicit hold on delegated work pauses the next action for the whole
+    # project without changing the posture or any admission snapshot.
+    # @spec PROJECT-DELEGATION-010
+    def delegation_hold?
+      ProjectDelegationHold.held.where(project_id: project.id).exists?
     end
 
     def assessment

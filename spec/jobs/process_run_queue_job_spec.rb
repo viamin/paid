@@ -1649,7 +1649,7 @@ RSpec.describe ProcessRunQueueJob do
           expect(run.reload.error_message).to include("boundary recheck")
           notification = Notification.find_by(source: Automation::DelegatedWorkBoundary::NOTIFICATION_SOURCE)
           expect(notification.metadata).to include("boundary" => "dequeue")
-          expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
+          expect(notification.metadata["reasons"]).to include("authorization_revoked")
         end
 
         it "cancels a user-triggered PR retry at the same dequeue boundary" do # @spec PROJECT-DELEGATION-004 PROJECT-DELEGATION-005

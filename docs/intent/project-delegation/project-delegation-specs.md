@@ -113,3 +113,36 @@ Status markers: `[ ]` planned implementation gap.
   closeout blocked while a material follow-up is open, and SHALL NOT execute
   that follow-up under the delegated authority; the follow-up's own execution
   SHALL require its own admission, policy snapshot, and boundary rechecks.
+
+- [x] **PROJECT-DELEGATION-009** — When the system admits delegated work, it
+  SHALL record one admission snapshot binding the work to the delegation
+  posture level and revision it relied on and to the current intent,
+  acceptance, and evidence revisions, and a later posture change SHALL NOT
+  rewrite that snapshot. A broadened posture SHALL apply only to new
+  admissions: an in-flight admission SHALL keep its admitted scope, SHALL NOT
+  gain the broadened authority, and SHALL stop when the current posture no
+  longer supports the admitted authority.
+  *Verified by:* `spec/services/automation/delegated_action_admission_spec.rb`
+  (admission snapshot contents, broadening confined to new admissions,
+  narrowing and broadening stops) and
+  `spec/services/automation/delegated_work_boundary_spec.rb` (direction-aware
+  posture comparison against the pinned snapshot).
+
+- [x] **PROJECT-DELEGATION-010** — When the project posture rolls back to
+  `conservative`, an explicit delegation hold is placed, a bounded
+  authorization expires or is revoked, or the admitted action reaches its
+  bounded stop, the system SHALL prevent the next delegated action, SHALL
+  preserve the admission snapshot, the delegated evidence, and the audit
+  history, and SHALL expose one focused recovery decision naming the recovery
+  that stays inside the admitted lineage.
+  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`
+  (distinct stop reasons and their recovery scope),
+  `spec/services/automation/delegated_action_admission_spec.rb` (expiry,
+  revocation, and hold stop the next action),
+  `spec/services/project_delegation/select_posture_spec.rb` (conservative
+  rollback routes affected work and preserves evidence),
+  `spec/services/project_delegation/place_hold_spec.rb` and
+  `spec/services/project_delegation/release_hold_spec.rb` (hold and release
+  lifecycle), `spec/models/project_delegation_hold_spec.rb` (durable hold
+  record), and `spec/system/projects/delegation_posture_spec.rb` (the owner
+  sees the hold and the rollback on the settings surface).

@@ -48,6 +48,13 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)
   end
 
+  # RDR-080: holding and releasing delegated work is the same ownership act
+  # as choosing the posture, so it follows the same roles.
+  # @spec PROJECT-DELEGATION-010
+  def manage_delegation_hold?
+    select_delegation_posture?
+  end
+
   # Bounded delivery is action-specific. Review and repair follow the existing
   # run permission; merge remains reserved to project automation owners. The
   # caller must still provide an identified work item and evidence.

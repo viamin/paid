@@ -5,6 +5,7 @@
 # and project setting changes remain independently authorized.
 #
 # @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
+# @spec PROJECT-DELEGATION-009 @spec PROJECT-DELEGATION-010
 class BoundedDelegatedAction < ApplicationRecord
   ACTIONS = %w[review repair merge].freeze
   RESERVED_ACTIONS = %w[
@@ -37,8 +38,19 @@ class BoundedDelegatedAction < ApplicationRecord
     status == "active" && expires_at > Time.current
   end
 
+  # An authorization past its expiry is no longer in force, and it is not
+  # revoked either: the boundary reports the two stops separately because
+  # their recoveries differ.
+  def expired?
+    status == "active" && expires_at <= Time.current
+  end
+
   def revoked?
     status == "revoked"
+  end
+
+  def completed?
+    status == "completed"
   end
 
   # Lifecycle write only: caller surfaces reach this through

@@ -50,6 +50,11 @@ class User < ApplicationRecord
   # @spec PROJECT-DELEGATION-001
   has_many :selected_delegation_postures, class_name: "ProjectDelegationPosture",
     foreign_key: :selected_by_id, dependent: :nullify, inverse_of: :selected_by
+  # @spec PROJECT-DELEGATION-010
+  has_many :held_delegation_holds, class_name: "ProjectDelegationHold",
+    foreign_key: :held_by_id, dependent: :nullify, inverse_of: :held_by
+  has_many :released_delegation_holds, class_name: "ProjectDelegationHold",
+    foreign_key: :released_by_id, dependent: :nullify, inverse_of: :released_by
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
