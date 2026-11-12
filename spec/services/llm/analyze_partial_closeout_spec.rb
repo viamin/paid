@@ -251,6 +251,25 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-050
+    it "keeps human authorization and runnable technical evidence as distinct assessment entries" do
+      selected = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative environment measurement", command: "bin/measure")
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [ human_gap("Representative environment authorization", next_step: "Approve the named representative environment.") ],
+        criteria: [ { criterion: "Measure latency in the approved environment", state: "unknown",
+          validation_kind: "native", validation_requirement_id: selected.id } ]
+      }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.fetch("gaps")).to contain_exactly(include("kind" => "human", "criterion" => "Representative environment authorization"))
+      expect(result.fetch("criteria")).to contain_exactly(include("validation_kind" => "native", "validation_requirement_id" => selected.id))
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        expect(prompt).to include("mixed prerequisite", "separate entries", "independent judgment")
+      end
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,

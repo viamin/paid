@@ -701,6 +701,27 @@ servers; native checks copy neither attachment type.
 Validation evidence remains evidence for a later assessment, not an automatic
 attestation that the criterion is satisfied.
 
+### Mixed human and technical prerequisites
+
+A closeout prerequisite can contain more than one independently owned fact.
+When an operator must authorize a representative environment or supply another
+human decision before Paid collects a measurement, the assessment records a
+human gap with the exact human next step and a separate criterion assessment
+for the runnable technical check. Reconciliation keeps the human gap in the
+human Inbox; the criterion alone can expose the named reviewed-recipe action
+through `TechnicalPrerequisites`. A successful, failed, unavailable, or stale
+technical result is revision-bound provenance for the next acceptance audit,
+not evidence that the authorization or an independent human judgment occurred.
+
+The same separation applies to blinded or otherwise independent judgments:
+they remain human-owned, are never synthesized from a technical result, and
+are not moved onto an implementation child merely because that child supplies
+related measurements. Terminal technical validation re-enters the existing
+deduplicated, evidence-bound acceptance-audit path. An unchanged evidence
+generation does not create an audit loop; an unavailable or failed result stays
+visible with its setup or retry action and can be reassessed when evidence
+changes.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation
