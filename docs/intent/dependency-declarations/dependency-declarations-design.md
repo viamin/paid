@@ -38,7 +38,10 @@ section body is code, not Markdown list structure, so list-style lines inside it
 are not declarations. A fenced block closes only on the same delimiter
 character with a run at least as long as its opening delimiter. A subsequent
 heading ends the dependency section; child/sub-issue sections remain excluded
-from inline parsing.
+from inline parsing. A list item or directive that names another issue as the
+subject of its dependency ordering is contextual rather than a declaration for
+the current item, both inside and outside dependency sections. Direct list-item
+references and directives that name the current item remain declarations.
 
 ## Shared Consumers
 
