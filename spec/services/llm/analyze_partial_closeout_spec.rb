@@ -56,6 +56,30 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-050
+    it "keeps a human authorization and its technical measurement as separate assessment records" do
+      recipe = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative measurement", command: "bin/measure")
+      criterion = "Representative environment approval and measurement"
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [ {
+          criterion:, kind: "human", next_step: "Approve the representative environment.",
+          attribution: { coverage: "established", source_issue_number: issue.github_number,
+            owner_issue_number: issue.github_number, criterion: }
+        } ],
+        criteria: [ { criterion:, state: "unknown", validation_kind: "native", validation_requirement_id: recipe.id } ]
+      }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.fetch("gaps")).to contain_exactly(include("kind" => "human", "criterion" => criterion))
+      expect(result.fetch("criteria")).to contain_exactly(include("validation_kind" => "native",
+        "validation_requirement_id" => recipe.id, "criterion" => criterion))
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        expect(prompt).to include("return a separate human gap and a criterion validation record")
+      end
+    end
+
     # @spec PARTIAL-CLOSEOUT-047
     it "supplies source acceptance text and linked merged delivery evidence" do
       issue.update!(body: "Acceptance: dispatch succeeds after a retry")

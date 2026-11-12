@@ -1125,6 +1125,28 @@ RSpec.describe "Inbox" do
       expect(form.at_css("input[name='requirement_id']")["value"]).to eq(relevant.id.to_s)
     end
 
+    # @spec PARTIAL-CLOSEOUT-050
+    it "keeps a human environment approval separate from its runnable technical validation" do
+      criterion = "Representative environment approval and measurement"
+      notification = Notification.find_by!(account:, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      notification.update!(title: "Environment approval required", description: "Approve the representative environment.",
+        metadata: { "prerequisites" => [ { "identity" => "environment-approval", "criterion" => criterion } ] })
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      recipe = create(:pre_commit_requirement, project:, account:, name: "Representative measurement", command: "bin/measure")
+      source_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(guided_issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(guided_issue),
+        "criteria" => [ { "criterion" => criterion, "state" => "unknown",
+          "validation_kind" => "native", "validation_requirement_id" => recipe.id } ]
+      } })
+
+      render_guided_pane
+
+      expect(response.body).to include("Human evidence requested", "Approve the representative environment.")
+      expect(response.body).to include("Run Representative measurement", criterion)
+    end
+
     # @spec PARTIAL-CLOSEOUT-032
     it "shows the setup action when a sidecar criterion has no prepared attachment" do
       source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)

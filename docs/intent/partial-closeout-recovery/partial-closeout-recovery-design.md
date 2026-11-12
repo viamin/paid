@@ -701,6 +701,21 @@ servers; native checks copy neither attachment type.
 Validation evidence remains evidence for a later assessment, not an automatic
 attestation that the criterion is satisfied.
 
+A mixed prerequisite is represented as distinct records that recombine only in
+the next acceptance audit: a human authorization or independent judgment is a
+`human` gap with its own attributed Inbox occurrence and exact next step, while
+the runnable observation is criterion validation metadata that names the
+reviewed recipe and any required tool. A successful measurement neither
+authorizes the human decision nor supplies an independent human judgment, and
+human approval does not fabricate a measurement result. Every non-cancelled
+terminal technical validation, including unavailable and failed results,
+retains its environment, revision, criterion, and execution provenance and
+offers the normal deduplicated report-only audit. The audit consumes current
+evidence and may leave either prerequisite unresolved; unchanged evidence does
+not create an audit loop. Authorization, setup, and independent judgments stay
+in the human Inbox, while only a current, actor-authorized reviewed recipe can
+enter `TechnicalPrerequisites` execution.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation

@@ -138,6 +138,28 @@
       `spec/services/llm/analyze_partial_closeout_spec.rb`,
       `spec/requests/inbox_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-050** — When a partial-closeout criterion combines a
+  human authorization or independent judgment with a runnable technical
+  observation, Paid SHALL persist and render them as distinct prerequisites:
+  the human item SHALL remain an attributed human Inbox occurrence with its
+  own exact next step, and the technical item SHALL remain a current reviewed
+  `TechnicalPrerequisites` action bound to its criterion, pinned revision,
+  environment, and execution provenance. Technical success SHALL NOT imply
+  human approval or independent human evidence, and human approval SHALL NOT
+  imply a technical result. Every non-cancelled terminal technical validation,
+  including unavailable or failed outcomes, SHALL retain visible retryable
+  evidence and invoke the normal deduplicated report-only acceptance-audit
+  admission path; that audit SHALL use current evidence and SHALL NOT loop
+  when the evidence generation is unchanged.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/technical_prerequisites/inbox_actions.rb`,
+  `app/services/technical_prerequisites/evidence.rb`,
+  `app/jobs/technical_prerequisite_validation_job.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`.
+  *Test:* `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its
