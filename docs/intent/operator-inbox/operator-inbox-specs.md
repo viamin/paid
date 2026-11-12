@@ -76,6 +76,21 @@
   `spec/services/inbox/action_history_spec.rb`,
   `spec/services/inbox/removals_spec.rb`.
 
+- [x] **OPERATOR-INBOX-028** — When an issue-backed Action history renders,
+  its heading SHALL show locally durable processing-attempt and Inbox-return
+  counts. Processing attempts SHALL count distinct agent-run starts; Inbox
+  returns SHALL count deduplicated `Returned to Inbox` events and the durable
+  retry-abandonment count after its first appearance. The heading SHALL
+  emphasize two or more known returns, include retry-limit and
+  token-budget-exceeded runs through the existing run projection, and label
+  counts as known (rather than estimating them) while the subject's history
+  coverage is incomplete.
+  *Code:* `app/services/inbox/action_history.rb`,
+  `app/services/inbox/action_history_page.rb`,
+  `app/views/inbox/_history_content.html.erb`.
+  *Test:* `spec/services/inbox/action_history_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
   project, the system SHALL expose that pending review as a `plan_review`

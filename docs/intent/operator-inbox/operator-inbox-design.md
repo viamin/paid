@@ -163,6 +163,16 @@ events; reapproval of a newer revision therefore remains visible after the
 invalidated attempt. Scanner replay of the same assessed revision is
 idempotent.
 
+The Action history heading summarizes the locally durable projection for an
+issue: distinct agent-run starts are processing attempts, and Inbox returns are
+the sum of deduplicated `Returned to Inbox` ledger events plus the issue's
+durable retry-abandonment returns (the abandonment count after its first
+appearance). This makes retry-cap and token-budget terminal runs visible
+through the same attempt count without a second counter. The heading calls out
+two or more known returns. If the coverage boundary is incomplete, the heading
+labels both figures as known counts and keeps the unavailable-history notice;
+it never estimates missing activity.
+
 Issue-backed lanes retain their project joins when project predicates or
 ordering require them, but preload projects separately. This keeps one shared
 project object per project while preventing a project audit-history payload

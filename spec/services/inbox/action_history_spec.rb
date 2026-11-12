@@ -104,6 +104,38 @@ RSpec.describe Inbox::ActionHistory do
     expect(described_class.call(entry:).incomplete).to be(false)
   end
 
+  # @spec OPERATOR-INBOX-028
+  it "summarizes an empty local history without inferring unavailable activity" do
+    history = described_class.call(entry:)
+
+    expect(history.summary).to have_attributes(processing_attempts: 0, inbox_returns: 0)
+    expect(history.incomplete).to be(true)
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "counts distinct processing attempts including token-budget-exceeded runs" do
+    create(:agent_run, :completed, project:, issue:)
+    exhausted = create(:agent_run, :token_budget_exceeded, project:, issue:)
+
+    history = described_class.call(entry:)
+
+    expect(history.summary.processing_attempts).to eq(2)
+    expect(history.events.map(&:id)).to include("run-finish:#{exhausted.id}")
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "combines deduplicated ledger and retry-cap returns without duplicating either source" do
+    issue.update!(runner_retry_abandonment_count: 3)
+    2.times do
+      Inbox::HistoryRecorder.call(entry:, event_key: "returned-once", action: "Returned to Inbox",
+        actor: "Paid", result: "completed")
+    end
+
+    history = described_class.call(entry:)
+
+    expect(history.summary.inbox_returns).to eq(3)
+  end
+
   # @spec OPERATOR-INBOX-022
   it "returns every event exactly once across pages" do
     21.times do |index|
@@ -140,7 +172,7 @@ RSpec.describe Inbox::ActionHistory do
 
     expect(history.events.size).to eq(5)
     expect(history.next_cursor).to eq(history.events.last.id)
-    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
+    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/).reject { |sql| sql.include?("COUNT") }
     expect(history_selects).not_to be_empty
     expect(history_selects).to all(include("LIMIT"))
   end

@@ -6,6 +6,8 @@ module Inbox
   # @spec OPERATOR-INBOX-022
   class ActionHistoryPage
     Cursor = Data.define(:id, :occurred_at)
+    Projection = Data.define(:events, :summary)
+    Summary = Data.define(:processing_attempts, :inbox_returns)
     RUN_OUTCOMES = {
       "completed" => [ "Agent run completed", "completed" ],
       "no_output" => [ "Agent run completed with no output", "no_output" ],
@@ -19,6 +21,7 @@ module Inbox
     }.freeze
 
     def self.call(...) = new(...).call
+    def self.projection(...) = new(...).projection
 
     def initialize(entry:, subject_key:, limit:, before:)
       @entry, @subject_key, @limit, @before = entry, subject_key, limit, before
@@ -29,6 +32,15 @@ module Inbox
 
       (persisted_events + run_start_events + run_finish_events + feature_approval_events + feature_release_events)
         .sort_by { |event| [ -event.occurred_at.to_f, event.id ] }
+    end
+
+    def projection = Projection.new(events: call, summary: summary)
+
+    # @spec OPERATOR-INBOX-028
+    def summary
+      return Summary.new(processing_attempts: 0, inbox_returns: 0) unless entry.issue
+
+      Summary.new(processing_attempts: runs.count, inbox_returns: returned_inbox_events + retry_inbox_returns)
     end
 
     private
@@ -135,6 +147,14 @@ module Inbox
 
     def history_scope
       InboxHistoryEvent.for_subject(account: entry.project.account, subject_key:)
+    end
+
+    def returned_inbox_events
+      history_scope.where("metadata ->> 'action' = ?", "Returned to Inbox").count
+    end
+
+    def retry_inbox_returns
+      [ entry.issue.runner_retry_abandonment_count - 1, 0 ].max
     end
 
     def safe_evidence_url(url)

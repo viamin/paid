@@ -1357,6 +1357,25 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-frame"]).to eq("inbox-history")
   end
 
+  # @spec OPERATOR-INBOX-028
+  it "renders an accessible, emphasized summary for repeatedly returned work" do
+    issue = create(:issue, :needs_input, project:, title: "Repeated question", body: questions_body,
+      runner_retry_abandonment_count: 3)
+    issue.update_column(:action_history_started_at, issue.github_created_at)
+    create(:agent_run, :completed, project:, issue:)
+    create(:agent_run, :token_budget_exceeded, project:, issue:)
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    document = Nokogiri::HTML(response.body)
+    summary = document.at_css("#inbox-history-summary")
+    expect(summary).to be_present
+    expect(summary.text).to include("2 processing attempts", "Frequent Inbox returns: 2")
+    expect(summary["class"]).to include("text-amber-800", "font-semibold")
+    expect(summary["role"]).to eq("status")
+  end
+
   # @spec OPERATOR-INBOX-025
   it "returns an empty history frame after the item leaves the inbox" do
     issue = create(:issue, :needs_input, project:, body: questions_body)
