@@ -131,6 +131,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   # The guard. Walks every <a> and <form> in the detail pane and asserts that
   # each one satisfies exactly one of the three rules.
   def assert_navigation_intent!(fragment, kind:)
+    assert_action_projection_source!(fragment, kind:)
     rules_violated = []
     fragment.css("a").each do |anchor|
       href = anchor["href"].to_s
@@ -183,6 +184,14 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
          `<name>` listed in `INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS`) and a code comment in
          the partial explaining why it intentionally renders inside the frame.
     MSG
+  end
+
+  # @spec OPERATOR-INBOX-027
+  def assert_action_projection_source!(fragment, kind:)
+    source = fragment.css("[data-inbox-detail-actions-target='source']")
+    expect(source.size).to eq(1), "inbox kind #{kind} must expose one header-action source"
+    expect(source.first.css("a[href], button, input[type='submit']")).not_to be_empty,
+      "inbox kind #{kind} must expose its rendered actions to the header projection"
   end
 
   # Per-kind contexts, each registering its kind in

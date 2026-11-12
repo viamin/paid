@@ -71,6 +71,19 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Detail action area
+
+Each selected Inbox detail projects its available action controls into a
+sticky, responsive header action area before explanatory content. The header
+does not reimplement authorization, endpoints, confirmation, Turbo, or
+loading behavior: it mirrors each rendered action and activates the original
+control. This keeps lane-specific policy and mutation semantics at their
+existing rendering boundary while making the same action available without
+scrolling. Detailed inputs and decision forms remain in the detail body; their
+header action activates the original submit control after the operator has
+entered the required detail below. On narrow screens the action controls wrap
+within the header rather than overflowing the viewport.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the

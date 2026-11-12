@@ -522,6 +522,18 @@
   `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-027** — When an operator opens any selected Inbox
+  detail, the system SHALL project every currently rendered action into a
+  sticky, keyboard-accessible header action area before explanatory content.
+  A projected control SHALL activate its original control, preserving its
+  existing authorization, endpoint, confirmation, Turbo, and loading
+  behavior. Detailed decision inputs SHALL remain in the detail body, and the
+  action area SHALL wrap without horizontal overflow on narrow screens.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_detail_actions_controller.js`.
+  *Test:* `spec/system/inbox_detail_actions_spec.rb`,
+  `spec/lib/inbox_detail_actions_controller_node_harness_spec.rb`.
+
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
   workflow through the existing Temporal bridge and SHALL redirect back to the

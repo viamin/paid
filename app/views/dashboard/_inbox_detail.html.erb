@@ -1,4 +1,5 @@
-<%# @spec OPERATOR-INBOX-006 @spec OPERATOR-INBOX-026 @spec LIST-DETAIL-003 %>
+<%# @spec OPERATOR-INBOX-006 @spec OPERATOR-INBOX-026 @spec OPERATOR-INBOX-027 @spec LIST-DETAIL-003 %>
+<div data-controller="inbox-detail-actions">
 <div class="border-b border-gray-200 px-4 py-4 sm:px-6">
   <div class="flex items-start justify-between gap-4">
     <div>
@@ -45,7 +46,18 @@
   <p id="inbox-copy-link-status" data-inbox-master-detail-target="copyStatus" class="sr-only" role="status" aria-live="polite"></p>
 </div>
 
-<div class="px-4 py-5 sm:px-6">
+<div class="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6"
+     data-testid="inbox-detail-actions">
+  <div class="flex flex-wrap items-center gap-3">
+    <h3 class="text-sm font-semibold text-gray-900">Actions</h3>
+    <nav class="flex min-w-0 flex-1 flex-wrap gap-2"
+         aria-label="Item actions"
+         data-inbox-detail-actions-target="area"></nav>
+  </div>
+  <p class="sr-only" role="status" aria-live="polite" data-inbox-detail-actions-target="status"></p>
+</div>
+
+<div class="px-4 py-5 sm:px-6" data-inbox-detail-actions-target="source">
   <%= render "dashboard/inbox_decision_brief", entry: entry %>
 
   <% if entry.issue %>
@@ -129,4 +141,5 @@
     <p class="mt-6 text-sm text-gray-500" role="status">Loading history…</p>
   <% end %>
   <%= render "dashboard/inbox_phase_and_removal", entry: entry %>
+</div>
 </div>
