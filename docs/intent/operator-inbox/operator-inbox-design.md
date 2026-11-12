@@ -154,6 +154,15 @@ backfill can move the boundary only when it supplies the missing interval. API
 detail reads accept a history-specific limit and cursor so clients can advance
 the bounded timeline independently of Inbox-list pagination.
 
+The action-history heading summarizes the durable evidence without materializing
+another counter. For issue-backed entries it reports recorded processing
+attempts from the same agent-run relation used by the timeline, and Inbox
+appearances and returns from the issue's retry-abandonment counter. The first
+appearance is not a return; each later recorded abandonment is one return.
+Repeated returns receive an emphasized, accessible status treatment. A
+history-coverage gap qualifies the labels as recorded evidence, rather than
+inventing activity from the current Inbox state or from unavailable history.
+
 The PR scanner carries an explicit latest owner-review record, including its
 reviewed revision, to the same persistence boundary as its merge assessment.
 It never derives an owner-approval event from a blocker-free assessment, so

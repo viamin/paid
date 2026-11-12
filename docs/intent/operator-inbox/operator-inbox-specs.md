@@ -936,3 +936,17 @@
   *Test:* `spec/services/inbox/decision_brief_spec.rb`,
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-028** — When an operator loads issue-backed Action
+  history, the header SHALL show recorded processing-attempt and Inbox
+  appearance/return counts from the existing agent-run and retry-abandonment
+  records. The initial appearance SHALL NOT count as a return; repeated returns
+  SHALL have an accessible emphasized treatment. Retry-limit and
+  token-budget-exceeded runs SHALL count as processing attempts exactly once,
+  and deduplicated history events SHALL NOT add to these counters. When the
+  durable coverage boundary is incomplete, the header SHALL identify counts as
+  recorded evidence and SHALL NOT infer unavailable prior activity.
+  *Code:* `app/services/inbox/action_history.rb`,
+  `app/views/inbox/_history_content.html.erb`.
+  *Test:* `spec/services/inbox/action_history_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

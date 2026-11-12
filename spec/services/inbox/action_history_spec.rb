@@ -85,7 +85,27 @@ RSpec.describe Inbox::ActionHistory do
 
   # @spec OPERATOR-INBOX-023
   it "marks a subject with no local evidence as legacy-incomplete" do
-    expect(described_class.call(entry:).incomplete).to be(true)
+    history = described_class.call(entry:)
+
+    expect(history.incomplete).to be(true)
+    expect(history.summary).to have_attributes(processing_attempts: 0, inbox_appearances: 0,
+      inbox_returns: 0, repeated_returns?: false)
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "summarizes recorded processing and retry-return appearances without counting duplicate history events" do
+    issue.update!(runner_retry_abandonment_count: 3)
+    create(:agent_run, project:, issue:, status: "retried", completed_at: Time.current)
+    create(:agent_run, :token_budget_exceeded, project:, issue:)
+    subject_key = "issue:#{project.id}:#{issue.github_number}"
+    create(:inbox_history_event, account: project.account, project:, subject_key:, event_key: "returned-once",
+      metadata: { action: "Returned to Inbox" })
+
+    history = described_class.call(entry:)
+
+    expect(history.summary).to have_attributes(processing_attempts: 2, inbox_appearances: 3,
+      inbox_returns: 2, repeated_returns?: true)
+    expect(history.events.map(&:action)).to include("Agent run retried", "Agent run exceeded its token budget")
   end
 
   # @spec OPERATOR-INBOX-023
@@ -140,7 +160,7 @@ RSpec.describe Inbox::ActionHistory do
 
     expect(history.events.size).to eq(5)
     expect(history.next_cursor).to eq(history.events.last.id)
-    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
+    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/).reject { |sql| sql.include?("COUNT(*)") }
     expect(history_selects).not_to be_empty
     expect(history_selects).to all(include("LIMIT"))
   end

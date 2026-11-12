@@ -1357,6 +1357,24 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-frame"]).to eq("inbox-history")
   end
 
+  # @spec OPERATOR-INBOX-028
+  it "renders recorded history counts and emphasizes repeated Inbox returns" do
+    Rails.cache.clear
+    issue = create_retry_limited_issue(title: "Repeated retry caps", github_number: 522,
+      runner_retry_abandonment_count: 3)
+    create(:agent_run, project:, issue:, status: "retried")
+    create(:agent_run, :token_budget_exceeded, project:, issue:)
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::RETRY_LIMITED_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    document = Nokogiri::HTML(response.body)
+    summary = document.at_css("[data-testid='inbox-history-summary']")
+    expect(summary.text).to include("Recorded 2 processing attempts", "3 Inbox appearances", "2 returns")
+    expect(summary["role"]).to eq("status")
+    expect(summary.at_css(".bg-amber-100").text).to eq("Repeated Inbox returns")
+  end
+
   # @spec OPERATOR-INBOX-025
   it "returns an empty history frame after the item leaves the inbox" do
     issue = create(:issue, :needs_input, project:, body: questions_body)
