@@ -667,6 +667,23 @@ history remain in the lane-specific detail and collapsed disclosures.
   contract across every queue lane, including evidence fallbacks, concise
   product questions, and human-readable partial-closeout prerequisites.
 
+## Detail action area
+
+Every selected Inbox detail has one named action area immediately below its
+identity header. The area is sticky within the detail pane while the operator
+reads the selected item. It presents the controls that the already-rendered
+lane exposes, rather than recreating lane-specific endpoint or policy logic.
+The action-area controller moves links and submit controls while retaining each
+control's original attributes and form association; detailed text, inputs, and
+decision context stay in their lane-specific content below. This makes the
+same authorized actions available without requiring each lane to maintain a
+second implementation. On narrow screens the controls wrap and remain in
+normal keyboard tab order.
+
+The action area is a progressive enhancement. The server-rendered lane remains
+complete when JavaScript is unavailable, and moving a submit control preserves
+the original form's hidden values, confirmation, loading, and Turbo behavior.
+
 ## Testing
 
 - `spec/services/inbox/queue_spec.rb` covers typed discovery of

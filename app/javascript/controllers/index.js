@@ -67,6 +67,9 @@ application.register("goal-toggle", GoalToggleController)
 import InboxMasterDetailController from "./inbox_master_detail_controller"
 application.register("inbox-master-detail", InboxMasterDetailController)
 
+import InboxDetailActionsController from "./inbox_detail_actions_controller"
+application.register("inbox-detail-actions", InboxDetailActionsController)
+
 import InboxFiltersController from "./inbox_filters_controller"
 application.register("inbox-filters", InboxFiltersController)
 

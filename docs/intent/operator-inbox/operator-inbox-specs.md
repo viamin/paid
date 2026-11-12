@@ -936,3 +936,18 @@
   *Test:* `spec/services/inbox/decision_brief_spec.rb`,
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-028** — When an operator selects an Inbox item, the
+  detail pane SHALL provide a labelled, sticky top action area containing the
+  controls available from the selected item's rendered detail, including the
+  shared chat and Inbox removal controls when authorized. The area SHALL reuse
+  the original controls and their forms so existing endpoints, policies,
+  confirmations, loading behavior, and Turbo navigation intent remain
+  unchanged. Detailed explanatory content and decision inputs SHALL remain
+  below the area. The controls SHALL wrap on narrow viewports and remain in
+  keyboard tab order; without JavaScript the complete server-rendered detail
+  SHALL remain usable.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_detail_actions_controller.js`.
+  *Test:* `spec/views/dashboard/inbox_detail_actions_spec.rb`,
+  `spec/system/inbox_navigation_spec.rb`.
