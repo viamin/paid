@@ -45,6 +45,34 @@ RSpec.describe PullRequests::DependenciesResolved do
     end
   end
 
+  context "when a dependency-section bullet describes another issue's prerequisites" do
+    let(:issue) do
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 4981,
+        body: <<~BODY
+          ## Rollout / dependency
+          - Draft because #4868 depends on #4863 and #4761.
+          - #4820
+
+          Closes #4868
+        BODY
+      )
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-005, DEPENDENCY-DECLARATIONS-009
+    it "proceeds when real prerequisites are resolved" do
+      expect(collector).to receive(:dependency_resolved?).with(number: 4820).and_return(true)
+      expect(collector).not_to receive(:dependency_resolved?).with(number: 4868)
+      expect(collector).not_to receive(:dependency_resolved?).with(number: 4863)
+      expect(collector).not_to receive(:dependency_resolved?).with(number: 4761)
+
+      expect(call).to be(true)
+    end
+  end
+
   context "when a same-repo dependency is resolved" do
     let(:body) { "Depends on #41" }
 
