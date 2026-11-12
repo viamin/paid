@@ -522,6 +522,20 @@
   `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-028** — When an operator opens an Inbox detail, the
+  system SHALL provide a labeled action area immediately below the item header.
+  It SHALL keep the entry's existing actionable controls, including
+  type-specific controls, contextual chat, and personal Inbox removal or
+  restore, in that area without changing their endpoint, authorization,
+  confirmation, loading, or Turbo-frame behavior. The action area SHALL remain
+  sticky within the detail pane while its explanatory content scrolls, preserve
+  the controls' labels and keyboard focusability, and wrap controls on narrow
+  viewports.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_action_area_controller.js`.
+  *Test:* `spec/system/dashboard_inbox_spec.rb`,
+  `spec/lib/inbox_action_area_controller_node_harness_spec.rb`.
+
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
   workflow through the existing Temporal bridge and SHALL redirect back to the

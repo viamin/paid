@@ -71,6 +71,24 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Detail action area
+
+Every selected detail places its available controls in one labeled action area
+directly below the item header. The area is sticky inside the detail pane, so
+an operator can act while reading the decision brief and supporting evidence.
+Rather than recreate each lane's routes, policy checks, Turbo settings,
+confirmations, or loading behavior, the `inbox-action-area` controller moves
+the existing rendered controls into that area after Turbo renders the detail.
+This retains the original interactive elements and their state while leaving
+explanatory and detailed decision content in the document below. The action
+area wraps controls on narrow viewports; controls that need more space retain
+their own form layout.
+
+The rendered controls remain the source of truth for which actions are
+authorized: a lane that does not render an action contributes none. This keeps
+the action area aligned with type-specific authorization and avoids a second,
+drifting action-policy registry.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the
@@ -682,6 +700,11 @@ history remain in the lane-specific detail and collapsed disclosures.
   mobile-collapse coverage — `spec/system/dashboard_inbox_spec.rb`'s
   `:rack_test` driver never applies CSS, so it cannot catch a broken grid
   declaration (#3876).
+- `spec/system/dashboard_inbox_spec.rb` covers the rendered sticky, responsive
+  Inbox action-area contract; `spec/lib/inbox_action_area_controller_node_harness_spec.rb`
+  verifies it moves the existing controls rather than duplicating their
+  endpoints or Turbo behavior. `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`
+  renders every lane and branch through the shared action-area target.
 - `spec/requests/plan_reviews_spec.rb` covers signal dispatch and inbox
   redirects after review actions.
 - `spec/requests/projects/clarifying_questions_spec.rb` covers inbox queue

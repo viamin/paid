@@ -70,6 +70,9 @@ application.register("inbox-master-detail", InboxMasterDetailController)
 import InboxFiltersController from "./inbox_filters_controller"
 application.register("inbox-filters", InboxFiltersController)
 
+import InboxActionAreaController from "./inbox_action_area_controller"
+application.register("inbox-action-area", InboxActionAreaController)
+
 import LiveDashboardController from "./live_dashboard_controller"
 application.register("live-dashboard", LiveDashboardController)
 

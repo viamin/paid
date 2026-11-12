@@ -131,6 +131,16 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   # The guard. Walks every <a> and <form> in the detail pane and asserts that
   # each one satisfies exactly one of the three rules.
   def assert_navigation_intent!(fragment, kind:)
+  # @spec OPERATOR-INBOX-028
+  # This spec renders every inbox kind and branch below. Keep every rendered
+  # action inside the action-area content target so the controller can move the
+  # original element into the sticky header without recreating its behavior.
+  action_content = fragment.at_css("[data-inbox-action-area-target='content']")
+  action_area = fragment.at_css("[data-inbox-action-area-target='actions']")
+  expect(action_content).to be_present, "inbox kind `#{kind}` has no action-area content target"
+  expect(action_area).to be_present, "inbox kind `#{kind}` has no action area"
+  expect(action_area["aria-label"]).to eq("Actions for this Inbox item")
+
     rules_violated = []
     fragment.css("a").each do |anchor|
       href = anchor["href"].to_s

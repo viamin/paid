@@ -76,6 +76,23 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     )
   end
 
+  # @spec OPERATOR-INBOX-028
+  it "renders a sticky, labeled action area that wraps on narrow screens" do
+    issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+
+    sign_in_as(user)
+    visit inbox_entry_path("clarifying_questions:#{issue.id}",
+      project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+    )
+
+    action_area = page.find("[data-inbox-action-area-target='actions']", visible: false)
+
+    expect(action_area["aria-label"]).to eq("Actions for this Inbox item")
+    expect(action_area[:class]).to include("sticky", "top-0", "flex-wrap")
+    expect(page).to have_css("[data-controller~='inbox-action-area']", visible: false)
+  end
+
   # @spec LIST-DETAIL-007
   it "renders Inbox in the shared viewport-bound shell with independent pane scroll regions" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
