@@ -57,14 +57,42 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       local_deps, cross_deps = described_class.extract(
         body: <<~BODY,
           ## Dependencies
-          Issue #500 depends on #41.
           `Depends on #42`
         BODY
         comments: [],
         current_issue_number: 100
       )
 
-      expect(local_deps).to eq(41 => false, 42 => false)
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "excludes a dependency-section bullet that describes another issue's prerequisites" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Rollout / dependency
+          - Draft because #4868 depends on #4863 and #4761.
+
+          Closes #4868
+        BODY
+        comments: [],
+        current_issue_number: 4981
+      )
+
+      expect(local_deps).to eq({})
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "keeps an explicit dependency directive for the current item in a dependency section" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- PR #4981 depends on #41",
+        comments: [],
+        current_issue_number: 4981
+      )
+
+      expect(local_deps).to eq(41 => false)
       expect(cross_deps).to eq({})
     end
 

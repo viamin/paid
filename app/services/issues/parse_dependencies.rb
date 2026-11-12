@@ -284,15 +284,15 @@ module Issues
     # the captured String directly — without it, refs_str would be an Array.
     def extract_removal_refs(text, local_numbers, cross_refs)
       markdown_sections(text, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
-        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: false)
+        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: true, mask_inline_code: false)
       end
 
       inline_text = strip_markdown_sections(text, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
-      extract_inline_removal_refs(inline_text, local_numbers, cross_refs, contextual_exclusions: true)
+      extract_inline_removal_refs(inline_text, local_numbers, cross_refs, contextual_exclusions: true, mask_inline_code: true)
     end
 
-    def extract_inline_removal_refs(text, local_numbers, cross_refs, contextual_exclusions:)
-      scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
+    def extract_inline_removal_refs(text, local_numbers, cross_refs, contextual_exclusions:, mask_inline_code:)
+      scratch = mask_inline_code ? without_markdown_code(text) : without_fenced_code(text)
       scratch.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
         next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
 
@@ -313,11 +313,11 @@ module Issues
     def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004
       markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
-        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: false)
+        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: true, mask_inline_code: false)
       end
 
       inline_text = strip_markdown_sections(body, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
-      extract_inline_refs(inline_text, local_deps, cross_deps, contextual_exclusions: true)
+      extract_inline_refs(inline_text, local_deps, cross_deps, contextual_exclusions: true, mask_inline_code: true)
     end
 
     # Within a "## Dependencies" section, recognise deployment directives and
@@ -329,6 +329,8 @@ module Issues
 
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
+          next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
         scratch = scratch.gsub(pattern, "")
@@ -368,6 +370,7 @@ module Issues
 
     def flush_list_item(item, local_deps, cross_deps)
       return unless item
+      return if describes_another_issue_in_directive?(item)
 
       extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
     end
@@ -386,8 +389,8 @@ module Issues
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
     # Deployment-phrased matches are consumed first so the plain pattern does
     # not double-count them as non-deployment deps.
-    def extract_inline_refs(text, local_deps, cross_deps, contextual_exclusions:) # @spec DEPENDENCY-DECLARATIONS-009
-      scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
+    def extract_inline_refs(text, local_deps, cross_deps, contextual_exclusions:, mask_inline_code:) # @spec DEPENDENCY-DECLARATIONS-009
+      scratch = mask_inline_code ? without_markdown_code(text) : without_fenced_code(text)
 
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
@@ -415,6 +418,14 @@ module Issues
       return false if clause[0...subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
 
       subject[1].to_i != @current_issue_number
+    end
+
+    def describes_another_issue_in_directive?(text)
+      [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN ].any? do |pattern|
+        text.to_enum(:scan, pattern).any? do
+          describes_another_issue?(text, Regexp.last_match.begin(0))
+        end
+      end
     end
 
     def without_markdown_code(text)
@@ -483,6 +494,8 @@ module Issues
       stripped = text.gsub(CROSS_REPO_REF_PATTERN, "")
       stripped.scan(ISSUE_REF_PATTERN) do |(num)|
         n = num.to_i
+        next if n == @current_issue_number
+
         local_deps[n] = true if requires_deployment
         local_deps[n] = false unless local_deps.key?(n)
       end

@@ -149,7 +149,7 @@ RSpec.describe Issues::ParseDependencies do
       dependency = create(:issue, project: project, github_number: 9057)
       issue = create(:issue, project: project, body: "Depends on #9057")
 
-      described_class.call(issue: issue, comments: [ "Issue #4635 no longer depends on #9057." ])
+      described_class.call(issue: issue, comments: [ "## Dependencies\nIssue #4635 no longer depends on #9057." ])
 
       expect(issue.dependencies).to contain_exactly(dependency)
       expect(described_class.extract(body: "Issue #4635 no longer depends on #9057.").first).to be_empty

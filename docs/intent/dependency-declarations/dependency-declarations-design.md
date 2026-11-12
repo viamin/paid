@@ -16,11 +16,12 @@ turning unrelated issue references into prerequisites.
 
 Explicit `Depends on`, `Blocked by`, and deployment directives continue to
 admit local and qualified `owner/repo#N` references wherever the parser already
-recognises them. Outside a dependency section, those directives do not apply
-when they appear as Markdown code examples or describe another numbered issue's
-prerequisites. A sentence about another issue's ordering cannot impose that
-ordering on the issue carrying the sentence. Negative and removal directives
-retain their ordered-comment semantics.
+recognises them. Those directives do not apply when they appear as Markdown
+code examples outside a dependency section or describe another numbered
+issue's prerequisites, whether inside or outside a dependency section. A
+sentence or list item about another issue's ordering cannot impose that ordering
+on the issue carrying the sentence. Negative and removal directives retain
+their ordered-comment semantics.
 
 Under a Markdown heading containing `Dependency` or `Dependencies`, a bare
 reference is a declaration only when it is in a Markdown list item: unordered
@@ -63,6 +64,7 @@ batch is evaluated against earlier additions.
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
 | Bare-reference admission | Markdown list grammar only within dependency sections | Parse all section prose; semantic keyword heuristics | List syntax is deterministic, intentional, and avoids making an implementation inventory a merge gate. |
+| Contextual issue ordering | Exclude the whole statement or list item when another numbered issue is its subject | Treat every reference in a dependency section as a declaration | A PR may explain the prerequisites of the issue it closes without making a circular Auto-Merge gate. |
 | Consumer contract | One shared extractor | Separate Auto-Pick and Auto-Merge parsers | Both gates must interpret the same declaration text identically. |
 
 ## References
