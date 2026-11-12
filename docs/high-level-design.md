@@ -71,7 +71,7 @@ existing GitHub automation remains stable during migration.
 
 ## Approach: Isolation by Default
 
-Agents run in Docker containers built from a dedicated agent image
+Agents and standalone application text requests run in Docker containers built from a dedicated agent image
 (`docker/agent/Dockerfile`). They receive scoped, short-lived credentials via a
 secrets proxy rather than long-lived tokens; they operate in isolated
 backend-selected workspaces (named-volume clones by default, legacy worktree

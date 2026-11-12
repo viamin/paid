@@ -111,6 +111,11 @@ module Containers
     rescue StandardError
       close
       raise
+    rescue SignalException
+      # Worker cancellation raises outside StandardError. Dispose of the
+      # container before preserving the original cancellation signal.
+      close
+      raise
     end
 
     def close

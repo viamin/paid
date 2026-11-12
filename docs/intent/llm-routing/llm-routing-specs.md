@@ -19,7 +19,7 @@
 - [x] **LLM-ROUTING-006** — A standalone isolated text request SHALL bound
   prompt and output size, deadline, cancellation, and egress; it SHALL remove
   its container after success, failure, timeout, provisioning failure, or
-  worker interruption, and SHALL never fall back to host execution. Its
+  worker interruption (including a Ruby cancellation signal), and SHALL never fall back to host execution. Its
   worker-death orphan-sweep lifetime SHALL not expire during healthy reuse of
   the container. Post-run
   background summaries and diagnostics SHALL route independently of a cleaned-up environment.

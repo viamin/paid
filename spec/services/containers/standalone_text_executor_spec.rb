@@ -160,6 +160,18 @@ RSpec.describe Containers::StandaloneTextExecutor do
     end.to raise_error(AgentHarness::TimeoutError, /timed out/)
   end
 
+  # @spec LLM-ROUTING-006
+  it "cleans up a provisioned container when worker cancellation interrupts execution" do
+    allow(backend).to receive(:exec_in_container).and_raise(Interrupt, "worker cancelled")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(Interrupt, "worker cancelled")
+
+    expect(backend).to have_received(:stop_container).with(container, timeout: 0).at_least(:once)
+    expect(backend).to have_received(:delete_container).with(container, force: true).once
+  end
+
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
   it "reuses one container across executor commands until closed" do
     allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
