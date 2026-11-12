@@ -18,13 +18,13 @@ module ProjectDelegation
     # action governs, and a terminal or expired one admits nothing until a
     # new explicit authorization exists.
     AuthorizationState = Data.define(:id, :work_item_id, :action, :phase, :stop_before_phase,
-      :status, :expires_at, :authority) do
+      :status, :status_reason, :lifecycle_evidence, :evidence, :expires_at, :authority) do
       def in_force?
         status == "active" && expires_at.present? && expires_at > Time.current
       end
 
       def expired?
-        status == "active" && expires_at.present? && expires_at <= Time.current
+        status == "expired" || (status == "active" && expires_at.present? && expires_at <= Time.current)
       end
 
       def to_h
@@ -35,6 +35,9 @@ module ProjectDelegation
           phase: phase,
           stop_before_phase: stop_before_phase,
           status: status,
+          status_reason: status_reason,
+          lifecycle_evidence: lifecycle_evidence,
+          evidence: evidence,
           in_force: in_force?,
           expires_at: expires_at&.iso8601,
           authority: authority.to_h
@@ -169,6 +172,9 @@ module ProjectDelegation
         phase: Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(record.action, record.action),
         stop_before_phase: record.evidence.to_h["stop_before_phase"],
         status: record.status,
+        status_reason: record.status_reason,
+        lifecycle_evidence: record.lifecycle_evidence,
+        evidence: record.evidence,
         expires_at: record.expires_at,
         authority: effective_policy_decision(
           Automation::DelegatedActionAdmission::ACTION_PHASES.fetch(record.action, record.action), record.issue,

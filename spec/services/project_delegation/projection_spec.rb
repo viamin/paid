@@ -54,6 +54,7 @@ RSpec.describe ProjectDelegation::Projection do
       stop_before_phase: "merge",
       status: "active"
     )
+    expect(state.evidence).to include("intent_revision", "acceptance_revision", "evidence_revision", "posture_signature")
     expect(state).to be_in_force
   end
 
@@ -65,6 +66,17 @@ RSpec.describe ProjectDelegation::Projection do
 
     expect(state).not_to be_in_force
     expect(state).to be_expired
+  end
+
+  it "projects lifecycle stop reasons without replacing the admission snapshot" do # @spec PROJECT-DELEGATION-006
+    authorization = authorize_review
+    authorization.bounded_stop!(evidence: { "boundary" => "retry" })
+
+    state = described_class.for_work_item(project: project, work_item: issue).authorization_for("review")
+
+    expect(state).to have_attributes(status: "stopped", status_reason: "bounded_phase_stop")
+    expect(state.evidence).to include("evidence_revision")
+    expect(state.lifecycle_evidence).to include("boundary" => "retry")
   end
 
   it "keeps only the newest authorization for an action as governing" do
