@@ -111,6 +111,9 @@ module Containers
     rescue StandardError
       close
       raise
+    rescue SignalException
+      close
+      raise
     end
 
     def close

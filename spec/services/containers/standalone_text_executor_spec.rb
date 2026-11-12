@@ -160,6 +160,30 @@ RSpec.describe Containers::StandaloneTextExecutor do
     end.to raise_error(AgentHarness::TimeoutError, /timed out/)
   end
 
+  # @spec LLM-ROUTING-006
+  it "removes the disposable container when worker interruption reaches execution" do
+    allow(backend).to receive(:exec_in_container).and_raise(Interrupt)
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(Interrupt)
+
+    expect(backend).to have_received(:stop_container).with(container, timeout: 0).at_least(:once)
+    expect(backend).to have_received(:delete_container).with(container, force: true).once
+  end
+
+  # @spec LLM-ROUTING-006
+  it "fails closed when Docker cannot provision isolated execution" do
+    allow(backend).to receive(:create_container).and_raise(Docker::Error::DockerError, "daemon unavailable")
+    allow(backend).to receive(:exec_in_container)
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::ConfigurationError, /Unable to provision isolated text execution/)
+
+    expect(backend).not_to have_received(:exec_in_container)
+  end
+
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
   it "reuses one container across executor commands until closed" do
     allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
