@@ -212,7 +212,7 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-11-10
+    audited: 2026-11-11
     next: "Reconcile open implementation children #4512-#4515 and #4517, collect pilot evidence #4638, and complete closeout #4518 before final acceptance of RDR-077."
   bounded-phase-authorization:
     title: Bounded Delivery-Phase Authorization
@@ -221,9 +221,9 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-11-10
+    audited: 2026-11-11
     blockedBy: [automation-phases]
-    next: "RDR-078 remains proposed; obtain design acceptance #4996, then complete phase-lifecycle claims through #4997-#4999 and closeout #5000. Keep the exclusive stop disabled until accepted."
+    next: "RDR-078 awaits owner acceptance through #4996; shipped -010/-011/-004 foundation is the single authority. On acceptance, implement phase-lifecycle claims through #4997-#4999 and close out via #5000; keep automation_phases default-off and the exclusive stop disabled until enforcement lands."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md

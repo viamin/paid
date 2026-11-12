@@ -94,19 +94,33 @@ after the phase decision by the existing paths.
 and revocation. `WorkItemContinuationGrant#covers_phase?` walks the delivery
 chain; `#active?` requires neither completion nor revocation.
 
-`Automation::ContinuationGrantLookup.resolve(work_item:)` resolves the chain
-from any work item in the delivery chain — the issue, its pull requests'
-parent issue, or a run attached to either — so a grant survives issue →
-implementation run → PR → review → repair. It deliberately does **not** walk
-child issues, mentions, or dependency edges, so an additional or decomposed
-issue needs its own authorization.
+`Automation::ContinuationGrantLookup.resolve(project:, phase:, work_item:)`
+resolves the chain from any work item in the delivery chain — the issue, its
+pull requests' parent issue, or a run attached to either — so a grant survives
+issue → implementation run → PR → review → repair. It deliberately does
+**not** walk child issues, mentions, or dependency edges, so an additional or
+decomposed issue needs its own authorization.
 
 Completion and revocation:
 
 - `complete!` is called when the endpoint's work lands (PR merged for a merge
   endpoint, PR merge-ready for a coding endpoint); reopening never reactivates.
 - `revoke!` withdraws only the exception. Project defaults may still permit the
-  work independently, which the revocation UI states explicitly.
+  work independently, which the revocation UI states explicitly. A grant
+  suppresses nothing, so withdrawing one cannot broaden authority — unlike the
+  bounded phase authorization, whose revocation retains its stop until an
+  explicit recovery decision
+  ([RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authorization.md)).
+
+Grant endpoints are non-stopping by design: an endpoint bounds its grant
+without prohibiting independently enabled project automation, and no grant,
+phase setting, or manual-start surface offers a stop option
+(`AUTOMATION-PHASES-012`). If accepted and implemented, a per-lineage
+exclusive stop may exist only through the separately authorized bounded phase
+authorization of
+[RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authorization.md)
+(`docs/intent/bounded-phase-authorization/`), which composes with this policy
+and never modifies grant endpoint semantics.
 
 ## Manual starts
 
@@ -126,8 +140,10 @@ submitted one: a mismatch returns the updated notice for review and creates no
 run (`AUTOMATION-PHASES-011`). Grant creation requires permission to delegate
 the covered actions; a merge endpoint requires permission to delegate merge.
 
-There is deliberately no per-item "stop after this phase" override
-(`AUTOMATION-PHASES-012`).
+There is deliberately no per-item "stop after this phase" override on these
+surfaces (`AUTOMATION-PHASES-012`); a future per-lineage exclusive stop must
+be the bounded phase authorization composed with this policy (see
+[Continuation grants](#continuation-grants)).
 
 ## Execution enforcement
 

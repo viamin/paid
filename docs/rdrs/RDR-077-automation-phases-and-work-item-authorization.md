@@ -155,8 +155,13 @@ tenant permissions, and scheduler safety holds still apply. A missing required
 capability configuration creates a visible blocker, not an implicit exemption.
 
 The endpoint bounds the grant; it does not prohibit independently enabled
-project automation. There is no per-item stopping override. When the grant ends,
+project automation. There is no per-item stopping override on grants or
+project settings. When the grant ends,
 project automation may continue the work under its normal eligibility rules.
+(The proposed [RDR-078](RDR-078-bounded-delivery-phase-authorization.md)
+amendment would add one per-lineage exception through its separate
+authorization type only after owner acceptance; see [Later proposed
+amendment](#later-proposed-amendment).)
 
 Every form allowing a manual start must explain before submission when the
 selected endpoint will not be the effective automation stopping point under the
@@ -376,7 +381,10 @@ The following issue boundaries were used for delivery and reconciliation:
   updates with form selections and is also available through the API and work
   details. An unchecked continuation option does not suppress the notice when
   project policy permits follow-ups. Newly permitted continuation at submission
-  returns an updated notice for review. No per-item stopping override is added.
+  returns an updated notice for review. No per-item stopping override is added
+  to grants or project settings by this RDR; the proposed RDR-078 amendment
+  would add the single bounded-authorization exception for its own type only
+  after owner acceptance.
 - Phase disablement, grant revocation, queued execution, retries, and a new
   review comment race without starting unauthorized subsequent actions.
 - Trusted activation labels cannot enable disabled phases. A grant does not
@@ -457,8 +465,21 @@ own release authorization.
 
 ## Later proposed amendment
 
-[RDR-078](RDR-078-bounded-delivery-phase-authorization.md) proposes a new,
-explicit bounded authorization whose exclusive stop can suppress otherwise
-enabled downstream project automation for one identified lineage. Until that
-proposal is accepted and implemented, this RDR's current rule remains in force:
-continuation endpoints do not prohibit independently enabled project automation.
+[RDR-078](RDR-078-bounded-delivery-phase-authorization.md) proposes a
+separate, explicitly confirmed bounded
+phase authorization whose exclusive stop can suppress otherwise enabled
+downstream project automation for its one identified lineage. If accepted,
+this would be the single per-item stop exception, scoped to that authorization
+type:
+continuation grants, project phase settings, activation labels, and
+manual-start endpoints keep this RDR's non-stopping endpoint semantics
+(`AUTOMATION-PHASES-012` remains in force, rescoped to those surfaces), and no
+stop option is added to existing grants. RDR-078's terminal lifecycle rules
+govern how its own stop persists, expires, or is withdrawn.
+
+If accepted, those rules do not change this RDR's grant revocation semantics. A
+continuation grant is purely additive, so revoking it restores project
+defaults. A bounded phase authorization both delegates and suppresses, so
+revoking it does not silently release the phase it stopped; RDR-078 records
+the explicit authorized decision — a new authorization or an explicit return
+to ordinary project policy — that resolves that lineage instead.
