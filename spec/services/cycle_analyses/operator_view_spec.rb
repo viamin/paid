@@ -58,7 +58,7 @@ RSpec.describe CycleAnalyses::OperatorView do
     expect(status.key).to eq(:no_analysis)
     expect(status.description).to include("Paid recommends one bounded repair analysis")
     expect(status.description).to include("may edit one verified GitHub dependency declaration")
-    expect(status.button).to have_attributes(kind: :start_analysis, label: "Start repair analysis")
+    expect(status.button).to have_attributes(kind: :start_analysis, label: "Analyze cycle (may edit GitHub)")
     expect(status.button.confirm).to include("may edit one verified GitHub dependency declaration")
   end
 
@@ -97,7 +97,7 @@ RSpec.describe CycleAnalyses::OperatorView do
 
     expect(status.key).to eq(:pending_sync)
     expect(status.description).to include("#{project.full_name}##{issues[0].github_number}")
-    expect(status.button).to have_attributes(kind: :confirm_repair, label: "Confirm cycle repair")
+    expect(status.button).to have_attributes(kind: :confirm_repair, label: "Check synchronized repair status (no GitHub edit)")
     expect(status.button.confirm).to include("does not edit GitHub")
   end
 
@@ -136,7 +136,7 @@ RSpec.describe CycleAnalyses::OperatorView do
 
     expect(status.key).to eq(:stale)
     expect(status.next_action).to include("fresh analysis")
-    expect(status.button).to have_attributes(kind: :start_analysis, label: "Start fresh analysis")
+    expect(status.button).to have_attributes(kind: :start_analysis, label: "Analyze current cycle (may edit GitHub)")
   end
 
   # @spec AUTO-PICK-QUEUE-023
@@ -150,7 +150,7 @@ RSpec.describe CycleAnalyses::OperatorView do
     expect(status.description).to include("cannot confirm whether GitHub changed")
     expect(status.description).not_to include("Nothing on GitHub changed")
     expect(status.next_action).to start_with("Check the live GitHub declaration")
-    expect(status.button).to have_attributes(kind: :retry_analysis, label: "Retry repair analysis")
+    expect(status.button).to have_attributes(kind: :retry_analysis, label: "Retry analysis (may edit GitHub)")
   end
 
   # @spec AUTO-PICK-QUEUE-023
