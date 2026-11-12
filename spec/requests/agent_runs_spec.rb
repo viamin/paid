@@ -287,10 +287,12 @@ RSpec.describe "AgentRuns" do
 
         document = parsed_html
         expect(document.at_css("details[data-testid='agent-runs-filters']")["open"]).to be_nil
-        expect(document.at_css("select[name='q[status_eq]']")).to be_present
-        expect(document.at_css("select[name='q[agent_type_eq]']")).to be_present
-        expect(document.at_css("select[name='q[goal_eq]']")).to be_present
-        expect(document.at_css("select[name='q[effective_runner_eq]']")).to be_present
+        expect(document.at_css("input[name='q[branch_name_or_temporal_workflow_id_cont]']")).to be_present
+        expect(document.at_css("select[name='q[status_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[agent_type_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[goal_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[trigger_type_in][]'][multiple]")).to be_present
+        expect(document.at_css("select[name='q[effective_runner_in][]'][multiple]")).to be_present
       end
 
       # @spec AGENT-RUNS-INDEX-001
@@ -298,9 +300,9 @@ RSpec.describe "AgentRuns" do
         get agent_runs_path
 
         document = parsed_html
-        expect(document.at_css("select[name='q[status_eq]']")).to be_nil
-        expect(document.at_css("select[name='q[agent_type_eq]']")).to be_nil
-        expect(document.at_css("select[name='q[goal_eq]']")).to be_nil
+        expect(document.at_css("select[name='q[status_in][]']")).to be_nil
+        expect(document.at_css("select[name='q[agent_type_in][]']")).to be_nil
+        expect(document.at_css("select[name='q[goal_in][]']")).to be_nil
         expect(document.at_css("select[name='sort']")).to be_present
       end
 
@@ -315,15 +317,65 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
       end
 
-      it "filters agent runs by goal type" do
-        pr_run = create(:agent_run, project: project, goal: "create_pr")
-        issue_run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_issue")
+      # @spec AGENT-RUNS-INDEX-004
+      it "filters agent runs by multiple allowlisted Ransack values and text search" do
+        pr_run = create(:agent_run, project: project, goal: "create_pr", status: "queued", agent_type: "codex", trigger_type: "manual")
+        issue_run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_issue", status: "completed", agent_type: "cursor", trigger_type: "automatic")
+        other_run = create(:agent_run, :with_git_context, project: project, branch_name: "other-branch", agent_type: "api")
 
-        get agent_runs_path, params: { q: { goal_eq: "create_pr" } }
+        get agent_runs_path, params: { q: {
+          status_in: [ pr_run.status, issue_run.status ],
+          goal_in: [ "create_pr", "create_issue" ],
+          agent_type_in: [ pr_run.agent_type, issue_run.agent_type ],
+          trigger_type_in: [ pr_run.trigger_type, issue_run.trigger_type ],
+          effective_runner_in: [ pr_run.effective_runner, issue_run.effective_runner ],
+          branch_name_or_temporal_workflow_id_cont: ""
+        } }
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(project_agent_run_path(project, pr_run))
-        expect(response.body).not_to include(project_agent_run_path(project, issue_run))
+        expect(response.body).to include(project_agent_run_path(project, issue_run))
+        expect(response.body).not_to include(project_agent_run_path(project, other_run))
+        expect(response.body).to include("Active filters are applied.")
+
+        get agent_runs_path, params: { q: { branch_name_or_temporal_workflow_id_cont: "other" } }
+
+        expect(response.body).to include(project_agent_run_path(project, other_run))
+        expect(response.body).not_to include(project_agent_run_path(project, pr_run))
+      end
+
+      # @spec AGENT-RUNS-INDEX-004
+      it "ignores unallowlisted predicates" do
+        first_run = create(:agent_run, project: project)
+        second_run = create(:agent_run, :with_custom_prompt, project: project, custom_prompt: "unallowlisted")
+
+        get agent_runs_path, params: { q: { custom_prompt_cont: "unallowlisted" } }
+
+        expect(response.body).to include(project_agent_run_path(project, first_run))
+        expect(response.body).to include(project_agent_run_path(project, second_run))
+      end
+
+      # @spec AGENT-RUNS-INDEX-005
+      it "does not apply queue ordering to a multi-status filter containing a finished run" do
+        queued_run = create(:agent_run, project: project, status: "queued")
+        completed_run = create(:agent_run, project: project, status: "completed")
+
+        get agent_runs_path, params: { sort: "queue", q: { status_in: [ "queued", "completed" ] } }
+
+        expect(response.body).to include(project_agent_run_path(project, queued_run))
+        expect(response.body).to include(project_agent_run_path(project, completed_run))
+      end
+
+      # @spec AGENT-RUNS-INDEX-005
+      it "retains multi-value filters in pagination URLs and provides a reset link" do
+        30.times { create(:agent_run, project: project, status: "queued") }
+
+        get agent_runs_path, params: { q: { status_in: [ "queued" ] } }
+
+        document = parsed_html
+        reset_link = document.css("details[data-testid='agent-runs-filters'] a").find { |link| link.text.squish == "Clear" }
+        expect(reset_link["href"]).to eq(agent_runs_path)
+        expect(response.body).to include("q%5Bstatus_in%5D%5B%5D=queued")
       end
 
       it "shows named runner filter labels and omits unresolved routed ids" do
@@ -334,18 +386,18 @@ RSpec.describe "AgentRuns" do
 
         get agent_runs_path
 
-        option_text = parsed_html.css('select[name="q[effective_runner_eq]"] option').map { |option| option.text.squish }
+        option_text = parsed_html.css('select[name="q[effective_runner_in][]"] option').map { |option| option.text.squish }
 
         expect(option_text).to include("Kimi K2.5")
         expect(option_text).not_to include("runner:999999")
       end
 
-      it "shows the goal filter dropdown" do
+      it "shows the multi-select goal filter" do
         create(:agent_run, project: project, goal: "create_pr")
 
         get agent_runs_path
 
-        expect(response.body).to include("All Goals")
+        expect(parsed_html.at_css("select[name='q[goal_in][]'][multiple]").text).to include("Create PR")
       end
 
       it "associates the sort label with the sort select" do
@@ -621,15 +673,29 @@ RSpec.describe "AgentRuns" do
         expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
       end
 
-      it "filters agent runs by goal type" do
-        pr_run = create(:agent_run, project: project, goal: "create_pr")
-        issue_run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_issue")
+      # @spec AGENT-RUNS-INDEX-004
+      it "filters project runs by multiple allowlisted Ransack values and text search" do
+        pr_run = create(:agent_run, project: project, goal: "create_pr", status: "queued", agent_type: "codex", trigger_type: "manual")
+        issue_run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_issue", status: "completed", agent_type: "cursor", trigger_type: "automatic")
+        other_run = create(:agent_run, :with_git_context, project: project, branch_name: "other-branch", agent_type: "api")
 
-        get project_agent_runs_path(project), params: { q: { goal_eq: "create_pr" } }
+        get project_agent_runs_path(project), params: { q: {
+          status_in: [ pr_run.status, issue_run.status ],
+          goal_in: [ "create_pr", "create_issue" ],
+          agent_type_in: [ pr_run.agent_type, issue_run.agent_type ],
+          trigger_type_in: [ pr_run.trigger_type, issue_run.trigger_type ],
+          effective_runner_in: [ pr_run.effective_runner, issue_run.effective_runner ]
+        } }
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(project_agent_run_path(project, pr_run))
-        expect(response.body).not_to include(project_agent_run_path(project, issue_run))
+        expect(response.body).to include(project_agent_run_path(project, issue_run))
+        expect(response.body).not_to include(project_agent_run_path(project, other_run))
+
+        get project_agent_runs_path(project), params: { q: { branch_name_or_temporal_workflow_id_cont: "other" } }
+
+        expect(response.body).to include(project_agent_run_path(project, other_run))
+        expect(response.body).not_to include(project_agent_run_path(project, pr_run))
       end
 
       it "sorts agent runs via Ransack sort params" do

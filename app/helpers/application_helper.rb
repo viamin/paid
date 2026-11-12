@@ -495,7 +495,11 @@ module ApplicationHelper
     )
   end
 
-  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
+  RANSACK_PERMITTED_KEYS = %i[
+    status_eq status_in agent_type_eq agent_type_in trigger_type_eq trigger_type_in
+    goal_eq goal_in effective_runner_eq effective_runner_in branch_name_cont
+    temporal_workflow_id_cont branch_name_or_temporal_workflow_id_cont category_eq active_eq name_cont s
+  ].freeze
 
   def sort_link_to(label, attribute, q)
     current_sort = q.sorts.find { |s| s.name == attribute.to_s }
@@ -506,7 +510,8 @@ module ApplicationHelper
       tag.span(" \u2193", class: "ml-1")
     end
 
-    q_params = params[:q]&.permit(*RANSACK_PERMITTED_KEYS)&.to_h || {}
+    q_params = params[:q]&.permit(*RANSACK_PERMITTED_KEYS,
+      status_in: [], agent_type_in: [], trigger_type_in: [], goal_in: [], effective_runner_in: [])&.to_h || {}
     link_to(
       safe_join([ label, arrow ].compact),
       url_for(request.query_parameters.except(:page, "page").merge(q: q_params.merge(s: "#{attribute} #{direction}"))),
