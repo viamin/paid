@@ -789,6 +789,21 @@
   `spec/services/partial_closeouts/assessment_spec.rb`,
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
 
+- [x] **OPERATOR-INBOX-027** — The Inbox SHALL expose shareable GET filters
+  using only the Ransack-compatible `q[kind_in][]`, `q[project_id_in][]`, and
+  `q[search_cont]` predicates. Operators MAY select multiple accessible projects
+  and kinds; each group SHALL match its union and compose with the active scope,
+  sort, and server-side search over project/repository, entry title, and entry
+  summary. Because `Inbox::Queue` composes heterogeneous lane records rather
+  than one ActiveRecord relation, `Inbox::EntrySearch` SHALL be the narrow
+  adapter that applies this explicitly allowlisted predicate contract after the
+  queue's authorization, phase relevance, and personal-removal logic. It SHALL
+  not accept arbitrary model attributes, SQL, or unsupported predicates.
+  *Code:* `app/services/inbox/entry_search.rb`,
+  `app/controllers/inbox_controller.rb`, `app/views/inbox/index.html.erb`.
+  *Test:* `spec/services/inbox/entry_search_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/system/inbox_filters_dialog_spec.rb`.
+
 - [x] **OPERATOR-INBOX-017** — When an Inbox detail needs GitHub-only
   context or an enhancement-comment link, the system SHALL load that
   supplementary content in a separate lazy Turbo Frame so the queue and

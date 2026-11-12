@@ -71,6 +71,24 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Filtering and search
+
+The Inbox GET query uses the Ransack predicate vocabulary under `q`: `kind_in`,
+`project_id_in`, and `search_cont`. The filter dialog supports selecting any
+number of kinds and accessible projects; each list is the union of its selected
+values, and both lists compose with scope, ordering, and search. `search_cont`
+matches the rendered project/repository name plus entry title and summary.
+
+`Inbox::Queue` is intentionally not an ActiveRecord relation: its entries come
+from independent issue, notification, feature, and dependency-cycle lanes with
+their own authorization and admission predicates. `Inbox::EntrySearch` is the
+narrow Ransack-compatible adapter for that heterogeneous output. It explicitly
+allows only the three predicates above and runs after queue construction has
+applied policy scope, phase relevance, and personal-removal rules. Unsupported
+Ransack predicates and arbitrary model attributes are ignored. This retains one
+canonical query contract without inventing a SQL union that could change lane
+membership or bypass a lane's policy.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the

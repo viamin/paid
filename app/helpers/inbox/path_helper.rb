@@ -4,11 +4,13 @@ module Inbox
   module PathHelper
     # @spec INBOX-FOUNDATION-009 @spec INBOX-PHASE-RELEVANCE-002
     def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], **overrides)
+      search = Inbox::EntrySearch.permitted_params(params).to_h.presence
       {
         project_id: project&.id,
         kind: kind,
         sort: sort,
-        scope: scope
+        scope: scope,
+        q: search
       }.compact.merge(overrides)
     end
 

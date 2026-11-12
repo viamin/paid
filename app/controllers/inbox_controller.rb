@@ -116,7 +116,10 @@ class InboxController < ApplicationController
   # @spec OPERATOR-INBOX-016
   def load_inbox
     @scoped_project = scoped_needs_input_project
-    @selected_kind = valid_inbox_kind
+    @inbox_search = Inbox::EntrySearch.new(query: inbox_search_params)
+    @selected_kinds = @inbox_search.kind_values
+    @selected_project_ids = @inbox_search.project_ids
+    @selected_kind = @selected_kinds.one? ? @selected_kinds.first : nil
     @selected_sort = valid_inbox_sort
     @selected_scope = valid_inbox_scope
     if single_entry_request?
@@ -124,7 +127,8 @@ class InboxController < ApplicationController
       return
     end
 
-    @inbox_entries = inbox_queue.call
+    @inbox_source_entries = inbox_queue.call
+    @inbox_entries = @inbox_search.call(@inbox_source_entries)
     load_inbox_presentations(entries: @inbox_entries)
     redirect_for_empty_filtered_combination
   end
@@ -134,10 +138,13 @@ class InboxController < ApplicationController
   # single-entry render derives the matrix so the filter dialog still offers
   # every project with items.
   def load_inbox_presentations(entries: nil)
-    if entries && @scoped_project.nil? && @selected_kind.nil? && @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE
-      @inbox_availability = Inbox::Availability.call(user: current_user, entries:)
+    searchable_entries = entries && Inbox::EntrySearch.call(entries: availability_source_entries, query: @inbox_search.text_only_query)
+    if searchable_entries && @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE
+      @inbox_availability = Inbox::Availability.call(user: current_user, entries: searchable_entries,
+        projects: @selected_project_ids, kinds: @selected_kinds)
     else
-      @inbox_availability = Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+      @inbox_availability = Inbox::Availability.call(user: current_user,
+        projects: @selected_project_ids, kinds: @selected_kinds)
     end
     @inbox_projects = @inbox_availability.available_projects
   end
@@ -163,6 +170,12 @@ class InboxController < ApplicationController
       kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
   end
 
+  def availability_source_entries
+    return @inbox_source_entries unless params[:project_id].present? || params[:kind].present?
+
+    @availability_source_entries ||= Inbox::Queue.call(user: current_user, sort: @selected_sort, scope: @selected_scope)
+  end
+
   def queue_entry_kind
     return @selected_kind unless single_entry_request?
 
@@ -182,10 +195,10 @@ class InboxController < ApplicationController
   # the "nearest" non-empty combination (#4276).
   def redirect_for_empty_filtered_combination
     return if @inbox_entries.present?
-    return if @selected_kind.nil? && @scoped_project.nil?
+    return unless @inbox_search.active?
     return if @inbox_availability.total_count.zero?
 
-    redirect_to inbox_path(sort: params[:sort].presence), status: :see_other,
+    redirect_to inbox_path(sort: params[:sort].presence, scope: params[:scope].presence), status: :see_other,
       notice: "No inbox items matched that filter, so it was cleared. Showing every open item instead."
   end
 
@@ -202,13 +215,20 @@ class InboxController < ApplicationController
     Inbox::Queue::KINDS.include?(kind) ? kind : nil
   end
 
+  def inbox_search_params
+    query = Inbox::EntrySearch.permitted_params(params).to_h
+    query["kind_in"] ||= [ params[:kind] ] if params[:kind].present?
+    query["project_id_in"] ||= [ params[:project_id] ] if params[:project_id].present?
+    query
+  end
+
   def valid_inbox_sort
     sort = params[:sort].to_s
     Inbox::Queue::SORTS.key?(sort) ? sort : Inbox::Queue::DEFAULT_SORT
   end
 
   def inbox_redirect_params
-    { project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence,
+    { project_id: @scoped_project&.id, kind: @selected_kind, q: Inbox::EntrySearch.permitted_params(params).to_h.presence, sort: params[:sort].presence,
       scope: @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE ? nil : @selected_scope }.compact
   end
 

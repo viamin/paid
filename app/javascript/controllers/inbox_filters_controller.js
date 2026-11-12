@@ -2,11 +2,11 @@ import { Controller } from "@hotwired/stimulus"
 
 // @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-010
 export default class extends Controller {
-  static targets = ["dialog", "kindOption", "projectOption", "projectSearch", "trigger"]
+  static targets = ["dialog", "kindOption", "projectOption", "trigger"]
 
   open() {
     this.dialogTarget.showModal()
-    this.projectSearchTarget.focus()
+    this.dialogTarget.querySelector("input")?.focus()
   }
 
   close() {
@@ -26,88 +26,50 @@ export default class extends Controller {
     this.close()
   }
 
-  filterProjects() {
-    this.refreshOptions()
-  }
-
-  // Selecting a Type narrows the Project list to projects with items of that
-  // kind, so the operator can never build a combination that would render an
-  // empty list (#4276).
+  // Selecting one or more types narrows the Project list to projects with at
+  // least one selected type. The server remains the source of truth.
   kindChanged(event) {
-    if (event.target.name !== "kind") return
+    if (event.target.name !== "q[kind_in][]") return
 
-    this.refreshOptions("kind")
+    this.refreshOptions()
   }
 
   // Selecting a Project narrows the Type list to kinds with items in that
   // project.
   projectChanged(event) {
-    if (event.target.name !== "project_id") return
+    if (event.target.name !== "q[project_id_in][]") return
 
-    this.refreshOptions("project")
+    this.refreshOptions()
   }
 
-  // Single writer for option visibility so the project search and the
-  // kind/project narrowing compose instead of clobbering each other: a
-  // project option stays visible only while it both matches the search
-  // query and carries items of the selected kind. Hiding through the
-  // search never drops a selection; a selection excluded by the other
-  // group's filter resets to that group's "All" option.
-  refreshOptions(changedField) {
-    const selectedKind = this.selectedValue("kind")
-    const selectedProjectId = this.selectedValue("project_id")
-    const query = this.projectSearchTarget.value.trim().toLowerCase()
-
-    if (changedField === "kind") {
-      this.refreshProjectOptions(selectedKind, query)
-      this.refreshKindOptions(this.selectedValue("project_id"))
-      return
-    }
-
-    if (changedField === "project") {
-      this.refreshKindOptions(selectedProjectId)
-      this.refreshProjectOptions(this.selectedValue("kind"), query)
-      return
-    }
-
-    this.refreshKindOptions(selectedProjectId)
-    this.refreshProjectOptions(this.selectedValue("kind"), query)
+  refreshOptions() {
+    this.refreshKindOptions(this.selectedValues("q[project_id_in][]"))
+    this.refreshProjectOptions(this.selectedValues("q[kind_in][]"))
   }
 
-  refreshKindOptions(selectedProjectId) {
+  refreshKindOptions(selectedProjectIds) {
     this.kindOptionTargets.forEach((option) => {
-      this.updateOption(option, this.allowed(option, "projectIds", selectedProjectId))
+      this.updateOption(option, this.allowed(option, "projectIds", selectedProjectIds))
     })
   }
 
-  refreshProjectOptions(selectedKind, query) {
+  refreshProjectOptions(selectedKinds) {
     this.projectOptionTargets.forEach((option) => {
-      const allowed = this.allowed(option, "kindIds", selectedKind)
-      const matchesQuery = query.length === 0 || Boolean(option.dataset.projectName?.includes(query))
-      this.updateOption(option, allowed, matchesQuery)
+      this.updateOption(option, this.allowed(option, "kindIds", selectedKinds))
     })
   }
 
-  selectedValue(name) {
-    return this.element.querySelector(`input[name="${name}"]:checked`)?.value || ""
+  selectedValues(name) {
+    return Array.from(this.element.querySelectorAll(`input[name="${name}"]:checked`)).map((input) => input.value)
   }
 
-  // The "All" option (empty radio value) is always allowed; a concrete
-  // option must list the other group's current selection in its matrix data.
-  allowed(option, datasetKey, selectedValue) {
-    const input = option.querySelector("input[type=\"radio\"]")
-    if (input.value === "" || !selectedValue) return true
+  allowed(option, datasetKey, selectedValues) {
+    if (selectedValues.length === 0) return true
 
-    return Boolean(option.dataset[datasetKey]?.split(",").includes(selectedValue))
+    return selectedValues.some((value) => option.dataset[datasetKey]?.split(",").includes(value))
   }
 
-  updateOption(option, allowed, matchesQuery = true) {
-    option.hidden = !(allowed && matchesQuery)
-
-    const input = option.querySelector("input[type=\"radio\"]")
-    if (!allowed && input.checked) {
-      input.checked = false
-      this.element.querySelector(`input[name="${input.name}"][value=""]`).checked = true
-    }
+  updateOption(option, allowed) {
+    option.hidden = !allowed
   }
 }

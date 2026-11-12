@@ -36,8 +36,9 @@
               data-action="inbox-filters#open"
               aria-haspopup="dialog">
         <span>Filters</span>
-        <% if @selected_kind %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::KIND_LABELS.fetch(@selected_kind) %></span><% end %>
-        <% if @scoped_project %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= @scoped_project.full_name %></span><% end %>
+        <% @selected_kinds.each do |kind| %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::KIND_LABELS.fetch(kind) %></span><% end %>
+        <% if @selected_project_ids.any? %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= pluralize(@selected_project_ids.size, "project") %></span><% end %>
+        <% if @inbox_search.search_term %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= @inbox_search.search_term %></span><% end %>
         <% if @selected_sort != Inbox::Queue::DEFAULT_SORT %><span class="whitespace-nowrap rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::SORTS.fetch(@selected_sort) %></span><% end %>
       </button>
 
@@ -53,33 +54,34 @@
           <%= form_with url: inbox_path, method: :get, class: "flex flex-1 flex-col gap-6", data: { action: "submit->inbox-filters#apply" } do %>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Type</legend>
-              <div class="mt-2 grid gap-2" role="radiogroup" data-action="change->inbox-filters#kindChanged">
-                <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="kindOption"><%= radio_button_tag :kind, "", @selected_kind.nil? %> All types</label>
+              <div class="mt-2 grid gap-2" data-action="change->inbox-filters#kindChanged">
                 <% @inbox_availability.available_kinds.each do |kind| %>
                   <% label = Inbox::Queue::KIND_LABELS.fetch(kind) %>
                   <label class="flex items-center gap-2 text-sm text-gray-700"
                          data-inbox-filters-target="kindOption"
                          data-project-ids="<%= @inbox_availability.project_ids_for(kind).join(",") %>">
-                    <%= radio_button_tag :kind, kind, @selected_kind == kind %> <%= label %> (<%= @inbox_availability.kind_counts[kind] %>)
+                    <%= check_box_tag "q[kind_in][]", kind, @selected_kinds.include?(kind) %> <%= label %> (<%= @inbox_availability.kind_counts[kind] %>)
                   </label>
                 <% end %>
               </div>
             </fieldset>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Project</legend>
-              <label class="sr-only" for="inbox-project-search">Search projects</label>
-              <input id="inbox-project-search" type="search" placeholder="Search projects" class="mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm" data-inbox-filters-target="projectSearch" data-action="input->inbox-filters#filterProjects">
-              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto" role="radiogroup" data-action="change->inbox-filters#projectChanged">
-                <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="projectOption"><%= radio_button_tag :project_id, "", @scoped_project.nil? %> All projects</label>
+              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto" data-action="change->inbox-filters#projectChanged">
                 <% @inbox_projects.each do |project| %>
                   <label class="flex items-center gap-2 text-sm text-gray-700"
                          data-inbox-filters-target="projectOption"
                          data-project-name="<%= project.full_name.downcase %>"
                          data-kind-ids="<%= @inbox_availability.kinds_for(project).join(",") %>">
-                    <%= radio_button_tag :project_id, project.id, @scoped_project == project %> <%= project.full_name %> (<%= @inbox_availability.project_counts[project.id] %>)
+                    <%= check_box_tag "q[project_id_in][]", project.id, @selected_project_ids.include?(project.id) %> <%= project.full_name %> (<%= @inbox_availability.project_counts[project.id] %>)
                   </label>
                 <% end %>
               </div>
+            </fieldset>
+            <fieldset>
+              <legend class="text-sm font-semibold text-gray-900">Search</legend>
+              <label class="sr-only" for="inbox-search">Search Inbox</label>
+              <%= search_field_tag "q[search_cont]", @inbox_search.search_term, id: "inbox-search", placeholder: "Project, repository, title, or summary", class: "mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
             </fieldset>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Sort</legend>
@@ -105,7 +107,7 @@
     <% scope_labels.each do |scope, label| %>
       <% next if scope == @selected_scope %>
       <%= link_to label,
-            inbox_path(project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence, scope: scope == "actionable" ? nil : scope),
+            inbox_path(q: Inbox::EntrySearch.permitted_params(params).to_h.presence, sort: params[:sort].presence, scope: scope == "actionable" ? nil : scope),
             class: "rounded-full bg-white px-3 py-1 font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% end %>
     <span class="rounded-full bg-indigo-50 px-3 py-1 font-medium text-indigo-700">
