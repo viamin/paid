@@ -462,3 +462,8 @@ explicit bounded authorization whose exclusive stop can suppress otherwise
 enabled downstream project automation for one identified lineage. Until that
 proposal is accepted and implemented, this RDR's current rule remains in force:
 continuation endpoints do not prohibit independently enabled project automation.
+The proposal does not alter continuation grants: their endpoints remain
+additive, and revoking one restores ordinary project-default eligibility. If
+accepted, RDR-078 alone owns the separate explicit authorization and its
+exclusive stop; a continuation grant, GitHub approval, review, or run cannot
+create that stop.
