@@ -3,10 +3,11 @@
 module Inbox
   # Read-only projection for a stable issue/PR or feature identity. Queue list
   # construction never calls this service; it is intentionally detail-only.
-  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023
+  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023 OPERATOR-INBOX-028
   class ActionHistory
     Event = Data.define(:id, :action, :actor, :source, :result, :occurred_at, :revision, :evidence_url)
-    Result = Data.define(:events, :incomplete, :next_cursor)
+    Summary = Data.define(:processing_attempts, :inbox_appearances, :inbox_returns, :frequently_returned)
+    Result = Data.define(:events, :incomplete, :next_cursor, :summary)
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
     CACHE_TTL = 20.seconds
@@ -21,9 +22,9 @@ module Inbox
       @before = before
     end
 
-    # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
+    # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025 OPERATOR-INBOX-028
     def call
-      return Result.new(events: [], incomplete: false, next_cursor: nil) unless subject_key
+      return Result.new(events: [], incomplete: false, next_cursor: nil, summary: empty_summary) unless subject_key
 
       returned = capture_return!
       candidates = if cacheable? && !returned
@@ -33,11 +34,12 @@ module Inbox
       else
         ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
       end
-      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil) unless candidates
+      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil, summary: empty_summary) unless candidates
 
       page = candidates.first(limit + 1)
       visible = page.first(limit)
-      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil)
+      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil,
+        summary: ActionHistoryPage.summary(entry:, subject_key:))
     end
 
     def self.subject_key_for(entry)
@@ -90,6 +92,10 @@ module Inbox
 
     def cache_key
       self.class.cache_key_for(account_id: entry.project.account_id, subject_key:)
+    end
+
+    def empty_summary
+      Summary.new(processing_attempts: 0, inbox_appearances: 0, inbox_returns: 0, frequently_returned: false)
     end
   end
 end

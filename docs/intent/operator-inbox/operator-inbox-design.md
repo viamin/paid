@@ -402,6 +402,26 @@ window on every clear fixes the operator path and is a no-op for the
 automatic path, since the successful run that triggers it always post-dates
 the reset.
 
+### Action-history activity summary
+
+The Action history header summarizes the same read-only projection that backs
+the timeline. It counts one processing attempt for each matching agent run and
+counts Inbox appearances from the current appearance plus durable `Returned to
+Inbox` events. For retry-limited issues, the retained
+`runner_retry_abandonment_count` supplies the durable lower-bound appearance
+count; the projection takes the higher of that count and the event-derived
+count, so a retry-cap return recorded both ways is not double-counted.
+
+The header shows processing attempts, Inbox appearances, and returns. Two or
+more returns receive an emphasized status treatment so repeated retry caps or
+other recurring returns are visible without reading the timeline. Terminal
+run events, including `retried` and `token_budget_exceeded`, remain normal
+agent-run attempts and therefore contribute exactly once through their run's
+start event. When the subject's coverage boundary predates unavailable
+activity, the header labels its values as recorded counts and retains the
+existing unavailable-history explanation; it never estimates missing
+historical attempts or returns.
+
 ### `manual_review`
 
 Backed by `Issue#paid_state == "manual_review"` directly, the same way

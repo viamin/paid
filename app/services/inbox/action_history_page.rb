@@ -3,7 +3,7 @@
 module Inbox
   # Executes one bounded query per history stream and merges only those
   # candidates in memory. The cursor uses the projection's global time/id sort.
-  # @spec OPERATOR-INBOX-022
+  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-028
   class ActionHistoryPage
     Cursor = Data.define(:id, :occurred_at)
     RUN_OUTCOMES = {
@@ -19,6 +19,10 @@ module Inbox
     }.freeze
 
     def self.call(...) = new(...).call
+
+    def self.summary(entry:, subject_key:)
+      new(entry:, subject_key:, limit: 1, before: nil).send(:activity_summary)
+    end
 
     def initialize(entry:, subject_key:, limit:, before:)
       @entry, @subject_key, @limit, @before = entry, subject_key, limit, before
@@ -154,6 +158,29 @@ module Inbox
       entry.project.account.account_activity_events.where(
         action: "feature_intent.released", subject: feature
       )
+    end
+
+    # @spec OPERATOR-INBOX-028
+    def activity_summary
+      attempts = entry.issue ? runs.count : 0
+      appearances = entry.issue ? inbox_appearances : 1
+      returns = [ appearances - 1, 0 ].max
+      ActionHistory::Summary.new(processing_attempts: attempts, inbox_appearances: appearances,
+        inbox_returns: returns, frequently_returned: returns >= 2)
+    end
+
+    def inbox_appearances
+      return retry_limited_appearances if entry.issue.runner_retry_abandonment_count.positive?
+
+      1 + returned_to_inbox_events.count
+    end
+
+    def retry_limited_appearances
+      entry.issue.runner_retry_abandonment_count
+    end
+
+    def returned_to_inbox_events
+      history_scope.where("metadata ->> 'action' = ? OR event_key LIKE ?", "Returned to Inbox", "inbox-returned:%")
     end
   end
 end

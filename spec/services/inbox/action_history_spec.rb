@@ -10,6 +10,54 @@ RSpec.describe Inbox::ActionHistory do
       waiting_since: Time.current, questions: [], tasks: [], summary_text: "Review", title_text: issue.title, action_url: issue.github_url)
   end
 
+  # @spec OPERATOR-INBOX-028
+  it "summarizes a no-history item as its current Inbox appearance" do
+    summary = described_class.call(entry:).summary
+
+    expect(summary).to have_attributes(processing_attempts: 0, inbox_appearances: 1,
+      inbox_returns: 0, frequently_returned: false)
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "counts each ordinary agent run once as a processing attempt" do
+    create(:agent_run, :completed, project:, issue:)
+
+    expect(described_class.call(entry:).summary).to have_attributes(
+      processing_attempts: 1, inbox_appearances: 1, inbox_returns: 0, frequently_returned: false
+    )
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "surfaces repeated retry-limited returns without double-counting a matching event" do
+    issue.update!(runner_retry_abandonment_count: 3)
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", metadata: { action: "Returned to Inbox" })
+
+    expect(described_class.call(entry:).summary).to have_attributes(
+      inbox_appearances: 3, inbox_returns: 2, frequently_returned: true
+    )
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "counts retry-limit runs as attempts" do
+    run = create(:agent_run, project:, issue:, status: "retried", completed_at: Time.current)
+
+    history = described_class.call(entry:)
+
+    expect(history.summary.processing_attempts).to eq(1)
+    expect(history.events.map(&:id)).to include("run-finish:#{run.id}")
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "counts token-budget-exceeded runs as attempts" do
+    run = create(:agent_run, project:, issue:, status: "token_budget_exceeded", completed_at: Time.current)
+
+    history = described_class.call(entry:)
+
+    expect(history.summary.processing_attempts).to eq(1)
+    expect(history.events.map(&:id)).to include("run-finish:#{run.id}")
+  end
+
   # @spec OPERATOR-INBOX-022
   it "orders durable transitions and failed then completed runs without conflating their results" do
     create(:inbox_history_event, account: project.account, project:, subject_key: "issue:#{project.id}:#{issue.github_number}",
@@ -142,7 +190,8 @@ RSpec.describe Inbox::ActionHistory do
     expect(history.next_cursor).to eq(history.events.last.id)
     history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
     expect(history_selects).not_to be_empty
-    expect(history_selects).to all(include("LIMIT"))
+    expect(history_selects.reject { |sql| sql.include?("COUNT(") }).to all(include("LIMIT"))
+    expect(history_selects.grep(/COUNT\(\*\)/)).to have_attributes(size: 2)
   end
 
   # @spec OPERATOR-INBOX-025
@@ -156,7 +205,7 @@ RSpec.describe Inbox::ActionHistory do
     second_queries = count_queries { described_class.call(entry:) }
 
     expect(first_queries).to be > second_queries
-    expect(second_queries).to be <= 1
+    expect(second_queries).to be <= 2
   ensure
     Rails.cache = original_cache
   end
@@ -186,7 +235,7 @@ RSpec.describe Inbox::ActionHistory do
     Inbox::HistoryRecorder.call(entry:, event_key: "operator-action", action: "Operator acted",
       actor: "Paid", result: "completed")
 
-    expect(count_queries { described_class.call(entry:) }).to eq(0)
+    expect(count_queries { described_class.call(entry:) }).to eq(2)
   ensure
     Rails.cache = original_cache
   end

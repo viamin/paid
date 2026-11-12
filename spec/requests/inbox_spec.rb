@@ -1329,7 +1329,7 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-action"]).to eq("advance")
   end
 
-  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
+  # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025 OPERATOR-INBOX-028
   it "loads history lazily and offers a cursor-backed continuation for older activity" do
     issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
     subject_key = "issue:#{project.id}:#{issue.github_number}"
@@ -1355,6 +1355,22 @@ RSpec.describe "Inbox" do
     expect(link.text).to include("See older activity")
     expect(link["href"]).to include("history_cursor=history%3A")
     expect(link["data-turbo-frame"]).to eq("inbox-history")
+  end
+
+  # @spec OPERATOR-INBOX-028
+  it "renders accessible repeated-return counts in the action history header" do
+    issue = create(:issue, :needs_input, project:, title: "Repeated retry", body: questions_body,
+      runner_retry_abandonment_count: 3)
+    create(:agent_run, project:, issue:, status: "token_budget_exceeded", completed_at: Time.current)
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    document = Nokogiri::HTML(response.body)
+    summary = document.at_css("[aria-label='Action history summary']")
+    emphasis = summary.at_css("[aria-label='Frequent Inbox returns']")
+    expect(summary.text).to include("Recorded processing attempts: 1", "Recorded Inbox appearances: 3")
+    expect(emphasis.text).to include("Returned 2 times")
   end
 
   # @spec OPERATOR-INBOX-025

@@ -76,6 +76,23 @@
   `spec/services/inbox/action_history_spec.rb`,
   `spec/services/inbox/removals_spec.rb`.
 
+- [x] **OPERATOR-INBOX-028** — When an operator opens an issue-backed Inbox
+  action history, its header SHALL show recorded processing-attempt and Inbox
+  appearance/return counts derived from the same durable action-history and
+  agent-run projection as the timeline. Each matching agent run SHALL count
+  once as an attempt, including runs ending at the retry limit or with
+  `token_budget_exceeded`. The projection SHALL use the retained
+  `runner_retry_abandonment_count` as the retry-limited appearance count
+  without double-counting a matching deduplicated return event. Two or more
+  returns SHALL receive an accessible emphasized treatment. When the history
+  coverage boundary is incomplete, the header SHALL identify the values as
+  recorded and SHALL not estimate unavailable past activity.
+  *Code:* `app/services/inbox/action_history.rb`,
+  `app/services/inbox/action_history_page.rb`,
+  `app/views/inbox/_history_content.html.erb`.
+  *Test:* `spec/services/inbox/action_history_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
   project, the system SHALL expose that pending review as a `plan_review`
