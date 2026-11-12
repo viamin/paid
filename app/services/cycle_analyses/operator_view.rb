@@ -40,7 +40,7 @@ module CycleAnalyses
       end
 
       def repair_button_label
-        "Remove the #{changes.first.to_ref} dependency from #{changes.first.from_ref}"
+        "Remove the #{changes.first.to_ref} dependency #{changes.first.source_description}"
       end
 
       def repair_confirmation
@@ -219,7 +219,7 @@ module CycleAnalyses
         description: "Paid recommends one bounded repair analysis: it reviews every declaration in the cycle and, " \
                      "only when strict safeguards pass, #{MAY_EDIT_COPY} — nothing else.",
         next_action: "Start the analysis below, or review the declarations yourself and edit the wrong one on GitHub.",
-        button: Button.new(:start_analysis, "Start repair analysis", START_CONFIRMATION))
+        button: fresh_analysis_button)
     end
 
     # A requeued pending-sync run keeps its applied repair and takes
@@ -252,7 +252,7 @@ module CycleAnalyses
         description: "Paid removed one dependency declaration on #{repaired_declaration_ref || 'GitHub'}. " \
                      "Nothing else changed. The next GitHub synchronization confirms whether the cycle is gone.",
         next_action: pending_sync_next_action(confirmable),
-        button: confirmable ? Button.new(:confirm_repair, "Confirm cycle repair", CONFIRM_REPAIR_CONFIRMATION) : nil)
+        button: confirmable ? Button.new(:confirm_repair, "Re-check synced graph — no GitHub edit", CONFIRM_REPAIR_CONFIRMATION) : nil)
     end
 
     def pending_sync_next_action(confirmable)
@@ -324,7 +324,7 @@ module CycleAnalyses
     end
 
     def fresh_analysis_button
-      Button.new(:start_analysis, "Start fresh analysis", START_CONFIRMATION)
+      Button.new(:start_analysis, "Analyze cycle — may edit GitHub", START_CONFIRMATION)
     end
 
     def ambiguous?
@@ -372,8 +372,8 @@ module CycleAnalyses
 
     def source_description(edge)
       case edge&.fetch("declaration_source", nil)
-      when "issue_comment" then "declared in a trusted comment"
-      when "issue_body" then "declared in the issue body"
+      when "issue_comment" then "declared in a trusted comment on #{issue_ref(edge['from_issue_id'])}"
+      when "issue_body" then "declared in the issue body of #{issue_ref(edge['from_issue_id'])}"
       else "declaration source not recorded"
       end
     end

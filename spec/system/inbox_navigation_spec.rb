@@ -46,6 +46,31 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     Inbox::Queue.call(user:, project:, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND).map(&:issue)
   end
 
+  def completed_cycle_analysis
+    issues = Array.new(3) { create(:issue, project:, github_state: "open") }
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1],
+      declaration_source: "issue_comment", declaration_url: "https://github.com/acme/alpha/issues/1#issuecomment-42")
+    create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[2])
+    create_legacy_issue_dependency(issue: issues[2], depends_on_issue: issues[0])
+    cycle = Issues::DependencyCycles.call(account:).sole
+    snapshot = CycleAnalyses::Snapshot.call(cycle:)
+    removal = snapshot.fetch("effective_edges").find { |edge| edge["from_issue_id"] == issues[0].id }
+    recommendation = {
+      "summary" => "The dependency is obsolete.",
+      "candidates" => [ {
+        "declaration_changes" => [ { "edge_id" => removal.fetch("id"), "action" => "remove" } ],
+        "evidence" => [ "The target issue was closed as a duplicate." ],
+        "tradeoffs" => [ "The declaring issue may start earlier." ],
+        "missing_or_conflicting_intent" => [],
+        "acyclic" => true
+      } ]
+    }
+    create(:agent_run, status: "completed", project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => snapshot },
+      verification_result: { CycleAnalyses::RESULT_KEY => { "recommendation" => recommendation } })
+    [ cycle, issues ]
+  end
+
   it "keeps the first collection selection shareable and advances subsequent selection through browser history" do
     initial_issue, next_issue = ordered_issues
     page.current_window.resize_to(1440, 1000)
@@ -102,6 +127,23 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
 
     expect(page).to have_current_path(inbox_entry_path(cycle_entry.id, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND))
     expect(page).to have_css("#inbox-detail h2", text: "Dependency cycle")
+  end
+
+  # @spec AUTO-PICK-QUEUE-024
+  it "keeps a completed cycle-repair proposal understandable on a narrow screen" do
+    cycle, issues = completed_cycle_analysis
+    from_ref = "#{project.full_name}##{issues[0].github_number}"
+    to_ref = "#{project.full_name}##{issues[1].github_number}"
+
+    page.current_window.resize_to(390, 844)
+    visit inbox_entry_path(cycle.id, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
+
+    expect(page).to have_text("The dependency is obsolete.")
+    expect(page).to have_text("Remove the dependency declared by #{from_ref} → #{to_ref}")
+    expect(page).to have_button("Remove the #{to_ref} dependency declared in a trusted comment on #{from_ref}")
+    expect(page).to have_text("Before:")
+    expect(page).to have_text("After:")
+    expect(page).to have_no_text('"declaration_changes"')
   end
 
   it "uses the existing safe fallback when a copied member URL is no longer actionable" do

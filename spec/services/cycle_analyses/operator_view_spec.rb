@@ -58,7 +58,7 @@ RSpec.describe CycleAnalyses::OperatorView do
     expect(status.key).to eq(:no_analysis)
     expect(status.description).to include("Paid recommends one bounded repair analysis")
     expect(status.description).to include("may edit one verified GitHub dependency declaration")
-    expect(status.button).to have_attributes(kind: :start_analysis, label: "Start repair analysis")
+    expect(status.button).to have_attributes(kind: :start_analysis, label: "Analyze cycle — may edit GitHub")
     expect(status.button.confirm).to include("may edit one verified GitHub dependency declaration")
   end
 
@@ -97,7 +97,7 @@ RSpec.describe CycleAnalyses::OperatorView do
 
     expect(status.key).to eq(:pending_sync)
     expect(status.description).to include("#{project.full_name}##{issues[0].github_number}")
-    expect(status.button).to have_attributes(kind: :confirm_repair, label: "Confirm cycle repair")
+    expect(status.button).to have_attributes(kind: :confirm_repair, label: "Re-check synced graph — no GitHub edit")
     expect(status.button.confirm).to include("does not edit GitHub")
   end
 
@@ -136,7 +136,7 @@ RSpec.describe CycleAnalyses::OperatorView do
 
     expect(status.key).to eq(:stale)
     expect(status.next_action).to include("fresh analysis")
-    expect(status.button).to have_attributes(kind: :start_analysis, label: "Start fresh analysis")
+    expect(status.button).to have_attributes(kind: :start_analysis, label: "Analyze cycle — may edit GitHub")
   end
 
   # @spec AUTO-PICK-QUEUE-023
@@ -247,7 +247,8 @@ RSpec.describe CycleAnalyses::OperatorView do
     candidate = view_for(run).manual_repair_candidates.sole
 
     expect(candidate.repair_button_label).to eq(
-      "Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}"
+      "Remove the #{project.full_name}##{issues[1].github_number} dependency declared in a trusted comment on " \
+      "#{project.full_name}##{issues[0].github_number}"
     )
     expect(candidate.repair_confirmation).to include(
       "#{project.full_name}##{issues[0].github_number}", "#{project.full_name}##{issues[1].github_number}", "edits GitHub"
