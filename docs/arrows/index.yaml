@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -202,7 +202,7 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-11-08
+    audited: 2026-11-12
     blockedBy: [automation-phases, bounded-phase-authorization, confidence-driven-delivery]
     next: "Complete the intent-checkpoint/action-plan and pilot measurement slices from RDR-080; keep bounded_delivery opt-in until their evidence gates pass."
   automation-phases:
@@ -212,7 +212,7 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-11-10
+    audited: 2026-11-12
     next: "Reconcile open implementation children #4512-#4515 and #4517, collect pilot evidence #4638, and complete closeout #4518 before final acceptance of RDR-077."
   bounded-phase-authorization:
     title: Bounded Delivery-Phase Authorization
@@ -221,9 +221,9 @@ arrows:
     parent: PAID
     taxonomy: automation
     status: PARTIAL
-    audited: 2026-11-10
+    audited: 2026-11-12
     blockedBy: [automation-phases]
-    next: "RDR-078 remains proposed; obtain design acceptance #4996, then complete phase-lifecycle claims through #4997-#4999 and closeout #5000. Keep the exclusive stop disabled until accepted."
+    next: "RDR-078 stays Proposed until an authorized owner accepts one exact revision; then complete the phase-lifecycle claims through #4997-#4999 and closeout #5000. Keep the exclusive stop disabled until accepted."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md

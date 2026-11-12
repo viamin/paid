@@ -27,6 +27,11 @@ starting phase plus every later delivery phase up to and including the
 endpoint. Operations never appears in a chain, and discovery is never reachable
 from a coding or later start.
 
+These constants are the single source of phase identity. Other segments
+reference them instead of restating a phase list, and a project's own
+milestone name is not a phase: it is not a delivery phase, not a setting
+section, and not an authorization scope.
+
 ## Rollout guard
 
 `automation_phases` is defined in `FeatureFlags::DEFINITIONS`, default off, and
@@ -45,7 +50,7 @@ existing execution and Inbox behavior is untouched.
 ```
 
 `Automation::PhaseSettings` is the only reader. A project with no stored
-configuration reads derived defaults (`Automation::Phases::DerivedSettings`) so
+configuration reads derived defaults (`Automation::PhaseSettings#derive`) so
 pre-existing projects keep their effective capabilities:
 
 | Phase | Derived from |
@@ -94,12 +99,14 @@ after the phase decision by the existing paths.
 and revocation. `WorkItemContinuationGrant#covers_phase?` walks the delivery
 chain; `#active?` requires neither completion nor revocation.
 
-`Automation::ContinuationGrantLookup.resolve(work_item:)` resolves the chain
-from any work item in the delivery chain — the issue, its pull requests'
-parent issue, or a run attached to either — so a grant survives issue →
-implementation run → PR → review → repair. It deliberately does **not** walk
-child issues, mentions, or dependency edges, so an additional or decomposed
-issue needs its own authorization.
+`Automation::ContinuationGrantLookup.resolve(project:, phase:, work_item:)`
+resolves the chain from any work item in the delivery chain — the issue, its
+pull requests' parent issue, or a run attached to either — so a grant survives
+issue → implementation run → PR → review → repair;
+`covering(project:, phase:, work_item:)` returns the active grant that covers
+one phase. It deliberately does **not** walk child issues, mentions, or
+dependency edges, so an additional or decomposed issue needs its own
+authorization.
 
 Completion and revocation:
 
@@ -126,8 +133,12 @@ submitted one: a mismatch returns the updated notice for review and creates no
 run (`AUTOMATION-PHASES-011`). Grant creation requires permission to delegate
 the covered actions; a merge endpoint requires permission to delegate merge.
 
-There is deliberately no per-item "stop after this phase" override
-(`AUTOMATION-PHASES-012`).
+There is deliberately no per-item "stop after this phase" override on an
+ordinary continuation grant or a project default (`AUTOMATION-PHASES-012`).
+The only instrument that may stop one identified lineage is the separate
+bounded authorization in
+[`docs/intent/bounded-phase-authorization/`](../bounded-phase-authorization/bounded-phase-authorization-design.md);
+it is proposed, and it does not change this segment's grants.
 
 ## Execution enforcement
 

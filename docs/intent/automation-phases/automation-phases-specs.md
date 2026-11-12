@@ -91,7 +91,10 @@
   *Code:* `Projects::AgentRunsController`
 
 - [x] **AUTOMATION-PHASES-012** — The system SHALL NOT offer a per-item
-  override that stops project automation beyond the chosen endpoint.
+  override that stops project automation beyond the chosen endpoint of an
+  ordinary continuation grant or project default; any instrument that stops
+  one identified lineage requires its own accepted design and does not change
+  a continuation grant's endpoint behavior.
   *Tests:* `spec/services/automation/manual_start/plan_spec.rb`
   *Code:* `Automation::ManualStart::Plan`
 

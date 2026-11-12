@@ -155,8 +155,12 @@ tenant permissions, and scheduler safety holds still apply. A missing required
 capability configuration creates a visible blocker, not an implicit exemption.
 
 The endpoint bounds the grant; it does not prohibit independently enabled
-project automation. There is no per-item stopping override. When the grant ends,
-project automation may continue the work under its normal eligibility rules.
+project automation. An ordinary continuation grant offers no per-item stopping
+override: when the grant ends, project automation may continue the work under
+its normal eligibility rules. The only instrument that may stop one identified
+lineage is the separate bounded authorization in
+[RDR-078](RDR-078-bounded-delivery-phase-authorization.md), and it is active
+only once that proposal is accepted and implemented.
 
 Every form allowing a manual start must explain before submission when the
 selected endpoint will not be the effective automation stopping point under the
@@ -457,8 +461,19 @@ own release authorization.
 
 ## Later proposed amendment
 
-[RDR-078](RDR-078-bounded-delivery-phase-authorization.md) proposes a new,
+[RDR-078](RDR-078-bounded-delivery-phase-authorization.md) proposes a separate,
 explicit bounded authorization whose exclusive stop can suppress otherwise
 enabled downstream project automation for one identified lineage. Until that
 proposal is accepted and implemented, this RDR's current rule remains in force:
-continuation endpoints do not prohibit independently enabled project automation.
+continuation endpoints do not prohibit independently enabled project
+automation.
+
+The two instruments differ in one further respect, so that acceptance of
+RDR-078 does not silently change this RDR's grants. An ordinary continuation
+grant is additive and non-stopping: it authorizes work, and revoking it
+withdraws only that exception, so project defaults may permit the work
+independently. A bounded authorization is a complete instrument for its
+lineage: a revoked, expired, or completed record withdraws both its delegation
+and its suppression for that lineage, and recovery is one explicit authorized
+decision rather than a silent fall-through to project defaults. Ordinary
+continuation grants keep their current behavior under either state.

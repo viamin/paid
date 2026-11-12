@@ -56,9 +56,14 @@ the shared read model for settings, Inbox, API, and MCP.
 `Automation::DelegatedActionAdmission` is the shared write/admission contract
 for queue, dequeue, retry, follow-up recording, closeout, and repair jobs. It
 uses the effective-policy decision as a boundary input, so a disabled phase or
-revoked continuation authority blocks the action and creates one focused
+a withdrawn bounded authorization blocks the action and creates one focused
 human decision. All calls record the same policy signature and evidence
 references.
+
+The bounded stop's lifecycle and stop semantics are owned by
+`docs/intent/bounded-phase-authorization/`, and they are proposed rather than
+active. This segment consumes their shared policy decision and never decides a
+stop, a boundary, or a scope of its own.
 
 The initial boundary-recheck slice rechecks current revisions, posture
 signature, applicable phase and bounded-stop policy, tenant, trust, budget,
