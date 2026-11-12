@@ -23,6 +23,9 @@ class ChatTurn < ApplicationRecord
 
   belongs_to :chat_session
   belongs_to :user_message, class_name: "ChatMessage"
+  # Lifecycle events are immutable after insertion. Delete them directly when
+  # their owning turn is removed so teardown does not attempt an illegal update
+  # or destroy on an append-only audit record.
   has_many :lifecycle_events, class_name: "ChatTurnLifecycleEvent", dependent: :delete_all
 
   validates :status, inclusion: { in: STATUSES }

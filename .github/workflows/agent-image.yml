@@ -13,8 +13,11 @@ on:
       - scripts/lib/install_contract_helpers.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
+      - scripts/test-paid-journey-launch-contract.sh
+      - scripts/test-paid-journey-launch-contract-inner.sh
       - scripts/test-agent-runner-contracts.sh
       - scripts/test-agent-runner-contracts-inner.sh
+      - .paid/journeys.md
       - app/services/containers/provision.rb
       - lib/runner_support.rb
   push:
@@ -30,8 +33,11 @@ on:
       - scripts/lib/install_contract_helpers.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
+      - scripts/test-paid-journey-launch-contract.sh
+      - scripts/test-paid-journey-launch-contract-inner.sh
       - scripts/test-agent-runner-contracts.sh
       - scripts/test-agent-runner-contracts-inner.sh
+      - .paid/journeys.md
       - app/services/containers/provision.rb
       - lib/runner_support.rb
 
@@ -50,7 +56,7 @@ jobs:
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     # A contract-owned CLI update invalidates several expensive image layers.
-    # Leave sufficient headroom for a cold rebuild plus both smoke suites.
+    # Leave sufficient headroom for a cold rebuild plus every smoke suite.
     timeout-minutes: 90
     outputs:
       image_relevant: ${{ steps.changes.outputs.image_relevant }}
@@ -94,8 +100,11 @@ jobs:
                 scripts/lib/install_contract_helpers.rb|\
                 scripts/test-agent-image.sh|\
                 scripts/test-agent-image-inner.sh|\
+                scripts/test-paid-journey-launch-contract.sh|\
+                scripts/test-paid-journey-launch-contract-inner.sh|\
                 scripts/test-agent-runner-contracts.sh|\
                 scripts/test-agent-runner-contracts-inner.sh|\
+                .paid/journeys.md|\
                 app/services/containers/provision.rb|\
                 lib/runner_support.rb)
                   printf '%s\n' "$path"
@@ -481,6 +490,10 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         run: ./scripts/test-agent-image.sh
 
+      - name: Journey launch-contract smoke test
+        if: steps.changes.outputs.image_relevant == 'true'
+        run: ./scripts/test-paid-journey-launch-contract.sh
+
       - name: Runner-contract smoke test
         if: steps.changes.outputs.image_relevant == 'true'
         run: ./scripts/test-agent-runner-contracts.sh
@@ -507,7 +520,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
-          VERIFIED_CHECKS: smoke_test,runner_contract_smoke_test
+          VERIFIED_CHECKS: smoke_test,journey_launch_contract_smoke_test,runner_contract_smoke_test
         run: |
           mkdir -p tmp
           bundle exec ruby scripts/generate-agent-image-metadata.rb

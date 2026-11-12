@@ -105,13 +105,20 @@
   accounts carrying that marker, so an unmarked account colliding on the
   journey slug or email SHALL be refused; agent-reported steps or screenshots
   alone SHALL remain unverified evidence under the existing result contract.
+  The guide's documented application-launch command SHALL remain aligned with
+  `Screenshots::RuntimePlan` and one the agent's own execution container can
+  run directly. The agent-image workflow SHALL resolve the documented command
+  against that image and SHALL fail when the container cannot run it.
   *Code:* `app/services/agent_runs/verification_prompt.rb`,
   `.paid/journeys.md`, `bin/paid-journey`,
   `app/services/screenshots/seed_data/paid_journey.rb`,
   `db/migrate/20261111051641_add_seed_owner_to_accounts.rb`.
   *Test:* `spec/services/agent_runs/verification_prompt_spec.rb`,
   `spec/services/screenshots/seed_data/paid_journey_spec.rb`,
-  `spec/system/paid_project_journey_spec.rb`.
+  `spec/system/paid_project_journey_spec.rb`,
+  `spec/config/agent_image_build_script_spec.rb`,
+  `scripts/test-paid-journey-launch-contract.sh`,
+  `scripts/test-paid-journey-launch-contract-inner.sh`.
 
 - [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
   agent run, the system SHALL publish it through the same durable key contract

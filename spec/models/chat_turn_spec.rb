@@ -117,6 +117,22 @@ RSpec.describe ChatTurn do
     end
   end
 
+  describe "destruction" do
+    # @spec CHAT-TURN-RECOVERY-007
+    it "removes immutable lifecycle events with their owning turn" do
+      turn = described_class.start!(chat_session: chat_session, user_message: user_message)
+      event = ChatTurnLifecycleEvent.create!(
+        chat_turn: turn,
+        chat_session: chat_session,
+        event_name: "chat_turn.completed",
+        occurred_at: Time.current
+      )
+
+      expect { turn.destroy! }.to change(ChatTurnLifecycleEvent, :count).by(-1)
+      expect { event.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+  end
+
   describe "#fail!" do
     it "classifies a provider error and records a lifecycle event" do
       turn = described_class.start!(chat_session: chat_session, user_message: user_message)

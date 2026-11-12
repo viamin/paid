@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "fileutils"
+require "open3"
 require "psych"
+require "tmpdir"
 
 class AgentImageBuildScript < Pathname
 end
@@ -13,6 +16,9 @@ class AgentImageDockerfile < Pathname
 end
 
 class AgentImageFetchHelper < Pathname
+end
+
+class PaidJourneyLaunchContract < Pathname
 end
 
 class RemoteDockerSetupGuide < Pathname
@@ -108,7 +114,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
     end
 
     # @spec CONTAINER-RUNTIME-031
-    it "allows enough time for a cold contract-owned CLI rebuild and both smoke suites" do
+    it "allows enough time for a cold contract-owned CLI rebuild and every smoke suite" do
       expect(workflow.dig("jobs", "agent-image", "timeout-minutes")).to eq(90)
     end
 
@@ -149,9 +155,153 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("id: build-paid-agent")
       expect(workflow_source).to include("id: image-digest")
       expect(workflow_source).to include("bundle exec ruby scripts/generate-agent-image-metadata.rb")
-      expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,runner_contract_smoke_test")
+      expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,journey_launch_contract_smoke_test,runner_contract_smoke_test")
       expect(workflow_source).to include("uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2")
       expect(workflow_source).to include("path: tmp/agent-image-metadata.json")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "runs the Paid journey launch contract in the built agent image" do
+      expect(workflow_source).to include("- .paid/journeys.md")
+      expect(workflow_source).to include("scripts/test-paid-journey-launch-contract.sh")
+      expect(workflow_source).to include("name: Journey launch-contract smoke test")
+      expect(workflow_source).to include("run: ./scripts/test-paid-journey-launch-contract.sh")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "runs the journey launch contract when its guide or script changes on main" do
+      push_paths = workflow.fetch(true).fetch("push").fetch("paths")
+
+      expect(push_paths).to include(
+        ".paid/journeys.md",
+        "scripts/test-paid-journey-launch-contract.sh",
+        "scripts/test-paid-journey-launch-contract-inner.sh"
+      )
+    end
+  end
+
+  describe PaidJourneyLaunchContract do
+    subject(:script_source) { Rails.root.join("scripts/test-paid-journey-launch-contract.sh").read }
+
+    let(:inner_script_path) { Rails.root.join("scripts/test-paid-journey-launch-contract-inner.sh") }
+    let(:inner_script_source) { inner_script_path.read }
+
+    # @spec LIVE-PREVIEW-012
+    it "resolves the guide's launch command inside the paid-agent image" do
+      expect(script_source).to include("docker run --rm")
+      expect(script_source).to include("test-paid-journey-launch-contract-inner.sh")
+      expect(inner_script_path).to exist
+      expect(inner_script_source).to include(".paid/journeys.md")
+      expect(inner_script_source).to include("command -v")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "requires bin/dev's supervisors in the managed image" do
+      expect(Rails.root.join("docker/agent/Dockerfile").read).to include("tmux")
+      expect(Rails.root.join("docker/agent/Dockerfile").read).to include("gem install --no-document overmind")
+      expect(inner_script_source).to include("tmux overmind")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "accepts a launch command the checkout and the image can run" do
+      stdout, stderr, status = run_launch_contract_check(
+        launch_command: "bundle exec bin/rails server -b 0.0.0.0 -p 3000",
+        scripts: [ "bin/rails" ]
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("bundle exec bin/rails server -b 0.0.0.0 -p 3000")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "rejects a launch command whose repository script is missing from the checkout" do
+      _stdout, stderr, status = run_launch_contract_check(
+        launch_command: "bundle exec bin/rails server -b 0.0.0.0 -p 3000",
+        scripts: []
+      )
+
+      expect(status).not_to be_success
+      expect(stderr).to include("'bin/rails' is missing from the checkout")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "rejects a launch command the image cannot resolve" do
+      _stdout, stderr, status = run_launch_contract_check(
+        launch_command: "paid-journey-missing-command server",
+        scripts: []
+      )
+
+      expect(status).not_to be_success
+      expect(stderr).to include("'paid-journey-missing-command' is not available in this image")
+    end
+
+    # @spec LIVE-PREVIEW-012
+    it "accepts the runtime-derived bin/dev launch command" do
+      stdout, stderr, status = run_launch_contract_check(
+        launch_command: "PORT=3000 bin/dev",
+        scripts: [ "bin/dev" ]
+      )
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("PORT=3000 bin/dev")
+    end
+
+    # Runs the container-side check against a throwaway checkout so the
+    # assertions never depend on the host's own tooling.
+    def run_launch_contract_check(launch_command:, scripts:)
+      Dir.mktmpdir("paid-journey-launch-contract") do |dir|
+        guide_path = write_guide(dir, launch_command)
+        scripts.each { |script| write_script(dir, script) }
+        stub_dir = write_stub_bin(dir)
+
+        Open3.capture3(
+          { "PATH" => stub_dir },
+          File.join(stub_dir, "bash"),
+          inner_script_path.to_s,
+          guide_path,
+          chdir: dir
+        )
+      end
+    end
+
+    def write_guide(dir, launch_command)
+      guide_path = File.join(dir, ".paid", "journeys.md")
+      FileUtils.mkdir_p(File.dirname(guide_path))
+      File.write(guide_path, "# Journeys\n\n```bash\n(#{launch_command}) > tmp/app.log 2>&1 &\n```\n")
+      guide_path
+    end
+
+    def write_script(dir, script)
+      script_path = File.join(dir, script)
+      FileUtils.mkdir_p(File.dirname(script_path))
+      File.write(script_path, "#!/usr/bin/env bash\nexit 0\n")
+      FileUtils.chmod(0o755, script_path)
+    end
+
+    # A PATH holding only the utilities the check needs, so the assertions stay
+    # independent of the host's own tooling: a supervisor installed on the host
+    # must not satisfy the `bin/dev` rule, and the launch command's executable
+    # must resolve from the stub rather than from the developer's machine.
+    def write_stub_bin(dir)
+      stub_dir = File.join(dir, "stubbin")
+      FileUtils.mkdir_p(stub_dir)
+      %w[bash sed dirname tmux overmind].each do |utility|
+        source = ENV.fetch("PATH").split(File::PATH_SEPARATOR).filter_map do |entry|
+          candidate = File.join(entry, utility)
+          File.executable?(candidate) ? candidate : nil
+        end.first
+        if source
+          FileUtils.ln_s(source, File.join(stub_dir, utility))
+        elsif utility.in?(%w[tmux overmind])
+          File.write(File.join(stub_dir, utility), "#!/usr/bin/env bash\nexit 0\n")
+          FileUtils.chmod(0o755, File.join(stub_dir, utility))
+        else
+          raise "Unable to locate #{utility} on PATH"
+        end
+      end
+      File.write(File.join(stub_dir, "bundle"), "#!/usr/bin/env bash\nexit 0\n")
+      FileUtils.chmod(0o755, File.join(stub_dir, "bundle"))
+      stub_dir
     end
   end
 

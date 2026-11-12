@@ -28,4 +28,14 @@ RSpec.describe "Paid project detail verification journey", system_driver: :rack_
     expect(page).to have_current_path(project_path(project))
     expect(page).to have_content(project.name)
   end
+
+  # @spec LIVE-PREVIEW-012
+  it "documents the runtime-derived launch command" do
+    journey_guide = Rails.root.join(".paid/journeys.md").read
+    log_path = Regexp.escape(AgentRuns::VerificationPrompt::APP_LOG_PATH)
+    launch_command = journey_guide[/^\((.+)\) > #{log_path}/, 1]
+    runtime_plan = Screenshots::RuntimePlan.call(project:, repo_path: Rails.root)
+
+    expect(launch_command).to eq(runtime_plan.start_command)
+  end
 end
