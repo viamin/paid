@@ -642,6 +642,7 @@ class AgentRun < ApplicationRecord
     Arel.sql(effective_runner_sql)
   end
 
+  # @spec AGENT-RUNS-INDEX-004
   def self.ransackable_attributes(auth_object = nil)
     %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at completed_at temporal_workflow_id effective_runner]
   end
@@ -768,12 +769,13 @@ class AgentRun < ApplicationRecord
   def self.compute_distinct_filter_options
     # The aggregate only reads agent_runs columns; eager loads on the incoming
     # scope would otherwise fan the pluck out into wide LEFT JOIN queries.
-    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal)
+    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal, :trigger_type)
 
     {
       status: values.filter_map(&:first).uniq,
       agent_type: values.filter_map { |row| row[1] }.uniq,
-      goal: values.filter_map { |row| row[2] }.uniq
+      goal: values.filter_map { |row| row[2] }.uniq,
+      trigger_type: values.filter_map { |row| row[3] }.uniq
     }
   end
   private_class_method :compute_distinct_filter_options
@@ -4572,7 +4574,7 @@ class AgentRun < ApplicationRecord
   end
 
   def invalidate_filter_options_cache_on_change
-    return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "synthetic").present?
+    return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "trigger_type", "synthetic").present?
     return unless project
 
     self.class.invalidate_filter_options_cache(

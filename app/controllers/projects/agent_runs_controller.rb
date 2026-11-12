@@ -20,7 +20,7 @@ module Projects
       # @spec AGENT-RUNS-INDEX-001
       authorize @project, :show?
       base_scope = @project.agent_runs.excluding_synthetic.includes(:runner, project: [ :created_by, :account ], issue: :project)
-      @q = base_scope.ransack(params[:q])
+      @q = base_scope.ransack(agent_run_search_params)
       @q.sorts = "created_at desc" if @q.sorts.empty?
       @pagy, @agent_runs = pagy(@q.result)
       AgentRun.preload_final_runner_records(@agent_runs)

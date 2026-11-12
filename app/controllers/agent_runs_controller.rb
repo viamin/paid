@@ -13,7 +13,7 @@ class AgentRunsController < ApplicationController
     # this account-wide view for consistency with the project-scoped run list.
     base_scope = policy_scope(AgentRun).excluding_synthetic.excluding_list_payload
       .includes(:runner, project: [ :created_by, :account ], issue: :project)
-    @q = base_scope.ransack(params[:q])
+    @q = base_scope.ransack(agent_run_search_params)
     queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
 
     if params[:sort] == "queue" && queue_sort_compatible?
@@ -56,12 +56,12 @@ class AgentRunsController < ApplicationController
   end
 
   def queue_sort_compatible?
-    status_filter = params.dig(:q, :status_eq)
+    status_filters = Array(params.dig(:q, :status_in)).reject(&:blank?)
     # Queue sort is only meaningful when already filtered to an unfinished
     # status — otherwise queue_order_display's .unfinished scope silently
     # hides completed/failed runs from the default (unfiltered) view.
-    return false if status_filter.blank?
+    return false if status_filters.empty?
 
-    AgentRun::UNFINISHED_STATUSES.include?(status_filter)
+    status_filters.all? { |status| AgentRun::UNFINISHED_STATUSES.include?(status) }
   end
 end

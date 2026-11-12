@@ -495,7 +495,10 @@ module ApplicationHelper
     )
   end
 
-  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
+  RANSACK_PERMITTED_SCALAR_KEYS = (
+    AgentRunFilterOptions::RANSACK_SCALAR_FILTERS + %i[category_eq active_eq name_cont]
+  ).freeze
+  RANSACK_PERMITTED_ARRAY_KEYS = AgentRunFilterOptions::RANSACK_ARRAY_FILTERS
 
   def sort_link_to(label, attribute, q)
     current_sort = q.sorts.find { |s| s.name == attribute.to_s }
@@ -506,7 +509,8 @@ module ApplicationHelper
       tag.span(" \u2193", class: "ml-1")
     end
 
-    q_params = params[:q]&.permit(*RANSACK_PERMITTED_KEYS)&.to_h || {}
+    permitted_array_keys = RANSACK_PERMITTED_ARRAY_KEYS.index_with { [] }
+    q_params = params[:q]&.permit(*RANSACK_PERMITTED_SCALAR_KEYS, permitted_array_keys)&.to_h || {}
     link_to(
       safe_join([ label, arrow ].compact),
       url_for(request.query_parameters.except(:page, "page").merge(q: q_params.merge(s: "#{attribute} #{direction}"))),
