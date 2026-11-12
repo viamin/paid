@@ -116,6 +116,13 @@ RSpec.describe BoundedDelegatedAction do
     expect(action).not_to be_allowed
   end
 
+  it "exposes expiry separately from other terminal lifecycle states" do
+    action = build(:bounded_delegated_action, project:, issue:, expires_at: 1.minute.ago)
+
+    expect(action).to be_expired
+    expect(action).not_to be_revoked
+  end
+
   it "rejects revocation by a user from another account" do
     action = create(:bounded_delegated_action, project:, issue:, created_by: user)
     other_user = create(:user)

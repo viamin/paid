@@ -66,6 +66,10 @@ module Automation
       }
     end
 
+    def self.posture_revision_for(project)
+      ProjectDelegation::Posture.resolve(project).revision.to_s
+    end
+
     def self.acceptance_revision_for(assessment)
       "criteria:#{Digest::SHA256.hexdigest(assessment.criteria.to_json)}"
     end
@@ -92,6 +96,7 @@ module Automation
         "intent_digest" => "sha256:#{PartialCloseouts::Assessment.intent_revision_for(work_item)}",
         "acceptance_refs" => acceptance_refs,
         **revision_tokens(issue: work_item),
+        "posture_revision" => posture_revision_for(work_item.project),
         "posture_signature" => posture_signature_for(project: work_item.project, action: action),
         "phase" => ACTION_PHASES.fetch(action),
         "stop_before_phase" => stop_before_phase
@@ -152,6 +157,7 @@ module Automation
         issue_id: work_item.id,
         **self.class.revision_tokens(issue: work_item, assessment: current_assessment).transform_keys(&:to_sym),
         posture_signature: self.class.posture_signature_for(project:, action:),
+        posture_revision: self.class.posture_revision_for(project),
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
           work_item:, trigger:, delegated_action: action),

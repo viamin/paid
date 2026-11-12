@@ -37,6 +37,10 @@ class BoundedDelegatedAction < ApplicationRecord
     status == "active" && expires_at > Time.current
   end
 
+  def expired?
+    expires_at <= Time.current && !revoked?
+  end
+
   def revoked?
     status == "revoked"
   end

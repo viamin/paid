@@ -61,16 +61,18 @@ human decision. All calls record the same policy signature and evidence
 references.
 
 The initial boundary-recheck slice rechecks current revisions, posture
-signature, applicable phase and bounded-stop policy, tenant, trust, budget,
-repository checks, authorization lifecycle, and assessment availability. A
-mismatch creates a narrow Inbox request rather than falling through to a
-project default. Existing actions may finish their current atomic unit but
-cannot begin a new one after a failed recheck.
+revision and signature, applicable phase and bounded-stop policy, explicit
+issue holds, tenant, trust, budget, repository checks, authorization
+lifecycle, and assessment availability. A mismatch creates a narrow Inbox
+request rather than falling through to a project default and appends the
+admission snapshot plus failed checks to the audit ledger. Existing actions
+may finish their current atomic unit but cannot begin a new one after a failed
+recheck.
 
-The full boundary will additionally recheck explicit holds, actor policy,
-lineage, and the semantic scope, ambiguity, conflicting-evidence, and
-material-risk conditions owned by the bounded-phase reassessment design. Those
-conditions remain planned until that reassessment path lands.
+The full boundary will additionally recheck actor policy, lineage, and the
+semantic scope, ambiguity, conflicting-evidence, and material-risk conditions
+owned by the bounded-phase reassessment design. Those conditions remain
+planned until that reassessment path lands.
 
 ## Rollback and measurement
 

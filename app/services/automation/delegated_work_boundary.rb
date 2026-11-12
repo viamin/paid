@@ -36,7 +36,22 @@ module Automation
         source: NOTIFICATION_SOURCE,
         title: "Delegated work needs a focused decision",
         description: "Delegated work is paused before #{boundary} until its current authority is reviewed.",
-        metadata: { "authorization_id" => authorization.id, "boundary" => boundary.to_s, "reasons" => reasons.map(&:to_s) }
+        metadata: {
+          "authorization_id" => authorization.id,
+          "boundary" => boundary.to_s,
+          "reasons" => reasons.map(&:to_s),
+          "recovery_action" => "reauthorize_or_hold"
+        }
+      )
+      Audit::RecordEvent.call(
+        action: "bounded_action.boundary_blocked",
+        subject: authorization,
+        metadata: {
+          "authorization_id" => authorization.id,
+          "boundary" => boundary.to_s,
+          "reasons" => reasons.map(&:to_s),
+          "admission_snapshot" => authorization.evidence
+        }
       )
       ProjectDelegation::RecordPilotEvent.boundary_stop(authorization:, reasons:, boundary:)
       Result.new(permitted: false, boundary:, reasons:, notification:)
@@ -55,9 +70,12 @@ module Automation
     def failed_checks
       checks = {
         authorization_lifecycle: authorization.allowed?,
+        authorization_expired: !authorization.expired?,
+        authorization_revoked: !authorization.revoked?,
         intent_revision: revision_matches?(:intent_revision),
         acceptance_revision: revision_matches?(:acceptance_revision),
         evidence_revision: revision_matches?(:evidence_revision),
+        posture_revision: revision_matches?(:posture_revision),
         posture_signature: revision_matches?(:posture_signature),
         phase: phase_matches?,
         phase_policy: policy_allows?(snapshot[:phase_policy]),
@@ -70,7 +88,8 @@ module Automation
         trust: truthy?(snapshot[:trust]),
         budget: allowed?(snapshot[:budget]),
         repository_controls: allowed?(snapshot[:repository_controls]),
-        assessment_availability: truthy?(snapshot[:assessment_available])
+        assessment_availability: truthy?(snapshot[:assessment_available]),
+        explicit_hold: !explicit_hold?
       }
       checks.filter_map { |reason, passed| reason unless passed }
     end
@@ -101,6 +120,12 @@ module Automation
       snapshot[:account_id].to_s == authorization.account_id.to_s &&
         snapshot[:project_id].to_s == authorization.project_id.to_s &&
         snapshot[:issue_id].to_s == authorization.issue_id.to_s
+    end
+
+    def explicit_hold?
+      authorization.issue.paused? || authorization.issue.hold_for_review? ||
+        authorization.issue.held_for_review? ||
+        authorization.issue.paid_state.in?(%w[needs_input manual_review])
     end
 
     def allowed?(value)

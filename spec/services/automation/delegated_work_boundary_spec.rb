@@ -16,6 +16,7 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       "intent_revision" => "intent-7",
       "acceptance_revision" => "acceptance-3",
       "evidence_revision" => "evidence-9",
+      "posture_revision" => "posture-4",
       "posture_signature" => "posture:4",
       "phase" => "coding",
       "stop_before_phase" => "merge"
@@ -26,6 +27,7 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       intent_revision: "intent-7",
       acceptance_revision: "acceptance-3",
       evidence_revision: "evidence-9",
+      posture_revision: "posture-4",
       posture_signature: "posture:4",
       phase: "coding",
       phase_policy: true,
@@ -68,6 +70,7 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     expect(second).to be_blocked
     expect(second.reasons).to include(:posture_signature)
     expect(Notification.where(source: described_class::NOTIFICATION_SOURCE).count).to eq(1)
+    expect(account.account_activity_events.by_action("bounded_action.boundary_blocked").count).to eq(2)
     # The reused decision represents the latest failure, so the operator is
     # never pointed at an authorization, boundary, or reason that no longer
     # blocks the work.
@@ -75,6 +78,21 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       "authorization_id" => authorization.id,
       "boundary" => "retry",
       "reasons" => [ "posture_signature" ]
+    )
+  end
+
+  it "fails closed for an explicit issue hold and retains the admission snapshot" do # @spec PROJECT-DELEGATION-006
+    issue.update!(hold_for_review: true)
+
+    result = recheck
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:explicit_hold)
+    event = account.account_activity_events.by_action("bounded_action.boundary_blocked").last
+    expect(event.metadata).to include(
+      "authorization_id" => authorization.id,
+      "reasons" => include("explicit_hold"),
+      "admission_snapshot" => include("posture_revision" => "posture-4")
     )
   end
 

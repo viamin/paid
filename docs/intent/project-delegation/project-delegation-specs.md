@@ -84,11 +84,14 @@ Status markers: `[ ]` planned implementation gap.
   authority, the system SHALL apply the broader posture only to new admissions
   and SHALL NOT silently broaden an in-flight authorization; when a project
   setting narrows delegated authority, or when expiry, revocation, or a bounded
-  stop occurs, the system SHALL prevent the next action while preserving
-  audit/evidence history and exposing a recovery decision.
+  stop occurs, the system SHALL prevent the next action while preserving an
+  immutable admission snapshot and audit/evidence history and exposing a
+  recovery decision. An explicit issue pause or review hold SHALL have the
+  same fail-closed effect.
   *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
   `spec/services/automation/delegated_action_admission_spec.rb` (posture
-  change and revocation rechecks), and
+  posture revision, posture change, explicit hold, expiry, and revocation
+  rechecks), and
   `spec/services/automation/focused_decision_spec.rb` (one recovery decision
   whose metadata tracks the current failure).
 

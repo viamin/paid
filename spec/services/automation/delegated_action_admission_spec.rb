@@ -175,6 +175,17 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(result.reasons).to include(:intent_revision)
   end
 
+  it "blocks when an authorization expires and exposes expiry recovery" do # @spec PROJECT-DELEGATION-006
+    authorization = authorize(action: "review")
+    authorization.update!(expires_at: 1.minute.ago)
+
+    result = recheck(goal: "review")
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:authorization_expired)
+    expect(Notification.last.metadata["recovery_action"]).to eq("reauthorize_or_hold")
+  end
+
   it "blocks when the project posture narrows after admission" do # @spec PROJECT-DELEGATION-006
     authorize(action: "review")
     project.delegation_posture.update!(

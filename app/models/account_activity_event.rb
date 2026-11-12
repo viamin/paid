@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
 class AccountActivityEvent < ApplicationRecord
-  IMMUTABLE_ACTIONS = %w[project_delegation.posture_selected].freeze
+  IMMUTABLE_ACTIONS = %w[
+    project_delegation.posture_selected
+    bounded_action.boundary_blocked
+  ].freeze
 
   ACTION_CATEGORIES = {
     "account.updated" => "account",
@@ -59,6 +62,7 @@ class AccountActivityEvent < ApplicationRecord
     "feature_intent.released" => "approval",
     "bounded_action.authorized" => "approval",
     "bounded_action.revoked" => "approval",
+    "bounded_action.boundary_blocked" => "approval",
     "project_delegation.posture_selected" => "project",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
