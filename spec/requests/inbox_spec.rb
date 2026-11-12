@@ -186,7 +186,7 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("may edit one verified GitHub dependency declaration")
     document = Nokogiri::HTML(response.body)
     start_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
-    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Start repair analysis")
+    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Analyze and possibly repair on GitHub")
     expect(start_form["data-turbo-confirm"]).to include("may edit one verified GitHub dependency declaration")
   end
 
@@ -198,7 +198,7 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Analysis queued")
-    expect(response.body).not_to include("Start repair analysis")
+    expect(response.body).not_to include("Analyze and possibly repair on GitHub")
     document = Nokogiri::HTML(response.body)
     status_link = document.at_css("a[href='#{project_agent_run_path(project, run)}']")
     expect(status_link.text).to include("Check analysis status")
@@ -249,7 +249,7 @@ RSpec.describe "Inbox" do
     repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
     from_ref = "#{project.full_name}##{issues[0].github_number}"
     to_ref = "#{project.full_name}##{issues[1].github_number}"
-    expect(repair_form.at_css("input[type='submit']")["value"]).to eq("Remove the #{to_ref} dependency from #{from_ref}")
+    expect(repair_form.at_css("input[type='submit']")["value"]).to eq("Remove the #{to_ref} dependency from #{from_ref} on GitHub")
     expect(repair_form["data-turbo-confirm"]).to include(from_ref, to_ref, "trusted comment", "edits GitHub")
     expect(repair_form.at_css("input[name='agent_run_id']")["value"]).to eq(run.id.to_s)
     expect(repair_form.at_css("input[name='candidate_index']")["value"]).to eq("0")
@@ -273,7 +273,7 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("removed one dependency declaration on #{project.full_name}##{issues[0].github_number}")
     document = Nokogiri::HTML(response.body)
     confirm_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
-    expect(confirm_form.at_css("input[type='submit']")["value"]).to eq("Confirm cycle repair")
+    expect(confirm_form.at_css("input[type='submit']")["value"]).to eq("Re-check repair (does not edit GitHub)")
     expect(confirm_form["data-turbo-confirm"]).to include("does not edit GitHub")
   end
 
@@ -311,10 +311,10 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Stale analysis")
-    expect(response.body).not_to include("Confirm cycle repair")
+    expect(response.body).not_to include("Re-check repair (does not edit GitHub)")
     document = Nokogiri::HTML(response.body)
     start_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
-    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Start fresh analysis")
+    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Analyze current cycle (may edit GitHub)")
     expect(start_form["data-turbo-confirm"]).to include("may edit one verified GitHub dependency declaration")
   end
 
@@ -328,7 +328,7 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Automatic repair stopped")
     expect(response.body).to include("authority for every project in this cycle")
     expect(response.body).to include("Edit the declaration on GitHub yourself")
-    expect(response.body).not_to include("Start fresh analysis")
+    expect(response.body).not_to include("Analyze current cycle (may edit GitHub)")
     document = Nokogiri::HTML(response.body)
     expect(document.at_css("form[action='#{dashboard_cycle_analyses_path}']")).to be_nil
   end
@@ -356,7 +356,7 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("No single safe repair")
     expect(response.body).to include("Owners disagree")
     expect(response.body).to include("apply one reviewed removal")
-    expect(response.body).to include("Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}")
+    expect(response.body).to include("Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number} on GitHub")
   end
 
   def record_conflicting_recommendation!(run, removal_edge)
@@ -409,11 +409,11 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(current_cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Stale analysis", "Start fresh analysis")
+    expect(response.body).to include("Stale analysis", "Analyze current cycle (may edit GitHub)")
     document = Nokogiri::HTML(response.body)
     expect(document.at_css("[data-testid='cycle-recommendation']")).to be_nil
     start_form = document.at_css("form[action='#{dashboard_cycle_analyses_path}']")
-    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Start fresh analysis")
+    expect(start_form.at_css("input[type='submit']")["value"]).to eq("Analyze current cycle (may edit GitHub)")
   end
 
   # @spec AUTO-PICK-QUEUE-016
@@ -423,7 +423,7 @@ RSpec.describe "Inbox" do
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Analysis failed", "Retry repair analysis")
+    expect(response.body).to include("Analysis failed", "Retry analysis (may edit GitHub)")
   end
 
   # @spec AUTO-PICK-QUEUE-020 AUTO-PICK-QUEUE-024

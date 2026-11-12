@@ -153,10 +153,10 @@ states Paid's recommendation (one bounded repair analysis) and that a
 qualifying analysis run may edit one verified GitHub dependency declaration.
 Every action says what it does and appears only when the backend will
 perform it as described: a status check only navigates to the run; starting
-an analysis may change GitHub (the start action and its confirmation both
-say so); confirming a pending repair only re-checks the synchronized graph
-and never edits GitHub, and that confirm action appears only when the
-recorded completed run for the current occurrence can be resumed for the
+an analysis may change GitHub (its action label and confirmation both say
+so); confirming a pending repair only re-checks the synchronized graph and
+never edits GitHub (its action label says so), and that confirm action appears
+only when the recorded completed run for the current occurrence can be resumed for the
 read-only confirmation — a cancelled run with an applied repair instead
 waits for the synchronization that requeues the confirmation automatically,
 and a run left stale by a re-occurred cycle falls back to the fresh-analysis
