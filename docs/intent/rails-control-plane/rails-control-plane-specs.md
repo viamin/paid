@@ -6,6 +6,13 @@
 
 ## Request and Realtime Lifecycle
 
+- [x] **RAILS-CONTROL-PLANE-016** — When a developer starts the normal
+  development stack, the Rails application SHALL mount PgHero at `/pghero` for
+  inspection of the local development database; PgHero's dependency and route
+  SHALL be absent from production.
+  *Tests:* `spec/config/pghero_development_spec.rb`.
+  *Code:* `Gemfile`, `config/routes.rb`.
+
 - [x] **RAILS-CONTROL-PLANE-010** — When Rails connects to the development
   PostgreSQL database, the connection SHALL disable JIT so interactive
   requests do not pay compilation cost for short eligibility queries; the

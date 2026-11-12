@@ -178,6 +178,9 @@ group :test do
 end
 
 group :development do
+  # Local PostgreSQL query and health dashboard, served by the development Rails process.
+  gem "pghero", "~> 4.1"
+
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
 

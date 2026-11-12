@@ -60,6 +60,11 @@ The existing development supervisor records lightweight process RSS and host
 memory samples before a crash, so a killed process's memory growth can be
 distinguished from pressure elsewhere in the workspace.
 
+The development Rails process mounts PgHero at `/pghero` so developers can
+inspect the local primary PostgreSQL database from the normal `bin/dev` stack.
+PgHero is a development-only dependency and route; production boots and
+deployment dependencies do not include it.
+
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
 fallback profile levels execute as a

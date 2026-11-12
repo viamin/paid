@@ -165,6 +165,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | Service | URL | Description |
 | ------- | --- | ----------- |
 | Rails app | <http://localhost:3000> | Main application |
+| PgHero | <http://localhost:3000/pghero> | Development-only PostgreSQL dashboard |
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
 | PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
@@ -293,7 +294,18 @@ bin/rails console            # Rails console
 bin/temporal_worker          # Run the Temporal worker directly (`TEMPORAL_WORKER_MODE=poll|agent|both`; default is `both`)
 bin/dev-update --lightweight # Pull latest main without restarting the dev stack
 bin/dev-update --full        # Pull latest main, rerun setup, and restart the dev stack
+```
 
+### PgHero (development only)
+
+PgHero is included with the development bundle and is mounted by the normal
+Rails development server. After `bin/setup` and `bin/dev`, open
+<http://localhost:3000/pghero> to inspect the same local PostgreSQL database
+configured through `DATABASE_URL`. No PgHero-specific environment variables or
+separate service are required. The dashboard is not bundled or routed in
+production.
+
+```bash
 # Testing
 bin/rspec                    # Run the full RSpec test suite
 

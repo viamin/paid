@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 Rails.application.routes.draw do
+  # @spec RAILS-CONTROL-PLANE-016
+  mount PgHero::Engine, at: "pghero" if Rails.env.development?
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
 
