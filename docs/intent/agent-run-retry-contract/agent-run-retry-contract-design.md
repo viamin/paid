@@ -9,9 +9,8 @@ prefix: AGENT-RETRY
 > segment names the shared vocabulary and minimal interface shape for
 > "another attempt at the same logical operation" across Paid's existing
 > retry (and deliberate no-retry) paths for agent runs and agent-run-style
-> attempts (#4986). It is a map and a contract, not a new runtime
-> subsystem: every path named below keeps its own owner, identity, and
-> dispatch logic exactly as it stands today.
+> attempts (#4986). It is a map and a contract with one runtime reference
+> adopter: every path keeps its own owner, identity, and dispatch logic.
 
 ## Purpose
 
@@ -103,9 +102,8 @@ decisions. Naming them gives future adopters (and reviewers) a shared
 vocabulary without forcing a shared base class:
 
 ```ruby
-# Documented shape only — no module ships with this change. A future
-# migration slice may introduce a real module once a second or third path
-# adopts it; see "Migration and rollout" below.
+# `AgentRuns::RetryAttempt` ships this mechanics shape. A use-case-owned
+# policy supplies admission and successor construction.
 module Retryable
   module AttemptPolicy
     # The stable identity of the logical operation this terminal row or
@@ -260,41 +258,32 @@ documented landing spot.
 
 ## Migration and rollout
 
-No runtime behavior changes in this PR. Every path in the policy matrix
-keeps its current owner, identity, budget, and dispatch logic exactly as
-shipped.
-
 **First implementation slice:** issue-less manual-run retry
-(`docs/intent/manual-run-retry/`) is declared the reference adopter of the
-mint-new-row half of this contract. It already satisfies every
-cross-cutting safety requirement above without modification, so adopting
-it as the first slice requires no code change — only this design's
-cross-reference. Timed-out-issue-goal retry, in-place rate-limit recovery,
+(`docs/intent/manual-run-retry/`) is the reference adopter of the
+mint-new-row half of this contract. `AgentRuns::RetryAttempt` owns
+scheduling, locked claim, and durable decision recording;
+`AgentRuns::ManualRunRetryPolicy` retains manual eligibility, lineage, and
+successor construction. Timed-out-issue-goal retry, in-place rate-limit recovery,
 and Apple verification attempts are named as candidate second/third slices
 (one mint-new-row-shaped, one in-place-shaped, one lineage-column-shaped)
 but are explicitly deferred to their own tracked follow-up work.
 
-**Rollback:** since this change ships no runtime code, there is nothing to
-roll back. A future extraction PR that introduces a real
-`Retryable::AttemptPolicy` module must keep every adopted use case's
-existing specs green — the same "this feature SHALL NOT alter X" regression
-shape `MANUAL-RUN-RETRY-007` already uses against EAGER-QUEUE-007 and
-`StaleRunDetectorJob`.
+**Rollback:** disable `Project#retry_failed_manual_runs` to stop new manual
+retry scheduling. The service preserves the existing cap, backoff, input
+copying, and locked recheck, so no other retry path is changed.
 
-**Rollout guard:** Docs-only. This change exposes no runtime behavior; a
-future extraction PR picks its own guard (feature flag, config gate, or
-migration-only) scoped to whichever path it migrates, per
-`docs/rdrs/README.md`'s Rollout Guard taxonomy.
+**Rollout guard:** the existing project-scoped
+`retry_failed_manual_runs` setting remains the guard for this adopter.
 
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
 | Universal "replay AgentRun" operation | Rejected | A single `AgentRun#replay!` used by every path | Collapses meaningfully different identities (issue-owned vs. row-owned vs. digest-owned) and dispatch rules (mint vs. in-place vs. re-seed a parent) into one method; EAGER-QUEUE-007's issue-owned identity and rate-limit recovery's row-owned identity cannot share one claim method without one of them losing its own admission rule. |
-| First migration slice | Issue-less manual-run retry | Timed-out-issue-goal retry; in-place rate-limit recovery | Already shipped, already satisfies every cross-cutting requirement in this design, smallest blast radius, and explicitly named by the issue scoping this design. |
+| First migration slice | Issue-less manual-run retry | Timed-out-issue-goal retry; in-place rate-limit recovery | Smallest blast radius and a concrete mint-new-row adopter for validating shared mechanics without changing another path's identity. |
 | New persisted state | None introduced | A shared `retry_attempts` table across every path | Every path's existing identity/lineage column (`external_metadata` keys, `retry_of_attempt_id`, `consecutive_auto_pick_failure_count`, `stale_requeue_count`) already covers attempt bookkeeping for that path; a shared table would duplicate data without adding capability. |
 | Acceptance-audit multi-attempt support | Documented extension point only, not implemented | Implement the adapter now | Acceptance-audit recovery is explicitly separate, in-progress work (per issue scope); this design intentionally stops at naming the landing spot so that work is not duplicated or pre-empted here. |
-| Shared interface as a shipped Ruby module | Documented shape in this design only, no module added | Ship `Retryable::AttemptPolicy` now with no caller | A module with no adopter is dead code; the interface earns its place in code once a second concrete use case migrates to it (tracked separately), not before. |
+| Shared interface as a shipped Ruby service | `AgentRuns::RetryAttempt` with a manual policy adapter | A universal `AgentRun#replay!`; copied schedule/job predicates | Shared mechanics need one real adopter to prove the boundary, while policy-owned admission avoids averaging incompatible identities and dispatch rules. |
 
 ## Open Questions & Future Decisions
 

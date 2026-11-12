@@ -110,21 +110,22 @@ lose its volume-backed data. This makes a stale seeded configuration, stale
 pulled image, or out-of-band container replacement visible without confusing
 source-pin consistency with runtime conformance.
 
-GitHub-hosted jobs are deliberately looser. They add the PGDG repository at run
-time and install the client by major version only, so they never depend on the
-runner image's preinstalled PostgreSQL and are unaffected by a PGDG minor
-release landing after the server image does. That looseness is safe precisely
-because the binding constraint is a major-version one; it is what keeps CI
-independent of the publication ordering the images must wait on.
+GitHub-hosted jobs are deliberately looser. They use the runner image's client
+when it already matches the required major version; otherwise they add the
+PGDG repository at run time and install the client by major version only. A
+matching preinstalled client lets tests proceed during a package-mirror outage,
+while the fallback keeps jobs portable to runner revisions without that client.
+That looseness is safe precisely because the binding constraint is a
+major-version one; it is what keeps CI independent of the publication ordering
+the images must wait on.
 
 Browser system tests install the GLib and GTK runtime libraries in their
 GitHub-hosted job. Those libraries are dependencies of the browser binary, not
 application dependencies, so keeping their installation in CI makes the test
 environment reproducible without changing the application runtime. The browser
-runtime installation reuses the package indexes refreshed by the PostgreSQL
-client setup earlier in the job instead of issuing an unguarded duplicate
-refresh, while retaining the same bounded package-download settings as the
-client installation.
+runtime installation uses the runner's package indexes instead of issuing an
+unguarded duplicate refresh, while retaining the same bounded package-download
+settings as the client fallback installation.
 
 That looseness needs one guard. The PGDG signing key is fetched at run time,
 and a runner whose download fails must not publish an unverified key: apt then

@@ -111,6 +111,14 @@ jobs:
       - name: Install PostgreSQL client
         # @spec TOOLCHAIN-PIN-028
         run: |
+          # ubuntu-24.04 runner images already ship the matching PostgreSQL
+          # client. Prefer it so a transient package-mirror outage cannot stop
+          # profiling before database setup.
+          if command -v psql >/dev/null && psql --version | grep -Eq '^psql \(PostgreSQL\) 16\.'; then
+            psql --version
+            exit 0
+          fi
+
           # The PGDG signing key download flakes on GitHub runners. Publishing an
           # unverified key makes every later apt-get update fail with "The repository
           # ... is not signed" and takes the whole job down, so fetch the key with

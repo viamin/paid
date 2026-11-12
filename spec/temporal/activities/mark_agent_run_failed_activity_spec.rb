@@ -501,6 +501,8 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         expect {
           activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
         }.not_to have_enqueued_job(RetryFailedManualRunJob)
+
+        expect(OrchestrationDecision.last.outputs["reason"]).to eq("project_retry_disabled")
       end
 
       it "does not schedule a retry when the run already produced a pull request" do
