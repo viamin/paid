@@ -51,12 +51,15 @@ module Issues
     def self.call(...) = new(...).call
 
     def self.cyclic_ids(node_ids:, edges:)
+      cyclic_components(node_ids:, edges:).flatten.to_set
+    end
+
+    def self.cyclic_components(node_ids:, edges:)
       node_ids = node_ids.to_set
       edges = edges.select { |from_id, to_id| node_ids.include?(from_id) && node_ids.include?(to_id) }
       components = GraphComponents.new(node_ids:, edges:).call
       self_edges = edges.select { |from_id, to_id| from_id == to_id }.map(&:first).to_set
       components.filter_map { |component| component if component.size > 1 || self_edges.include?(component.first) }
-        .flatten.to_set
     end
 
     def initialize(account:)
@@ -100,14 +103,10 @@ module Issues
     # Kosaraju's two linear passes are intentionally iterative: a large legacy
     # import must not consume the Ruby stack while producing an operator alert.
     def components
-      cyclic_ids = self.class.cyclic_ids(
+      self.class.cyclic_components(
         node_ids: nodes.keys,
         edges: edges.map { |edge| [ edge.from_id, edge.to_id ] }
       )
-      cycle_edges = edges.filter_map do |edge|
-        [ edge.from_id, edge.to_id ] if cyclic_ids.include?(edge.from_id) && cyclic_ids.include?(edge.to_id)
-      end
-      GraphComponents.new(node_ids: cyclic_ids, edges: cycle_edges).call
     end
 
     def cycle_for(component)
