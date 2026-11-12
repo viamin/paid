@@ -522,6 +522,20 @@
   `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-027** — When a supported Inbox entry renders, the
+  selected detail SHALL expose a sticky, keyboard-reachable action area below
+  its identity header. The area SHALL project every currently available
+  lane-specific action, contextual-chat action, and personal Inbox
+  remove/restore action without adding a new mutation endpoint; activation
+  SHALL invoke the existing control so its policy, confirmation, Turbo
+  behavior, loading state, validation, and success/error handling remain
+  unchanged. Detailed explanatory and decision-input UI SHALL remain below the
+  action area. The action area SHALL wrap on desktop and remain horizontally
+  reachable on narrow screens.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_detail_actions_controller.js`.
+  *Test:* `spec/system/dashboard_inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
   workflow through the existing Temporal bridge and SHALL redirect back to the

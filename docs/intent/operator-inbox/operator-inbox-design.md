@@ -71,6 +71,19 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Selected-entry actions
+
+The selected detail keeps a single sticky action area directly beneath its
+identity header. It projects every currently rendered link and submit control
+from the selected item, including lane-specific actions, contextual chat, and
+personal Inbox removal. The projection activates the original control rather
+than introducing a second mutation endpoint, so authorization, confirmation,
+Turbo navigation, validation, disabled state, and server-side error handling
+remain owned by the existing action. Detailed rationale and input controls
+remain in the body below the action area. The action list wraps on wide panes
+and scrolls horizontally on narrow panes so it remains keyboard reachable
+without obscuring the selected item.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the

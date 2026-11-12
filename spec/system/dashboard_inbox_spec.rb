@@ -76,6 +76,29 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     )
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "renders a sticky action area before the explanatory detail content on desktop and narrow layouts" do
+    issue = create(:issue, :needs_input, project: project, title: "Actionable question", body: questions_body)
+
+    sign_in_as(user)
+    visit inbox_entry_path("clarifying_questions:#{issue.id}",
+      project_id: project.id,
+      kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+    )
+
+    detail = Nokogiri::HTML(page.body).at_css("turbo-frame#inbox-detail")
+    action_area = detail.at_css("[data-testid='inbox-detail-actions']")
+    action_source = detail.at_css("[data-inbox-detail-actions-target='source']")
+
+    expect(action_area).to be_present
+    expect(action_area[:class]).to include("sticky")
+    expect(action_area.at_css("[data-inbox-detail-actions-target='controls']")[:class]).to include("overflow-x-auto")
+    expect(detail.to_html.index(action_area.to_html)).to be < detail.to_html.index(action_source.to_html)
+    expect(action_source).to have_css("form[action='#{project_issue_clarifying_questions_path(project, issue)}']")
+    expect(action_source).to have_button("Answer in chat")
+    expect(action_source).to have_button("Remove from Inbox")
+  end
+
   # @spec LIST-DETAIL-007
   it "renders Inbox in the shared viewport-bound shell with independent pane scroll regions" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
