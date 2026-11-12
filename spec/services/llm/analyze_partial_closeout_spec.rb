@@ -693,6 +693,16 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     end
   end
 
+  # @spec PARTIAL-CLOSEOUT-050
+  it "instructs the assessor to split mixed human authorization from runnable validation" do
+    described_class.call(agent_run: agent_run)
+
+    expect(provider).to have_received(:send_message) do |prompt:, **|
+      expect(prompt).to include("emit distinct prerequisites", "Technical success does not supply the authorization",
+        "independent human judgment")
+    end
+  end
+
   def human_gap(criterion, next_step: "Run the approved macOS pilot.")
     { criterion:, kind: "human", next_step:,
       attribution: { coverage: "established", source_issue_number: issue.github_number,

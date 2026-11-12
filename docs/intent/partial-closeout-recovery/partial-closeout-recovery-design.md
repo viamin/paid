@@ -701,6 +701,28 @@ servers; native checks copy neither attachment type.
 Validation evidence remains evidence for a later assessment, not an automatic
 attestation that the criterion is satisfied.
 
+### Mixed human and technical prerequisites
+
+A closeout assessment represents each authority boundary independently. When a
+criterion needs a human authorization or representative-environment setup and a
+machine-runnable measurement, it records a human prerequisite with the exact
+authorization/setup action and separately records the criterion's named
+technical validation action. The human prerequisite stays in the human Inbox;
+the technical action uses `TechnicalPrerequisites::InboxActions` and the
+existing delegated execution policy. Completion of either is not evidence for
+the other.
+
+Every technical result is bound to its validation run, pinned checkout,
+criterion, reviewed recipe/tool snapshot, environment evidence, and terminal
+result provenance. Completed, failed, and unavailable records remain visible;
+the latter two retain their exact recovery action and can be retried only by a
+fresh authorized validation. A terminal result changes the technical-evidence
+revision and offers a fresh, deduplicated acceptance audit. The audit is the
+only operation that recombines current human authorization, technical evidence,
+and any independent human evidence; it never infers authorization or an
+independent judgment from a technical success. Independent/blinded judgments
+remain separate human prerequisites even when they concern the same criterion.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation
