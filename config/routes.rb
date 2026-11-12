@@ -2,6 +2,8 @@
 
 Rails.application.routes.draw do
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
+  # @spec DEV-DB-TOOLS-001
+  mount PgHero::Engine, at: "pghero" if Rails.env.development? && defined?(PgHero)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
 
   devise_for :users, controllers: { registrations: "users/registrations" }

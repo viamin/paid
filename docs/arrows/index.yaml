@@ -586,6 +586,14 @@ arrows:
     taxonomy: runtime
     status: OK
     audited: 2026-08-24
+  development-database-tools:
+    title: Development Database Tools
+    path: docs/intent/development-database-tools/development-database-tools-design.md
+    specs: docs/intent/development-database-tools/development-database-tools-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-11-12
   container-egress-allowlisting:
     title: Container Egress Allowlisting
     path: docs/intent/container-egress-allowlisting/container-egress-allowlisting-design.md

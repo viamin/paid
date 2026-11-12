@@ -165,10 +165,20 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | Service | URL | Description |
 | ------- | --- | ----------- |
 | Rails app | <http://localhost:3000> | Main application |
+| PgHero | <http://localhost:3000/pghero> | Development-only PostgreSQL inspection dashboard |
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
 | PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
 | Qdrant | <http://localhost:6333> | Vector store for semantic knowledge search |
+
+### Database inspection with PgHero
+
+PgHero is installed only in the development bundle and inspects the same local
+database connection as Rails. Run the normal development stack with `bin/dev`
+(or `docker compose up --build`), then visit
+<http://localhost:3000/pghero>. No separate PgHero service or credentials are
+required. PgHero uses Rails' `DATABASE_URL`; set that variable before starting
+the stack when you want to inspect a non-default local development database.
 
 ### First-Time Setup
 
