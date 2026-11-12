@@ -450,13 +450,22 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          for attempt in 1 2 3; do
+            if pg_isready -h "$DB_HOST" -U postgres -d postgres && psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
           -- RLS regression specs create and revoke a restricted test role. This
           -- grants that narrowly scoped setup capability while preserving the
           -- runtime guard's non-superuser and non-BYPASSRLS invariants.
           -- Each matrix shard receives a newly initialized PostgreSQL service,
           -- so the role is declared once rather than conditionally through DO.
-          CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid_runtime') THEN
+              CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+            ELSE
+              ALTER ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+            END IF;
+          END
+          $$;
           DO $$
           BEGIN
             IF NOT EXISTS (
@@ -474,10 +483,20 @@ jobs:
           END
           $$;
           SQL
-          # Exercise the configured connection rather than discovering a bad
-          # password or LOGIN attribute after every shard has started.
-          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
-            -c "SELECT 1"
+            then
+              # Exercise the configured connection rather than discovering a bad
+              # password or LOGIN attribute after every shard has started.
+              if PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+                -c "SELECT 1"; then
+                exit 0
+              fi
+            fi
+
+            echo "::warning::Application-role setup failed (attempt $attempt/3); retrying"
+            sleep "$((attempt * 5))"
+          done
+
+          exit 1
 
       - name: Build assets
         run: yarn build && yarn build:css
@@ -831,13 +850,22 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          for attempt in 1 2 3; do
+            if pg_isready -h "$DB_HOST" -U postgres -d postgres && psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
           -- RLS regression specs create and revoke a restricted test role. This
           -- grants that narrowly scoped setup capability while preserving the
           -- runtime guard's non-superuser and non-BYPASSRLS invariants.
           -- The recovery job receives a newly initialized PostgreSQL service,
           -- so the role is declared once rather than conditionally through DO.
-          CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid_runtime') THEN
+              CREATE ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+            ELSE
+              ALTER ROLE paid_runtime LOGIN CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+            END IF;
+          END
+          $$;
           DO $$
           BEGIN
             IF NOT EXISTS (
@@ -855,10 +883,20 @@ jobs:
           END
           $$;
           SQL
-          # Exercise the configured connection rather than discovering a bad
-          # password or LOGIN attribute after every shard has started.
-          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
-            -c "SELECT 1"
+            then
+              # Exercise the configured connection rather than discovering a bad
+              # password or LOGIN attribute after every shard has started.
+              if PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+                -c "SELECT 1"; then
+                exit 0
+              fi
+            fi
+
+            echo "::warning::Application-role setup failed (attempt $attempt/3); retrying"
+            sleep "$((attempt * 5))"
+          done
+
+          exit 1
 
       - name: Build assets
         run: yarn build && yarn build:css
@@ -1691,8 +1729,17 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          CREATE ROLE paid_runtime LOGIN CREATEDB NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+          for attempt in 1 2 3; do
+            if pg_isready -h "$DB_HOST" -U postgres -d postgres && psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid_runtime') THEN
+              CREATE ROLE paid_runtime LOGIN CREATEDB NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+            ELSE
+              ALTER ROLE paid_runtime LOGIN CREATEDB NOSUPERUSER NOBYPASSRLS PASSWORD 'paid_runtime';
+            END IF;
+          END
+          $$;
           DO $$
           BEGIN
             IF NOT EXISTS (
@@ -1709,8 +1756,18 @@ jobs:
           END
           $$;
           SQL
-          PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
-            -c "SELECT 1"
+            then
+              if PGPASSWORD=paid_runtime psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -U paid_runtime -d postgres \
+                -c "SELECT 1"; then
+                exit 0
+              fi
+            fi
+
+            echo "::warning::Application-role setup failed (attempt $attempt/3); retrying"
+            sleep "$((attempt * 5))"
+          done
+
+          exit 1
 
       - name: Set up database
         run: bin/rails db:create db:schema:load

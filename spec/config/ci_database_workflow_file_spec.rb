@@ -123,6 +123,17 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           end
         end
 
+        if expectations.fetch("creates_application_role")
+          # @spec POSTGRESQL-PERSISTENCE-002
+          it "retries application-role setup for #{job_name}" do
+            job = workflow.fetch("jobs").fetch(job_name)
+            role_step = job.fetch("steps").find { |step| step["name"] == "Create application database role" }
+
+            expect(role_step.fetch("run")).to include("for attempt in 1 2 3")
+            expect(role_step.fetch("run")).to include("pg_isready -h \"$DB_HOST\" -U postgres -d postgres")
+          end
+        end
+
         it "installs the PGDG postgres client major package for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           install_step = job.fetch("steps").find { |step| step["name"] == "Install PostgreSQL client" }
