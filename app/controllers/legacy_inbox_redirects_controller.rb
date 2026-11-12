@@ -21,10 +21,11 @@ class LegacyInboxRedirectsController < ApplicationController
   end
 
   def inbox_query_params
-    {
-      project_id: params[:project_id].presence,
-      kind: valid_inbox_kind
-    }.compact
+    query = {
+      project_id_in: [ params[:project_id].presence ].compact,
+      kind_in: [ valid_inbox_kind ].compact
+    }.reject { |_key, value| value.empty? }
+    query.empty? ? {} : { q: query }
   end
 
   def valid_inbox_kind

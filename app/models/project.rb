@@ -469,7 +469,7 @@ class Project < ApplicationRecord
   scope :inactive, -> { where(active: false) }
 
   def self.ransackable_attributes(auth_object = nil)
-    %w[name last_agent_run_at last_github_activity_at created_at]
+    %w[name owner repo last_agent_run_at last_github_activity_at created_at]
   end
 
   def self.ransackable_associations(auth_object = nil)

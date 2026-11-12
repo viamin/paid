@@ -139,6 +139,23 @@
   `app/helpers/inbox/path_helper.rb`, `app/views/inbox/index.html.erb`,
   `app/javascript/controllers/inbox_filters_controller.js`.
 
+- [x] **INBOX-FOUNDATION-012** — The Inbox SHALL accept multiple projects and
+  multiple kinds through only the Ransack-compatible GET predicates
+  `q[project_id_in][]`, `q[kind_in][]`, and `q[search_cont]`. Project and
+  repository text SHALL be searched through Ransack on the policy-scoped
+  Project relation; entry title and summary text SHALL be searched only through
+  the typed Inbox adapter's explicit fields. The query boundary SHALL reject
+  unallowlisted predicates and SHALL compose the union selections with scope,
+  phase relevance, personal removals, ordering, direct-entry access, and
+  existing empty-filter fallback semantics. Because typed entries are assembled
+  from unrelated lane relations, no single Active Record relation represents all
+  entry titles and summaries; the adapter is the sole documented exception to
+  a directly Ransack-backed relation.
+  *Tests:* `spec/services/inbox/query_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/system/inbox_filters_dialog_spec.rb`.
+  *Code:* `app/services/inbox/query.rb`, `app/controllers/inbox_controller.rb`,
+  `app/services/inbox/availability.rb`, `app/views/inbox/index.html.erb`.
+
 ## Filter availability (`Inbox::Availability`)
 
 - [x] **INBOX-FOUNDATION-010** — The Inbox filter dialog SHALL only offer

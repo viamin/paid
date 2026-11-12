@@ -9,7 +9,7 @@ module Api
       before_action -> { require_scope!(:inbox) }, only: %i[index count show resolve_reopen_review remove_entry restore_entry]
       before_action -> { require_scope!(:chat) }, only: :chat
 
-      # @spec MOBILE-API-006 MOBILE-API-010
+      # @spec MOBILE-API-006 MOBILE-API-010 INBOX-FOUNDATION-012
       def index
         authorize :inbox, policy_class: InboxPolicy
         policy_scope(:inbox, policy_scope_class: InboxPolicy::Scope)
@@ -17,7 +17,7 @@ module Api
         filters = inbox_filters
         return if conditional_response?(filters)
 
-        entries = Inbox::Queue.call(user: current_user, **filters.slice(:project, :kind, :sort, :scope))
+        entries = filters.fetch(:query).call(Inbox::Queue.call(user: current_user, **filters.slice(:sort, :scope)))
         page = paginated_entries(entries)
         listed_entries = page.first(inbox_limit)
         payload = { entries: InboxEntrySerializer.render_list_page(listed_entries) }
@@ -114,13 +114,22 @@ module Api
 
       def inbox_filters
         {
-          project: scoped_project,
-          kind: valid_kind,
+          query: inbox_query,
           sort: valid_sort,
           scope: valid_scope,
           limit: inbox_limit,
           cursor: params[:cursor].presence
         }.compact
+      end
+
+      def inbox_query
+        query = Inbox::Query.new(params: params.fetch(:q, {}), projects: policy_scope(Project),
+          legacy_project_id: params[:project_id], legacy_kind: params[:kind])
+        query.project_ids.each do |id|
+          project = policy_scope(Project).find(id)
+          authorize project, :show?
+        end
+        query
       end
 
       # @spec INBOX-PHASE-RELEVANCE-002
@@ -129,19 +138,6 @@ module Api
         return nil if scope.blank?
 
         Inbox::Queue::SCOPES.include?(scope) ? scope : Inbox::Queue::ACTIONABLE_SCOPE
-      end
-
-      def scoped_project
-        return if params[:project_id].blank?
-
-        project = policy_scope(Project).find(params[:project_id])
-        authorize project, :show?
-        project
-      end
-
-      def valid_kind
-        kind = params[:kind].to_s
-        Inbox::Queue::KINDS.include?(kind) ? kind : nil
       end
 
       def valid_sort
@@ -159,7 +155,7 @@ module Api
       end
 
       def inbox_etag(filters)
-        payload = [ current_user.id, filters.slice(:kind, :sort, :scope, :limit, :cursor).merge(project_id: filters[:project]&.id), inbox_version ]
+        payload = [ current_user.id, filters.slice(:sort, :scope, :limit, :cursor).merge(q: params[:q], project_id: params[:project_id], kind: params[:kind]), inbox_version ]
         %Q("#{Digest::SHA256.hexdigest(payload.to_json)}")
       end
 

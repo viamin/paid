@@ -62,6 +62,32 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  # @spec INBOX-FOUNDATION-012
+  it "filters multiple projects and kinds through shareable Ransack query parameters" do
+    alpha_question = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
+    beta_question = create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
+    review = create(:issue, project: second_project, title: "Beta manual review", paid_state: "manual_review", manual_review_reason: "Needs review")
+
+    get inbox_path, params: { q: { project_id_in: [ project.id, second_project.id ],
+                                   kind_in: [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, Inbox::Queue::MANUAL_REVIEW_KIND ] } }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(alpha_question.title, beta_question.title, review.title)
+    expect(response.body).to include("q%5Bproject_id_in%5D%5B%5D")
+  end
+
+  # @spec INBOX-FOUNDATION-012
+  it "searches projects and entry titles server-side while preserving kind filters" do
+    alpha_question = create(:issue, :needs_input, project:, title: "Deploy alpha", body: questions_body)
+    create(:issue, :needs_input, project: second_project, title: "Deploy beta", body: questions_body)
+
+    get inbox_path, params: { q: { kind_in: [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND ], search_cont: "alpha" } }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(alpha_question.title)
+    expect(response.body).not_to include("Deploy beta")
+  end
+
   def cycle_analysis_run(status: "completed", recommendation: nil, repair: nil, coverage: nil)
     issues = Array.new(3) { create(:issue, project:, github_state: "open") }
     create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1],
@@ -644,8 +670,8 @@ RSpec.describe "Inbox" do
 
     expect(filter).to be_present
     expect(document.at_css("[data-inbox-filters-target='trigger']").text).to include("Filters", project.full_name, "Clarifying Questions", "Newest first")
-    expect(document.at_css("input[name='kind'][value='clarifying_questions']")["checked"]).to be_present
-    expect(document.at_css("input[name='project_id'][value='#{project.id}']")["checked"]).to be_present
+    expect(document.at_css("input[name='q[kind_in][]'][value='clarifying_questions']")["checked"]).to be_present
+    expect(document.at_css("input[name='q[project_id_in][]'][value='#{project.id}']")["checked"]).to be_present
     expect(document.at_css("input[name='sort'][value='newest']")["checked"]).to be_present
   end
 
@@ -1407,10 +1433,10 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}']")).to be_present
-    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")).to be_nil
-    expect(document.at_css("input[name='project_id'][value='#{project.id}']")).to be_present
-    expect(document.at_css("input[name='project_id'][value='#{untouched_project.id}']")).to be_nil
+    expect(document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}']")).to be_present
+    expect(document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")).to be_nil
+    expect(document.at_css("input[name='q[project_id_in][]'][value='#{project.id}']")).to be_present
+    expect(document.at_css("input[name='q[project_id_in][]'][value='#{untouched_project.id}']")).to be_nil
   end
 
   # @spec INBOX-FOUNDATION-010
@@ -1421,8 +1447,8 @@ RSpec.describe "Inbox" do
     get inbox_path(project_id: project.id)
 
     document = Nokogiri::HTML(response.body)
-    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}']")).to be_present
-    expect(document.at_css("input[name='kind'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")).to be_nil
+    expect(document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}']")).to be_present
+    expect(document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")).to be_nil
   end
 
   # @spec INBOX-FOUNDATION-010
@@ -1433,24 +1459,11 @@ RSpec.describe "Inbox" do
     get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
 
     document = Nokogiri::HTML(response.body)
-    expect(document.at_css("input[name='project_id'][value='#{second_project.id}']")).to be_present
-    expect(document.at_css("input[name='project_id'][value='#{project.id}']")).to be_nil
+    expect(document.at_css("input[name='q[project_id_in][]'][value='#{second_project.id}']")).to be_present
+    expect(document.at_css("input[name='q[project_id_in][]'][value='#{project.id}']")).to be_nil
   end
 
   # @spec INBOX-FOUNDATION-010
-  it "embeds the kind<->project matrix so the dialog can narrow options client-side" do
-    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
-
-    get inbox_path
-
-    document = Nokogiri::HTML(response.body)
-    kind_label = document.at_css("label[data-project-ids]")
-    project_label = document.at_css("label[data-kind-ids]")
-
-    expect(kind_label["data-project-ids"]).to eq(project.id.to_s)
-    expect(project_label["data-kind-ids"]).to eq(Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
-  end
-
   # @spec INBOX-FOUNDATION-010
   it "shows per-option counts in the filters dialog" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
@@ -1458,10 +1471,10 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    kind_label = document.at_css("label[data-project-ids]")
+    kind_label = document.at_css("label:has(input[name='q[kind_in][]'])")
 
     expect(kind_label.text).to include("Clarifying Questions (1)")
-    expect(document.at_css("label[data-kind-ids]").text).to include("#{project.full_name} (1)")
+    expect(document.at_css("label:has(input[name='q[project_id_in][]'])").text).to include("#{project.full_name} (1)")
   end
 
   # @spec INBOX-FOUNDATION-011
@@ -1957,7 +1970,7 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::RETRY_LIMITED_KIND}']")
+    control = document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::RETRY_LIMITED_KIND}']")
 
     expect(control).to be_present
   end
@@ -1976,7 +1989,7 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")
+    control = document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::MANUAL_REVIEW_KIND}']")
     expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
@@ -1992,7 +2005,7 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::FEATURE_DECISION_KIND}']")
+    control = document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::FEATURE_DECISION_KIND}']")
     expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND)
@@ -2008,7 +2021,7 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    control = document.at_css("input[name='kind'][value='#{Inbox::Queue::INTENT_CONFORMANCE_KIND}']")
+    control = document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::INTENT_CONFORMANCE_KIND}']")
     expect(control).to be_present
 
     get inbox_path(kind: Inbox::Queue::INTENT_CONFORMANCE_KIND)
@@ -2032,7 +2045,7 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    option = document.at_css("input[name='kind'][value='#{Inbox::Queue::TEST_REVIEW_PENDING_KIND}']")
+    option = document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::TEST_REVIEW_PENDING_KIND}']")
     expect(option).to be_present
 
     get inbox_path(kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND)
@@ -2049,7 +2062,7 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    option = document.at_css("input[name='kind'][value='#{Inbox::Queue::TRACEABILITY_GAP_KIND}']")
+    option = document.at_css("input[name='q[kind_in][]'][value='#{Inbox::Queue::TRACEABILITY_GAP_KIND}']")
     expect(option).to be_present
 
     get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)

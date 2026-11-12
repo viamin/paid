@@ -32,8 +32,8 @@ class InboxController < ApplicationController
   # removal moved out of the default list.
   # @spec INBOX-PHASE-RELEVANCE-003
   def hidden_or_removed_entry
-    entry = Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
-      project: @scoped_project, kind: @selected_kind)
+    entry = Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id])
+    entry = nil unless entry && @inbox_query.matches?(entry)
     @inbox_entries = [ entry ].compact if entry
     entry
   end
@@ -112,11 +112,15 @@ class InboxController < ApplicationController
     alert ? redirect_to(target, alert:) : redirect_to(target, notice:)
   end
 
-  # @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-010 @spec INBOX-FOUNDATION-011
+  # @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-010 @spec INBOX-FOUNDATION-011 @spec INBOX-FOUNDATION-012
   # @spec OPERATOR-INBOX-016
   def load_inbox
-    @scoped_project = scoped_needs_input_project
-    @selected_kind = valid_inbox_kind
+    @inbox_query = Inbox::Query.new(params: params.fetch(:q, {}), projects: policy_scope(Project),
+      legacy_project_id: params[:project_id], legacy_kind: params[:kind])
+    @selected_projects = selected_projects
+    @selected_kinds = @inbox_query.kinds
+    @scoped_project = @selected_projects.one? ? @selected_projects.first : nil
+    @selected_kind = @selected_kinds.one? ? @selected_kinds.first : nil
     @selected_sort = valid_inbox_sort
     @selected_scope = valid_inbox_scope
     if single_entry_request?
@@ -124,8 +128,9 @@ class InboxController < ApplicationController
       return
     end
 
-    @inbox_entries = inbox_queue.call
-    load_inbox_presentations(entries: @inbox_entries)
+    @scope_entries = inbox_queue.call
+    @inbox_entries = @inbox_query.call(@scope_entries)
+    load_inbox_presentations(entries: @scope_entries)
     redirect_for_empty_filtered_combination
   end
 
@@ -134,11 +139,9 @@ class InboxController < ApplicationController
   # single-entry render derives the matrix so the filter dialog still offers
   # every project with items.
   def load_inbox_presentations(entries: nil)
-    if entries && @scoped_project.nil? && @selected_kind.nil? && @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE
-      @inbox_availability = Inbox::Availability.call(user: current_user, entries:)
-    else
-      @inbox_availability = Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
-    end
+    @inbox_availability = Inbox::Availability.call(
+      user: current_user, entries:, projects: @selected_projects, kinds: @selected_kinds
+    )
     @inbox_projects = @inbox_availability.available_projects
   end
 
@@ -154,19 +157,13 @@ class InboxController < ApplicationController
   end
 
   def selected_entry_queue
-    [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
-      project: @scoped_project, kind: @selected_kind) ].compact
+    [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id]) ]
+      .compact
+      .select { @inbox_query.matches?(_1) }
   end
 
   def inbox_queue
-    @inbox_queue ||= Inbox::Queue.new(user: current_user, project: @scoped_project,
-      kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
-  end
-
-  def queue_entry_kind
-    return @selected_kind unless single_entry_request?
-
-    @selected_kind.presence || params[:entry_id].to_s.split(":", 2).first
+    @inbox_queue ||= Inbox::Queue.new(user: current_user, sort: @selected_sort, scope: @selected_scope)
   end
 
   # @spec INBOX-PHASE-RELEVANCE-002
@@ -182,24 +179,19 @@ class InboxController < ApplicationController
   # the "nearest" non-empty combination (#4276).
   def redirect_for_empty_filtered_combination
     return if @inbox_entries.present?
-    return if @selected_kind.nil? && @scoped_project.nil?
+    return if @selected_kinds.empty? && @selected_projects.empty?
     return if @inbox_availability.total_count.zero?
 
     redirect_to inbox_path(sort: params[:sort].presence), status: :see_other,
       notice: "No inbox items matched that filter, so it was cleared. Showing every open item instead."
   end
 
-  def scoped_needs_input_project
-    return if params[:project_id].blank?
+  def selected_projects
+    return @selected_projects if defined?(@selected_projects)
 
-    project = policy_scope(Project).find(params[:project_id])
-    authorize project, :show?
-    project
-  end
-
-  def valid_inbox_kind
-    kind = params[:kind].to_s
-    Inbox::Queue::KINDS.include?(kind) ? kind : nil
+    ids = Inbox::Query.new(params: params.fetch(:q, {}), projects: policy_scope(Project),
+      legacy_project_id: params[:project_id]).project_ids
+    @selected_projects = ids.map { |id| policy_scope(Project).find(id) }
   end
 
   def valid_inbox_sort
@@ -208,7 +200,7 @@ class InboxController < ApplicationController
   end
 
   def inbox_redirect_params
-    { project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence,
+    { q: params[:q], project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence,
       scope: @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE ? nil : @selected_scope }.compact
   end
 

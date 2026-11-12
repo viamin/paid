@@ -3,8 +3,9 @@
 module Inbox
   module PathHelper
     # @spec INBOX-FOUNDATION-009 @spec INBOX-PHASE-RELEVANCE-002
-    def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], **overrides)
+    def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], q: params[:q], **overrides)
       {
+        q: q.respond_to?(:to_unsafe_h) ? q.to_unsafe_h : q,
         project_id: project&.id,
         kind: kind,
         sort: sort,

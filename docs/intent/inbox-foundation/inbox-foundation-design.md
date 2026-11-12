@@ -129,14 +129,26 @@ issue, not a project-visibility filter, so it does not reintroduce the
 project-level `auto_pick_enabled` gate this section removes.
 
 The Inbox header keeps filtering controls compact as the number of entry kinds
-grows. A single collapsed trigger opens a filter panel with a single type
-selector, a searchable accessible-project selector, and an ordering selector.
-The URL remains the source of truth: `kind`, `project_id`, and `sort` restore
-the panel state and survive selection/action links. The panel is a focus-trapped
-popover on desktop and a native full-screen dialog on narrow screens; Escape
-closes it and Enter submits its GET form. Type deliberately remains
-single-select: that preserves the established `kind` URL contract while the
-team gathers evidence that combined kinds are needed.
+grows. A single collapsed trigger opens a filter panel with multi-select Type
+and Project controls, a server-side search field, and an ordering selector.
+The URL remains the source of truth: Ransack-compatible `q[kind_in][]`,
+`q[project_id_in][]`, and `q[search_cont]` parameters restore the panel state
+and survive selection/action links. The panel is a focus-trapped popover on
+desktop and a native full-screen dialog on narrow screens; Escape closes it and
+Enter submits its GET form.
+
+`Inbox::Query` is the query boundary. Inbox entries are ephemeral typed
+projections assembled from unrelated lane relations, so there is no truthful
+single Active Record relation on which to run a unified Ransack search. The
+boundary accepts only the three predicates above, runs project/repository
+search through Ransack on the already-authorized `Project` relation, and
+matches the explicitly exposed entry `title_text` and `summary_text` fields in
+memory. It never accepts model names, arbitrary attributes, SQL fragments, or
+unallowlisted predicates. Queue construction, policy scoping, phase relevance,
+and personal-removal filtering happen before this boundary, so query filtering
+cannot widen visibility. Entry types without a project, title, or summary are
+still filterable by kind; they simply contribute no text match for that missing
+field.
 
 ### Filter availability and empty-combination fallback (#4276)
 
@@ -162,12 +174,13 @@ The kind↔project availability matrix is embedded in the dialog's DOM
 the Stimulus controller narrows the opposite group live as the operator
 selects — no extra round-trip — and resets a now-invalid selection to "All".
 
-Server-side, a filtered URL matching zero entries while ≥1 item waits
+Server-side, a selected project/kind URL matching zero entries while ≥1 item waits
 elsewhere (stale bookmark, deep link, item resolved since the list rendered)
 must not land on the "Inbox clear" empty state: the controller redirects to
 the unfiltered view (keeping only `sort`) with a notice that the filter was
-cleared. That empty state therefore means exactly "nothing is waiting
-anywhere", not "this combination matches nothing".
+cleared. A text search that matches no entries remains an empty result so the
+operator can refine or reset it. That preserves the historical fallback for
+filter combinations without concealing a valid no-results search.
 
 Ordering differs in the one way the inbox page cares about:
 
