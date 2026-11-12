@@ -43,6 +43,19 @@ RSpec.describe Llm::Request do
     expect(standalone_executor).to have_received(:close)
   end
 
+  # @spec LLM-ROUTING-005 LLM-ROUTING-006
+  it "does not reuse a stale live-run container handle" do
+    run.update!(container_id: "removed-container", runner_handle: { "container_id" => "removed-container" })
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
+
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: 30
+    )
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
   it "tries an authorized configured fallback after authentication fails" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
