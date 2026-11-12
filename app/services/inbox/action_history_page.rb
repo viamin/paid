@@ -20,6 +20,11 @@ module Inbox
 
     def self.call(...) = new(...).call
 
+    def self.runs_for(entry)
+      entry.project.agent_runs.where(issue: entry.issue)
+        .or(entry.project.agent_runs.where(source_pull_request_number: entry.issue.github_number))
+    end
+
     def initialize(entry:, subject_key:, limit:, before:)
       @entry, @subject_key, @limit, @before = entry, subject_key, limit, before
     end
@@ -142,8 +147,7 @@ module Inbox
     end
 
     def runs
-      entry.project.agent_runs.where(issue: entry.issue)
-        .or(entry.project.agent_runs.where(source_pull_request_number: entry.issue.github_number))
+      self.class.runs_for(entry)
     end
 
     def feature

@@ -85,7 +85,34 @@ RSpec.describe Inbox::ActionHistory do
 
   # @spec OPERATOR-INBOX-023
   it "marks a subject with no local evidence as legacy-incomplete" do
-    expect(described_class.call(entry:).incomplete).to be(true)
+    history = described_class.call(entry:)
+
+    expect(history).to have_attributes(incomplete: true, processing_attempts: 0, inbox_returns: 0)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "summarizes recorded processing attempts without counting timeline events twice" do
+    create(:agent_run, project:, issue:, status: "failed", started_at: 2.hours.ago, completed_at: 1.hour.ago)
+    create(:agent_run, project:, issue:, status: "completed", started_at: 1.hour.ago, completed_at: 30.minutes.ago)
+
+    expect(described_class.call(entry:)).to have_attributes(processing_attempts: 2, inbox_returns: 0)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "summarizes repeated retry returns from the durable abandonment counter" do
+    issue.update!(runner_retry_abandonment_count: 3)
+
+    expect(described_class.call(entry:)).to have_attributes(inbox_returns: 2)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "counts a token-budget-exceeded run as one recorded processing attempt" do
+    create(:agent_run, project:, issue:, status: "token_budget_exceeded", started_at: 1.hour.ago, completed_at: 30.minutes.ago)
+
+    history = described_class.call(entry:)
+
+    expect(history).to have_attributes(processing_attempts: 1)
+    expect(history.events.map(&:action)).to include("Agent run exceeded its token budget")
   end
 
   # @spec OPERATOR-INBOX-023
@@ -140,7 +167,7 @@ RSpec.describe Inbox::ActionHistory do
 
     expect(history.events.size).to eq(5)
     expect(history.next_cursor).to eq(history.events.last.id)
-    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
+    history_selects = selects.grep(/SELECT "(?:inbox_history_events|agent_runs)"\.\* FROM/)
     expect(history_selects).not_to be_empty
     expect(history_selects).to all(include("LIMIT"))
   end

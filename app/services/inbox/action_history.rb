@@ -6,7 +6,7 @@ module Inbox
   # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023
   class ActionHistory
     Event = Data.define(:id, :action, :actor, :source, :result, :occurred_at, :revision, :evidence_url)
-    Result = Data.define(:events, :incomplete, :next_cursor)
+    Result = Data.define(:events, :incomplete, :next_cursor, :processing_attempts, :inbox_returns)
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
     CACHE_TTL = 20.seconds
@@ -23,7 +23,7 @@ module Inbox
 
     # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
     def call
-      return Result.new(events: [], incomplete: false, next_cursor: nil) unless subject_key
+      return Result.new(events: [], incomplete: false, next_cursor: nil, processing_attempts: 0, inbox_returns: 0) unless subject_key
 
       returned = capture_return!
       candidates = if cacheable? && !returned
@@ -33,11 +33,11 @@ module Inbox
       else
         ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
       end
-      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil) unless candidates
+      return result(events: [], next_cursor: nil) unless candidates
 
       page = candidates.first(limit + 1)
       visible = page.first(limit)
-      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil)
+      result(events: visible, next_cursor: page[limit] ? visible.last.id : nil)
     end
 
     def self.subject_key_for(entry)
@@ -53,10 +53,15 @@ module Inbox
 
     def self.invalidate_subject(account_id:, subject_key:)
       Rails.cache.delete(cache_key_for(account_id:, subject_key:))
+      Rails.cache.delete(summary_cache_key_for(account_id:, subject_key:))
     end
 
     def self.cache_key_for(account_id:, subject_key:)
       "#{CACHE_PREFIX}/#{account_id}/#{subject_key}"
+    end
+
+    def self.summary_cache_key_for(account_id:, subject_key:)
+      "#{cache_key_for(account_id:, subject_key:)}/summary"
     end
 
     private
@@ -82,6 +87,32 @@ module Inbox
         (entry.issue.action_history_started_at.nil? || entry.issue.action_history_started_at > entry.issue.github_created_at)
     end
 
+    # Counts run records, rather than start and finish timeline entries, so one
+    # processing attempt cannot be counted twice.
+    # @spec OPERATOR-INBOX-022
+    def result(events:, next_cursor:)
+      Result.new(events:, incomplete: legacy_coverage?, next_cursor:, **summary)
+    end
+
+    def summary
+      return @summary if defined?(@summary)
+
+      @summary = if cacheable?
+        Rails.cache.fetch(summary_cache_key, expires_in: CACHE_TTL) { recorded_summary }
+      else
+        recorded_summary
+      end
+    end
+
+    def recorded_summary
+      return { processing_attempts: 0, inbox_returns: 0 } unless entry.issue
+
+      {
+        processing_attempts: ActionHistoryPage.runs_for(entry).distinct.count,
+        inbox_returns: [ entry.issue.runner_retry_abandonment_count.to_i - 1, 0 ].max
+      }
+    end
+
     # Cache only the default read-only page. Cursor pages are infrequent and
     # keeping arbitrary cursors out of the cache bounds its size.
     def cacheable?
@@ -90,6 +121,10 @@ module Inbox
 
     def cache_key
       self.class.cache_key_for(account_id: entry.project.account_id, subject_key:)
+    end
+
+    def summary_cache_key
+      self.class.summary_cache_key_for(account_id: entry.project.account_id, subject_key:)
     end
   end
 end

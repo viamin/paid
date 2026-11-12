@@ -2,6 +2,18 @@
 <% history = Inbox::ActionHistory.call(entry: entry, user: current_user, before: params[:history_cursor]) %>
 <section class="mt-6 border-t border-gray-200 pt-4" aria-labelledby="inbox-history-heading">
   <h3 id="inbox-history-heading" class="text-sm font-semibold text-gray-900">Action history</h3>
+  <% if entry.issue %>
+    <p class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600" data-testid="inbox-history-summary" aria-label="recorded action history summary">
+      <span><%= pluralize(history.processing_attempts, "processing attempt") %></span>
+      <span aria-hidden="true">·</span>
+      <% if history.inbox_returns >= 2 %>
+        <span class="rounded-full bg-rose-100 px-2 py-0.5 font-semibold text-rose-800" data-testid="inbox-history-repeated-returns"><%= pluralize(history.inbox_returns, "Inbox return") %></span>
+      <% else %>
+        <span><%= pluralize(history.inbox_returns, "Inbox return") %></span>
+      <% end %>
+      <% if history.incomplete %><span class="text-amber-800">Recorded data only</span><% end %>
+    </p>
+  <% end %>
   <% if history.incomplete %><p class="mt-1 text-sm text-amber-800">History before Paid recorded durable evidence is unavailable.</p><% end %>
   <ol class="mt-3 space-y-3" aria-label="Action history timeline">
     <% history.events.each do |event| %>

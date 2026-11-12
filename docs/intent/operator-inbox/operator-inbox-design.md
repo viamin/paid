@@ -154,6 +154,13 @@ backfill can move the boundary only when it supplies the missing interval. API
 detail reads accept a history-specific limit and cursor so clients can advance
 the bounded timeline independently of Inbox-list pagination.
 
+The web timeline header summarizes the durable projection without maintaining a
+second counter: processing attempts are counted from the issue's agent-run
+records, and retry-lane returns use the issue's persistent abandonment count
+minus its initial Inbox appearance. A repeated return is styled as an attention
+signal. The summary is explicitly a count of recorded data whenever the ledger
+coverage boundary is incomplete; it never fabricates older attempts or returns.
+
 The PR scanner carries an explicit latest owner-review record, including its
 reviewed revision, to the same persistence boundary as its merge assessment.
 It never derives an owner-approval event from a blocker-free assessment, so
