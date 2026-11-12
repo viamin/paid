@@ -34,7 +34,8 @@ module Inbox
       else
         ActionHistoryPage.projection_for(entry:, subject_key:, limit:, before:)
       end
-      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil, summary: empty_summary) unless projection&.events
+      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil,
+        summary: projection&.summary || empty_summary) unless projection&.events
 
       page = projection.events.first(limit + 1)
       visible = page.first(limit)
