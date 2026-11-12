@@ -3,6 +3,8 @@
 Rails.application.routes.draw do
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
+  # @spec RAILS-CONTROL-PLANE-016
+  mount PgHero::Engine, at: "pghero" if defined?(PgHero)
 
   devise_for :users, controllers: { registrations: "users/registrations" }
 

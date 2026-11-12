@@ -72,6 +72,11 @@ its shutdown is deferred only while the Rails unload lock is held. Outside code
 reload, shutdown remains synchronous. Broadcasts must survive shutdown and work
 afterward.
 
+PgHero is a development-bundle Rails engine mounted at `/pghero`. It uses the
+application's development `DATABASE_URL` to expose PostgreSQL health and query
+inspection without a separately managed service. Production does not install or
+mount PgHero.
+
 ## Deferred Work
 
 The RDR's earlier Phlex preference remains deferred. Any future view-layer

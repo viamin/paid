@@ -6,6 +6,13 @@
 
 ## Request and Realtime Lifecycle
 
+- [x] **RAILS-CONTROL-PLANE-016** — When a developer starts the normal local
+  Rails stack after `bin/setup`, the control plane SHALL make PgHero available
+  at `/pghero` to inspect the database selected by `DATABASE_URL`; PgHero SHALL
+  remain absent from production's bundle and routes.
+  *Tests:* `spec/config/pghero_development_integration_spec.rb`.
+  *Code:* `Gemfile`, `config/routes.rb`, `README.md`.
+
 - [x] **RAILS-CONTROL-PLANE-010** — When Rails connects to the development
   PostgreSQL database, the connection SHALL disable JIT so interactive
   requests do not pay compilation cost for short eligibility queries; the
