@@ -1357,6 +1357,23 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-frame"]).to eq("inbox-history")
   end
 
+  # @spec OPERATOR-INBOX-022
+  it "renders accessible emphasized return counts in the history header" do
+    issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body,
+      runner_retry_abandonment_count: 3)
+    2.times { create(:agent_run, project:, issue:, status: "token_budget_exceeded", completed_at: Time.current) }
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    document = Nokogiri::HTML(response.body)
+    summary = document.at_css("[data-testid='inbox-history-summary']")
+    expect(summary.text).to include("2 processing attempts", "2 Inbox returns", "2 retry-cap returns", "2 token-budget limits")
+    expect(summary["role"]).to eq("status")
+    expect(summary["class"]).to include("text-amber-800")
+    expect(document.text).to include("Counts include only activity available to Paid")
+  end
+
   # @spec OPERATOR-INBOX-025
   it "returns an empty history frame after the item leaves the inbox" do
     issue = create(:issue, :needs_input, project:, body: questions_body)

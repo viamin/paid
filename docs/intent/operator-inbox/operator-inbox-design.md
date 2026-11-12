@@ -154,6 +154,14 @@ backfill can move the boundary only when it supplies the missing interval. API
 detail reads accept a history-specific limit and cursor so clients can advance
 the bounded timeline independently of Inbox-list pagination.
 
+The timeline header summarizes all locally available processing attempts,
+deduplicated ledger returns, retry-cap returns, and token-budget-exceeded
+attempts. It uses the run records and existing retry-abandonment total rather
+than persisting a parallel counter. Repeated returns receive a visible,
+accessible warning treatment. When the coverage boundary is incomplete, the
+header qualifies every count as limited to Paid's available activity rather
+than implying that the subject has no older activity.
+
 The PR scanner carries an explicit latest owner-review record, including its
 reviewed revision, to the same persistence boundary as its merge assessment.
 It never derives an owner-approval event from a blocker-free assessment, so

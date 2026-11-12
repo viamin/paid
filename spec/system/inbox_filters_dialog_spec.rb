@@ -75,6 +75,20 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     expect(page).to have_content("Action history")
   end
 
+  # @spec OPERATOR-INBOX-022
+  it "announces repeated return and token-budget counts in the loaded history header" do
+    issue = project_a.issues.first
+    issue.update!(runner_retry_abandonment_count: 3)
+    2.times { create(:agent_run, project: project_a, issue:, status: "token_budget_exceeded", completed_at: Time.current) }
+
+    visit inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
+    page.execute_script("document.querySelector('#inbox-history').scrollIntoView()")
+
+    expect(page).to have_selector("[data-testid='inbox-history-summary'][role='status'].text-amber-800",
+      text: "2 processing attempts · 2 Inbox returns · 2 retry-cap returns · 2 token-budget limits")
+    expect(page).to have_content("Counts include only activity available to Paid")
+  end
+
   # @spec OPERATOR-INBOX-025
   it "keeps a clicked row selected when the initial detail request is in flight" do
     visit inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)

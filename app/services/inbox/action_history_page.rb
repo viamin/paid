@@ -6,6 +6,7 @@ module Inbox
   # @spec OPERATOR-INBOX-022
   class ActionHistoryPage
     Cursor = Data.define(:id, :occurred_at)
+    Summary = Inbox::ActionHistory::Summary
     RUN_OUTCOMES = {
       "completed" => [ "Agent run completed", "completed" ],
       "no_output" => [ "Agent run completed with no output", "no_output" ],
@@ -20,6 +21,10 @@ module Inbox
 
     def self.call(...) = new(...).call
 
+    def self.summary(entry:, subject_key:)
+      new(entry:, subject_key:, limit: 1, before: nil).summary
+    end
+
     def initialize(entry:, subject_key:, limit:, before:)
       @entry, @subject_key, @limit, @before = entry, subject_key, limit, before
     end
@@ -31,9 +36,24 @@ module Inbox
         .sort_by { |event| [ -event.occurred_at.to_f, event.id ] }
     end
 
+    # @spec OPERATOR-INBOX-022
+    def summary
+      return empty_summary unless entry.issue
+
+      retry_cap_returns = [ entry.issue.runner_retry_abandonment_count.to_i - 1, 0 ].max
+      Summary.new(processing_attempts: runs.count,
+        inbox_returns: history_scope.where("event_key LIKE ?", "inbox-returned:%").count + retry_cap_returns,
+        retry_cap_returns:,
+        token_budget_exceeded_attempts: runs.where(status: "token_budget_exceeded").count)
+    end
+
     private
 
     attr_reader :before, :entry, :limit, :subject_key
+
+    def empty_summary
+      Summary.new(processing_attempts: 0, inbox_returns: 0, retry_cap_returns: 0, token_budget_exceeded_attempts: 0)
+    end
 
     def persisted_events
       bounded(history_scope, "occurred_at", "'history:' || id::text").map do |event|

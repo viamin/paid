@@ -85,7 +85,35 @@ RSpec.describe Inbox::ActionHistory do
 
   # @spec OPERATOR-INBOX-023
   it "marks a subject with no local evidence as legacy-incomplete" do
-    expect(described_class.call(entry:).incomplete).to be(true)
+    history = described_class.call(entry:)
+
+    expect(history.incomplete).to be(true)
+    expect(history.summary).to have_attributes(
+      processing_attempts: 0, inbox_returns: 0, retry_cap_returns: 0, token_budget_exceeded_attempts: 0
+    )
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "summarizes durable processing and Inbox-return activity without replayed ledger events" do
+    create(:agent_run, project:, issue:, status: "failed", started_at: 2.hours.ago, completed_at: 90.minutes.ago)
+    create(:agent_run, project:, issue:, status: "completed", started_at: 1.hour.ago, completed_at: 30.minutes.ago)
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", event_key: "inbox-returned:one",
+      metadata: { action: "Returned to Inbox" })
+
+    expect(described_class.call(entry:).summary).to have_attributes(
+      processing_attempts: 2, inbox_returns: 1, retry_cap_returns: 0, token_budget_exceeded_attempts: 0
+    )
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "counts repeated retry caps and token-budget outcomes from their durable sources" do
+    issue.update!(runner_retry_abandonment_count: 3)
+    2.times { create(:agent_run, project:, issue:, status: "token_budget_exceeded", completed_at: Time.current) }
+
+    expect(described_class.call(entry:).summary).to have_attributes(
+      processing_attempts: 2, inbox_returns: 2, retry_cap_returns: 2, token_budget_exceeded_attempts: 2
+    )
   end
 
   # @spec OPERATOR-INBOX-023
@@ -142,7 +170,8 @@ RSpec.describe Inbox::ActionHistory do
     expect(history.next_cursor).to eq(history.events.last.id)
     history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
     expect(history_selects).not_to be_empty
-    expect(history_selects).to all(include("LIMIT"))
+    paged_selects = history_selects.reject { |sql| sql.start_with?("SELECT COUNT") }
+    expect(paged_selects).to all(include("LIMIT"))
   end
 
   # @spec OPERATOR-INBOX-025

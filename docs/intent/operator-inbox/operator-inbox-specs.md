@@ -53,7 +53,13 @@
   details SHALL offer a cursor-backed continuation when older events exist,
   and API detail clients SHALL be able to advance the bounded timeline with a
   dedicated history cursor and limit. Inbox list and count queries SHALL NOT
-  load per-row history or make live GitHub calls.
+  load per-row history or make live GitHub calls. The web timeline header
+  SHALL summarize all locally available processing attempts, durable Inbox
+  returns, retry-cap returns, and token-budget-exceeded attempts without
+  inferring unavailable activity or double-counting replayed ledger events.
+  Repeated returns SHALL receive an emphasized, accessible treatment. When
+  the coverage boundary is incomplete, the header SHALL state that its counts
+  cover only the activity available to Paid.
   *Code:* `app/services/inbox/action_history.rb`,
   `app/services/inbox/action_history_page.rb`,
   `app/services/inbox/chat_context.rb`,

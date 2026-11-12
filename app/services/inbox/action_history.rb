@@ -6,11 +6,13 @@ module Inbox
   # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023
   class ActionHistory
     Event = Data.define(:id, :action, :actor, :source, :result, :occurred_at, :revision, :evidence_url)
-    Result = Data.define(:events, :incomplete, :next_cursor)
+    Summary = Data.define(:processing_attempts, :inbox_returns, :retry_cap_returns, :token_budget_exceeded_attempts)
+    Projection = Data.define(:candidates, :summary)
+    Result = Data.define(:events, :incomplete, :next_cursor, :summary)
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
     CACHE_TTL = 20.seconds
-    CACHE_PREFIX = "inbox/history/v1"
+    CACHE_PREFIX = "inbox/history/v2"
 
     def self.call(...) = new(...).call
 
@@ -23,21 +25,25 @@ module Inbox
 
     # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
     def call
-      return Result.new(events: [], incomplete: false, next_cursor: nil) unless subject_key
+      return Result.new(events: [], incomplete: false, next_cursor: nil, summary: empty_summary) unless subject_key
 
       returned = capture_return!
-      candidates = if cacheable? && !returned
+      projection = if cacheable? && !returned
         Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
-          ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
+          Projection.new(candidates: ActionHistoryPage.call(entry:, subject_key:, limit:, before:),
+            summary: ActionHistoryPage.summary(entry:, subject_key:))
         end
       else
-        ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
+        Projection.new(candidates: ActionHistoryPage.call(entry:, subject_key:, limit:, before:),
+          summary: ActionHistoryPage.summary(entry:, subject_key:))
       end
-      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil) unless candidates
+      candidates = projection.candidates
+      summary = projection.summary
+      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil, summary:) unless candidates
 
       page = candidates.first(limit + 1)
       visible = page.first(limit)
-      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil)
+      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil, summary:)
     end
 
     def self.subject_key_for(entry)
@@ -64,6 +70,10 @@ module Inbox
     attr_reader :before, :entry, :limit, :user
 
     def subject_key = self.class.subject_key_for(entry)
+
+    def empty_summary
+      Summary.new(processing_attempts: 0, inbox_returns: 0, retry_cap_returns: 0, token_budget_exceeded_attempts: 0)
+    end
 
     def capture_return!
       return unless user && entry.issue
