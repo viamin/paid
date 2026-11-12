@@ -701,7 +701,7 @@ class AgentRun < ApplicationRecord
     invalidate_runner_options_cache_for_account(account_id: account_id)
   end
 
-  # @spec AGENT-RUNS-INDEX-002
+  # @spec AGENT-RUNS-INDEX-002 AGENT-RUNS-INDEX-004
   def self.distinct_filter_options(cache_key: nil)
     return compute_distinct_filter_options unless cache_key
 
@@ -712,7 +712,7 @@ class AgentRun < ApplicationRecord
 
   def self.filter_options_cache_key_for(account_id:, project_id: nil)
     scope = project_id ? "project/#{project_id}" : "account"
-    "agent_runs/filter_options/account/#{account_id}/#{scope}"
+    "agent_runs/filter_options/v2/account/#{account_id}/#{scope}"
   end
 
   def self.invalidate_filter_options_cache(account_id:, project_id: nil)
@@ -768,12 +768,13 @@ class AgentRun < ApplicationRecord
   def self.compute_distinct_filter_options
     # The aggregate only reads agent_runs columns; eager loads on the incoming
     # scope would otherwise fan the pluck out into wide LEFT JOIN queries.
-    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal)
+    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal, :trigger_type)
 
     {
       status: values.filter_map(&:first).uniq,
       agent_type: values.filter_map { |row| row[1] }.uniq,
-      goal: values.filter_map { |row| row[2] }.uniq
+      goal: values.filter_map { |row| row[2] }.uniq,
+      trigger_type: values.filter_map { |row| row[3] }.uniq
     }
   end
   private_class_method :compute_distinct_filter_options

@@ -11,3 +11,14 @@
 - [x] **AGENT-RUNS-INDEX-003** — When the account-wide Agent Runs index loads a
   page of runs, it SHALL omit large run payload columns that are unused by the
   index while retaining the context text displayed in the table.
+- [x] **AGENT-RUNS-INDEX-004** — When an authorized operator filters either
+  Agent Runs index, it SHALL use only allowlisted Ransack predicates: `_in`
+  predicates for available status, agent-type, goal, effective-runner, and
+  trigger-type values, and `branch_name_or_temporal_workflow_id_cont` for text
+  search. Multiple selected values for one categorical field SHALL have OR
+  semantics.
+- [x] **AGENT-RUNS-INDEX-005** — When Agent Runs filters or sorting are active,
+  the index SHALL retain its `q` GET query through pagination and table sort
+  links, identify active filters to assistive technology, and offer a reset
+  action. Queue-priority ordering SHALL apply only for exactly one unfinished
+  selected status; all other filter combinations SHALL use normal ordering.

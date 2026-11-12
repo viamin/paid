@@ -495,7 +495,12 @@ module ApplicationHelper
     )
   end
 
-  RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
+  # @spec AGENT-RUNS-INDEX-004 AGENT-RUNS-INDEX-005
+  RANSACK_PERMITTED_KEYS = [
+    :status_eq, :agent_type_eq, :trigger_type_eq, :goal_eq, :branch_name_cont,
+    :branch_name_or_temporal_workflow_id_cont, :category_eq, :active_eq, :name_cont, :s,
+    { status_in: [], agent_type_in: [], trigger_type_in: [], goal_in: [], effective_runner_in: [] }
+  ].freeze
 
   def sort_link_to(label, attribute, q)
     current_sort = q.sorts.find { |s| s.name == attribute.to_s }
