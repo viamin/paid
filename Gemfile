@@ -187,6 +187,9 @@ group :development do
   # Per-request profiler overlay backed by vernier + prosopite [https://github.com/codergeek121/dial]
   gem "dial", "~> 0.6"
 
+  # PostgreSQL performance dashboard for the local development database [https://github.com/ankane/pghero]
+  gem "pghero"
+
   # Developer tools for HTML+ERB templates [https://herb-tools.dev]
   gem "herb", require: false
 end

@@ -165,6 +165,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | Service | URL | Description |
 | ------- | --- | ----------- |
 | Rails app | <http://localhost:3000> | Main application |
+| PgHero | <http://localhost:3000/pghero> | Development-only PostgreSQL dashboard |
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
 | PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
@@ -314,6 +315,15 @@ yarn audit                   # JavaScript dependency audit
 # CI helper
 bin/ci                       # Runs setup, lint, and security audit
 ```
+
+### Inspecting the Development Database with PgHero
+
+Run `bin/setup` once, then start the application with `bin/dev` and visit
+<http://localhost:3000/pghero>. PgHero uses the same development database
+connection as Rails, so it automatically honors `DATABASE_URL` when you use an
+externally provisioned PostgreSQL service. No PgHero-specific environment
+variables or additional services are required. The dashboard is available only
+in the development environment and is not included in production.
 
 ## Architecture Overview
 

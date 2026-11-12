@@ -60,6 +60,13 @@ The existing development supervisor records lightweight process RSS and host
 memory samples before a crash, so a killed process's memory growth can be
 distinguished from pressure elsewhere in the workspace.
 
+Development also mounts PgHero at `/pghero` as a developer-only PostgreSQL
+inspection surface. It uses the application's existing development database
+connection, including an externally supplied `DATABASE_URL`, and needs no
+separate service or PgHero-specific environment variable. The gem and route
+are excluded from test and production bundles and routes, so production
+deployment behavior remains unchanged.
+
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
 fallback profile levels execute as a
