@@ -53,18 +53,33 @@ RSpec.describe Issues::ParseDependencies, :no_db do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
-    it "keeps quoted and attributed directives inside a dependency section" do
+    it "excludes another issue's directive inside a dependency section while retaining a direct directive" do
       local_deps, cross_deps = described_class.extract(
         body: <<~BODY,
           ## Dependencies
           Issue #500 depends on #41.
-          `Depends on #42`
+          Issue #100 depends on #42
         BODY
         comments: [],
         current_issue_number: 100
       )
 
-      expect(local_deps).to eq(41 => false, 42 => false)
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "excludes a dependency-section list item that describes another issue's prerequisites" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Rollout / dependency
+          - Draft because #4868 depends on #4863 and #4761.
+        BODY
+        comments: [],
+        current_issue_number: 4981
+      )
+
+      expect(local_deps).to eq({})
       expect(cross_deps).to eq({})
     end
 

@@ -310,10 +310,10 @@ module Issues
     # sections are stripped before inline extraction so dependency phrases
     # describing inter-sub-issue relationships are not attributed to the
     # current issue.
-    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004
+    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004, DEPENDENCY-DECLARATIONS-009
       markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
-        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: false)
+        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: true)
       end
 
       inline_text = strip_markdown_sections(body, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
@@ -323,12 +323,14 @@ module Issues
     # Within a "## Dependencies" section, recognise deployment directives and
     # bare references only in Markdown list items. This keeps implementation
     # inventories in ordinary prose from becoming unintended prerequisites.
-    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003
+    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
       scratch = without_fenced_code(section_body)
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
+          next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
         scratch = scratch.gsub(pattern, "")
@@ -368,6 +370,7 @@ module Issues
 
     def flush_list_item(item, local_deps, cross_deps)
       return unless item
+      return if describes_another_issue?(item, item.index(DIRECTIVE_KEYWORD_PATTERN))
 
       extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
     end
@@ -406,6 +409,8 @@ module Issues
     end
 
     def describes_another_issue?(text, directive_start)
+      return false unless directive_start
+
       # Only the immediately preceding subject can own a directive. Limit the
       # lookback so many directives in a long issue body stay linear to parse.
       prefix = text[[ directive_start - 256, 0 ].max...directive_start]
