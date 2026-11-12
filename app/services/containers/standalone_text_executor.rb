@@ -102,15 +102,20 @@ module Containers
     end
 
     def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
+      completed = false
       validate_input_size!(command, env, preparation, stdin_data)
       provision! unless @container
-      with_managed_credential_lease do
+      result = with_managed_credential_lease do
         run(materialized_command(command), timeout: bounded_timeout(timeout),
           env: materialized_env(env), input: input_payload(command, preparation, stdin_data))
       end
-    rescue StandardError
-      close
-      raise
+      completed = true
+      result
+    ensure
+      # Interrupt is not a StandardError, but a worker may receive it while an
+      # exec is in flight. The disposable container has no valid reuse after
+      # any interrupted command, so remove it before propagating the signal.
+      close unless completed
     end
 
     def close

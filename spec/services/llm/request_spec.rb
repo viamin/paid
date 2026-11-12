@@ -163,6 +163,17 @@ RSpec.describe Llm::Request do
     expect(Containers::StandaloneTextExecutor).to have_received(:new).once
   end
 
+  # @spec LLM-ROUTING-002 LLM-ROUTING-005 LLM-ROUTING-006
+  it "fails closed for a discarded runner pinned by a stale run handle" do
+    run.effective_runner_record.update_column(:discarded_at, Time.current)
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }
+      .to raise_error(AgentHarness::ConfigurationError, /No eligible configured runner/)
+
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   # @spec LLM-ROUTING-001 MODEL-POLICY-024
   it "does not let a ZDR fallback disqualify the non-ZDR primary" do
     fallback = create(:runner, user: owner, runner_key: "gemini", zero_data_retention: true,
