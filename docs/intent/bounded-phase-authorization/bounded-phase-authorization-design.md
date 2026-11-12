@@ -27,10 +27,14 @@ project policy; the model stays validation-only.
 The authorization stores its author, consent projection, permitted actions,
 intent/acceptance references, policy signature, lifecycle timestamps, and
 audit references. All records use project/account tenant scoping and normal
-actor policy checks. Expiry, completion, revocation, and superseded are
-terminal for admission until a new explicit authorization. Reassessment-
-required pauses admission until an authorized actor resolves it by stopping,
-superseding, or resuming the unchanged authorization.
+actor policy checks. Expiry, completion, revocation, explicit holds, and the
+exclusive bounded stop are durable lifecycle outcomes for admission until a
+new explicit authorization. Lifecycle transitions append reasoned evidence
+and immutable account-audit events without changing the original admission
+snapshot, so recovery decisions can inspect both the authority that was
+admitted and why it stopped. Reassessment-required pauses admission until an
+authorized actor resolves it by stopping, superseding, or resuming the
+unchanged authorization.
 
 ## Policy composition
 

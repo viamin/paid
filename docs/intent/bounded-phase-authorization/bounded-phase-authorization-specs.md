@@ -63,6 +63,7 @@ claims remain proposed until their admission and reassessment paths land.
   (canonical admission evidence),
   `spec/services/automation/delegated_work_boundary_spec.rb`,
   `spec/services/automation/delegated_action_admission_spec.rb`, the
+  lifecycle cases in `spec/models/bounded_delegated_action_spec.rb`,
   delegated-work contexts of
   `spec/temporal/activities/queue_agent_run_activity_spec.rb` and
   `spec/jobs/process_run_queue_job_spec.rb` (queue, follow-up-tagged queue,
