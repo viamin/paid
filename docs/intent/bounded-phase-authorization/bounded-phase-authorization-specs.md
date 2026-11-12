@@ -37,22 +37,26 @@ claims remain proposed until their admission and reassessment paths land.
   acceptance evidence, selected phase/actions, exclusive stopping boundary,
   policy signature, expiry, and audit event; it SHALL NOT derive this authority
   from a GitHub approval, mention, dependency, parent/child relation, or
-  milestone membership.
-  *Planned tests:* model and command specs.
+  milestone membership. It SHALL extend the shipped `-010` evidence/audit
+  record and SHALL NOT create another delegated-action authority.
+  *Planned delivery:* #4997. *Planned tests:* model and command specs.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-002** — When a bounded authorization is
   active, the system SHALL permit only its selected phase's in-scope review and
   repair actions on the identified lineage, and SHALL require explicit supported
   authorization for another issue, child, PR, milestone-wide scope, release,
-  deployment, or setting enablement.
-  *Planned tests:* effective-policy and lineage specs.
+  deployment, or setting enablement. It SHALL compose the shipped `-011`
+  action permissions and `-004` admission boundary rather than duplicate them.
+  *Planned delivery:* #4997. *Planned tests:* effective-policy and lineage specs.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-003** — When the identified lineage would
   enter the selected next phase, the system SHALL stop it with a visible
   `bounded_phase_stop` result even if project defaults or an ordinary
   continuation grant would otherwise permit that phase; ordinary RDR-077 grants
-  SHALL retain their current non-stopping behavior.
-  *Planned tests:* effective-policy and queue specs.
+  SHALL retain their current non-stopping behavior. This extends the shipped
+  `-004` fail-closed boundary result with a `bounded_phase_stop`; it SHALL NOT
+  change continuation-grant endpoint semantics.
+  *Planned delivery:* #4997. *Planned tests:* effective-policy and queue specs.
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-004** — Before creating, dequeuing,
   retrying, or scheduling a follow-up action, the system SHALL recheck tenant,
@@ -79,29 +83,31 @@ claims remain proposed until their admission and reassessment paths land.
   *Planned tests:* invalidation and reassessment specs, including resumption of
   an unchanged authorization after a triggering condition resolves without
   scope expansion (for example a policy change that is restored).
+  *Planned delivery:* #4998.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-006** — When semantic correspondence is
   evaluated, the system SHALL use `agent_harness` with bounded evidence and a
   structured outcome, SHALL fail closed on unavailable or malformed output, and
   SHALL NOT let that outcome waive deterministic policy.
-  *Planned tests:* scope-assessment specs.
+  *Planned delivery:* #4998. *Planned tests:* scope-assessment specs.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-007** — When coding is selected, the
   system SHALL stop at merge-ready and SHALL NOT merge; when merge is selected,
   it SHALL still require CI, security, branch protection, mergeability, and all
   required fresh reviews for the current head, without treating an older GitHub
-  approval as current evidence.
-  *Planned tests:* merge-policy and request specs.
+  approval as current evidence. Review freshness remains owned by the
+  auto-merge strategy; this authorization never refreshes a review.
+  *Planned delivery:* #4999. *Planned tests:* merge-policy and request specs.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-008** — Inbox, work detail, chat, API, and
   tool operations SHALL use the same authorization policy and SHALL display the
   scope, current state, remaining checks, invalidators, expiry/revocation, and
   next stop before consent and during execution.
-  *Planned tests:* request, Inbox, chat, API, and MCP specs.
+  *Planned delivery:* #4999. *Planned tests:* request, Inbox, chat, API, and MCP specs.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-009** — Authorization completion,
   revocation, reassessment, and endpoint admission SHALL be concurrency-safe;
   when either terminal transition races a dequeue or follow-up, at most the
   already-admitted action may proceed and no next-phase action SHALL start.
   Reopening completed work SHALL NOT reactivate the authorization.
-  *Planned tests:* transaction/concurrency and reopen specs.
+  *Planned delivery:* #4999. *Planned tests:* transaction/concurrency and reopen specs.
