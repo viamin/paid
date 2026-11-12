@@ -380,7 +380,8 @@ The following issue boundaries were used for delivery and reconciliation:
   updates with form selections and is also available through the API and work
   details. An unchecked continuation option does not suppress the notice when
   project policy permits follow-ups. Newly permitted continuation at submission
-  returns an updated notice for review. No per-item stopping override is added.
+  returns an updated notice for review. An ordinary continuation grant adds no
+  per-item stopping override.
 - Phase disablement, grant revocation, queued execution, retries, and a new
   review comment race without starting unauthorized subsequent actions.
 - Trusted activation labels cannot enable disabled phases. A grant does not
