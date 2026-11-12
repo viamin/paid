@@ -38,7 +38,12 @@ section body is code, not Markdown list structure, so list-style lines inside it
 are not declarations. A fenced block closes only on the same delimiter
 character with a run at least as long as its opening delimiter. A subsequent
 heading ends the dependency section; child/sub-issue sections remain excluded
-from inline parsing.
+from inline parsing. In every supported location, a directive whose numbered
+subject is another issue is contextual rather than a declaration for the
+current item. This includes list items such as `Draft because #4868 depends on
+another prerequisite (#4863)`; their subject and prerequisites do not become dependencies of the item
+that carries the text. An explicit directive for the current item remains a
+declaration.
 
 ## Shared Consumers
 
