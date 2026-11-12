@@ -142,6 +142,17 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(Containers::ProxyUrl).to have_received(:resolve).with(backend: backend, restricted: false)
   end
 
+  # @spec LLM-ROUTING-005
+  it "creates the text container without host bind mounts" do
+    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(hash_including(
+      "HostConfig" => hash_including("Binds" => [])
+    ))
+  end
+
   # @spec LLM-ROUTING-006
   it "honors the caller timeout above two minutes" do
     allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
@@ -158,6 +169,20 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect do
       described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
     end.to raise_error(AgentHarness::TimeoutError, /timed out/)
+
+    expect(backend).to have_received(:delete_container).with(container, force: true)
+  end
+
+  # @spec LLM-ROUTING-006
+  it "fails closed when Docker cannot provision the isolated container" do
+    allow(backend).to receive(:create_container).and_raise(Docker::Error::DockerError, "Docker unavailable")
+    allow(backend).to receive(:exec_in_container)
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::ConfigurationError, /Unable to provision isolated text execution/)
+
+    expect(backend).not_to have_received(:exec_in_container)
   end
 
   # @spec LLM-ROUTING-005 LLM-ROUTING-006

@@ -77,6 +77,9 @@ secrets proxy rather than long-lived tokens; they operate in isolated
 backend-selected workspaces (named-volume clones by default, legacy worktree
 bind mounts only when explicitly requested); and they cannot interfere with
 each other or reach the host.
+Standalone application text requests use the same container and secrets-proxy
+boundary without any repository or Rails-workspace bind mount, so account and
+post-run decisions do not depend on host-side CLI authentication.
 Isolation is the precondition for running multiple agents in parallel and for
 giving an agent broad permissions inside its container without broad
 permissions on the system.
