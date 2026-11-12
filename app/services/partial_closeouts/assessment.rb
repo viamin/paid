@@ -24,6 +24,19 @@ module PartialCloseouts
 
     def self.call(...) = new(...).call
 
+    # @spec PARTIAL-CLOSEOUT-048
+    def self.persisted_for(issues)
+      return {} if issues.empty?
+
+      latest = AgentRun.where(issue_id: issues.map(&:id)).where("reconciliation ? 'assessment'")
+        .select("DISTINCT ON (agent_runs.issue_id) agent_runs.issue_id, agent_runs.reconciliation")
+        .order("agent_runs.issue_id, agent_runs.id DESC")
+      AgentRun.from("(#{latest.to_sql}) agent_runs").pluck(:issue_id, :reconciliation).to_h.transform_values do |reconciliation|
+        assessment = reconciliation.to_h["assessment"]
+        assessment.is_a?(Hash) ? assessment.deep_stringify_keys : {}
+      end
+    end
+
     def self.snapshot(agent_run, assessment)
       payload = assessment.to_h.deep_stringify_keys
       input_revisions = payload.delete("audit_input_revisions")
@@ -60,11 +73,13 @@ module PartialCloseouts
     end
 
     # @spec OPERATOR-INBOX-016
-    def initialize(issue, evidence: nil, technical_evidence: nil, trusted_measurement_evidence: nil)
+    def initialize(issue, evidence: nil, technical_evidence: nil, trusted_measurement_evidence: nil,
+      persisted_assessment: nil)
       @issue = issue
       @evidence = evidence
       @technical_evidence = technical_evidence
       @trusted_measurement_evidence = trusted_measurement_evidence
+      @persisted_assessment = persisted_assessment
     end
 
     def call
@@ -85,7 +100,8 @@ module PartialCloseouts
     attr_reader :issue
 
     def assessment
-      @assessment ||= latest_run&.reconciliation.to_h.fetch("assessment", {}).deep_stringify_keys || {}
+      @assessment ||= @persisted_assessment || latest_run&.reconciliation.to_h
+        &.fetch("assessment", {})&.deep_stringify_keys || {}
     end
 
     def latest_run

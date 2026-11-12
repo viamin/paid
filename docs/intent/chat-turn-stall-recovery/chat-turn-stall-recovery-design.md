@@ -233,6 +233,9 @@ with `chat_turn_id`, `chat_session_id`,
 `triggered_by`). Stall rate, recovery success/outcome, and duplicate-
 prevention (`claim_recovery!` returning `false`) are all queryable by
 `event_name` and the denormalized `chat_session_id`/`chat_turn_id`.
+When a parent chat turn is deleted as part of its account/session teardown,
+the association deletes lifecycle rows directly rather than attempting to
+mutate immutable audit records.
 
 ## Non-goals (deferred)
 

@@ -31,6 +31,22 @@ RSpec.describe ChatTurn do
     end
   end
 
+  describe "deletion" do
+    # @spec CHAT-TURN-RECOVERY-007
+    it "removes immutable lifecycle events when deleting their turn" do
+      turn = described_class.start!(chat_session: chat_session, user_message: user_message)
+      event = ChatTurnLifecycleEvent.create!(
+        chat_turn: turn,
+        chat_session: chat_session,
+        event_name: "chat_turn.completed",
+        occurred_at: Time.current
+      )
+
+      expect { turn.destroy! }.to change(described_class, :count).by(-1)
+        .and change { ChatTurnLifecycleEvent.where(id: event.id).count }.by(-1)
+    end
+  end
+
   describe "#claim_initial_attempt!" do
     # @spec CHAT-TURN-RECOVERY-001
     it "allows only one caller to claim a pending turn" do

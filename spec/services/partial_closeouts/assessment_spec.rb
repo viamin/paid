@@ -9,6 +9,14 @@ RSpec.describe PartialCloseouts::Assessment do
     create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
   end
 
+  # @spec PARTIAL-CLOSEOUT-048
+  it "treats a JSON null persisted assessment as an empty assessment" do
+    run = create(:agent_run, :completed, project:, issue:)
+    run.update!(reconciliation: { "assessment" => nil })
+
+    expect(described_class.persisted_for([ issue ])).to eq(issue.id => {})
+  end
+
   # @spec OPERATOR-INBOX-016
   it "reads assessment data without loading agent run transcripts or requerying supplied evidence" do
     pull_request
