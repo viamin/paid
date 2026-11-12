@@ -30,7 +30,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   def captured_payload
     archive = nil
     allow(backend).to receive(:archive_in_container) do |_, path, &stream|
-      expect(path).to eq("/opt")
+      expect(path).to eq("/paid-input")
       tar = StringIO.new
       while (chunk = stream.call).present?
         tar.write(chunk)
@@ -58,6 +58,21 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(text_options(inputs)).not_to have_key(:stdin)
     expect(backend).to have_received(:exec_in_container).with(container,
       [ "chown", "agent:agent", "/home/agent" ], user: "root")
+  end
+
+  # @spec LLM-ROUTING-006
+  it "stages request input in a writable tmpfs while retaining a read-only root filesystem" do
+    captured_payload
+    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(hash_including(
+      "ReadonlyRootfs" => true,
+      "HostConfig" => hash_including(
+        "Tmpfs" => hash_including("/paid-input" => "size=#{described_class::INPUT_TMPFS_SIZE},mode=1777")
+      )
+    ))
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005

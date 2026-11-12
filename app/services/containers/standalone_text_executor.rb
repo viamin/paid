@@ -9,6 +9,7 @@ module Containers
   class StandaloneTextExecutor
     MAX_OUTPUT_BYTES = 2 * 1024 * 1024
     MAX_INPUT_BYTES = 1024 * 1024
+    INPUT_TMPFS_SIZE = 2 * 1024 * 1024
     # Linux caps a single execve argument or environment string at MAX_ARG_STRLEN
     # (128 KiB), so any env entry larger than this fails inside Docker exec even
     # when the aggregate input stays within MAX_INPUT_BYTES. Values that must
@@ -171,11 +172,8 @@ module Containers
     def stage_input(payload)
       basename = "paid-text-#{SecureRandom.hex(12)}"
       tar = StringIO.new(Docker::Util.create_tar(basename => { content: payload.string, permissions: 0o644 }))
-      # Docker's archive endpoint writes to the container layer beneath tmpfs
-      # mounts. /opt remains visible with ReadonlyRootfs enabled and disappears
-      # when this disposable container is deleted.
-      Containers.backend.archive_in_container(@container, "/opt") { tar.read(64 * 1024).to_s }
-      "/opt/#{basename}"
+      Containers.backend.archive_in_container(@container, "/paid-input") { tar.read(64 * 1024).to_s }
+      "/paid-input/#{basename}"
     rescue Docker::Error::DockerError => e
       raise AgentHarness::Error, "Unable to stage isolated text request: #{e.message}"
     end
@@ -337,7 +335,7 @@ module Containers
         "HostConfig" => {
           "Memory" => DEFAULTS[:memory_bytes], "MemorySwap" => DEFAULTS[:memory_bytes],
           "CpuPeriod" => 100_000, "CpuQuota" => DEFAULTS[:cpu_quota], "PidsLimit" => DEFAULTS[:pids_limit],
-          "Tmpfs" => { "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777", "/home/agent" => "size=#{64 * 1024 * 1024},mode=0700,uid=1000,gid=1000" },
+          "Tmpfs" => { "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777", "/home/agent" => "size=#{64 * 1024 * 1024},mode=0700,uid=1000,gid=1000", "/paid-input" => "size=#{INPUT_TMPFS_SIZE},mode=1777" },
           "NetworkMode" => NetworkPolicy::INFRA_NETWORK_NAME
         },
         "Env" => [ "HOME=/home/agent" ],
