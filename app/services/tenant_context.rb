@@ -62,9 +62,7 @@ class TenantContext
     private
 
     def current_setting(key)
-      connection.select_value(
-        ActiveRecord::Base.sanitize_sql_array([ "SELECT NULLIF(current_setting(?, true), '')", key ])
-      )
+      connection.select_value("SELECT NULLIF(current_setting($1, true), '')", "TenantContext#current_setting", setting_binds(key))
     rescue ActiveRecord::ConnectionNotEstablished
       nil
     rescue ActiveRecord::StatementInvalid => e
@@ -74,9 +72,7 @@ class TenantContext
     end
 
     def set_config(key, value)
-      connection.execute(
-        ActiveRecord::Base.sanitize_sql_array([ "SELECT set_config(?, ?, false)", key, value.to_s ])
-      )
+      connection.exec_query("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
     rescue ActiveRecord::ConnectionNotEstablished
       nil
     rescue ActiveRecord::StatementInvalid => e
@@ -87,6 +83,12 @@ class TenantContext
 
     def transaction_aborted?(error)
       error.cause.is_a?(PG::InFailedSqlTransaction)
+    end
+
+    def setting_binds(*values)
+      values.map do |setting|
+        ActiveRecord::Relation::QueryAttribute.new(nil, setting.to_s, ActiveRecord::Type::String.new)
+      end
     end
 
     def connection
