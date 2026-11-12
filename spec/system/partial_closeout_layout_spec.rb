@@ -97,6 +97,22 @@ RSpec.describe "Partial closeout continuation form", :js, system_driver: :paid_c
     end
   end
 
+  it "shows inspectable root-prerequisite leverage without changing queue state" do # @spec PARTIAL-CLOSEOUT-048
+    root = create(:issue, project:, github_number: 230, paid_state: "in_progress")
+    issue = create(:issue, project:, github_number: 231, paid_state: "in_progress")
+    create(:issue_dependency, issue:, depends_on_issue: root)
+    create(:issue, :pull_request, project:, github_number: 232, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+
+    visit inbox_entry_path("partial_closeout:#{issue.id}", project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+
+    expect(page).to have_css("[data-root-prerequisite-ranking]", text: "Highest-leverage root prerequisites")
+    expect(page).to have_text("#230")
+    expect(page).to have_text("#230 → #231")
+    expect(issue.reload.issue_dependencies.pluck(:depends_on_issue_id)).to eq([ root.id ])
+  end
+
   def continuation_form_geometry(section_width:)
     page.evaluate_script(<<~JS)
       (() => {

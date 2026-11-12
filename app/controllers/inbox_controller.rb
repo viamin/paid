@@ -21,6 +21,7 @@ class InboxController < ApplicationController
     @selected_entry = resolve_selected_entry(@inbox_entries) || hidden_or_removed_entry
     return redirect_to(inbox_path(**inbox_redirect_params), status: :see_other) unless @selected_entry
 
+    load_root_prerequisite_ranking
     @detail_view = true
     return render(:show) if detail_frame_request?
 
@@ -123,8 +124,7 @@ class InboxController < ApplicationController
       return
     end
 
-    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind,
-      sort: @selected_sort, scope: @selected_scope)
+    @inbox_entries = inbox_queue.call
     load_inbox_presentations(entries: @inbox_entries)
     redirect_for_empty_filtered_combination
   end
@@ -156,6 +156,17 @@ class InboxController < ApplicationController
   def selected_entry_queue
     [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
       project: @scoped_project, kind: @selected_kind) ].compact
+  end
+
+  def inbox_queue
+    @inbox_queue ||= Inbox::Queue.new(user: current_user, project: @scoped_project,
+      kind: queue_entry_kind, sort: @selected_sort, scope: @selected_scope)
+  end
+
+  def queue_entry_kind
+    return @selected_kind unless single_entry_request?
+
+    @selected_kind.presence || params[:entry_id].to_s.split(":", 2).first
   end
 
   # @spec INBOX-PHASE-RELEVANCE-002
@@ -204,5 +215,19 @@ class InboxController < ApplicationController
   def resolve_selected_entry(entries)
     requested_id = params[:entry_id].to_s
     entries.find { |entry| entry.id == requested_id }
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
+  def load_root_prerequisite_ranking
+    return unless @selected_entry.partial_closeout?
+
+    queue_issue_ids = ranking_queue_entries.filter_map { |entry| entry.issue&.id if entry.partial_closeout? }
+    @root_prerequisite_ranking = Issues::RootPrerequisiteRanking.call(
+      account: @selected_entry.project.account, queue_issue_ids:, visible_project_ids: inbox_queue.visible_project_ids
+    )
+  end
+
+  def ranking_queue_entries
+    action_name == "index" ? @inbox_entries : inbox_queue.call
   end
 end

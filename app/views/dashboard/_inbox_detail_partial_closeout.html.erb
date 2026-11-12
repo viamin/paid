@@ -163,6 +163,35 @@
     </p>
   </div>
 
+  <%# @spec PARTIAL-CLOSEOUT-048 %>
+  <% if root_prerequisite_ranking && (root_prerequisite_ranking.rankings.any? || root_prerequisite_ranking.exclusions.any?) %>
+    <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-root-prerequisite-ranking>
+      <h3 class="text-sm font-semibold text-indigo-900">Highest-leverage root prerequisites</h3>
+      <p class="text-sm text-indigo-800">Counts include only current visible partial-closeout queue work. This is read-only: it does not change priorities or dependency links.</p>
+      <% root_prerequisite_ranking.first(5).each do |ranking| %>
+        <div class="rounded-lg border border-indigo-100 bg-white p-3">
+          <p class="font-medium text-gray-900">
+            #<%= ranking.root.github_number %> <%= ranking.root.title %> — unlocks <%= ranking.total_reach %> blocked <%= "issue".pluralize(ranking.total_reach) %>
+          </p>
+          <p class="text-xs text-gray-600"><%= ranking.direct_reach %> direct · <%= ranking.transitive_reach %> transitive · <%= ranking.actionable ? "Actionable now" : "Necessary blocker; resolve its own admission blockers first" %></p>
+          <ul class="mt-2 space-y-1 text-xs text-gray-700">
+            <% ranking.paths.each do |path| %>
+              <li>
+                <%= path.issues.map { |path_issue| "##{path_issue.github_number}" }.join(" → ") %>
+                — <%= path.completion_alone_makes_runnable ? "completion alone makes this work runnable" : "necessary, but independent blockers remain" %><%= path.stale ? "; assessment is stale — request a fresh audit" : "" %>
+              </li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+      <% if root_prerequisite_ranking.exclusions.any? %>
+        <p class="text-xs text-amber-800">
+          Not ranked: <%= root_prerequisite_ranking.exclusions.group_by { |exclusion| exclusion[:kind] }.map { |kind, rows| "#{rows.size} #{kind.tr('_', ' ')}" }.join(", ") %>.
+        </p>
+      <% end %>
+    </div>
+  <% end %>
+
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Recorded evidence</h3>
     <p class="text-sm text-gray-600"><%= status.outcome %></p>
