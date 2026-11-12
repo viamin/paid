@@ -5448,6 +5448,15 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".ransackable_attributes" do
+    # @spec AGENT-RUNS-INDEX-004
+    it "allowlists the Agent Runs filter and context-search attributes" do
+      expect(described_class.ransackable_attributes).to include(
+        "status", "agent_type", "goal", "trigger_type", "effective_runner", "run_text"
+      )
+    end
+  end
+
   describe "#effective_provider" do
     it "returns final_runner when present and not mapped" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_runner: "codex")

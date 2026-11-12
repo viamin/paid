@@ -56,12 +56,13 @@ class AgentRunsController < ApplicationController
   end
 
   def queue_sort_compatible?
-    status_filter = params.dig(:q, :status_eq)
+    status_filters = Array(params.dig(:q, :status_in)).reject(&:blank?)
+    status_filters = Array(params.dig(:q, :status_eq)).reject(&:blank?) if status_filters.empty?
     # Queue sort is only meaningful when already filtered to an unfinished
     # status — otherwise queue_order_display's .unfinished scope silently
     # hides completed/failed runs from the default (unfiltered) view.
-    return false if status_filter.blank?
+    return false if status_filters.empty?
 
-    AgentRun::UNFINISHED_STATUSES.include?(status_filter)
+    (status_filters - AgentRun::UNFINISHED_STATUSES).empty?
   end
 end

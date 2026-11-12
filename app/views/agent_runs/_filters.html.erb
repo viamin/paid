@@ -1,5 +1,11 @@
-<%# @spec AGENT-RUNS-INDEX-001 %>
-<details class="mt-4 rounded-lg bg-white shadow ring-1 ring-black ring-opacity-5" data-testid="agent-runs-filters">
+<%# @spec AGENT-RUNS-INDEX-001 @spec AGENT-RUNS-INDEX-004 @spec AGENT-RUNS-INDEX-005 %>
+<% filter_params = params[:q].respond_to?(:to_unsafe_h) ? params[:q].to_unsafe_h : {} %>
+<% active_filters = filter_params.except("s").filter_map do |predicate, value| %>
+  <% values = Array(value).reject(&:blank?) %>
+  <% "#{predicate.delete_suffix('_in').delete_suffix('_cont').humanize}: #{values.join(', ')}" if values.any? %>
+<% end %>
+<%= tag.details class: "mt-4 rounded-lg bg-white shadow ring-1 ring-black ring-opacity-5",
+  data: { testid: "agent-runs-filters" }, open: active_filters.any? do %>
   <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-900">
     <span>Filters</span>
     <span class="text-gray-400">⌄</span>
@@ -7,48 +13,63 @@
 
   <div class="border-t border-gray-200 p-4">
     <%= search_form_for q, url: request.path, html: { method: :get, class: "flex flex-wrap items-end gap-4" } do |f| %>
+      <div>
+        <%= f.label :run_text_cont, "Search run context", class: "block text-sm font-medium text-gray-700" %>
+        <%= f.search_field :run_text_cont, placeholder: "Branch or prompt text", class: "mt-1 block rounded-md border-gray-300 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+      </div>
+
       <% if filter_options[:status].any? %>
         <div>
-          <%= f.label :status_eq, "Status", class: "block text-sm font-medium text-gray-700" %>
-          <%= f.select :status_eq,
-            options_for_select(AgentRun::STATUSES.filter_map { |status| [status.titleize, status] if filter_options[:status].include?(status) }, params.dig(:q, :status_eq)),
-            { include_blank: "All Statuses" },
-            class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+          <%= f.label :status_in, "Status", class: "block text-sm font-medium text-gray-700" %>
+          <%= f.select :status_in,
+            options_for_select(AgentRun::STATUSES.filter_map { |status| [status.titleize, status] if filter_options[:status].include?(status) }, params.dig(:q, :status_in)),
+            {},
+            multiple: true, size: 4, class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
       <% end %>
 
       <% if filter_options[:agent_type].any? %>
         <div>
-          <%= f.label :agent_type_eq, "Agent", class: "block text-sm font-medium text-gray-700" %>
-          <%= f.select :agent_type_eq,
-            options_for_select(AgentRun::AGENT_TYPES.filter_map { |agent_type| [agent_type.titleize, agent_type] if filter_options[:agent_type].include?(agent_type) }, params.dig(:q, :agent_type_eq)),
-            { include_blank: "All Agents" },
-            class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+          <%= f.label :agent_type_in, "Agent", class: "block text-sm font-medium text-gray-700" %>
+          <%= f.select :agent_type_in,
+            options_for_select(AgentRun::AGENT_TYPES.filter_map { |agent_type| [agent_type.titleize, agent_type] if filter_options[:agent_type].include?(agent_type) }, params.dig(:q, :agent_type_in)),
+            {},
+            multiple: true, size: 4, class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
       <% end %>
 
       <% if filter_options[:goal].any? %>
         <div>
-          <%= f.label :goal_eq, "Goal", class: "block text-sm font-medium text-gray-700" %>
+          <%= f.label :goal_in, "Goal", class: "block text-sm font-medium text-gray-700" %>
           <% goal_labels = {
             "create_pr" => "Create PR",
             "create_issue" => "Create Issue",
             "review" => "PR Code Review"
           } %>
-          <%= f.select :goal_eq,
-            options_for_select(AgentRun::GOALS.filter_map { |goal| [goal_labels.fetch(goal, goal.titleize), goal] if filter_options[:goal].include?(goal) }, params.dig(:q, :goal_eq)),
-            { include_blank: "All Goals" },
-            class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+          <%= f.select :goal_in,
+            options_for_select(AgentRun::GOALS.filter_map { |goal| [goal_labels.fetch(goal, goal.titleize), goal] if filter_options[:goal].include?(goal) }, params.dig(:q, :goal_in)),
+            {},
+            multiple: true, size: 4, class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
       <% end %>
 
       <% if local_assigns[:runner_options]&.any? %>
         <div>
-          <%= f.label :effective_runner_eq, "Runner", class: "block text-sm font-medium text-gray-700" %>
-          <%= f.select :effective_runner_eq,
-            options_for_select(runner_options.map { |option| [option[:label], option[:value]] }, params.dig(:q, :effective_runner_eq)),
-            { include_blank: "All Runners" },
-            class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+          <%= f.label :effective_runner_in, "Runner", class: "block text-sm font-medium text-gray-700" %>
+          <%= f.select :effective_runner_in,
+            options_for_select(runner_options.map { |option| [option[:label], option[:value]] }, params.dig(:q, :effective_runner_in)),
+            {},
+            multiple: true, size: 4, class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
+        </div>
+      <% end %>
+
+      <% if filter_options.fetch(:trigger_type, []).any? %>
+        <div>
+          <%= f.label :trigger_type_in, "Trigger", class: "block text-sm font-medium text-gray-700" %>
+          <%= f.select :trigger_type_in,
+            options_for_select(filter_options.fetch(:trigger_type, []).sort.map { |trigger_type| [trigger_type.titleize, trigger_type] }, params.dig(:q, :trigger_type_in)),
+            {},
+            multiple: true, size: 4, class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
       <% end %>
 
@@ -57,7 +78,7 @@
         <%= select_tag :sort,
           options_for_select([
             ["Newest first", "newest"],
-            ["Queue priority (approximate)", "queue"]
+            *(["Queue priority (approximate)", "queue"] if local_assigns[:show_project])
           ], params[:sort].presence || "newest"),
           id: :sort,
           class: "mt-1 block rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
@@ -66,10 +87,16 @@
       <div class="flex items-end gap-2">
         <%= f.submit "Filter",
           class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
-        <%= link_to "Clear",
+        <%= link_to "Reset filters",
           request.path,
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
       </div>
     <% end %>
+    <% if active_filters.any? %>
+      <p class="mt-3 text-sm text-gray-600" aria-live="polite"><span class="font-medium">Active filters:</span> <%= active_filters.join("; ") %></p>
+    <% end %>
+    <% if local_assigns[:show_project] %>
+      <p class="mt-3 text-sm text-gray-600">Queue priority applies only when every selected status is unfinished; otherwise results are newest first.</p>
+    <% end %>
   </div>
-</details>
+<% end %>
