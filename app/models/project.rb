@@ -469,6 +469,8 @@ class Project < ApplicationRecord
   scope :inactive, -> { where(active: false) }
 
   def self.ransackable_attributes(auth_object = nil)
+    return %w[id owner repo] if auth_object == :inbox
+
     %w[name last_agent_run_at last_github_activity_at created_at]
   end
 

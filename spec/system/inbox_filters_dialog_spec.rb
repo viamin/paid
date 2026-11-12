@@ -3,15 +3,7 @@
 require "rails_helper"
 require "warden/test/helpers"
 
-# @spec INBOX-FOUNDATION-010
-# The filters dialog narrows Type and Project options client-side so the
-# operator cannot build a combination that renders an empty list. The
-# project-name search and that narrowing are two predicates over the same
-# `option.hidden` state, so they must compose instead of the last writer
-# clobbering the first (#4278 review): searching must not re-show projects
-# the selected type excluded, and changing the type must not re-show
-# projects the search excluded. rack_test cannot execute Stimulus, so this
-# drives a real browser.
+# @spec INBOX-FOUNDATION-012
 RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :system do
   include Warden::Test::Helpers
 
@@ -58,11 +50,6 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     click_button "Filters"
   end
 
-  def assert_project_option_state(project, visibility)
-    selector = "label[data-project-name='#{project.full_name.downcase}']"
-    expect(page).to have_selector(selector, visible: visibility)
-  end
-
   # @spec OPERATOR-INBOX-025
   it "loads selected detail history when its lazy frame enters view" do
     visit inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -84,43 +71,18 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     expect(page).to have_selector("turbo-frame#inbox-detail form[action='#{project_issue_clarifying_questions_path(project_b, project_b.issues.first)}']")
   end
 
-  it "keeps the project search applied when the selected type changes" do
+  # @spec INBOX-FOUNDATION-012
+  it "submits multiple projects and kinds in a shareable GET URL" do
     open_filters
-    fill_in "Search projects", with: "beta"
-    choose "Clarifying Questions"
+    check "Clarifying Questions"
+    check "Manual Review"
+    check "acme/alpha"
+    check "acme/beta"
+    fill_in "Title or summary", with: "question"
+    click_button "Apply filters"
 
-    # alpha carries clarifying-question items, so the type narrowing alone
-    # would re-show it — but the pending "beta" search must keep it hidden.
-    assert_project_option_state(project_a, :hidden)
-    assert_project_option_state(project_b, :visible)
-  end
-
-  it "keeps the type narrowing applied when the project search runs" do
-    open_filters
-    choose "Manual Review"
-    fill_in "Search projects", with: "alpha"
-
-    # alpha has no manual_review items, so matching the search query must
-    # not re-offer it as a project option (that combination is empty).
-    assert_project_option_state(project_a, :hidden)
-    assert_project_option_state(project_b, :hidden)
-  end
-
-  it "hides a searched-out project selection without clearing it" do
-    open_filters
-    choose "acme/beta"
-    fill_in "Search projects", with: "alpha"
-
-    assert_project_option_state(project_b, :hidden)
-    radio = page.find("input[name='project_id'][value='#{project_b.id}']", visible: :all)
-    expect(radio).to be_checked
-  end
-
-  it "hides types that would be empty for the selected project" do
-    open_filters
-    choose "acme/alpha"
-
-    expect(page).to have_field("Manual Review", visible: :hidden)
-    expect(page).to have_field("Clarifying Questions", visible: :visible)
+    expect(page).to have_current_path(/project_ids%5B%5D=#{project_a.id}.*project_ids%5B%5D=#{project_b.id}/)
+    expect(page).to have_content("Alpha question")
+    expect(page).to have_content("Beta question")
   end
 end

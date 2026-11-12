@@ -129,14 +129,14 @@ issue, not a project-visibility filter, so it does not reintroduce the
 project-level `auto_pick_enabled` gate this section removes.
 
 The Inbox header keeps filtering controls compact as the number of entry kinds
-grows. A single collapsed trigger opens a filter panel with a single type
-selector, a searchable accessible-project selector, and an ordering selector.
-The URL remains the source of truth: `kind`, `project_id`, and `sort` restore
+grows. A single collapsed trigger opens a filter panel with multi-select type
+and accessible-project selectors, server-side search, and an ordering selector.
+The URL remains the source of truth: `kinds[]`, `project_ids[]`, `q`, and `sort` restore
 the panel state and survive selection/action links. The panel is a focus-trapped
 popover on desktop and a native full-screen dialog on narrow screens; Escape
 closes it and Enter submits its GET form. Type deliberately remains
-single-select: that preserves the established `kind` URL contract while the
-team gathers evidence that combined kinds are needed.
+multi-select; legacy singular `kind` and `project_id` parameters remain accepted
+for shared links.
 
 ### Filter availability and empty-combination fallback (#4276)
 

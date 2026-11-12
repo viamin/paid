@@ -126,11 +126,12 @@
 
 - [x] **INBOX-FOUNDATION-009** — When an operator opens the Inbox, the system
   SHALL render a compact collapsed filter control. On expansion it SHALL offer
-  a single type selector, a searchable selector scoped to projects currently
-  surfacing at least one inbox item (`INBOX-FOUNDATION-010`), an All reset for
-  each, oldest/newest waiting order, and a clear-all action. The controls
-  SHALL derive their selected state solely from `kind`, `project_id`, and
-  `sort` URL parameters; the queue SHALL preserve oldest-waiting-first when
+  multi-select type and project selectors scoped to projects currently
+  surfacing at least one inbox item (`INBOX-FOUNDATION-010`), server-side
+  project/repository and title/summary search, oldest/newest waiting order,
+  and a clear-all action. The controls SHALL derive their selected state solely
+  from `kinds[]`, `project_ids[]`, `q`, and `sort` URL parameters (while
+  accepting legacy singular links); the queue SHALL preserve oldest-waiting-first when
   `sort` is absent and SHALL support `sort=newest`. The expanded control SHALL
   be focus-trapped, close on Escape, submit on Enter, and render as a
   full-screen dialog below the `lg` breakpoint.
@@ -143,10 +144,9 @@
 
 - [x] **INBOX-FOUNDATION-010** — The Inbox filter dialog SHALL only offer
   filter options that cannot yield an empty list: the Type selector SHALL list
-  only kinds with ≥1 waiting item (scoped to the active project filter when
-  one is applied) plus "All types", and the Project selector SHALL list only
-  projects with ≥1 waiting item (scoped to the active kind filter when one is
-  applied) plus "All projects". The clarifying-questions lane SHALL exclude
+  only kinds with ≥1 waiting item (scoped to active project filters) and the
+  Project selector SHALL list only projects with ≥1 waiting item (scoped to
+  active kind filters). The clarifying-questions lane SHALL exclude
   `needs_input` rows that lack both parseable body questions and persisted
   `needs_input_questions`, because `Inbox::Queue` cannot render them. Each
   offered option SHALL display its item count. Availability SHALL be computed
@@ -157,19 +157,25 @@
   short TTL the badge uses — every inbox render (`index`, `show`, and
   `open_chat` all build availability in `load_inbox`) pays one cache read
   instead of re-running every lane per request. The dialog
-  SHALL embed the kind↔project availability matrix in the DOM so selecting a
-  type dynamically narrows the project options (and vice versa) without an
-  extra round-trip, resetting a now-invalid selection to "All". The
-  project-name search SHALL compose with that narrowing rather than
-  clobbering it: an option stays visible only while it both matches the
-  search query and is compatible with the other group's selection, and
-  hiding through the search alone never resets a selection.
+  SHALL count the active scope and server-side search result, so displayed
+  options and counts agree with the rendered list.
   *Tests:* `spec/services/inbox/availability_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/system/inbox_filters_dialog_spec.rb`.
   *Code:* `app/services/inbox/availability.rb`,
   `app/controllers/inbox_controller.rb#load_inbox`,
   `app/views/inbox/index.html.erb`,
   `app/javascript/controllers/inbox_filters_controller.js`.
+
+- [x] **INBOX-FOUNDATION-012** — The Inbox query boundary SHALL accept only
+  allowlisted multi-value project and kind filters plus the
+  `project_owner_or_repo_cont` and `title_or_summary_cont` search predicates.
+  It SHALL use Ransack for project/repository matching and apply the same
+  predicates to the heterogeneous, policy-scoped Inbox presentation without
+  exposing arbitrary model attributes or SQL. It SHALL compose search, kind,
+  project, and scope filtering while preserving phase relevance, removals,
+  direct-entry access, and queue ordering.
+  *Tests:* `spec/services/inbox/query_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `app/services/inbox/query.rb`, `app/controllers/inbox_controller.rb`.
 
 - [x] **INBOX-FOUNDATION-011** — When a filtered Inbox URL (a `kind` and/or
   `project_id` parameter) matches zero entries while at least one item is

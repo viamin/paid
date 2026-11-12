@@ -644,9 +644,42 @@ RSpec.describe "Inbox" do
 
     expect(filter).to be_present
     expect(document.at_css("[data-inbox-filters-target='trigger']").text).to include("Filters", project.full_name, "Clarifying Questions", "Newest first")
-    expect(document.at_css("input[name='kind'][value='clarifying_questions']")["checked"]).to be_present
-    expect(document.at_css("input[name='project_id'][value='#{project.id}']")["checked"]).to be_present
+    expect(document.at_css("input[name='kinds[]'][value='clarifying_questions']")["checked"]).to be_present
+    expect(document.at_css("input[name='project_ids[]'][value='#{project.id}']")["checked"]).to be_present
     expect(document.at_css("input[name='sort'][value='newest']")["checked"]).to be_present
+  end
+
+  # @spec INBOX-FOUNDATION-012
+  it "composes allowlisted multi-value project and kind filters with server-side search" do
+    create(:issue, :needs_input, project: project, title: "Alpha needle", body: questions_body)
+    create(:issue, project: second_project, paid_state: "manual_review", title: "Beta needle",
+      manual_review_reason: "Needs operator attention.")
+    create(:issue, :needs_input, project: second_project, title: "Beta unrelated", body: questions_body)
+
+    get inbox_path(
+      project_ids: [ project.id, second_project.id ],
+      kinds: [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, Inbox::Queue::MANUAL_REVIEW_KIND ],
+      q: { title_or_summary_cont: "needle" }
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Alpha needle", "Beta needle")
+    expect(response.body).not_to include("Beta unrelated")
+    document = Nokogiri::HTML(response.body)
+    expect(document.css("input[name='project_ids[]'][checked]").map { |input| input["value"] }).to include(project.id.to_s, second_project.id.to_s)
+    expect(document.css("input[name='kinds[]'][checked]").map { |input| input["value"] }).to include("clarifying_questions", "manual_review")
+  end
+
+  # @spec INBOX-FOUNDATION-012
+  it "uses the allowlisted Ransack project predicate without accepting unrelated q attributes" do
+    create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
+
+    get inbox_path(q: { project_owner_or_repo_cont: "alpha", arbitrary_sql_eq: "ignored" })
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Alpha question")
+    expect(response.body).not_to include("Beta question")
   end
 
   # @spec NOTIFICATION-SEVERITY-009 OPERATOR-INBOX-002B
