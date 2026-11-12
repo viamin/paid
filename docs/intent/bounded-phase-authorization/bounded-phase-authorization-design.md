@@ -11,26 +11,35 @@ Implements proposed [RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authoriz
 
 `BoundedPhaseAuthorization` is a proposed execution delegation, not a pull
 request review record. Its identity is `(account, project, root work item,
-selected phase, stop-before phase, intent digest)`. The root work item is one
-identified issue or PR; `Automation::ContinuationGrantLookup` supplies only
-the existing same-work lineage. Milestones, parent/child issue links,
-dependencies, mentions, and unrelated PRs never extend it.
+selected phase, stop-before phase, intent digest)`. A phase is an
+`Automation::Phases` value, never a project delivery milestone. The root work
+item is one identified issue or PR; `Automation::ContinuationGrantLookup`
+supplies only the existing same-work issue → implementation run → PR → review
+→ repair lineage. Milestones, parent/child issue links, dependencies, mentions,
+and unrelated PRs never extend it.
 
-The initial implementation slice is the action-specific durable
-`BoundedDelegatedAction` contract. It records bounded evidence and an
-account-activity audit event before later admission and lifecycle enforcement
-composes it with `Automation::EffectivePolicy`. Authorization and revocation
+The shipped foundation is the action-specific durable `BoundedDelegatedAction`
+contract (`-010` and `-011`) plus shared deterministic admission rechecks
+(`-004`). It is the only existing source for delegated action identity, actor,
+tenant, expiry, evidence, and audit events. Later phase lifecycle work extends
+that foundation and composes it with `Automation::EffectivePolicy`; it does not
+create a second authorization or approval engine. Authorization and revocation
 are service write boundaries (`Automation::AuthorizeBoundedAction`,
 `Automation::RevokeBoundedAction`) that delegate permission checks to the
 project policy; the model stays validation-only.
 
-The authorization stores its author, consent projection, permitted actions,
-intent/acceptance references, policy signature, lifecycle timestamps, and
-audit references. All records use project/account tenant scoping and normal
-actor policy checks. Expiry, completion, revocation, and superseded are
-terminal for admission until a new explicit authorization. Reassessment-
-required pauses admission until an authorized actor resolves it by stopping,
-superseding, or resuming the unchanged authorization.
+The proposed phase lifecycle stores its author, consent projection, permitted
+actions, intent/acceptance references, policy signature, lifecycle timestamps,
+and audit references around that foundation. All records use project/account
+tenant scoping and normal actor policy checks. Completion leaves its exclusive
+stop in place and reopening does not reactivate it. Expiry fails closed to a
+visible reassessment decision. Revocation blocks new delegated actions and
+keeps the suppressed stop-before phase from starting automatically. Recovery
+from either terminal state is an explicit authorized decision to create a new
+authorization or return the lineage to ordinary project policy. Supersession
+transfers both the delegated actions and stop to the newer authorization.
+Reassessment-required pauses admission until an authorized actor stops it,
+supersedes it with newly consented scope, or resumes only unchanged scope.
 
 ## Policy composition
 
@@ -41,11 +50,13 @@ proposed bounded-authorization input has three outcomes:
 | --- | --- |
 | The action is in the selected phase and the authorization is current | Permit as `:bounded_phase_authorization`, then apply existing controls. |
 | The action crosses the selected stop boundary on its lineage | Block as `:bounded_phase_stop`, even if project defaults permit it. |
-| The authorization is revoked, expired, invalid, unknown, or outside scope | Block or require reassessment; never fall through to project defaults for that lineage. |
+| The authorization is revoked, expired, invalid, unknown, or outside scope | Block or require reassessment; never silently fall through to project defaults for the governed action or suppressed phase. |
 
 The boundary override is deliberately limited to this explicit authorization.
-Ordinary RDR-077 continuation grants preserve their existing behavior, where
-project defaults can continue after their endpoint.
+Ordinary RDR-077 continuation grants preserve their existing additive behavior:
+project defaults can continue after their endpoint, including after grant
+revocation. The proposal remains inactive until its owner acceptance and
+implementation are both complete.
 
 ## Scope assessment and invalidation
 
@@ -62,11 +73,12 @@ to `reassessment_required` under lock and emits an Inbox decision. Only an
 authorized actor can resolve it, by stopping the authorization, superseding it
 with a newly consented authorization, or resuming the unchanged authorization
 when the triggering condition resolved without scope expansion — for example a
-policy change that was restored. Resumption transitions back to `active` under
-the same lock after re-verifying policy signature, lineage, and expiry, emits
-an audit event, and never edits the pinned scope; a resumed authorization is
-re-evaluated if any trigger recurs. No semantic result bypasses deterministic
-enforcement.
+policy change that was restored. A stop is terminal; resumption is available
+only for a still-current reassessment-required authorization. Resumption
+transitions back to `active` under the same lock after re-verifying policy
+signature, lineage, and expiry, emits an audit event, and never edits the pinned
+scope; a resumed authorization is re-evaluated if any trigger recurs. No
+semantic result bypasses deterministic enforcement.
 
 ## Admission and concurrency
 
@@ -99,14 +111,12 @@ into this record.
 
 ## Test-first implementation slices
 
-1. Model/audit/policy unit specs establish scope, lineage non-inheritance,
-   lifecycle, revocation, expiry, reassessment resolution (stop, supersede,
-   resume unchanged), and endpoint race behavior.
-2. Effective-policy and queue specs establish exclusive stopping despite
-   enabled downstream defaults and admission/dequeue/follow-up rechecks.
-3. Scope-assessment specs establish bounded `agent_harness` input and fail-
-   closed malformed, unavailable, unknown, and out-of-scope outcomes.
-4. Request, Inbox, chat, API, and MCP specs establish identical consent and
-   status projections, actor/tenant isolation, and repository-review blockers.
-5. Integration specs cover completion/reopening and no implicit release,
-   deployment, child-work, or setting-enable authority.
+1. **#4997 (`-001`–`-003`)** adds phase identity, lineage non-inheritance, and
+   exclusive-stop composition to the shipped foundation.
+2. **#4998 (`-005`–`-006`)** adds reassessment resolution and bounded
+   `agent_harness` correspondence, including fail-closed output handling.
+3. **#4999 (`-007`–`-009`)** adds consent-surface parity, fresh-review gates,
+   terminal races, completion/reopening, and no implicit release, deployment,
+   child-work, or setting-enable authority.
+4. **#5000** independently maps the complete implementation to `-001` through
+   `-011` and this LLD before status or rollout changes.
