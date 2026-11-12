@@ -73,6 +73,17 @@ safe fallback to the filtered collection rather than rendering its detail.
 
 ## Request cost
 
+## Filter query boundary
+
+Inbox entries are a policy-scoped projection assembled from unrelated lane
+relations, rather than one Active Record relation. `Inbox::Search` therefore
+provides the narrow Ransack-compatible boundary after `Inbox::Queue` has
+applied authorization, phase relevance, and personal removals. It accepts only
+`q[kind_in][]`, `q[project_id_in][]`, and `q[search_cont]`; repository names,
+entry titles, and summaries are the only searchable text. This preserves the
+queue's lane-specific contracts without accepting arbitrary model attributes or
+SQL. Existing single-value deep links are translated into that boundary.
+
 The collection response renders the queue and filter controls before the
 selected detail loads through a separate eager Turbo Frame, so progress,
 actions, and history never hold up the first list response. The eager loading

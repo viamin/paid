@@ -62,6 +62,21 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  # @spec OPERATOR-INBOX-027 OPERATOR-INBOX-028
+  it "composes multi-project, multi-kind, and server-side search filters through q" do
+    alpha_question = create(:issue, :needs_input, project:, title: "Release checklist", body: questions_body)
+    create(:issue, project:, paid_state: "manual_review", title: "Alpha review", manual_review_reason: "Round limit reached.")
+    beta_question = create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
+    create(:issue, project: second_project, paid_state: "manual_review", title: "Deployment review", manual_review_reason: "Round limit reached.")
+
+    get inbox_path(q: { kind_in: %w[clarifying_questions manual_review], project_id_in: [ project.id, second_project.id ], search_cont: "release" })
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(alpha_question.title)
+    expect(response.body).not_to include(beta_question.title, "Deployment review")
+    expect(response.body).to include("q%5Bkind_in%5D%5B%5D=clarifying_questions")
+  end
+
   def cycle_analysis_run(status: "completed", recommendation: nil, repair: nil, coverage: nil)
     issues = Array.new(3) { create(:issue, project:, github_state: "open") }
     create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1],

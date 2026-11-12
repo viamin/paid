@@ -519,6 +519,25 @@
   `app/views/dashboard/_inbox_detail.html.erb`,
   `app/javascript/controllers/inbox_master_detail_controller.js`.
   *Test:* `spec/system/inbox_navigation_spec.rb`,
+
+- [x] **OPERATOR-INBOX-027** — The Inbox collection SHALL use the explicitly
+  allowlisted Ransack-compatible `q` contract: `kind_in`, `project_id_in`, and
+  `search_cont`. The Type and Project controls SHALL accept multiple selected
+  values and return their union within the already authorized, phase-relevant,
+  and personal-removal-filtered queue scope. Unsupported predicates SHALL be
+  ignored; no user input may become SQL or select arbitrary entry attributes.
+  *Code:* `app/services/inbox/search.rb`, `app/controllers/inbox_controller.rb`.
+  *Test:* `spec/services/inbox/search_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-028** — `search_cont` SHALL search Inbox project
+  repository names and entry title and summary fields server-side, compose with
+  `kind_in`, `project_id_in`, sort, and scope, and survive member/detail
+  navigation in shareable GET URLs. Because `Inbox::Queue` is a projection over
+  unrelated lane relations, `Inbox::Search` is the narrow Ransack-compatible
+  adapter; the lanes themselves cannot be represented as one Active Record
+  relation without changing their authorization and relevance contracts.
+  *Code:* `app/services/inbox/search.rb`, `app/helpers/inbox/path_helper.rb`.
+  *Test:* `spec/services/inbox/search_spec.rb`, `spec/system/inbox_filters_dialog_spec.rb`.
   `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
