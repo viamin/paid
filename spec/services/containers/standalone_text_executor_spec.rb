@@ -22,11 +22,11 @@ RSpec.describe Containers::StandaloneTextExecutor do
       .and_return([ [ agent_owner ], [], 0 ])
   end
 
-  def stub_text_exec(&behavior)
+  def stub_text_exec
     allow(backend).to receive(:exec_in_container) do |selected, command, options = {}, &stream|
       next [ [ agent_owner ], [], 0 ] if options[:user] == "root"
 
-      behavior.call(selected, command, options, &stream)
+      yield(selected, command, options, stream)
     end
   end
 
@@ -333,7 +333,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   it "stops collection and raises a classified failure when output exceeds the cap" do
     captured_payload
     allow(Containers::StandaloneTextCredential).to receive(:issue).and_return("scoped-identity")
-    stub_text_exec do |*, &stream|
+    stub_text_exec do |*, stream|
       next [ [], [], 0 ] unless stream
 
       stream.call(:stdout, "x" * (described_class::MAX_OUTPUT_BYTES + 1)) if stream
