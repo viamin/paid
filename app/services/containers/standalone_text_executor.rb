@@ -108,7 +108,10 @@ module Containers
         run(materialized_command(command), timeout: bounded_timeout(timeout),
           env: materialized_env(env), input: input_payload(command, preparation, stdin_data))
       end
-    rescue StandardError
+    # An interrupted worker raises SignalException rather than StandardError.
+    # This is the resource boundary for the disposable container, so cleanup
+    # must happen before either class of exception is allowed to propagate.
+    rescue SignalException, StandardError
       close
       raise
     end

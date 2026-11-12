@@ -142,6 +142,19 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(Containers::ProxyUrl).to have_received(:resolve).with(backend: backend, restricted: false)
   end
 
+  # @spec LLM-ROUTING-005
+  it "does not mount a checkout or Rails workspace" do
+    allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container) do |config|
+      expect(config).not_to have_key("Volumes")
+      expect(config.fetch("HostConfig")).not_to have_key("Binds")
+      expect(config.fetch("HostConfig")).not_to have_key("Mounts")
+    end
+  end
+
   # @spec LLM-ROUTING-006
   it "honors the caller timeout above two minutes" do
     allow(backend).to receive(:exec_in_container).and_return([ [], [], 0 ])
@@ -158,6 +171,29 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect do
       described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
     end.to raise_error(AgentHarness::TimeoutError, /timed out/)
+  end
+
+  # @spec LLM-ROUTING-006
+  it "removes a partially provisioned container when Docker cannot start it" do
+    allow(backend).to receive(:start_container).with(container)
+      .and_raise(Docker::Error::DockerError, "Docker unavailable")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::ConfigurationError, /Unable to provision isolated text execution/)
+
+    expect(backend).to have_received(:delete_container).with(container, force: true).once
+  end
+
+  # @spec LLM-ROUTING-006
+  it "removes its container when the worker is interrupted" do
+    allow(backend).to receive(:exec_in_container).and_raise(Interrupt, "worker interrupted")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(Interrupt, "worker interrupted")
+
+    expect(backend).to have_received(:delete_container).with(container, force: true).once
   end
 
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
