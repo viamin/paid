@@ -1,5 +1,7 @@
 <%# @spec OPERATOR-INBOX-006 @spec OPERATOR-INBOX-026 @spec LIST-DETAIL-003 %>
-<div class="border-b border-gray-200 px-4 py-4 sm:px-6">
+<%# @spec OPERATOR-INBOX-027 %>
+<div data-controller="inbox-actions">
+<div class="border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
   <div class="flex items-start justify-between gap-4">
     <div>
       <div class="flex items-center gap-2">
@@ -43,9 +45,17 @@
     </div>
   </div>
   <p id="inbox-copy-link-status" data-inbox-master-detail-target="copyStatus" class="sr-only" role="status" aria-live="polite"></p>
+
 </div>
 
-<div class="px-4 py-5 sm:px-6">
+<nav data-inbox-actions-target="actionArea"
+     data-testid="inbox-item-actions"
+     aria-label="Inbox item actions"
+     hidden
+     class="sticky top-0 z-20 flex flex-wrap gap-2 border-b border-gray-200 bg-white px-4 py-3 shadow-sm sm:px-6">
+</nav>
+
+<div data-inbox-actions-target="content" class="px-4 py-5 sm:px-6">
   <%= render "dashboard/inbox_decision_brief", entry: entry %>
 
   <% if entry.issue %>
@@ -129,4 +139,5 @@
     <p class="mt-6 text-sm text-gray-500" role="status">Loading history…</p>
   <% end %>
   <%= render "dashboard/inbox_phase_and_removal", entry: entry %>
+</div>
 </div>

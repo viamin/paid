@@ -522,6 +522,22 @@
   `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-027** — When an operator views a selected Inbox item,
+  the detail SHALL expose a visible, labelled action area directly below the
+  item identity. The area SHALL remain sticky within the detail pane while
+  the operator reads its content, and SHALL provide an equivalent keyboard
+  reachable affordance for every link or form submission action rendered by
+  the selected kind, interactive-chat affordance, and Inbox removal or
+  restore control. Each projected form submission SHALL retain the existing
+  form's endpoint, method, policy gate, confirmation, Turbo navigation
+  intent, and loading behavior; explanatory content and detailed decision
+  inputs SHALL remain below the action area. At narrow widths the area SHALL
+  wrap controls without horizontal overflow.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_actions_controller.js`.
+  *Test:* `spec/system/inbox_action_area_spec.rb`,
+  `spec/lib/inbox_actions_controller_node_harness_spec.rb`.
+
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
   workflow through the existing Temporal bridge and SHALL redirect back to the

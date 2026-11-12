@@ -71,6 +71,25 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Selected-entry action area
+
+Every selected Inbox detail keeps its actionable controls in a labeled action
+area directly beneath the item identity. The area is sticky within the detail
+pane, so an operator can reach an action while reading a long explanation or
+decision record. It projects the controls already rendered by the selected
+kind, plus the shared chat and Inbox removal controls, rather than introducing
+new endpoints or authorization decisions. The detailed source controls remain
+with their explanation below the action area; the top projection preserves the
+source control's destination, HTTP method, confirmation, Turbo intent, and
+accessible name.
+
+The projection is populated after the selected detail loads, which lets one
+shared detail shell cover every Inbox kind without a second type-specific
+action contract. It uses each source form as the submission owner, so policy
+checks, server validation, and Turbo loading behavior remain on the existing
+form. On narrow screens the controls wrap within the action area instead of
+creating horizontal overflow.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the
