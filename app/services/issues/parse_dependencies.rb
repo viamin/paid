@@ -284,15 +284,17 @@ module Issues
     # the captured String directly — without it, refs_str would be an Array.
     def extract_removal_refs(text, local_numbers, cross_refs)
       markdown_sections(text, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
-        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: false)
+        extract_inline_removal_refs(
+          section_body, local_numbers, cross_refs, contextual_exclusions: true, mask_inline_code: false
+        )
       end
 
       inline_text = strip_markdown_sections(text, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
       extract_inline_removal_refs(inline_text, local_numbers, cross_refs, contextual_exclusions: true)
     end
 
-    def extract_inline_removal_refs(text, local_numbers, cross_refs, contextual_exclusions:)
-      scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
+    def extract_inline_removal_refs(text, local_numbers, cross_refs, contextual_exclusions:, mask_inline_code: contextual_exclusions)
+      scratch = mask_inline_code ? without_markdown_code(text) : without_fenced_code(text)
       scratch.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
         next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
 
@@ -313,7 +315,7 @@ module Issues
     def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004
       markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
-        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: false)
+        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: true, mask_inline_code: false)
       end
 
       inline_text = strip_markdown_sections(body, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
@@ -322,19 +324,22 @@ module Issues
 
     # Within a "## Dependencies" section, recognise deployment directives and
     # bare references only in Markdown list items. This keeps implementation
-    # inventories in ordinary prose from becoming unintended prerequisites.
+    # inventories and another issue's prerequisites from becoming unintended
+    # prerequisites of the current item.
     def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003
       scratch = without_fenced_code(section_body)
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
+      extract_list_item_refs(scratch, local_deps, cross_deps)
+
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
+          next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
         scratch = scratch.gsub(pattern, "")
       end
-
-      extract_list_item_refs(scratch, local_deps, cross_deps)
     end
 
     # Extracts bare refs from Markdown list items. Indented continuation lines
@@ -368,8 +373,17 @@ module Issues
 
     def flush_list_item(item, local_deps, cross_deps)
       return unless item
+      return if item_describes_another_issue?(item)
 
       extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
+    end
+
+    def item_describes_another_issue?(item)
+      [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN ].any? do |pattern|
+        item.to_enum(:scan, pattern).any? do
+          describes_another_issue?(item, Regexp.last_match.begin(0))
+        end
+      end
     end
 
     def continuation_line?(line, indentation)
@@ -386,8 +400,8 @@ module Issues
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
     # Deployment-phrased matches are consumed first so the plain pattern does
     # not double-count them as non-deployment deps.
-    def extract_inline_refs(text, local_deps, cross_deps, contextual_exclusions:) # @spec DEPENDENCY-DECLARATIONS-009
-      scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
+    def extract_inline_refs(text, local_deps, cross_deps, contextual_exclusions:, mask_inline_code: contextual_exclusions) # @spec DEPENDENCY-DECLARATIONS-009
+      scratch = mask_inline_code ? without_markdown_code(text) : without_fenced_code(text)
 
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
