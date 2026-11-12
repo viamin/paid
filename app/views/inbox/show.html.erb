@@ -2,8 +2,8 @@
 <%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
   <%= render "dashboard/inbox_detail",
              entry: @selected_entry,
-             scoped_project: @scoped_project,
-             selected_kind: @selected_kind,
+             scoped_project: nil,
+             selected_kind: nil,
              selected_scope: @selected_scope,
              root_prerequisite_ranking: @root_prerequisite_ranking %>
 <% end %>

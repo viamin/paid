@@ -71,6 +71,22 @@ that restoration. A copied member URL remains subject to the entry's normal
 tenant and owner visibility checks; an unavailable entry follows the existing
 safe fallback to the filtered collection rather than rendering its detail.
 
+## Filtering and search
+
+Inbox entries are a typed, in-memory projection assembled from several
+authorized relations, so they cannot honestly expose one Active Record relation
+to Ransack. `Inbox::RansackQuery` is the narrow compatible boundary: it accepts
+only the Ransack-shaped `kind_in`, `project_id_in`, and `search_cont`
+predicates, then applies them to already policy-scoped, phase-relevant,
+personal-removal-aware entries. It searches an entry's project/repository name,
+title, and summary. Unsupported predicates and values are ignored; no model
+attribute, SQL fragment, or arbitrary entry payload is queryable. The web
+Inbox uses `q[...]` GET parameters, preserving filters in scope changes,
+selection URLs, redirects, and reset links. This adapter is necessary for
+synthetic entries (especially dependency-cycle entries with multiple projects)
+that have no shared persisted relation; it deliberately does not claim to make
+their heterogeneous records directly Ransackable.
+
 ## Request cost
 
 The collection response renders the queue and filter controls before the

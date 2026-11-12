@@ -936,3 +936,17 @@
   *Test:* `spec/services/inbox/decision_brief_spec.rb`,
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-028** — When an operator filters or searches the Inbox,
+  the system SHALL accept only the Ransack-compatible `kind_in`, `project_id_in`,
+  and `search_cont` predicates in `q` GET parameters. Multiple selected projects
+  and kinds SHALL compose as unions within their dimensions and with the search
+  predicate, while preserving authorized visibility, phase relevance, personal
+  removals, scope behavior, sorting, direct-entry access, and the empty-filter
+  fallback. Search SHALL match project/repository, entry title, or summary.
+  Unsupported predicates and values SHALL have no effect.
+  *Code:* `app/services/inbox/ransack_query.rb`,
+  `app/services/inbox/queue.rb`, `app/controllers/inbox_controller.rb`,
+  `app/views/inbox/index.html.erb`.
+  *Test:* `spec/services/inbox/ransack_query_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/system/inbox_filters_dialog_spec.rb`.

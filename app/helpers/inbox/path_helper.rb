@@ -3,12 +3,13 @@
 module Inbox
   module PathHelper
     # @spec INBOX-FOUNDATION-009 @spec INBOX-PHASE-RELEVANCE-002
-    def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], **overrides)
+    def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], q: params[:q], **overrides)
       {
-        project_id: project&.id,
-        kind: kind,
+        project_id: project&.id || params[:project_id],
+        kind: kind || params[:kind],
         sort: sort,
-        scope: scope
+        scope: scope,
+        q: q.respond_to?(:to_unsafe_h) ? q.to_unsafe_h : q
       }.compact.merge(overrides)
     end
 

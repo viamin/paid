@@ -18,6 +18,7 @@ module Api
         return if conditional_response?(filters)
 
         entries = Inbox::Queue.call(user: current_user, **filters.slice(:project, :kind, :sort, :scope))
+        entries = Inbox::RansackQuery.call(entries:, params: filters[:q])
         page = paginated_entries(entries)
         listed_entries = page.first(inbox_limit)
         payload = { entries: InboxEntrySerializer.render_list_page(listed_entries) }
@@ -118,6 +119,7 @@ module Api
           kind: valid_kind,
           sort: valid_sort,
           scope: valid_scope,
+          q: inbox_query,
           limit: inbox_limit,
           cursor: params[:cursor].presence
         }.compact
@@ -144,6 +146,13 @@ module Api
         Inbox::Queue::KINDS.include?(kind) ? kind : nil
       end
 
+      def inbox_query
+        query = params.fetch(:q, {}).permit(:search_cont, kind_in: [], project_id_in: []).to_h
+        query["kind_in"] ||= [ params[:kind] ] if params[:kind].present?
+        query["project_id_in"] ||= [ params[:project_id] ] if params[:project_id].present?
+        query
+      end
+
       def valid_sort
         Inbox::Queue::SORTS.key?(params[:sort].to_s) ? params[:sort].to_s : Inbox::Queue::DEFAULT_SORT
       end
@@ -159,7 +168,7 @@ module Api
       end
 
       def inbox_etag(filters)
-        payload = [ current_user.id, filters.slice(:kind, :sort, :scope, :limit, :cursor).merge(project_id: filters[:project]&.id), inbox_version ]
+        payload = [ current_user.id, filters.slice(:kind, :sort, :scope, :limit, :cursor, :q).merge(project_id: filters[:project]&.id), inbox_version ]
         %Q("#{Digest::SHA256.hexdigest(payload.to_json)}")
       end
 

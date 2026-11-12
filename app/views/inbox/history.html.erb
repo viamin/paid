@@ -1,5 +1,5 @@
 <%# @spec OPERATOR-INBOX-025 %>
 <%= turbo_frame_tag "inbox-history" do %>
   <%= render "inbox/history_content", entry: @selected_entry,
-        scoped_project: @scoped_project, selected_kind: @selected_kind if @selected_entry %>
+        scoped_project: nil, selected_kind: nil if @selected_entry %>
 <% end %>

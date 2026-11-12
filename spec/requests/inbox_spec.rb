@@ -634,19 +634,31 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Closed question")
   end
 
-  it "renders compact URL-driven filters with the selected project, kind, and sort" do
+  # @spec OPERATOR-INBOX-028
+  it "renders Ransack-compatible multi-value filters and server-side search in the GET URL" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+    create(:issue, project: second_project, paid_state: "manual_review", title: "Beta deployment", manual_review_reason: "Round limit reached.")
 
-    get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND, sort: "newest")
+    get inbox_path(q: {
+      project_id_in: [ project.id, second_project.id ],
+      kind_in: [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, Inbox::Queue::MANUAL_REVIEW_KIND ],
+      search_cont: "deployment"
+    }, sort: "newest")
 
     document = Nokogiri::HTML(response.body)
     filter = document.at_css("[data-controller~='inbox-filters']")
 
     expect(filter).to be_present
-    expect(document.at_css("[data-inbox-filters-target='trigger']").text).to include("Filters", project.full_name, "Clarifying Questions", "Newest first")
-    expect(document.at_css("input[name='kind'][value='clarifying_questions']")["checked"]).to be_present
-    expect(document.at_css("input[name='project_id'][value='#{project.id}']")["checked"]).to be_present
+    expect(document.at_css("[data-inbox-filters-target='trigger']").text).to include("Filters", project.full_name, second_project.full_name,
+      "Clarifying Questions", "Manual Review", "Newest first")
+    expect(document.at_css("input[name='q[kind_in][]'][value='clarifying_questions']")["checked"]).to be_present
+    expect(document.at_css("input[name='q[kind_in][]'][value='manual_review']")["checked"]).to be_present
+    expect(document.at_css("input[name='q[project_id_in][]'][value='#{project.id}']")["checked"]).to be_present
+    expect(document.at_css("input[name='q[project_id_in][]'][value='#{second_project.id}']")["checked"]).to be_present
+    expect(document.at_css("input[name='q[search_cont]']")["value"]).to eq("deployment")
     expect(document.at_css("input[name='sort'][value='newest']")["checked"]).to be_present
+    expect(response.body).to include("Beta deployment")
+    expect(response.body).not_to include("Alpha question")
   end
 
   # @spec NOTIFICATION-SEVERITY-009 OPERATOR-INBOX-002B

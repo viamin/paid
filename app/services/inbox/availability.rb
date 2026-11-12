@@ -19,10 +19,10 @@ module Inbox
       new(...).call
     end
 
-    def initialize(user:, project: nil, kind: nil, entries: nil)
+    def initialize(user:, project: nil, kind: nil, projects: [], kinds: [], entries: nil)
       @user = user
-      @project = project
-      @kind = kind.to_s.presence
+      @project_ids = Array(projects.presence || project).compact.map { |candidate| candidate.respond_to?(:id) ? candidate.id : candidate }
+      @kinds = Array(kinds.presence || kind).filter_map(&:presence)
       @entries = entries
     end
 
@@ -85,16 +85,16 @@ module Inbox
 
     private
 
-    attr_reader :user, :project, :kind
+    attr_reader :user, :kinds, :project_ids
 
     def count_for_kind(entry_kind)
       per_project = matrix[entry_kind]
-      project ? per_project[project.id].to_i : per_project.values.sum
+      project_ids.present? ? per_project.slice(*project_ids).values.sum : per_project.values.sum
     end
 
     def count_for_project(project_record)
-      if kind
-        matrix[kind][project_record.id].to_i
+      if kinds.present?
+        kinds.sum { |entry_kind| matrix[entry_kind][project_record.id].to_i }
       else
         Inbox::Queue::KINDS.sum { |k| matrix[k][project_record.id].to_i }
       end
@@ -102,7 +102,7 @@ module Inbox
 
     def projects_with_items
       @projects_with_items ||= begin
-        ids = kind ? matrix[kind].keys : matrix.values.flat_map(&:keys).uniq
+        ids = kinds.present? ? kinds.flat_map { |entry_kind| matrix[entry_kind].keys }.uniq : matrix.values.flat_map(&:keys).uniq
         if @entries
           @entries.flat_map { |entry| projects_for(entry) }.uniq(&:id).select { |candidate| ids.include?(candidate.id) }
             .sort_by { |candidate| [ candidate.owner, candidate.repo ] }
