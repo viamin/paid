@@ -2,6 +2,13 @@
 
 class Account < ApplicationRecord
   has_many :dependabot_alert_coverages, dependent: :destroy
+  has_many :work_items, dependent: :destroy
+  has_many :work_item_project_mappings, dependent: :destroy
+  has_many :work_item_assignments, dependent: :destroy
+  has_many :work_item_lifecycle_mappings, dependent: :destroy
+  has_many :work_item_lifecycle_conflicts, dependent: :destroy
+  has_many :trusted_provider_identities, dependent: :destroy
+  has_many :provider_identity_mappings, dependent: :destroy
   has_logidze
   MAX_SLUG_GENERATION_ATTEMPTS = 10
   PLANS = %w[trial free professional enterprise].freeze

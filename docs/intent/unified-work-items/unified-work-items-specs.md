@@ -28,12 +28,20 @@
   state, and raw provider payloads, keyed by provider identity; imported
   comments SHALL NOT be reposted.
 
-- [ ] **UNIFIED-WORK-ITEMS-004** — The browser and assignment services SHALL
+- [x] **UNIFIED-WORK-ITEMS-004** — The browser and assignment services SHALL
   show unassigned work first and support filters, individual and bulk
   assignment, current-and-future/future-only/no-auto-assignment mapping modes,
   issue-level customization or replacement, assignment provenance, affected
   issue review flags, preview/confirmation, and mapping- or issue-level
   execution-project defaults.
+  *Tests:* `spec/services/work_items/browse_spec.rb`,
+  `spec/services/work_items/assign_to_projects_spec.rb`,
+  `spec/services/work_items/project_mappings/`,
+  `spec/services/work_items/overrides/`,
+  `spec/services/work_items/execution_project_resolver_spec.rb`
+  *Code:* `WorkItems::Browse`, `WorkItems::AssignToProjects`,
+  `WorkItems::ProjectMappings`, `WorkItems::Overrides`,
+  `WorkItems::ExecutionProjectResolver`
 
 - [ ] **UNIFIED-WORK-ITEMS-005** — When a user starts a workflow from a
   unified ticket, the system SHALL preserve existing project permissions and
@@ -45,11 +53,13 @@
   API-key user when permitted and allow agent-run lifecycle writes to be
   configured independently.
 
-- [ ] **UNIFIED-WORK-ITEMS-006** — When lifecycle mappings are configured
+- [x] **UNIFIED-WORK-ITEMS-006** — When lifecycle mappings are configured
   between Linear and Paid, the system SHALL synchronize supported changes in
   both directions with loop prevention, surface simultaneous conflicting
   changes for human review, and never treat an unsupported provider operation
   as successful.
+  *Tests:* `spec/services/work_items/lifecycle/`
+  *Code:* `WorkItemLifecycleMapping`, `WorkItems::Lifecycle`
 
 - [ ] **UNIFIED-WORK-ITEMS-007** — The GitHub migration SHALL run offline and
   idempotently, preserve GitHub identity, metadata, comments, Paid state,

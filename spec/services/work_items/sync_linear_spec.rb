@@ -63,4 +63,103 @@ RSpec.describe WorkItems::SyncLinear do
     expect(configuration.reload.connection_health).to eq("rate_limited")
     expect(existing.reload.title).to eq("Existing")
   end
+
+  it "reconciles a changed provider lifecycle state through the configured mapping" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    FeatureFlags.enable!(:unified_work_items, project:)
+    create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress")
+    item = create(:work_item, account:, tracker_configuration: configuration, external_id: "issue-1",
+      native_state: "Todo", paid_lifecycle_state: "todo")
+    ticket[:state][:name] = "In Progress"
+    stub_ticket
+
+    described_class.call(project:)
+
+    expect(item.reload).to have_attributes(native_state: "In Progress", paid_lifecycle_state: "in_progress",
+      lifecycle_sync_source: "provider")
+  end
+
+  it "replaces unlocked mapping assignments when Linear moves a ticket to another mapped project" do
+    # @spec UNIFIED-WORK-ITEMS-004
+    FeatureFlags.enable!(:unified_work_items, project:)
+    first_target = create(:project, account:)
+    second_target = create(:project, account:)
+    FeatureFlags.enable!(:unified_work_items, project: first_target)
+    FeatureFlags.enable!(:unified_work_items, project: second_target)
+    first_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-1")
+    first_mapping.work_item_project_mapping_targets.create!(project: first_target)
+    second_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-2")
+    second_mapping.work_item_project_mapping_targets.create!(project: second_target)
+    stub_ticket
+
+    described_class.call(project:)
+    ticket[:project] = { id: "linear-project-2", name: "Delivery" }
+    stub_ticket
+
+    described_class.call(project:)
+
+    item = WorkItem.find_by!(account:, provider: "linear", external_id: "issue-1")
+    expect(item.projects).to contain_exactly(second_target)
+    expect(item.work_item_assignments.sole.work_item_project_mapping).to eq(second_mapping)
+  end
+
+  it "flags locked assignments when Linear moves a ticket to another mapped project" do
+    # @spec UNIFIED-WORK-ITEMS-004
+    FeatureFlags.enable!(:unified_work_items, project:)
+    first_target = create(:project, account:)
+    second_target = create(:project, account:)
+    FeatureFlags.enable!(:unified_work_items, project: first_target)
+    FeatureFlags.enable!(:unified_work_items, project: second_target)
+    first_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-1")
+    first_mapping.work_item_project_mapping_targets.create!(project: first_target)
+    second_mapping = create(:work_item_project_mapping, account:, provider: "linear", native_project_id: "linear-project-2")
+    second_mapping.work_item_project_mapping_targets.create!(project: second_target)
+    stub_ticket
+    described_class.call(project:)
+    item = WorkItem.find_by!(account:, provider: "linear", external_id: "issue-1")
+    item.work_item_assignments.update_all(locked: true)
+    ticket[:project] = { id: "linear-project-2", name: "Delivery" }
+    stub_ticket
+
+    described_class.call(project:)
+
+    expect(item.reload.projects).to contain_exactly(first_target)
+    expect(item).to be_needs_review
+  end
+
+  it "uses the syncing project lifecycle mapping instead of an assigned project's mapping" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    FeatureFlags.enable!(:unified_work_items, project:)
+    other_project = create(:project, account:)
+    create(:work_item_lifecycle_mapping, account:, project:, native_state: "In Progress", paid_state: "syncing_project")
+    create(:work_item_lifecycle_mapping, account:, project: other_project,
+      native_state: "In Progress", paid_state: "other_project")
+    item = create(:work_item, account:, tracker_configuration: configuration, external_id: "issue-1",
+      native_state: "Todo")
+    item.work_item_assignments.create!(account:, project: other_project, provenance: "manual")
+    item.work_item_assignments.create!(account:, project:, provenance: "manual")
+    ticket[:state][:name] = "In Progress"
+    stub_ticket
+
+    described_class.call(project:)
+
+    expect(item.reload.paid_lifecycle_state).to eq("syncing_project")
+  end
+
+  it "records a conflict instead of overwriting a recent Paid lifecycle change" do
+    # @spec UNIFIED-WORK-ITEMS-006
+    FeatureFlags.enable!(:unified_work_items, project:)
+    create(:work_item_lifecycle_mapping, account:, native_state: "In Progress", paid_state: "in_progress")
+    item = create(:work_item, account:, tracker_configuration: configuration, external_id: "issue-1",
+      native_state: "Todo", paid_lifecycle_state: "blocked", lifecycle_sync_source: "paid",
+      lifecycle_synced_at: Time.zone.parse("2026-11-10T13:00:00Z"))
+    ticket[:state][:name] = "In Progress"
+    stub_ticket
+
+    expect { described_class.call(project:) }.to change(WorkItemLifecycleConflict, :count).by(1)
+
+    expect(item.reload).to have_attributes(native_state: "Todo", paid_lifecycle_state: "blocked")
+    expect(item.work_item_lifecycle_conflicts.last).to have_attributes(requested_native_state: "In Progress",
+      requested_paid_state: "in_progress")
+  end
 end

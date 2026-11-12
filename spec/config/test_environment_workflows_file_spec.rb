@@ -97,12 +97,13 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
     blocks = test_env_blocks_for(path)
     return blocks unless path == ".github/workflows/ci.yml"
 
-    # The shard matrix and dropped-shard recovery exercise the restricted
-    # paid_runtime role; every other test-mode job uses the postgres bootstrap
-    # credentials.
-    shard_jobs = [ "test-shards", "shard-recovery" ]
-    shard_envs = shard_jobs.filter_map { |job_name| workflow_config(path).fetch("jobs")[job_name]&.fetch("env", nil) }
-    blocks.reject { |env| shard_envs.include?(env) }
+    # Application and benchmark code exercise the restricted paid_runtime role;
+    # every other test-mode job uses the postgres bootstrap credentials.
+    restricted_jobs = [ "test-shards", "shard-recovery", "performance" ]
+    restricted_envs = restricted_jobs.filter_map do |job_name|
+      workflow_config(path).fetch("jobs")[job_name]&.fetch("env", nil)
+    end
+    blocks.reject { |env| restricted_envs.include?(env) }
   end
 
   it "sets an explicit test secret key base anywhere Rails boots in test mode" do

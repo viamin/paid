@@ -70,6 +70,10 @@ module Configuration
         # settings. Applying an unrelated operating profile must not disable
         # enrollment for subsequently attached features.
         "confidence_delivery_enrollment_enabled" => "feature-policy enrollment, not an operating-mode posture",
+        # @spec UNIFIED-WORK-ITEMS-006
+        # Agent-run lifecycle synchronization is an independent project policy.
+        # Applying an operating profile must not enable provider status writes.
+        "agent_run_lifecycle_sync_enabled" => "lifecycle synchronization policy, not an operating-mode posture",
         # @spec QUESTION-EXPLORATION-019
         # The exploration rollout setting is deliberately selected in project
         # settings. An operating profile must not silently flip which
