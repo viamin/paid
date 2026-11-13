@@ -73,8 +73,8 @@ When Overmind's control socket is missing but a tmux session remains, startup
 refuses to launch duplicate services and directs the developer to inspect the
 old session.
 
-The development web process also exposes password-protected PgHero at `/pghero`
-to the development machine only. PgHero is a development-only Rails engine that
+The development web process also exposes PgHero at `/pghero` without
+authentication by default. PgHero is a development-only Rails engine that
 inspects the same PostgreSQL connection configured for Paid through
 `DATABASE_URL`; it does not add a service, a database, or a production route.
 PgHero is mounted only when Rails runs in development, so the system-test
@@ -83,15 +83,29 @@ dependencies that Paid's eagerly loaded test application requires.
 `bin/dev` binds the native development server to loopback. Docker Compose
 publishes its web port to the host loopback interface while the server listens
 on the container network, so the dashboard remains reachable from the host
-without being exposed through Tailscale or other network interfaces. The local
-PgHero password (`PGHERO_PASSWORD` when supplied, otherwise Rails' development
-secret) prevents restricted agent containers that can reach the Compose proxy
-from loading the dashboard. The `.devcontainer` VS Code environment is a
+without being exposed through Tailscale or other network interfaces. A developer
+can optionally set `PGHERO_PASSWORD` to require HTTP Basic authentication. The
+`.devcontainer` VS Code environment is a
 different case: it already forwards its web port on all host interfaces so a
 developer can reach the whole app over Tailscale, predating PgHero, so it sets
 `PAID_WEB_BIND_ADDRESS=0.0.0.0` rather than relying on the native loopback
-default. PgHero rides along with the rest of the app there; the password is
-its only protection against that broader reachability.
+default. PgHero rides along with the rest of the app there and is reachable by
+anyone who can access the forwarded development web port, including restricted
+agent containers that can reach the Compose proxy.
+The unauthenticated dashboard is read-only: Paid rejects its non-GET requests
+and hides PgHero's query termination and Explain controls. This keeps query
+stats visible without letting a network caller reset stats or interrupt work.
+PgHero normalizes query text before display to hide literal values in live
+queries and query stats.
+Development PostgreSQL preloads `pg_stat_statements`, and the development
+primary database installs its extension so PgHero can show current query stats
+and slow queries. This applies to both Docker Compose and the VS Code
+devcontainer; it does not enable PgHero's historical query capture or change
+production PostgreSQL configuration. `bin/setup` installs the extension on
+existing Compose development databases when query stats are enabled in the
+container environment. The development dashboard flags queries
+averaging at least 100 ms over five calls so low-volume performance problems
+are visible locally.
 
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five

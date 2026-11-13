@@ -38,6 +38,43 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec RAILS-CONTROL-PLANE-018
+  it "enables query stats on an existing Compose development database" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge(
+        "PAID_ENABLE_DEV_QUERY_STATS" => "1", "RAILS_ENV" => "development",
+        "DB_HOST" => "postgres", "DB_ADMIN_USERNAME" => "postgres", "DB_ADMIN_PASSWORD" => "test-admin-password"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "psql-calls.log"))).to include(
+        "-h postgres -U postgres -d paid_development -c CREATE EXTENSION IF NOT EXISTS pg_stat_statements"
+      )
+    end
+  end
+
+  # @spec RAILS-CONTROL-PLANE-018
+  it "targets the configured development database and port when DATABASE_URL is set" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge(
+        "PAID_ENABLE_DEV_QUERY_STATS" => "1", "RAILS_ENV" => "development",
+        "DATABASE_URL" => "postgresql://paid:app-password@custom-db:5544/other_dev",
+        "DB_ADMIN_USERNAME" => "postgres", "DB_ADMIN_PASSWORD" => "test-admin-password"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "psql-calls.log"))).to include(
+        "-h custom-db -U postgres -d other_dev -p 5544 -c CREATE EXTENSION IF NOT EXISTS pg_stat_statements"
+      )
+    end
+  end
+
   it "writes the metrics token file from METRICS_TOKEN so Prometheus scrape auth stays in sync" do
     # Regression guard: docker-compose.observability.yml mounts the host
     # metrics token file into the Prometheus container at the path
@@ -173,6 +210,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
   def prepare_script_fixture(dir, installed_bundler_versions: [ "4.0.12" ])
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "lib", "paid"))
+    FileUtils.mkdir_p(File.join(dir, "config"))
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "log", "dev-update"))
     FileUtils.mkdir_p(File.join(dir, "workspace-root"))
@@ -183,6 +221,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     FileUtils.cp(script_source, script_path)
     FileUtils.chmod("+x", script_path)
     FileUtils.cp(log_truncator_source, File.join(dir, "lib", "paid", "log_truncator.rb"))
+    FileUtils.cp(File.expand_path("../../config/worktree_database_names.rb", __dir__), File.join(dir, "config", "worktree_database_names.rb"))
 
     write_executable(
       File.join(dir, "bin", "ensure-worktree-databases"),
@@ -305,6 +344,15 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
 
+    write_executable(
+      File.join(dir, "stubbin", "psql"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf '%s\\n' "$*" >> "#{dir}/psql-calls.log"
+        exit 0
+      BASH
+    )
+
     FileUtils.mkdir_p(File.join(dir, "scripts"))
     write_executable(
       File.join(dir, "scripts", "build-agent-image.sh"),
@@ -327,6 +375,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
       "WORKSPACE_ROOT" => File.join(dir, "workspace-root"),
       "BUNDLE_BIN_PATH" => nil,
+      "DATABASE_URL" => nil,
       "BUNDLE_GEMFILE" => nil,
       "BUNDLER_SETUP" => nil,
       "BUNDLER_VERSION" => nil,

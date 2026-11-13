@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "uri"
 
 APP_ROOT = File.expand_path("..", __dir__)
 BUNDLER_VERSION_PATTERN = /^BUNDLED WITH$\n\s+(.+)$/.freeze
@@ -66,6 +67,22 @@ FileUtils.chdir APP_ROOT do
     system! "bin/ensure-worktree-databases"
     system! "bin/rails db:prepare"
     system! "bin/rails db:reset" if ARGV.include?("--reset")
+
+    if ENV["PAID_ENABLE_DEV_QUERY_STATS"] == "1" && ENV.fetch("RAILS_ENV", "development") == "development"
+      puts "\n== Enabling development query stats =="
+      require_relative "../config/worktree_database_names"
+      database_url = URI.parse(ENV["DATABASE_URL"]) if ENV["DATABASE_URL"]
+      database_name = database_url ? URI::DEFAULT_PARSER.unescape(database_url.path.delete_prefix("/")) :
+        Paid::WorktreeDatabaseNames.development_primary_name
+      admin_host = ENV["DB_ADMIN_HOST"] || database_url&.host || ENV.fetch("DB_HOST")
+      admin_port = ENV["DB_ADMIN_PORT"] || database_url&.port || ENV["DB_PORT"]
+      admin_user = ENV.fetch("DB_ADMIN_USERNAME")
+      admin_password = ENV.fetch("DB_ADMIN_PASSWORD")
+      psql_args = [ "-v", "ON_ERROR_STOP=1", "-h", admin_host, "-U", admin_user, "-d", database_name ]
+      psql_args.push("-p", admin_port.to_s) if admin_port
+      system!({ "PGPASSWORD" => admin_password }, "psql", *psql_args,
+        "-c", "CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+    end
   end
 
   unless skip_database

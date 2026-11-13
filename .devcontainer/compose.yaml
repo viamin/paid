@@ -42,6 +42,7 @@ services:
       # bin/dev-web defaults to loopback; the port mapping above forwards from
       # the container's non-loopback address, so Puma must listen there too.
       PAID_WEB_BIND_ADDRESS: "0.0.0.0"
+      PAID_ENABLE_DEV_QUERY_STATS: "1"
 
     depends_on:
       postgres:
@@ -56,7 +57,7 @@ services:
     # worktree's databases. The default max_connections=100 is exhausted under
     # that combined load; 200 gives headroom. Production sets max_connections at
     # its own DB layer (see docs/WORKER_POOL_TUNING.md).
-    command: postgres -c max_connections=200
+    command: postgres -c max_connections=200 -c shared_preload_libraries=pg_stat_statements
     restart: unless-stopped
     networks:
     - default

@@ -8,7 +8,7 @@ RSpec.describe "PgHero development route", :no_db do
   around do |example|
     original_password = ENV.fetch("PGHERO_PASSWORD", nil)
     original_environment = PgHero.env
-    ENV["PGHERO_PASSWORD"] = "development-password"
+    ENV.delete("PGHERO_PASSWORD")
     PgHero.env = "development"
     reset_pghero_auth_config
     example.run
@@ -20,7 +20,7 @@ RSpec.describe "PgHero development route", :no_db do
   end
 
   # @spec RAILS-CONTROL-PLANE-018
-  it "configures authentication for requests forwarded through Docker Compose" do
+  it "mounts PgHero without authentication by default" do
     routes = ActionDispatch::Routing::RouteSet.new
     environment = ActiveSupport::StringInquirer.new("development")
     routes.draw { PgHeroDevelopmentRoutes.draw(self, environment:) }
@@ -28,7 +28,27 @@ RSpec.describe "PgHero development route", :no_db do
 
     route = routes.routes.find { |candidate| candidate.app.app == PgHero::Engine }
     expect(route).to be_present
+    expect(PgHero.password).to be_nil
+  end
+
+  # @spec RAILS-CONTROL-PLANE-018
+  it "allows an explicit password for development" do
+    ENV["PGHERO_PASSWORD"] = "development-password"
+    reset_pghero_auth_config
+
     expect(PgHero.password).to eq("development-password")
+  end
+
+  # @spec RAILS-CONTROL-PLANE-018
+  it "rejects PgHero write requests before they reach the engine" do
+    routes = ActionDispatch::Routing::RouteSet.new
+    environment = ActiveSupport::StringInquirer.new("development")
+    routes.draw { PgHeroDevelopmentRoutes.draw(self, environment:) }
+
+    response = Rack::MockRequest.new(routes).post("/pghero/reset_query_stats")
+
+    expect(response.status).to eq(405)
+    expect(response.headers.fetch("allow")).to eq("GET, HEAD")
   end
 
   # @spec RAILS-CONTROL-PLANE-018
