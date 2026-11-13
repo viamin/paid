@@ -23,6 +23,24 @@ RSpec.describe Containers::DockerExecWithStdin, :no_db do
     expect(result).to eq([ [], [], 7 ])
   end
 
+  # @spec LLM-ROUTING-006
+  it "returns the command status when Docker closes stdin before consuming it" do
+    connection = instance_double(Docker::Connection)
+    container = instance_double(Docker::Container, id: "container-1", connection: connection)
+    execution = instance_double(Docker::Exec, id: "exec-1", json: { "ExitCode" => 7 })
+    socket = instance_double(IO)
+    allow(Docker::Exec).to receive(:create).and_return(execution)
+    allow(socket).to receive(:write).and_raise(Errno::EPIPE)
+    allow(socket).to receive(:readpartial).and_raise(EOFError)
+    allow(connection).to receive(:post) do |_path, _query, options|
+      options.fetch(:hijack_block).call(socket)
+    end
+
+    result = described_class.call(container:, command: [ "false" ], stdin: StringIO.new("input"), wait: 5)
+
+    expect(result).to eq([ [], [], 7 ])
+  end
+
   describe "Docker integration", :runner_smoke do
     around do |example|
       WebMock.disable!

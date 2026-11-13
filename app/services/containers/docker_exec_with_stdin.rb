@@ -32,14 +32,27 @@ module Containers
         # The materializer reads a declared byte count. Half-closing this
         # socket makes Docker end the attached stream before a quiet command
         # finishes, so leave the write side open until Docker closes it.
-        IO.copy_stream(stdin, socket)
+        writer = Thread.new { copy_input(stdin, socket) }
         begin
           loop { attach.call(socket.readpartial(512), nil, nil) }
         rescue EOFError
           nil
+        ensure
+          writer.join
+          writer.value
         end
       end
     end
     private_class_method :stream_input
+
+    def self.copy_input(stdin, socket)
+      IO.copy_stream(stdin, socket)
+    rescue Errno::EPIPE, Errno::ECONNRESET
+      # A command may exit without consuming its complete input. Docker closes
+      # the write side in that case, but the completed exec status remains the
+      # authoritative result.
+      nil
+    end
+    private_class_method :copy_input
   end
 end
