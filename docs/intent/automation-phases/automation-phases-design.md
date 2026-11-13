@@ -94,7 +94,7 @@ after the phase decision by the existing paths.
 and revocation. `WorkItemContinuationGrant#covers_phase?` walks the delivery
 chain; `#active?` requires neither completion nor revocation.
 
-`Automation::ContinuationGrantLookup.resolve(work_item:)` resolves the chain
+`Automation::ContinuationGrantLookup.resolve(project:, phase:, work_item:)` resolves the chain
 from any work item in the delivery chain — the issue, its pull requests'
 parent issue, or a run attached to either — so a grant survives issue →
 implementation run → PR → review → repair. It deliberately does **not** walk
@@ -126,8 +126,11 @@ submitted one: a mismatch returns the updated notice for review and creates no
 run (`AUTOMATION-PHASES-011`). Grant creation requires permission to delegate
 the covered actions; a merge endpoint requires permission to delegate merge.
 
-There is deliberately no per-item "stop after this phase" override
-(`AUTOMATION-PHASES-012`).
+Manual continuation grants deliberately offer no per-item "stop after this
+phase" override (`AUTOMATION-PHASES-012`): their endpoints are additive and
+project defaults may continue the same work. The proposed RDR-078 exclusive
+stop is a separate, explicitly authorized lifecycle and must not be inferred
+from a grant, GitHub approval, review, or run.
 
 ## Execution enforcement
 
