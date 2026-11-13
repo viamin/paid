@@ -36,36 +36,37 @@ RSpec.describe TenantContext, :no_db, :tenant_isolation do
 
     it "writes tenant settings through parameterized queries" do # @spec POSTGRESQL-PERSISTENCE-001
       connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
+      raw_connection = instance_double(PG::Connection)
+      result = instance_double(PG::Result)
       allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive(:exec_query)
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      allow(raw_connection).to receive(:exec_params).and_return(result)
+      allow(result).to receive(:clear)
 
       described_class.apply!(account)
 
-      expect(connection).to have_received(:exec_query).with(
+      expect(raw_connection).to have_received(:exec_params).with(
         "SELECT set_config($1, $2, false)",
-        "TenantContext#set_config",
-        satisfy do |binds|
-          binds.map(&:value_before_type_cast) == [ "paid.current_account_id", "123" ]
-        end
+        [ "paid.current_account_id", "123" ]
       )
-      expect(connection).to have_received(:exec_query).with(
+      expect(raw_connection).to have_received(:exec_params).with(
         "SELECT set_config($1, $2, false)",
-        "TenantContext#set_config",
-        satisfy do |binds|
-          binds.map(&:value_before_type_cast) == [ "paid.bypass_tenant_rls", "false" ]
-        end
+        [ "paid.bypass_tenant_rls", "false" ]
       )
+      expect(result).to have_received(:clear).twice
     end
 
     it "retries a transient missing PostgreSQL result while setting tenant context" do # @spec POSTGRESQL-PERSISTENCE-001
       connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
-      missing_result = NoMethodError.new("undefined method 'cmd_tuples' for nil", :cmd_tuples)
+      raw_connection = instance_double(PG::Connection)
+      result = instance_double(PG::Result, clear: nil)
       calls = 0
 
       allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive(:exec_query) do
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      allow(raw_connection).to receive(:exec_params) do
         calls += 1
-        raise missing_result if calls == 1
+        calls == 1 ? nil : result
       end
 
       described_class.apply_system_access!
@@ -75,13 +76,14 @@ RSpec.describe TenantContext, :no_db, :tenant_isolation do
 
     it "raises when the PostgreSQL result remains unavailable after retrying" do # @spec POSTGRESQL-PERSISTENCE-001
       connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
-      missing_result = NoMethodError.new("undefined method 'cmd_tuples' for nil", :cmd_tuples)
+      raw_connection = instance_double(PG::Connection)
 
       allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive(:exec_query).and_raise(missing_result)
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      allow(raw_connection).to receive(:exec_params).and_return(nil)
 
-      expect { described_class.apply_system_access! }.to raise_error(missing_result)
-      expect(connection).to have_received(:exec_query).twice
+      expect { described_class.apply_system_access! }.to raise_error(TenantContext::TransientMissingPostgresqlResult)
+      expect(raw_connection).to have_received(:exec_params).twice
     end
   end
 

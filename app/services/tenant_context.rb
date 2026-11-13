@@ -3,6 +3,8 @@
 # @spec POSTGRESQL-PERSISTENCE-001
 # @spec POSTGRESQL-PERSISTENCE-006
 class TenantContext
+  class TransientMissingPostgresqlResult < StandardError; end
+
   class << self
     def apply!(account)
       Current.account = account
@@ -75,9 +77,10 @@ class TenantContext
       attempts = 0
 
       begin
-        connection.exec_query("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
-      rescue NoMethodError => error
-        raise unless missing_postgresql_result?(error) && attempts.zero?
+        result = raw_connection.exec_params("SELECT set_config($1, $2, false)", [ key, value.to_s ])
+        raise TransientMissingPostgresqlResult unless result
+      rescue TransientMissingPostgresqlResult
+        raise unless attempts.zero?
 
         attempts += 1
         retry
@@ -87,6 +90,8 @@ class TenantContext
         raise unless transaction_aborted?(e)
 
         nil
+      ensure
+        result&.clear
       end
     end
 
@@ -94,18 +99,12 @@ class TenantContext
       error.cause.is_a?(PG::InFailedSqlTransaction)
     end
 
-    def missing_postgresql_result?(error)
-      error.name == :cmd_tuples && error.message.include?("for nil")
-    end
-
-    def setting_binds(*values)
-      values.map do |setting|
-        ActiveRecord::Relation::QueryAttribute.new(nil, setting.to_s, ActiveRecord::Type::String.new)
-      end
-    end
-
     def connection
       ActiveRecord::Base.connection
+    end
+
+    def raw_connection
+      connection.raw_connection
     end
   end
 end
