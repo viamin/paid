@@ -216,16 +216,20 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 
 PgHero starts inside the existing Rails process; it does not need a separate
 container or service. Run `bin/setup` once, then start the normal development
-stack with `bin/dev` and open <http://localhost:3000/pghero>. PgHero inspects
-the same development PostgreSQL database configured by `DATABASE_URL`; set that
-variable if your local database is not using the documented default.
+stack with `bin/dev` and open <http://localhost:3000/pghero>. Sign in as
+`paid`; its password defaults to Rails' local development secret. Set
+`PGHERO_PASSWORD` to use a separate local-only password, and optionally set
+`PGHERO_USERNAME` to choose another username. PgHero inspects the same
+development PostgreSQL database configured by `DATABASE_URL`; set that variable
+if your local database is not using the documented default.
 
 The dashboard is intentionally mounted only in `RAILS_ENV=development`.
 `bin/dev` binds its web server to loopback, while Docker Compose publishes port
-3000 only to `127.0.0.1`; the dashboard is therefore unavailable through
-Tailscale or other network interfaces. PgHero query history and cloud
-monitoring are not enabled, so no PgHero-specific environment variables or
-migrations are needed.
+3000 only to `127.0.0.1`; it is unavailable through Tailscale or other network
+interfaces. The required HTTP Basic password also prevents restricted agent
+containers that can reach the Compose proxy from loading database metadata.
+PgHero query history and cloud monitoring are not enabled, and no migrations or
+additional service are needed.
 
 ## Provider Auth Setup
 
