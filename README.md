@@ -220,11 +220,12 @@ stack with `bin/dev` and open <http://localhost:3000/pghero>. PgHero inspects
 the same development PostgreSQL database configured by `DATABASE_URL`; set that
 variable if your local database is not using the documented default.
 
-The dashboard is intentionally mounted only in `RAILS_ENV=development` and
-accepts requests only from the development machine's loopback interface. It is
-therefore unavailable through Tailscale or other network interfaces. PgHero
-query history and cloud monitoring are not enabled, so no PgHero-specific
-environment variables or migrations are needed.
+The dashboard is intentionally mounted only in `RAILS_ENV=development`.
+`bin/dev` binds its web server to loopback, while Docker Compose publishes port
+3000 only to `127.0.0.1`; the dashboard is therefore unavailable through
+Tailscale or other network interfaces. PgHero query history and cloud
+monitoring are not enabled, so no PgHero-specific environment variables or
+migrations are needed.
 
 ## Provider Auth Setup
 

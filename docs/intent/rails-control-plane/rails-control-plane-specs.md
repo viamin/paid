@@ -93,13 +93,16 @@
 
 - [x] **RAILS-CONTROL-PLANE-016** — When a developer starts Paid with
   `bin/dev`, the development web process SHALL expose PgHero at `/pghero` for
-  loopback requests to the PostgreSQL database configured through
+  requests from the development machine to the PostgreSQL database configured through
   `DATABASE_URL`. PgHero's gem and route SHALL be absent from non-development
   environments, and the integration SHALL not require another service or
-  database. Network requests, including requests over Tailscale, SHALL NOT
-  reach the PgHero route.
-  *Tests:* `spec/config/pg_hero_development_integration_spec.rb`.
-  *Code:* `Gemfile`, `config/routes.rb`.
+  database. Native development SHALL bind the web server to loopback; Docker
+  Compose SHALL publish the web port only to host loopback while allowing the
+  published request to reach PgHero. Network requests, including requests over
+  Tailscale, SHALL NOT reach the PgHero route.
+  *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
+  `spec/requests/pghero_development_spec.rb`.
+  *Code:* `Gemfile`, `config/routes.rb`, `bin/dev-web`, `docker-compose.yml`.
 
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping

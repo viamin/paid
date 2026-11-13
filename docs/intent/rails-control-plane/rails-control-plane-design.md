@@ -60,13 +60,14 @@ The existing development supervisor records lightweight process RSS and host
 memory samples before a crash, so a killed process's memory growth can be
 distinguished from pressure elsewhere in the workspace.
 
-The development web process also exposes PgHero at `/pghero` to loopback
-requests only. PgHero is a development-only Rails engine that inspects the
-same PostgreSQL connection configured for Paid through `DATABASE_URL`; it does
-not add a service, a database, or a production route. Developers start it with
-the existing `bin/dev` workflow and may use the dashboard to inspect their
-local database. Restricting the route to loopback prevents network clients from
-reading database diagnostics or submitting PgHero administration actions.
+The development web process also exposes PgHero at `/pghero` to the development
+machine only. PgHero is a development-only Rails engine that inspects the same
+PostgreSQL connection configured for Paid through `DATABASE_URL`; it does not
+add a service, a database, or a production route. `bin/dev` binds the native
+development server to loopback. Docker Compose publishes its web port to the
+host loopback interface while the server listens on the container network, so
+the dashboard remains reachable from the host without being exposed through
+Tailscale or other network interfaces.
 
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
