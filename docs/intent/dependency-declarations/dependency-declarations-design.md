@@ -41,7 +41,9 @@ section body is code, not Markdown list structure, so list-style lines inside it
 are not declarations. A fenced block closes only on the same delimiter
 character with a run at least as long as its opening delimiter. A subsequent
 heading ends the dependency section; child/sub-issue sections remain excluded
-from inline parsing.
+from inline parsing. The same folding rule applies while identifying a numbered
+issue as the subject of a directive: a wrapped directive about another issue
+does not become a declaration for the current item.
 
 ## Shared Consumers
 

@@ -51,7 +51,8 @@ RSpec.describe PullRequests::DependenciesResolved do
       <<~BODY
         ## Rollout / dependency
         - #42
-        - Draft because #4868 depends on #4863 and #4761.
+        - Draft because #4868
+          depends on #4863 and #4761.
 
         Closes #4868
       BODY

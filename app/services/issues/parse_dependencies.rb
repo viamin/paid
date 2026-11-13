@@ -293,8 +293,9 @@ module Issues
 
     def extract_inline_removal_refs(text, local_numbers, cross_refs, contextual_exclusions:)
       scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
-      scratch.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
-        next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
+      contextual_text = contextual_exclusions ? with_folded_list_continuations(scratch) : scratch
+      contextual_text.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
+        next if contextual_exclusions && describes_another_issue?(contextual_text, Regexp.last_match.begin(0))
 
         refs_str.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
           cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
@@ -388,6 +389,7 @@ module Issues
     # not double-count them as non-deployment deps.
     def extract_inline_refs(text, local_deps, cross_deps, contextual_exclusions:) # @spec DEPENDENCY-DECLARATIONS-009
       scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
+      scratch = with_folded_list_continuations(scratch) if contextual_exclusions
 
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
@@ -434,24 +436,53 @@ module Issues
     # declaration remains eligible for section extraction.
     def without_contextual_dependency_clauses(text)
       visible = text.dup
+      contextual_text = with_folded_list_continuations(text)
       patterns = [
         [ INLINE_REMOVAL_PATTERN, true ], [ NON_DEPENDENCY_PATTERN, true ],
         [ INLINE_DEPLOYMENT_PATTERN, false ], [ INLINE_DEPENDS_PATTERN, false ]
       ]
       patterns.each do |pattern, include_current_issue|
-        text.to_enum(:scan, pattern).each do
+        contextual_text.to_enum(:scan, pattern).each do
           match = Regexp.last_match
           subject_start = contextual_subject_start(
-            text, match.begin(0), include_current_issue: include_current_issue
+            contextual_text, match.begin(0), include_current_issue: include_current_issue
           )
           next unless subject_start
           next if visible[subject_start] == " "
 
-          clause_end = text.match(/[.!?;](?=\s|\z)|\n/, match.end(0))&.end(0) || text.length
+          clause_end = contextual_text.match(/[.!?;](?=\s|\z)|\n/, match.end(0))&.end(0) || text.length
           visible[subject_start...clause_end] = " " * (clause_end - subject_start)
         end
       end
       visible
+    end
+
+    # Preserve offsets while treating valid folded list-item lines as a single
+    # clause. Contextual masking uses the resulting text only to find clauses;
+    # list extraction still receives the original Markdown structure.
+    def with_folded_list_continuations(text) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-009
+      folded = text.dup
+      indentation = nil
+      offset = 0
+
+      text.each_line do |line|
+        match = LIST_ITEM_PATTERN.match(line)
+        if match
+          indentation = markdown_columns(match[1])
+        elsif indentation && continuation_line?(line, indentation)
+          replace_preceding_line_ending(folded, offset)
+        elsif !line.strip.empty?
+          indentation = nil
+        end
+        offset += line.length
+      end
+
+      folded
+    end
+
+    def replace_preceding_line_ending(text, offset)
+      length = text[offset - 2...offset] == "\r\n" ? 2 : 1
+      text[(offset - length)...offset] = " " * length
     end
 
     def without_markdown_code(text)

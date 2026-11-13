@@ -53,6 +53,17 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue.dependencies).to contain_exactly(actual)
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-009
+    it "ignores another issue's prerequisite when its directive is folded in a list item" do
+      body = <<~MARKDOWN
+        ## Dependencies
+        - Draft because #500
+          depends on #41.
+      MARKDOWN
+
+      expect(described_class.extract(body:, current_issue_number: 4981).first).to be_empty
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-009
     it "does not treat a colon-attributed directive as its own" do
       create(:issue, project: project, github_number: 9053)
