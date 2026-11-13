@@ -11,6 +11,45 @@ RSpec.describe Inbox::ActionHistory do
   end
 
   # @spec OPERATOR-INBOX-022
+  it "reports the current Inbox appearance without inventing unavailable history" do
+    history = described_class.call(entry:)
+
+    expect(history.summary).to have_attributes(processing_attempts: 0, inbox_appearances: 1,
+      inbox_returns: 0, repeated_returns: false)
+    expect(history.incomplete).to be(true)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "summarizes durable runs and deduplicated Inbox returns" do
+    create(:agent_run, project:, issue:, status: "completed", started_at: 2.hours.ago, completed_at: 1.hour.ago)
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", event_key: "inbox-returned:1:abc",
+      metadata: { action: "Returned to Inbox" })
+
+    summary = described_class.call(entry:).summary
+
+    expect(summary).to have_attributes(processing_attempts: 1, inbox_appearances: 2,
+      inbox_returns: 1, repeated_returns: false)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "emphasizes repeated retry-cap returns from the durable abandonment count" do
+    issue.update!(runner_retry_abandonment_count: 3)
+
+    expect(described_class.call(entry:).summary).to have_attributes(inbox_appearances: 3,
+      inbox_returns: 2, repeated_returns: true)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "counts token-budget-exceeded runs as processing attempts without inventing a return" do
+    create(:agent_run, project:, issue:, status: "token_budget_exceeded", started_at: 1.hour.ago,
+      completed_at: 30.minutes.ago)
+
+    expect(described_class.call(entry:).summary).to have_attributes(processing_attempts: 1,
+      inbox_appearances: 1, inbox_returns: 0)
+  end
+
+  # @spec OPERATOR-INBOX-022
   it "orders durable transitions and failed then completed runs without conflating their results" do
     create(:inbox_history_event, account: project.account, project:, subject_key: "issue:#{project.id}:#{issue.github_number}",
       event_key: "approval", occurred_at: 3.hours.ago, actor_label: "octocat", source: "github", result: "completed",
@@ -140,7 +179,7 @@ RSpec.describe Inbox::ActionHistory do
 
     expect(history.events.size).to eq(5)
     expect(history.next_cursor).to eq(history.events.last.id)
-    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/)
+    history_selects = selects.grep(/FROM (?:"inbox_history_events"|"agent_runs")/).reject { |sql| sql.include?("COUNT") }
     expect(history_selects).not_to be_empty
     expect(history_selects).to all(include("LIMIT"))
   end

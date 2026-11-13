@@ -154,6 +154,14 @@ backfill can move the boundary only when it supplies the missing interval. API
 detail reads accept a history-specific limit and cursor so clients can advance
 the bounded timeline independently of Inbox-list pagination.
 
+The action-history header projects compact, known counts from the same durable
+sources: agent-run rows provide processing attempts, the retry-abandonment
+counter provides distinct retry-lane appearances, and deduplicated ledger
+return events provide other recorded returns. A repeated return is emphasized
+in the header. When the coverage boundary is incomplete, the header labels its
+figures as known rather than filling in older activity; token-budget failures
+remain attempts unless a durable return source records a separate appearance.
+
 The PR scanner carries an explicit latest owner-review record, including its
 reviewed revision, to the same persistence boundary as its merge assessment.
 It never derives an owner-approval event from a blocker-free assessment, so

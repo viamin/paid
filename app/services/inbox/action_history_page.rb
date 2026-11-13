@@ -6,6 +6,7 @@ module Inbox
   # @spec OPERATOR-INBOX-022
   class ActionHistoryPage
     Cursor = Data.define(:id, :occurred_at)
+    Result = Data.define(:events, :summary)
     RUN_OUTCOMES = {
       "completed" => [ "Agent run completed", "completed" ],
       "no_output" => [ "Agent run completed with no output", "no_output" ],
@@ -27,8 +28,9 @@ module Inbox
     def call
       return if before && cursor.nil?
 
-      (persisted_events + run_start_events + run_finish_events + feature_approval_events + feature_release_events)
+      events = (persisted_events + run_start_events + run_finish_events + feature_approval_events + feature_release_events)
         .sort_by { |event| [ -event.occurred_at.to_f, event.id ] }
+      Result.new(events:, summary:)
     end
 
     private
@@ -154,6 +156,28 @@ module Inbox
       entry.project.account.account_activity_events.where(
         action: "feature_intent.released", subject: feature
       )
+    end
+
+    # Counts use complete durable sources instead of the bounded visible page.
+    # The retry counter records distinct retry-lane appearances; the ledger
+    # records other deduplicated returns.
+    # @spec OPERATOR-INBOX-022
+    def summary
+      retry_appearances = entry.issue&.runner_retry_abandonment_count.to_i
+      returns = [ retry_appearances - 1, 0 ].max + recorded_returns
+      ActionHistory::Summary.new(processing_attempts: processing_attempts,
+        inbox_appearances: [ retry_appearances, 1 ].max + recorded_returns,
+        inbox_returns: returns, repeated_returns: returns > 1)
+    end
+
+    def processing_attempts
+      return 0 unless entry.issue
+
+      runs.count
+    end
+
+    def recorded_returns
+      history_scope.where("event_key LIKE ?", "inbox-returned:%").count
     end
   end
 end

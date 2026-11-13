@@ -1,7 +1,19 @@
 <%# @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025 %>
 <% history = Inbox::ActionHistory.call(entry: entry, user: current_user, before: params[:history_cursor]) %>
 <section class="mt-6 border-t border-gray-200 pt-4" aria-labelledby="inbox-history-heading">
-  <h3 id="inbox-history-heading" class="text-sm font-semibold text-gray-900">Action history</h3>
+  <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+    <h3 id="inbox-history-heading" class="text-sm font-semibold text-gray-900">Action history</h3>
+    <p data-testid="inbox-history-summary" role="status" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-600">
+      <span><%= history.incomplete ? "Known " : "" %><%= pluralize(history.summary.processing_attempts, "processing attempt") %></span>
+      <span aria-hidden="true">·</span>
+      <span><%= history.incomplete ? "Known " : "" %><%= pluralize(history.summary.inbox_appearances, "Inbox appearance") %></span>
+      <% if history.summary.inbox_returns.positive? %>
+        <span class="<%= history.summary.repeated_returns ? "font-semibold text-amber-800" : "font-medium text-gray-700" %>">
+          Returned to Inbox <%= pluralize(history.summary.inbox_returns, "time") %>
+        </span>
+      <% end %>
+    </p>
+  </div>
   <% if history.incomplete %><p class="mt-1 text-sm text-amber-800">History before Paid recorded durable evidence is unavailable.</p><% end %>
   <ol class="mt-3 space-y-3" aria-label="Action history timeline">
     <% history.events.each do |event| %>
