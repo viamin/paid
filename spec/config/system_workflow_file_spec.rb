@@ -22,13 +22,9 @@ RSpec.describe SystemWorkflowFile, :no_db do
     system_job.fetch("steps").find { |step| step["name"] == name }
   end
 
-  it "allows every pull-request system test run to finish" do
-    concurrency = workflow.fetch("concurrency")
-
-    expect(concurrency).to include(
-      "group" => "system-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action }}",
-      "cancel-in-progress" => false
-    )
+  # @spec TEST-SUITE-020
+  it "does not group system-test runs into a cancellation-prone concurrency queue" do
+    expect(workflow).not_to have_key("concurrency")
   end
 
   # @spec MOBILE-API-016
