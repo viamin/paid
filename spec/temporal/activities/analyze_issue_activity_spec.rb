@@ -5,6 +5,13 @@ require "ostruct"
 
 # @spec KNOWLEDGE-005
 RSpec.describe Activities::AnalyzeIssueActivity do
+  def create_managed_runner(user:, runner_key:)
+    runner = create(:runner, user: user, runner_key: runner_key, enabled_for_chat: true,
+      tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: runner, account: user.account, created_by: user)
+    runner
+  end
+
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) do
@@ -968,7 +975,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       # Claude is rate-limited -> Knowledge::ProviderSelector.for_chat returns []
       create(:runner_state, :rate_limited, user: owner, runner_name: "claude")
       # An available alternative the owner actually has configured
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      create_managed_runner(user: owner, runner_key: "codex")
     end
 
     # @spec ISSUE-ANALYSIS-002
@@ -1336,7 +1343,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-001
     it "uses the configured issue_analysis_runner as the primary provider" do
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      create_managed_runner(user: owner, runner_key: "codex")
       owner.settings.update!(issue_analysis_runner: "codex", issue_analysis_fallback_runners: [])
 
       selected_provider = nil
@@ -1352,8 +1359,8 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-001
     it "tries issue_analysis_fallback_runners before broadening to all chat runners" do
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
-      create(:runner, user: owner, runner_key: "gemini", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      create_managed_runner(user: owner, runner_key: "codex")
+      create_managed_runner(user: owner, runner_key: "gemini")
       owner.settings.update!(issue_analysis_runner: "codex", issue_analysis_fallback_runners: [ "gemini" ])
       create(:runner_state, :rate_limited, user: owner, runner_name: "codex")
 
@@ -1377,11 +1384,9 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       }.to raise_error(Temporalio::Error::ApplicationError, "All issue-analysis providers exhausted")
     end
 
-    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005
-    it "reports the standalone runner configuration gap without falling back to a subscription" do
-      provider = double(supports_tool_control?: false)
-      allow(AgentHarness).to receive(:provider_class).with(:claude)
-        .and_return(double(new: provider))
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005 LLM-ROUTING-008
+    it "reports the standalone runner configuration gap without a managed credential" do
+      owner.account.runner_credentials.update_all(revoked_at: Time.current)
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
@@ -1409,7 +1414,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       # back to all available chat runners. The lean runner (codex) should be
       # tried before the heavy-exploration runner (claude).
       owner.runners.find_by!(runner_key: "claude").update!(enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      create_managed_runner(user: owner, runner_key: "codex")
 
       selected_provider = nil
       allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|

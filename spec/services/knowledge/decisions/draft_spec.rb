@@ -12,8 +12,10 @@ RSpec.describe Knowledge::Decisions::Draft do
     end
     project.effective_owner.runners.kept_only.subscription.each do |runner|
       runner.update!(enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      create(:runner_credential, runner: runner, account: project.account, created_by: owner) unless
+        project.account.runner_credentials.active.for_runner(runner.runner_key).exists?
     end
-allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
     agent_run.log!("stdout", "Implemented JWT authentication for API endpoints")
   end
 
