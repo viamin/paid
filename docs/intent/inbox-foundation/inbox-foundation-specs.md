@@ -142,18 +142,19 @@
 ## Filter availability (`Inbox::Availability`)
 
 - [x] **INBOX-FOUNDATION-010** — The Inbox filter dialog SHALL only offer
-  filter options that cannot yield an empty list: the Type selector SHALL list
-  only kinds with ≥1 waiting item (scoped to the active project filter when
-  one is applied) plus "All types", and the Project selector SHALL list only
-  projects with ≥1 waiting item (scoped to the active kind filter when one is
-  applied) plus "All projects". The clarifying-questions lane SHALL exclude
+  filter options that cannot yield an empty list within the active Inbox scope:
+  the Type selector SHALL list only kinds with ≥1 waiting item in that scope
+  (scoped to the active project filter when one is applied) plus "All types",
+  and the Project selector SHALL list only projects with ≥1 waiting item in
+  that scope (scoped to the active kind filter when one is applied) plus "All
+  projects". The clarifying-questions lane SHALL exclude
   `needs_input` rows that lack both parseable body questions and persisted
   `needs_input_questions`, because `Inbox::Queue` cannot render them. Each
   offered option SHALL display its item count. Availability SHALL be computed
   from per-kind lane scopes corresponding to `Inbox::Count` without building
   full queue entries; unlike the badge's bounded approximation, the matrix
-  SHALL apply each lane's renderability predicate. The per-user matrix SHALL
-  be cached behind the same dashboard cache version and
+  SHALL apply each lane's renderability predicate. The per-user-and-scope
+  matrix SHALL be cached behind the same dashboard cache version and
   short TTL the badge uses — every inbox render (`index`, `show`, and
   `open_chat` all build availability in `load_inbox`) pays one cache read
   instead of re-running every lane per request. The dialog

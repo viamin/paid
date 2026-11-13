@@ -142,15 +142,17 @@ narrow screens; Escape closes it and Enter submits its GET form.
 
 The dialog only offers options that cannot yield an empty list. An
 `Inbox::Availability` service computes, per kind and per project, how many
-renderable items are waiting — from lane scopes corresponding to the
-`Inbox::Count` badge (shared candidate scopes on `Inbox::MergeApproval` and
-`Inbox::IntentConformance`; the exact SQL of the other lanes), without
-building full queue entries. The badge remains a bounded approximation for
+renderable items are waiting in the active Inbox scope — from lane scopes
+corresponding to the `Inbox::Count` badge (shared candidate scopes on
+`Inbox::MergeApproval` and `Inbox::IntentConformance`; the exact SQL of the
+other lanes), without building full queue entries. The badge remains a bounded approximation for
 stale questionless `needs_input` rows, while availability must remain exact so
 its options never produce an empty list. The Type selector lists only kinds
 with ≥1 item scoped to the active project filter; the Project selector lists
 only projects with ≥1 item scoped to the active kind filter; both show counts
-and keep their "All" reset.
+and keep their "All" reset. Each active scope has a distinct cached matrix so
+actionable, removed, and disabled-phase entries cannot leak availability into
+one another.
 
 The clarifying-questions availability lane additionally reuses
 `Inbox::Queue.questions_for` for its renderability predicate. A stale

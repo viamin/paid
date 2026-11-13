@@ -46,6 +46,8 @@ RSpec.describe "Inbox phase relevance and removal" do
     get inbox_path(scope: Inbox::Queue::DISABLED_PHASES_SCOPE)
 
     expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Clarifying Questions (1)")
+    expect(response.body).to include("acme/alpha (1)")
 
     # The collection response no longer builds the detail, so the operator's
     # browser loads it through the eager detail frame.
@@ -94,6 +96,8 @@ RSpec.describe "Inbox phase relevance and removal" do
     post inbox_entry_remove_path(entry_id: "clarifying_questions:#{issue.id}")
     get inbox_path(scope: Inbox::Queue::REMOVED_SCOPE)
     expect(response.body).to include("Which behavior?")
+    expect(response.body).to include("Clarifying Questions (1)")
+    expect(response.body).to include("acme/alpha (1)")
 
     post inbox_entry_restore_path(entry_id: "clarifying_questions:#{issue.id}")
     get inbox_path

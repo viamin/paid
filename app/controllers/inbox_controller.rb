@@ -140,7 +140,9 @@ class InboxController < ApplicationController
     if entries && @scoped_projects.empty? && @selected_kinds.empty? && @inbox_query.empty? && @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE
       @inbox_availability = Inbox::Availability.call(user: current_user, entries:)
     else
-      @inbox_availability = Inbox::Availability.call(user: current_user, projects: @scoped_projects, kinds: @selected_kinds)
+      @inbox_availability = Inbox::Availability.call(
+        user: current_user, projects: @scoped_projects, kinds: @selected_kinds, scope: @selected_scope
+      )
     end
     @inbox_projects = @inbox_availability.available_projects
   end
