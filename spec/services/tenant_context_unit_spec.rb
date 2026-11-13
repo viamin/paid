@@ -56,6 +56,33 @@ RSpec.describe TenantContext, :no_db, :tenant_isolation do
         end
       )
     end
+
+    it "retries a transient missing PostgreSQL result while setting tenant context" do # @spec POSTGRESQL-PERSISTENCE-001
+      connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
+      missing_result = NoMethodError.new("undefined method 'cmd_tuples' for nil", :cmd_tuples)
+      calls = 0
+
+      allow(described_class).to receive(:connection).and_return(connection)
+      allow(connection).to receive(:exec_query) do
+        calls += 1
+        raise missing_result if calls == 1
+      end
+
+      described_class.apply_system_access!
+
+      expect(calls).to eq(3)
+    end
+
+    it "raises when the PostgreSQL result remains unavailable after retrying" do # @spec POSTGRESQL-PERSISTENCE-001
+      connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
+      missing_result = NoMethodError.new("undefined method 'cmd_tuples' for nil", :cmd_tuples)
+
+      allow(described_class).to receive(:connection).and_return(connection)
+      allow(connection).to receive(:exec_query).and_raise(missing_result)
+
+      expect { described_class.apply_system_access! }.to raise_error(missing_result)
+      expect(connection).to have_received(:exec_query).twice
+    end
   end
 
   describe ".apply_system_access!" do

@@ -9,8 +9,11 @@
 - [x] **POSTGRESQL-PERSISTENCE-001** — Tenant-scoped Paid data SHALL be
   isolated in PostgreSQL by row-level security policies keyed from
   `paid.current_account_id`, and tenant-scoped reads without tenant context
-  SHALL return no tenant rows.
-  *Tests:* `spec/security/tenant_context_spec.rb`.
+  SHALL return no tenant rows. When PostgreSQL transiently returns no result
+  while setting that context, the application SHALL retry the parameterized
+  setting query once and SHALL raise a repeated failure.
+  *Tests:* `spec/security/tenant_context_spec.rb`,
+  `spec/services/tenant_context_unit_spec.rb`.
   *Code:* `EnableTenantRowLevelSecurity`, `TenantContext`.
 
 - [x] **POSTGRESQL-PERSISTENCE-002** — The application runtime SHALL reject

@@ -72,17 +72,30 @@ class TenantContext
     end
 
     def set_config(key, value)
-      connection.exec_query("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
-    rescue ActiveRecord::ConnectionNotEstablished
-      nil
-    rescue ActiveRecord::StatementInvalid => e
-      raise unless transaction_aborted?(e)
+      attempts = 0
 
-      nil
+      begin
+        connection.exec_query("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
+      rescue NoMethodError => error
+        raise unless missing_postgresql_result?(error) && attempts.zero?
+
+        attempts += 1
+        retry
+      rescue ActiveRecord::ConnectionNotEstablished
+        nil
+      rescue ActiveRecord::StatementInvalid => e
+        raise unless transaction_aborted?(e)
+
+        nil
+      end
     end
 
     def transaction_aborted?(error)
       error.cause.is_a?(PG::InFailedSqlTransaction)
+    end
+
+    def missing_postgresql_result?(error)
+      error.name == :cmd_tuples && error.message.include?("for nil")
     end
 
     def setting_binds(*values)
