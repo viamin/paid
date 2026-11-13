@@ -10,8 +10,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
     start_result = start!(agent_run)
-    return if start_result == :paused
-    return handoff_terminal_measurement(agent_run) unless start_result == :started
+    return handoff_terminal_validation(agent_run) unless start_result == :started
 
     result = TechnicalPrerequisites::ValidateExecution.call(
       agent_run:, native_command: recipe(agent_run).fetch("command")
@@ -85,7 +84,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
     PartialCloseouts::AutoAudit.call(issue: audit_issue) if audit_issue
   end
 
-  def handoff_terminal_measurement(agent_run)
+  def handoff_terminal_validation(agent_run)
     return unless agent_run.finished?
     return if agent_run.status == "cancelled" || agent_run.issue.nil?
 
@@ -93,12 +92,15 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   end
 
   def fail!(agent_run, error)
+    audit_issue = nil
     agent_run&.with_lock do
       agent_run.reload
       next if agent_run.finished?
 
       agent_run.update!(status: "failed", completed_at: Time.current, error_message: error.message)
+      audit_issue = agent_run.issue
     end
+    PartialCloseouts::AutoAudit.call(issue: audit_issue) if audit_issue
     raise error
   end
 

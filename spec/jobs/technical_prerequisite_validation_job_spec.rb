@@ -96,13 +96,17 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
 
   # @spec PARTIAL-CLOSEOUT-032
   it "records the failure and re-raises when the validation raises" do
+    issue = create(:issue, project:)
+    agent_run.update!(issue:)
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_raise(Containers::Provision::Error, "no container provisioned")
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
 
     expect { described_class.perform_now(agent_run.id) }.to raise_error(Containers::Provision::Error)
 
     expect(agent_run.reload.status).to eq("failed")
     expect(agent_run.error_message).to eq("no container provisioned")
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
   end
 
   # @spec PARTIAL-CLOSEOUT-042
@@ -180,7 +184,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
       status: "failed", error_message: "Project scheduling is paused; resume it before running performance measurement."
     )
     expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
-    expect(PartialCloseouts::AutoAudit).not_to have_received(:call)
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
   end
 
   # @spec PARTIAL-CLOSEOUT-042
