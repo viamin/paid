@@ -118,6 +118,12 @@ module Issues
     CHILD_LISTING_HEADING_PATTERN = /\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b/i
     INLINE_EXCLUDED_HEADING_PATTERN = Regexp.union(DEPENDENCY_HEADING_PATTERN, CHILD_LISTING_HEADING_PATTERN)
     DIRECTIVE_KEYWORD_PATTERN = /\b(?:depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of|remove\s+(?:deployment\s+)?dependenc(?:y|ies))\b/i
+    CLAUSE_SUBJECT_PATTERN = /
+      (?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)
+      (?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*
+      (?=depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of)
+    /ix
+    DIRECTIVE_SUBJECT_PATTERN = /(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
     FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(`{3,}|~{3,})/
     CLOSING_FENCE_PATTERN = /\A[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?:\r?\n)?\z/
@@ -126,12 +132,6 @@ module Issues
     LIST_ITEM_PATTERN = /^([ ]{0,3}(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)(.+)$/
     # Indented non-blank content: a continuation of the preceding list item.
     CONTINUATION_LINE_PATTERN = /^[ \t]+\S/
-    CLAUSE_SUBJECT_PATTERN = /
-      (?:\b(?:issue|pr|pull request)\s+)?\#(\d+)(?:\s*:\s*|\s+)
-      (?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*
-      (?=depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of)
-    /ix
-    DIRECTIVE_SUBJECT_PATTERN = /(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i
 
     attr_reader :issue, :adjacency, :comments, :body, :reconcile
 
@@ -290,7 +290,7 @@ module Issues
     # the captured String directly — without it, refs_str would be an Array.
     def extract_removal_refs(text, local_numbers, cross_refs)
       markdown_sections(text, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
-        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: false)
+        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: true)
       end
 
       inline_text = strip_markdown_sections(text, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
@@ -299,8 +299,9 @@ module Issues
 
     def extract_inline_removal_refs(text, local_numbers, cross_refs, contextual_exclusions:)
       scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
-      scratch.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
-        next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
+      contextual_text = contextual_exclusions ? with_folded_list_continuations(scratch) : scratch
+      contextual_text.scan(INLINE_REMOVAL_PATTERN) do |(refs_str)|
+        next if contextual_exclusions && describes_another_issue?(contextual_text, Regexp.last_match.begin(0))
 
         refs_str.scan(CROSS_REPO_REF_PATTERN) do |owner, repo, number|
           cross_refs << [ owner.downcase, repo.downcase, number.to_i ]
@@ -316,10 +317,10 @@ module Issues
     # sections are stripped before inline extraction so dependency phrases
     # describing inter-sub-issue relationships are not attributed to the
     # current issue.
-    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004
+    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004, DEPENDENCY-DECLARATIONS-009
       markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
-        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: false)
+        extract_inline_refs(section_body, local_deps, cross_deps, contextual_exclusions: true)
       end
 
       inline_text = strip_markdown_sections(body, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
@@ -329,16 +330,14 @@ module Issues
     # Within a "## Dependencies" section, recognise deployment directives and
     # bare references only in Markdown list items. This keeps implementation
     # inventories in ordinary prose from becoming unintended prerequisites.
-    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003
-      scratch = without_fenced_code(section_body)
+    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
+      scratch = without_contextual_dependency_clauses(without_markdown_code(section_body))
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       extract_list_item_refs(scratch, local_deps, cross_deps, skip_directive_items: true)
 
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
-          next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
-
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
         scratch = scratch.gsub(pattern, "")
@@ -435,37 +434,111 @@ module Issues
     # not double-count them as non-deployment deps.
     def extract_inline_refs(text, local_deps, cross_deps, contextual_exclusions:) # @spec DEPENDENCY-DECLARATIONS-009
       scratch = contextual_exclusions ? without_markdown_code(text) : without_fenced_code(text)
+      scratch = with_folded_list_continuations(scratch) if contextual_exclusions
 
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       scratch.scan(INLINE_DEPLOYMENT_PATTERN) do |(refs_str)|
-        next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+        next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
 
         extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
       end
       scratch = scratch.gsub(INLINE_DEPLOYMENT_PATTERN, "")
 
       scratch.scan(INLINE_DEPENDS_PATTERN) do |(refs_str)|
-        next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+        next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
 
         extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: false)
       end
     end
 
     def describes_another_issue?(text, directive_start)
-      prefix = text[[ directive_start - 256, 0 ].max...directive_start]
-      clause = prefix[(prefix.rindex(/[.!?;\n]/) || -1) + 1..]
+      !contextual_subject_start(text, directive_start, coordinated: true).nil?
+    end
+
+    def contextual_subject_start(text, directive_start, include_current_issue: false, coordinated: false)
+      # Only the immediately preceding subject can own a directive. Limit the
+      # lookback so many directives in a long issue body stay linear to parse.
+      lookback_start = [ directive_start - 256, 0 ].max
+      prefix = text[lookback_start...directive_start]
+      clause_start = (prefix.rindex(/[.!?;\n]/) || -1) + 1
+      clause = prefix[clause_start..]
       immediate_subject = clause.match(DIRECTIVE_SUBJECT_PATTERN)
-      return false if immediate_subject && immediate_subject[1].to_i == @current_issue_number
+      # A bare #N after an earlier directive is usually that directive's
+      # object. An explicit "Issue #N" names a new subject even in the same
+      # sentence, so do not let the earlier directive hide its attribution.
+      if immediate_subject
+        preceding_directive = clause[0...immediate_subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
+        named_subject = immediate_subject[0].match?(/\A(?:issue|pr|pull request)\s+#/i)
+        return if preceding_directive && !named_subject
+        return if !include_current_issue && immediate_subject[1].to_i == @current_issue_number
 
-      # A preceding directive makes the nearest reference its target, so retain
-      # the earlier clause subject for coordinated directives.
-      return true if immediate_subject && !clause[0...immediate_subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
+        return lookback_start + clause_start + immediate_subject.begin(0)
+      end
 
+      return unless coordinated
+
+      # An earlier subject owns coordinated directives in the same clause,
+      # such as "#4868 depends on #4863 and awaits deployment of #4761".
       subject = clause.match(CLAUSE_SUBJECT_PATTERN)
-      return false unless subject
+      return unless subject
+      return if !include_current_issue && subject[1].to_i == @current_issue_number
 
-      subject[1].to_i != @current_issue_number
+      lookback_start + clause_start + subject.begin(0)
+    end
+
+    # A list item can contain both a bare declaration for this issue and a
+    # sentence about another issue. Mask only the latter sentence so the bare
+    # declaration remains eligible for section extraction.
+    def without_contextual_dependency_clauses(text)
+      visible = text.dup
+      contextual_text = with_folded_list_continuations(text)
+      patterns = [
+        [ INLINE_REMOVAL_PATTERN, true ], [ NON_DEPENDENCY_PATTERN, true ],
+        [ INLINE_DEPLOYMENT_PATTERN, false ], [ INLINE_DEPENDS_PATTERN, false ]
+      ]
+      patterns.each do |pattern, include_current_issue|
+        contextual_text.to_enum(:scan, pattern).each do
+          match = Regexp.last_match
+          subject_start = contextual_subject_start(
+            contextual_text, match.begin(0), include_current_issue: include_current_issue
+          )
+          next unless subject_start
+          next if visible[subject_start] == " "
+
+          clause_end = contextual_text.match(/[.!?;](?=\s|\z)|\n/, match.end(0))&.end(0) || text.length
+          visible[subject_start...clause_end] = " " * (clause_end - subject_start)
+        end
+      end
+      visible
+    end
+
+    # Preserve offsets while treating valid folded list-item lines as a single
+    # clause. Contextual masking uses the resulting text only to find clauses;
+    # list extraction still receives the original Markdown structure.
+    def with_folded_list_continuations(text) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-009
+      folded = text.dup
+      indentation = nil
+      offset = 0
+
+      text.each_line do |line|
+        match = LIST_ITEM_PATTERN.match(line)
+        if match
+          indentation = markdown_columns(match[1])
+        elsif indentation && continuation_line?(line, indentation)
+          replace_preceding_line_ending(folded, offset)
+        elsif !line.strip.empty?
+          indentation = nil
+        end
+        offset += line.length
+      end
+
+      folded
+    end
+
+    def replace_preceding_line_ending(text, offset)
+      length = text[offset - 2...offset] == "\r\n" ? 2 : 1
+      text[(offset - length)...offset] = " " * length
     end
 
     def without_markdown_code(text)

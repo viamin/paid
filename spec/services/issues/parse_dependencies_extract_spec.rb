@@ -53,7 +53,24 @@ RSpec.describe Issues::ParseDependencies, :no_db do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
-    it "excludes another issue's coordinated prerequisites inside a dependency section" do
+    it "excludes attributed and quoted directives while keeping a current-item directive inside a dependency section" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          Issue #500 depends on #41.
+          `Depends on #42`
+          Issue #100 depends on #43.
+        BODY
+        comments: [],
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(43 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "excludes a dependency-section bullet that describes another issue's prerequisites" do
       local_deps, cross_deps = described_class.extract(
         body: <<~BODY,
           ## Rollout / dependency
@@ -93,14 +110,101 @@ RSpec.describe Issues::ParseDependencies, :no_db do
     # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-003
     it "keeps a bare declaration beside a directive in the same list item" do
       local_deps, cross_deps = described_class.extract(
-        body: <<~BODY,
-          ## Dependencies
-          - #41; depends on #42
-        BODY
+        body: "## Dependencies\n- #41; depends on #42\n",
         comments: []
       )
 
       expect(local_deps).to eq(41 => false, 42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "keeps a bare declaration before another issue's dependency in the same list item" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- #42; Issue #500 depends on #41.\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "keeps a bare declaration before another issue's deployment dependency" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- #42; Issue #500 awaits deployment of #41.\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "ignores another issue's negative dependency while keeping a bare declaration" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- #42; Issue #500 is not blocked by #41.\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "ignores another issue having no dependency while keeping a bare declaration" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- #42; Issue #500 has no dependency on #41.\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
+    it "does not remove this issue's dependency for another issue's removal comment" do
+      local_deps, cross_deps = described_class.extract(
+        body: "Depends on #41",
+        comments: [ "## Dependencies\n- Issue #500 no longer depends on #41.\n" ],
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(41 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
+    it "still applies this issue's removal inside a dependency section" do
+      local_deps, cross_deps = described_class.extract(
+        body: "Depends on #41",
+        comments: [ "## Dependencies\n- Issue #100 no longer depends on #41.\n" ],
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq({})
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "does not treat a quoted directive in a list item as a declaration" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- `Depends on #41`\n- #42\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "ignores two attributed dependencies joined in one sentence" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- Issue #500 depends on #41 and issue #600 depends on #42.\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq({})
       expect(cross_deps).to eq({})
     end
 
