@@ -14,7 +14,7 @@ module CycleAnalyses
       def readable_description
         return correction_description if action == "correct"
 
-        "Remove the dependency declared by #{from_ref} → #{to_ref}, #{source_location}."
+        "Remove the dependency declared by #{from_ref} → #{to_ref}, #{source_provenance}."
       end
 
       def source_label
@@ -26,6 +26,12 @@ module CycleAnalyses
         return location if source_url.blank?
 
         "#{location} at #{source_url}"
+      end
+
+      def source_provenance
+        return source_description if source_url.blank?
+
+        "#{source_description} at #{source_url}"
       end
 
       def source_reference
