@@ -44,6 +44,11 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
         return :paused
       end
 
+      unless authorization_current?(agent_run)
+        agent_run.update!(status: "failed", completed_at: Time.current, error_message: authorization_error_message)
+        return :authorization_required
+      end
+
       agent_run.update!(status: "running", started_at: Time.current)
     end
     :started
@@ -53,6 +58,15 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
     return unless recipe(agent_run)["performance_measurement"].present?
 
     TechnicalPrerequisites.scheduler_pause_message(agent_run.project)
+  end
+
+  def authorization_current?(agent_run)
+    identifier = recipe(agent_run)["technical_authorization_id"]
+    identifier.blank? || TechnicalPrerequisites::Authorization.granted?(issue: agent_run.issue, identifier:)
+  end
+
+  def authorization_error_message
+    "Human authorization changed or expired; authorize the current technical validation inputs before retrying."
   end
 
   def finish!(agent_run, result)

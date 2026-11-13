@@ -6,7 +6,7 @@ RSpec.describe TechnicalPrerequisites::Authorization do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project:) }
   let(:identifier) { "representative-environment-v1" }
-  let(:revision) { PartialCloseouts::Assessment.source_revision_for(issue) }
+  let(:revision) { described_class.source_revision_for(issue) }
   let(:occurrence) do
     { "identity" => "authorization-occurrence", "technical_authorization_id" => identifier,
       "source_revision" => revision, "source_issue_number" => issue.github_number }
@@ -31,6 +31,24 @@ RSpec.describe TechnicalPrerequisites::Authorization do
     })
 
     expect(described_class.granted?(issue:, identifier:)).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-050
+  it "keeps authorization current when the authorized check records technical evidence" do
+    create(:notification, account: project.account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, metadata: {
+        "prerequisites" => [ occurrence ], "evidence_submissions" => [ {
+          "prerequisite_identity" => occurrence["identity"], "source_revision" => revision,
+          "outcome" => "sufficient"
+        } ] })
+    create(:agent_run, :completed, project:, issue:, reconciliation: {
+      TechnicalPrerequisites::Evidence::RECONCILIATION_KEY => {
+        "status" => "completed", "criterion" => "Measure response time",
+        "technical_authorization_id" => identifier
+      }
+    })
+
+    expect(described_class.granted?(issue:, identifier:)).to be(true)
   end
 
   # @spec PARTIAL-CLOSEOUT-050

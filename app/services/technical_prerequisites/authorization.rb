@@ -7,6 +7,10 @@ module TechnicalPrerequisites
   class Authorization
     def self.granted?(...) = new(...).granted?
 
+    def self.source_revision_for(issue)
+      PartialCloseouts::Assessment.source_revision_for(issue, technical_evidence: [])
+    end
+
     def initialize(issue:, identifier:)
       @issue = issue
       @identifier = identifier.to_s
@@ -46,7 +50,7 @@ module TechnicalPrerequisites
     def current?(notification, occurrence, submission)
       revision = occurrence["source_revision"]
       revision.blank? || (submission["source_revision"] == revision &&
-        PartialCloseouts::PrerequisiteOccurrences.current_source_revision(notification, occurrence) == revision)
+        self.class.source_revision_for(issue) == revision)
     end
   end
 end

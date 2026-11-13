@@ -17,6 +17,18 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     TechnicalPrerequisites::ValidateExecution::Result.new(status:, evidence:, setup_action: nil)
   end
 
+  def grant_authorization(issue, identifier)
+    revision = TechnicalPrerequisites::Authorization.source_revision_for(issue)
+    occurrence = { "identity" => "authorization-occurrence", "technical_authorization_id" => identifier,
+                   "source_revision" => revision, "source_issue_number" => issue.github_number }
+    create(:notification, account: project.account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, metadata: {
+        "prerequisites" => [ occurrence ], "evidence_submissions" => [ {
+          "prerequisite_identity" => occurrence["identity"], "source_revision" => revision,
+          "outcome" => "sufficient"
+        } ] })
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "uses a bounded low-priority worker for isolated network and container execution" do
     expect(described_class.queue_name).to eq("low_priority")
@@ -121,6 +133,31 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     described_class.perform_now(agent_run.id)
 
     expect(agent_run.reload.status).to eq("failed")
+    expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-050
+  it "refuses execution when queued-run authorization is stale at job start" do
+    issue = create(:issue, project:)
+    identifier = "representative-environment-v1"
+    grant_authorization(issue, identifier)
+    agent_run.update!(issue:, external_metadata: {
+      "technical_prerequisite_validation" => {
+        "requirement_id" => 1, "requirement_name" => "audit", "command" => "bin/audit",
+        "source_run_id" => 1, "technical_authorization_id" => identifier
+      }
+    })
+    create(:issue, :pull_request, project:, parent_issue: issue, github_state: "closed", pr_review_phase: "merged")
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload).to have_attributes(
+      status: "failed",
+      error_message: "Human authorization changed or expired; authorize the current technical validation inputs before retrying."
+    )
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
     expect(PartialCloseouts::AutoAudit).to have_received(:call).with(issue:)
   end
 
