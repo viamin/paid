@@ -91,6 +91,7 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     fill_in "Search", with: "Beta"
     click_button "Apply filters"
 
+    expect(page).to have_current_path(/\?.+/)
     query = Rack::Utils.parse_nested_query(URI.parse(page.current_url).query)
     expect(query).to include(
       "project_ids" => contain_exactly(project_a.id.to_s, project_b.id.to_s),
