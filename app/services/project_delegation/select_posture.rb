@@ -25,10 +25,11 @@ module ProjectDelegation
       new(...).call
     end
 
-    def initialize(project:, actor:, level:)
+    def initialize(project:, actor:, level:, reason: nil)
       @project = project
       @actor = actor
       @level = level.to_s
+      @reason = reason
     end
 
     def call
@@ -44,7 +45,7 @@ module ProjectDelegation
 
     private
 
-    attr_reader :project, :actor, :level
+    attr_reader :project, :actor, :level, :reason
 
     def ensure_level!
       raise UnknownLevel, "#{level} is not a supported delegation posture." unless Posture::LEVELS.include?(level)
@@ -112,7 +113,7 @@ module ProjectDelegation
     # rewritten by a later selection.
     def audit(record, previous_level)
       Audit::RecordEvent.call(
-        action: "project_delegation.posture_selected",
+        action: reason.present? ? "project_delegation.rollback" : "project_delegation.posture_selected",
         actor: actor,
         subject: project,
         metadata: {
@@ -123,6 +124,7 @@ module ProjectDelegation
           "revision" => record.revision,
           "enabled_action_classes" => record.enabled_action_classes,
           "policy_signature" => record.policy_signature,
+          "reason" => reason,
           "guards" => {
             "automation_phases" => Automation::RolloutGuard.enabled?(project),
             "project_delegation" => FeatureFlags.enabled?(:project_delegation, project:)

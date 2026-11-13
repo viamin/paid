@@ -160,7 +160,8 @@ module Automation
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
-        assessment_available: !current_assessment.stale?
+        assessment_available: !current_assessment.stale?,
+        explicit_hold: work_item.hold_for_review?
       }
     end
 

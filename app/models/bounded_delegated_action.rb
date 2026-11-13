@@ -33,12 +33,37 @@ class BoundedDelegatedAction < ApplicationRecord
     active? && ACTIONS.include?(action)
   end
 
+  def admission_snapshot
+    evidence.deep_dup
+  end
+
   def active?
     status == "active" && expires_at > Time.current
   end
 
   def revoked?
     status == "revoked"
+  end
+
+  def expired?
+    status == "active" && expires_at <= Time.current
+  end
+
+  def complete!
+    completed = false
+    with_lock do
+      next false unless status == "active"
+
+      update!(status: "completed")
+      Audit::RecordEvent.call(
+        action: "bounded_action.completed",
+        actor: nil,
+        subject: self,
+        metadata: { "action" => action, "stop_before_phase" => evidence.to_h["stop_before_phase"] }
+      )
+      completed = true
+    end
+    completed
   end
 
   # Lifecycle write only: caller surfaces reach this through

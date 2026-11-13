@@ -55,6 +55,7 @@ module Automation
     def failed_checks
       checks = {
         authorization_lifecycle: authorization.allowed?,
+        expiry: !authorization.expired?,
         intent_revision: revision_matches?(:intent_revision),
         acceptance_revision: revision_matches?(:acceptance_revision),
         evidence_revision: revision_matches?(:evidence_revision),
@@ -70,9 +71,12 @@ module Automation
         trust: truthy?(snapshot[:trust]),
         budget: allowed?(snapshot[:budget]),
         repository_controls: allowed?(snapshot[:repository_controls]),
-        assessment_availability: truthy?(snapshot[:assessment_available])
+        assessment_availability: truthy?(snapshot[:assessment_available]),
+        explicit_hold: !truthy?(snapshot[:explicit_hold])
       }
-      checks.filter_map { |reason, passed| reason unless passed }
+      reasons = checks.filter_map { |reason, passed| reason unless passed }
+      complete_at_stop if reasons.include?(:bounded_stop) && at_exclusive_stop?
+      reasons
     end
 
     def revision_matches?(key)
@@ -88,6 +92,15 @@ module Automation
     def bounded_stop_allows?
       stop = authorization.evidence.to_h["stop_before_phase"]
       stop.present? && snapshot[:phase].to_s != stop.to_s
+    end
+
+    def complete_at_stop
+      authorization.complete! if authorization.status == "active"
+    end
+
+    def at_exclusive_stop?
+      stop = authorization.evidence.to_h["stop_before_phase"]
+      stop.present? && snapshot[:phase].to_s == stop.to_s
     end
 
     # Fail closed: a caller that could not resolve the current phase policy

@@ -188,4 +188,20 @@ RSpec.describe ProjectDelegation::Posture do
       expect(payload.dig(:remaining_reviews, 0)).to include(:key, :description)
     end
   end
+
+  describe ProjectDelegation::Rollback do # @spec PROJECT-DELEGATION-006
+    it "records an auditable conservative rollback without deleting the prior selection" do
+      record = create(:project_delegation_posture, project:, level: "bounded_delivery", selected_by: user)
+
+      posture = described_class.call(project:, actor: user, reason: "material reversal")
+
+      expect(posture).to be_conservative
+      expect(project.delegation_posture.reload).to have_attributes(
+        level: "conservative",
+        revision: record.revision + 1
+      )
+      expect(account.account_activity_events.by_action("project_delegation.rollback").last.metadata)
+        .to include("reason" => "material reversal", "previous_level" => "bounded_delivery")
+    end
+  end
 end

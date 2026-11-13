@@ -116,6 +116,13 @@ RSpec.describe BoundedDelegatedAction do
     expect(action).not_to be_allowed
   end
 
+  it "exposes its persisted evidence as the immutable admission snapshot" do # @spec PROJECT-DELEGATION-004
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+    expect(action.admission_snapshot).to eq(action.evidence)
+    expect(action.admission_snapshot).not_to be(action.evidence)
+  end
+
   it "rejects revocation by a user from another account" do
     action = create(:bounded_delegated_action, project:, issue:, created_by: user)
     other_user = create(:user)
