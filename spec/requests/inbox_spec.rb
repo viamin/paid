@@ -250,7 +250,8 @@ RSpec.describe "Inbox" do
     from_ref = "#{project.full_name}##{issues[0].github_number}"
     to_ref = "#{project.full_name}##{issues[1].github_number}"
     expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
-      "Remove the #{to_ref} declaration from #{from_ref}'s trusted comment"
+      "Remove the #{to_ref} declaration from #{from_ref}'s trusted comment at " \
+      "https://github.com/acme/alpha/issues/1#issuecomment-42"
     )
     expect(repair_form["data-turbo-confirm"]).to include(
       from_ref, to_ref, "trusted comment", "https://github.com/acme/alpha/issues/1#issuecomment-42", "edits GitHub"
@@ -364,7 +365,8 @@ RSpec.describe "Inbox" do
     repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
     expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
       "Remove the #{project.full_name}##{issues[1].github_number} declaration from " \
-      "#{project.full_name}##{issues[0].github_number}'s trusted comment"
+      "#{project.full_name}##{issues[0].github_number}'s trusted comment at " \
+      "https://github.com/acme/alpha/issues/1#issuecomment-42"
     )
   end
 

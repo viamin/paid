@@ -22,9 +22,16 @@ module CycleAnalyses
       end
 
       def source_location
-        return source_description if source_url.blank?
+        location = source_description.sub(/\Adeclared in /, "")
+        return location if source_url.blank?
 
-        "#{source_description} at #{source_url}"
+        "#{location} at #{source_url}"
+      end
+
+      def source_reference
+        return source_label if source_url.blank?
+
+        "#{source_label} at #{source_url}"
       end
 
       private
@@ -51,7 +58,7 @@ module CycleAnalyses
 
       def repair_button_label
         change = changes.first
-        "Remove the #{change.to_ref} declaration from #{change.from_ref}'s #{change.source_label}"
+        "Remove the #{change.to_ref} declaration from #{change.from_ref}'s #{change.source_reference}"
       end
 
       def repair_confirmation

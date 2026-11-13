@@ -248,15 +248,16 @@ RSpec.describe CycleAnalyses::OperatorView do
 
     expect(candidate.repair_button_label).to eq(
       "Remove the #{project.full_name}##{issues[1].github_number} declaration from " \
-      "#{project.full_name}##{issues[0].github_number}'s trusted comment"
+      "#{project.full_name}##{issues[0].github_number}'s trusted comment at " \
+      "https://github.com/acme/alpha/issues/1#issuecomment-42"
     )
     expect(candidate.repair_confirmation).to include(
       "#{project.full_name}##{issues[0].github_number}", "#{project.full_name}##{issues[1].github_number}",
-      "https://github.com/acme/alpha/issues/1#issuecomment-42", "edits GitHub"
+      "in a trusted comment at https://github.com/acme/alpha/issues/1#issuecomment-42", "edits GitHub"
     )
     expect(candidate.before_description).to include(
       "lists #{project.full_name}##{issues[1].github_number} as a dependency",
-      "https://github.com/acme/alpha/issues/1#issuecomment-42"
+      "in a trusted comment at https://github.com/acme/alpha/issues/1#issuecomment-42"
     )
     expect(candidate.after_description).to include("stops waiting on #{project.full_name}##{issues[1].github_number}")
   end
