@@ -31,3 +31,10 @@
   permissions and each credential-specific runner's availability state. Invalid
   structured output SHALL be rejected without persisting malformed records or
   logging the raw provider payload.
+- [x] **LLM-ROUTING-008** — When a post-push source-closure assessment cannot
+  complete with the run's pinned runner, it SHALL try the owning user's enabled,
+  configured, policy-permitted fallback runners within the assessment activity
+  deadline before parking the run. Disabled fallbacks SHALL not authorize a
+  different runner or billing mode. A subscription runner without an active
+  managed credential SHALL be skipped before provisioning a text container; if
+  no usable runner remains, routing SHALL report a configuration failure.

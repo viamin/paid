@@ -26,6 +26,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
 
   before do
     agent_run.update!(runner: runner, container_id: "test-container", final_runner: runner.routing_key)
+    create(:runner_credential, runner: runner, account: project.account)
     allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
     allow(provider_class).to receive(:new).and_return(provider)
     allow(provider).to receive_messages(supports_tool_control?: true, subscription_unset_vars: [],
@@ -294,6 +295,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     it "honors the final runner after a fallback" do
       fallback = create(:runner, user: project.effective_owner, runner_key: "gemini",
         tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+      create(:runner_credential, runner: fallback, account: project.account)
       agent_run.update!(final_runner: fallback.routing_key)
       allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
 
