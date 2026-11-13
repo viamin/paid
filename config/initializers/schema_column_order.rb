@@ -9,6 +9,10 @@ module SchemaColumnOrder
     def columns(table_name)
       super.sort_by(&:name)
     end
+
+    def extensions
+      super - [ "pg_stat_statements" ]
+    end
   end
 
   # @spec POSTGRESQL-PERSISTENCE-009

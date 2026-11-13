@@ -26,6 +26,8 @@ than the checked-in canonical copy. Schema dumps sort columns alphabetically
 by name in every environment, independent of their physical PostgreSQL order.
 A dump-only connection wrapper supplies sorted columns to Rails while preserving
 its rendering of definitions, constraints, and the existing `fx` integration.
+It omits the development-only `pg_stat_statements` extension from schema dumps
+so local query monitoring does not become a production schema dependency.
 The primary and cable databases own disjoint table sets. A static regression
 check compares their checked-in schema files and rejects shared tables, so a
 dump from a contaminated database cannot silently commit cable tables into
@@ -68,5 +70,7 @@ GIN indexes, trigger-maintained search vectors) for the shipped full-text path.
 
 Scale-triggered follow-ups identified in the RDR remain deferred: partitioning
 large operational tables, explicit read-replica criteria, retention/archival
-policies, and `pg_stat_statements` monitoring. Those are operational evolution
-steps, not blockers to the implemented PostgreSQL foundation.
+policies, and production `pg_stat_statements` monitoring. The development
+PostgreSQL container preloads `pg_stat_statements` for PgHero's current query
+stats; production monitoring remains operational evolution.
+These steps are not blockers to the implemented PostgreSQL foundation.

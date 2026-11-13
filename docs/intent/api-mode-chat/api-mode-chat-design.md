@@ -102,6 +102,17 @@ waited for the restore.
 If a rolling-deploy writer attaches dependent records to a duplicate before
 cleanup, the migration marks that session started instead of deleting work or
 failing on its foreign-key references.
+If that unique index is left invalid after an interrupted build, a repair
+migration first marks referenced drafts started, then archives only surplus closed blank sessions with no user content or
+workspace resources, then rebuilds the index while chat writes are blocked.
+The repair locks candidate draft rows before checking dependent records so a
+concurrent message cannot attach after the safety check. It bounds lock
+acquisition and index rebuild time so a busy database
+fails the migration rather than holding chat writes indefinitely.
+Archiving preserves those sessions for inspection and keeps an active or idle
+draft ahead of a closed one, otherwise the newest blank session. An unexpected
+second active or content-bearing duplicate stops the
+repair for manual review.
 Chat creation recovers a unique-index
 conflict by returning the committed draft. A configuration-free page load
 leaves that draft unchanged; an explicit create configuration is applied to
