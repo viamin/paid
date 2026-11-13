@@ -57,7 +57,7 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
   # @spec PARTIAL-CLOSEOUT-049
   it "passes configured fallback runners to a bounded audit assessment" do
     primary = create(:runner, user: user, runner_key: "codex")
-    create(:runner, user: user, runner_key: "gemini")
+    fallback = create(:runner, user: user, runner_key: "gemini")
     run.update!(runner: primary)
     user.settings.update!(fallback_enabled: true, issue_analysis_fallback_runners: [ "gemini" ])
     allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return({ "gaps" => [] })
@@ -65,7 +65,7 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     described_class.new.execute(agent_run_id: run.id)
 
     expect(Llm::AnalyzePartialCloseout).to have_received(:call).with(
-      agent_run: run, fallback_runner_identifiers: array_including("gemini"), timeout: be_between(120, 300))
+      agent_run: run, fallback_runner_identifiers: array_including(fallback.routing_key), timeout: be_between(120, 300))
   end
 
   # @spec PARTIAL-CLOSEOUT-049

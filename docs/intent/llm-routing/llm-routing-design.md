@@ -18,6 +18,13 @@ needed for each helper. Fallback follows user permission flags and configured
 order within one shared timeout budget. Requests use the harness's explicit
 execution boundary, bypassing its process-wide provider substitution. A default stored in settings is not proof the owner
 has configured that vendor: routing must resolve a live, permitted Runner.
+Post-push source-closure assessments use the owner's enabled fallback order
+when the run's pinned runner cannot complete an isolated text request. The
+fallback budget stays below the assessment activity deadline; disabled
+fallbacks do not authorize another runner or billing mode.
+An isolated text request skips a subscription runner with no active managed
+credential before provisioning a container. When no usable alternative exists,
+it reports the credential configuration error immediately.
 
 Text operations accept subscription and API-key runners. The existing chat-runner setting accepts owned runner identifiers, allowing
 multiple configurations behind the same CLI to remain distinguishable. API credentials

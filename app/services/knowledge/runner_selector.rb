@@ -73,7 +73,7 @@ module Knowledge
       end
     end
 
-    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005 LLM-ROUTING-008
     def standalone_chat_runners
       user_setting.user.runners.kept_only.for_chat.ordered.select do |runner|
         standalone_text_capable?(runner)
@@ -134,14 +134,12 @@ module Knowledge
 
     def standalone_text_capable?(runner)
       return runner.effective_api_secret.present? if runner.api_key?
-      return false if managed_subscription?(runner)
 
-      key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
-      AgentHarness.provider_class(key).new(config: AgentHarness.build_config(key)).supports_tool_control?
+      managed_credential_available?(runner)
     end
 
-    def managed_subscription?(runner)
-      user_setting.user.account.runner_credentials.for_runner(runner.runner_key).where(revoked_at: nil).exists?
+    def managed_credential_available?(runner)
+      user_setting.user.account.runner_credentials.active.for_runner(runner.runner_key).exists?
     end
 
     def warn_on_embedding_fallback(candidates)

@@ -175,6 +175,14 @@ RSpec.describe Knowledge::ProviderSelector do
   describe ".available_standalone_chat_runners" do
     before { user.runners.delete_all }
 
+    # @spec LLM-ROUTING-008
+    it "includes a subscription runner with an active managed credential" do
+      runner = create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
+      create(:runner_credential, runner: runner, account: user.account, created_by: user)
+
+      expect(described_class.available_standalone_chat_runners(user_setting: setting)).to eq([ runner ])
+    end
+
     it "preserves an API-key Codex routing identity when its subscription cannot disable tools" do
       subscription = create(:runner, user: user, runner_key: "codex", enabled_for_chat: true)
       credential = create(:runner_api_key, user: user, api_service_type: "openai")

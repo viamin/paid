@@ -11,6 +11,7 @@ module ConfiguredLlmRouting
     runner = owner.runners.kept_only.where(runner_key: "claude").ordered.first ||
       create(:runner, user: owner, runner_key: "claude")
     runner.update!(enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner:, account: owner.account, created_by: owner) if runner.subscription?
     stub_configured_llm_via_conductor
   end
 
