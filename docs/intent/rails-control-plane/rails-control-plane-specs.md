@@ -104,8 +104,9 @@ failures when no tmux socket responds.
 
 - [x] **RAILS-CONTROL-PLANE-017** — When the Overmind control socket is absent
   but an Overmind tmux session exists for this workspace or its socket is newly
-  created, development startup SHALL refuse to launch duplicate services and explain
-  how to inspect the existing session.
+  created, or another same-workspace startup holds the cleanup-and-launch lock,
+  development startup SHALL promptly refuse to launch duplicate services and
+  explain how to inspect the existing session.
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/dev`, `bin/lib/dev_supervisor.sh`.
 

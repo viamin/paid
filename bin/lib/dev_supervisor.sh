@@ -34,7 +34,7 @@ dev_supervisor_tmux_startup_lock_path() {
   echo "/tmp/overmind-$(id -u)-${app_root_hash}.startup.lock"
 }
 
-# @spec RAILS-CONTROL-PLANE-016
+# @spec RAILS-CONTROL-PLANE-016, RAILS-CONTROL-PLANE-017
 dev_supervisor_acquire_tmux_startup_lock() {
   local lock_path
   lock_path="$(dev_supervisor_tmux_startup_lock_path)"
@@ -42,7 +42,7 @@ dev_supervisor_acquire_tmux_startup_lock() {
   # Keep this descriptor open until bin/dev exits. Its child Overmind startup
   # is therefore serialized with stale-socket cleanup for this workspace.
   exec {DEV_SUPERVISOR_TMUX_STARTUP_LOCK_FD}>"$lock_path"
-  flock "$DEV_SUPERVISOR_TMUX_STARTUP_LOCK_FD"
+  flock -n "$DEV_SUPERVISOR_TMUX_STARTUP_LOCK_FD"
 }
 
 dev_supervisor_prepare_logging() {

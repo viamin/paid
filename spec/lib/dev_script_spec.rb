@@ -5,6 +5,7 @@ require "fileutils"
 require "open3"
 require "socket"
 require "tmpdir"
+require "timeout"
 require_relative "../support/exec_tmpdir"
 require_relative "../support/overmind_env_helpers"
 
@@ -116,7 +117,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "serializes same-workspace startup while cleaning empty tmux servers" do # @spec RAILS-CONTROL-PLANE-016
+  it "refuses a concurrent same-workspace start while cleaning empty tmux servers" do # @spec RAILS-CONTROL-PLANE-016, RAILS-CONTROL-PLANE-017
     Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(
         dir,
@@ -128,11 +129,11 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       env = dev_script_env(dir)
       first, ready_reader = start_dev_with_ready_pipe(env, script_path, dir)
       expect(ready_reader.read(1)).to eq("1")
-      second_stdout, second_stderr, second_status = Open3.capture3(env, script_path, chdir: dir)
+      second_stdout, second_stderr, second_status = run_dev_within(0.5, env, script_path, dir)
       Process.wait(first)
       ready_reader.close
       expect(second_status.success?).to be(false), -> { "stdout: #{second_stdout}\nstderr: #{second_stderr}" }
-      expect(second_stderr).to include("existing or starting Overmind tmux session")
+      expect(second_stderr).to include("another bin/dev is cleaning up or starting Overmind")
       expect(File.read(File.join(dir, "overmind-start-count")).lines.count).to eq(1)
     end
   end
@@ -674,6 +675,17 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     )
     ready_writer.close
     [ pid, ready_reader ]
+  end
+
+  def run_dev_within(timeout, env, script_path, dir)
+    Open3.popen3(env, script_path, chdir: dir) do |stdin, stdout, stderr, waiter|
+      stdin.close
+      status = Timeout.timeout(timeout) { waiter.value }
+      [ stdout.read, stderr.read, status ]
+    ensure
+      Process.kill("TERM", waiter.pid) if waiter&.alive?
+      waiter&.value
+    end
   end
 
   def assert_before_start_snapshot(dir)
