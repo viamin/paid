@@ -632,7 +632,6 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       stdout, stderr, status = Open3.capture3(failure_lock_env(dir), script_path, "--lightweight", chdir: dir)
       updater_log = read_updater_log(dir)
       lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
-      reason_path = "#{lock_path}.reason"
 
       expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
       expect(updater_log).to include("git stash: fatal: Unable to create .git/index.lock")
@@ -641,7 +640,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(File.read(File.join(dir, "git-stash.log"))).to eq("stash: stash push --include-untracked -m dev-update-autostash\n")
       expect(File.exist?(File.join(dir, "pre-existing-stash"))).to be(true)
       expect(File.read(lock_path).strip).to eq("1")
-      expect(File.read(reason_path).strip).to eq("git-stash")
+      expect(File.read("#{lock_path}.reason").strip).to eq("git-stash")
     end
   end
 
