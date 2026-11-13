@@ -133,6 +133,8 @@ RSpec.describe Llm::Request do
 
   # @spec LLM-ROUTING-008
   it "uses the selected runner owner's managed credential when no account is supplied" do
+    previous_account = Current.account
+    previous_user = Current.user
     Current.account = nil
     Current.user = owner
     owner.settings.update!(kb_chat_runner: runner.routing_key)
@@ -143,7 +145,8 @@ RSpec.describe Llm::Request do
       account: owner.account, runner: runner, timeout: 30
     )
   ensure
-    Current.user = nil
+    Current.account = previous_account
+    Current.user = previous_user
   end
 
   # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
