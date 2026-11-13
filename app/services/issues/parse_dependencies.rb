@@ -284,7 +284,7 @@ module Issues
     # the captured String directly — without it, refs_str would be an Array.
     def extract_removal_refs(text, local_numbers, cross_refs)
       markdown_sections(text, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
-        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: false)
+        extract_inline_removal_refs(section_body, local_numbers, cross_refs, contextual_exclusions: true)
       end
 
       inline_text = strip_markdown_sections(text, heading_pattern: INLINE_EXCLUDED_HEADING_PATTERN)
@@ -324,7 +324,7 @@ module Issues
     # bare references only in Markdown list items. This keeps implementation
     # inventories in ordinary prose from becoming unintended prerequisites.
     def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
-      scratch = without_contextual_dependency_clauses(without_fenced_code(section_body))
+      scratch = without_contextual_dependency_clauses(without_markdown_code(section_body))
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
@@ -409,17 +409,22 @@ module Issues
       !contextual_subject_start(text, directive_start).nil?
     end
 
-    def contextual_subject_start(text, directive_start)
+    def contextual_subject_start(text, directive_start, include_current_issue: false)
       # Only the immediately preceding subject can own a directive. Limit the
       # lookback so many directives in a long issue body stay linear to parse.
       lookback_start = [ directive_start - 256, 0 ].max
       prefix = text[lookback_start...directive_start]
       clause_start = (prefix.rindex(/[.!?;\n]/) || -1) + 1
       clause = prefix[clause_start..]
-      subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i)
+      subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i)
       return unless subject
-      return if clause[0...subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
-      return if subject[1].to_i == @current_issue_number
+      # A bare #N after an earlier directive is usually that directive's
+      # object. An explicit "Issue #N" names a new subject even in the same
+      # sentence, so do not let the earlier directive hide its attribution.
+      preceding_directive = clause[0...subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
+      named_subject = subject[0].match?(/\A(?:issue|pr|pull request)\s+#/i)
+      return if preceding_directive && !named_subject
+      return if !include_current_issue && subject[1].to_i == @current_issue_number
 
       lookback_start + clause_start + subject.begin(0)
     end
@@ -429,11 +434,18 @@ module Issues
     # declaration remains eligible for section extraction.
     def without_contextual_dependency_clauses(text)
       visible = text.dup
-      [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN ].each do |pattern|
+      patterns = [
+        [ INLINE_REMOVAL_PATTERN, true ], [ NON_DEPENDENCY_PATTERN, true ],
+        [ INLINE_DEPLOYMENT_PATTERN, false ], [ INLINE_DEPENDS_PATTERN, false ]
+      ]
+      patterns.each do |pattern, include_current_issue|
         text.to_enum(:scan, pattern).each do
           match = Regexp.last_match
-          subject_start = contextual_subject_start(text, match.begin(0))
+          subject_start = contextual_subject_start(
+            text, match.begin(0), include_current_issue: include_current_issue
+          )
           next unless subject_start
+          next if visible[subject_start] == " "
 
           clause_end = text.match(/[.!?;](?=\s|\z)|\n/, match.end(0))&.end(0) || text.length
           visible[subject_start...clause_end] = " " * (clause_end - subject_start)

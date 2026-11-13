@@ -17,10 +17,11 @@ turning unrelated issue references into prerequisites.
 Explicit `Depends on`, `Blocked by`, and deployment directives continue to
 admit local and qualified `owner/repo#N` references wherever the parser already
 recognises them. Those directives do not apply when they appear as Markdown code
-examples or describe another numbered issue's prerequisites, including in a
-dependency-section list item. A sentence about another issue's ordering cannot
-impose that ordering on the issue carrying the sentence. Negative and removal
-directives retain their ordered-comment semantics. When one list item contains
+examples or describe another numbered issue's dependency status or
+prerequisites, including in a dependency-section list item. A sentence about
+another issue's ordering cannot impose that ordering on the issue carrying the
+sentence. Negative and removal directives retain their ordered-comment
+semantics. When one list item contains
 both a bare declaration for the current item and another issue's ordering, the
 bare declaration remains in effect.
 
