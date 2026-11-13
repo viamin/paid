@@ -13,10 +13,10 @@ module Notifications
         false
       end
 
-      def detect(scope)
+      def detect(scope) # @spec NOTIFICATION-SEVERITY-013
         Array(scope).select do |agent_run|
           agent_run.status == "timeout" &&
-            agent_run.iterations.to_i.zero? &&
+            !agent_run.observable_main_agent_work? &&
             agent_run.tokens_input.to_i.zero?
         end
       end
@@ -46,7 +46,7 @@ module Notifications
         details << "PR ##{agent_run.source_pull_request_number}" if agent_run.source_pull_request_number.present?
         details << "draft follow-up" if agent_run.count_toward_draft_review_round?
         details << "no container_id" if agent_run.container_id.blank?
-        details << "zero iterations"
+        details << "no observed main-agent work"
         details << "zero input tokens"
         details.join(", ")
       end

@@ -53,15 +53,51 @@ RSpec.describe Issues::ParseDependencies, :no_db do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
-    it "keeps quoted and attributed directives inside a dependency section" do
+    it "excludes another issue's coordinated prerequisites inside a dependency section" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Rollout / dependency
+          - Draft because #4868 depends on #4863 and awaits deployment of #4761.
+
+          Closes #4868
+        BODY
+        comments: [],
+        current_issue_number: 4981
+      )
+
+      expect(local_deps).to eq({})
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
+    it "keeps direct and current-item declarations in a dependency section" do
       local_deps, cross_deps = described_class.extract(
         body: <<~BODY,
           ## Dependencies
-          Issue #500 depends on #41.
-          `Depends on #42`
+          - #41
+          - Issue #4981 depends on #42
+          - Deployment of owner/repo#43
+          Depends on owner/repo#44
         BODY
         comments: [],
-        current_issue_number: 100
+        current_issue_number: 4981
+      )
+
+      expect(local_deps).to eq(41 => false, 42 => false)
+      expect(cross_deps).to eq(
+        [ "owner", "repo", 43 ] => true,
+        [ "owner", "repo", 44 ] => false
+      )
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-003
+    it "keeps a bare declaration beside a directive in the same list item" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          - #41; depends on #42
+        BODY
+        comments: []
       )
 
       expect(local_deps).to eq(41 => false, 42 => false)

@@ -59,6 +59,19 @@ three restarts within five minutes; other exits surface to Overmind normally.
 The existing development supervisor records lightweight process RSS and host
 memory samples before a crash, so a killed process's memory growth can be
 distinguished from pressure elsewhere in the workspace.
+The supervisor checks tmux panes only on sockets with live sessions. An old
+tmux server can answer `tmux ls` successfully while listing no sessions; after
+one minute, startup stops that server and removes its socket. Health checks
+ignore empty servers so they cannot mark a newer Overmind session unhealthy.
+Startup holds a workspace-scoped lock while it cleans sockets and launches
+Overmind, so a concurrent startup cannot replace a checked empty socket before
+it is stopped. A concurrent same-workspace startup refuses promptly rather
+than waiting for the active development session to exit. New sockets remain
+untouched while their first session starts; a socket without panes does not
+identify a worktree, so it does not block another worktree with the same name.
+When Overmind's control socket is missing but a tmux session remains, startup
+refuses to launch duplicate services and directs the developer to inspect the
+old session.
 
 The development web process also exposes password-protected PgHero at `/pghero`
 to the development machine only. PgHero is a development-only Rails engine that

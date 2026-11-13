@@ -2104,14 +2104,28 @@ class AgentRun < ApplicationRecord
     PUSH_PERMISSION_REJECTION_KEYWORDS.any? { |keyword| msg.include?(keyword) }
   end
 
+  # @spec MANUAL-RUN-RETRY-003 NO-OUTPUT-ISSUE-008 QUALITY-LOOPS-009
   # Returns true when this run performed no observable work before failing:
-  # no agent iterations, no created PR, no created issue. A blind retry is
+  # no successful main-agent execution, no created PR, no created issue. A blind retry is
   # only safe for this shape of failure — anything with partial side effects
   # (an opened PR, a created issue) must stay terminal for an operator rather
   # than risk a duplicate. Used to gate the issue-less manual run auto-retry
   # (see MarkAgentRunFailedActivity).
   def no_observable_work?
-    iterations.to_i.zero? && pull_request_number.blank? && created_issue_number.blank?
+    !observable_main_agent_work? && pull_request_number.blank? && created_issue_number.blank?
+  end
+
+  # Successful and timed-out main runner commands preserve their output in the
+  # attempt record. Smoke preflight uses a distinct error type, and maintenance
+  # commands do not create runner attempts.
+  def observable_main_agent_work?
+    iterations.to_i.positive? || observable_main_agent_execution_count.positive?
+  end
+
+  def observable_main_agent_execution_count
+    Array(runners_attempted).count do |attempt|
+      (attempt["success"] || attempt["error_type"] == "timeout") && attempt["output_chars"].to_i.positive?
+    end
   end
 
   # The 1-indexed attempt number of a manual retry chain for an issue-less
