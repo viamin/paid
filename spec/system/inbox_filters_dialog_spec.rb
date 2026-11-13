@@ -84,14 +84,19 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
   # @spec INBOX-FOUNDATION-012
   it "submits multiple projects, multiple kinds, and server-side search" do
     open_filters
-    check "Clarifying Questions"
-    check "Manual Review"
     check "acme/alpha"
     check "acme/beta"
+    check "Clarifying Questions"
+    check "Manual Review"
     fill_in "Search", with: "Beta"
     click_button "Apply filters"
 
-    expect(page).to have_current_path(/project_ids.*kinds.*text_cont/)
+    query = Rack::Utils.parse_nested_query(URI.parse(page.current_url).query)
+    expect(query).to include(
+      "project_ids" => contain_exactly(project_a.id.to_s, project_b.id.to_s),
+      "kinds" => contain_exactly(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, Inbox::Queue::MANUAL_REVIEW_KIND),
+      "q" => { "text_cont" => "Beta" }
+    )
     expect(page).to have_content("Beta question")
     expect(page).not_to have_content("Alpha question")
   end
