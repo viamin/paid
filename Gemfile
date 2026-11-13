@@ -178,6 +178,9 @@ group :test do
 end
 
 group :development do
+  # Local PostgreSQL performance dashboard, mounted at /pghero in development.
+  gem "pghero", "~> 4.1"
+
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
 

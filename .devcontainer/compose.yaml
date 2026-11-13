@@ -39,6 +39,9 @@ services:
       PAID_PROXY_PORT: "${PAID_WEB_PORT:-3000}"
       PAID_WEB_PORT: "${PAID_WEB_PORT:-3000}"
       PAID_TEMPORAL_UI_PORT: "${PAID_TEMPORAL_UI_PORT:-8080}"
+      # bin/dev-web defaults to loopback; the port mapping above forwards from
+      # the container's non-loopback address, so Puma must listen there too.
+      PAID_WEB_BIND_ADDRESS: "0.0.0.0"
 
     depends_on:
       postgres:

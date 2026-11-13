@@ -1,0 +1,6 @@
+development:
+  databases:
+    primary:
+      spec: primary
+  username: <%= ENV.fetch("PGHERO_USERNAME", "paid") %>
+  password: <%= ENV.fetch("PGHERO_PASSWORD", Rails.application.secret_key_base) %>

@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "routes/pghero_development_routes"
+
 Rails.application.routes.draw do
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
+  PgHeroDevelopmentRoutes.draw(self)
 
   devise_for :users, controllers: { registrations: "users/registrations" }
 

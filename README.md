@@ -165,6 +165,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | Service | URL | Description |
 | ------- | --- | ----------- |
 | Rails app | <http://localhost:3000> | Main application |
+| PgHero | <http://localhost:3000/pghero> | Development-only PostgreSQL dashboard |
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
 | PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
@@ -210,6 +211,28 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | `GEMINI_CONFIG_DIR` | Host path to `~/.gemini/` for Gemini subscription auth | _(none)_ |
 | `PAID_PROXY_PORT` | Port the secrets proxy listens on (used by agent containers) | `3000` |
 | `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |
+
+### PgHero (development only)
+
+PgHero starts inside the existing Rails process; it does not need a separate
+container or service. Run `bin/setup` once, then start the normal development
+stack with `bin/dev` and open <http://localhost:3000/pghero>. Sign in as
+`paid`; its password defaults to Rails' local development secret. Set
+`PGHERO_PASSWORD` to use a separate local-only password, and optionally set
+`PGHERO_USERNAME` to choose another username. PgHero inspects the same
+development PostgreSQL database configured by `DATABASE_URL`; set that variable
+if your local database is not using the documented default.
+
+The dashboard is intentionally mounted only in `RAILS_ENV=development`.
+`bin/dev` binds its web server to loopback, while Docker Compose publishes port
+3000 only to `127.0.0.1`; it is unavailable through Tailscale or other network
+interfaces. The required HTTP Basic password also prevents restricted agent
+containers that can reach the Compose proxy from loading database metadata.
+The checked-in `.devcontainer` already forwards its web port on all host
+interfaces so the whole app is reachable over Tailscale; PgHero rides along
+with it there, so the password is its only protection in that environment.
+PgHero query history and cloud monitoring are not enabled, and no migrations or
+additional service are needed.
 
 ## Provider Auth Setup
 

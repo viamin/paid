@@ -73,6 +73,26 @@ When Overmind's control socket is missing but a tmux session remains, startup
 refuses to launch duplicate services and directs the developer to inspect the
 old session.
 
+The development web process also exposes password-protected PgHero at `/pghero`
+to the development machine only. PgHero is a development-only Rails engine that
+inspects the same PostgreSQL connection configured for Paid through
+`DATABASE_URL`; it does not add a service, a database, or a production route.
+PgHero is mounted only when Rails runs in development, so the system-test
+environment does not load its dashboard route while retaining the development
+dependencies that Paid's eagerly loaded test application requires.
+`bin/dev` binds the native development server to loopback. Docker Compose
+publishes its web port to the host loopback interface while the server listens
+on the container network, so the dashboard remains reachable from the host
+without being exposed through Tailscale or other network interfaces. The local
+PgHero password (`PGHERO_PASSWORD` when supplied, otherwise Rails' development
+secret) prevents restricted agent containers that can reach the Compose proxy
+from loading the dashboard. The `.devcontainer` VS Code environment is a
+different case: it already forwards its web port on all host interfaces so a
+developer can reach the whole app over Tailscale, predating PgHero, so it sets
+`PAID_WEB_BIND_ADDRESS=0.0.0.0` rather than relying on the native loopback
+default. PgHero rides along with the rest of the app there; the password is
+its only protection against that broader reachability.
+
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five
 fallback profile levels execute as a

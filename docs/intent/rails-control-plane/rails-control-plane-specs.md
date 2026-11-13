@@ -110,6 +110,26 @@ failures when no tmux socket responds.
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/dev`, `bin/lib/dev_supervisor.sh`.
 
+- [x] **RAILS-CONTROL-PLANE-018** — When a developer starts Paid with
+  `bin/dev`, the development web process SHALL expose PgHero at `/pghero` for
+  password-authenticated requests from the development machine to the PostgreSQL
+  database configured through `DATABASE_URL`. PgHero's gem and route SHALL be
+  absent from non-development environments, and the integration SHALL not
+  require another service or database. The system-test environment SHALL NOT
+  mount the PgHero route. Native development SHALL bind the web
+  server to loopback; Docker Compose SHALL publish the web port only to host
+  loopback while allowing the published request to reach PgHero. Requests from
+  Tailscale or restricted agent containers reaching `docker-compose.yml`'s
+  published port SHALL NOT load the PgHero dashboard without the password. The
+  `.devcontainer` VS Code environment already forwards its web port for direct
+  Tailscale reachability of the whole app, predating PgHero; that forwarding
+  SHALL continue, so the password — not network isolation — is PgHero's
+  protection there.
+  *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
+  `spec/requests/pghero_development_spec.rb`.
+  *Code:* `Gemfile`, `config/routes.rb`, `bin/dev-web`, `docker-compose.yml`,
+  `.devcontainer/compose.yaml`.
+
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping
   every cron enqueue with a `(cron_key, cron_at)` pair guarded by the unique
