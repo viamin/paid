@@ -13,6 +13,18 @@ RSpec.describe PartialCloseouts::AutoAudit do
       github_state: "closed", pr_review_phase: "merged")
   end
 
+  # @spec PARTIAL-CLOSEOUT-051
+  it "schedules one report-only audit despite its own stale prerequisite notification" do
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+    result = described_class.call(issue:)
+
+    expect(result).to be_scheduled
+    expect(result.agent_run.goal).to eq("analyze_issue")
+    expect(Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).where(id: issue.id)).to be_empty
+  end
+
   # @spec PARTIAL-CLOSEOUT-037
   it "queues one automatic report-only audit after merge and never repeats it for the same evidence" do
     first = described_class.call(issue:)

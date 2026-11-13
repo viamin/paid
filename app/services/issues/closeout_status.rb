@@ -64,13 +64,14 @@ module Issues
       end
     end
 
-    def self.call(issue, eligible_issue_ids: nil, continuation_eligible_issue_ids: nil, inputs: nil)
+    def self.call(issue, eligible_issue_ids: nil, continuation_eligible_issue_ids: nil, inputs: nil, acceptance_audit: false)
       evidence = inputs&.evidence_by_issue_id&.fetch(issue.id) || CloseoutEvidence.call(issue)
       eligible_ids = eligible_issue_ids || admissible_issue_ids(issue)
       prerequisites = inputs&.prerequisites_by_issue_id&.fetch(issue.id) || prerequisite_labels(issue)
-      blockers = admission_blockers(issue, prerequisites: prerequisites, inputs: inputs)
+      audit_bypass = acceptance_audit && audit_prerequisite_bypass?(issue, evidence:, inputs:)
+      blockers = admission_blockers(issue, prerequisites: prerequisites, inputs: inputs, audit_bypass:)
       if blockers.empty? && evidence.present?
-        blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids) ].compact
+        blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids, audit_bypass:) ].compact
       end
 
       Result.new(
@@ -83,6 +84,20 @@ module Issues
         unresolved_prerequisites: prerequisites,
         technical_evidence: inputs&.technical_evidence_by_issue_id&.fetch(issue.id, [])
       )
+    end
+
+    # A stale assessment can be refreshed through its own human prerequisite.
+    # External prerequisite state remains an admission guard.
+    # @spec PARTIAL-CLOSEOUT-051
+    def self.audit_prerequisite_bypass?(issue, evidence: CloseoutEvidence.call(issue), inputs: nil)
+      return false if evidence.blank?
+
+      notifications = inputs ? inputs.prerequisite_notifications_by_issue_id.fetch(issue.id, []) : prerequisite_notifications(issue)
+      return false if notifications.empty?
+      return false if notifications.any? { |notification| external_prerequisite_states(notification, inputs:).any? }
+
+      technical_evidence = inputs&.technical_evidence_by_issue_id&.fetch(issue.id, nil)
+      PartialCloseouts::Assessment.call(issue, evidence:, technical_evidence:).stale?
     end
 
     # Preloads the mutable persisted inputs used only to explain each
@@ -185,18 +200,18 @@ module Issues
     # Each diagnostic interrogates the same persisted state consumed by the
     # candidate source. Keep this list additive: simultaneous guards must all
     # be visible rather than having the first one conceal the rest.
-    def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
+    def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil, audit_bypass: false)
       prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
         analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:) +
-        open_native_child_blockers(issue, inputs:) + prerequisite_notification_blockers(issue, inputs:)
+        open_native_child_blockers(issue, inputs:) + (audit_bypass ? [] : prerequisite_notification_blockers(issue, inputs:))
     end
 
     # The scoped preflight is the admission authority. If it rejects after all
     # known guard diagnostics, do not invent a likely cause: callers get an
     # explicit investigation path and the exact dequeue decision remains safe.
     # @spec PARTIAL-CLOSEOUT-004
-    def self.residual_eligibility_blocker(issue, continuation_eligible_issue_ids)
+    def self.residual_eligibility_blocker(issue, continuation_eligible_issue_ids, audit_bypass: false)
       admissible = if continuation_eligible_issue_ids
         continuation_eligible_issue_ids.include?(issue.id)
       else
@@ -204,7 +219,8 @@ module Issues
           issue.project,
           issue.id,
           excluding_run_id: nil,
-          continuation_authorized_issue_ids: [ issue.id ]
+          continuation_authorized_issue_ids: [ issue.id ],
+          acceptance_audit_authorized_issue_ids: audit_bypass ? [ issue.id ] : []
         )
       end
       return nil if admissible

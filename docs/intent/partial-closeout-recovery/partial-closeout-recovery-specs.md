@@ -252,6 +252,22 @@
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
   `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-051** — When a source issue has a stale acceptance
+  assessment and its own active prerequisite notification, Paid SHALL allow
+  one authorized report-only acceptance audit to pass that notification at
+  request and dequeue. The notification SHALL continue blocking implementation
+  and closure. The audit SHALL still honor every other admission guard,
+  evidence and intent revisions, budget, deduplication, and retry limits; a
+  current assessment SHALL not earn another audit merely because its
+  prerequisite remains open.
+  *Code:* `app/services/issues/request_continuation.rb`,
+  `app/services/issues/closeout_status.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/agent_runs/recheck_issue_eligibility.rb`.
+  *Test:* `spec/services/issues/request_acceptance_audit_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-035** — When a report-only acceptance audit completes,
   the system SHALL pass its persisted criterion assessment through the
   deterministic partial-closeout reconciler before completing the audit run.

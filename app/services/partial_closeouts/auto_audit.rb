@@ -28,7 +28,7 @@ module PartialCloseouts
       return result(:automation_disabled) unless Issues::AutoPickProjectGate.call(issue.project)
 
       issue.with_lock do
-        status = Issues::CloseoutStatus.call(issue)
+        status = Issues::CloseoutStatus.call(issue, acceptance_audit: true)
         return result(:not_stalled) unless status.stalled?
         return result(:blocked) if status.blockers.any?
         assessment = Assessment.call(

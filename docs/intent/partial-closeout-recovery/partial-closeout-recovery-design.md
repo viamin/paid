@@ -851,3 +851,15 @@ mistaken for actionable roots.
    items.
 3. ✅ The owner chose Option B, the persisted stall read model in RDR-081, for
    the lane's request-path cost (#4558). Implementation and rollout remain open.
+
+## Report-only audit through a stale prerequisite
+
+A prerequisite notification protects implementation and closure until its
+criterion is evidenced. It does not prevent a report-only audit of a stale
+assessment for the same source issue: that audit is the bounded way to decide
+whether the prerequisite is still applicable. Audit admission lifts only that
+notification guard, rechecks all other eligibility conditions at request and
+dequeue, and leaves the notification in place until assessment reconciliation
+records sufficient evidence. Current assessments and unchanged retry
+generations do not create another audit. A notification that also records
+unresolved external prerequisites keeps its gate until those states clear.

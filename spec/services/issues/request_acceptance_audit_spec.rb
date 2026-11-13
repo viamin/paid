@@ -26,6 +26,42 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     run.update!(reconciliation: { "assessment" => assessment })
   end
 
+  # @spec PARTIAL-CLOSEOUT-051
+  it "audits through its own stale prerequisite while implementation remains held" do
+    merged_partial_pr
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result).to be_success
+    expect(result.agent_run.goal).to eq("analyze_issue")
+    expect(AgentRuns::RecheckIssueEligibility.call(result.agent_run)).to be(false)
+    expect(Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).where(id: issue.id)).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "keeps implementation held by its own prerequisite without an audit request" do
+    merged_partial_pr
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+    result = Issues::RequestContinuation.call(issue:, actor: user, reason: "Build the remaining work")
+
+    expect(result.code).to eq(:human_prerequisite_notification)
+    expect(issue.agent_runs.where(goal: "create_pr")).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "does not re-audit a current assessment through an unchanged prerequisite" do
+    merged_partial_pr
+    record_acceptance_audit(criteria: [ { "criterion" => "human review", "state" => "unmet" } ])
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+    expect(described_class.call(issue:, actor: user).code).to eq(:human_prerequisite_notification)
+  end
+
   # @spec PARTIAL-CLOSEOUT-027
   it "queues one report-only audit and records its mode in the evidence snapshot" do
     merged_partial_pr

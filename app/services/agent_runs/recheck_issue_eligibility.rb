@@ -189,9 +189,12 @@ module AgentRuns
     end
 
     def continuation_eligible?(request)
+      audit_bypass = request.evidence["continuation_mode"] == "acceptance_audit" &&
+        Issues::CloseoutStatus.audit_prerequisite_bypass?(issue)
       Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_for_dequeue?(
         agent_run.project, agent_run.issue_id, excluding_run_id: agent_run.id,
-        continuation_authorized_issue_ids: [ request.issue_id ]
+        continuation_authorized_issue_ids: [ request.issue_id ],
+        acceptance_audit_authorized_issue_ids: audit_bypass ? [ request.issue_id ] : []
       )
     end
 
