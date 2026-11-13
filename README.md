@@ -165,6 +165,7 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | Service | URL | Description |
 | ------- | --- | ----------- |
 | Rails app | <http://localhost:3000> | Main application |
+| PgHero | <http://localhost:3000/pghero> | Development-only PostgreSQL dashboard |
 | Temporal UI | <http://localhost:8080> | Workflow monitoring |
 | PostgreSQL | localhost:5432 | Database (app user: paid, password: paid; admin user: paid_admin) |
 | Temporal gRPC | localhost:7233 | Temporal server |
@@ -210,6 +211,19 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | `GEMINI_CONFIG_DIR` | Host path to `~/.gemini/` for Gemini subscription auth | _(none)_ |
 | `PAID_PROXY_PORT` | Port the secrets proxy listens on (used by agent containers) | `3000` |
 | `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |
+
+### PgHero (development only)
+
+PgHero starts inside the existing Rails process; it does not need a separate
+container or service. Run `bin/setup` once, then start the normal development
+stack with `bin/dev` and open <http://localhost:3000/pghero>. PgHero inspects
+the same development PostgreSQL database configured by `DATABASE_URL`; set that
+variable if your local database is not using the documented default.
+
+The dashboard is intentionally mounted only in `RAILS_ENV=development` and has
+no additional authentication. Do not expose a development server running PgHero
+to an untrusted network. PgHero query history and cloud monitoring are not
+enabled, so no PgHero-specific environment variables or migrations are needed.
 
 ## Provider Auth Setup
 

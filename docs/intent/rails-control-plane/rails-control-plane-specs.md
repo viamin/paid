@@ -91,6 +91,14 @@
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/lib/dev_supervisor.sh`.
 
+- [x] **RAILS-CONTROL-PLANE-016** — When a developer starts Paid with
+  `bin/dev`, the development web process SHALL expose PgHero at `/pghero` for
+  the PostgreSQL database configured through `DATABASE_URL`. PgHero's gem and
+  route SHALL be absent from non-development environments, and the integration
+  SHALL not require another service or database.
+  *Tests:* `spec/config/pg_hero_development_integration_spec.rb`.
+  *Code:* `Gemfile`, `config/routes.rb`.
+
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping
   every cron enqueue with a `(cron_key, cron_at)` pair guarded by the unique
