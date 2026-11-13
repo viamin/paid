@@ -22,12 +22,14 @@ RSpec.describe PgHeroDevelopmentIntegration, :no_db do
     gemfile = Rails.root.join("Gemfile").read
     routes = Rails.root.join("config/routes.rb").read
     pg_hero_config = Rails.root.join("config/pghero.yml").read
+    system_tests_workflow = Rails.root.join(".github/workflows/system_tests.yml").read
     readme = Rails.root.join("README.md").read
 
     expect(PgHero::Engine).to be < Rails::Engine
     expect(gemfile).to match(/group :development do.*gem "pghero"/m)
     expect(routes).to include('PgHeroDevelopmentRoutes.draw(self)')
     expect(pg_hero_config).to include('ENV.fetch("PGHERO_PASSWORD", Rails.application.secret_key_base)')
+    expect(system_tests_workflow).to include('BUNDLE_WITHOUT: development')
     expect(readme).to include("### PgHero (development only)", "bin/dev", "DATABASE_URL", "PGHERO_PASSWORD", "http://localhost:3000/pghero")
   end
 
