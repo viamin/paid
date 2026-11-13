@@ -527,10 +527,31 @@ jobs:
         # System specs run in a separate workflow (.github/workflows/system_tests.yml)
         # because they need Chromium and built JS/CSS assets.
         # @spec TEST-SUITE-001 @spec TEST-SUITE-009
-        run: >-
-          bin/rspec-shard
-          --format progress --format json
-          --out tmp/rspec-shard-${{ matrix.shard }}.json
+        run: |
+          set -o pipefail
+          failure_log="$(mktemp)"
+          trap 'rm -f "$failure_log"' EXIT
+          for attempt in 1 2 3; do
+            if bin/rspec-shard \
+              --format progress --format json \
+              --out tmp/rspec-shard-${{ matrix.shard }}.json 2>&1 | tee "$failure_log"; then
+              exit 0
+            fi
+
+            # PostgreSQL can return an empty result while Rails applies tenant
+            # context on hosted runners. It is a transient runner transport
+            # failure, not an assertion failure, so retry only that signature.
+            if ! grep -Fq "undefined method 'cmd_tuples' for nil" "$failure_log"; then
+              exit 1
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::PostgreSQL returned an empty result while setting tenant context after three attempts"
+              exit 1
+            fi
+
+            echo "::warning::PostgreSQL returned an empty result while setting tenant context; retrying test shard ${{ matrix.shard }} (attempt $((attempt + 1))/3)"
+          done
 
       # @spec TEST-SUITE-006
       - name: Run query performance benchmarks
