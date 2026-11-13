@@ -171,6 +171,26 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "allows startup when another same-named worktree has a fresh tmux socket" do # @spec RAILS-CONTROL-PLANE-017
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |root|
+      first_worktree = File.join(root, "first", "paid")
+      second_worktree = File.join(root, "second", "paid")
+      shared_tmux_dir = File.join(root, "tmux")
+      FileUtils.mkdir_p(first_worktree)
+      FileUtils.mkdir_p(second_worktree)
+      FileUtils.mkdir_p(shared_tmux_dir)
+      prepare_script_fixture(first_worktree)
+      script_path = prepare_script_fixture(second_worktree)
+      create_socket(File.join(shared_tmux_dir, "overmind-paid-fresh"))
+
+      env = dev_script_env(second_worktree).merge("DEV_SUPERVISOR_TMUX_SOCKET_DIR" => shared_tmux_dir)
+      _stdout, stderr, status = Open3.capture3(env, script_path, chdir: second_worktree)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(second_worktree, "overmind-start-ran"))).to be(true)
+    end
+  end
+
   it "keeps a healthy Overmind session running when an old tmux socket has no sessions" do # @spec RAILS-CONTROL-PLANE-016
     Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, overmind: { running: true }, tmux: { empty_session_socket: true })

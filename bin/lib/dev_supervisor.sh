@@ -353,10 +353,6 @@ dev_supervisor_tmux_has_existing_session() {
       done <<< "$paths"
       continue
     fi
-    # A new server may not have created its first session yet.
-    if ! dev_supervisor_tmux_socket_old_enough "$socket"; then
-      return 0
-    fi
   done < <(dev_supervisor_tmux_sockets)
   return 1
 }
