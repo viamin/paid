@@ -22,9 +22,14 @@ module Projects
 
     # @spec PROJECT-DELEGATION-006
     def update_posture(project)
-      return rollback(project) if posture_params[:level] == ProjectDelegation::Posture::CONSERVATIVE
+      return rollback(project) if rolling_back?(project)
 
       ProjectDelegation::SelectPosture.call(project:, actor: current_user, level: posture_params[:level])
+    end
+
+    def rolling_back?(project)
+      posture_params[:level] == ProjectDelegation::Posture::CONSERVATIVE &&
+        project.delegation_posture&.level == ProjectDelegation::Posture::BOUNDED_DELIVERY
     end
 
     def rollback(project)

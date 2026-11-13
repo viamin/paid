@@ -110,6 +110,14 @@ RSpec.describe "Project delegation posture settings" do
     expect(response.body).to include("rollback reason is required")
   end
 
+  it "selects the initial conservative posture without treating it as a rollback" do # @spec PROJECT-DELEGATION-001 PROJECT-DELEGATION-006
+    select_posture("conservative")
+
+    expect(project.delegation_posture.reload).to have_attributes(level: "conservative", revision: 1)
+    expect(AccountActivityEvent.where(action: "project_delegation.posture_selected", subject: project)).to exist
+    expect(AccountActivityEvent.where(action: "project_delegation.rollback", subject: project)).to be_empty
+  end
+
   it "hides the posture selection until the project opts in" do
     FeatureFlags.disable!(:project_delegation, project:)
 
