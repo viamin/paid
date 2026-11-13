@@ -37,18 +37,18 @@ RSpec.describe TenantContext, :no_db, :tenant_isolation do
     it "writes tenant settings through parameterized queries" do # @spec POSTGRESQL-PERSISTENCE-001
       connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
       allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive(:select_value)
+      allow(connection).to receive(:exec_query)
 
       described_class.apply!(account)
 
-      expect(connection).to have_received(:select_value).with(
+      expect(connection).to have_received(:exec_query).with(
         "SELECT set_config($1, $2, false)",
         "TenantContext#set_config",
         satisfy do |binds|
           binds.map(&:value_before_type_cast) == [ "paid.current_account_id", "123" ]
         end
       )
-      expect(connection).to have_received(:select_value).with(
+      expect(connection).to have_received(:exec_query).with(
         "SELECT set_config($1, $2, false)",
         "TenantContext#set_config",
         satisfy do |binds|
