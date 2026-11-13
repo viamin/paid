@@ -99,6 +99,22 @@ to infer issue type from title, labels, or body content (that would be
 exactly the guess-from-absence pattern this design avoids). Runs whose output
 contains no declaration retain today's classification behavior unchanged.
 
+## Main-agent work evidence
+
+`iterations` is a legacy counter and is not evidence that a provider-neutral
+agent run performed work. The no-output classifier instead derives observable
+main-agent work from the persisted runner-attempt record: a successful attempt,
+or a timed-out main-command attempt, that recorded nonzero output bytes.
+`RunAgentActivity` writes successful attempts after the main runner command
+returns and writes timed-out attempts with the output observed before the
+timeout. Smoke preflight uses a distinct attempt type and maintenance commands
+do not create main runner attempts, so their turns or output cannot authorize a
+no-output completion. Explicit provider and infrastructure error signals retain
+priority when no main-agent work is observed, and terminal infrastructure
+signals always retain precedence. Historic positive
+`iterations` values remain evidence for records written before the counter
+stopped advancing; zero is never used as proof that no work occurred.
+
 The state transition happens before the comment attempt, so comment-post
 failures do not roll back the issue state. Instead the activity records the
 failure on the `AgentRun` in two forms:

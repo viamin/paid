@@ -10,7 +10,7 @@ module QualityMetrics
       @agent_run = agent_run
     end
 
-    def call
+    def call # @spec QUALITY-LOOPS-009
       @automated_metric = QualityMetric.find_or_initialize_by(
         agent_run: agent_run,
         metric_type: "automated"
@@ -118,7 +118,7 @@ module QualityMetrics
     def build_pr_scores
       scores = {}
       scores["pr_created"] = agent_run.pull_request_number.present? ? 1.0 : 0.0
-      scores["iterations"] = iteration_score if agent_run.iterations&.positive?
+      scores["iterations"] = iteration_score if effective_iteration_count.positive?
       lint = lint_clean_score
       scores["lint_clean"] = lint unless lint.nil?
       if agent_run.pull_request_number.present?
@@ -131,7 +131,7 @@ module QualityMetrics
 
     def build_iteration_and_lint_scores
       scores = {}
-      scores["iterations"] = iteration_score if agent_run.iterations&.positive?
+      scores["iterations"] = iteration_score if effective_iteration_count.positive?
       lint = lint_clean_score
       scores["lint_clean"] = lint unless lint.nil?
       scores
@@ -139,7 +139,7 @@ module QualityMetrics
 
     def build_merge_conflict_scores
       scores = {}
-      scores["iterations"] = iteration_score if agent_run.iterations&.positive?
+      scores["iterations"] = iteration_score if effective_iteration_count.positive?
       scores
     end
 
@@ -169,7 +169,13 @@ module QualityMetrics
     end
 
     def iteration_score
-      [ 1.0 - ((agent_run.iterations - 1) * 0.1), 0.0 ].max
+      [ 1.0 - ((effective_iteration_count - 1) * 0.1), 0.0 ].max
+    end
+
+    def effective_iteration_count
+      return agent_run.iterations if agent_run.iterations.to_i.positive?
+
+      agent_run.observable_main_agent_execution_count
     end
 
     # Scores based on the number of review comments on the PR.

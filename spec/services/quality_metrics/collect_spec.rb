@@ -97,6 +97,17 @@ RSpec.describe QualityMetrics::Collect do
       expect(metric.scores["iterations"]).to be_present
     end
 
+    # @spec QUALITY-LOOPS-009
+    it "sets iteration score from main-agent work when iterations is zero" do
+      agent_run.update!(iterations: 0, runners_attempted: [
+        { "runner" => "codex", "success" => true, "output_chars" => 250 }
+      ])
+
+      metric = described_class.call(agent_run: agent_run)
+
+      expect(metric.scores["iterations"]).to be_present
+    end
+
     it "calculates a composite score" do
       metric = described_class.call(agent_run: agent_run)
 

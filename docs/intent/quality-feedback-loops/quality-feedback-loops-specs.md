@@ -94,3 +94,10 @@
   `app/views/projects/pre_commit_requirements/index.html.erb`.
   *Test:* `spec/models/pre_commit_requirement_spec.rb`,
   `spec/requests/projects/pre_commit_requirements_spec.rb`.
+
+- [x] **QUALITY-LOOPS-009** — Quality scoring SHALL use persisted
+  main-agent-work evidence when the legacy `iterations` counter is zero, so a
+  successful main runner attempt with recorded output is not excluded from the
+  iteration-quality signal.
+  *Code:* `app/models/agent_run.rb`, `app/services/quality_metrics/collect.rb`.
+  *Test:* `spec/services/quality_metrics/collect_spec.rb`.
