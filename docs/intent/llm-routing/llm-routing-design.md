@@ -34,19 +34,15 @@ Rotating managed credentials (Codex, OpenCode, OMP) reuse the provisioner's
 refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so a
 standalone request materializes a refreshed token and writes an in-container
 rotation back into the canonical credential once before the container is deleted.
-The command, preparation, and prompt travel in a bounded Docker archive to a
-temporary mode-0600 file owned by the agent in the disposable container's
-private layer, not as exec environment entries, because a single `execve`
-environment string is capped near 128 KiB. Docker archive extraction writes
-beneath tmpfs mounts, so the file is staged at `/opt` while the process root
-filesystem remains read-only. The materializer unlinks each input immediately
-after consuming it, including on malformed payloads or materialization failure,
-so a reused container cannot retain earlier request data; any remaining input
-also disappears when the container is deleted.
-Docker exec does not attach stdin: its hijack transport can return before the
-process has finished. An unavailable exit status, missing setup output, or
-Docker read timeout is a transport failure, never success or a permanent
-configuration failure.
+The command, preparation, and prompt travel through an upgraded Docker exec
+stdin connection, not as exec environment entries, because a single `execve`
+environment string is capped near 128 KiB. The materializer checks that every
+declared input byte arrived before starting the CLI. The transport waits for
+process completion and checks the exit status before returning output. The container
+root filesystem remains read-only. Docker's archive endpoint rejects writes
+to read-only containers, including paths backed by tmpfs.
+An unavailable exit status, missing setup output, or Docker read timeout is a
+transport failure, never success or a permanent configuration failure.
 Caller environment entries are bounded per entry.
 Embedding and interactive API chat keep their existing capability-specific
 transports and settings. Provider identifiers inside those protocol adapters

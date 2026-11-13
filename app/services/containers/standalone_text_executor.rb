@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "stringio"
-require "rubygems/package"
 
 module Containers
   # Executes one application text command in a disposable container. It never
@@ -13,7 +12,7 @@ module Containers
     # Linux caps a single execve argument or environment string at MAX_ARG_STRLEN
     # (128 KiB), so any env entry larger than this fails inside Docker exec even
     # when the aggregate input stays within MAX_INPUT_BYTES. Values that must
-    # reach the command travel in a container archive instead (see
+    # reach the command travel on the upgraded exec stdin stream instead (see
     # #input_payload); caller env entries stay in exec env and are rejected
     # above this conservative per-entry bound, leaving headroom for the
     # "NAME=" prefix and NUL terminator.
@@ -38,12 +37,11 @@ module Containers
           path.write_text(content, encoding="utf-8")
           path.chmod(mode)
 
-      input_path = sys.argv[1]
-      try:
-          header = json.loads(sys.stdin.buffer.readline())
-          stdin_data = sys.stdin.buffer.read(int(header.get("stdin_bytes", 0)))
-      finally:
-          os.unlink(input_path)
+      header = json.loads(sys.stdin.buffer.readline())
+      expected_bytes = int(header.get("stdin_bytes", 0))
+      stdin_data = sys.stdin.buffer.read(expected_bytes)
+      if len(stdin_data) != expected_bytes:
+          raise EOFError("isolated text input ended before the declared length")
 
       environment = os.environ.copy()
       if "PAID_CREDENTIAL_IDENTITY" in os.environ:
@@ -109,9 +107,9 @@ module Containers
     def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
       validate_input_size!(command, env, preparation, stdin_data)
       provision! unless @container
-      input_path = stage_input(input_payload(command, preparation, stdin_data))
       with_managed_credential_lease do
-        run(materialized_command(input_path), timeout: bounded_timeout(timeout), env: materialized_env(env))
+        run(materialized_command, timeout: bounded_timeout(timeout), env: materialized_env(env),
+          input: input_payload(command, preparation, stdin_data))
       end
     rescue StandardError
       close
@@ -155,14 +153,12 @@ module Containers
         "Isolated text request env entry #{oversized.first} exceeded the #{MAX_ENV_ENTRY_BYTES}-byte per-entry exec limit"
     end
 
-    def materialized_command(input_path)
-      [ "sh", "-c", 'exec python3 -c "$1" "$2" < "$2"',
-        "paid-text", MATERIALIZE_COMMAND, input_path ]
+    def materialized_command
+      [ "python3", "-c", MATERIALIZE_COMMAND ]
     end
 
-    # Command, preparation, and stdin travel as one bounded archive payload.
-    # Docker exec does not attach stdin: its hijack transport can finish before
-    # the process and return a nil exit code while the command is still running.
+    # Command, preparation, and stdin travel as one bounded stream.
+    # Docker exec requires an upgraded connection to attach stdin reliably.
     def input_payload(command, preparation, stdin_data)
       input = stdin_data.to_s
       header = { "command" => Array(command).map(&:to_s),
@@ -171,28 +167,6 @@ module Containers
       payload = header.dup.force_encoding(Encoding::BINARY)
       payload << "\n" << input.b
       StringIO.new(payload)
-    end
-
-    def stage_input(payload)
-      basename = "paid-text-#{SecureRandom.hex(12)}"
-      tar = private_input_tar(basename, payload.string)
-      # Docker archives written to tmpfs paths land beneath the mount and are
-      # invisible to exec. /opt is visible and disappears with the container.
-      Containers.backend.archive_in_container(@container, "/opt") { tar.read(64 * 1024).to_s }
-      "/opt/#{basename}"
-    rescue Docker::Error::DockerError => e
-      raise AgentHarness::Error, "Unable to stage isolated text request: #{e.message}"
-    end
-
-    def private_input_tar(name, content)
-      tar = StringIO.new("".b)
-      tar.write(Gem::Package::TarHeader.new(name: name, prefix: "", size: content.bytesize,
-        mode: 0o600, uid: @agent_uid, gid: @agent_gid, uname: "agent", gname: "agent"))
-      tar.write(content)
-      tar.write("\0" * ((512 - content.bytesize % 512) % 512))
-      tar.write("\0" * 1024)
-      tar.rewind
-      tar
     end
 
     def preparation_file_writes(preparation)
@@ -276,7 +250,7 @@ module Containers
       raise AgentHarness::ConfigurationError, "Unable to provision isolated text execution: #{e.message}"
     end
 
-    def run(command, timeout:, env:)
+    def run(command, timeout:, env:, input:)
       timed_out = false
       finished = false
       mutex = Mutex.new
@@ -293,8 +267,8 @@ module Containers
       stdout = +""
       stderr = +""
       output_exceeded = false
-      result = Containers.backend.exec_in_container(@container, command,
-        wait: timeout, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
+      result = Containers.backend.exec_in_container_with_stdin(@container, command,
+        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
         next if output_exceeded
 
         target = stream == :stderr ? stderr : stdout

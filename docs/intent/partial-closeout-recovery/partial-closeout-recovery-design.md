@@ -76,8 +76,12 @@ its result stale rather than attaching that result to evidence it never saw.
 Source-closure assessment is post-processing after a branch push. Its retry
 policy uses bounded exponential backoff (15 seconds through two minutes), not
 the workflow default's one-second cadence. Authentication, configuration, and
-invalid-response failures remain actionable and fail closed; timeout and
-transport exhaustion persist a `waiting_recovery` record on the original run.
+invalid-response failures remain actionable and fail closed; timeout, transport,
+and unsuccessful runner responses persist a `waiting_recovery` record on the
+original run. An unsuccessful runner response is retried as a transport outcome
+because its nonzero exit alone cannot establish a permanent assessment error.
+The new unsuccessful-response recovery path uses a Temporal patch marker so
+existing workflow histories retain their original replay behavior.
 That record carries only the failed step, branch, pinned pushed commit, attempt
 count, sanitized category, and next retry time. It is a work-slot hold, not an
 execution failure, and cleanup releases the prior container.

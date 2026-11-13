@@ -65,12 +65,15 @@ RSpec.describe Containers::Backends::RemoteDocker, :no_db do
     expect(backend.list_containers(all: true)).to eq([ container ])
   end
 
-  it "streams request archives through the remote container handle" do
-    allow(container).to receive(:archive_in_stream).with("/opt").and_yield
+  it "routes upgraded stdin exec through the remote container handle" do
+    input = StringIO.new("hello")
+    allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])
 
-    backend.archive_in_container(container, "/opt") { "tar data" }
+    result = backend.exec_in_container_with_stdin(container, [ "cat" ], stdin: input, wait: 5)
 
-    expect(container).to have_received(:archive_in_stream).with("/opt")
+    expect(result).to eq([ [ "hello" ], [], 0 ])
+    expect(Containers::DockerExecWithStdin).to have_received(:call)
+      .with(container:, command: [ "cat" ], stdin: input, wait: 5)
   end
 
   it "delegates network, image, and volume access through the remote connection" do

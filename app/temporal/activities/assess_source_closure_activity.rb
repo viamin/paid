@@ -34,6 +34,6 @@ module Activities
 
     private
 
-    def recoverable_category?(category) = category.in?(%w[timeout transport_error])
+    def recoverable_category?(category) = Llm::AnalyzePartialCloseout::RECOVERABLE_CATEGORIES.include?(category)
   end
 end

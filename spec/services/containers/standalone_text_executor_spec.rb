@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "open3"
 require "rails_helper"
 
 RSpec.describe Containers::StandaloneTextExecutor do
@@ -9,7 +10,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   let(:backend) { instance_double(Containers::Backends::LocalDocker) }
   let(:container) { instance_double(Docker::Container) }
   let(:agent_owner) { "1001:1001\n" }
-  let(:captured_archive) { {} }
+  let(:captured_inputs) { [] }
 
   before do
     allow(Containers).to receive(:backend).and_return(backend)
@@ -20,6 +21,10 @@ RSpec.describe Containers::StandaloneTextExecutor do
     allow(backend).to receive(:exec_in_container).with(container,
       [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
       .and_return([ [ agent_owner ], [], 0 ])
+    allow(backend).to receive(:exec_in_container_with_stdin) do |_selected, _command, **options|
+      captured_inputs << options.fetch(:stdin).string
+      [ [], [], 0 ]
+    end
   end
 
   def stub_text_exec
@@ -28,10 +33,14 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
       yield(selected, command, options, stream)
     end
+    allow(backend).to receive(:exec_in_container_with_stdin) do |selected, command, **options, &stream|
+      captured_inputs << options.fetch(:stdin).string
+      yield(selected, command, options, stream)
+    end
   end
 
-  def input_header_of(archive)
-    JSON.parse(archive.split("\n", 2).first)
+  def input_header_of(payload)
+    JSON.parse(payload.split("\n", 2).first)
   end
 
   def text_options(inputs)
@@ -39,20 +48,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   def captured_payload
-    allow(backend).to receive(:archive_in_container) do |_, path, &stream|
-      expect(path).to eq("/opt")
-      tar = StringIO.new
-      while (chunk = stream.call).present?
-        tar.write(chunk)
-      end
-      tar.rewind
-      Gem::Package::TarReader.new(tar) do |reader|
-        entry = reader.first
-        captured_archive[:header] = entry.header
-        captured_archive[:payload] = entry.read
-      end
-    end
-    -> { captured_archive[:payload] }
+    -> { captured_inputs.last }
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
@@ -69,36 +65,20 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
     expect(text_options(inputs).fetch(:Env)).to include("PAID_CREDENTIAL_IDENTITY=scoped-identity")
     expect(input_header_of(payload.call)).to include("command" => [ "codex", "exec", "hello" ])
-    expect(text_options(inputs)).not_to have_key(:stdin)
+    expect(text_options(inputs).fetch(:stdin)).to be_a(StringIO)
     expect(backend).to have_received(:exec_in_container).with(container,
       [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
   end
 
   # @spec LLM-ROUTING-006
-  it "stages request input readable only by the agent while retaining a read-only root filesystem" do
+  it "streams request input while retaining a read-only root filesystem" do
     captured_payload
     stub_text_exec { [ [], [], 0 ] }
 
     described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
 
     expect(backend).to have_received(:create_container).with(hash_including("ReadonlyRootfs" => true))
-    expect(captured_archive.fetch(:header).mode).to eq(0o600)
-    expect(captured_archive.fetch(:header).uid).to eq(1001)
-    expect(captured_archive.fetch(:header).gid).to eq(1001)
-  end
-
-  # @spec LLM-ROUTING-006
-  it "uses the container agent's actual ownership for the private input file" do
-    captured_payload
-    stub_text_exec { [ [], [], 0 ] }
-    allow(backend).to receive(:exec_in_container).with(container,
-      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
-      .and_return([ [ "2002:3003\n" ], [], 0 ])
-
-    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
-
-    expect(captured_archive.fetch(:header).uid).to eq(2002)
-    expect(captured_archive.fetch(:header).gid).to eq(3003)
+    expect(input_header_of(captured_inputs.last)).to include("command" => [ "codex", "exec", "hello" ])
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
@@ -115,7 +95,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(Containers::StandaloneTextCredential).to have_received(:issue).with(hash_including(
       account: account, runner: runner, env_keys: [ "OPENAI_API_KEY" ]
     ))
-    expect(backend).to have_received(:exec_in_container).with(container, anything, hash_including(:Env)) do |_, _, options|
+    expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything, hash_including(:Env)) do |_, _, options|
       expect(options.fetch(:Env)).not_to include(a_string_including("selected-secret"))
     end
   end
@@ -144,7 +124,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-006
-  it "forwards stdin data through the container archive, not the environment" do
+  it "forwards stdin data through the upgraded exec stream, not the environment" do
     payload = captured_payload
     inputs = []
     stub_text_exec do |_c, _command, options = {}|
@@ -158,7 +138,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
     header, body = payload.call.split("\n", 2)
     expect(JSON.parse(header).fetch("stdin_bytes")).to eq("private prompt".bytesize)
     expect(body).to eq("private prompt")
-    expect(text_options(inputs)).not_to have_key(:stdin)
+    expect(text_options(inputs).fetch(:stdin)).to be_a(StringIO)
     expect(text_options(inputs).fetch(:Env)).not_to include(a_string_including("PAID_TEXT_STDIN"))
     expect(text_options(inputs).fetch(:Env)).not_to include(a_string_including("private prompt"))
   end
@@ -217,13 +197,13 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
     described_class.new(account: account, runner: runner, timeout: 300).execute([ "codex", "exec", "hello" ])
 
-    expect(backend).to have_received(:exec_in_container).with(container, anything, hash_including(wait: 300))
+    expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything, hash_including(wait: 300))
   end
 
   # @spec LLM-ROUTING-006
   it "classifies Docker read timeouts as request timeouts" do
     captured_payload
-    allow(backend).to receive(:exec_in_container).with(container, anything, hash_including(:Env))
+    allow(backend).to receive(:exec_in_container_with_stdin).with(container, anything, hash_including(:Env))
       .and_raise(Docker::Error::TimeoutError, "read timeout")
 
     expect do
@@ -234,7 +214,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   # @spec LLM-ROUTING-006
   it "rejects an incomplete Docker exec instead of reporting success" do
     captured_payload
-    allow(backend).to receive(:exec_in_container).with(container, anything, hash_including(:Env))
+    allow(backend).to receive(:exec_in_container_with_stdin).with(container, anything, hash_including(:Env))
       .and_return([ [], [], nil ])
 
     expect do
@@ -269,12 +249,12 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-006
-  it "removes the container when archive staging fails" do
-    allow(backend).to receive(:archive_in_container).and_raise(Docker::Error::DockerError, "archive failed")
+  it "removes the container when the upgraded exec transport fails" do
+    allow(backend).to receive(:exec_in_container_with_stdin).and_raise(Docker::Error::DockerError, "exec failed")
 
     expect do
       described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
-    end.to raise_error(AgentHarness::Error, /Unable to stage isolated text request/)
+    end.to raise_error(AgentHarness::Error, /Isolated text execution failed/)
 
     expect(backend).to have_received(:delete_container).with(container, force: true)
   end
@@ -324,9 +304,15 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-006
-  it "removes staged input after consuming it" do
-    expect(described_class::MATERIALIZE_COMMAND).to include("input_path = sys.argv[1]")
-    expect(described_class::MATERIALIZE_COMMAND).to match(/finally:\n\s+os\.unlink\(input_path\)/)
+  it "rejects input that ends before its declared byte count" do
+    header = { command: [ "true" ], stdin_bytes: 5 }.to_json
+    _stdout, stderr, status = Open3.capture3(
+      { "PAID_MAX_OUTPUT_BYTES" => "100" }, "python3", "-c", described_class::MATERIALIZE_COMMAND,
+      stdin_data: "#{header}\nabc"
+    )
+
+    expect(status).not_to be_success
+    expect(stderr).to include("EOFError: isolated text input ended before the declared length")
   end
 
   # @spec LLM-ROUTING-006

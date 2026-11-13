@@ -66,7 +66,9 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def archive_in_container(_container, _path, &)
+      # The command must read a known byte count. This transport keeps stdin
+      # open until exec exits; the caller must enforce its execution deadline.
+      def exec_in_container_with_stdin(_container, _command, stdin:, wait:, **, &)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
