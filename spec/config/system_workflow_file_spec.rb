@@ -22,6 +22,15 @@ RSpec.describe SystemWorkflowFile, :no_db do
     system_job.fetch("steps").find { |step| step["name"] == name }
   end
 
+  it "keeps distinct pull-request event types from canceling each other" do
+    concurrency = workflow.fetch("concurrency")
+
+    expect(concurrency).to include(
+      "group" => "system-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action }}",
+      "cancel-in-progress" => "${{ github.event_name == 'pull_request' }}"
+    )
+  end
+
   # @spec MOBILE-API-016
   it "allows the browser suite to install the mobile contract toolchain from a cold cache" do
     expect(system_job.fetch("timeout-minutes")).to eq(90)
