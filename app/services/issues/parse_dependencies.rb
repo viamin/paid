@@ -327,14 +327,16 @@ module Issues
       scratch = without_fenced_code(section_body)
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
+      extract_list_item_refs(scratch, local_deps, cross_deps, skip_directive_items: true)
+
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
+          next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
+
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
         scratch = scratch.gsub(pattern, "")
       end
-
-      extract_list_item_refs(scratch, local_deps, cross_deps)
     end
 
     # Extracts bare refs from Markdown list items. Indented continuation lines
@@ -342,7 +344,7 @@ module Issues
     # "- #41,\n  #42" item declares both refs. Fenced-code lines are skipped:
     # markdown_sections preserves them in the section body, but they are code,
     # not list structure.
-    def extract_list_item_refs(text, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-007
+    def extract_list_item_refs(text, local_deps, cross_deps, skip_directive_items: false) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-007, DEPENDENCY-DECLARATIONS-009
       item = nil
       continuation_indentation = nil
 
@@ -351,25 +353,32 @@ module Issues
 
         match = LIST_ITEM_PATTERN.match(line)
         if match
-          flush_list_item(item, local_deps, cross_deps)
+          flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
           continuation_indentation = markdown_columns(match[1])
           item = match[2]
         elsif item && continuation_line?(line, continuation_indentation)
           item = "#{item} #{line.strip}"
         elsif !line.strip.empty?
-          flush_list_item(item, local_deps, cross_deps)
+          flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
           item = nil
           continuation_indentation = nil
         end
       end
 
-      flush_list_item(item, local_deps, cross_deps)
+      flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
     end
 
-    def flush_list_item(item, local_deps, cross_deps)
+    def flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
       return unless item
+      return if skip_directive_items && contains_dependency_directive?(item)
 
       extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
+    end
+
+    def contains_dependency_directive?(text)
+      [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN, SECTION_DEPLOYMENT_PATTERN ].any? do |pattern|
+        text.scan(pattern).any?
+      end
     end
 
     def continuation_line?(line, indentation)
@@ -392,14 +401,14 @@ module Issues
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       scratch.scan(INLINE_DEPLOYMENT_PATTERN) do |(refs_str)|
-        next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
+        next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
 
         extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
       end
       scratch = scratch.gsub(INLINE_DEPLOYMENT_PATTERN, "")
 
       scratch.scan(INLINE_DEPENDS_PATTERN) do |(refs_str)|
-        next if contextual_exclusions && describes_another_issue?(scratch, Regexp.last_match.begin(0))
+        next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
 
         extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: false)
       end
