@@ -766,14 +766,16 @@ class AgentRun < ApplicationRecord
   private_class_method :compute_distinct_effective_runner_options
 
   def self.compute_distinct_filter_options
+    # @spec AGENT-RUNS-INDEX-004
     # The aggregate only reads agent_runs columns; eager loads on the incoming
     # scope would otherwise fan the pluck out into wide LEFT JOIN queries.
-    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal)
+    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal, :trigger_type)
 
     {
       status: values.filter_map(&:first).uniq,
       agent_type: values.filter_map { |row| row[1] }.uniq,
-      goal: values.filter_map { |row| row[2] }.uniq
+      goal: values.filter_map { |row| row[2] }.uniq,
+      trigger_type: values.filter_map { |row| row[3] }.uniq
     }
   end
   private_class_method :compute_distinct_filter_options
