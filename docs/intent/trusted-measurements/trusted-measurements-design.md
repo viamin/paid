@@ -29,6 +29,14 @@ updates the same row; a new revision creates a new historical row. The current
 evidence projection exposes only a succeeded row whose revision equals the
 deployment signal, while retaining stale and failed rows for provenance.
 
+In development, where the running application uses the live checkout instead
+of a release artifact, Paid identifies the checkout by its HEAD commit and a
+digest of tracked and untracked source changes. The digest changes when the
+mounted source changes, so a prior measurement becomes stale. Production
+continues to require an explicit deploy-pipeline signal; a Git checkout in a
+control-plane process is not evidence of a production deployment. If the
+development checkout cannot be identified, the signal remains unavailable.
+
 The #4812 check counts active `agent_planning_hold_reconciliation`
 notifications whose Issue source is closed. It also reports the active total
 for that source and project scope. The development baseline of 36 is recorded
