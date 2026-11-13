@@ -137,7 +137,7 @@ module Llm
     end
 
     def managed_credential_available?(runner)
-      @account.runner_credentials.active.for_runner(runner.runner_key).exists?
+      runner.user.account.runner_credentials.active.for_runner(runner.runner_key).exists?
     end
 
     def perform_request(runner, timeout:)
@@ -186,7 +186,7 @@ module Llm
     end
 
     def executor_for(runner, timeout:)
-      Containers::StandaloneTextExecutor.new(account: @account, runner: runner, timeout: timeout)
+      Containers::StandaloneTextExecutor.new(account: @account || runner.user.account, runner: runner, timeout: timeout)
     end
 
     def subscription_runtime(provider, runtime)

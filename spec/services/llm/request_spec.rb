@@ -131,6 +131,21 @@ RSpec.describe Llm::Request do
     expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
   end
 
+  # @spec LLM-ROUTING-008
+  it "uses the selected runner owner's managed credential when no account is supplied" do
+    Current.account = nil
+    Current.user = owner
+    owner.settings.update!(kb_chat_runner: runner.routing_key)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(prompt: "Assess", timeout: 30)).to eq(response)
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: owner.account, runner: runner, timeout: 30
+    )
+  ensure
+    Current.user = nil
+  end
+
   # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
   it "surfaces a later fallback's permanent failure over an earlier transient failure" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
