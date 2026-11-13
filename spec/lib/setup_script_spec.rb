@@ -376,6 +376,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       "WORKSPACE_ROOT" => File.join(dir, "workspace-root"),
       "BUNDLE_BIN_PATH" => nil,
       "DATABASE_URL" => nil,
+      "PAID_DEVELOPMENT_DATABASE" => nil,
       "BUNDLE_GEMFILE" => nil,
       "BUNDLER_SETUP" => nil,
       "BUNDLER_VERSION" => nil,
