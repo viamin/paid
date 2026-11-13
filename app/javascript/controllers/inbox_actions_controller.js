@@ -1,14 +1,14 @@
 import { Controller } from "@hotwired/stimulus"
 
-// Projects Inbox detail controls that opt in via `data-inbox-action` into a
-// single sticky action area. The proxies invoke the original controls, keeping
-// their policies, Turbo behavior, confirmations, and submit/loading states as
-// the sole action path. Only explicitly marked item actions are promoted;
-// contextual reference links (issue trees, evidence records) stay in the body
-// so the bar height does not grow with issue/evidence count.
+// Projects every form action in the Inbox detail, plus links that opt in via
+// `data-inbox-action`, into a single sticky action area. The proxies invoke the
+// original controls, keeping their policies, Turbo behavior, confirmations,
+// and submit/loading states as the sole action path. Contextual reference links
+// (issue trees, evidence records) stay in the body so the bar height does not
+// grow with issue/evidence count.
 // @spec OPERATOR-INBOX-027
 export default class extends Controller {
-  static targets = ["bar"]
+  static targets = ["bar", "source"]
 
   connect() {
     this.disabledObservers = []
@@ -30,9 +30,8 @@ export default class extends Controller {
   }
 
   controls() {
-    const selector = "[data-inbox-action]"
-    return Array.from(this.element.querySelectorAll(selector))
-      .filter((control) => !this.barTarget.contains(control))
+    const selector = "button, input[type='submit'], input[type='image'], [data-inbox-action]"
+    return Array.from(this.sourceTarget.querySelectorAll(selector))
       .filter((control) => this.labelFor(control).length > 0)
   }
 

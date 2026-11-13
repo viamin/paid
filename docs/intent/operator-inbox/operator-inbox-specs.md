@@ -523,7 +523,8 @@
   `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-027** — When a selected Inbox detail renders, the
-  system SHALL present every explicitly designated item-action control as an
+  system SHALL present every form action control and every explicitly
+  designated navigational item action as an
   equivalent, keyboard-accessible affordance in a sticky action area directly
   below the detail header. Contextual reference links SHALL remain in the
   detail body and SHALL NOT be projected into the action area. The action area

@@ -620,6 +620,21 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "traceability_gap")
     end
+
+    # @spec OPERATOR-INBOX-027
+    it "places every traceability action, including the disclosed filing action, in the action source" do
+      source = render_detail_partial(entry).at_css("[data-inbox-actions-target='source']")
+      labels = source.css("button, input[type='submit']").map { |control| control.text.strip.presence || control["value"] }
+
+      expect(labels).to include(
+        "Link existing work",
+        "Defer",
+        "Dismiss / not applicable",
+        "File issue and link finding",
+        "Recheck",
+        "Chat about this (optional)"
+      )
+    end
   end
 
   # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016

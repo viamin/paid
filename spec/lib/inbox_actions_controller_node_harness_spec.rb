@@ -18,9 +18,10 @@ RSpec.describe InboxActionsControllerNodeHarness do
 
       const result = { actionLinkClicks: 0, contextualLinkClicks: 0, decisions: [], labels: [] }
       const submitters = [
-        { tagName: "BUTTON", textContent: "Repair", name: "decision", value: "repair", disabled: false, inboxAction: true },
-        { tagName: "BUTTON", textContent: "Clarify", name: "decision", value: "clarify", disabled: false, inboxAction: true },
-        { tagName: "BUTTON", textContent: "Defer", name: "decision", value: "defer", disabled: true, inboxAction: true }
+        { tagName: "BUTTON", textContent: "Repair", name: "decision", value: "repair", disabled: false },
+        { tagName: "BUTTON", textContent: "Clarify", name: "decision", value: "clarify", disabled: false },
+        { tagName: "BUTTON", textContent: "Defer", name: "decision", value: "defer", disabled: true },
+        { tagName: "INPUT", type: "submit", textContent: "", value: "File issue and link finding", disabled: false }
       ]
       submitters.forEach((submitter) => {
         submitter.click = function() {
@@ -30,6 +31,14 @@ RSpec.describe InboxActionsControllerNodeHarness do
       const actionLink = { tagName: "A", textContent: "Open settings", inboxAction: true, click() { result.actionLinkClicks += 1 } }
       const contextualLink = { tagName: "A", textContent: "Evidence #123", click() { result.contextualLinkClicks += 1 } }
       const allControls = [ actionLink, contextualLink, ...submitters ]
+      const actionSource = {
+        querySelectorAll(selector) {
+          result.selector = selector
+          return allControls.filter((control) =>
+            control.inboxAction || control.tagName === "BUTTON" || control.type === "submit"
+          )
+        }
+      }
       const bar = {
         contains() { return false },
         replaceChildren(...children) { this.children = children }
@@ -55,12 +64,7 @@ RSpec.describe InboxActionsControllerNodeHarness do
       const controller = Object.create(InboxActionsController.prototype)
       controller.hasBarTarget = true
       controller.barTarget = bar
-      controller.element = {
-        querySelectorAll(selector) {
-          result.selector = selector
-          return allControls.filter((control) => control.inboxAction)
-        }
-      }
+      controller.sourceTarget = actionSource
       controller.connect()
       bar.children.forEach((proxy) => { result.labels.push(proxy.textContent); proxy.listener() })
       submitters[0].disabled = true
@@ -79,16 +83,20 @@ RSpec.describe InboxActionsControllerNodeHarness do
     JSON.parse(stdout)
   end
 
-  it "projects only opted-in actions and synchronizes disabled state" do
+  it "projects every form action and designated action link while synchronizing disabled state" do
     expect(run_harness).to eq(
       "actionLinkClicks" => 1,
       "contextualLinkClicks" => 0,
-      "decisions" => [ [ "decision", "repair" ], [ "decision", "clarify" ] ],
-      "labels" => [ "Open settings", "Repair", "Clarify", "Defer" ],
-      "selector" => "[data-inbox-action]",
+      "decisions" => [
+        [ "decision", "repair" ],
+        [ "decision", "clarify" ],
+        [ nil, "File issue and link finding" ]
+      ],
+      "labels" => [ "Open settings", "Repair", "Clarify", "Defer", "File issue and link finding" ],
+      "selector" => "button, input[type='submit'], input[type='image'], [data-inbox-action]",
       "firstProxyDisabled" => true,
       "thirdProxyDisabled" => true,
-      "observedAttributes" => [ [ "disabled" ], [ "disabled" ], [ "disabled" ] ],
+      "observedAttributes" => [ [ "disabled" ], [ "disabled" ], [ "disabled" ], [ "disabled" ] ],
       "observersDisconnected" => true
     )
   end
