@@ -4,6 +4,7 @@ module Activities
   # Records the semantic closeout authority before publishing a source PR.
   class AssessSourceClosureActivity < BaseActivity
     activity_name "AssessSourceClosure"
+    MAX_ASSESSMENT_TIMEOUT_WITH_FALLBACK = 100
 
     def execute(input) # @spec PARTIAL-CLOSEOUT-029
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
@@ -11,7 +12,10 @@ module Activities
 
       track_phase(agent_run_id: agent_run.id, phase_key: "assess_source_closure", phase_group: "post", agent_run: agent_run) do
         assessment = agent_run.reconciliation["assessment"] || begin
-          result = Llm::AnalyzePartialCloseout.call(agent_run: agent_run)
+          fallbacks = Llm::AnalyzePartialCloseout.fallback_runner_identifiers_for(agent_run)
+          timeout = fallbacks.any? ? MAX_ASSESSMENT_TIMEOUT_WITH_FALLBACK : Llm::AnalyzePartialCloseout::TIMEOUT
+          result = Llm::AnalyzePartialCloseout.call(agent_run: agent_run,
+            fallback_runner_identifiers: fallbacks, timeout: timeout)
           PartialCloseouts::Assessment.snapshot(agent_run, result)
         end
         agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => assessment))

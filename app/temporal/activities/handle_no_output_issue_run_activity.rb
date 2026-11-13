@@ -94,7 +94,7 @@ module Activities
     PERMISSION_REQUESTED_PATTERN = /permission requested:/i
     TOOL_PERMISSION_REJECTED_PATTERN = /the user rejected permission to use this specific tool call/i
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004 NO-OUTPUT-ISSUE-005
+    def execute(input) # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-002 NO-OUTPUT-ISSUE-003 NO-OUTPUT-ISSUE-004 NO-OUTPUT-ISSUE-005 NO-OUTPUT-ISSUE-008
       agent_run_id = input[:agent_run_id]
       output_present = input.fetch(:output_present, false)
 
@@ -166,14 +166,11 @@ module Activities
         return "infrastructure_error"
       end
 
-      # Guard: if the agent produced output but did zero iterations, the
-      # "output" is likely a provider-level error, trivial CLI boilerplate,
-      # or an agent that read the prompt then gave up without doing real
-      # work. Cost-cents alone is not evidence of work — reading the
-      # prompt incurs a few cents. Recommend-close requires real iterations
-      # so users are not left with issues parked on transient agent failures.
-      # Confirm provider/infrastructure errors against output patterns first.
-      if agent_run.iterations.to_i.zero?
+      # A completed main runner attempt with output is the provider-neutral
+      # evidence of work. It excludes smoke preflight and post-run commands,
+      # unlike streaming turns, and remains reliable while iterations is not
+      # populated. Confirm provider/infrastructure errors first.
+      unless agent_run.observable_main_agent_work?
         return "provider_error" if provider_error_output?(diagnostic_output)
         return "infrastructure_error" if infrastructure_error_output?(diagnostic_output)
 

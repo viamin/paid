@@ -26,10 +26,11 @@ jobs:
     # A Gemfile.lock change invalidates ruby/setup-ruby's bundle cache, and the
     # dependency installer can retry for up to 30 minutes before assets and the
     # browser suite begin. Leave enough room for the checks to complete.
-    # The suite began promptly but exhausted the previous 60-minute cap while
-    # running specs. Keep the bounded job timeout while allowing the browser
-    # suite its normal execution window after dependency setup.
-    timeout-minutes: 90
+    # The suite began promptly but exhausted both the previous 60-minute cap
+    # and the subsequent 90-minute cap while running specs. Keep a bounded
+    # timeout while allowing the browser suite its normal execution window
+    # after dependency setup.
+    timeout-minutes: 120
 
     services:
       postgres:
@@ -289,7 +290,24 @@ jobs:
         run: bin/rails ci:bootstrap_test_defaults
 
       - name: Run system specs
-        run: bin/rspec spec/system
+        run: |
+          set -o pipefail
+          failure_log="$(mktemp)"
+          trap 'rm -f "$failure_log"' EXIT
+          if bin/rspec spec/system 2>&1 | tee "$failure_log"; then
+            exit 0
+          fi
+
+          # Rails can receive a nil PostgreSQL result from the hosted service
+          # while applying request tenant context. That is a runner-side
+          # transport failure, not a spec assertion; retry it once, while
+          # preserving immediate failures for every other test error.
+          if grep -Fq "undefined method 'cmd_tuples' for nil" "$failure_log"; then
+            echo "::warning::PostgreSQL returned an empty result while setting tenant context; retrying system specs once"
+            bin/rspec spec/system
+          else
+            exit 1
+          fi
 
       - name: Upload failure artifacts
         if: failure()

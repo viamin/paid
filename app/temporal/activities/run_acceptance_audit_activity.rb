@@ -14,7 +14,7 @@ module Activities
       track_phase(agent_run_id: agent_run.id, phase_key: "run_acceptance_audit",
         phase_group: "agent", agent_run: agent_run) do
         agent_run.start!
-        fallbacks = fallback_runner_identifiers(agent_run)
+        fallbacks = Llm::AnalyzePartialCloseout.fallback_runner_identifiers_for(agent_run)
         assessment = assess(agent_run, fallbacks)
         snapshot = PartialCloseouts::Assessment.snapshot(agent_run, assessment)
         agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => snapshot))
@@ -42,16 +42,6 @@ module Activities
         }
       ))
       raise
-    end
-
-    # @spec PARTIAL-CLOSEOUT-049
-    def fallback_runner_identifiers(agent_run)
-      settings = agent_run.project.effective_owner&.settings
-      return [] unless settings&.fallback_enabled?
-
-      primary = agent_run.effective_runner_record&.routing_key || agent_run.effective_runner
-      (Array(settings.issue_analysis_fallback_runners) +
-        settings.fallback_priority_for(primary_runner: primary, identifiers: true)).uniq.first(4)
     end
   end
 end

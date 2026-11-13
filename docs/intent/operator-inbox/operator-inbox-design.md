@@ -101,6 +101,23 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+## Selected-detail action area
+
+Every selected Inbox detail projects its form action controls and explicitly
+designated navigational actions into one sticky action area immediately below
+the detail header. The projection reuses the rendered controls rather than
+creating alternate endpoints or policy decisions: a toolbar form control
+activates its original submitter, while a navigational action remains an anchor
+with the original navigation attributes. Existing authorization, confirmation,
+loading, Turbo, and error behavior therefore remain authoritative. Contextual
+references such as linked issues and evidence records remain only in the detail
+body unless they are explicitly designated as item actions, preventing
+record counts from expanding the action area. Detailed form fields and
+explanatory content also stay in the detail body; when an action requires
+input, browser validation and focus continue to lead the operator to that
+existing form. The action area wraps at narrow widths and remains keyboard
+accessible while the selected detail pane scrolls.
+
 ## Detail progress projection
 
 For an issue-backed selected detail only, `Inbox::ProgressProjection` returns
@@ -153,6 +170,16 @@ later than the subject's GitHub creation, even after newer events arrive; a
 backfill can move the boundary only when it supplies the missing interval. API
 detail reads accept a history-specific limit and cursor so clients can advance
 the bounded timeline independently of Inbox-list pagination.
+
+The action-history header projects compact, known counts from the same durable
+sources: agent-run rows provide processing attempts, the retry-abandonment
+counter provides distinct retry-lane appearances, and item-occurrence-keyed
+ledger return events provide other recorded returns. Retry-lane ledger events
+are excluded from that additive count because the counter already represents
+them. A repeated return is emphasized
+in the header. When the coverage boundary is incomplete, the header labels its
+figures as known rather than filling in older activity; token-budget failures
+remain attempts unless a durable return source records a separate appearance.
 
 The PR scanner carries an explicit latest owner-review record, including its
 reviewed revision, to the same persistence boundary as its merge assessment.

@@ -61,6 +61,7 @@ module Llm
                 ],
                 additionalProperties: false
               },
+              technical_authorization_id: { type: "string" },
               attribution: {
                 type: "object", properties: {
                   coverage: { type: "string", enum: %w[established unknown] },
@@ -80,7 +81,7 @@ module Llm
               evidence: { type: "array", items: { type: "object", properties: { label: { type: "string" }, url: { type: "string" } }, required: %w[label], additionalProperties: false } },
               owner_issue_number: { type: "integer" }, prerequisite_kind: { type: "string", enum: %w[human external] }, prerequisite: { type: "string" },
               validation_kind: { type: "string", enum: %w[native tool_sidecar performance_measurement] }, validation_requirement_id: { type: "integer" },
-              validation_tool_name: { type: "string" }
+              validation_tool_name: { type: "string" }, technical_authorization_id: { type: "string" }
             }, required: %w[criterion state], additionalProperties: false
           }
         },
@@ -93,6 +94,22 @@ module Llm
     }.freeze
 
     def self.call(...) = new(...).call
+
+    # @spec LLM-ROUTING-008 PARTIAL-CLOSEOUT-049 RUNNER-USAGE-001 RUNNER-USAGE-002
+    def self.fallback_runner_identifiers_for(agent_run)
+      owner = agent_run.project.effective_owner
+      settings = owner&.settings
+      return [] unless settings&.fallback_enabled?
+
+      primary = agent_run.effective_runner_record&.routing_key || agent_run.effective_runner
+      allowed = UserSetting.fallback_candidate_runners(owner, identifiers: true)
+      configured = Array(settings.issue_analysis_fallback_runners).filter_map do |identifier|
+        runner = Runner.for_identifier(owner, identifier)
+        runner.routing_key if allowed.include?(runner&.routing_key)
+      end
+      (configured +
+        settings.fallback_priority_for(primary_runner: primary, identifiers: true)).uniq.first(4)
+    end
 
     def initialize(agent_run:, fallback_runner_identifiers: [], timeout: TIMEOUT)
       @agent_run = agent_run
@@ -146,13 +163,15 @@ module Llm
       gaps = parsed["gaps"]
       gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
         valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"]) &&
+        valid_technical_authorizations?(parsed) &&
         (parsed["classification"].nil? || VALID_CLASSIFICATIONS.include?(parsed["classification"]))
     end
 
     def valid_gap?(gap)
       return false unless gap.is_a?(Hash) && gap["criterion"].is_a?(String) &&
         gap["criterion"].present? && VALID_KINDS.include?(gap["kind"])
-      return false unless optional_strings?(gap, %w[title body next_step workflow]) && valid_owner?(gap) && valid_source_retention?(gap)
+      return false unless optional_strings?(gap, %w[title body next_step workflow technical_authorization_id]) && valid_owner?(gap) && valid_source_retention?(gap)
+      return false if gap["technical_authorization_id"].present? && gap["kind"] != "human"
       return false if gap["workflow"].present? && !VALID_WORKFLOWS.include?(gap["workflow"])
       return false unless owner_resolvable?(gap)
       return valid_external_dependency?(gap["external_dependency"]) if gap["kind"] == "external"
@@ -219,7 +238,9 @@ module Llm
         criterion["criterion"].is_a?(String) &&
         criterion["criterion"].present? &&
         VALID_STATES.include?(criterion["state"]) &&
-        optional_strings?(criterion, %w[prerequisite]) && valid_owner?(criterion) &&
+        optional_strings?(criterion, %w[prerequisite technical_authorization_id]) && valid_owner?(criterion) &&
+        !(criterion["technical_authorization_id"].present? && criterion["validation_kind"].blank?) &&
+        !(criterion["technical_authorization_id"].present? && criterion["prerequisite_kind"] == "human") &&
         (criterion["prerequisite_kind"].nil? || %w[human external].include?(criterion["prerequisite_kind"])) &&
         (criterion["validation_kind"].nil? || %w[native tool_sidecar performance_measurement].include?(criterion["validation_kind"])) &&
         (criterion["validation_tool_name"].nil? ||
@@ -227,6 +248,19 @@ module Llm
         (criterion["validation_requirement_id"].nil? ||
           (criterion["validation_kind"].present? && validation_recipe_ids.include?(criterion["validation_requirement_id"]))) &&
         valid_evidence?(criterion["evidence"])
+    end
+
+    # A human authorization and the technical evidence it permits have distinct
+    # owners. The identifier joins two records without turning technical success
+    # into a human judgment or leaving the runnable check in the human Inbox.
+    def valid_technical_authorizations?(parsed)
+      authorizations = Array(parsed["gaps"]).filter_map do |gap|
+        gap["technical_authorization_id"] if gap["kind"] == "human"
+      end
+      Array(parsed["criteria"]).all? do |criterion|
+        identifier = criterion["technical_authorization_id"]
+        identifier.blank? || authorizations.include?(identifier)
+      end
     end
 
     def optional_strings?(payload, keys)
@@ -371,7 +405,7 @@ module Llm
         #{RESPONSE_SCHEMA.to_json}
         Return gaps only for unmet acceptance criteria, at most #{MAX_GAPS} gaps. Each gap must be agent work with a focused title/body, an owner_issue_number, or retain_on_source=true when the current source issue itself already owns the remaining task; human work with an exact next_step; or external work with an exact next_step and external_dependency owner/repo/number matching the blocking work. Do not create a child issue to repeat the current source issue's task. A source-retained agent gap keeps the source incomplete and available for continuation after its partial PR; do not set owner_issue_number on that gap. Every human gap must include attribution. Set coverage=established only when the supplied current source issue and exact criterion actually own the human evidence; provide source_issue_number, owner_issue_number, and the exact criterion. If that relationship cannot be established, set coverage=unknown with a concise reason: this records bounded reassessment work and must not create an Inbox human task. Never attach an independent evaluation to an implementation child merely because that child mentions it. When a human gap is specifically the independent facet-confidence closeout evaluation, set workflow to facet_confidence_closeout_evaluation; otherwise omit workflow. When a human gap cites policy or evidence, include its stable key, revision, label, and optional URL in references. If stale policy requires an operator choice, set policy_selection.required and provide its exact next_step; never silently substitute solo review for team policy.
         Also return criterion-level assessments for every criterion you can identify: state is satisfied only with cited evidence, unmet for demonstrated missing work, and unknown whenever evidence is absent. Include evidence links only when supplied, current open owner issue numbers, and human or external prerequisites. Classify the closeout as awaiting_final_audit, blocked_implementation, missing_measured_results, or coordination_epic. State the supported next action and why it will not duplicate open work.
-        For an unmet or unknown criterion that needs an isolated technical check, set validation_kind to native, tool_sidecar, or performance_measurement. Set performance_measurement only when an enabled reviewed recipe below explicitly provides its baseline revision, representative workload provenance, metrics, samples, environment, budget, and artifact contract. Set validation_requirement_id only when one enabled reviewed recipe below directly validates that criterion; leave it unset when none applies. Never select a recipe merely because it is available. For a tool_sidecar criterion, set validation_tool_name to the exact attached tool name when known. An unrelated tool does not satisfy the criterion. Tool sidecars additionally require an attached, allowlisted tool and scoped rollout authorization.
+        For an unmet or unknown criterion that needs an isolated technical check, set validation_kind to native, tool_sidecar, or performance_measurement. If a human must authorize the representative environment, credentials, scope, or setup before that check, split it into (1) a human gap with its own exact criterion, attribution, next_step, and a stable technical_authorization_id, and (2) a technical criterion with validation_kind and the same technical_authorization_id. Do not put a human prerequisite on the technical criterion, and do not use technical success as evidence of that authorization. An independent human judgment has no technical_authorization_id and remains a separate human gap. Set performance_measurement only when an enabled reviewed recipe below explicitly provides its baseline revision, representative workload provenance, metrics, samples, environment, budget, and artifact contract. Set validation_requirement_id only when one enabled reviewed recipe below directly validates that criterion; leave it unset when none applies. Never select a recipe merely because it is available. For a tool_sidecar criterion, set validation_tool_name to the exact attached tool name when known. An unrelated tool does not satisfy the criterion. Tool sidecars additionally require an attached, allowlisted tool and scoped rollout authorization.
         Enabled reviewed validation recipes: #{validation_recipe_lines}
         Attached tool sidecars: #{agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") }.to_json}
         Reuse owner_issue_number only when one of the currently open issues listed below directly owns the still-unmet criterion; closed historical work is not an owner. Prefer an existing owner over filing an equivalent new issue.

@@ -27,6 +27,26 @@ delivers visibility + authorized recovery on its own.
 
 ## Design
 
+### Mixed human and technical prerequisites
+
+An authorization to use a representative environment, credentials, or scope is
+human evidence, not a property inferred from a successful command. An assessor
+therefore records it as an attributed human gap with a stable authorization
+identity and records the resulting measurement or check as a distinct technical
+criterion carrying that identity. The human prerequisite is retained in the
+human Inbox and becomes effective only after submitted evidence is independently
+validated. The technical criterion remains in the existing reviewed-recipe
+`TechnicalPrerequisites` path; it refuses execution until the paired
+authorization is current. Independent blinded or other human judgments do not
+carry an authorization identity and cannot be satisfied by technical evidence.
+
+Technical validation records its pinned checkout, reviewed recipe, selected
+environment/image/tool identity, criterion, result, and cleanup provenance.
+Completed, failed, unavailable, and stale records all remain part of the source
+evidence generation, so a non-cancelled terminal result offers the normal
+deduplicated report-only acceptance audit. That audit may reassess current
+evidence but cannot manufacture a human authorization or independent judgment.
+
 ### Evidence: `Issues::CloseoutEvidence`
 
 One value object computes the *closeout evidence* for an issue and a stable

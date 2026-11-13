@@ -190,6 +190,18 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(Containers::ProxyUrl).to have_received(:resolve).with(backend: backend, restricted: false)
   end
 
+  # @spec LLM-ROUTING-005
+  it "does not mount a repository or Rails workspace" do
+    captured_payload
+    stub_text_exec { [ [], [], 0 ] }
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(hash_including(
+      "HostConfig" => hash_excluding("Binds")
+    ))
+  end
+
   # @spec LLM-ROUTING-006
   it "honors the caller timeout above two minutes" do
     captured_payload
@@ -246,6 +258,17 @@ RSpec.describe Containers::StandaloneTextExecutor do
     end.to raise_error(AgentHarness::TimeoutError, /timed out/)
 
     expect(backend).to have_received(:delete_container).with(container, force: true)
+  end
+
+  # @spec LLM-ROUTING-006
+  it "fails closed when Docker cannot provision isolated execution" do
+    allow(backend).to receive(:create_container).and_raise(Docker::Error::DockerError, "Docker unavailable")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::ConfigurationError, /Unable to provision isolated text execution/)
+
+    expect(backend).not_to have_received(:start_container)
   end
 
   # @spec LLM-ROUTING-006

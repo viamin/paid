@@ -485,6 +485,14 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       assert_navigation_intent!(fragment, kind: "retry_limited")
     end
 
+    # @spec OPERATOR-INBOX-027
+    it "designates the project runs recovery link as an item action" do
+      fragment = render_detail_partial(entry)
+      link = fragment.css("a[data-inbox-action]").find { |candidate| candidate.text.strip == "Open project runs" }
+
+      expect(link).to be_present
+    end
+
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (push blocked)" do
       push_blocked_issue = TenantContext.with_system_access do
         create(:issue, project: project, github_number: 9).tap do |issue|
@@ -590,6 +598,14 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "project_setup_pending")
     end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the project settings recovery link as an item action" do
+      fragment = render_detail_partial(entry)
+      link = fragment.css("a[data-inbox-action]").find { |candidate| candidate.text.strip == "Open project settings" }
+
+      expect(link).to be_present
+    end
   end
 
   describe "traceability_gap" do
@@ -619,6 +635,21 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "traceability_gap")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "places every traceability action, including the disclosed filing action, in the action source" do
+      source = render_detail_partial(entry).at_css("[data-inbox-actions-target='source']")
+      labels = source.css("button, input[type='submit']").map { |control| control.text.strip.presence || control["value"] }
+
+      expect(labels).to include(
+        "Link existing work",
+        "Defer",
+        "Dismiss / not applicable",
+        "File issue and link finding",
+        "Recheck",
+        "Chat about this (optional)"
+      )
     end
   end
 

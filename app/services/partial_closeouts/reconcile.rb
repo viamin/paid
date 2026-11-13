@@ -501,7 +501,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "kind", "next_step", "policy_selection", "workflow", "external_dependency", "attribution"))
+      identity = canonicalize(gap.slice("criterion", "kind", "next_step", "policy_selection", "workflow", "external_dependency", "attribution", "technical_authorization_id"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
@@ -517,15 +517,22 @@ module PartialCloseouts
         "origin_agent_run_id" => agent_run.id,
         "criterion" => gap["criterion"], "kind" => gap["kind"], "next_step" => gap["next_step"].to_s.strip,
         "references" => Array(gap["references"]),
-        "source_revision" => Assessment.source_revision_for(source_issue),
+        "source_revision" => prerequisite_source_revision(gap, source_issue),
         "intent_revision" => Assessment.intent_revision_for(source_issue),
         "source_issue_number" => source_issue.github_number,
         "owner_issue_number" => gap.dig("attribution", "owner_issue_number") || source_issue.github_number }
       occurrence["external_dependency"] = external_dependency(gap) if external_gap?(gap)
       occurrence["workflow"] = gap["workflow"] if gap["workflow"].present?
+      occurrence["technical_authorization_id"] = gap["technical_authorization_id"] if gap["technical_authorization_id"].present?
       selection = gap["policy_selection"]
       occurrence["policy_selection"] = selection if selection.is_a?(Hash) && selection["required"]
       occurrence
+    end
+
+    def prerequisite_source_revision(gap, source_issue)
+      return Assessment.source_revision_for(source_issue) if gap["technical_authorization_id"].blank?
+
+      TechnicalPrerequisites::Authorization.source_revision_for(source_issue)
     end
 
     def source_revision

@@ -21,9 +21,10 @@ module Llm
       @transient_failure = nil
       @unsuccessful_response = nil
       @eligible_route = false
+      @missing_managed_credential = false
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -79,6 +80,10 @@ module Llm
       # A candidate that cannot serve this request at all is skipped, not
       # failed: it must never mask another runner's failure (#5002 review).
       return unless runner_available?(runner)
+      unless runner.api_key? || managed_credential_available?(runner)
+        @missing_managed_credential = true
+        return
+      end
 
       response = perform_request(runner, timeout: @per_runner_timeout ? [ remaining, @per_runner_timeout ].min : remaining)
       return response if !response.respond_to?(:success?) || response.success?
@@ -111,6 +116,9 @@ module Llm
       raise @permanent_failure if @permanent_failure
       raise @transient_failure if @transient_failure
       return @unsuccessful_response if @unsuccessful_response
+      if @missing_managed_credential
+        raise AgentHarness::ConfigurationError, "No managed subscription credential is available for isolated text requests"
+      end
       raise AgentHarness::ConfigurationError, "No eligible configured runner for this LLM request" if @eligible_route
       raise AgentHarness::ConfigurationError,
         "No eligible configured runner can satisfy the required zero data retention policy"
@@ -126,6 +134,10 @@ module Llm
     # turns a retryable transport failure into a permanent one (#5002 review).
     def runner_available?(runner)
       runner.present? && !runner.discarded? && runner.user_id == @user&.id && permitted_usage?(runner)
+    end
+
+    def managed_credential_available?(runner)
+      runner.user.account.runner_credentials.active.for_runner(runner.runner_key).exists?
     end
 
     def perform_request(runner, timeout:)
@@ -174,7 +186,7 @@ module Llm
     end
 
     def executor_for(runner, timeout:)
-      Containers::StandaloneTextExecutor.new(account: @account, runner: runner, timeout: timeout)
+      Containers::StandaloneTextExecutor.new(account: @account || runner.user.account, runner: runner, timeout: timeout)
     end
 
     def subscription_runtime(provider, runtime)

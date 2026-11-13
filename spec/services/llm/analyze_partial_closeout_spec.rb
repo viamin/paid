@@ -26,6 +26,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
 
   before do
     agent_run.update!(runner: runner, container_id: "test-container", final_runner: runner.routing_key)
+    create(:runner_credential, runner: runner, account: project.account)
     allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
     allow(provider_class).to receive(:new).and_return(provider)
     allow(provider).to receive_messages(supports_tool_control?: true, subscription_unset_vars: [],
@@ -251,6 +252,34 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-050
+    it "requires a paired human authorization for an authorization-gated technical criterion" do
+      selected = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative environment check", command: "bin/measure")
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [ { criterion: "Authorize the representative environment", kind: "human",
+          next_step: "Approve the named staging environment.", technical_authorization_id: "staging-v1",
+          attribution: { coverage: "established", source_issue_number: issue.github_number,
+            owner_issue_number: issue.github_number, criterion: "Authorize the representative environment" } } ],
+        criteria: [ { criterion: "Measure response time", state: "unknown", validation_kind: "native",
+          validation_requirement_id: selected.id, technical_authorization_id: "staging-v1" } ]
+      }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.dig("criteria", 0, "technical_authorization_id")).to eq("staging-v1")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-050
+    it "rejects a technical criterion that claims an unpaired authorization" do
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [], criteria: [ { criterion: "Measure response time", state: "unknown", validation_kind: "native",
+          technical_authorization_id: "missing" } ]
+      }.to_json)
+
+      expect { described_class.call(agent_run:) }.to raise_error(described_class::AssessmentFailure, /invalid fields/)
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,
@@ -294,6 +323,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     it "honors the final runner after a fallback" do
       fallback = create(:runner, user: project.effective_owner, runner_key: "gemini",
         tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+      create(:runner_credential, runner: fallback, account: project.account)
       agent_run.update!(final_runner: fallback.routing_key)
       allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
 

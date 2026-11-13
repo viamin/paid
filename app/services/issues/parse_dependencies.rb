@@ -118,6 +118,12 @@ module Issues
     CHILD_LISTING_HEADING_PATTERN = /\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b/i
     INLINE_EXCLUDED_HEADING_PATTERN = Regexp.union(DEPENDENCY_HEADING_PATTERN, CHILD_LISTING_HEADING_PATTERN)
     DIRECTIVE_KEYWORD_PATTERN = /\b(?:depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of|remove\s+(?:deployment\s+)?dependenc(?:y|ies))\b/i
+    CLAUSE_SUBJECT_PATTERN = /
+      (?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)
+      (?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*
+      (?=depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of)
+    /ix
+    DIRECTIVE_SUBJECT_PATTERN = /(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
     FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(`{3,}|~{3,})/
     CLOSING_FENCE_PATTERN = /\A[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?:\r?\n)?\z/
@@ -328,14 +334,14 @@ module Issues
       scratch = without_contextual_dependency_clauses(without_markdown_code(section_body))
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
+      extract_list_item_refs(scratch, local_deps, cross_deps, skip_directive_items: true)
+
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
         scratch = scratch.gsub(pattern, "")
       end
-
-      extract_list_item_refs(scratch, local_deps, cross_deps)
     end
 
     # Extracts bare refs from Markdown list items. Indented continuation lines
@@ -343,7 +349,7 @@ module Issues
     # "- #41,\n  #42" item declares both refs. Fenced-code lines are skipped:
     # markdown_sections preserves them in the section body, but they are code,
     # not list structure.
-    def extract_list_item_refs(text, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-007, DEPENDENCY-DECLARATIONS-009
+    def extract_list_item_refs(text, local_deps, cross_deps, skip_directive_items: false) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-007, DEPENDENCY-DECLARATIONS-009
       item = nil
       continuation_indentation = nil
 
@@ -352,25 +358,64 @@ module Issues
 
         match = LIST_ITEM_PATTERN.match(line)
         if match
-          flush_list_item(item, local_deps, cross_deps)
+          flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
           continuation_indentation = markdown_columns(match[1])
           item = match[2]
         elsif item && continuation_line?(line, continuation_indentation)
           item = "#{item} #{line.strip}"
         elsif !line.strip.empty?
-          flush_list_item(item, local_deps, cross_deps)
+          flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
           item = nil
           continuation_indentation = nil
         end
       end
 
-      flush_list_item(item, local_deps, cross_deps)
+      flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
     end
 
-    def flush_list_item(item, local_deps, cross_deps)
+    def flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
       return unless item
 
-      extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
+      refs = if skip_directive_items && contains_dependency_directive?(item)
+        bare_list_item_refs(item)
+      else
+        item
+      end
+
+      extract_all_refs(refs, local_deps, cross_deps, requires_deployment: false)
+    end
+
+    def contains_dependency_directive?(text)
+      [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN, SECTION_DEPLOYMENT_PATTERN ].any? do |pattern|
+        text.scan(pattern).any?
+      end
+    end
+
+    # Directives are extracted in the inline pass. Mask their spans here so
+    # bare-ref extraction retains independent references from the same item.
+    def bare_list_item_refs(item)
+      item.dup.tap do |refs|
+        [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
+          item.to_enum(:scan, pattern).each do
+            directive = Regexp.last_match
+            mask_directive_span(refs, item, directive)
+          end
+        end
+      end
+    end
+
+    def mask_directive_span(refs, item, directive)
+      subject_start = directive_subject_start(item, directive.begin(0))
+      start = subject_start || directive.begin(0)
+      refs[start...directive.end(0)] = " " * (directive.end(0) - start)
+    end
+
+    def directive_subject_start(text, directive_start)
+      prefix = text[0...directive_start]
+      clause = prefix[(prefix.rindex(/[.!?;\n]/) || -1) + 1..]
+      subject = clause.match(DIRECTIVE_SUBJECT_PATTERN)
+
+      subject && prefix.length - clause.length + subject.begin(0)
     end
 
     def continuation_line?(line, indentation)
@@ -408,24 +453,35 @@ module Issues
     end
 
     def describes_another_issue?(text, directive_start)
-      !contextual_subject_start(text, directive_start).nil?
+      !contextual_subject_start(text, directive_start, coordinated: true).nil?
     end
 
-    def contextual_subject_start(text, directive_start, include_current_issue: false)
+    def contextual_subject_start(text, directive_start, include_current_issue: false, coordinated: false)
       # Only the immediately preceding subject can own a directive. Limit the
       # lookback so many directives in a long issue body stay linear to parse.
       lookback_start = [ directive_start - 256, 0 ].max
       prefix = text[lookback_start...directive_start]
       clause_start = (prefix.rindex(/[.!?;\n]/) || -1) + 1
       clause = prefix[clause_start..]
-      subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has(?:\s+been)?|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i)
-      return unless subject
+      immediate_subject = clause.match(DIRECTIVE_SUBJECT_PATTERN)
       # A bare #N after an earlier directive is usually that directive's
       # object. An explicit "Issue #N" names a new subject even in the same
       # sentence, so do not let the earlier directive hide its attribution.
-      preceding_directive = clause[0...subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
-      named_subject = subject[0].match?(/\A(?:issue|pr|pull request)\s+#/i)
-      return if preceding_directive && !named_subject
+      if immediate_subject
+        preceding_directive = clause[0...immediate_subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
+        named_subject = immediate_subject[0].match?(/\A(?:issue|pr|pull request)\s+#/i)
+        return if preceding_directive && !named_subject
+        return if !include_current_issue && immediate_subject[1].to_i == @current_issue_number
+
+        return lookback_start + clause_start + immediate_subject.begin(0)
+      end
+
+      return unless coordinated
+
+      # An earlier subject owns coordinated directives in the same clause,
+      # such as "#4868 depends on #4863 and awaits deployment of #4761".
+      subject = clause.match(CLAUSE_SUBJECT_PATTERN)
+      return unless subject
       return if !include_current_issue && subject[1].to_i == @current_issue_number
 
       lookback_start + clause_start + subject.begin(0)

@@ -27,6 +27,13 @@
   *Code:* `app/services/notifications/rules/zero_iteration_timeout.rb#build`.
   *Test:* `spec/services/notifications/rules/zero_iteration_timeout_spec.rb`.
 
+- [x] **NOTIFICATION-SEVERITY-013** — The timeout-with-no-work notification
+  SHALL not fire for a run with observable main-agent work, even when its
+  legacy `iterations` counter and input-token counter are zero.
+  *Code:* `app/models/agent_run.rb`,
+  `app/services/notifications/rules/zero_iteration_timeout.rb`.
+  *Test:* `spec/services/notifications/rules/zero_iteration_timeout_spec.rb`.
+
 - [x] **NOTIFICATION-SEVERITY-004** — When computing the bell-badge unread
   count — whether for a full render or for a Turbo-stream bell replacement
   broadcast after publish/resolve — the system SHALL count only active,

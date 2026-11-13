@@ -16,6 +16,7 @@ RSpec.describe Llm::Request do
   let(:standalone_executor) { instance_double(Containers::StandaloneTextExecutor) }
 
   before do
+    create(:runner_credential, runner: runner, account: project.account)
     allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(provider_class)
     allow(provider_class).to receive(:new).and_return(provider)
     allow(provider).to receive_messages(supports_tool_control?: true, send_message: response)
@@ -43,10 +44,27 @@ RSpec.describe Llm::Request do
     expect(standalone_executor).to have_received(:close)
   end
 
+  # @spec LLM-ROUTING-005 LLM-ROUTING-006
+  it "uses a disposable executor instead of a stale run execution handle" do
+    owner.settings.update!(kb_chat_runner: runner.routing_key)
+    run.update_columns(container_id: "stale-run-container", runner_handle: {
+      "runner_type" => "local_docker", "identifier" => "stale-run-container"
+    })
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    expect(run).not_to receive(:execute_in_execution_environment)
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
+
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: 30
+    )
+  end
+
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
   it "tries an authorized configured fallback after authentication fails" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
     owner.settings.update!(kb_chat_runner: runner.routing_key, kb_chat_fallback_runners: [ fallback.routing_key ], fallback_enabled: true)
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
@@ -67,6 +85,7 @@ RSpec.describe Llm::Request do
   it "tries an explicit audit fallback after the run's pinned runner fails" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
     attempts = [ AgentHarness::TimeoutError.new("runner timed out"), response ]
@@ -86,10 +105,55 @@ RSpec.describe Llm::Request do
     )
   end
 
+  # @spec LLM-ROUTING-008
+  it "skips a pinned subscription without managed credentials and tries an authorized fallback" do
+    project.account.runner_credentials.for_runner("codex").update_all(revoked_at: Time.current)
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 100,
+      fallback_runner_identifiers: [ fallback.routing_key ])).to eq(response)
+    expect(provider).to have_received(:send_message).once
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: fallback, timeout: be_between(1, 100)
+    )
+  end
+
+  # @spec LLM-ROUTING-008
+  it "reports a missing managed credential without provisioning a doomed container" do
+    project.account.runner_credentials.for_runner("codex").update_all(revoked_at: Time.current)
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 100) }
+      .to raise_error(AgentHarness::ConfigurationError, /managed subscription credential/)
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+  end
+
+  # @spec LLM-ROUTING-008
+  it "uses the selected runner owner's managed credential when no account is supplied" do
+    previous_account = Current.account
+    previous_user = Current.user
+    Current.account = nil
+    Current.user = owner
+    owner.settings.update!(kb_chat_runner: runner.routing_key)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(prompt: "Assess", timeout: 30)).to eq(response)
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: owner.account, runner: runner, timeout: 30
+    )
+  ensure
+    Current.account = previous_account
+    Current.user = previous_user
+  end
+
   # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
   it "surfaces a later fallback's permanent failure over an earlier transient failure" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
     attempts = [
@@ -107,6 +171,7 @@ RSpec.describe Llm::Request do
   it "surfaces the pinned runner's permanent failure over a later fallback's transport failure" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
     allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
     allow(provider).to receive(:subscription_unset_vars).and_return([])
     attempts = [
@@ -324,8 +389,6 @@ RSpec.describe Llm::Request do
 
   # @spec PARTIAL-CLOSEOUT-031
   it "provisions managed subscription credentials through the disposable executor" do
-    create(:runner_credential, runner: runner, account: project.account)
-
     allow(provider).to receive(:subscription_unset_vars).and_return([])
 
     expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)

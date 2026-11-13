@@ -31,9 +31,9 @@
   <%= hidden_field_tag "decision[external_revision]", audit_revision %>
   <div><%= form.label :reason, "Decision reason", class: "block text-sm font-medium text-gray-900" %><%= form.text_area :reason, name: "decision[reason]", required: true, rows: 3, class: "mt-1 w-full rounded-md border-gray-300" %></div>
   <div class="flex flex-wrap gap-2">
-    <%= form.button "Request a separately authorized repair", name: "decision[action]", value: "request_repair", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
-    <%= form.button "Approve a clarification for persistence", name: "decision[action]", value: "approve_clarification", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
-    <%= form.button "Defer", name: "decision[action]", value: "defer", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+    <%= form.button "Request a separately authorized repair", name: "decision[action]", value: "request_repair", data: { inbox_action: "" }, class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
+    <%= form.button "Approve a clarification for persistence", name: "decision[action]", value: "approve_clarification", data: { inbox_action: "" }, class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+    <%= form.button "Defer", name: "decision[action]", value: "defer", data: { inbox_action: "" }, class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
   </div>
   <p class="text-xs text-gray-500">This records an Inbox decision only. It does not modify project artifacts or start repair.</p>
 <% end %>

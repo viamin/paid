@@ -522,6 +522,20 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         expect(issue.reload.paid_state).to eq("failed")
         expect(agent_run.reload.status).to eq("failed")
       end
+
+      # @spec NO-OUTPUT-ISSUE-008
+      it "completes a zero-iteration main-agent run that declares no code is required" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, cost_cents: 100)
+        agent_run.record_runner_attempt("codex", success: true, output_chars: 250)
+        agent_run.log!("stdout", declaration)
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("no_code_required")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
     end
 
     context "when classification resolves to needs_input" do
@@ -1039,6 +1053,42 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
 
         expect(result[:outcome]).to eq("infrastructure_error")
         expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-008
+      it "classifies smoke-only turn data as infrastructure_error" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue,
+          iterations: 0, turns_completed: 1, streaming_turns_data: [ { "turn_number" => 1 } ])
+        agent_run.log!("stdout", "Smoke preflight completed")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("infrastructure_error")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-008
+      it "classifies a provider failure as provider_error despite zero iterations" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue, iterations: 0)
+        agent_run.record_runner_attempt("codex", success: false, error_type: "rate_limited")
+        agent_run.log!("stderr", "Error: quota exceeded")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("provider_error")
+      end
+
+      # @spec NO-OUTPUT-ISSUE-008
+      it "recommends close after successful main-agent work despite zero iterations" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue, iterations: 0)
+        agent_run.record_runner_attempt("codex", success: true, output_chars: 250)
+        agent_run.log!("stdout", "Inspected the implementation; no further code changes are needed.")
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("recommend_close")
       end
     end
 

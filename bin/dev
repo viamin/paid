@@ -159,7 +159,16 @@ if [ -S "$OVERMIND_SOCKET" ]; then
   fi
 fi
 
+# @spec RAILS-CONTROL-PLANE-017
+if ! dev_supervisor_acquire_tmux_startup_lock; then
+  echo "Refusing to start duplicate services: another bin/dev is cleaning up or starting Overmind for this workspace. Check tmux sockets in $(dev_supervisor_tmux_socket_dir) and stop the old session before retrying." >&2
+  exit 1
+fi
 dev_supervisor_cleanup_stale_tmux_sockets
+if dev_supervisor_tmux_has_existing_session; then
+  echo "Refusing to start duplicate services: an existing or starting Overmind tmux session is present. Check tmux sockets in $(dev_supervisor_tmux_socket_dir) and stop the old session before retrying." >&2
+  exit 1
+fi
 dev_supervisor_cleanup_stale_overmind_tmp_dirs
 
 # Let the debug gem allow remote connections,

@@ -50,4 +50,16 @@ RSpec.describe TechnicalPrerequisites::InboxActions do
     expect(action).to be_ready
     expect(action.setup_action).to be_nil
   end
+
+  # @spec PARTIAL-CLOSEOUT-050
+  it "keeps a paired technical check out of the runnable lane until human authorization is validated" do
+    issue = create(:issue, project:)
+    source_run.update!(issue:)
+    criterion["technical_authorization_id"] = "representative-environment-v1"
+
+    action = described_class.call(project:, actor: project.created_by, assessment:, source_run:).sole
+
+    expect(action).not_to be_ready
+    expect(action.setup_action).to eq("Complete the named human authorization prerequisite before running this technical validation.")
+  end
 end

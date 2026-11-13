@@ -1,4 +1,6 @@
 <%# @spec OPERATOR-INBOX-006 @spec OPERATOR-INBOX-026 @spec LIST-DETAIL-003 %>
+<%# @spec OPERATOR-INBOX-027 %>
+<div data-controller="inbox-actions">
 <div class="border-b border-gray-200 px-4 py-4 sm:px-6">
   <div class="flex items-start justify-between gap-4">
     <div>
@@ -46,6 +48,13 @@
 </div>
 
 <div class="px-4 py-5 sm:px-6">
+  <div data-inbox-actions-target="bar"
+       role="region"
+       aria-label="Inbox item actions"
+       hidden
+       class="sticky top-0 z-10 -mx-4 mb-5 flex flex-wrap gap-2 border-y border-gray-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:-mx-6 sm:px-6">
+  </div>
+  <div data-inbox-actions-target="source">
   <%= render "dashboard/inbox_decision_brief", entry: entry %>
 
   <% if entry.issue %>
@@ -129,4 +138,6 @@
     <p class="mt-6 text-sm text-gray-500" role="status">Loading history…</p>
   <% end %>
   <%= render "dashboard/inbox_phase_and_removal", entry: entry %>
+  </div>
+</div>
 </div>

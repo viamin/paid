@@ -532,6 +532,18 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         }.not_to have_enqueued_job(RetryFailedManualRunJob)
       end
 
+      # @spec MANUAL-RUN-RETRY-003
+      it "does not schedule a retry when a timed-out main-agent attempt produced output" do
+        agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr",
+          iterations: 0, runners_attempted: [
+            { "runner" => "codex", "success" => false, "error_type" => "timeout", "output_chars" => 250 }
+          ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Agent timed out")
+        }.not_to have_enqueued_job(RetryFailedManualRunJob)
+      end
+
       it "does not schedule a retry for a recoverable rate-limited run (StaleRunDetectorJob owns that recovery)" do
         agent_run = create(:agent_run, :running, :manual, :with_custom_prompt, project: project, goal: "create_pr")
         agent_run.rate_limit!(error: "All runners exhausted (will retry)", reset_at: 2.minutes.from_now)
