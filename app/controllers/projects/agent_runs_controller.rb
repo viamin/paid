@@ -395,7 +395,7 @@ module Projects
 
     # Starts a reviewed recipe against a fresh pinned run; the resulting run
     # detail provides progress and cancellation, and this action provides retry.
-    # @spec PARTIAL-CLOSEOUT-032
+    # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050
     def validate_technical_prerequisite
       authorize @project, :run_agent?
 
@@ -425,7 +425,8 @@ module Projects
       end
 
       result = TechnicalPrerequisites::StartValidation.call(source_run:, requirement:, actor: current_user,
-        criterion: params[:criterion].presence, tool_name: selected_tool_name)
+        criterion: params[:criterion].presence, tool_name: selected_tool_name,
+        authorization_id: action&.criterion&.fetch("technical_authorization_id", nil))
       if result.success?
         redirect_to project_agent_run_path(@project, result.agent_run), notice: result.message
       else

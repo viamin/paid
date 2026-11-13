@@ -72,6 +72,9 @@ class TenantContext
     end
 
     def set_config(key, value)
+      # set_config mutates PostgreSQL session state. It must bypass Rails's
+      # query cache so consecutive writes of the same SQL shape are not
+      # mistaken for a read and skipped.
       connection.exec_query("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
     rescue ActiveRecord::ConnectionNotEstablished
       nil

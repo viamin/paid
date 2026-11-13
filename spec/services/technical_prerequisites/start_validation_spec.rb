@@ -22,6 +22,20 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(TechnicalPrerequisiteValidationJob).to have_been_enqueued.with(result.agent_run.id)
   end
 
+  # @spec PARTIAL-CLOSEOUT-050
+  it "refuses an authorization-gated check before human evidence is validated" do
+    project = create(:project)
+    issue = create(:issue, project:)
+    source_run = create(:agent_run, :completed, project:, issue:, base_commit_sha: "a" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account, command: "bin/audit")
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by,
+      criterion: "Measure response time", authorization_id: "representative-environment-v1")
+
+    expect(result).not_to be_success
+    expect(result.message).to eq("Complete the named human authorization prerequisite before running this technical validation.")
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "queues the validation for an issue whose feature intent is not released" do
     project = create(:project)

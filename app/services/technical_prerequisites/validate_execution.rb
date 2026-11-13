@@ -12,7 +12,7 @@ module TechnicalPrerequisites
   # attached tool is exercised by provisioning it and publishing its endpoint
   # to the analyzer. The run's verification_result is the durable,
   # revision-bound evidence record consumed by closeout assessment.
-  # @spec PARTIAL-CLOSEOUT-032
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
     COMMAND_TIMEOUT = 5.minutes
@@ -304,6 +304,7 @@ module TechnicalPrerequisites
         **runtime_image_evidence,
         "requested_checkout" => agent_run.base_commit_sha,
         "criterion" => agent_run.external_metadata.dig(RECIPE_KEY, "criterion"),
+        "technical_authorization_id" => agent_run.external_metadata.dig(RECIPE_KEY, "technical_authorization_id"),
         "checkout" => nil,
         "tool_identity" => agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") },
         "cleanup" => { "attempted" => true }

@@ -30,7 +30,10 @@ module PartialCloseouts
       else
         notification.subject
       end
-      Assessment.source_revision_for(source_issue) if source_issue
+      return unless source_issue
+      return TechnicalPrerequisites::Authorization.source_revision_for(source_issue) if occurrence["technical_authorization_id"].present?
+
+      Assessment.source_revision_for(source_issue)
     end
 
     def self.legacy_occurrence(notification)
