@@ -35,17 +35,30 @@ class RunnerState < ApplicationRecord
     rate_limited_until.present? && rate_limited_until > Time.current
   end
 
+  # @spec RUNNER-FALLBACK-013
   # Marks the runner as rate limited until the given time.
   #
   # @param reset_at [Time, nil] When the rate limit resets. Defaults to 60 seconds from now.
-  def mark_rate_limited!(reset_at: nil)
+  # @param limit_kind [Symbol, nil] Public provider classification retained for
+  #   user-facing diagnostics; never provider response content.
+  def mark_rate_limited!(reset_at: nil, limit_kind: nil)
     reset_at ||= 60.seconds.from_now
-    update!(rate_limited_until: reset_at)
+    next_metadata = metadata.dup
+    if limit_kind
+      next_metadata["rate_limit_kind"] = limit_kind.to_s
+    else
+      next_metadata.delete("rate_limit_kind")
+    end
+    update!(rate_limited_until: reset_at, metadata: next_metadata)
   end
 
   # Clears the rate limit for this runner.
   def clear_rate_limit!
-    update!(rate_limited_until: nil)
+    update!(rate_limited_until: nil, metadata: metadata.except("rate_limit_kind"))
+  end
+
+  def rate_limit_kind
+    metadata.is_a?(Hash) ? metadata["rate_limit_kind"] : nil
   end
 
   # Per-model rate-limit tracking for runners that support model rotation

@@ -26,7 +26,7 @@ module Notifications
 
         {
           severity: duration >= ERROR_THRESHOLD ? :error : :warning,
-          title: "#{runner.display_name} quota exhausted for #{human_duration(state.updated_at)}",
+          title: "#{limit_label(runner, state)} for #{human_duration(state.updated_at)}",
           description: description_for(runner, state),
           nav_section: "runners",
           action_url: edit_runner_path(runner),
@@ -40,9 +40,16 @@ module Notifications
       def description_for(runner, state)
         parts = []
         parts << "#{blocked_run_count_for(runner)} unfinished runs blocked"
+        parts << "subscription usage limit; wait for the provider reset" if state.rate_limit_kind == "subscription_usage"
         parts << "resets at #{state.rate_limited_until.iso8601}" if state.rate_limited_until
         parts << "open runner settings at #{edit_runner_path(runner)}"
         parts.join(". ")
+      end
+
+      def limit_label(runner, state)
+        return "Subscription usage limit reached" if state.rate_limit_kind == "subscription_usage"
+
+        "#{runner.display_name} quota exhausted"
       end
 
       def quota_duration_for(runner)

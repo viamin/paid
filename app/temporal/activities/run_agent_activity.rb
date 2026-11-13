@@ -139,6 +139,7 @@ module Activities
     # RunnerQuotaExhausted WARNING_THRESHOLD (15 min) so the user is
     # alerted before the backoff fully elapses.
     INSUFFICIENT_CREDITS_BACKOFF = 1.hour
+    SUBSCRIPTION_USAGE_LIMIT_BACKOFF = 30.minutes
     CHANGE_DETECTION_MAX_ATTEMPTS = 3
     CHANGE_DETECTION_RETRY_BACKOFF = 0.25
     POST_RUN_BOOKKEEPING_ERROR_TYPE = "PostRunBookkeepingFailed"
@@ -242,6 +243,7 @@ module Activities
         last_attempted_label = nil
         timeout_error = nil
         rate_limit_reset_at = nil
+        last_rate_limit_kind = nil
         skipped_rate_limited_count = 0
         skipped_circuit_open_count = 0
 
@@ -451,15 +453,17 @@ module Activities
             }
           rescue RunnerRateLimitError => e
             last_error = "rate_limited"
+            last_rate_limit_kind = e.limit_kind if e.limit_kind
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
-            persist_rate_limit(user_settings, runner_state_name, runner_states, e.reset_at)
+            persist_rate_limit(user_settings, runner_state_name, runner_states, e.reset_at, limit_kind: e.limit_kind)
             agent_run.record_runner_attempt(
               attempt_label,
               success: false,
               error_type: "rate_limited",
               error_message: e.message,
               duration_seconds: attempt_duration,
+              diagnostics: rate_limit_diagnostics(e),
               **resolved_run_info
             )
             logger.info(message: "agent_execution.rate_limited", runner: runner, agent_run_id: agent_run.id, duration_seconds: attempt_duration)
@@ -805,6 +809,7 @@ module Activities
           else
             "All runners rate limited: #{runner_list}"
           end
+          unavailable_message = "All runners blocked by a subscription usage limit: #{runner_list}" if last_rate_limit_kind == :subscription_usage
           agent_run.rate_limit!(
             error: unavailable_message,
             reset_at: rate_limit_reset_at
@@ -836,11 +841,12 @@ module Activities
 
     # Custom error classes for runner-specific failures
     class RunnerRateLimitError < StandardError
-      attr_reader :reset_at
+      attr_reader :reset_at, :limit_kind
 
-      def initialize(message, reset_at: nil)
+      def initialize(message, reset_at: nil, limit_kind: nil)
         super(message)
-        @reset_at = reset_at
+        @limit_kind = limit_kind
+        @reset_at = reset_at || (SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now if limit_kind == :subscription_usage)
       end
     end
 
@@ -1556,9 +1562,15 @@ module Activities
     end
 
     # Records a rate limit for a runner.
-    def persist_rate_limit(user_settings, runner_state_name, runner_states, reset_at = nil)
+    def persist_rate_limit(user_settings, runner_state_name, runner_states, reset_at = nil, limit_kind: nil)
       state = runner_state_for(user_settings, runner_state_name, runner_states)
-      state.mark_rate_limited!(reset_at: reset_at)
+      state.mark_rate_limited!(reset_at: reset_at, limit_kind: limit_kind)
+    end
+
+    def rate_limit_diagnostics(error)
+      return {} unless error.limit_kind
+
+      { "limit_kind" => error.limit_kind.to_s }
     end
 
     # Records a successful runner execution.
@@ -2209,10 +2221,20 @@ module Activities
       strip_prompt_echo([ stderr, stdout ].compact.join("\n").strip, prompt)
     end
 
+    # @spec RUNNER-FALLBACK-013
     def run_harness_preflight!(agent_run:, harness_provider:, runner:, execution_env:)
       result = harness_provider.preflight_check(env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
 
       return if result[:healthy]
+
+      if result[:error_category].to_sym == :rate_limited
+        reset_at = result[:reset_at] || SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now
+        raise ProviderRateLimitError.new(
+          "Subscription usage limit reached for #{runner}",
+          reset_at: reset_at,
+          limit_kind: :subscription_usage
+        )
+      end
 
       reason = "Harness preflight failed: #{result[:reason] || 'Preflight check failed'}"
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
@@ -2840,7 +2862,8 @@ module Activities
       )
       raise ProviderRateLimitError.new(
         "Runner credit/quota exhausted for #{runner}: #{sanitized_output.truncate(200)}",
-        reset_at: reset_at
+        reset_at: reset_at,
+        limit_kind: :metered_credit
       )
     end
 

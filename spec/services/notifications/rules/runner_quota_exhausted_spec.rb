@@ -51,4 +51,17 @@ RSpec.describe Notifications::Rules::RunnerQuotaExhausted do
 
     expect(Notification.where(source: "runner_quota_exhausted", subject: runner).count).to eq(1)
   end
+
+  it "describes a subscription usage limit without telling the user to top up" do
+    create(:runner_state, user: user, runner_name: runner.state_key,
+      rate_limited_until: 30.minutes.from_now, updated_at: 16.minutes.ago,
+      metadata: { "rate_limit_kind" => "subscription_usage" })
+
+    described_class.call(scope: runner)
+
+    notification = Notification.find_by!(source: "runner_quota_exhausted", subject: runner)
+    expect(notification.title).to include("Subscription usage limit")
+    expect(notification.description).to include("wait for the provider reset")
+    expect(notification.description).not_to include("top up")
+  end
 end
