@@ -269,9 +269,8 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
 
   it "broadcasts the persisted token-limit rejection as message_created alongside the error event" do
     # @spec CHAT-API-014
-    account.tenant_setting!.update!(
-      chat_settings: { "chat_session_token_limit" => 100 }
-    )
+    create(:tenant_setting, account: account,
+      chat_settings: { "chat_session_token_limit" => 100 })
     create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
 
     expect {
