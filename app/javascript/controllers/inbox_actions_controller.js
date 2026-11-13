@@ -1,11 +1,11 @@
 import { Controller } from "@hotwired/stimulus"
 
 // Projects every form action in the Inbox detail, plus links that opt in via
-// `data-inbox-action`, into a single sticky action area. The proxies invoke the
-// original controls, keeping their policies, Turbo behavior, confirmations,
-// and submit/loading states as the sole action path. Contextual reference links
-// (issue trees, evidence records) stay in the body so the bar height does not
-// grow with issue/evidence count.
+// `data-inbox-action`, into a single sticky action area. Form-action proxies
+// invoke the original controls, while navigational actions remain links with
+// their native attributes. Contextual reference links (issue trees, evidence
+// records) stay in the body so the bar height does not grow with issue/evidence
+// count.
 // @spec OPERATOR-INBOX-027
 export default class extends Controller {
   static targets = ["bar", "source"]
@@ -36,12 +36,21 @@ export default class extends Controller {
   }
 
   proxyFor(control) {
+    if (control.tagName === "A") return this.linkProxyFor(control)
+
     const proxy = document.createElement("button")
     proxy.type = "button"
     proxy.textContent = this.labelFor(control)
     proxy.className = "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
     proxy.addEventListener("click", () => this.activate(control))
     this.observeDisabled(control, proxy)
+    return proxy
+  }
+
+  linkProxyFor(control) {
+    const proxy = control.cloneNode(false)
+    proxy.textContent = this.labelFor(control)
+    proxy.className = "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
     return proxy
   }
 

@@ -28,7 +28,18 @@ RSpec.describe InboxActionsControllerNodeHarness do
           if (!this.disabled) result.decisions.push([ this.name, this.value ])
         }
       })
-      const actionLink = { tagName: "A", textContent: "Open settings", inboxAction: true, click() { result.actionLinkClicks += 1 } }
+      const actionLink = {
+        tagName: "A",
+        textContent: "Open settings",
+        inboxAction: true,
+        href: "/projects/7/edit",
+        target: "_blank",
+        rel: "noopener noreferrer",
+        cloneNode() {
+          return { tagName: this.tagName, href: this.href, target: this.target, rel: this.rel }
+        },
+        click() { result.actionLinkClicks += 1 }
+      }
       const contextualLink = { tagName: "A", textContent: "Evidence #123", click() { result.contextualLinkClicks += 1 } }
       const allControls = [ actionLink, contextualLink, ...submitters ]
       const actionSource = {
@@ -66,7 +77,16 @@ RSpec.describe InboxActionsControllerNodeHarness do
       controller.barTarget = bar
       controller.sourceTarget = actionSource
       controller.connect()
-      bar.children.forEach((proxy) => { result.labels.push(proxy.textContent); proxy.listener() })
+      bar.children.forEach((proxy) => {
+        result.labels.push(proxy.textContent)
+        if (proxy.listener) proxy.listener()
+      })
+      result.actionLink = {
+        tagName: bar.children[0].tagName,
+        href: bar.children[0].href,
+        target: bar.children[0].target,
+        rel: bar.children[0].rel
+      }
       submitters[0].disabled = true
       observers[0].callback()
       result.firstProxyDisabled = bar.children[1].disabled
@@ -85,8 +105,14 @@ RSpec.describe InboxActionsControllerNodeHarness do
 
   it "projects every form action and designated action link while synchronizing disabled state" do
     expect(run_harness).to eq(
-      "actionLinkClicks" => 1,
+      "actionLinkClicks" => 0,
       "contextualLinkClicks" => 0,
+      "actionLink" => {
+        "tagName" => "A",
+        "href" => "/projects/7/edit",
+        "target" => "_blank",
+        "rel" => "noopener noreferrer"
+      },
       "decisions" => [
         [ "decision", "repair" ],
         [ "decision", "clarify" ],

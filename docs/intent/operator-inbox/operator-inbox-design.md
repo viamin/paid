@@ -105,12 +105,13 @@ rechecks current queue membership and returns an empty frame for stale entries.
 
 Every selected Inbox detail projects its form action controls and explicitly
 designated navigational actions into one sticky action area immediately below
-the detail header. The projection reuses the rendered controls rather than creating alternate
-endpoints or policy decisions: a toolbar control activates its original form
-submitter or link, so the existing authorization, confirmation, loading,
-Turbo, and error behavior remain authoritative. Contextual references such as
-linked issues and evidence records remain only in the detail body unless they
-are explicitly designated as item actions, preventing
+the detail header. The projection reuses the rendered controls rather than
+creating alternate endpoints or policy decisions: a toolbar form control
+activates its original submitter, while a navigational action remains an anchor
+with the original navigation attributes. Existing authorization, confirmation,
+loading, Turbo, and error behavior therefore remain authoritative. Contextual
+references such as linked issues and evidence records remain only in the detail
+body unless they are explicitly designated as item actions, preventing
 record counts from expanding the action area. Detailed form fields and
 explanatory content also stay in the detail body; when an action requires
 input, browser validation and focus continue to lead the operator to that
