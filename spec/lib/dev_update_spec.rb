@@ -645,6 +645,29 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
   end
 
   # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+  it "recovers Overmind when a migration-triggered update stops before a failed auto-stash" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        start_overmind_running: true,
+        dirty_tree: true,
+        stash_push_exit_status: 1,
+        stash_push_output: "fatal: Unable to create .git/index.lock"
+      )
+      create_stale_socket(dir)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true), -> { read_updater_log(dir) }
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Attempting recovery start because Overmind was stopped during this update.")
+      expect(updater_log).to include("Recovery start succeeded.")
+      expect(updater_log).to include("ERROR: git stash push failed. Resolve the Git error and rerun bin/dev-update.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
   it "skips restore without popping when a successful push creates no stash" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(

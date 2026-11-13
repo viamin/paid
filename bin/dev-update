@@ -154,6 +154,10 @@ stash_dirty_tree() {
     if ! stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"; then
       log_command_output "git stash" "$stash_output"
       record_failure "git-stash"
+      # A full restart may have stopped Overmind before pulling; bring it back
+      # before exiting so a stash failure does not leave dev down. No-op when
+      # this invocation never stopped Overmind.
+      recover_dev_if_needed
       fail "git stash push failed. Resolve the Git error and rerun bin/dev-update."
     fi
     log_command_output "git stash" "$stash_output"
