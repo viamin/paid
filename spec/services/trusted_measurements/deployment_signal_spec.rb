@@ -41,7 +41,12 @@ RSpec.describe TrustedMeasurements::DeploymentSignal do # @spec TRUSTED-MEASUREM
 
   it "returns unknown when a development checkout cannot be read" do
     Dir.mktmpdir do |root|
+      previous_git_dir = ENV["GIT_DIR"]
+      ENV["GIT_DIR"] = Rails.root.join(".git").to_s
+
       expect(described_class.current(root:, environment: "development")).to be_nil
+    ensure
+      ENV["GIT_DIR"] = previous_git_dir
     end
   end
 end

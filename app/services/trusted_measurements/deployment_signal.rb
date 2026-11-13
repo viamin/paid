@@ -16,6 +16,12 @@ module TrustedMeasurements
   # TrustedMeasurementAttempt#current_for_revision?).
   module DeploymentSignal
     ENV_KEY = "PAID_DEPLOYED_REVISION"
+    GIT_ENVIRONMENT = {
+      "GIT_DIR" => nil,
+      "GIT_WORK_TREE" => nil,
+      "GIT_COMMON_DIR" => nil,
+      "GIT_INDEX_FILE" => nil
+    }.freeze
 
     def self.current(root: Rails.root, environment: Rails.env)
       return ENV[ENV_KEY].presence unless environment.to_s == "development"
@@ -43,14 +49,14 @@ module TrustedMeasurements
     end
 
     def self.git_output(root, *arguments)
-      output, _error, status = Open3.capture3("git", *arguments, chdir: root.to_s)
+      output, _error, status = Open3.capture3(GIT_ENVIRONMENT, "git", "-C", root.to_s, *arguments)
       output if status.success?
     end
     private_class_method :git_output
 
     def self.update_from_git_diff(digest, root)
-      Open3.popen2("git", "diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD",
-        chdir: root.to_s, err: File::NULL) do |input, output, process|
+      Open3.popen2(GIT_ENVIRONMENT, "git", "-C", root.to_s, "diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD",
+        err: File::NULL) do |input, output, process|
         input.close
         digest.update(output.read(64 * 1024)) until output.eof?
         process.value.success?
