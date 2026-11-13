@@ -64,6 +64,17 @@ RSpec.describe Inbox::ActionHistory do
   end
 
   # @spec OPERATOR-INBOX-022
+  it "does not add a legacy untyped return that may duplicate a durable retry abandonment" do
+    issue.update!(runner_retry_abandonment_count: 2)
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", event_key: "inbox-returned:abc",
+      metadata: { action: "Returned to Inbox" })
+
+    expect(described_class.call(entry:).summary).to have_attributes(inbox_appearances: 2,
+      inbox_returns: 1, repeated_returns: false)
+  end
+
+  # @spec OPERATOR-INBOX-022
   it "emphasizes repeated retry-cap returns from the durable abandonment count" do
     issue.update!(runner_retry_abandonment_count: 3)
 

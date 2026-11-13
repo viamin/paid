@@ -164,9 +164,10 @@ module Inbox
     # @spec OPERATOR-INBOX-022
     def summary
       retry_appearances = entry.issue&.runner_retry_abandonment_count.to_i
-      returns = [ retry_appearances - 1, 0 ].max + recorded_returns
+      recorded_return_count = recorded_returns(retry_appearances:)
+      returns = [ retry_appearances - 1, 0 ].max + recorded_return_count
       ActionHistory::Summary.new(processing_attempts: processing_attempts,
-        inbox_appearances: [ retry_appearances, 1 ].max + recorded_returns,
+        inbox_appearances: [ retry_appearances, 1 ].max + recorded_return_count,
         inbox_returns: returns, repeated_returns: returns > 1)
     end
 
@@ -176,10 +177,11 @@ module Inbox
       runs.count
     end
 
-    def recorded_returns
-      history_scope.where("event_key LIKE ?", "inbox-returned:%")
+    def recorded_returns(retry_appearances:)
+      returns = history_scope.where("event_key LIKE ?", "inbox-returned:%")
         .where("metadata ->> 'entry_kind' IS DISTINCT FROM ?", Inbox::Queue::RETRY_LIMITED_KIND)
-        .count
+      returns = returns.where("metadata ? 'entry_kind'") if retry_appearances.positive?
+      returns.count
     end
   end
 end
