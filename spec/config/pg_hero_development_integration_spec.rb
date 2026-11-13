@@ -20,4 +20,11 @@ RSpec.describe PgHeroDevelopmentIntegration, :no_db do
     expect(pg_hero_config).to include('ENV.fetch("PGHERO_PASSWORD", Rails.application.secret_key_base)')
     expect(readme).to include("### PgHero (development only)", "bin/dev", "DATABASE_URL", "PGHERO_PASSWORD", "http://localhost:3000/pghero")
   end
+
+  # @spec RAILS-CONTROL-PLANE-016
+  it "binds the devcontainer web server to all interfaces so the forwarded port reaches Rails and PgHero" do
+    devcontainer_compose = Rails.root.join(".devcontainer/compose.yaml").read
+
+    expect(devcontainer_compose).to include('PAID_WEB_BIND_ADDRESS: "0.0.0.0"')
+  end
 end

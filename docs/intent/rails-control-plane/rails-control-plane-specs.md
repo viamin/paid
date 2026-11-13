@@ -99,10 +99,16 @@
   require another service or database. Native development SHALL bind the web
   server to loopback; Docker Compose SHALL publish the web port only to host
   loopback while allowing the published request to reach PgHero. Requests from
-  Tailscale or restricted agent containers SHALL NOT load the PgHero dashboard.
+  Tailscale or restricted agent containers reaching `docker-compose.yml`'s
+  published port SHALL NOT load the PgHero dashboard without the password. The
+  `.devcontainer` VS Code environment already forwards its web port for direct
+  Tailscale reachability of the whole app, predating PgHero; that forwarding
+  SHALL continue, so the password — not network isolation — is PgHero's
+  protection there.
   *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
   `spec/requests/pghero_development_spec.rb`.
-  *Code:* `Gemfile`, `config/routes.rb`, `bin/dev-web`, `docker-compose.yml`.
+  *Code:* `Gemfile`, `config/routes.rb`, `bin/dev-web`, `docker-compose.yml`,
+  `.devcontainer/compose.yaml`.
 
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping

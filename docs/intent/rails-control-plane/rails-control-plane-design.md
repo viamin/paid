@@ -70,7 +70,12 @@ on the container network, so the dashboard remains reachable from the host
 without being exposed through Tailscale or other network interfaces. The local
 PgHero password (`PGHERO_PASSWORD` when supplied, otherwise Rails' development
 secret) prevents restricted agent containers that can reach the Compose proxy
-from loading the dashboard.
+from loading the dashboard. The `.devcontainer` VS Code environment is a
+different case: it already forwards its web port on all host interfaces so a
+developer can reach the whole app over Tailscale, predating PgHero, so it sets
+`PAID_WEB_BIND_ADDRESS=0.0.0.0` rather than relying on the native loopback
+default. PgHero rides along with the rest of the app there; the password is
+its only protection against that broader reachability.
 
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five

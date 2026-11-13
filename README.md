@@ -228,6 +228,9 @@ The dashboard is intentionally mounted only in `RAILS_ENV=development`.
 3000 only to `127.0.0.1`; it is unavailable through Tailscale or other network
 interfaces. The required HTTP Basic password also prevents restricted agent
 containers that can reach the Compose proxy from loading database metadata.
+The checked-in `.devcontainer` already forwards its web port on all host
+interfaces so the whole app is reachable over Tailscale; PgHero rides along
+with it there, so the password is its only protection in that environment.
 PgHero query history and cloud monitoring are not enabled, and no migrations or
 additional service are needed.
 
