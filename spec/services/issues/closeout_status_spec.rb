@@ -245,6 +245,23 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(blocker.recovery).to include("rechecks")
   end
 
+  it "keeps a resolved purely external notification classified with a useful reason" do # @spec PARTIAL-CLOSEOUT-038 PARTIAL-CLOSEOUT-051
+    merged_partial_pr(number: 12)
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
+    create(:issue, project: target_project, github_number: 517, github_state: "closed")
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "prerequisites" => [ {
+        "identity" => "agent-harness-517", "kind" => "external",
+        "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
+      } ] })
+
+    blocker = described_class.call(issue).blockers.find { |candidate| candidate.code == :prerequisite_notification }
+
+    expect(blocker.message).to include("##{notification.id}", "resolved")
+    expect(blocker.recovery).to include("Recheck")
+  end
+
   it "batch-loads external prerequisite targets for every rendered notification" do # @spec PARTIAL-CLOSEOUT-026
     target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
     dependents = 3.times.map { |index| external_prerequisite_dependent(target_project, 517 + index) }
