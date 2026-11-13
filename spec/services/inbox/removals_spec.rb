@@ -92,9 +92,9 @@ RSpec.describe Inbox::Removals do
       expect(InboxHistoryEvent.where(subject_key: "issue:#{project.id}:#{issue.github_number}").pluck(:metadata)).to include(
         include("action" => "Removed from Inbox"), include("action" => "Restored to Inbox"), include("action" => "Returned to Inbox")
       )
-      expect(InboxHistoryEvent.find_by!(metadata: { "action" => "Returned to Inbox" })).to have_attributes(
-        actor_label: "Paid", source: "paid"
-      )
+      returned = InboxHistoryEvent.find_by!("event_key LIKE ?", "inbox-returned:%")
+      expect(returned).to have_attributes(actor_label: "Paid", source: "paid")
+      expect(returned.metadata).to include("action" => "Returned to Inbox", "entry_kind" => entry.kind)
     end
 
     # @spec INBOX-PHASE-RELEVANCE-008

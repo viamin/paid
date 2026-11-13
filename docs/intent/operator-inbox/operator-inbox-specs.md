@@ -53,7 +53,17 @@
   details SHALL offer a cursor-backed continuation when older events exist,
   and API detail clients SHALL be able to advance the bounded timeline with a
   dedicated history cursor and limit. Inbox list and count queries SHALL NOT
-  load per-row history or make live GitHub calls.
+  load per-row history or make live GitHub calls. The action-history header
+  SHALL summarize the known number of processing attempts and Inbox
+  appearances, identify repeated returns without requiring timeline reading,
+  and label those counts as known when the persisted coverage boundary leaves
+  older activity unavailable. Processing attempts SHALL come from the same
+  durable agent-run projection as the timeline; retry-cap appearances SHALL
+  use the issue's durable distinct-abandonment count, and other recorded Inbox
+  returns SHALL use item-occurrence-keyed ledger events while excluding
+  retry-lane events already represented by that counter. Token-budget-exceeded
+  runs SHALL therefore count as processing attempts without a synthetic
+  return event or inferred older history.
   *Code:* `app/services/inbox/action_history.rb`,
   `app/services/inbox/action_history_page.rb`,
   `app/services/inbox/chat_context.rb`,

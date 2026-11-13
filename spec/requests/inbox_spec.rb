@@ -1357,6 +1357,25 @@ RSpec.describe "Inbox" do
     expect(link["data-turbo-frame"]).to eq("inbox-history")
   end
 
+  # @spec OPERATOR-INBOX-022
+  it "renders an accessible, responsive history summary with repeated returns" do
+    issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body,
+      runner_retry_abandonment_count: 3)
+    create(:agent_run, project:, issue:, status: "token_budget_exceeded", started_at: 1.hour.ago,
+      completed_at: 30.minutes.ago)
+
+    get inbox_entry_history_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+      headers: { "Turbo-Frame" => "inbox-history" }
+
+    document = Nokogiri::HTML(response.body)
+    summary = document.at_css("[data-testid='inbox-history-summary']")
+    expect(summary.text).to include("Known 1 processing attempt", "Known 3 Inbox appearances",
+      "Returned to Inbox 2 times")
+    expect(summary["role"]).to eq("status")
+    expect(summary["class"]).to include("flex-wrap")
+    expect(summary.at_css(".text-amber-800").text).to include("Returned to Inbox 2 times")
+  end
+
   # @spec OPERATOR-INBOX-025
   it "returns an empty history frame after the item leaves the inbox" do
     issue = create(:issue, :needs_input, project:, body: questions_body)
