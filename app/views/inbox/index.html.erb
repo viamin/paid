@@ -21,8 +21,8 @@
     <div>
       <h1 class="text-2xl font-semibold text-gray-900">Inbox</h1>
       <p class="mt-1 text-sm text-gray-500">
-        <% if @scoped_project %>
-          Human-actionable work waiting in <strong><%= @scoped_project.full_name %></strong>.
+        <% if @scoped_projects.one? %>
+          Human-actionable work waiting in <strong><%= @scoped_projects.first.full_name %></strong>.
         <% else %>
           Human-actionable work across your accessible projects.
         <% end %>
@@ -36,8 +36,9 @@
               data-action="inbox-filters#open"
               aria-haspopup="dialog">
         <span>Filters</span>
-        <% if @selected_kind %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::KIND_LABELS.fetch(@selected_kind) %></span><% end %>
-        <% if @scoped_project %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= @scoped_project.full_name %></span><% end %>
+        <% @selected_kinds.each do |kind| %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::KIND_LABELS.fetch(kind) %></span><% end %>
+        <% @scoped_projects.each do |project| %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= project.full_name %></span><% end %>
+        <% if @inbox_query["text_cont"].present? %><span class="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= @inbox_query["text_cont"] %></span><% end %>
         <% if @selected_sort != Inbox::Queue::DEFAULT_SORT %><span class="whitespace-nowrap rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"><%= Inbox::Queue::SORTS.fetch(@selected_sort) %></span><% end %>
       </button>
 
@@ -53,34 +54,29 @@
           <%= form_with url: inbox_path, method: :get, class: "flex flex-1 flex-col gap-6", data: { action: "submit->inbox-filters#apply" } do %>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Type</legend>
-              <div class="mt-2 grid gap-2" role="radiogroup" data-action="change->inbox-filters#kindChanged">
-                <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="kindOption"><%= radio_button_tag :kind, "", @selected_kind.nil? %> All types</label>
+              <div class="mt-2 grid gap-2">
                 <% @inbox_availability.available_kinds.each do |kind| %>
                   <% label = Inbox::Queue::KIND_LABELS.fetch(kind) %>
-                  <label class="flex items-center gap-2 text-sm text-gray-700"
-                         data-inbox-filters-target="kindOption"
-                         data-project-ids="<%= @inbox_availability.project_ids_for(kind).join(",") %>">
-                    <%= radio_button_tag :kind, kind, @selected_kind == kind %> <%= label %> (<%= @inbox_availability.kind_counts[kind] %>)
+                  <label class="flex items-center gap-2 text-sm text-gray-700">
+                    <%= check_box_tag "kinds[]", kind, @selected_kinds.include?(kind) %> <%= label %> (<%= @inbox_availability.kind_counts[kind] %>)
                   </label>
                 <% end %>
               </div>
             </fieldset>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Project</legend>
-              <label class="sr-only" for="inbox-project-search">Search projects</label>
-              <input id="inbox-project-search" type="search" placeholder="Search projects" class="mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm" data-inbox-filters-target="projectSearch" data-action="input->inbox-filters#filterProjects">
-              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto" role="radiogroup" data-action="change->inbox-filters#projectChanged">
-                <label class="flex items-center gap-2 text-sm text-gray-700" data-inbox-filters-target="projectOption"><%= radio_button_tag :project_id, "", @scoped_project.nil? %> All projects</label>
+              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto">
                 <% @inbox_projects.each do |project| %>
-                  <label class="flex items-center gap-2 text-sm text-gray-700"
-                         data-inbox-filters-target="projectOption"
-                         data-project-name="<%= project.full_name.downcase %>"
-                         data-kind-ids="<%= @inbox_availability.kinds_for(project).join(",") %>">
-                    <%= radio_button_tag :project_id, project.id, @scoped_project == project %> <%= project.full_name %> (<%= @inbox_availability.project_counts[project.id] %>)
+                  <label class="flex items-center gap-2 text-sm text-gray-700">
+                    <%= check_box_tag "project_ids[]", project.id, @scoped_projects.include?(project) %> <%= project.full_name %> (<%= @inbox_availability.project_counts[project.id] %>)
                   </label>
                 <% end %>
               </div>
             </fieldset>
+            <div>
+              <%= label_tag "q_text_cont", "Search", class: "text-sm font-semibold text-gray-900" %>
+              <%= search_field_tag "q[text_cont]", @inbox_query["text_cont"], placeholder: "Project, repository, or entry title", class: "mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+            </div>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Sort</legend>
               <div class="mt-2 grid gap-2" role="radiogroup">
@@ -105,7 +101,7 @@
     <% scope_labels.each do |scope, label| %>
       <% next if scope == @selected_scope %>
       <%= link_to label,
-            inbox_path(project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence, scope: scope == "actionable" ? nil : scope),
+            inbox_path(**inbox_query_params(scope: scope == "actionable" ? nil : scope)),
             class: "rounded-full bg-white px-3 py-1 font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% end %>
     <span class="rounded-full bg-indigo-50 px-3 py-1 font-medium text-indigo-700">

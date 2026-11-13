@@ -171,6 +171,22 @@
   `app/views/inbox/index.html.erb`,
   `app/javascript/controllers/inbox_filters_controller.js`.
 
+- [x] **INBOX-FOUNDATION-012** — When an operator filters the Inbox, the
+  dialog SHALL submit repeatable `project_ids[]` and `kinds[]` GET parameters
+  whose union is applied inside the selected scope. It SHALL submit its text
+  search as the allowlisted `q[text_cont]` predicate. `Inbox::Search` SHALL
+  translate that predicate to Ransack searches over the already authorized
+  Project repository fields and Issue title/body fields, then intersect those
+  results with the queue's typed entries; no other Ransack attributes or
+  predicates are accepted. Empty filtered combinations SHALL retain the
+  existing reset-to-unfiltered behavior, while direct-entry lookup continues
+  to resolve hidden and personally removed entries through its existing
+  targeted authorization path.
+  *Tests:* `spec/services/inbox/search_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/system/inbox_filters_dialog_spec.rb`.
+  *Code:* `app/services/inbox/search.rb`, `app/services/inbox/queue.rb`,
+  `app/controllers/inbox_controller.rb`, `app/views/inbox/index.html.erb`.
+
 - [x] **INBOX-FOUNDATION-011** — When a filtered Inbox URL (a `kind` and/or
   `project_id` parameter) matches zero entries while at least one item is
   waiting under a different combination, the system SHALL NOT render the
