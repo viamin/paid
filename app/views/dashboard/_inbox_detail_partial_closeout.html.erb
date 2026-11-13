@@ -52,7 +52,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <%= link_to shadow_evaluation.labeling? ? "Resume labeling" : "Open evaluation and report",
                 project_shadow_evaluation_path(entry.project, shadow_evaluation, **inbox_context),
-                data: { turbo_frame: "_top" },
+                data: { inbox_action: "", turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
           <% if shadow_evaluation.completed? || shadow_evaluation.failed? || shadow_evaluation.partial? || shadow_evaluation.cancelled? %>
             <span class="text-xs <%= shadow_evaluation.completed? ? "text-green-700" : "text-red-700" %>">
@@ -67,7 +67,7 @@
         </p>
         <%= link_to "Start evaluation",
               new_project_shadow_evaluation_path(entry.project, **inbox_context),
-              data: { turbo_frame: "_top" },
+              data: { inbox_action: "", turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
       <% end %>
       <p class="text-xs text-gray-500">
@@ -115,7 +115,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <%= link_to facet_closeout_evaluation.labeling? ? "Resume judgments" : "Open evaluation and report",
                 project_facet_confidence_evaluation_path(entry.project, facet_closeout_evaluation, **inbox_context),
-                data: { turbo_frame: "_top" },
+                data: { inbox_action: "", turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
           <% if facet_closeout_evaluation.frozen? %>
             <span class="text-xs text-green-700">reference set frozen — the compiled report is attached evidence</span>
@@ -129,7 +129,7 @@
         </p>
         <%= link_to "Start evaluation",
               new_project_facet_confidence_evaluation_path(entry.project, issue_id: issue.id, **inbox_context),
-              data: { turbo_frame: "_top" },
+              data: { inbox_action: "", turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       <% end %>
     <% else %>
@@ -327,7 +327,7 @@
               <p class="text-sm text-indigo-900"><%= action.setup_action %></p>
               <% unless action.requirement %>
                 <%= link_to "Configure reviewed checks", project_pre_commit_requirements_path(entry.project),
-                      data: { turbo_frame: "_top" }, class: "text-sm font-medium text-indigo-700 hover:text-indigo-900" %>
+                      data: { inbox_action: "", turbo_frame: "_top" }, class: "text-sm font-medium text-indigo-700 hover:text-indigo-900" %>
               <% end %>
             <% end %>
           </div>
@@ -411,7 +411,7 @@
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <%= link_to "Open project runs",
           project_agent_runs_path(entry.project),
-          data: { turbo_frame: "_top" },
+          data: { inbox_action: "", turbo_frame: "_top" },
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
   </div>
 

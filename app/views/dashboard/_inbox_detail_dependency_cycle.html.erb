@@ -31,7 +31,7 @@
       <% end %>
       <% if analysis_run %>
         <%= link_to "Check analysis status", project_agent_run_path(analysis_run.project, analysis_run),
-              data: { turbo_frame: "_top" }, class: "font-medium text-indigo-700 underline" %>
+              data: { inbox_action: "", turbo_frame: "_top" }, class: "font-medium text-indigo-700 underline" %>
       <% end %>
     </div>
   </div>
