@@ -65,9 +65,10 @@
   <div class="flex gap-3">
     <%= button_to "Start bootstrap run", bootstrap_readiness_project_agent_runs_path(entry.project),
           class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
+          data: { inbox_action: "" },
           form: { data: { turbo_frame: "_top" } } %>
     <%= link_to "Open project settings", entry.action_url,
-          data: { turbo_frame: "_top" },
+          data: { inbox_action: "", turbo_frame: "_top" },
           class: "inline-flex items-center rounded-md border border-amber-600 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100" %>
   </div>
 </div>

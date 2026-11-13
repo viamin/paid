@@ -48,6 +48,7 @@
             entry.issue.github_url,
             target: "_blank",
             rel: "noopener noreferrer",
+            data: { inbox_action: "" },
             class: "inline-flex items-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500" %>
     <% elsif policy(entry.project).run_agent? %>
       <%= button_to "Unblock",
@@ -55,6 +56,7 @@
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
+            data: { inbox_action: "" },
             form: { data: { turbo_confirm: unblock_confirmation_text(entry.record), turbo_frame: "_top" } } %>
     <% end %>
   </div>

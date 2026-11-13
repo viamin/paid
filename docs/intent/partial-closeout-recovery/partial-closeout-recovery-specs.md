@@ -4,6 +4,31 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-050** — When an acceptance assessment identifies a
+  human authorization or setup prerequisite for an isolated technical check,
+  Paid SHALL represent the authorization as an attributed human prerequisite
+  and the check as a separate technical criterion joined only by a stable
+  authorization identity. The human prerequisite SHALL remain in the human
+  Inbox until its submitted evidence is independently validated; the technical
+  criterion SHALL use only the existing reviewed-recipe validation action and
+  SHALL refuse execution until that authorization is current. Technical
+  completion, failure, unavailability, or stale evidence SHALL remain visible
+  with its environment, revision, criterion, and provenance and SHALL never
+  satisfy an independent human judgment or infer authorization. Each
+  non-cancelled terminal technical result SHALL invalidate the assessment
+  evidence generation and offer one deduplicated fresh acceptance audit; an
+  unchanged generation SHALL not loop. Tenant-scoped prerequisite evidence and
+  the existing `run_agent?`/reviewed-recipe authorization remain required.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/technical_prerequisites/authorization.rb`,
+  `app/services/technical_prerequisites/inbox_actions.rb`,
+  `app/services/technical_prerequisites/start_validation.rb`,
+  `app/jobs/technical_prerequisite_validation_job.rb`.
+  *Test:* `spec/services/technical_prerequisites/authorization_spec.rb`,
+  `spec/services/technical_prerequisites/inbox_actions_spec.rb`,
+  `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-048** — When an operator opens a current
   `partial_closeout` Inbox detail, the system SHALL present a read-only,
   account-scoped, bounded ranking of actionable root prerequisites by distinct

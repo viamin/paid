@@ -6,11 +6,12 @@ module Inbox
   # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-023
   class ActionHistory
     Event = Data.define(:id, :action, :actor, :source, :result, :occurred_at, :revision, :evidence_url)
-    Result = Data.define(:events, :incomplete, :next_cursor)
+    Summary = Data.define(:processing_attempts, :inbox_appearances, :inbox_returns, :repeated_returns)
+    Result = Data.define(:events, :incomplete, :next_cursor, :summary)
     DEFAULT_LIMIT = 20
     MAX_LIMIT = 100
     CACHE_TTL = 20.seconds
-    CACHE_PREFIX = "inbox/history/v1"
+    CACHE_PREFIX = "inbox/history/v2"
 
     def self.call(...) = new(...).call
 
@@ -23,7 +24,7 @@ module Inbox
 
     # @spec OPERATOR-INBOX-022 OPERATOR-INBOX-025
     def call
-      return Result.new(events: [], incomplete: false, next_cursor: nil) unless subject_key
+      return Result.new(events: [], incomplete: false, next_cursor: nil, summary: empty_summary) unless subject_key
 
       returned = capture_return!
       candidates = if cacheable? && !returned
@@ -33,11 +34,12 @@ module Inbox
       else
         ActionHistoryPage.call(entry:, subject_key:, limit:, before:)
       end
-      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil) unless candidates
+      return Result.new(events: [], incomplete: legacy_coverage?, next_cursor: nil, summary: empty_summary) unless candidates
 
-      page = candidates.first(limit + 1)
+      page = candidates.events.first(limit + 1)
       visible = page.first(limit)
-      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil)
+      Result.new(events: visible, incomplete: legacy_coverage?, next_cursor: page[limit] ? visible.last.id : nil,
+        summary: candidates.summary)
     end
 
     def self.subject_key_for(entry)
@@ -72,8 +74,8 @@ module Inbox
       return unless removal && !removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
 
       occurrence = Digest::SHA256.hexdigest(Inbox::RequestIdentity.occurrence_for(entry))
-      event = HistoryRecorder.call(entry:, event_key: "inbox-returned:#{removal.id}:#{occurrence}",
-        action: "Returned to Inbox", actor: "Paid", result: "completed")
+      event = HistoryRecorder.call(entry:, event_key: "inbox-returned:#{occurrence}",
+        action: "Returned to Inbox", actor: "Paid", result: "completed", metadata: { entry_kind: entry.kind })
       event&.previously_new_record?
     end
 
@@ -90,6 +92,10 @@ module Inbox
 
     def cache_key
       self.class.cache_key_for(account_id: entry.project.account_id, subject_key:)
+    end
+
+    def empty_summary
+      Summary.new(processing_attempts: 0, inbox_appearances: 0, inbox_returns: 0, repeated_returns: false)
     end
   end
 end

@@ -42,6 +42,7 @@ module TechnicalPrerequisites
     def setup_action(criterion, requirement)
       return "Prepare a reviewed validation recipe for this criterion, then run a fresh acceptance audit." unless requirement
       return "Select an implementation run with a pinned checkout before validating this criterion." unless source_run&.base_commit_sha.present?
+      return "Complete the named human authorization prerequisite before running this technical validation." if authorization_required?(criterion)
       return performance_setup_action(requirement) if criterion["validation_kind"] == "performance_measurement"
       return unless criterion["validation_kind"] == "tool_sidecar"
       attached = source_run.tool_sidecar_snapshot.any? do |tool|
@@ -56,6 +57,11 @@ module TechnicalPrerequisites
       return if FeatureFlags.enabled?(:marketplace_tool_sidecars, project:)
 
       "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project."
+    end
+
+    def authorization_required?(criterion)
+      identifier = criterion["technical_authorization_id"]
+      identifier.present? && source_run&.issue.present? && !Authorization.granted?(issue: source_run.issue, identifier:)
     end
 
     # @spec PARTIAL-CLOSEOUT-042

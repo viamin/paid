@@ -3,8 +3,6 @@
 # @spec POSTGRESQL-PERSISTENCE-001
 # @spec POSTGRESQL-PERSISTENCE-006
 class TenantContext
-  class TransientMissingPostgresqlResult < StandardError; end
-
   class << self
     def apply!(account)
       Current.account = account
@@ -74,25 +72,16 @@ class TenantContext
     end
 
     def set_config(key, value)
-      attempts = 0
+      # set_config mutates PostgreSQL session state. It must bypass Rails's
+      # query cache so consecutive writes of the same SQL shape are not
+      # mistaken for a read and skipped.
+      connection.exec_query("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
+    rescue ActiveRecord::ConnectionNotEstablished
+      nil
+    rescue ActiveRecord::StatementInvalid => e
+      raise unless transaction_aborted?(e)
 
-      begin
-        result = raw_connection.exec_params("SELECT set_config($1, $2, false)", [ key, value.to_s ])
-        raise TransientMissingPostgresqlResult unless result
-      rescue TransientMissingPostgresqlResult
-        raise unless attempts.zero?
-
-        attempts += 1
-        retry
-      rescue ActiveRecord::ConnectionNotEstablished
-        nil
-      rescue ActiveRecord::StatementInvalid => e
-        raise unless transaction_aborted?(e)
-
-        nil
-      ensure
-        result&.clear
-      end
+      nil
     end
 
     def setting_binds(*values)
@@ -107,10 +96,6 @@ class TenantContext
 
     def connection
       ActiveRecord::Base.connection
-    end
-
-    def raw_connection
-      connection.raw_connection
     end
   end
 end

@@ -90,6 +90,6 @@
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <%= f.submit "Submit Answers",
           class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer",
-          data: { turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub #{issue_kind_label(entry.issue, style: :long)}." } %>
+          data: { inbox_action: "", turbo_confirm: "Submit your answers? They will be posted as a comment on the GitHub #{issue_kind_label(entry.issue, style: :long)}." } %>
   </div>
 <% end %>

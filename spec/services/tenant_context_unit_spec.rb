@@ -36,54 +36,25 @@ RSpec.describe TenantContext, :no_db, :tenant_isolation do
 
     it "writes tenant settings through parameterized queries" do # @spec POSTGRESQL-PERSISTENCE-001
       connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
-      raw_connection = instance_double(PG::Connection)
-      result = instance_double(PG::Result)
       allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive(:raw_connection).and_return(raw_connection)
-      allow(raw_connection).to receive(:exec_params).and_return(result)
-      allow(result).to receive(:clear)
+      allow(connection).to receive(:exec_query)
 
       described_class.apply!(account)
 
-      expect(raw_connection).to have_received(:exec_params).with(
+      expect(connection).to have_received(:exec_query).with(
         "SELECT set_config($1, $2, false)",
-        [ "paid.current_account_id", "123" ]
+        "TenantContext#set_config",
+        satisfy do |binds|
+          binds.map(&:value_before_type_cast) == [ "paid.current_account_id", "123" ]
+        end
       )
-      expect(raw_connection).to have_received(:exec_params).with(
+      expect(connection).to have_received(:exec_query).with(
         "SELECT set_config($1, $2, false)",
-        [ "paid.bypass_tenant_rls", "false" ]
+        "TenantContext#set_config",
+        satisfy do |binds|
+          binds.map(&:value_before_type_cast) == [ "paid.bypass_tenant_rls", "false" ]
+        end
       )
-      expect(result).to have_received(:clear).twice
-    end
-
-    it "retries a transient missing PostgreSQL result while setting tenant context" do # @spec POSTGRESQL-PERSISTENCE-001
-      connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
-      raw_connection = instance_double(PG::Connection)
-      result = instance_double(PG::Result, clear: nil)
-      calls = 0
-
-      allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive(:raw_connection).and_return(raw_connection)
-      allow(raw_connection).to receive(:exec_params) do
-        calls += 1
-        calls == 1 ? nil : result
-      end
-
-      described_class.apply_system_access!
-
-      expect(calls).to eq(3)
-    end
-
-    it "raises when the PostgreSQL result remains unavailable after retrying" do # @spec POSTGRESQL-PERSISTENCE-001
-      connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
-      raw_connection = instance_double(PG::Connection)
-
-      allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive(:raw_connection).and_return(raw_connection)
-      allow(raw_connection).to receive(:exec_params).and_return(nil)
-
-      expect { described_class.apply_system_access! }.to raise_error(TenantContext::TransientMissingPostgresqlResult)
-      expect(raw_connection).to have_received(:exec_params).twice
     end
   end
 
@@ -209,12 +180,9 @@ RSpec.describe TenantContext, :no_db, :tenant_isolation do
   describe ".with_system_access" do
     it "reads existing tenant settings through parameterized queries" do # @spec POSTGRESQL-PERSISTENCE-001
       connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
-      raw_connection = instance_double(PG::Connection)
-      result = instance_double(PG::Result, clear: nil)
 
       allow(described_class).to receive(:connection).and_return(connection)
-      allow(connection).to receive_messages(select_value: nil, raw_connection: raw_connection)
-      allow(raw_connection).to receive(:exec_params).and_return(result)
+      allow(connection).to receive_messages(select_value: nil, exec_query: nil)
 
       described_class.with_system_access { nil }
 

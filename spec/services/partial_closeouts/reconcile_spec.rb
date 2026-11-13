@@ -383,6 +383,25 @@ RSpec.describe PartialCloseouts::Reconcile do
       "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(parent)))
   end
 
+  it "excludes technical results from a paired authorization occurrence revision" do # @spec PARTIAL-CLOSEOUT-050
+    create(:agent_run, :completed, project:, issue: parent, reconciliation: {
+      TechnicalPrerequisites::Evidence::RECONCILIATION_KEY => {
+        "status" => "completed", "criterion" => "Prior environment check"
+      }
+    })
+    authorization_gap = human_gap("Authorize the representative environment").merge(
+      "technical_authorization_id" => "representative-environment-v1"
+    )
+
+    described_class.call(agent_run: run, assessment: gaps([ authorization_gap ]))
+
+    occurrence = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      .metadata.fetch("prerequisites").sole
+    expect(occurrence.fetch("source_revision"))
+      .to eq(TechnicalPrerequisites::Authorization.source_revision_for(parent))
+    expect(occurrence.fetch("source_revision")).not_to eq(PartialCloseouts::Assessment.source_revision_for(parent))
+  end
+
   it "preserves submitted evidence when reconciling the prerequisite again" do # @spec PARTIAL-CLOSEOUT-033
     gap = human_gap("macOS acceptance")
     described_class.call(agent_run: run, assessment: gaps([ gap ]))

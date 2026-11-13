@@ -80,6 +80,17 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_css("#inbox-copy-link-status", text: "Link copied.")
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "keeps every selected-item action accessible at the top on narrow screens" do
+    page.current_window.resize_to(390, 844)
+    visit member_path(first_issue)
+
+    action_area = find("[data-inbox-actions-target='bar']:not([hidden])")
+    expect(action_area).to have_button("Submit Answers")
+    expect(action_area[:class]).to include("flex-wrap")
+    expect(action_area[:class]).to include("sticky")
+  end
+
   it "uses the member URL for a dependency cycle and retains it on mobile" do
     first = create(:issue, project:, github_state: "open", title: "Cycle first")
     second = create(:issue, project:, github_state: "open", title: "Cycle second")
