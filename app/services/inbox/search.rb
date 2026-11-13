@@ -24,7 +24,8 @@ module Inbox
       return entries if term.blank?
 
       entries.select do |entry|
-        displayed_text_matches?(entry) || project_ids.include?(entry.project&.id) || issue_ids.include?(entry.issue&.id)
+        displayed_text_matches?(entry) ||
+          project_ids.intersect?(entry_project_ids(entry)) || issue_ids.intersect?(entry_issue_ids(entry))
       end
     end
 
@@ -37,13 +38,27 @@ module Inbox
     end
 
     def project_ids
-      @project_ids ||= Project.where(id: entries.filter_map { |entry| entry.project&.id }.uniq)
-        .ransack({ "owner_or_repo_cont" => term }, auth_object: :inbox).result(distinct: true).pluck(:id)
+      @project_ids ||= Project.where(id: entries.flat_map { |entry| entry_project_ids(entry) }.uniq)
+        .ransack({ "owner_or_repo_cont" => term }, auth_object: :inbox).result(distinct: true).pluck(:id).to_set
     end
 
     def issue_ids
-      @issue_ids ||= Issue.where(id: entries.filter_map { |entry| entry.issue&.id }.uniq)
-        .ransack({ "title_or_body_cont" => term }, auth_object: :inbox).result(distinct: true).pluck(:id)
+      @issue_ids ||= Issue.where(id: entries.flat_map { |entry| entry_issue_ids(entry) }.uniq)
+        .ransack({ "title_or_body_cont" => term }, auth_object: :inbox).result(distinct: true).pluck(:id).to_set
+    end
+
+    def entry_project_ids(entry)
+      ([ entry.project&.id ] + entry_issues(entry).map(&:project_id)).compact.uniq
+    end
+
+    def entry_issue_ids(entry)
+      entry_issues(entry).map(&:id)
+    end
+
+    def entry_issues(entry)
+      return entry.record.issues if entry.record.is_a?(Issues::DependencyCycles::Cycle)
+
+      [ entry.issue ].compact
     end
 
     def displayed_text_matches?(entry)

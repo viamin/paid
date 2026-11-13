@@ -36,4 +36,25 @@ RSpec.describe Inbox::Search do
     expect(described_class.call(entries:, query: { "text_cont" => "passkey" })).to eq([ title_entry ])
     expect(described_class.call(entries:, query: { "text_cont" => "obligations" })).to eq([ summary_entry ])
   end
+
+  # @spec INBOX-FOUNDATION-012
+  it "searches every project and issue represented by a dependency cycle" do
+    account = create(:account)
+    user = create(:user, account:)
+    primary_project = create(:project, account:, created_by: user, owner: "acme", repo: "alpha")
+    other_project = create(:project, account:, created_by: user, owner: "acme", repo: "payments")
+    primary_issue = create(:issue, project: primary_project, title: "Refresh dashboard")
+    other_issue = create(:issue, project: other_project, title: "Rotate signing key")
+    cycle = Issues::DependencyCycles::Cycle.new(
+      account:, issues: [ primary_issue, other_issue ], path: [], path_edges: [], effective_edges: [],
+      downstream_issues: [], detected_at: Time.current, occurrence: "cycle", visible_parent_project_ids: nil
+    )
+    entry = Inbox::Queue::Entry.new(
+      id: cycle.id, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND, project: cycle.project,
+      issue: nil, record: cycle, title_text: cycle.title, summary_text: cycle.summary
+    )
+
+    expect(described_class.call(entries: [ entry ], query: { "text_cont" => "payments" })).to eq([ entry ])
+    expect(described_class.call(entries: [ entry ], query: { "text_cont" => "signing" })).to eq([ entry ])
+  end
 end
