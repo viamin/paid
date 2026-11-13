@@ -91,6 +91,24 @@ RSpec.describe Issues::RequestAcceptanceAudit do
   end
 
   # @spec PARTIAL-CLOSEOUT-051
+  it "refuses an audit when a purely external notification is awaiting resolution cleanup" do
+    merged_partial_pr
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
+    create(:issue, project: target_project, github_number: 4604, github_state: "closed")
+    notification = human_prerequisite_notification
+    notification.update!(metadata: { "prerequisites" => [
+      { "identity" => "external-work", "kind" => "external",
+        "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 4604 } }
+    ] })
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.code).to eq(:prerequisite_notification)
+    expect(result.message).to include("##{notification.id}")
+    expect(result.agent_run).to be_nil
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
   it "keeps a genuine human decision hold closed to a report-only audit" do
     merged_partial_pr
     issue.update!(paid_state: "manual_review")

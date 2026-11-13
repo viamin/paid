@@ -145,7 +145,8 @@ module Issues
     # never releases the notification or authorizes implementation (#5057).
     # @spec PARTIAL-CLOSEOUT-051
     def bypasses_human_prerequisite?(blocker)
-      acceptance_audit? && blocker.code == :human_prerequisite_notification
+      acceptance_audit? && blocker.code == :human_prerequisite_notification &&
+        CloseoutStatus.acceptance_audit_prerequisite_refreshable?(issue)
     end
 
     # Any assessment state other than current acceptance supersedes the legacy
