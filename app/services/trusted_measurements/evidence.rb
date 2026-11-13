@@ -20,8 +20,12 @@ module TrustedMeasurements
       records = issues.index_by(&:id).transform_values { [] }
       return records if records.empty?
 
-      TrustedMeasurementAttempt.where(issue_id: records.keys).order(:id).each do |attempt|
-        records[attempt.issue_id] << present(attempt)
+      attempts = TrustedMeasurementAttempt.where(issue_id: records.keys).order(:id).to_a
+      return records if attempts.empty?
+
+      deployed_revision = DeploymentSignal.current
+      attempts.each do |attempt|
+        records[attempt.issue_id] << present(attempt, deployed_revision:)
       end
       latest_per_check(records)
     end
@@ -34,7 +38,7 @@ module TrustedMeasurements
       Digest::SHA256.hexdigest(JSON.generate(semantic_records))
     end
 
-    def self.present(attempt)
+    def self.present(attempt, deployed_revision:)
       {
         "check_key" => attempt.check_key,
         "check_version" => attempt.check_version,
@@ -45,7 +49,7 @@ module TrustedMeasurements
         "project_id" => attempt.project_id,
         "deployed_revision" => attempt.deployed_revision,
         "executed_at" => attempt.executed_at&.iso8601,
-        "current" => attempt.succeeded? && attempt.current_for_revision?(DeploymentSignal.current)
+        "current" => attempt.succeeded? && attempt.current_for_revision?(deployed_revision)
       }
     end
     private_class_method :present

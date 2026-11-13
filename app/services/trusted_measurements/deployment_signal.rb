@@ -21,16 +21,20 @@ module TrustedMeasurements
       return ENV[ENV_KEY].presence unless environment.to_s == "development"
 
       head = git_output(root, "rev-parse", "HEAD")
-      diff = git_output(root, "diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD")
       untracked = git_output(root, "ls-files", "--others", "--exclude-standard", "-z")
-      return if [ head, diff, untracked ].any?(&:nil?)
+      return if [ head, untracked ].any?(&:nil?)
 
       digest = Digest::SHA256.new
-      digest.update(diff)
+      return unless update_from_git_diff(digest, root)
+
       untracked.split("\0").sort.each do |name|
         path = File.join(root, name)
         digest.update(name).update("\0")
-        digest.update(File.symlink?(path) ? File.readlink(path) : File.binread(path))
+        if File.symlink?(path)
+          digest.update(File.readlink(path))
+        else
+          File.open(path, "rb") { |file| digest.update(file.read(64 * 1024)) until file.eof? }
+        end
         digest.update("\0")
       end
       "development:#{head.strip}:#{digest.hexdigest}"
@@ -43,5 +47,15 @@ module TrustedMeasurements
       output if status.success?
     end
     private_class_method :git_output
+
+    def self.update_from_git_diff(digest, root)
+      Open3.popen2("git", "diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD",
+        chdir: root.to_s, err: File::NULL) do |input, output, process|
+        input.close
+        digest.update(output.read(64 * 1024)) until output.eof?
+        process.value.success?
+      end
+    end
+    private_class_method :update_from_git_diff
   end
 end

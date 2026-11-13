@@ -62,6 +62,41 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(described_class.call(issue:, actor: user).code).to eq(:human_prerequisite_notification)
   end
 
+  # @spec PARTIAL-CLOSEOUT-051
+  it "audits a stale human prerequisite after its external work resolves" do
+    merged_partial_pr
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
+    create(:issue, project: target_project, github_number: 517, github_state: "closed")
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "prerequisites" => [
+        { "identity" => "external-517", "kind" => "external",
+          "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 } },
+        { "identity" => "human-review", "kind" => "human" }
+      ] })
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result).to be_success
+    expect(AgentRuns::RecheckIssueEligibility.call(result.agent_run)).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "keeps a stale audit held while its external work is open" do
+    merged_partial_pr
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
+    create(:issue, project: target_project, github_number: 517, github_state: "open")
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "prerequisites" => [
+        { "identity" => "external-517", "kind" => "external",
+          "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 } },
+        { "identity" => "human-review", "kind" => "human" }
+      ] })
+
+    expect(described_class.call(issue:, actor: user).code).to eq(:prerequisite_notification)
+  end
+
   # @spec PARTIAL-CLOSEOUT-027
   it "queues one report-only audit and records its mode in the evidence snapshot" do
     merged_partial_pr
