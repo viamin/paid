@@ -670,6 +670,7 @@ class AgentRun < ApplicationRecord
 
   RUNNER_OPTIONS_CACHE_TTL = 5.minutes
   FILTER_OPTIONS_CACHE_TTL = 90.seconds
+  FILTER_OPTIONS_CACHE_VERSION = 2
 
   def self.distinct_effective_runner_options(account_id:, cache_key: nil)
     if cache_key
@@ -712,7 +713,7 @@ class AgentRun < ApplicationRecord
 
   def self.filter_options_cache_key_for(account_id:, project_id: nil)
     scope = project_id ? "project/#{project_id}" : "account"
-    "agent_runs/filter_options/account/#{account_id}/#{scope}"
+    "agent_runs/filter_options/v#{FILTER_OPTIONS_CACHE_VERSION}/account/#{account_id}/#{scope}"
   end
 
   def self.invalidate_filter_options_cache(account_id:, project_id: nil)
@@ -766,14 +767,16 @@ class AgentRun < ApplicationRecord
   private_class_method :compute_distinct_effective_runner_options
 
   def self.compute_distinct_filter_options
+    # @spec AGENT-RUNS-INDEX-004
     # The aggregate only reads agent_runs columns; eager loads on the incoming
     # scope would otherwise fan the pluck out into wide LEFT JOIN queries.
-    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal)
+    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal, :trigger_type)
 
     {
       status: values.filter_map(&:first).uniq,
       agent_type: values.filter_map { |row| row[1] }.uniq,
-      goal: values.filter_map { |row| row[2] }.uniq
+      goal: values.filter_map { |row| row[2] }.uniq,
+      trigger_type: values.filter_map { |row| row[3] }.uniq
     }
   end
   private_class_method :compute_distinct_filter_options
@@ -4586,7 +4589,7 @@ class AgentRun < ApplicationRecord
   end
 
   def invalidate_filter_options_cache_on_change
-    return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "synthetic").present?
+    return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "trigger_type", "synthetic").present?
     return unless project
 
     self.class.invalidate_filter_options_cache(

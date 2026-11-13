@@ -175,6 +175,20 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(result.reasons).to include(:intent_revision)
   end
 
+  it "blocks when a label-derived review hold is applied" do # @spec PROJECT-DELEGATION-004 LABEL-CONTROL-001
+    project.update!(label_integration_mode: "read_only")
+    authorize(action: "review", work_item: pull_request)
+    pull_request.update!(
+      hold_for_review: false,
+      labels: pull_request.labels + [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+    )
+
+    result = recheck(goal: "review", work_item: pull_request)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:explicit_hold)
+  end
+
   it "blocks when the project posture narrows after admission" do # @spec PROJECT-DELEGATION-006
     authorize(action: "review")
     project.delegation_posture.update!(

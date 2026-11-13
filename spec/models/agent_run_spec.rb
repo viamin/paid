@@ -10,6 +10,16 @@ RSpec.describe AgentRun do
     Rails.cache.clear
   end
 
+  describe ".ransackable_attributes" do
+    # @spec AGENT-RUNS-INDEX-004
+    it "limits Agent Runs index filtering to its explicitly allowlisted attributes" do
+      expect(described_class.ransackable_attributes).to include(
+        "status", "agent_type", "goal", "trigger_type", "effective_runner", "branch_name", "temporal_workflow_id"
+      )
+      expect(described_class.ransackable_attributes).not_to include("custom_prompt", "error_message", "external_metadata")
+    end
+  end
+
   # @spec LAYERED-VERIFY-013
   it "keeps layered-verification audit and repair goals distinct" do
     expect(described_class::GOALS).to include("layered_verification_audit", "layered_verification_repair")
@@ -5432,6 +5442,14 @@ RSpec.describe AgentRun do
     end
 
     # @spec AGENT-RUNS-INDEX-002
+    it "versions filter option cache keys when the cached shape changes" do
+      expect(described_class.filter_options_cache_key_for(account_id: 17))
+        .to eq("agent_runs/filter_options/v2/account/17/account")
+      expect(described_class.filter_options_cache_key_for(account_id: 17, project_id: 23))
+        .to eq("agent_runs/filter_options/v2/account/17/project/23")
+    end
+
+    # @spec AGENT-RUNS-INDEX-002
     it "caches filter options by account and project scope" do
       project = create(:project)
       create(:agent_run, :completed, project: project, agent_type: "claude_code", goal: "create_pr")
@@ -5458,6 +5476,22 @@ RSpec.describe AgentRun do
       scope.distinct_filter_options(cache_key: project_key)
 
       agent_run.update!(goal: "create_issue")
+
+      expect(Rails.cache.read(account_key)).to be_nil
+      expect(Rails.cache.read(project_key)).to be_nil
+    end
+
+    # @spec AGENT-RUNS-INDEX-002
+    it "invalidates account and project filter options when trigger type changes" do
+      project = create(:project)
+      agent_run = create(:agent_run, :completed, :automatic, project: project)
+      account_key = described_class.filter_options_cache_key_for(account_id: project.account_id)
+      project_key = described_class.filter_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+      scope = described_class.where(project_id: project.id)
+      scope.distinct_filter_options(cache_key: account_key)
+      scope.distinct_filter_options(cache_key: project_key)
+
+      agent_run.update!(trigger_type: "manual")
 
       expect(Rails.cache.read(account_key)).to be_nil
       expect(Rails.cache.read(project_key)).to be_nil

@@ -64,6 +64,27 @@ RSpec.describe ProjectDelegation::SelectPosture do
     )
   end
 
+  it "does not classify a reasoned posture selection as a rollback" do
+    described_class.call(
+      project: project,
+      actor: owner,
+      level: "bounded_delivery",
+      reason: "operator request"
+    )
+
+    expect(audit_events.last.metadata).to include("reason" => "operator request")
+    expect(AccountActivityEvent.where(action: "project_delegation.rollback", subject: project)).to be_empty
+  end
+
+  it "rejects an unknown audit operation without changing posture" do
+    expect {
+      described_class.call(project: project, actor: owner, level: "bounded_delivery", operation: :unknown)
+    }.to raise_error(ProjectDelegation::SelectPosture::UnknownOperation)
+
+    expect(project.delegation_posture).to be_nil
+    expect(AccountActivityEvent.where(subject: project)).to be_empty
+  end
+
   it "rolls back the posture selection when recording its audit event fails" do
     described_class.call(project: project, actor: owner, level: "bounded_delivery")
     original = project.delegation_posture.reload.attributes

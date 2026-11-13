@@ -269,9 +269,13 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
 
   it "broadcasts the persisted token-limit rejection as message_created alongside the error event" do
     # @spec CHAT-API-014
-    create(:tenant_setting, account: account,
-      chat_settings: { "chat_session_token_limit" => 100 })
-    create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
+    configure_exhausted_token_limit
+
+    expect(ChatSessions::CheckTokenLimit.call(chat_session: chat_session)).to include(
+      within_limit: false,
+      limit: 100,
+      used_tokens: 110
+    )
 
     expect {
       described_class.perform_now(
@@ -438,6 +442,14 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         raise AgentHarness::RateLimitError, "API rate limit exceeded"
       end
     end.new
+  end
+
+  def configure_exhausted_token_limit
+    create(:tenant_setting, account:, features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+    chat_session.token_usages.create!(
+      request_type: "chat_message", input_tokens: 80, output_tokens: 30,
+      cost_cents: 1, llm_model: "test-model"
+    )
   end
 
   # A streaming client that emits two chunks then returns a final assistant

@@ -97,7 +97,8 @@ module Automation
           # authorization, @spec PARTIAL-CLOSEOUT-004); every other guard
           # still applies. It defaults to none so plain auto-pick semantics
           # are unchanged.
-          def eligible_for_dequeue?(project, issue_id, excluding_run_id:, continuation_authorized_issue_ids: [], acceptance_audit_authorized_issue_ids: [])
+          def eligible_for_dequeue?(project, issue_id, excluding_run_id:, continuation_authorized_issue_ids: [],
+            acceptance_audit_authorized_issue_ids: [])
             eligible_scope(
               project,
               excluding_run_id: excluding_run_id,
@@ -318,6 +319,7 @@ module Automation
             # unchanged, and plain auto-pick (no authorized ids) behaves
             # exactly as before.
             authorized_ids = Array(continuation_authorized_issue_ids)
+            acceptance_audit_ids = Array(acceptance_audit_authorized_issue_ids)
 
             base = Issue.ready_for_work(project)
               .where.not(id: inputs.blocking_issue_ids)
@@ -365,7 +367,7 @@ module Automation
               # or system resolve clears the block (see Notification's callback),
               # so the parent re-enters selection through the same eager-enqueue
               # path that dependency resolution uses.
-              .where.not(id: inputs.prerequisite_block_ids - Array(acceptance_audit_authorized_issue_ids))
+              .where.not(id: inputs.prerequisite_block_ids - acceptance_audit_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames

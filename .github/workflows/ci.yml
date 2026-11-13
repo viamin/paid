@@ -257,6 +257,9 @@ jobs:
       # Keep the CI runtime role below PostgreSQL's SUPERUSER/BYPASSRLS guard.
       # @spec POSTGRESQL-PERSISTENCE-002
       DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
+      # Cable's named connection must not fall back to a local socket during
+      # database setup or tests.
+      CABLE_DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432
@@ -678,6 +681,8 @@ jobs:
       # Keep the CI runtime role below PostgreSQL's SUPERUSER/BYPASSRLS guard.
       # @spec POSTGRESQL-PERSISTENCE-002
       DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
+      # Keep recovered shards on the same named cable connection as matrix legs.
+      CABLE_DATABASE_URL: postgres://paid_runtime:paid_runtime@localhost:5432/paid_test
       DB_HOST: localhost
       PGHOST: localhost
       PGPORT: 5432

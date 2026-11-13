@@ -209,6 +209,17 @@ module Issues
         open_native_child_blockers(issue, inputs:) + (audit_bypass ? [] : prerequisite_notification_blockers(issue, inputs:))
     end
 
+    # A report-only audit may inspect its own stale human prerequisite, but a
+    # newly introduced external prerequisite must still cancel it at dequeue.
+    # @spec PARTIAL-CLOSEOUT-051
+    def self.acceptance_audit_prerequisite_refreshable?(issue)
+      notifications = prerequisite_notifications(issue)
+      notifications.any? && notifications.all? do |notification|
+        PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification) &&
+          external_prerequisite_states(notification).all? { |state| state["state"] == "resolved" }
+      end
+    end
+
     # The scoped preflight is the admission authority. If it rejects after all
     # known guard diagnostics, do not invent a likely cause: callers get an
     # explicit investigation path and the exact dequeue decision remains safe.
@@ -381,7 +392,7 @@ module Issues
     # These mirror eligibility exclusions that deliberately do not use
     # IssueDependency edges. They diagnose canonical admission; they do not
     # replace it.
-    # @spec PARTIAL-CLOSEOUT-030
+    # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-051
     def self.open_native_child_blockers(issue, inputs: nil)
       children = inputs ? inputs.open_native_children_by_issue_id.fetch(issue.id, []) : open_native_children(issue)
       return [] if children.empty?
@@ -414,8 +425,10 @@ module Issues
 
       ids = notifications.map { |notification| "##{notification.id}" }
       external = notifications.flat_map { |notification| external_prerequisite_states(notification, inputs:) }
+        .reject { |state| state["state"] == "resolved" }
       [ Blocker.new(
-        code: external.any? ? :prerequisite_notification : :human_prerequisite_notification,
+        code: external.any? || notifications.none? { |notification| human_evidence_required?(notification) } ?
+          :prerequisite_notification : :human_prerequisite_notification,
         message: prerequisite_notification_message(notifications, ids, external),
         evidence: { "notifications" => notifications.map { |notification| notification_evidence(notification) },
           "external_prerequisites" => external,
@@ -433,13 +446,15 @@ module Issues
     private_class_method :external_prerequisite_states
 
     def self.prerequisite_notification_message(notifications, ids, external)
-      human = notifications.any? do |notification|
-        PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification)
-      end
+      human = notifications.any? { |notification| human_evidence_required?(notification) }
       external_message = external.map do |state|
         owner = state["owner"].present? ? " owned by @#{state["owner"]}" : ""
         "External prerequisite #{state.fetch("reference")} is #{state.fetch("state")}#{owner}."
       end.join(" ")
+      if external_message.blank? && !human
+        return "Active partial-closeout prerequisite notification#{'s' if notifications.many?} " \
+          "(#{ids.join(', ')}) remains open after its external prerequisites have resolved."
+      end
       return external_message unless human
 
       "#{external_message} Active partial-closeout human prerequisite notification#{'s' if notifications.many?} " \
@@ -447,13 +462,21 @@ module Issues
     end
     private_class_method :prerequisite_notification_message
 
+    def self.human_evidence_required?(notification)
+      PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification)
+    end
+    private_class_method :human_evidence_required?
+
     def self.prerequisite_notification_recovery(notifications, external = [])
       policy_steps = notifications.filter_map { |notification| notification.metadata.dig("policy_selection", "next_step") }
       guidance = "Supply and record the requested human decision or evidence at the listed notification route."
       guidance += " Replacement policy action: #{policy_steps.join(' ')}" if policy_steps.any?
       external_guidance = external.map { |state| state.fetch("recovery") }.uniq.join(" ")
       only_external = notifications.all? do |notification|
-        !PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification)
+        !human_evidence_required?(notification)
+      end
+      if policy_steps.empty? && only_external && external.empty?
+        return "Recheck the resolved external prerequisites and reconcile the active notification before continuation."
       end
       return "#{external_guidance} Do not resolve it manually while the external state is unavailable." if policy_steps.empty? && only_external
 

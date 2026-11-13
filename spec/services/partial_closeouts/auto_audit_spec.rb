@@ -13,16 +13,10 @@ RSpec.describe PartialCloseouts::AutoAudit do
       github_state: "closed", pr_review_phase: "merged")
   end
 
-  # @spec PARTIAL-CLOSEOUT-051
-  it "schedules one report-only audit despite its own stale prerequisite notification" do
+  def human_prerequisite_notification
     create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
-
-    result = described_class.call(issue:)
-
-    expect(result).to be_scheduled
-    expect(result.agent_run.goal).to eq("analyze_issue")
-    expect(Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).where(id: issue.id)).to be_empty
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Record the independent acceptance decision")
   end
 
   # @spec PARTIAL-CLOSEOUT-037
@@ -39,6 +33,17 @@ RSpec.describe PartialCloseouts::AutoAudit do
 
     expect(second.code).to eq(:already_audited)
     expect(issue.agent_runs.count).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "refreshes a stale assessment through its own human prerequisite notification" do
+    notification = human_prerequisite_notification
+
+    result = described_class.call(issue:)
+
+    expect(result).to be_scheduled
+    expect(result.agent_run.goal).to eq("analyze_issue")
+    expect(notification.reload).to have_attributes(resolved_at: nil, dismissed_at: nil)
   end
 
   # @spec PARTIAL-CLOSEOUT-037

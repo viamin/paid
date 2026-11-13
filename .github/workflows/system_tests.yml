@@ -289,6 +289,7 @@ jobs:
         run: bin/rails ci:bootstrap_test_defaults
 
       - name: Run system specs
+        # @spec TEST-SUITE-019
         run: |
           set -o pipefail
           failure_log="$(mktemp)"
@@ -300,18 +301,19 @@ jobs:
 
             # Rails can receive a nil PostgreSQL result from the hosted service
             # while applying request tenant context. That is a runner-side
-            # transport failure, not a spec assertion; retry it twice while
-            # preserving immediate failures for every other test error.
+            # transport failure, not a spec assertion. Retry only this known
+            # signature, keep the attempts bounded, and fail every other error
+            # immediately.
             if ! grep -Fq "undefined method 'cmd_tuples' for nil" "$failure_log"; then
               exit 1
             fi
-
             if [ "$attempt" -eq 3 ]; then
-              echo "::error::PostgreSQL returned an empty result while setting tenant context after three attempts"
               exit 1
             fi
 
-            echo "::warning::PostgreSQL returned an empty result while setting tenant context; retrying system specs (attempt $((attempt + 1))/3)"
+            echo "::warning::PostgreSQL returned an empty result while setting tenant context; retrying system specs (attempt $attempt/3)"
+            : > "$failure_log"
+            sleep "$((attempt * 5))"
           done
 
       - name: Upload failure artifacts

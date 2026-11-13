@@ -71,6 +71,17 @@ RSpec.describe Activities::MergePullRequestActivity do
             ))
         end
 
+        def authorize_delegated_review
+          create(:bounded_delegated_action,
+            project: delegated_project,
+            issue: delegated_pr,
+            action: "review",
+            evidence: Automation::DelegatedActionAdmission.admission_evidence(
+              work_item: delegated_pr, action: "review", acceptance_refs: [ "AC-1" ],
+              stop_before_phase: "merge"
+            ))
+        end
+
         it "refuses the merge when the delegated merge authorization was revoked" do # @spec PROJECT-DELEGATION-004
           record_current_assessment
           authorization = authorize_delegated_merge
@@ -90,9 +101,10 @@ RSpec.describe Activities::MergePullRequestActivity do
           expect(notification.metadata["reasons"]).to include("authorization_lifecycle")
         end
 
-        it "merges when the delegated merge authorization is still current" do # @spec PROJECT-DELEGATION-004
+        it "merges and completes the delegated authorization at its exclusive stop" do # @spec PROJECT-DELEGATION-006
           record_current_assessment
-          authorize_delegated_merge
+          authorization = authorize_delegated_merge
+          review_authorization = authorize_delegated_review
           allow(delegated_provider).to receive_messages(
             fetch_pull_request: pr_data,
             merge_pull_request: Automation::Providers::Data::MergeResult.new(
@@ -106,6 +118,10 @@ RSpec.describe Activities::MergePullRequestActivity do
 
           expect(result).to include(merged: true)
           expect(delegated_provider).to have_received(:merge_pull_request)
+          expect(authorization.reload.status).to eq("completed")
+          expect(review_authorization.reload.status).to eq("completed")
+          expect(delegated_project.account.account_activity_events.by_action("bounded_action.completed").last)
+            .to have_attributes(subject: authorization)
         end
       end
 

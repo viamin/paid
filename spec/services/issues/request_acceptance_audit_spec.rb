@@ -26,75 +26,10 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     run.update!(reconciliation: { "assessment" => assessment })
   end
 
-  # @spec PARTIAL-CLOSEOUT-051
-  it "audits through its own stale prerequisite while implementation remains held" do
-    merged_partial_pr
-    create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
-
-    result = described_class.call(issue:, actor: user)
-
-    expect(result).to be_success
-    expect(result.agent_run.goal).to eq("analyze_issue")
-    expect(AgentRuns::RecheckIssueEligibility.call(result.agent_run)).to be(false)
-    expect(Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project).where(id: issue.id)).to be_empty
-  end
-
-  # @spec PARTIAL-CLOSEOUT-051
-  it "keeps implementation held by its own prerequisite without an audit request" do
-    merged_partial_pr
-    create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
-
-    result = Issues::RequestContinuation.call(issue:, actor: user, reason: "Build the remaining work")
-
-    expect(result.code).to eq(:human_prerequisite_notification)
-    expect(issue.agent_runs.where(goal: "create_pr")).to be_empty
-  end
-
-  # @spec PARTIAL-CLOSEOUT-051
-  it "does not re-audit a current assessment through an unchanged prerequisite" do
-    merged_partial_pr
-    record_acceptance_audit(criteria: [ { "criterion" => "human review", "state" => "unmet" } ])
-    create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
-
-    expect(described_class.call(issue:, actor: user).code).to eq(:human_prerequisite_notification)
-  end
-
-  # @spec PARTIAL-CLOSEOUT-051
-  it "audits a stale human prerequisite after its external work resolves" do
-    merged_partial_pr
-    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
-    create(:issue, project: target_project, github_number: 517, github_state: "closed")
+  def human_prerequisite_notification
     create(:notification, :error, account:, subject: issue,
       source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
-      metadata: { "prerequisites" => [
-        { "identity" => "external-517", "kind" => "external",
-          "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 } },
-        { "identity" => "human-review", "kind" => "human" }
-      ] })
-
-    result = described_class.call(issue:, actor: user)
-
-    expect(result).to be_success
-    expect(AgentRuns::RecheckIssueEligibility.call(result.agent_run)).to be(false)
-  end
-
-  # @spec PARTIAL-CLOSEOUT-051
-  it "keeps a stale audit held while its external work is open" do
-    merged_partial_pr
-    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
-    create(:issue, project: target_project, github_number: 517, github_state: "open")
-    create(:notification, :error, account:, subject: issue,
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
-      metadata: { "prerequisites" => [
-        { "identity" => "external-517", "kind" => "external",
-          "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 } },
-        { "identity" => "human-review", "kind" => "human" }
-      ] })
-
-    expect(described_class.call(issue:, actor: user).code).to eq(:prerequisite_notification)
+      title: "Record the independent acceptance decision")
   end
 
   # @spec PARTIAL-CLOSEOUT-027
@@ -116,6 +51,100 @@ RSpec.describe Issues::RequestAcceptanceAudit do
         closeout_evidence: Issues::CloseoutEvidence.call(issue)
       )
     )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "admits a stale report-only audit through its own human prerequisite notification" do
+    merged_partial_pr
+    notification = human_prerequisite_notification
+
+    implementation = Issues::RequestContinuation.call(
+      issue:, actor: user, reason: "Implement the deferred work."
+    )
+    audit = described_class.call(issue:, actor: user)
+
+    expect(implementation.code).to eq(:human_prerequisite_notification)
+    expect(audit).to be_success
+    expect(notification.reload).to have_attributes(resolved_at: nil, dismissed_at: nil)
+    expect(audit.agent_run.goal).to eq("analyze_issue")
+    expect(AgentRuns::RecheckIssueEligibility.call(audit.agent_run)).to be(false)
+    expect(audit.agent_run.reload).to be_queued
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "admits an audit when a mixed notification's external prerequisite is resolved" do
+    merged_partial_pr
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
+    create(:issue, project: target_project, github_number: 4604, github_state: "closed")
+    notification = human_prerequisite_notification
+    notification.update!(metadata: { "prerequisites" => [
+      { "identity" => "human-decision", "kind" => "human" },
+      { "identity" => "external-work", "kind" => "external",
+        "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 4604 } }
+    ] })
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result).to be_success
+    expect(result.agent_run).to be_queued
+    expect(notification.reload).to have_attributes(resolved_at: nil, dismissed_at: nil)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "refuses an audit when a purely external notification is awaiting resolution cleanup" do
+    merged_partial_pr
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
+    create(:issue, project: target_project, github_number: 4604, github_state: "closed")
+    notification = human_prerequisite_notification
+    notification.update!(metadata: { "prerequisites" => [
+      { "identity" => "external-work", "kind" => "external",
+        "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 4604 } }
+    ] })
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.code).to eq(:prerequisite_notification)
+    expect(result.message).to include("##{notification.id}")
+    expect(result.agent_run).to be_nil
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "keeps a genuine human decision hold closed to a report-only audit" do
+    merged_partial_pr
+    issue.update!(paid_state: "manual_review")
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.code).to eq(:operator_pause)
+    expect(result.message).to include("human decision")
+    expect(result.agent_run).to be_nil
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "refuses a repeated audit when current evidence and intent are unchanged" do
+    merged_partial_pr
+    record_acceptance_audit(criteria: [ { "criterion" => "the work", "state" => "unmet" } ])
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.code).to eq(:assessment_current)
+    expect(result.agent_run).to be_nil
+  end
+
+  # @spec PARTIAL-CLOSEOUT-051
+  it "does not treat a foreign tenant notification as this issue's prerequisite" do
+    merged_partial_pr
+    other_account = create(:account)
+    other_project = create(:project, account: other_account)
+    other_issue = create(:issue, project: other_project)
+    foreign_notification = create(:notification, :error, account: other_account, subject: other_issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+    foreign_notification.update_column(:subject_id, issue.id)
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result).to be_success
+    expect(result.agent_run).to be_queued
   end
 
   # @spec PROJECT-DELEGATION-009
@@ -216,7 +245,7 @@ RSpec.describe Issues::RequestAcceptanceAudit do
   end
 
   # @spec PARTIAL-CLOSEOUT-027 PARTIAL-CLOSEOUT-037
-  it "queues an audit when satisfied criteria still contain recorded gaps" do
+  it "does not repeat an audit when satisfied criteria still contain recorded gaps" do
     merged_partial_pr
     resolve_current_evidence
     record_acceptance_audit(
@@ -226,8 +255,8 @@ RSpec.describe Issues::RequestAcceptanceAudit do
 
     result = described_class.call(issue:, actor: user)
 
-    expect(result).to be_success
-    expect(result.agent_run).to be_queued
+    expect(result.code).to eq(:assessment_current)
+    expect(result.agent_run).to be_nil
     expect(issue.reload).not_to be_closeout_resolved
   end
 end
