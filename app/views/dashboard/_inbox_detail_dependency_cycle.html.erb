@@ -26,7 +26,7 @@
       <% if status.button %>
         <%= form_with url: dashboard_cycle_analyses_path, data: { turbo_frame: "_top", turbo_confirm: status.button.confirm } do |form| %>
           <%= form.hidden_field :occurrence, value: cycle.occurrence %>
-          <%= form.submit status.button.label, class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
+          <%= form.submit status.button.label, data: { inbox_action: "" }, class: "rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
         <% end %>
       <% end %>
       <% if analysis_run %>

@@ -18,6 +18,7 @@
           method: :post,
           params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
           class: "inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500",
+          data: { inbox_action: "" },
           form: { data: { turbo_frame: "_top" } } do %>
       Approve
     <% end %>
@@ -26,6 +27,7 @@
           method: :post,
           params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
           class: "inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500",
+          data: { inbox_action: "" },
           form: { data: { turbo_confirm: "Reject this plan? No sub-issues will be created.", turbo_frame: "_top" } } do %>
       Reject
     <% end %>
@@ -66,6 +68,7 @@
       <% end %>
 
       <%= submit_tag "Revise",
+            data: { inbox_action: "" },
             class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500" %>
     <% end %>
   </div>

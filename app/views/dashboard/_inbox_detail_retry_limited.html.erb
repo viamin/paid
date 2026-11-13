@@ -50,6 +50,7 @@
             inbox_interactive_chat_path(entry),
             method: :post,
             class: "inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700",
+            data: { inbox_action: "" },
             form: { data: { turbo_frame: "_top" } } %>
     <% end %>
     <%= link_to "View on GitHub",
@@ -70,6 +71,7 @@
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500",
+            data: { inbox_action: "" },
             form: { data: { turbo_confirm: confirm_message, turbo_frame: "_top" } } %>
       <%= link_to "Open project runs",
             project_agent_runs_path(entry.project),

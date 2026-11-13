@@ -16,12 +16,12 @@
         <% if facet_escalation.evaluation %>
           <%= link_to facet_escalation.action_label(actor: current_user),
                 project_facet_confidence_evaluation_path(entry.project, facet_escalation.evaluation, **inbox_context),
-                data: { turbo_frame: "_top" },
+                data: { inbox_action: "", turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
         <% elsif policy(FacetConfidenceEvaluation.new(project: entry.project)).create? %>
           <%= link_to facet_escalation.action_label(actor: current_user),
                 new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
-                data: { turbo_frame: "_top" },
+                data: { inbox_action: "", turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
         <% end %>
         <% if entry.issue %>
@@ -61,7 +61,7 @@
               entry.action_url,
               target: entry.action_url.start_with?("http") ? "_blank" : nil,
               rel: entry.action_url.start_with?("http") ? "noopener noreferrer" : nil,
-              data: entry.action_url.start_with?("http") ? {} : { turbo_frame: "_top" },
+              data: (entry.action_url.start_with?("http") ? {} : { turbo_frame: "_top" }).merge(inbox_action: ""),
               class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
         <% if entry.issue %>
           <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer",
@@ -74,11 +74,12 @@
     <% elsif entry.issue %>
       <div class="flex flex-wrap items-center gap-3">
         <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer",
+              data: { inbox_action: "" },
               class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
       </div>
     <% elsif notification.subject.is_a?(AgentRun) %>
       <div class="flex flex-wrap items-center gap-3">
-        <%= link_to "View Agent Run", project_agent_run_path(notification.subject.project, notification.subject), data: { turbo_frame: "_top" },
+        <%= link_to "View Agent Run", project_agent_run_path(notification.subject.project, notification.subject), data: { inbox_action: "", turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
       </div>
     <% end %>

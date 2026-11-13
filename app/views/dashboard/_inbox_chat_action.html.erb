@@ -6,6 +6,7 @@
           inbox_interactive_chat_path(entry),
           method: :post,
           class: "inline-flex items-center rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50",
+          data: { inbox_action: "" },
           form: { data: { turbo_frame: "_top" } } %>
   </div>
 <% end %>

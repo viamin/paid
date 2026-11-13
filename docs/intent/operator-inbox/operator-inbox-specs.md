@@ -523,15 +523,16 @@
   `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-027** — When a selected Inbox detail renders, the
-  system SHALL present every currently rendered form submission and link as an
+  system SHALL present every explicitly designated item-action control as an
   equivalent, keyboard-accessible affordance in a sticky action area directly
-  below the detail header. The action area SHALL remain available while the
-  detail pane scrolls, wrap without horizontal clipping on narrow viewports,
-  and activate the original control so its existing endpoint, authorization,
-  confirmation, loading, Turbo, and success/error behavior remain unchanged.
-  Detailed fields and explanatory content SHALL remain in the detail body; an
-  action that needs input SHALL retain the existing browser validation and
-  focus behavior.
+  below the detail header. Contextual reference links SHALL remain in the
+  detail body and SHALL NOT be projected into the action area. The action area
+  SHALL remain available while the detail pane scrolls, wrap without
+  horizontal clipping on narrow viewports, and activate the original control
+  so its existing endpoint, authorization, confirmation, loading, Turbo, and
+  success/error behavior remain unchanged. Detailed fields and explanatory
+  content SHALL remain in the detail body; an action that needs input SHALL
+  retain the existing browser validation and focus behavior.
   *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
   `app/javascript/controllers/inbox_actions_controller.js`.
   *Test:* `spec/system/dashboard_inbox_spec.rb`,

@@ -84,6 +84,7 @@
         <%= text_area_tag :reason, nil, placeholder: "Reason for this decision", required: true, rows: 3,
               class: "block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
         <%= form.submit "Record decision",
+              data: { inbox_action: "" },
               class: "inline-flex items-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
       <% end %>
     </div>

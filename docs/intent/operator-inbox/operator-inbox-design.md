@@ -103,16 +103,18 @@ rechecks current queue membership and returns an empty frame for stale entries.
 
 ## Selected-detail action area
 
-Every selected Inbox detail projects its rendered action controls into one
-sticky action area immediately below the detail header. The projection reuses
-the rendered controls rather than creating alternate endpoints or policy
-decisions: a toolbar control activates its original form submitter or link, so
-the existing authorization, confirmation, loading, Turbo, and error behavior
-remain authoritative. Detailed form fields and explanatory content stay in
-the detail body; when an action requires input, browser validation and focus
-continue to lead the operator to that existing form. The action area wraps at
-narrow widths and remains keyboard accessible while the selected detail pane
-scrolls.
+Every selected Inbox detail projects its explicitly designated item-action
+controls into one sticky action area immediately below the detail header. The
+projection reuses the rendered controls rather than creating alternate
+endpoints or policy decisions: a toolbar control activates its original form
+submitter or link, so the existing authorization, confirmation, loading,
+Turbo, and error behavior remain authoritative. Contextual references such as
+linked issues and evidence records remain only in the detail body, preventing
+record counts from expanding the action area. Detailed form fields and
+explanatory content also stay in the detail body; when an action requires
+input, browser validation and focus continue to lead the operator to that
+existing form. The action area wraps at narrow widths and remains keyboard
+accessible while the selected detail pane scrolls.
 
 ## Detail progress projection
 

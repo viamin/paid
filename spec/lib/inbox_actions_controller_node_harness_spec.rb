@@ -7,7 +7,7 @@ class InboxActionsControllerNodeHarness; end
 
 # @spec OPERATOR-INBOX-027
 RSpec.describe InboxActionsControllerNodeHarness do
-  it "projects each submitter and synchronizes its disabled state" do
+  def run_harness
     script = <<~JAVASCRIPT
       const fs = require("node:fs")
       const source = fs.readFileSync("app/javascript/controllers/inbox_actions_controller.js", "utf8")
@@ -16,18 +16,20 @@ RSpec.describe InboxActionsControllerNodeHarness do
         .replace("export default class extends Controller {", "return class InboxActionsController extends Controller {")
       const InboxActionsController = new Function(transformed)()
 
-      const result = { linkClicks: 0, decisions: [], labels: [] }
+      const result = { actionLinkClicks: 0, contextualLinkClicks: 0, decisions: [], labels: [] }
       const submitters = [
-        { tagName: "BUTTON", textContent: "Repair", name: "decision", value: "repair", disabled: false },
-        { tagName: "BUTTON", textContent: "Clarify", name: "decision", value: "clarify", disabled: false },
-        { tagName: "BUTTON", textContent: "Defer", name: "decision", value: "defer", disabled: true }
+        { tagName: "BUTTON", textContent: "Repair", name: "decision", value: "repair", disabled: false, inboxAction: true },
+        { tagName: "BUTTON", textContent: "Clarify", name: "decision", value: "clarify", disabled: false, inboxAction: true },
+        { tagName: "BUTTON", textContent: "Defer", name: "decision", value: "defer", disabled: true, inboxAction: true }
       ]
       submitters.forEach((submitter) => {
         submitter.click = function() {
           if (!this.disabled) result.decisions.push([ this.name, this.value ])
         }
       })
-      const link = { tagName: "A", textContent: "View issue", click() { result.linkClicks += 1 } }
+      const actionLink = { tagName: "A", textContent: "Open settings", inboxAction: true, click() { result.actionLinkClicks += 1 } }
+      const contextualLink = { tagName: "A", textContent: "Evidence #123", click() { result.contextualLinkClicks += 1 } }
+      const allControls = [ actionLink, contextualLink, ...submitters ]
       const bar = {
         contains() { return false },
         replaceChildren(...children) { this.children = children }
@@ -42,10 +44,12 @@ RSpec.describe InboxActionsControllerNodeHarness do
         }
       }
       const observers = []
-      global.MutationObserver = class {
-        constructor(callback) { this.callback = callback; observers.push(this) }
-        observe(target, options) { this.target = target; this.options = options }
-        disconnect() { this.disconnected = true }
+      global.window = {
+        MutationObserver: class {
+          constructor(callback) { this.callback = callback; observers.push(this) }
+          observe(target, options) { this.target = target; this.options = options }
+          disconnect() { this.disconnected = true }
+        }
       }
 
       const controller = Object.create(InboxActionsController.prototype)
@@ -54,7 +58,7 @@ RSpec.describe InboxActionsControllerNodeHarness do
       controller.element = {
         querySelectorAll(selector) {
           result.selector = selector
-          return [ link, ...submitters ]
+          return allControls.filter((control) => control.inboxAction)
         }
       }
       controller.connect()
@@ -72,11 +76,16 @@ RSpec.describe InboxActionsControllerNodeHarness do
     stdout, stderr, status = Open3.capture3("node", stdin_data: script)
 
     expect(status).to be_success, stderr
-    expect(JSON.parse(stdout)).to eq(
-      "linkClicks" => 1,
+    JSON.parse(stdout)
+  end
+
+  it "projects only opted-in actions and synchronizes disabled state" do
+    expect(run_harness).to eq(
+      "actionLinkClicks" => 1,
+      "contextualLinkClicks" => 0,
       "decisions" => [ [ "decision", "repair" ], [ "decision", "clarify" ] ],
-      "labels" => [ "View issue", "Repair", "Clarify", "Defer" ],
-      "selector" => "a[href], button[type='submit'], input[type='submit'], input[type='image'], form button:not([type])",
+      "labels" => [ "Open settings", "Repair", "Clarify", "Defer" ],
+      "selector" => "[data-inbox-action]",
       "firstProxyDisabled" => true,
       "thirdProxyDisabled" => true,
       "observedAttributes" => [ [ "disabled" ], [ "disabled" ], [ "disabled" ] ],

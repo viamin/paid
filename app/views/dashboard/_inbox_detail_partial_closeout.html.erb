@@ -281,7 +281,7 @@
             request_acceptance_audit_project_agent_runs_path(entry.project),
             params: { issue_id: issue.id, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
-            data: { turbo_confirm: "Queue one report-only acceptance audit for ##{issue.github_number}? It will not create implementation work." } %>
+            data: { inbox_action: "", turbo_confirm: "Queue one report-only acceptance audit for ##{issue.github_number}? It will not create implementation work." } %>
     <% end %>
   </div>
 
@@ -356,6 +356,7 @@
             </p>
           </div>
           <%= form.submit "Link prerequisite",
+                data: { inbox_action: "" },
                 class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:self-auto" %>
         <% end %>
     <% end %>
@@ -456,7 +457,7 @@
           <%= form.submit "Close on GitHub",
               id: "closeout_submit_#{issue.id}",
               class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
-              data: { turbo_confirm: "Close ##{issue.github_number} on GitHub against the current acceptance audit? " \
+              data: { inbox_action: "", turbo_confirm: "Close ##{issue.github_number} on GitHub against the current acceptance audit? " \
                 "Paid will refuse if criteria, revisions, prerequisites, scanner verification, or GitHub state changed.", turbo_frame: "_top" } %>
         <% end %>
         </div>
@@ -496,7 +497,7 @@
               class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
         <%= form.submit "Request continuation",
               class: "inline-flex self-start items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
-              data: { turbo_confirm: "Queue one scoped continuation run for ##{issue.github_number}?" } %>
+              data: { inbox_action: "", turbo_confirm: "Queue one scoped continuation run for ##{issue.github_number}?" } %>
       <% end %>
     </div>
   <% end %>
