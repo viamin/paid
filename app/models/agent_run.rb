@@ -4588,7 +4588,7 @@ class AgentRun < ApplicationRecord
   end
 
   def invalidate_filter_options_cache_on_change
-    return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "synthetic").present?
+    return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "trigger_type", "synthetic").present?
     return unless project
 
     self.class.invalidate_filter_options_cache(

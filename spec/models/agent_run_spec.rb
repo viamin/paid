@@ -5474,6 +5474,22 @@ RSpec.describe AgentRun do
     end
 
     # @spec AGENT-RUNS-INDEX-002
+    it "invalidates account and project filter options when trigger type changes" do
+      project = create(:project)
+      agent_run = create(:agent_run, :completed, :automatic, project: project)
+      account_key = described_class.filter_options_cache_key_for(account_id: project.account_id)
+      project_key = described_class.filter_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+      scope = described_class.where(project_id: project.id)
+      scope.distinct_filter_options(cache_key: account_key)
+      scope.distinct_filter_options(cache_key: project_key)
+
+      agent_run.update!(trigger_type: "manual")
+
+      expect(Rails.cache.read(account_key)).to be_nil
+      expect(Rails.cache.read(project_key)).to be_nil
+    end
+
+    # @spec AGENT-RUNS-INDEX-002
     it "computes a cache-miss aggregate in one narrow query without eager-load joins" do
       project = create(:project)
       create(:agent_run, :completed, project: project, agent_type: "claude_code", goal: "create_pr")

@@ -299,6 +299,7 @@ module Projects
       redirect_to inbox_path, alert: error.message
     end
 
+    # @spec AGENT-RUNS-INDEX-002
     def bump_priority
       authorize @project, :run_agent?
 
@@ -319,6 +320,7 @@ module Projects
         return
       end
 
+      AgentRun.invalidate_filter_options_cache(account_id: @project.account_id, project_id: @project.id)
       @project.broadcast_pull_requests_update
       ProcessRunQueueJob.perform_later
 

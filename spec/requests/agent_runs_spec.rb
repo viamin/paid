@@ -391,7 +391,31 @@ RSpec.describe "AgentRuns" do
 
         get agent_runs_path
 
-        expect(response.body).to include("All Goals")
+        goal_select = parsed_html.at_css("select[name='q[goal_in][]'][multiple]")
+        expect(goal_select).to be_present
+        expect(goal_select.css("option").map { |option| option["value"] }).to include("create_pr")
+      end
+
+      # @spec AGENT-RUNS-INDEX-004
+      it "retains multi-select filters and search when sorting the filtered results" do
+        matching_run = create(:agent_run, project: project, status: "completed", agent_type: "codex",
+          goal: "create_pr", trigger_type: "manual", branch_name: "feature/sort-filtered")
+        excluded_run = create(:agent_run, project: project, status: "running", agent_type: "cursor",
+          goal: "create_issue", trigger_type: "automatic", branch_name: "feature/other")
+
+        get agent_runs_path, params: { q: {
+          status_in: [ "completed" ], agent_type_in: [ "codex" ], goal_in: [ "create_pr" ],
+          effective_runner_in: [ matching_run.effective_runner ], trigger_type_in: [ "manual" ],
+          branch_name_or_temporal_workflow_id_cont: "sort-filtered"
+        } }
+
+        sort_url = parsed_html.at_css("table thead a")["href"]
+        get sort_url
+
+        expect(response.body).to include(project_agent_run_path(project, matching_run))
+        expect(response.body).not_to include(project_agent_run_path(project, excluded_run))
+        expect(parsed_html.at_css("select[name='q[status_in][]'] option[value='completed']")["selected"]).to eq("selected")
+        expect(parsed_html.at_css("input[name='q[branch_name_or_temporal_workflow_id_cont]']")["value"]).to eq("sort-filtered")
       end
 
       it "associates the sort label with the sort select" do
@@ -2502,6 +2526,26 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
         expect(response.body).to include("Priority bumped")
+      end
+
+      # @spec AGENT-RUNS-INDEX-002
+      it "invalidates cached account and project filter options after the bulk trigger transition" do
+        original_cache = Rails.cache
+        Rails.cache = ActiveSupport::Cache::MemoryStore.new
+        create(:agent_run, :queued, :automatic, project: project,
+          source_pull_request_number: 77, custom_prompt: "Fix PR")
+        account_key = AgentRun.filter_options_cache_key_for(account_id: project.account_id)
+        project_key = AgentRun.filter_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+        scope = project.agent_runs
+        scope.distinct_filter_options(cache_key: account_key)
+        scope.distinct_filter_options(cache_key: project_key)
+
+        post bump_priority_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+
+        expect(scope.distinct_filter_options(cache_key: account_key)[:trigger_type]).to eq([ "manual" ])
+        expect(scope.distinct_filter_options(cache_key: project_key)[:trigger_type]).to eq([ "manual" ])
+      ensure
+        Rails.cache = original_cache
       end
 
       it "enqueues ProcessRunQueueJob" do
