@@ -103,8 +103,8 @@ RSpec.describe InboxActionsControllerNodeHarness do
     JSON.parse(stdout)
   end
 
-  it "projects every form action and designated action link while synchronizing disabled state" do
-    expect(run_harness).to eq(
+  def expected_result
+    {
       "actionLinkClicks" => 0,
       "contextualLinkClicks" => 0,
       "actionLink" => {
@@ -124,6 +124,10 @@ RSpec.describe InboxActionsControllerNodeHarness do
       "thirdProxyDisabled" => true,
       "observedAttributes" => [ [ "disabled" ], [ "disabled" ], [ "disabled" ], [ "disabled" ] ],
       "observersDisconnected" => true
-    )
+    }
+  end
+
+  it "projects every form action and designated action link while synchronizing disabled state" do
+    expect(run_harness).to eq(expected_result)
   end
 end
