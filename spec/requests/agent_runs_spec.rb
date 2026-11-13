@@ -1025,9 +1025,12 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows metrics" do
-        agent_run = create(:agent_run, :completed, :with_metrics, project: project)
+        agent_run = create(:agent_run, :completed, :with_metrics, project: project, runners_attempted: [
+          { "runner" => "claude", "success" => true, "output_chars" => 250 }
+        ])
         get project_agent_run_path(project, agent_run)
-        expect(response.body).to include("Iterations")
+        expect(response.body).to include("Main agent executions")
+        expect(response.body).to match(/Main agent executions.*?>\s*1\s*<\/dd>/m)
         expect(response.body).to include("Duration")
         expect(response.body).to include("Tokens")
         expect(response.body).to include("Cost")

@@ -2115,16 +2115,16 @@ class AgentRun < ApplicationRecord
     !observable_main_agent_work? && pull_request_number.blank? && created_issue_number.blank?
   end
 
-  # A successful main runner command is recorded before post-run bookkeeping.
-  # Smoke preflight and maintenance commands do not create runner attempts, so
-  # their output cannot make a retry or no-output completion unsafe.
+  # Successful and timed-out main runner commands preserve their output in the
+  # attempt record. Smoke preflight uses a distinct error type, and maintenance
+  # commands do not create runner attempts.
   def observable_main_agent_work?
     iterations.to_i.positive? || observable_main_agent_execution_count.positive?
   end
 
   def observable_main_agent_execution_count
     Array(runners_attempted).count do |attempt|
-      attempt["success"] && attempt["output_chars"].to_i.positive?
+      (attempt["success"] || attempt["error_type"] == "timeout") && attempt["output_chars"].to_i.positive?
     end
   end
 

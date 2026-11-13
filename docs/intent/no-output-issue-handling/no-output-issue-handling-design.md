@@ -103,14 +103,15 @@ contains no declaration retain today's classification behavior unchanged.
 
 `iterations` is a legacy counter and is not evidence that a provider-neutral
 agent run performed work. The no-output classifier instead derives observable
-main-agent work from the persisted runner-attempt record: a successful attempt
-that recorded nonzero output bytes. `RunAgentActivity` writes that record only
-after the main runner command returns successfully and before post-run
-bookkeeping begins. Smoke preflight and maintenance commands do not create a
-successful main runner attempt, so their streaming turns or output cannot
-authorize a no-output completion. Explicit provider and infrastructure error
-signals retain priority when no main-agent work is observed, and terminal
-infrastructure signals always retain precedence. Historic positive
+main-agent work from the persisted runner-attempt record: a successful attempt,
+or a timed-out main-command attempt, that recorded nonzero output bytes.
+`RunAgentActivity` writes successful attempts after the main runner command
+returns and writes timed-out attempts with the output observed before the
+timeout. Smoke preflight uses a distinct attempt type and maintenance commands
+do not create main runner attempts, so their turns or output cannot authorize a
+no-output completion. Explicit provider and infrastructure error signals retain
+priority when no main-agent work is observed, and terminal infrastructure
+signals always retain precedence. Historic positive
 `iterations` values remain evidence for records written before the counter
 stopped advancing; zero is never used as proof that no work occurred.
 

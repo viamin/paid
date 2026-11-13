@@ -2056,6 +2056,22 @@ RSpec.describe AgentRun do
         expect(agent_run.no_observable_work?).to be false
       end
 
+      it "is false when a timed-out main-agent attempt recorded output despite zero iterations" do
+        agent_run = build(:agent_run, :failed, iterations: 0, runners_attempted: [
+          { "runner" => "codex", "success" => false, "error_type" => "timeout", "output_chars" => 250 }
+        ])
+
+        expect(agent_run.no_observable_work?).to be false
+      end
+
+      it "is true when a smoke preflight timeout recorded output" do
+        agent_run = build(:agent_run, :failed, iterations: 0, runners_attempted: [
+          { "runner" => "codex", "success" => false, "error_type" => "preflight_timeout", "output_chars" => 250 }
+        ])
+
+        expect(agent_run.no_observable_work?).to be true
+      end
+
       it "is true when only smoke turns were recorded" do
         agent_run = build(:agent_run, :failed, iterations: 0, turns_completed: 1,
           streaming_turns_data: [ { "turn_number" => 1 } ])
