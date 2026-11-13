@@ -121,6 +121,51 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     )
   end
 
+  # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
+  it "keeps the pushed branch waiting when unsuccessful responses exhaust recovery retries" do
+    allow(Temporalio::Workflow).to receive(:patched)
+      .with("source-closure-retry-unsuccessful-response-v1").and_return(true)
+    failure = Temporalio::Error::ApplicationError.new(
+      "transport returned an unsuccessful response", { "category" => "unsuccessful_response" },
+      type: "SourceClosureAssessmentFailure"
+    )
+    allow(workflow).to receive(:run_activity) do |activity, _input, **_options|
+      raise activity_error(failure, retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED) if activity == Activities::AssessSourceClosureActivity
+
+      {}
+    end
+    allow(workflow).to receive(:run_cleanup_activity)
+
+    expect(workflow.execute(input)).to include(waiting: true)
+    expect(workflow).to have_received(:run_activity).with(
+      Activities::ParkSourceClosureRecoveryActivity,
+      { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30
+    )
+    expect(workflow).not_to have_received(:run_activity).with(Activities::CreatePullRequestActivity, any_args)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
+  it "replays an existing unsuccessful response through the original failure path" do
+    allow(Temporalio::Workflow).to receive(:patched)
+      .with("source-closure-retry-unsuccessful-response-v1").and_return(false)
+    failure = Temporalio::Error::ApplicationError.new(
+      "transport returned an unsuccessful response", { "category" => "unsuccessful_response" },
+      type: "SourceClosureAssessmentFailure"
+    )
+    allow(workflow).to receive(:run_activity) do |activity, _input, **_options|
+      raise activity_error(failure, retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED) if activity == Activities::AssessSourceClosureActivity
+
+      {}
+    end
+    allow(workflow).to receive(:run_cleanup_activity)
+
+    expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ActivityError)
+    expect(workflow).not_to have_received(:run_activity).with(Activities::ParkSourceClosureRecoveryActivity, any_args)
+    expect(workflow).to have_received(:run_cleanup_activity).with(
+      Activities::MarkAgentRunFailedActivity, anything, timeout: 30
+    )
+  end
+
   # @spec PARTIAL-CLOSEOUT-045
   it "terminally fails a non-recoverable assessment without leaving the run waiting" do
     authentication_error = Temporalio::Error::ApplicationError.new(

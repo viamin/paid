@@ -52,7 +52,10 @@ module Workflows
     rescue => e
       raise_if_canceled!(e)
       category = activity_failure_category(e)
-      raise unless retry_exhausted_activity_error?(e) && category.in?(%w[timeout transport_error])
+      raise unless retry_exhausted_activity_error?(e) && Llm::AnalyzePartialCloseout::RECOVERABLE_CATEGORIES.include?(category)
+      if category == "unsuccessful_response"
+        raise unless Temporalio::Workflow.patched("source-closure-retry-unsuccessful-response-v1")
+      end
 
       run_activity(Activities::ParkSourceClosureRecoveryActivity,
         { agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts }, timeout: 30)
