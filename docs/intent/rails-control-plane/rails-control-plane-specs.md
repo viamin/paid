@@ -91,6 +91,22 @@
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/lib/dev_supervisor.sh`.
 
+- [x] **RAILS-CONTROL-PLANE-016** — When a tmux socket is at least one minute old
+  and its server has no sessions, development startup SHALL stop that server
+  and remove its socket. It SHALL preserve newer sockets while their first
+  session may be starting. Supervisor health checks SHALL ignore empty servers
+  rather than restart a healthy Overmind session, while still detecting dead
+  panes and failures when no tmux socket responds.
+  *Tests:* `spec/lib/dev_script_spec.rb`.
+  *Code:* `bin/lib/dev_supervisor.sh`.
+
+- [x] **RAILS-CONTROL-PLANE-017** — When the Overmind control socket is absent
+  but an Overmind tmux session exists for this workspace or its socket is newly
+  created, development startup SHALL refuse to launch duplicate services and explain
+  how to inspect the existing session.
+  *Tests:* `spec/lib/dev_script_spec.rb`.
+  *Code:* `bin/dev`, `bin/lib/dev_supervisor.sh`.
+
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping
   every cron enqueue with a `(cron_key, cron_at)` pair guarded by the unique

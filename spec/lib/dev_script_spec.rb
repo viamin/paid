@@ -62,6 +62,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       tmux_socket_dir = File.join(dir, "tmux")
       FileUtils.mkdir_p(tmux_socket_dir)
       stale_tmux_socket = create_socket(File.join(tmux_socket_dir, "overmind-#{File.basename(dir)}-stale"))
+      File.utime(Time.now - 120, Time.now - 120, stale_tmux_socket)
 
       env = {
         "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
@@ -75,6 +76,112 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       expect(File.exist?(stale_tmux_socket)).to be(false)
       expect(File.exist?(File.join(dir, "log", "dev-update", "tmux.log"))).to be(true)
       assert_before_start_snapshot(dir)
+    end
+  end
+
+  it "removes a tmux socket whose server has no sessions before starting" do # @spec RAILS-CONTROL-PLANE-016
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: { empty_session_socket: true })
+      empty_socket = File.join(dir, "tmux", "overmind-#{File.basename(dir)}-empty")
+      File.utime(Time.now - 120, Time.now - 120, empty_socket)
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(empty_socket)).to be(false)
+      expect(File.exist?(File.join(dir, "empty-tmux-server-stopped"))).to be(true)
+    end
+  end
+
+  it "does not detach a newly created tmux server before its first session exists" do # @spec RAILS-CONTROL-PLANE-016
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      prepare_script_fixture(dir, tmux: { empty_session_socket: true })
+      empty_socket = File.join(dir, "tmux", "overmind-#{File.basename(dir)}-empty")
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+
+      _stdout, stderr, status = Open3.capture3(env, "bash", "-c",
+        "APP_ROOT=\"$PWD\"; source bin/lib/dev_supervisor.sh; dev_supervisor_cleanup_stale_tmux_sockets", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.socket?(empty_socket)).to be(true)
+      expect(File.exist?(File.join(dir, "empty-tmux-server-stopped"))).to be(false)
+    end
+  end
+
+  it "refuses a duplicate start when the Overmind control socket is gone but panes remain live" do # @spec RAILS-CONTROL-PLANE-017
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: { orphan_live_session: true })
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(stderr).to include("existing or starting Overmind tmux session")
+      expect(File.exist?(File.join(dir, "overmind-start-ran"))).to be(false)
+    end
+  end
+
+  it "allows startup when only another worktree has a live tmux session" do # @spec RAILS-CONTROL-PLANE-017
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: { other_worktree_session: true })
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(dir, "overmind-start-ran"))).to be(true)
+    end
+  end
+
+  it "keeps a healthy Overmind session running when an old tmux socket has no sessions" do # @spec RAILS-CONTROL-PLANE-016
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, overmind: { running: true }, tmux: { empty_session_socket: true })
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+
+      stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Overmind is already running and healthy.")
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
+    end
+  end
+
+  it "still restarts an Overmind session with a dead pane" do # @spec RAILS-CONTROL-PLANE-016
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, overmind: { running: true }, tmux: { pane_dead: true })
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+
+      stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Detected unhealthy Overmind session with dead processes. Restarting it...")
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(true)
     end
   end
 
@@ -370,6 +477,9 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     overmind_process_dead = overmind.fetch(:process_dead, false)
     overmind_restart_exit_status = overmind.fetch(:restart_exit_status, 0)
     tmux_pane_dead = tmux.fetch(:pane_dead, false)
+    empty_session_socket = tmux.fetch(:empty_session_socket, false)
+    orphan_live_session = tmux.fetch(:orphan_live_session, false)
+    other_worktree_session = tmux.fetch(:other_worktree_session, false)
     start_exit_status = overmind.fetch(:start_exit_status, 0)
     create_socket_on_start = overmind.fetch(:create_socket_on_start, false)
     start_sleep = overmind.fetch(:start_sleep, 0)
@@ -387,6 +497,9 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     FileUtils.touch(File.join(dir, "overmind-running")) if overmind_running
     create_socket(File.join(dir, ".overmind.sock")) if overmind_running
     create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-active")) if overmind_running
+    create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-empty")) if empty_session_socket
+    create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-orphan")) if orphan_live_session
+    create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-other")) if other_worktree_session
 
     write_executable(
       File.join(dir, "stubbin", "overmind"),
@@ -424,7 +537,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
             ;;
           quit)
             touch "#{dir}/overmind-quit-ran"
-            rm -f "#{dir}/overmind-running" "#{dir}/.overmind.sock"
+            rm -f "#{dir}/overmind-running" "#{dir}/.overmind.sock" "#{dir}/tmux/overmind-#{File.basename(dir)}-active"
             exit 0
             ;;
           restart)
@@ -448,8 +561,25 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       File.join(dir, "stubbin", "tmux"),
       <<~BASH
         #!/usr/bin/env bash
+        if [ "$1" = "-S" ] && [[ "$2" == *-empty ]]; then
+          if [ "$3" = "ls" ]; then exit 0; fi
+          if [ "$3" = "list-panes" ]; then echo "no current target" >&2; exit 1; fi
+          if [ "$3" = "kill-server" ]; then touch "#{dir}/empty-tmux-server-stopped"; rm -f "$2"; exit 0; fi
+        fi
+        if [ "$1" = "-S" ] && [[ "$2" == *-orphan ]]; then
+          if [ "$3" = "ls" ]; then echo "paid: 1 windows"; exit 0; fi
+          if [ "$3" = "list-panes" ]; then
+            if [[ "$6" == *pane_current_path* ]]; then echo "$PWD"; else echo "0 paid:web.0 ruby"; fi
+            exit 0
+          fi
+        fi
+        if [ "$1" = "-S" ] && [[ "$2" == *-other ]]; then
+          if [ "$3" = "ls" ]; then echo "paid: 1 windows"; exit 0; fi
+          if [ "$3" = "list-panes" ]; then echo "/other/worktree"; exit 0; fi
+        fi
         if [ "$1" = "-S" ] && [ "$3" = "ls" ]; then
           if [ -e "#{dir}/overmind-running" ]; then
+            echo "paid: 1 windows"
             exit 0
           fi
           exit 1

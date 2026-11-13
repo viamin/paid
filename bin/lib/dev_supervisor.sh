@@ -195,6 +195,7 @@ dev_supervisor_cleanup_stale_tmux_sockets() {
   dev_supervisor_prepare_logging
 
   local socket_dir
+  local sessions
   socket_dir="$(dev_supervisor_tmux_socket_dir)"
 
   [ -d "$socket_dir" ] || return 0
@@ -205,8 +206,21 @@ dev_supervisor_cleanup_stale_tmux_sockets() {
     [ -S "$socket" ] || continue
     found=1
 
-    if tmux -S "$socket" ls >> "$(dev_supervisor_tmux_log)" 2>&1; then
-      dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Keeping active tmux socket $socket"
+    if ! dev_supervisor_tmux_socket_old_enough "$socket"; then
+      continue
+    fi
+
+    if sessions="$(tmux -S "$socket" ls 2>> "$(dev_supervisor_tmux_log)")"; then
+      if [ -n "$sessions" ]; then
+        dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Keeping active tmux socket $socket"
+        continue
+      fi
+      # An empty server is still alive. Stop it before removing its socket.
+      if ! tmux -S "$socket" kill-server >> "$(dev_supervisor_tmux_log)" 2>&1; then
+        dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Could not stop empty tmux server $socket"
+        continue
+      fi
+      # kill-server removes its own socket; do not unlink a replacement socket.
       continue
     fi
 
@@ -217,6 +231,12 @@ dev_supervisor_cleanup_stale_tmux_sockets() {
   if [ "$found" -eq 0 ]; then
     dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "No overmind tmux sockets found in $socket_dir"
   fi
+}
+
+dev_supervisor_tmux_socket_old_enough() {
+  local modified_at
+  modified_at="$(stat -c %Y "$1" 2>/dev/null)" || return 1
+  [ $(( $(date +%s) - modified_at )) -ge 60 ]
 }
 
 dev_supervisor_cleanup_stale_overmind_tmp_dirs() {
@@ -265,13 +285,19 @@ dev_supervisor_tmux_sockets() {
 dev_supervisor_tmux_has_dead_panes() {
   local socket
   local output
+  local sessions
+  local failed=0
+  local healthy=0
 
   while IFS= read -r socket; do
     [ -n "$socket" ] || continue
 
-    if ! tmux -S "$socket" ls >> "$(dev_supervisor_tmux_log)" 2>&1; then
-      dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Treating tmux socket $socket as unhealthy because tmux ls failed"
-      return 0
+    if ! sessions="$(tmux -S "$socket" ls 2>> "$(dev_supervisor_tmux_log)")"; then
+      failed=1
+      continue
+    fi
+    if [ -z "$sessions" ]; then
+      continue
     fi
 
     if ! output="$(tmux -S "$socket" list-panes -a -F '#{pane_dead} #{session_name}:#{window_name}.#{pane_index} #{pane_current_command}' 2>> "$(dev_supervisor_tmux_log)")"; then
@@ -284,8 +310,37 @@ dev_supervisor_tmux_has_dead_panes() {
       printf '%s\n' "$output" >> "$(dev_supervisor_tmux_log)"
       return 0
     fi
+    healthy=1
   done < <(dev_supervisor_tmux_sockets)
 
+  if [ "$failed" -eq 1 ] && [ "$healthy" -eq 0 ]; then
+    dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Treating tmux session as unhealthy because no socket responds"
+    return 0
+  fi
+  return 1
+}
+
+dev_supervisor_tmux_has_existing_session() {
+  local socket sessions paths path
+  while IFS= read -r socket; do
+    [ -n "$socket" ] || continue
+    if sessions="$(tmux -S "$socket" ls 2>> "$(dev_supervisor_tmux_log)")" && [ -n "$sessions" ]; then
+      # Sockets are shared across worktrees with the same app name.
+      if ! paths="$(tmux -S "$socket" list-panes -a -F '#{pane_current_path}' 2>> "$(dev_supervisor_tmux_log)")"; then
+        return 0
+      fi
+      while IFS= read -r path; do
+        if [ "$path" = "$APP_ROOT" ]; then
+          return 0
+        fi
+      done <<< "$paths"
+      continue
+    fi
+    # A new server may not have created its first session yet.
+    if ! dev_supervisor_tmux_socket_old_enough "$socket"; then
+      return 0
+    fi
+  done < <(dev_supervisor_tmux_sockets)
   return 1
 }
 
