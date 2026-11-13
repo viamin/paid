@@ -93,9 +93,11 @@
 
 - [x] **RAILS-CONTROL-PLANE-016** — When a developer starts Paid with
   `bin/dev`, the development web process SHALL expose PgHero at `/pghero` for
-  the PostgreSQL database configured through `DATABASE_URL`. PgHero's gem and
-  route SHALL be absent from non-development environments, and the integration
-  SHALL not require another service or database.
+  loopback requests to the PostgreSQL database configured through
+  `DATABASE_URL`. PgHero's gem and route SHALL be absent from non-development
+  environments, and the integration SHALL not require another service or
+  database. Network requests, including requests over Tailscale, SHALL NOT
+  reach the PgHero route.
   *Tests:* `spec/config/pg_hero_development_integration_spec.rb`.
   *Code:* `Gemfile`, `config/routes.rb`.
 

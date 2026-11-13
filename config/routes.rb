@@ -4,7 +4,11 @@ Rails.application.routes.draw do
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
   # @spec RAILS-CONTROL-PLANE-016
-  mount PgHero::Engine, at: "pghero" if Rails.env.development?
+  if Rails.env.development?
+    constraints ->(request) { request.local? } do
+      mount PgHero::Engine, at: "pghero"
+    end
+  end
 
   devise_for :users, controllers: { registrations: "users/registrations" }
 
