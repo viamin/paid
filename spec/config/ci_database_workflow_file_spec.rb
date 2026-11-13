@@ -13,6 +13,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "db_username" => "paid_runtime",
         "db_password" => "paid_runtime",
         "database_url" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
+        "cable_database_url" => "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test",
         "creates_application_role" => true,
         "retries_database_setup" => true
       },
@@ -81,14 +82,16 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
       def expect_database_connection_env!(job, expectations)
         if expectations.key?("database_url")
-          expect(job.fetch("env")).to include(
-            "DATABASE_URL" => expectations.fetch("database_url")
-          )
+          expect(job.fetch("env")).to include("DATABASE_URL" => expectations.fetch("database_url"))
         else
           expect(job.fetch("env")).not_to have_key("DATABASE_URL")
         end
 
-        expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
+        if expectations.key?("cable_database_url")
+          expect(job.fetch("env")).to include("CABLE_DATABASE_URL" => expectations.fetch("cable_database_url"))
+        else
+          expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
+        end
       end
 
       def expected_ci_migrations_env
@@ -220,6 +223,17 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       end
 
       if workflow_path == ".github/workflows/ci.yml"
+        # @spec POSTGRESQL-PERSISTENCE-002
+        it "keeps recovered shards on the same primary and cable connection flow" do
+          env = workflow.fetch("jobs").fetch("shard-recovery").fetch("env")
+          database_url = "postgres://paid_runtime:paid_runtime@localhost:5432/paid_test"
+
+          expect(env).to include(
+            "DATABASE_URL" => database_url,
+            "CABLE_DATABASE_URL" => database_url
+          )
+        end
+
         # @spec POSTGRESQL-PERSISTENCE-002
         it "runs performance benchmarks with a tenant-safe application role" do
           job = workflow.fetch("jobs").fetch("performance")
