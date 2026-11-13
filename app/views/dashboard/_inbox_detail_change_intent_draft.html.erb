@@ -75,6 +75,7 @@
               approve_project_change_intent_path(change_intent.project, change_intent, return_to: return_to),
               method: :post,
               class: "inline-flex items-center justify-center rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500",
+              data: { inbox_action: "" },
               form: { data: { turbo_frame: "_top" } } %>
       <% end %>
       <% if can_chat %>
@@ -82,6 +83,7 @@
               inbox_interactive_chat_path(entry),
               method: :post,
               class: "inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50",
+              data: { inbox_action: "" },
               form: { data: { turbo_frame: "_top" } } %>
       <% end %>
       <% if can_review && change_intent.status == "draft" %>
@@ -89,7 +91,7 @@
               discard_project_change_intent_path(change_intent.project, change_intent, return_to: return_to),
               method: :post,
               class: "inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3.5 py-2 text-sm font-semibold text-rose-700 shadow-sm hover:bg-rose-50",
-              data: { turbo_confirm: "Discard this proposed Change Intent Record?" },
+              data: { inbox_action: "", turbo_confirm: "Discard this proposed Change Intent Record?" },
               form: { data: { turbo_frame: "_top" } } %>
       <% end %>
     </div>

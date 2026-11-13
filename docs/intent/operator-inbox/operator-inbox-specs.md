@@ -532,6 +532,25 @@
   `spec/lib/inbox_master_detail_controller_node_harness_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-027** — When a selected Inbox detail renders, the
+  system SHALL present every form action control and every explicitly
+  designated navigational item action as an
+  equivalent, keyboard-accessible affordance in a sticky action area directly
+  below the detail header. Contextual reference links SHALL remain in the
+  detail body and SHALL NOT be projected into the action area. The action area
+  SHALL remain available while the detail pane scrolls, wrap without
+  horizontal clipping on narrow viewports. A projected form action SHALL
+  activate the original control, and a projected navigational action SHALL
+  remain an anchor retaining its original navigation attributes, so existing
+  endpoint, authorization, confirmation, loading, Turbo, native link, and
+  success/error behavior remain unchanged. Detailed fields and explanatory
+  content SHALL remain in the detail body; an action that needs input SHALL
+  retain the existing browser validation and focus behavior.
+  *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
+  `app/javascript/controllers/inbox_actions_controller.js`.
+  *Test:* `spec/system/dashboard_inbox_spec.rb`,
+  `spec/lib/inbox_actions_controller_node_harness_spec.rb`.
+
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
   workflow through the existing Temporal bridge and SHALL redirect back to the

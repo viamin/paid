@@ -177,6 +177,7 @@
             method: :post,
             disabled: !readiness.ready?,
             class: "inline-flex items-center rounded-md bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 disabled:cursor-not-allowed disabled:bg-gray-300",
+            data: { inbox_action: "" },
             form: { data: { turbo_confirm: "Approve #{feature_intent.title} at its current design PR heads?", turbo_frame: "_top" } } %>
     </div>
 
@@ -192,7 +193,7 @@
           <%= form.label :replacement_reference, "Replacement issue, PR, or feature (optional)", class: "block text-xs font-medium text-gray-700" %>
           <%= form.url_field :replacement_reference, class: "mt-1 rounded-md border-gray-300 text-sm", placeholder: "https://github.com/org/repo/pull/123" %>
         </div>
-        <%= form.submit "Decline and remove", class: "inline-flex items-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" %>
+        <%= form.submit "Decline and remove", data: { inbox_action: "" }, class: "inline-flex items-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" %>
       <% end %>
     </div>
   <% end %>

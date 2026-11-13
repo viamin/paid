@@ -59,6 +59,7 @@
     <% if entry.record.state == "stale_metadata" %>
       <%= button_to "Repair document links through a design PR", repair_document_links_design_artifact_finding_path(entry.record),
         params: { revision: entry.record.revision }, form: { data: { turbo_frame: "_top" } },
+        data: { inbox_action: "" },
         class: "mt-4 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
     <% end %>
     <%= form_with url: resolve_design_artifact_finding_path(entry.record), data: { turbo_frame: "_top" }, class: "mt-4 space-y-3" do |form| %>
@@ -72,9 +73,9 @@
         <%= form.text_area :reason, name: "resolution[reason]", required: true, rows: 3, class: "mt-1 w-full rounded-md border-gray-300" %>
       </div>
       <div class="flex flex-wrap gap-2">
-        <%= form.button "Link existing work", name: "resolution[state]", value: "assigned", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
-        <%= form.button "Defer", name: "resolution[state]", value: "deferred", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
-        <%= form.button "Dismiss / not applicable", name: "resolution[state]", value: "dismissed", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+        <%= form.button "Link existing work", name: "resolution[state]", value: "assigned", data: { inbox_action: "" }, class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
+        <%= form.button "Defer", name: "resolution[state]", value: "deferred", data: { inbox_action: "" }, class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+        <%= form.button "Dismiss / not applicable", name: "resolution[state]", value: "dismissed", data: { inbox_action: "" }, class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
       </div>
     <% end %>
 
@@ -104,7 +105,7 @@
     </details>
   <% end %>
   <%= button_to "Recheck", recheck_design_artifact_finding_path(entry.record), params: { revision: entry.record.revision },
-    form: { data: { turbo_frame: "_top" } }, class: "mt-3 text-sm font-medium text-indigo-600" %>
+    form: { data: { turbo_frame: "_top" } }, data: { inbox_action: "" }, class: "mt-3 text-sm font-medium text-indigo-600" %>
   <%= button_to "Chat about this (optional)", inbox_interactive_chat_path(entry.id),
-    form: { data: { turbo_frame: "_top" } }, class: "mt-3 text-sm font-medium text-indigo-600" %>
+    form: { data: { turbo_frame: "_top" } }, data: { inbox_action: "" }, class: "mt-3 text-sm font-medium text-indigo-600" %>
 </section>

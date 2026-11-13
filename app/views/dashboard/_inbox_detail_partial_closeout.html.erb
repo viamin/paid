@@ -52,7 +52,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <%= link_to shadow_evaluation.labeling? ? "Resume labeling" : "Open evaluation and report",
                 project_shadow_evaluation_path(entry.project, shadow_evaluation, **inbox_context),
-                data: { turbo_frame: "_top" },
+                data: { inbox_action: "", turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
           <% if shadow_evaluation.completed? || shadow_evaluation.failed? || shadow_evaluation.partial? || shadow_evaluation.cancelled? %>
             <span class="text-xs <%= shadow_evaluation.completed? ? "text-green-700" : "text-red-700" %>">
@@ -67,7 +67,7 @@
         </p>
         <%= link_to "Start evaluation",
               new_project_shadow_evaluation_path(entry.project, **inbox_context),
-              data: { turbo_frame: "_top" },
+              data: { inbox_action: "", turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
       <% end %>
       <p class="text-xs text-gray-500">
@@ -115,7 +115,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <%= link_to facet_closeout_evaluation.labeling? ? "Resume judgments" : "Open evaluation and report",
                 project_facet_confidence_evaluation_path(entry.project, facet_closeout_evaluation, **inbox_context),
-                data: { turbo_frame: "_top" },
+                data: { inbox_action: "", turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
           <% if facet_closeout_evaluation.frozen? %>
             <span class="text-xs text-green-700">reference set frozen — the compiled report is attached evidence</span>
@@ -129,7 +129,7 @@
         </p>
         <%= link_to "Start evaluation",
               new_project_facet_confidence_evaluation_path(entry.project, issue_id: issue.id, **inbox_context),
-              data: { turbo_frame: "_top" },
+              data: { inbox_action: "", turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       <% end %>
     <% else %>
@@ -281,7 +281,7 @@
             request_acceptance_audit_project_agent_runs_path(entry.project),
             params: { issue_id: issue.id, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
-            data: { turbo_confirm: "Queue one report-only acceptance audit for ##{issue.github_number}? It will not create implementation work." } %>
+            data: { inbox_action: "", turbo_confirm: "Queue one report-only acceptance audit for ##{issue.github_number}? It will not create implementation work." } %>
     <% end %>
   </div>
 
@@ -327,7 +327,7 @@
               <p class="text-sm text-indigo-900"><%= action.setup_action %></p>
               <% unless action.requirement %>
                 <%= link_to "Configure reviewed checks", project_pre_commit_requirements_path(entry.project),
-                      data: { turbo_frame: "_top" }, class: "text-sm font-medium text-indigo-700 hover:text-indigo-900" %>
+                      data: { inbox_action: "", turbo_frame: "_top" }, class: "text-sm font-medium text-indigo-700 hover:text-indigo-900" %>
               <% end %>
             <% end %>
           </div>
@@ -356,6 +356,7 @@
             </p>
           </div>
           <%= form.submit "Link prerequisite",
+                data: { inbox_action: "" },
                 class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:self-auto" %>
         <% end %>
     <% end %>
@@ -410,7 +411,7 @@
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <%= link_to "Open project runs",
           project_agent_runs_path(entry.project),
-          data: { turbo_frame: "_top" },
+          data: { inbox_action: "", turbo_frame: "_top" },
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
   </div>
 
@@ -456,7 +457,7 @@
           <%= form.submit "Close on GitHub",
               id: "closeout_submit_#{issue.id}",
               class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
-              data: { turbo_confirm: "Close ##{issue.github_number} on GitHub against the current acceptance audit? " \
+              data: { inbox_action: "", turbo_confirm: "Close ##{issue.github_number} on GitHub against the current acceptance audit? " \
                 "Paid will refuse if criteria, revisions, prerequisites, scanner verification, or GitHub state changed.", turbo_frame: "_top" } %>
         <% end %>
         </div>
@@ -496,7 +497,7 @@
               class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
         <%= form.submit "Request continuation",
               class: "inline-flex self-start items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
-              data: { turbo_confirm: "Queue one scoped continuation run for ##{issue.github_number}?" } %>
+              data: { inbox_action: "", turbo_confirm: "Queue one scoped continuation run for ##{issue.github_number}?" } %>
       <% end %>
     </div>
   <% end %>
