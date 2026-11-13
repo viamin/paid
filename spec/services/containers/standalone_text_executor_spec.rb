@@ -281,6 +281,17 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-006
+  it "fails closed when Docker cannot provision isolated execution" do
+    allow(backend).to receive(:create_container).and_raise(Docker::Error::DockerError, "Docker unavailable")
+
+    expect do
+      described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+    end.to raise_error(AgentHarness::ConfigurationError, /Unable to provision isolated text execution/)
+
+    expect(backend).not_to have_received(:start_container)
+  end
+
+  # @spec LLM-ROUTING-006
   it "removes the container when archive staging fails" do
     allow(backend).to receive(:archive_in_container).and_raise(Docker::Error::DockerError, "archive failed")
 
