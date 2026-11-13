@@ -14,7 +14,17 @@ module CycleAnalyses
       def readable_description
         return correction_description if action == "correct"
 
-        "Remove the dependency declared by #{from_ref} → #{to_ref}, #{source_description}."
+        "Remove the dependency declared by #{from_ref} → #{to_ref}, #{source_location}."
+      end
+
+      def source_label
+        source_description.sub(/\Adeclared in (?:a |the )?/, "")
+      end
+
+      def source_location
+        return source_description if source_url.blank?
+
+        "#{source_description} at #{source_url}"
       end
 
       private
@@ -40,19 +50,20 @@ module CycleAnalyses
       end
 
       def repair_button_label
-        "Remove the #{changes.first.to_ref} dependency from #{changes.first.from_ref}"
+        change = changes.first
+        "Remove the #{change.to_ref} declaration from #{change.from_ref}'s #{change.source_label}"
       end
 
       def repair_confirmation
         change = changes.first
         "Remove the dependency declaration where #{change.from_ref} declares #{change.to_ref} as a dependency " \
-          "(#{change.source_description})? This edits GitHub. Paid re-checks the live declaration, your authority, " \
+          "in #{change.source_location}? This edits GitHub. Paid re-checks the live declaration, your authority, " \
           "and the current graph before writing."
       end
 
       def before_description
         change = changes.first
-        "#{change.from_ref} lists #{change.to_ref} as a dependency (#{change.source_description})."
+        "#{change.from_ref} lists #{change.to_ref} as a dependency in #{change.source_location}."
       end
 
       def after_description
