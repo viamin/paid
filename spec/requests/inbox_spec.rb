@@ -360,7 +360,12 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("No single safe repair")
     expect(response.body).to include("Owners disagree")
     expect(response.body).to include("apply one reviewed removal")
-    expect(response.body).to include("Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}")
+    document = Nokogiri::HTML(response.body)
+    repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
+    expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
+      "Remove the #{project.full_name}##{issues[1].github_number} declaration from " \
+      "#{project.full_name}##{issues[0].github_number}'s trusted comment"
+    )
   end
 
   def record_conflicting_recommendation!(run, removal_edge)
