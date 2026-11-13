@@ -60,7 +60,8 @@
   older activity unavailable. Processing attempts SHALL come from the same
   durable agent-run projection as the timeline; retry-cap appearances SHALL
   use the issue's durable distinct-abandonment count, and other recorded Inbox
-  returns SHALL use their deduplicated ledger events. Token-budget-exceeded
+  returns SHALL use item-occurrence-keyed ledger events while excluding
+  retry-lane events already represented by that counter. Token-budget-exceeded
   runs SHALL therefore count as processing attempts without a synthetic
   return event or inferred older history.
   *Code:* `app/services/inbox/action_history.rb`,

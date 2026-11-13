@@ -74,8 +74,8 @@ module Inbox
       return unless removal && !removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
 
       occurrence = Digest::SHA256.hexdigest(Inbox::RequestIdentity.occurrence_for(entry))
-      event = HistoryRecorder.call(entry:, event_key: "inbox-returned:#{removal.id}:#{occurrence}",
-        action: "Returned to Inbox", actor: "Paid", result: "completed")
+      event = HistoryRecorder.call(entry:, event_key: "inbox-returned:#{occurrence}",
+        action: "Returned to Inbox", actor: "Paid", result: "completed", metadata: { entry_kind: entry.kind })
       event&.previously_new_record?
     end
 

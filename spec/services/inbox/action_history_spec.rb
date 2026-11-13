@@ -33,6 +33,37 @@ RSpec.describe Inbox::ActionHistory do
   end
 
   # @spec OPERATOR-INBOX-022
+  it "counts one return when multiple users removed the same item occurrence" do
+    previous_occurrence = 2.hours.ago
+    current_occurrence = 1.hour.ago
+    returned_entry = entry.class.new(**entry.to_h.merge(waiting_since: current_occurrence))
+    users = create_list(:user, 2)
+    users.each do |user|
+      InboxRemoval.create!(user:, project:, request_key: entry.id, entry_kind: entry.kind,
+        request_occurrence: previous_occurrence.utc.iso8601(6), removed_at: previous_occurrence)
+      described_class.call(entry: returned_entry, user:)
+    end
+
+    summary = described_class.call(entry: returned_entry).summary
+
+    expect(summary).to have_attributes(inbox_appearances: 2, inbox_returns: 1)
+    expect(InboxHistoryEvent.where("event_key LIKE ?", "inbox-returned:%").count).to eq(1)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "does not add a retry-limited return already represented by the abandonment count" do
+    issue.update!(runner_retry_abandonment_count: 2)
+    kind = Inbox::Queue::RETRY_LIMITED_KIND
+    retry_entry = entry.class.new(**entry.to_h.merge(id: "#{kind}:#{issue.id}", kind:))
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", event_key: "inbox-returned:abc",
+      metadata: { action: "Returned to Inbox", entry_kind: kind })
+
+    expect(described_class.call(entry: retry_entry).summary).to have_attributes(inbox_appearances: 2,
+      inbox_returns: 1, repeated_returns: false)
+  end
+
+  # @spec OPERATOR-INBOX-022
   it "emphasizes repeated retry-cap returns from the durable abandonment count" do
     issue.update!(runner_retry_abandonment_count: 3)
 

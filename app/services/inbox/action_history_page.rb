@@ -177,7 +177,9 @@ module Inbox
     end
 
     def recorded_returns
-      history_scope.where("event_key LIKE ?", "inbox-returned:%").count
+      history_scope.where("event_key LIKE ?", "inbox-returned:%")
+        .where("metadata ->> 'entry_kind' IS DISTINCT FROM ?", Inbox::Queue::RETRY_LIMITED_KIND)
+        .count
     end
   end
 end

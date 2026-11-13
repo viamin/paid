@@ -156,8 +156,10 @@ the bounded timeline independently of Inbox-list pagination.
 
 The action-history header projects compact, known counts from the same durable
 sources: agent-run rows provide processing attempts, the retry-abandonment
-counter provides distinct retry-lane appearances, and deduplicated ledger
-return events provide other recorded returns. A repeated return is emphasized
+counter provides distinct retry-lane appearances, and item-occurrence-keyed
+ledger return events provide other recorded returns. Retry-lane ledger events
+are excluded from that additive count because the counter already represents
+them. A repeated return is emphasized
 in the header. When the coverage boundary is incomplete, the header labels its
 figures as known rather than filling in older activity; token-budget failures
 remain attempts unless a durable return source records a separate appearance.
