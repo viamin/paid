@@ -304,7 +304,7 @@ dev_supervisor_tmux_has_dead_panes() {
   local output
   local sessions
   local failed=0
-  local healthy=0
+  local responsive=0
 
   while IFS= read -r socket; do
     [ -n "$socket" ] || continue
@@ -313,6 +313,7 @@ dev_supervisor_tmux_has_dead_panes() {
       failed=1
       continue
     fi
+    responsive=1
     if [ -z "$sessions" ]; then
       continue
     fi
@@ -327,10 +328,9 @@ dev_supervisor_tmux_has_dead_panes() {
       printf '%s\n' "$output" >> "$(dev_supervisor_tmux_log)"
       return 0
     fi
-    healthy=1
   done < <(dev_supervisor_tmux_sockets)
 
-  if [ "$failed" -eq 1 ] && [ "$healthy" -eq 0 ]; then
+  if [ "$failed" -eq 1 ] && [ "$responsive" -eq 0 ]; then
     dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Treating tmux session as unhealthy because no socket responds"
     return 0
   fi

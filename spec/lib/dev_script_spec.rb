@@ -375,6 +375,30 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "ignores an empty tmux server when another old socket no longer responds" do # @spec RAILS-CONTROL-PLANE-016
+    Dir.mktmpdir("dev", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        overmind: { running: true },
+        tmux: { empty_session_socket: true, unresponsive_socket: true }
+      )
+      File.unlink(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-active"))
+
+      env = {
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "SKIP_DEV_CLEANUP" => "1",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      }
+      stdout, stderr, status = Open3.capture3(env, script_path, chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Overmind is already running and healthy.")
+      expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
+      expect(File.exist?(File.join(dir, "overmind-start-ran"))).to be(false)
+    end
+  end
+
   it "restarts a healthy overmind session when requested" do
     Dir.mktmpdir("dev", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, overmind: { running: true }, tmux: { pane_dead: false })
@@ -520,6 +544,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     overmind_restart_exit_status = overmind.fetch(:restart_exit_status, 0)
     tmux_pane_dead = tmux.fetch(:pane_dead, false)
     empty_session_socket = tmux.fetch(:empty_session_socket, false)
+    unresponsive_socket = tmux.fetch(:unresponsive_socket, false)
     orphan_live_session = tmux.fetch(:orphan_live_session, false)
     other_worktree_session = tmux.fetch(:other_worktree_session, false)
     start_exit_status = overmind.fetch(:start_exit_status, 0)
@@ -541,6 +566,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     create_socket(File.join(dir, ".overmind.sock")) if overmind_running
     create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-active")) if overmind_running
     create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-empty")) if empty_session_socket
+    create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-unresponsive")) if unresponsive_socket
     create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-orphan")) if orphan_live_session
     create_socket(File.join(dir, "tmux", "overmind-#{File.basename(dir)}-other")) if other_worktree_session
 
@@ -615,6 +641,9 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
           if [ "$3" = "ls" ]; then exit 0; fi
           if [ "$3" = "list-panes" ]; then echo "no current target" >&2; exit 1; fi
           if [ "$3" = "kill-server" ]; then touch "#{dir}/empty-tmux-server-stopped"; rm -f "$2"; exit 0; fi
+        fi
+        if [ "$1" = "-S" ] && [[ "$2" == *-unresponsive ]]; then
+          exit 1
         fi
         if [ "$1" = "-S" ] && [[ "$2" == *-orphan ]]; then
           if [ "$3" = "ls" ]; then echo "paid: 1 windows"; exit 0; fi
