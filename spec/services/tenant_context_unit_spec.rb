@@ -178,6 +178,21 @@ RSpec.describe TenantContext, :no_db, :tenant_isolation do
   end
 
   describe ".with_system_access" do
+    it "reads existing tenant settings through parameterized queries" do # @spec POSTGRESQL-PERSISTENCE-001
+      connection = instance_double(ActiveRecord::ConnectionAdapters::AbstractAdapter)
+
+      allow(described_class).to receive(:connection).and_return(connection)
+      allow(connection).to receive_messages(select_value: nil, exec_query: nil)
+
+      described_class.with_system_access { nil }
+
+      expect(connection).to have_received(:select_value).with(
+        "SELECT NULLIF(current_setting($1, true), '')",
+        "TenantContext#current_setting",
+        satisfy { |binds| binds.map(&:value_before_type_cast) == [ "paid.current_account_id" ] }
+      )
+    end
+
     it "restores the previous account and database settings after yielding" do
       allow(described_class).to receive(:current_setting).with("paid.current_account_id").and_return("123")
       allow(described_class).to receive(:current_setting).with("paid.bypass_tenant_rls").and_return("false")

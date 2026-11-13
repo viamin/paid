@@ -41,6 +41,9 @@ later upstream migrations.
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
 guards against unsafe runtime roles that would bypass those policies. The
+tenant-context writer retries once when PostgreSQL transiently returns no
+result for its parameterized setting query, then raises a repeated failure so
+no request continues with an uncertain RLS session state. The
 database-backed CI workflows start their PostgreSQL service with the bootstrap
 role, then create and use a dedicated non-superuser application role for Rails
 database tasks. The shipped policy set does not just hide rows on reads; it also rejects

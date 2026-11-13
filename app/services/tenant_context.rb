@@ -84,14 +84,14 @@ class TenantContext
       nil
     end
 
-    def transaction_aborted?(error)
-      error.cause.is_a?(PG::InFailedSqlTransaction)
-    end
-
     def setting_binds(*values)
       values.map do |setting|
         ActiveRecord::Relation::QueryAttribute.new(nil, setting.to_s, ActiveRecord::Type::String.new)
       end
+    end
+
+    def transaction_aborted?(error)
+      error.cause.is_a?(PG::InFailedSqlTransaction)
     end
 
     def connection
