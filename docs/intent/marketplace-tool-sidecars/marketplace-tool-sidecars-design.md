@@ -71,7 +71,8 @@ with `"npx"` (stdio in-container), `"docker_image"` (MCP url sidecar on
   paid-agent bucket without counting a sidecar as an additional running agent.
 - Waits for a TCP health probe against `hostname:port` with a timeout
   matching `McpProvisioner::HEALTH_CHECK_TIMEOUT`, mirroring the
-  `docker_image` arm.
+  `docker_image` arm. The tool's canonical top-level `port` is the probe and
+  endpoint port; `metadata.port` is retained only for legacy MCP definitions.
 - Does **not** register a `url_server` MCP entry; a tool sidecar is a plain
   TCP/HTTP endpoint exposed to the agent via the alias.
 

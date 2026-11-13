@@ -589,7 +589,7 @@ module Containers
 
     def resolve_port(definition, default_port: DEFAULT_PORT)
       metadata = definition.fetch("metadata", {})
-      port = metadata["port"]&.to_i || default_port
+      port = (definition["port"] || metadata["port"])&.to_i || default_port
 
       unless VALID_PORT_RANGE.cover?(port)
         raise Error, "Invalid port #{port} for sidecar #{definition["name"].inspect}; must be 1..65535"

@@ -105,7 +105,9 @@
   per-run `{name, hostname, port, url}` endpoint in
   `AgentRun#tool_sidecar_endpoints` and SHALL expose the complete manifest to
   the agent through the non-MCP `PAID_TOOL_SIDECAR_ENDPOINTS` JSON environment
-  variable. The manifest SHALL contain no failed, skipped, or unprovisioned
+  variable. Provisioning and the health probe SHALL use the attached tool
+  artifact's top-level `port`; legacy MCP definitions MAY use
+  `metadata.port`. The manifest SHALL contain no failed, skipped, or unprovisioned
   tools; SHALL not alter `mcp_provisioned_servers`; and SHALL be cleared when
   tool-sidecar cleanup runs or provisioning fails.
   *Tests:* `spec/services/containers/mcp_provisioner_tool_install_arm_spec.rb`,
