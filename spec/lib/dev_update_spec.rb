@@ -618,6 +618,33 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+  it "aborts after a failed auto-stash without pulling or popping a pre-existing stash" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        dirty_tree: true,
+        stash_push_exit_status: 1,
+        stash_push_output: "fatal: Unable to create .git/index.lock",
+        pre_existing_stash: true
+      )
+
+      stdout, stderr, status = Open3.capture3(failure_lock_env(dir), script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+      lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+      reason_path = "#{lock_path}.reason"
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("git stash: fatal: Unable to create .git/index.lock")
+      expect(updater_log).to include("ERROR: git stash push failed. Resolve the Git error and rerun bin/dev-update.")
+      expect(File.exist?(File.join(dir, "pull-ran"))).to be(false)
+      expect(File.read(File.join(dir, "git-stash.log"))).to eq("stash: stash push --include-untracked -m dev-update-autostash\n")
+      expect(File.exist?(File.join(dir, "pre-existing-stash"))).to be(true)
+      expect(File.read(lock_path).strip).to eq("1")
+      expect(File.read(reason_path).strip).to eq("git-stash")
+    end
+  end
+
   it "logs git stash pop output after restoring auto-stashed changes" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, dirty_tree: true, stash_pop_output: "Applied autostash cleanly")
@@ -858,8 +885,11 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     dirty_tree: false,
     current_branch: "main",
     pull_exit_status: 0,
+    stash_push_exit_status: 0,
+    stash_push_output: "Saved working directory and index state",
     stash_pop_exit_status: 0,
     stash_pop_output: "Applied stash",
+    pre_existing_stash: false,
     pull_diff_files: [],
     rails_migrate_exit_status: 0,
     rails_sync_exit_status: 0,
@@ -871,6 +901,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
+    FileUtils.touch(File.join(dir, "pre-existing-stash")) if pre_existing_stash
 
     script_path = File.join(dir, "bin", "dev-update")
     FileUtils.cp(script_source, script_path)
@@ -979,9 +1010,12 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
           stash)
             echo "stash: $*" >> "#{dir}/git-stash.log"
             if [ "${2:-}" = "pop" ]; then
+              rm -f "#{dir}/pre-existing-stash"
               printf '%s\n' "#{stash_pop_output}"
               exit #{stash_pop_exit_status}
             fi
+            printf '%s\n' "#{stash_push_output}"
+            exit #{stash_push_exit_status}
             ;;
           checkout)
             exit 0

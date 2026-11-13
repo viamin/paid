@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-11
+last_updated: 2026-11-13
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  development-environment-update:
+    title: Development Environment Update
+    path: docs/intent/development-environment-update/development-environment-update-design.md
+    specs: docs/intent/development-environment-update/development-environment-update-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-11-13
+    next: "Keep automatic updates bounded to state they create and surface Git failures without mutating lock files."
   settings-visible-copy:
     title: Settings Visible Copy
     path: docs/intent/settings-visible-copy/settings-visible-copy-design.md

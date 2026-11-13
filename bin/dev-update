@@ -148,7 +148,12 @@ stash_dirty_tree() {
   if tree_is_dirty; then
     log "Working tree has uncommitted changes; auto-stashing..."
     local stash_output
-    stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+    if ! stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"; then
+      log_command_output "git stash" "$stash_output"
+      record_failure "git-stash"
+      fail "git stash push failed. Resolve the Git error and rerun bin/dev-update."
+    fi
     log_command_output "git stash" "$stash_output"
     STASHED_CHANGES=1
   fi
