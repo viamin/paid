@@ -91,7 +91,7 @@
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/lib/dev_supervisor.sh`.
 
-- [x] **RAILS-CONTROL-PLANE-016** — When a developer starts Paid with
+- [x] **RAILS-CONTROL-PLANE-018** — When a developer starts Paid with
   `bin/dev`, the development web process SHALL expose PgHero at `/pghero` for
   password-authenticated requests from the development machine to the PostgreSQL
   database configured through `DATABASE_URL`. PgHero's gem and route SHALL be

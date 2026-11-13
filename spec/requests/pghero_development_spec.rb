@@ -19,7 +19,7 @@ RSpec.describe "PgHero development route", :no_db do
     reset_pghero_auth_config
   end
 
-  # @spec RAILS-CONTROL-PLANE-016
+  # @spec RAILS-CONTROL-PLANE-018
   it "configures authentication for requests forwarded through Docker Compose" do
     routes = ActionDispatch::Routing::RouteSet.new
     environment = ActiveSupport::StringInquirer.new("development")
