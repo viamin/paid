@@ -94,13 +94,19 @@ module Llm
 
     def self.call(...) = new(...).call
 
-    # @spec LLM-ROUTING-008 PARTIAL-CLOSEOUT-049
+    # @spec LLM-ROUTING-008 PARTIAL-CLOSEOUT-049 RUNNER-USAGE-001 RUNNER-USAGE-002
     def self.fallback_runner_identifiers_for(agent_run)
-      settings = agent_run.project.effective_owner&.settings
+      owner = agent_run.project.effective_owner
+      settings = owner&.settings
       return [] unless settings&.fallback_enabled?
 
       primary = agent_run.effective_runner_record&.routing_key || agent_run.effective_runner
-      (Array(settings.issue_analysis_fallback_runners) +
+      allowed = UserSetting.fallback_candidate_runners(owner, identifiers: true)
+      configured = Array(settings.issue_analysis_fallback_runners).filter_map do |identifier|
+        runner = Runner.for_identifier(owner, identifier)
+        runner.routing_key if allowed.include?(runner&.routing_key)
+      end
+      (configured +
         settings.fallback_priority_for(primary_runner: primary, identifiers: true)).uniq.first(4)
     end
 
