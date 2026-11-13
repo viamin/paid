@@ -18,7 +18,7 @@ module ProjectDelegation
     def call
       raise ArgumentError, "rollback reason is required" if reason.blank?
 
-      SelectPosture.call(project:, actor:, level: Posture::CONSERVATIVE, reason:)
+      SelectPosture.call(project:, actor:, level: Posture::CONSERVATIVE, reason:, operation: :rollback)
     end
 
     private

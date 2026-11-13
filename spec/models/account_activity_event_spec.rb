@@ -152,6 +152,14 @@ RSpec.describe AccountActivityEvent do
       expect(event.description).to eq("Searched paid issues for duplicates")
     end
 
+    it "describes project delegation rollbacks with revision context" do # @spec PROJECT-DELEGATION-006
+      event = described_class.new(action: "project_delegation.rollback", metadata: {
+        "level" => "conservative", "project_name" => "paid", "revision" => 3
+      })
+
+      expect(event.description).to eq("Selected the conservative delegation posture for paid (revision 3)")
+    end
+
     it "describes prompt approval" do
       event = described_class.new(action: "prompt_version.approved", metadata: {
         "prompt_slug" => "my-prompt", "version" => 3
@@ -208,6 +216,17 @@ RSpec.describe AccountActivityEvent do
         "query" => "duplicate", "state" => "open"
       })
       expect(event.detail_lines).to eq([ "Query: duplicate (state: open)" ])
+    end
+
+    it "returns posture details for project delegation rollbacks" do # @spec PROJECT-DELEGATION-006
+      event = described_class.new(action: "project_delegation.rollback", metadata: {
+        "previous_level" => "bounded_delivery", "enabled_action_classes" => []
+      })
+
+      expect(event.detail_lines).to eq([
+        "Previous posture: bounded delivery",
+        "Enabled action classes: none"
+      ])
     end
   end
 

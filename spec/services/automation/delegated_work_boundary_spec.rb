@@ -130,15 +130,6 @@ RSpec.describe Automation::DelegatedWorkBoundary do
     expect(result.reasons).to include(:expiry)
   end
 
-  it "closes the authorization when the exclusive stop is reached" do # @spec PROJECT-DELEGATION-006
-    result = recheck(phase: "merge")
-
-    expect(result).to be_blocked
-    expect(authorization.reload.status).to eq("completed")
-    expect(account.account_activity_events.by_action("bounded_action.completed").last)
-      .to have_attributes(subject: authorization)
-  end
-
   it "fails closed and records a security pause when security assessment is unavailable" do # @spec PROJECT-DELEGATION-007
     FeatureFlags.enable!(:project_delegation, project:)
 

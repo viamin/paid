@@ -207,7 +207,7 @@ class AccountActivityEvent < ApplicationRecord
       "Proposed pull request ##{metadata_value('pull_request_number')}"
     when "search_issues.executed"
       "Searched #{metadata_value('project_name')} issues for duplicates"
-    when "project_delegation.posture_selected"
+    when "project_delegation.posture_selected", "project_delegation.rollback"
       "Selected the #{metadata_value('level').humanize.downcase} delegation posture for " \
         "#{metadata_value('project_name')} (revision #{metadata_value('revision')})"
     when "prompt_version.approved"
@@ -269,7 +269,7 @@ class AccountActivityEvent < ApplicationRecord
       detail = +"Query: #{metadata_value('query')}"
       detail << " (state: #{metadata_value('state')})" if metadata.to_h["state"].present?
       [ detail ]
-    when "project_delegation.posture_selected"
+    when "project_delegation.posture_selected", "project_delegation.rollback"
       [ "Previous posture: #{metadata_value('previous_level').humanize.downcase}",
         "Enabled action classes: #{Array(metadata.to_h['enabled_action_classes']).join(', ').presence || 'none'}" ]
     when "prompt_version.approved"
