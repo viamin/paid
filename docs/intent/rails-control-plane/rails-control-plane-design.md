@@ -77,8 +77,9 @@ The development web process also exposes password-protected PgHero at `/pghero`
 to the development machine only. PgHero is a development-only Rails engine that
 inspects the same PostgreSQL connection configured for Paid through
 `DATABASE_URL`; it does not add a service, a database, or a production route.
-The system-test workflow excludes the development dependency group so its test
-environment does not load PgHero or any other development-only tool.
+PgHero is mounted only when Rails runs in development, so the system-test
+environment does not load its dashboard route while retaining the development
+dependencies that Paid's eagerly loaded test application requires.
 `bin/dev` binds the native development server to loopback. Docker Compose
 publishes its web port to the host loopback interface while the server listens
 on the container network, so the dashboard remains reachable from the host

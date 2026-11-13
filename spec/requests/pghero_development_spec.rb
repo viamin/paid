@@ -31,6 +31,17 @@ RSpec.describe "PgHero development route", :no_db do
     expect(PgHero.password).to eq("development-password")
   end
 
+  # @spec RAILS-CONTROL-PLANE-018
+  it "does not mount PgHero outside development" do
+    routes = ActionDispatch::Routing::RouteSet.new
+    environment = ActiveSupport::StringInquirer.new("test")
+
+    routes.draw { PgHeroDevelopmentRoutes.draw(self, environment:) }
+
+    route = routes.routes.find { |candidate| candidate.app.respond_to?(:app) && candidate.app.app == PgHero::Engine }
+    expect(route).to be_nil
+  end
+
   def reset_pghero_auth_config
     pghero_config_variables.each do |name|
       PgHero.remove_instance_variable(:"@#{name}") if PgHero.instance_variable_defined?(:"@#{name}")
