@@ -1369,9 +1369,11 @@ RSpec.describe "Inbox" do
 
     document = Nokogiri::HTML(response.body)
     summary = document.at_css("[data-testid='inbox-history-summary']")
-    expect(summary.text).to include("1 processing attempt", "3 Inbox appearances", "Returned to Inbox 2 times")
+    expect(summary.text).to include("Known 1 processing attempt", "Known 3 Inbox appearances",
+      "Returned to Inbox 2 times")
     expect(summary["role"]).to eq("status")
     expect(summary["class"]).to include("flex-wrap")
+    expect(summary.at_css(".text-amber-800").text).to include("Returned to Inbox 2 times")
   end
 
   # @spec OPERATOR-INBOX-025
