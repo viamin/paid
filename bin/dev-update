@@ -436,11 +436,11 @@ stop_overmind() {
   if dev_supervisor_tmux_has_existing_session; then
     log "Detected an orphaned Overmind tmux session without control socket $OVERMIND_SOCKET."
     if dev_supervisor_stop_workspace_tmux_sessions; then
-      log "Stopped orphaned Overmind tmux session: ${DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES}."
+      log "Stopped orphaned Overmind tmux session: $(dev_supervisor_workspace_tmux_identities)."
       STOPPED_OVERMIND=1
     else
       dev_supervisor_snapshot_state "dev-update-orphaned-tmux-stop-failed"
-      fail "Cannot safely stop orphaned Overmind tmux session (${DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES:-unknown identity}). Inspect tmux socket/session above and stop it before rerunning bin/dev-update."
+      fail "Cannot safely stop orphaned Overmind tmux session ($(dev_supervisor_workspace_tmux_identities 'unknown identity')). Inspect tmux socket/session above and stop it before rerunning bin/dev-update."
     fi
   else
     log "Overmind not running, skipping stop."

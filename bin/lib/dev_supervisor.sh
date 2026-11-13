@@ -362,6 +362,10 @@ dev_supervisor_tmux_has_existing_session() {
 # the pane path keeps sibling worktrees on the shared tmux server untouched.
 DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES=""
 
+dev_supervisor_workspace_tmux_identities() {
+  printf '%s\n' "${DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES:-${1:-}}"
+}
+
 dev_supervisor_workspace_tmux_sessions() {
   local socket panes session_name pane_path
 
