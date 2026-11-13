@@ -4,7 +4,7 @@ module PartialCloseouts
   # Schedules one report-only audit after terminal closeout evidence appears.
   # The issue lock covers the historical-attempt check and admission so
   # overlapping sweeps cannot schedule the same retry.
-  # @spec PARTIAL-CLOSEOUT-037 TRUSTED-MEASUREMENTS-006
+  # @spec PARTIAL-CLOSEOUT-037 TRUSTED-MEASUREMENTS-006 PARTIAL-CLOSEOUT-051
   class AutoAudit
     MAX_ATTEMPTS = 3
     RETRY_DELAY = 30.minutes
@@ -29,12 +29,12 @@ module PartialCloseouts
 
       issue.with_lock do
         status = Issues::CloseoutStatus.call(issue)
-        return result(:not_stalled) unless status.stalled?
-        return result(:blocked) if status.blockers.any?
+        return result(:not_stalled) unless stalled_or_refreshable?(status)
         assessment = Assessment.call(
           issue, evidence: status.evidence, technical_evidence: status.technical_evidence
         )
         return result(:assessment_current) unless assessment.stale?
+        return result(:blocked) if status.blockers.any? { |blocker| blocker.code != :human_prerequisite_notification }
         attempt_status = prior_attempt_status(assessment.current_source_revision)
         return result(attempt_status) if attempt_status
 
@@ -46,6 +46,17 @@ module PartialCloseouts
     private
 
     attr_reader :issue
+
+    # A human prerequisite notification remains an implementation and closure
+    # hold. It is the one stale assessment blocker an audit may inspect so it
+    # can determine the current supported recovery action (#5057).
+    def stalled_or_refreshable?(status)
+      return true if status.stalled?
+
+      status.blockers.any? && status.blockers.all? do |blocker|
+        blocker.code == :human_prerequisite_notification
+      end
+    end
 
     # @spec PARTIAL-CLOSEOUT-048
     def prior_attempt_status(source_revision)

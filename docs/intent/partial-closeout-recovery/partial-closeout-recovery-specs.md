@@ -252,6 +252,25 @@
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
   `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-051** — When a partial closeout's assessment is
+  missing or stale and its own active prerequisite notification requires only
+  human evidence, Paid SHALL admit one authorized, revision-bound,
+  report-only acceptance audit at request time and dequeue time without
+  releasing that notification or admitting implementation work. Open-request,
+  active-run, tenant, actor, budget, dependency, pause, trust, and all other
+  guards SHALL remain authoritative. An external prerequisite, a genuine human
+  decision hold, or unchanged current evidence SHALL refuse the audit with its
+  supported recovery action. A resulting assessment SHALL not treat environment
+  availability as acceptance evidence and SHALL expose only a criterion-specific
+  reviewed validation, named setup/authorization requirement, or genuine human
+  decision as its next action.
+  *Code:* `app/services/issues/request_continuation.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/agent_runs/recheck_issue_eligibility.rb`.
+  *Test:* `spec/services/issues/request_acceptance_audit_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`,
+  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-035** — When a report-only acceptance audit completes,
   the system SHALL pass its persisted criterion assessment through the
   deterministic partial-closeout reconciler before completing the audit run.

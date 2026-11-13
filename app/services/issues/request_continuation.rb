@@ -16,7 +16,7 @@ module Issues
   # skip labels, and active-run uniqueness all still apply, with the blocker
   # explained to the user.
   # @spec PARTIAL-CLOSEOUT-003 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
-  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037 @spec PARTIAL-CLOSEOUT-042
+  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037 @spec PARTIAL-CLOSEOUT-042 @spec PARTIAL-CLOSEOUT-051
   class RequestContinuation
     Result = Struct.new(:request, :agent_run, :code, :message, keyword_init: true) do
       def success? = code.nil?
@@ -124,13 +124,28 @@ module Issues
         return failure(:not_stalled, "This issue was already resolved complete against the current evidence.")
       end
 
-      blocker = status.blockers.first
+      return assessment_current_refusal if acceptance_audit? && !PartialCloseouts::Assessment.call(issue).stale?
+
+      blocker = status.blockers.reject { |candidate| bypasses_human_prerequisite?(candidate) }.first
       return failure(blocker.code, status.reason) if blocker
       if status.admissible
         return failure(:not_stalled, "This issue is already admissible to automatic scheduling; there is nothing to continue past.")
       end
 
       nil
+    end
+
+    def assessment_current_refusal
+      failure(:assessment_current,
+        "The current evidence and intent already have an acceptance assessment; change the evidence or intent before requesting another audit.")
+    end
+
+    # A stale assessment cannot determine whether its own human prerequisite
+    # remains the right next action. The bounded audit can reassess it, but
+    # never releases the notification or authorizes implementation (#5057).
+    # @spec PARTIAL-CLOSEOUT-051
+    def bypasses_human_prerequisite?(blocker)
+      acceptance_audit? && blocker.code == :human_prerequisite_notification
     end
 
     # Any assessment state other than current acceptance supersedes the legacy
@@ -229,6 +244,7 @@ module Issues
     def failure(code, message) = Result.new(code: code, message: message)
 
     def automatic? = origin == :automatic
+    def acceptance_audit? = continuation_mode == "acceptance_audit"
     def trigger_type = automatic? ? "automatic" : "manual"
 
     def auto_pick_project_open?

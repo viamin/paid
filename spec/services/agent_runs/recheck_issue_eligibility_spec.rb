@@ -259,6 +259,27 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(request.reload.status).to eq("queued")
     end
 
+    # @spec PARTIAL-CLOSEOUT-051
+    it "cancels an audit when an external prerequisite appears before dequeue" do
+      issue = create(:issue, project: project, github_state: "open")
+      merged_partial_pr(issue: issue, number: 71)
+      request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+      request.update!(evidence: request.evidence.merge("continuation_mode" => "acceptance_audit"))
+      run = continuation_run(issue: issue, request: request)
+      target_project = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
+      create(:issue, project: target_project, github_number: 4604, github_state: "open")
+      create(:notification, :error, account: project.account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        metadata: { "prerequisites" => [ {
+          "identity" => "external-work", "kind" => "external",
+          "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 4604 }
+        } ] })
+
+      expect(described_class.call(run)).to be(true)
+      expect(run.reload.status).to eq("cancelled")
+      expect(request.reload.status).to eq("superseded")
+    end
+
     it "cancels a continuation run while GitHub closure is in flight" do # @spec PARTIAL-CLOSEOUT-006
       issue = create(:issue, project: project, github_state: "open")
       merged_partial_pr(issue: issue, number: 68)

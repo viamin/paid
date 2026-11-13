@@ -97,11 +97,13 @@ module Automation
           # authorization, @spec PARTIAL-CLOSEOUT-004); every other guard
           # still applies. It defaults to none so plain auto-pick semantics
           # are unchanged.
-          def eligible_for_dequeue?(project, issue_id, excluding_run_id:, continuation_authorized_issue_ids: [])
+          def eligible_for_dequeue?(project, issue_id, excluding_run_id:, continuation_authorized_issue_ids: [],
+            acceptance_audit_authorized_issue_ids: [])
             eligible_scope(
               project,
               excluding_run_id: excluding_run_id,
-              continuation_authorized_issue_ids: continuation_authorized_issue_ids
+              continuation_authorized_issue_ids: continuation_authorized_issue_ids,
+              acceptance_audit_authorized_issue_ids: acceptance_audit_authorized_issue_ids
             )
               .where(id: issue_id)
               .exists?
@@ -155,13 +157,14 @@ module Automation
           # for several projects resolve owner tier feasibility once instead of
           # once per scope. It defaults to a fresh, uncached resolver, so a
           # standalone call always re-reads live runner configuration (#4556).
-          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil, eligibility_inputs: nil, tier_feasibility: Runners::TierFeasibility.new) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
+          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], acceptance_audit_authorized_issue_ids: [], issue_ids: nil, eligibility_inputs: nil, tier_feasibility: Runners::TierFeasibility.new) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004 PARTIAL-CLOSEOUT-051
             inputs = eligibility_inputs || build_eligibility_inputs(project, excluding_run_id: excluding_run_id)
             base = without_open_non_pr_subissues(
               base_scope(
                 project,
                 inputs: inputs,
-                continuation_authorized_issue_ids: continuation_authorized_issue_ids
+                continuation_authorized_issue_ids: continuation_authorized_issue_ids,
+                acceptance_audit_authorized_issue_ids: acceptance_audit_authorized_issue_ids
               )
             )
             base = base.where(id: issue_ids) if issue_ids
@@ -309,13 +312,14 @@ module Automation
             )
           end
 
-          def base_scope(project, inputs:, continuation_authorized_issue_ids: []) # @spec EAGER-QUEUE-009
+          def base_scope(project, inputs:, continuation_authorized_issue_ids: [], acceptance_audit_authorized_issue_ids: []) # @spec EAGER-QUEUE-009
             # @spec PARTIAL-CLOSEOUT-004 — a scoped continuation authorization
             # lifts ONLY the merged-PR and no-code guards below, and only for
             # the explicitly authorized issues. Every other guard applies
             # unchanged, and plain auto-pick (no authorized ids) behaves
             # exactly as before.
             authorized_ids = Array(continuation_authorized_issue_ids)
+            acceptance_audit_ids = Array(acceptance_audit_authorized_issue_ids)
 
             base = Issue.ready_for_work(project)
               .where.not(id: inputs.blocking_issue_ids)
@@ -363,7 +367,7 @@ module Automation
               # or system resolve clears the block (see Notification's callback),
               # so the parent re-enters selection through the same eager-enqueue
               # path that dependency resolution uses.
-              .where.not(id: inputs.prerequisite_block_ids)
+              .where.not(id: inputs.prerequisite_block_ids - acceptance_audit_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames

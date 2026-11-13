@@ -192,6 +192,17 @@ module Issues
         open_native_child_blockers(issue, inputs:) + prerequisite_notification_blockers(issue, inputs:)
     end
 
+    # A report-only audit may inspect its own stale human prerequisite, but a
+    # newly introduced external prerequisite must still cancel it at dequeue.
+    # @spec PARTIAL-CLOSEOUT-051
+    def self.acceptance_audit_prerequisite_refreshable?(issue)
+      notifications = prerequisite_notifications(issue)
+      notifications.any? && notifications.all? do |notification|
+        PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification) &&
+          external_prerequisite_states(notification).all? { |state| state["state"] == "resolved" }
+      end
+    end
+
     # The scoped preflight is the admission authority. If it rejects after all
     # known guard diagnostics, do not invent a likely cause: callers get an
     # explicit investigation path and the exact dequeue decision remains safe.
@@ -363,7 +374,7 @@ module Issues
     # These mirror eligibility exclusions that deliberately do not use
     # IssueDependency edges. They diagnose canonical admission; they do not
     # replace it.
-    # @spec PARTIAL-CLOSEOUT-030
+    # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-051
     def self.open_native_child_blockers(issue, inputs: nil)
       children = inputs ? inputs.open_native_children_by_issue_id.fetch(issue.id, []) : open_native_children(issue)
       return [] if children.empty?
@@ -396,6 +407,7 @@ module Issues
 
       ids = notifications.map { |notification| "##{notification.id}" }
       external = notifications.flat_map { |notification| external_prerequisite_states(notification, inputs:) }
+        .reject { |state| state["state"] == "resolved" }
       [ Blocker.new(
         code: external.any? ? :prerequisite_notification : :human_prerequisite_notification,
         message: prerequisite_notification_message(notifications, ids, external),

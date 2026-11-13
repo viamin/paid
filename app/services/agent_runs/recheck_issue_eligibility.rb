@@ -148,7 +148,7 @@ module AgentRuns
         )
     end
 
-    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-047
+    # @spec PARTIAL-CLOSEOUT-005 PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-041 PARTIAL-CLOSEOUT-047 PARTIAL-CLOSEOUT-051
     def recheck_continuation
       issue.reload
       request = agent_run.continuation_request
@@ -191,8 +191,14 @@ module AgentRuns
     def continuation_eligible?(request)
       Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_for_dequeue?(
         agent_run.project, agent_run.issue_id, excluding_run_id: agent_run.id,
-        continuation_authorized_issue_ids: [ request.issue_id ]
+        continuation_authorized_issue_ids: [ request.issue_id ],
+        acceptance_audit_authorized_issue_ids: acceptance_audit?(request) ? [ request.issue_id ] : []
       )
+    end
+
+    def acceptance_audit?(request)
+      request.evidence["continuation_mode"] == "acceptance_audit" &&
+        Issues::CloseoutStatus.acceptance_audit_prerequisite_refreshable?(issue)
     end
 
     def cancel_continuation(reason)

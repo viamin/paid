@@ -775,6 +775,23 @@ the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
 
+### Stale prerequisite-audit recovery (#5057)
+
+An active partial-closeout notification continues to block implementation,
+ordinary dequeue, and GitHub closure. When the notification is a human-only
+prerequisite on the same stalled closeout and its assessment is missing or
+stale, an authorized report-only acceptance audit may pass that one guard at
+request time and dequeue time. The exception is revision-bound to the audit's
+persisted source and intent revisions, and the existing open-request and
+active-run uniqueness constraints still deduplicate it. Dependencies, external
+prerequisites, tenant scope, trust, budget, pauses, and every other admission
+guard remain authoritative. A human decision, an external prerequisite, or
+unchanged current evidence therefore remains a named refusal with its normal
+recovery route. The audit neither resolves the notification nor treats
+environment availability as criterion evidence; its fresh assessment must
+surface a reviewed criterion-specific technical validation, setup or
+authorization requirement, or a genuine human decision.
+
 ### Held-delivery reconciliation (#4614)
 
 A merged delivery record may coexist with `manual_review`, including a
