@@ -210,6 +210,18 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(Containers::ProxyUrl).to have_received(:resolve).with(backend: backend, restricted: false)
   end
 
+  # @spec LLM-ROUTING-005
+  it "does not mount a repository or Rails workspace" do
+    captured_payload
+    stub_text_exec { [ [], [], 0 ] }
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(hash_including(
+      "HostConfig" => hash_excluding("Binds")
+    ))
+  end
+
   # @spec LLM-ROUTING-006
   it "honors the caller timeout above two minutes" do
     captured_payload

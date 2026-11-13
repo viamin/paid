@@ -43,6 +43,22 @@ RSpec.describe Llm::Request do
     expect(standalone_executor).to have_received(:close)
   end
 
+  # @spec LLM-ROUTING-005 LLM-ROUTING-006
+  it "uses a disposable executor instead of a stale run execution handle" do
+    owner.settings.update!(kb_chat_runner: runner.routing_key)
+    run.update_columns(container_id: "stale-run-container", runner_handle: {
+      "runner_type" => "local_docker", "identifier" => "stale-run-container"
+    })
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    expect(run).not_to receive(:execute_in_execution_environment)
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
+
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: 30
+    )
+  end
+
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
   it "tries an authorized configured fallback after authentication fails" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
