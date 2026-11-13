@@ -10,16 +10,14 @@
 - **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
 - **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4635](https://github.com/viamin/paid/issues/4635) (design acceptance), [#4328](https://github.com/viamin/paid/issues/4328)–[#4333](https://github.com/viamin/paid/issues/4333) (implementation), [#4334](https://github.com/viamin/paid/issues/4334) (closeout), [#4492](https://github.com/viamin/paid/issues/4492) (optimization recipe family umbrella, tracking only), [#4493](https://github.com/viamin/paid/issues/4493)–[#4496](https://github.com/viamin/paid/issues/4496) (optimization recipe family children), [#4636](https://github.com/viamin/paid/issues/4636) (optimization policy-intent acceptance prerequisite)
-- **Blocked on**: Validating the batch-analyzer checkout-access and
-  batch-invocation contract against RDR-073's shipped attachment lifecycle
-  (Critical assumption 2). Recorded by [#4327](https://github.com/viamin/paid/issues/4327)'s
-  [2026-10-23 audit](audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md);
-  the two pending live validations are owned by
-  [#4604](https://github.com/viamin/paid/issues/4604). Its 2026-10-24 and
-  2026-10-29 revalidations found no Docker client, socket, configured remote
-  endpoint, or alternate local engine, so the required native-analyzer and
-  sidecar artifacts remain uncollected and must run in a Docker-capable
-  execution environment.
+- **Blocked on**: Human design acceptance in
+  [#4635](https://github.com/viamin/paid/issues/4635) and the subsequent
+  LID handoff. Critical assumption 2's native-analyzer and sidecar live
+  validations are recorded in the
+  [2026-10-23 handoff audit's 2026-11-13 addendum](audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md),
+  completing the technical evidence owned by
+  [#4604](https://github.com/viamin/paid/issues/4604) without authorizing
+  implementation or changing this RDR's Draft status.
 
 ## Dependencies
 
@@ -27,22 +25,17 @@ RDR-073's implementation and closeout are complete: [#4263](https://github.com/v
 and its [closeout #4268](https://github.com/viamin/paid/issues/4268) are
 closed, and the [2026-10-20 final-acceptance audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md)
 found all four delivery phases shipped against every RDR-073 validation
-criterion. RDR-073's own rollout guard (`marketplace_tool_sidecars`) stays
-default-off pending pilot evidence; that guard, not an open RDR-073 issue,
-remains authoritative for tool admission.
+criterion. RDR-073's own rollout guard (`marketplace_tool_sidecars`) remains
+default-off after the project-19 validation pilot; broader rollout needs a
+separate decision. The guard remains authoritative for tool admission.
 
-Implementation of RDR-075 remains blocked on Critical assumption 2: RDR-073's
-service-oriented image/port contract does not by itself establish checkout
-access or batch invocation for maintenance analyzers, so that handoff must be
-validated against the shipped attachment contract before implementation
-proceeds past planning. #4327's 2026-10-23 audit resolved the static half
-(issue-less matching and the native-CLI execution contract); the two live
-execution-environment validations it could not run in a Docker-less workspace
-are owned by [#4604](https://github.com/viamin/paid/issues/4604). Acceptance
-of this design does not release that
-dependency. Future RDR-075 planning and implementation issues must carry the
-explicit dependency on [#4604](https://github.com/viamin/paid/issues/4604)'s
-validation outcome; a bare RDR reference does not block auto-pick.
+The [#4604](https://github.com/viamin/paid/issues/4604) live validation now
+establishes both sides of Critical assumption 2: a selected native CLI
+analyzer read the pinned run checkout, and an allowlisted marketplace sidecar
+answered a request from its paired run. The handoff audit records the image,
+checkout, response, and cleanup evidence. This technical gate is complete;
+human design acceptance in [#4635](https://github.com/viamin/paid/issues/4635)
+and the LID handoff remain before implementation phases can be released.
 
 ## Problem Statement
 
@@ -218,10 +211,10 @@ output parsing, exit-code meanings, version compatibility, and limitations.
 They reference marketplace entries or existing in-container tools rather than
 owning a second provisioning catalog: native CLI analyzers invoke
 `AgentRun#execute_in_execution_environment` — the shipped contract
-`PreCommitRequirements::Evaluate` already uses, per the 2026-10-23 handoff
-audit — once the required native-environment validation artifact
-([#4604](https://github.com/viamin/paid/issues/4604)) confirms the selected
-analyzer is available in the agent image.
+`PreCommitRequirements::Evaluate` already uses. The #4604 live validation
+ran ESLint against a pinned checkout after installing the project's locked
+dependencies inside the isolated run container; a selected analyzer need not
+be baked into the base agent image.
 
 Resolve capabilities per relevant package/ecosystem when a repository is
 polyglot. Honor project configuration and manual selections. A language match
@@ -398,13 +391,11 @@ existence of the general maintenance capability.
 
 ## Open Questions Before Finalization
 
-- Batch invocation/checkout access is statically understood (2026-10-23
-  handoff audit): native CLI analyzers use the existing
-  `AgentRun#execute_in_execution_environment` contract against the pinned
-  checkout, and sidecars are network-reachable only, with no bind mount.
-  Which adapter extensions remain necessary is decided by the two live
-  execution-environment validations owned by
-  [#4604](https://github.com/viamin/paid/issues/4604).
+- Batch invocation/checkout access is validated by the 2026-11-13 live
+  handoff audit: a native CLI analyzer read the pinned run checkout, and a
+  marketplace tool sidecar answered a request from the paired run over the
+  run's Docker network. The current analyzer set needs no RDR-073 checkout
+  bind-mount extension; a future checkout-dependent sidecar would need one.
 - What report/finding schema and API responses best fit existing run and
   knowledge artifacts without treating reports as PR outputs or quality scores?
 - Which initial analyzer versions and project configurations produce useful

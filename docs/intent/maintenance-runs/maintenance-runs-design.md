@@ -15,7 +15,9 @@ prefix: MAINT
 > acceptance requires; they are not accepted intent and authorize no
 > implementation. See
 > [`audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md`](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md)
-> for the tool-handoff evidence this design relies on.
+> for the completed native-analyzer and sidecar tool-handoff evidence this
+> design relies on. The technical validation does not replace RDR-075's
+> separate human acceptance gate (#4635).
 
 ## Purpose
 
