@@ -23,6 +23,7 @@ class BoundedDelegatedAction < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :expires_at, presence: true
   validate :evidence_is_bounded
+  validate :evidence_is_immutable, on: :update
   validate :account_matches_scope
   validate :creator_belongs_to_account
   validate :revoker_belongs_to_account
@@ -33,12 +34,37 @@ class BoundedDelegatedAction < ApplicationRecord
     active? && ACTIONS.include?(action)
   end
 
+  def admission_snapshot
+    evidence.deep_dup
+  end
+
   def active?
     status == "active" && expires_at > Time.current
   end
 
   def revoked?
     status == "revoked"
+  end
+
+  def expired?
+    status == "active" && expires_at <= Time.current
+  end
+
+  def complete!
+    completed = false
+    with_lock do
+      next false unless status == "active"
+
+      update!(status: "completed")
+      Audit::RecordEvent.call(
+        action: "bounded_action.completed",
+        actor: nil,
+        subject: self,
+        metadata: { "action" => action, "stop_before_phase" => evidence.to_h["stop_before_phase"] }
+      )
+      completed = true
+    end
+    completed
   end
 
   # Lifecycle write only: caller surfaces reach this through
@@ -70,6 +96,12 @@ class BoundedDelegatedAction < ApplicationRecord
     return if evidence["acceptance_refs"].is_a?(Array) && evidence["acceptance_refs"].any?(&:present?)
 
     errors.add(:evidence, "must include acceptance_refs")
+  end
+
+  def evidence_is_immutable
+    return unless will_save_change_to_evidence?
+
+    errors.add(:evidence, "cannot be changed after admission")
   end
 
   def validate_intent_digest

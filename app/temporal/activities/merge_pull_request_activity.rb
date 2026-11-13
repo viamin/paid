@@ -162,6 +162,10 @@ module Activities
           merge_permission_rejection_reason: nil
         )
         IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
+        Automation::DelegatedActionAdmission.complete_at_exclusive_stop(issue: issue, phase: Automation::Phases::MERGE)
+        Automation::DelegatedActionAdmission.complete_at_exclusive_stop(
+          issue: issue, phase: Automation::Phases::RELEASE_DEPLOYMENT
+        )
         # A merge resolves any prior escalation; strip the stale label so the
         # closed PR isn't left flagged as escalated.
         remove_escalated_label(provider, project, repo, pr_number) if had_escalated_label

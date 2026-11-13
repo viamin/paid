@@ -83,10 +83,13 @@ Status markers: `[ ]` planned implementation gap.
 - [x] **PROJECT-DELEGATION-006** — When a project setting broadens delegated
   authority, the system SHALL apply the broader posture only to new admissions
   and SHALL NOT silently broaden an in-flight authorization; when a project
-  setting narrows delegated authority, or when expiry, revocation, or a bounded
-  stop occurs, the system SHALL prevent the next action while preserving
+  setting narrows delegated authority, the settings surface SHALL require a
+  rollback reason and record a `project_delegation.rollback` audit event; when
+  expiry, revocation, or a bounded stop occurs, the system SHALL prevent the
+  next action while preserving
   audit/evidence history and exposing a recovery decision.
-  *Verified by:* `spec/services/automation/delegated_work_boundary_spec.rb`,
+  *Verified by:* `spec/requests/projects/delegation_postures_spec.rb` (auditable
+  reasoned settings rollback), `spec/services/automation/delegated_work_boundary_spec.rb`,
   `spec/services/automation/delegated_action_admission_spec.rb` (posture
   change and revocation rechecks), and
   `spec/services/automation/focused_decision_spec.rb` (one recovery decision

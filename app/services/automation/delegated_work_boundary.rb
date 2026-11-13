@@ -55,6 +55,7 @@ module Automation
     def failed_checks
       checks = {
         authorization_lifecycle: authorization.allowed?,
+        expiry: !authorization.expired?,
         intent_revision: revision_matches?(:intent_revision),
         acceptance_revision: revision_matches?(:acceptance_revision),
         evidence_revision: revision_matches?(:evidence_revision),
@@ -70,7 +71,8 @@ module Automation
         trust: truthy?(snapshot[:trust]),
         budget: allowed?(snapshot[:budget]),
         repository_controls: allowed?(snapshot[:repository_controls]),
-        assessment_availability: truthy?(snapshot[:assessment_available])
+        assessment_availability: truthy?(snapshot[:assessment_available]),
+        explicit_hold: !truthy?(snapshot[:explicit_hold])
       }
       checks.filter_map { |reason, passed| reason unless passed }
     end

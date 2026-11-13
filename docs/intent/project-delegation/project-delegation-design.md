@@ -84,22 +84,25 @@ references.
 
 The initial boundary-recheck slice rechecks current revisions, posture
 signature, applicable phase and bounded-stop policy, tenant, trust, budget,
-repository checks, authorization lifecycle, and assessment availability. A
-mismatch creates a narrow Inbox request rather than falling through to a
-project default. Existing actions may finish their current atomic unit but
-cannot begin a new one after a failed recheck.
+repository checks, authorization lifecycle, assessment availability, and
+explicit work-item holds. A mismatch creates a narrow Inbox request rather
+than falling through to a project default. Existing actions may finish their
+current atomic unit but cannot begin a new one after a failed recheck.
 
-The full boundary will additionally recheck explicit holds, actor policy,
-lineage, and the semantic scope, ambiguity, conflicting-evidence, and
-material-risk conditions owned by the bounded-phase reassessment design. Those
-conditions remain planned until that reassessment path lands.
+Actor policy, lineage, and the semantic scope, ambiguity,
+conflicting-evidence, and material-risk conditions owned by the bounded-phase
+reassessment design remain planned until that reassessment path lands.
 
 ## Rollback and measurement
 
 The implementation is behind the existing `automation_phases` flag and a
-default-off project `project_delegation` gate. Rolling back selects
-`conservative`, preserves evidence/audit history, blocks future delegated
-boundaries, and creates focused recovery requests. Metric events use the
+default-off project `project_delegation` gate. The settings surface routes a
+selection of `conservative` through an auditable revisioned rollback command
+that requires an operator-supplied reason, preserves
+evidence/audit history, blocks future delegated boundaries, and creates
+focused recovery requests. Reaching the exclusive stop completes the
+authorization with a retained audit event; expiry, revocation, and explicit
+holds block the next action without deleting the admission snapshot. Metric events use the
 tenant-scoped Inbox history ledger and snapshot posture, policy, intent,
 acceptance, and evidence revisions. The pilot evaluator measures decision
 volume/time, completion, reversals, and security/tenant/trust/evidence stop

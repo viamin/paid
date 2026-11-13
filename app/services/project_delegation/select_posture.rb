@@ -14,10 +14,16 @@ module ProjectDelegation
   #
   # @spec PROJECT-DELEGATION-001
   class SelectPosture
+    AUDIT_ACTIONS = {
+      selection: "project_delegation.posture_selected",
+      rollback: "project_delegation.rollback"
+    }.freeze
+
     class Error < StandardError; end
     class PermissionDenied < Error; end
     class GuardDisabled < Error; end
     class UnknownLevel < Error; end
+    class UnknownOperation < Error; end
 
     GUARD_MESSAGE = "Delegation is not enabled for this project yet; only the conservative posture is available."
 
@@ -25,13 +31,16 @@ module ProjectDelegation
       new(...).call
     end
 
-    def initialize(project:, actor:, level:)
+    def initialize(project:, actor:, level:, reason: nil, operation: :selection)
       @project = project
       @actor = actor
       @level = level.to_s
+      @reason = reason
+      @operation = operation.to_s.to_sym
     end
 
     def call
+      ensure_operation!
       ensure_level!
       ensure_authorized!
       ensure_guard_permits!
@@ -44,7 +53,11 @@ module ProjectDelegation
 
     private
 
-    attr_reader :project, :actor, :level
+    attr_reader :project, :actor, :level, :reason, :operation
+
+    def ensure_operation!
+      raise UnknownOperation, "#{operation} is not a supported posture operation." unless AUDIT_ACTIONS.key?(operation)
+    end
 
     def ensure_level!
       raise UnknownLevel, "#{level} is not a supported delegation posture." unless Posture::LEVELS.include?(level)
@@ -112,7 +125,7 @@ module ProjectDelegation
     # rewritten by a later selection.
     def audit(record, previous_level)
       Audit::RecordEvent.call(
-        action: "project_delegation.posture_selected",
+        action: AUDIT_ACTIONS.fetch(operation),
         actor: actor,
         subject: project,
         metadata: {
@@ -123,6 +136,7 @@ module ProjectDelegation
           "revision" => record.revision,
           "enabled_action_classes" => record.enabled_action_classes,
           "policy_signature" => record.policy_signature,
+          "reason" => reason,
           "guards" => {
             "automation_phases" => Automation::RolloutGuard.enabled?(project),
             "project_delegation" => FeatureFlags.enabled?(:project_delegation, project:)

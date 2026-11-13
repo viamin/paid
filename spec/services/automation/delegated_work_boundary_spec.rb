@@ -112,6 +112,24 @@ RSpec.describe Automation::DelegatedWorkBoundary do
       .to include("tenant_breach", "trust_breach", "evidence_missing")
   end
 
+  it "holds delegated work when the operator has placed the work item on hold" do # @spec PROJECT-DELEGATION-006
+    issue.update!(hold_for_review: true)
+
+    result = recheck(explicit_hold: true)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:explicit_hold)
+  end
+
+  it "reports expiry separately from other lifecycle failures" do # @spec PROJECT-DELEGATION-006
+    authorization.update!(expires_at: 1.second.ago)
+
+    result = recheck
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:expiry)
+  end
+
   it "fails closed and records a security pause when security assessment is unavailable" do # @spec PROJECT-DELEGATION-007
     FeatureFlags.enable!(:project_delegation, project:)
 

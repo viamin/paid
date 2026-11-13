@@ -98,6 +98,19 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(export_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
   end
 
+  # @spec TEST-SUITE-019
+  it "bounds retries for the hosted PostgreSQL empty-result failure" do
+    run = system_step("Run system specs").fetch("run")
+
+    expect(run).to include(
+      "for attempt in 1 2 3; do",
+      "undefined method 'cmd_tuples' for nil",
+      'if [ "$attempt" -eq 3 ]; then',
+      'sleep "$((attempt * 5))"',
+      "exit 1"
+    )
+  end
+
   # @spec TOOLCHAIN-PIN-029
   it "installs the Chromium runtime libraries required by Cuprite" do
     runtime_step = system_step("Install Chromium runtime dependencies")

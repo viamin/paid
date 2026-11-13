@@ -46,6 +46,17 @@ final check treats recovery as satisfying only the missing legs: a real shard
 failure, a failed re-run, an incomplete classification, or a still-missing
 report still fails the check. Recovery never re-runs legs that executed.
 
+## System-suite infrastructure recovery
+
+The GitHub-hosted PostgreSQL service can rarely return an empty protocol result
+while Rails applies tenant context, surfacing from the adapter as a
+`cmd_tuples` call on `nil`. The system-test job may retry the complete browser
+suite after that exact infrastructure signature, with three total attempts so
+repeated transport faults remain bounded. A short increasing delay gives the
+hosted service time to recover between attempts. Any other failure exits
+immediately, and exhaustion of the bounded attempts still fails the job. The
+recovery does not skip examples or reinterpret assertion failures.
+
 ## Individual test costs
 
 Certificate behavior specs use the existing explicit test key-size parameter

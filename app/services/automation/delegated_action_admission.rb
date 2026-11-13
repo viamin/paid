@@ -108,6 +108,19 @@ module Automation
       new(work_item: work_item, action: delegated_action, boundary: boundary, trigger:).call
     end
 
+    # Successful execution reaches the action's exclusive stop. Completion is
+    # deliberately separate from the pre-action recheck: before execution the
+    # work item is still in ACTION_PHASES, not STOP_BEFORE_PHASES.
+    # @spec PROJECT-DELEGATION-006
+    def self.complete_at_exclusive_stop(issue:, phase:)
+      STOP_BEFORE_PHASES.filter_map do |action, stop_phase|
+        next unless stop_phase == phase.to_s
+
+        new(work_item: issue, action: action, boundary: :closeout, trigger: :automatic)
+          .complete_at_exclusive_stop
+      end.any?
+    end
+
     def initialize(work_item:, action:, boundary:, trigger:)
       @work_item = work_item
       @action = action
@@ -123,6 +136,12 @@ module Automation
       authorization.with_lock do
         DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
       end
+    end
+
+    def complete_at_exclusive_stop
+      return false unless authorization_at_expected_stop?
+
+      authorization.complete!
     end
 
     private
@@ -145,6 +164,12 @@ module Automation
         .first
     end
 
+    def authorization_at_expected_stop?
+      return false if authorization.nil?
+
+      authorization.evidence.to_h["stop_before_phase"].to_s == STOP_BEFORE_PHASES.fetch(action)
+    end
+
     def snapshot
       current_assessment = assessment
       {
@@ -160,7 +185,8 @@ module Automation
         trust: !work_item.untrusted?,
         budget: CostBudgets::Check.call(project),
         repository_controls: project.github_installation&.active? == true,
-        assessment_available: !current_assessment.stale?
+        assessment_available: !current_assessment.stale?,
+        explicit_hold: work_item.held_for_review?
       }
     end
 

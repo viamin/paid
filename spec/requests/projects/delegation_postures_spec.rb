@@ -20,9 +20,9 @@ RSpec.describe "Project delegation posture settings" do
     FeatureFlags.enable!(:project_delegation, project:)
   end
 
-  def select_posture(level)
+  def select_posture(level, reason: nil)
     patch project_delegation_posture_path(project), params: {
-      project_delegation_posture: { level: level }
+      project_delegation_posture: { level: level, reason: reason }
     }
   end
 
@@ -86,14 +86,36 @@ RSpec.describe "Project delegation posture settings" do
     expect(response.body).to include("select the posture again")
   end
 
-  it "keeps narrowing to conservative available as the rollback path" do
+  it "rolls back to conservative with an auditable reason" do # @spec PROJECT-DELEGATION-006
     create(:project_delegation_posture, project: project, level: "bounded_delivery", revision: 1,
       selected_by: owner)
     FeatureFlags.disable!(:automation_phases, project:)
 
-    select_posture("conservative")
+    select_posture("conservative", reason: "Security assessment needs review")
 
     expect(project.delegation_posture.reload).to have_attributes(level: "conservative", revision: 2)
+    expect(AccountActivityEvent.where(action: "project_delegation.rollback", subject: project).last.metadata)
+      .to include("reason" => "Security assessment needs review")
+  end
+
+  it "requires a reason before rolling back to conservative" do # @spec PROJECT-DELEGATION-006
+    create(:project_delegation_posture, project: project, level: "bounded_delivery", revision: 1,
+      selected_by: owner)
+
+    select_posture("conservative")
+
+    expect(project.delegation_posture.reload).to have_attributes(level: "bounded_delivery", revision: 1)
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    follow_redirect!
+    expect(response.body).to include("rollback reason is required")
+  end
+
+  it "selects the initial conservative posture without treating it as a rollback" do # @spec PROJECT-DELEGATION-001 PROJECT-DELEGATION-006
+    select_posture("conservative")
+
+    expect(project.delegation_posture.reload).to have_attributes(level: "conservative", revision: 1)
+    expect(AccountActivityEvent.where(action: "project_delegation.posture_selected", subject: project)).to exist
+    expect(AccountActivityEvent.where(action: "project_delegation.rollback", subject: project)).to be_empty
   end
 
   it "hides the posture selection until the project opts in" do
