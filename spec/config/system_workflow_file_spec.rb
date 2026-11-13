@@ -22,12 +22,12 @@ RSpec.describe SystemWorkflowFile, :no_db do
     system_job.fetch("steps").find { |step| step["name"] == name }
   end
 
-  it "keeps distinct pull-request event types from canceling each other" do
+  it "allows every pull-request system test run to finish" do
     concurrency = workflow.fetch("concurrency")
 
     expect(concurrency).to include(
       "group" => "system-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action }}",
-      "cancel-in-progress" => "${{ github.event_name == 'pull_request' }}"
+      "cancel-in-progress" => false
     )
   end
 

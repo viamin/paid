@@ -8,13 +8,12 @@ on:
 permissions:
   contents: read
 
-# Cancel in-progress runs for repeated events of the same type on a PR. The
-# action keeps distinct pull-request events for one SHA from canceling each
-# other (for example, `opened` and `ready_for_review`). Don't cancel runs on
-# `main` (those are gating the changelog).
+# Allow every pull-request system-test run to finish. A cancelled required
+# check has no result for the pull-request gate, including when GitHub emits
+# distinct events for one SHA. Runs on `main` remain independently grouped.
 concurrency:
   group: system-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   system:
