@@ -394,43 +394,54 @@ stop_overmind() {
     if ! overmind_running; then
       log "Detected stale Overmind socket."
       remove_stale_overmind_socket
+    else
+      log "Stopping Overmind (detached)..."
+      # Use setsid to run overmind quit in a new session so that stopping
+      # Overmind does not kill this script (which may be a child of Overmind).
+      local quit_output
+      if ! quit_output="$(setsid env \
+        -u BUNDLE_BIN_PATH \
+        -u BUNDLE_GEMFILE \
+        -u BUNDLER_SETUP \
+        -u BUNDLER_VERSION \
+        -u RUBYLIB \
+        -u RUBYOPT \
+        -u RUBYGEMS_GEMDEPS \
+        overmind quit 2>&1)"; then
+        log "Warning: overmind quit returned a non-zero exit status."
+      fi
+      log_command_output "overmind quit" "$quit_output"
+      STOPPED_OVERMIND=1
+
+      # Give Overmind a moment to shut down gracefully and release its socket.
+      for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
+        if [ ! -e "$OVERMIND_SOCKET" ]; then
+          log "Overmind socket removed."
+          return
+        fi
+
+        if ! overmind_running; then
+          log "Overmind stopped; cleaning up socket if needed."
+          break
+        fi
+
+        sleep "$OVERMIND_POLL_INTERVAL"
+      done
+
+      remove_stale_overmind_socket
       return
     fi
+  fi
 
-    log "Stopping Overmind (detached)..."
-    # Use setsid to run overmind quit in a new session so that stopping
-    # Overmind does not kill this script (which may be a child of Overmind).
-    local quit_output
-    if ! quit_output="$(setsid env \
-      -u BUNDLE_BIN_PATH \
-      -u BUNDLE_GEMFILE \
-      -u BUNDLER_SETUP \
-      -u BUNDLER_VERSION \
-      -u RUBYLIB \
-      -u RUBYOPT \
-      -u RUBYGEMS_GEMDEPS \
-      overmind quit 2>&1)"; then
-      log "Warning: overmind quit returned a non-zero exit status."
+  if dev_supervisor_tmux_has_existing_session; then
+    log "Detected an orphaned Overmind tmux session without control socket $OVERMIND_SOCKET."
+    if dev_supervisor_stop_workspace_tmux_sessions; then
+      log "Stopped orphaned Overmind tmux session: ${DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES}."
+      STOPPED_OVERMIND=1
+    else
+      dev_supervisor_snapshot_state "dev-update-orphaned-tmux-stop-failed"
+      fail "Cannot safely stop orphaned Overmind tmux session (${DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES:-unknown identity}). Inspect tmux socket/session above and stop it before rerunning bin/dev-update."
     fi
-    log_command_output "overmind quit" "$quit_output"
-    STOPPED_OVERMIND=1
-
-    # Give Overmind a moment to shut down gracefully and release its socket.
-    for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
-      if [ ! -e "$OVERMIND_SOCKET" ]; then
-        log "Overmind socket removed."
-        return
-      fi
-
-      if ! overmind_running; then
-        log "Overmind stopped; cleaning up socket if needed."
-        break
-      fi
-
-      sleep "$OVERMIND_POLL_INTERVAL"
-    done
-
-    remove_stale_overmind_socket
   else
     log "Overmind not running, skipping stop."
   fi

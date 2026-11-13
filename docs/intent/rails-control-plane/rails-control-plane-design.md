@@ -71,7 +71,12 @@ untouched while their first session starts; a socket without panes does not
 identify a worktree, so it does not block another worktree with the same name.
 When Overmind's control socket is missing but a tmux session remains, startup
 refuses to launch duplicate services and directs the developer to inspect the
-old session.
+old session. A full `bin/dev-update` identifies same-workspace panes through
+the app-scoped Overmind tmux socket and pane path, then stops only those
+sessions before setup and replacement startup. It leaves other worktrees and
+unrelated tmux servers alone. If the session cannot be inspected or stopped,
+the updater stops before setup and reports the socket/session identity with a
+diagnostic snapshot.
 
 The development web process also exposes PgHero at `/pghero` without
 authentication by default. PgHero is a development-only Rails engine that

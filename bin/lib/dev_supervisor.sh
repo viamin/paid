@@ -357,6 +357,58 @@ dev_supervisor_tmux_has_existing_session() {
   return 1
 }
 
+# Records the exact tmux sessions whose panes belong to this workspace. The
+# app-name socket prefix narrows the search to Overmind servers for this app;
+# the pane path keeps sibling worktrees on the shared tmux server untouched.
+DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES=""
+
+dev_supervisor_workspace_tmux_sessions() {
+  local socket panes session_name pane_path
+
+  while IFS= read -r socket; do
+    [ -n "$socket" ] || continue
+    if ! panes="$(tmux -S "$socket" list-panes -a -F '#{session_name}|#{pane_current_path}' 2>> "$(dev_supervisor_tmux_log)")"; then
+      printf '%s|<uninspectable>\n' "$socket"
+      return 1
+    fi
+
+    while IFS='|' read -r session_name pane_path; do
+      [ "$pane_path" = "$APP_ROOT" ] || continue
+      printf '%s|%s\n' "$socket" "$session_name"
+    done <<< "$panes"
+  done < <(dev_supervisor_tmux_sockets)
+}
+
+# @spec RAILS-CONTROL-PLANE-019
+dev_supervisor_stop_workspace_tmux_sessions() {
+  local identities socket session_name
+
+  if ! identities="$(dev_supervisor_workspace_tmux_sessions)"; then
+    DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES="$identities"
+    return 1
+  fi
+  identities="$(printf '%s\n' "$identities" | sed '/^$/d' | sort -u)"
+  DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES="$identities"
+  [ -n "$identities" ] || return 0
+
+  while IFS='|' read -r socket session_name; do
+    dev_supervisor_log_line "$(dev_supervisor_tmux_log)" \
+      "Stopping orphaned workspace tmux session socket=$socket session=$session_name"
+    if ! tmux -S "$socket" kill-session -t "$session_name" >> "$(dev_supervisor_tmux_log)" 2>&1; then
+      return 1
+    fi
+  done <<< "$identities"
+
+  if identities="$(dev_supervisor_workspace_tmux_sessions)"; then
+    identities="$(printf '%s\n' "$identities" | sed '/^$/d' | sort -u)"
+    DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES="$identities"
+    [ -z "$identities" ]
+  else
+    DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES="$identities"
+    return 1
+  fi
+}
+
 # @spec RAILS-CONTROL-PLANE-015
 dev_supervisor_log_memory_sample() {
   local puma_rss_kb temporal_rss_kb host_available_kb cgroup_current_bytes cgroup_max_bytes cgroup_oom_kills
