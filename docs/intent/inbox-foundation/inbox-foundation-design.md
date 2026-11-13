@@ -129,14 +129,14 @@ issue, not a project-visibility filter, so it does not reintroduce the
 project-level `auto_pick_enabled` gate this section removes.
 
 The Inbox header keeps filtering controls compact as the number of entry kinds
-grows. A single collapsed trigger opens a filter panel with a single type
-selector, a searchable accessible-project selector, and an ordering selector.
-The URL remains the source of truth: `kind`, `project_id`, and `sort` restore
-the panel state and survive selection/action links. The panel is a focus-trapped
-popover on desktop and a native full-screen dialog on narrow screens; Escape
-closes it and Enter submits its GET form. Type deliberately remains
-single-select: that preserves the established `kind` URL contract while the
-team gathers evidence that combined kinds are needed.
+grows. A single collapsed trigger opens a filter panel with multi-select type
+and accessible-project controls, project-name search, entry-text search, and an
+ordering selector. The URL remains the source of truth: repeatable `kinds[]`
+and `project_ids[]`, allowlisted `q[text_cont]`, and `sort` parameters restore
+the panel state and survive selection/action links. Values within each filter
+group are unioned; the project and kind groups compose by intersection. The
+panel is a focus-trapped popover on desktop and a native full-screen dialog on
+narrow screens; Escape closes it and Enter submits its GET form.
 
 ### Filter availability and empty-combination fallback (#4276)
 
@@ -159,8 +159,11 @@ not an inbox item, so it must not make a type or project option available.
 
 The kind↔project availability matrix is embedded in the dialog's DOM
 (`data-project-ids` on kind options, `data-kind-ids` on project options), so
-the Stimulus controller narrows the opposite group live as the operator
-selects — no extra round-trip — and resets a now-invalid selection to "All".
+the Stimulus controller narrows the opposite group live against the union of
+the current selections — no extra round-trip — and unchecks selections that
+the opposite group makes unavailable. Project-name search composes with that
+availability predicate but does not clear a selection merely because its name
+is searched out.
 
 Server-side, a filtered URL matching zero entries while ≥1 item waits
 elsewhere (stale bookmark, deep link, item resolved since the list rendered)

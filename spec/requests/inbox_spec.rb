@@ -78,6 +78,16 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("q%5Btext_cont%5D=Rotate")
   end
 
+  # @spec INBOX-FOUNDATION-012
+  it "ignores a scalar search parameter" do
+    issue = create(:issue, :needs_input, project:, title: "Visible question", body: questions_body)
+
+    get inbox_path(q: "malformed")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(issue.title)
+  end
+
   def cycle_analysis_run(status: "completed", recommendation: nil, repair: nil, coverage: nil)
     issues = Array.new(3) { create(:issue, project:, github_state: "open") }
     create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1],
@@ -1473,14 +1483,17 @@ RSpec.describe "Inbox" do
   end
 
   # @spec INBOX-FOUNDATION-010
-  it "renders repeatable kind and project controls without client-side filtering" do
+  it "embeds the kind<->project matrix for multi-select client-side filtering" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    expect(document.at_css("input[type='checkbox'][name='kinds[]'][value='clarifying_questions']")).to be_present
-    expect(document.at_css("input[type='checkbox'][name='project_ids[]'][value='#{project.id}']")).to be_present
+    kind_label = document.at_css("label[data-project-ids]")
+    project_label = document.at_css("label[data-kind-ids]")
+
+    expect(kind_label["data-project-ids"]).to eq(project.id.to_s)
+    expect(project_label["data-kind-ids"]).to eq(Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
   end
 
   # @spec INBOX-FOUNDATION-010

@@ -214,7 +214,8 @@ class InboxController < ApplicationController
   end
 
   def inbox_search_query
-    params.fetch(:q, {}).permit(:text_cont).to_h
+    query = params[:q]
+    query.is_a?(ActionController::Parameters) ? query.permit(:text_cont).to_h : {}
   end
 
   def valid_inbox_sort

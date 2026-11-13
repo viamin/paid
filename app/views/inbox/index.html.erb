@@ -54,10 +54,12 @@
           <%= form_with url: inbox_path, method: :get, class: "flex flex-1 flex-col gap-6", data: { action: "submit->inbox-filters#apply" } do %>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Type</legend>
-              <div class="mt-2 grid gap-2">
+              <div class="mt-2 grid gap-2" data-action="change->inbox-filters#kindChanged">
                 <% @inbox_availability.available_kinds.each do |kind| %>
                   <% label = Inbox::Queue::KIND_LABELS.fetch(kind) %>
-                  <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <label class="flex items-center gap-2 text-sm text-gray-700"
+                         data-inbox-filters-target="kindOption"
+                         data-project-ids="<%= @inbox_availability.project_ids_for(kind).join(",") %>">
                     <%= check_box_tag "kinds[]", kind, @selected_kinds.include?(kind) %> <%= label %> (<%= @inbox_availability.kind_counts[kind] %>)
                   </label>
                 <% end %>
@@ -65,9 +67,14 @@
             </fieldset>
             <fieldset>
               <legend class="text-sm font-semibold text-gray-900">Project</legend>
-              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto">
+              <label class="sr-only" for="inbox-project-search">Search projects</label>
+              <input id="inbox-project-search" type="search" placeholder="Search projects" autocomplete="off" class="mt-2 w-full rounded-md border-gray-300 text-sm shadow-sm" data-inbox-filters-target="projectSearch" data-action="input->inbox-filters#filterProjects">
+              <div class="mt-2 max-h-44 space-y-2 overflow-y-auto" data-action="change->inbox-filters#projectChanged">
                 <% @inbox_projects.each do |project| %>
-                  <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <label class="flex items-center gap-2 text-sm text-gray-700"
+                         data-inbox-filters-target="projectOption"
+                         data-project-name="<%= project.full_name.downcase %>"
+                         data-kind-ids="<%= @inbox_availability.kinds_for(project).join(",") %>">
                     <%= check_box_tag "project_ids[]", project.id, @scoped_projects.include?(project) %> <%= project.full_name %> (<%= @inbox_availability.project_counts[project.id] %>)
                   </label>
                 <% end %>

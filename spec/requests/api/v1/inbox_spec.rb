@@ -49,6 +49,16 @@ RSpec.describe "Mobile inbox API" do
     end
   end
 
+  # @spec INBOX-FOUNDATION-012 MOBILE-API-006
+  it "ignores a scalar search parameter" do
+    issue
+
+    get "/api/v1/inbox", params: { q: "malformed" }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("entries").sole.fetch("id")).to eq("clarifying_questions:#{issue.id}")
+  end
+
   it "serializes structured clarifying questions and their decision brief" do # @spec OPERATOR-INBOX-025 OPERATOR-INBOX-027
     issue.update!(needs_input_questions: [
       {

@@ -5,7 +5,7 @@ require "warden/test/helpers"
 
 # @spec INBOX-FOUNDATION-010
 # The dialog is a permanent browser flow because it verifies multi-value GET
-# controls survive Turbo navigation and invoke the server-side search boundary.
+# controls, union-aware availability narrowing, and server-side search.
 RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :system do
   include Warden::Test::Helpers
 
@@ -52,6 +52,14 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     click_button "Filters"
   end
 
+  def project_option(project)
+    "label[data-project-name='#{project.full_name.downcase}']"
+  end
+
+  def kind_option(kind)
+    "label[data-inbox-filters-target='kindOption'] input[value='#{kind}']"
+  end
+
   # @spec OPERATOR-INBOX-025
   it "loads selected detail history when its lazy frame enters view" do
     visit inbox_path(kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -86,5 +94,44 @@ RSpec.describe "Inbox filters dialog", system_driver: :paid_cuprite, type: :syst
     expect(page).to have_current_path(/project_ids.*kinds.*text_cont/)
     expect(page).to have_content("Beta question")
     expect(page).not_to have_content("Alpha question")
+  end
+
+  # @spec INBOX-FOUNDATION-010
+  it "narrows projects against the union of selected kinds" do
+    open_filters
+    check "Clarifying Questions"
+    check "Manual Review"
+
+    expect(page).to have_selector(project_option(project_a), visible: :visible)
+    expect(page).to have_selector(project_option(project_b), visible: :visible)
+
+    uncheck "Clarifying Questions"
+
+    expect(page).to have_selector(project_option(project_a), visible: :hidden)
+    expect(page).to have_selector(project_option(project_b), visible: :visible)
+  end
+
+  # @spec INBOX-FOUNDATION-010
+  it "narrows kinds against the union of selected projects" do
+    open_filters
+    check "acme/alpha"
+    check "acme/beta"
+
+    expect(page).to have_selector(kind_option(Inbox::Queue::MANUAL_REVIEW_KIND), visible: :visible)
+
+    uncheck "acme/beta"
+
+    expect(page).to have_selector(kind_option(Inbox::Queue::MANUAL_REVIEW_KIND), visible: :hidden)
+    expect(page).to have_selector(kind_option(Inbox::Queue::CLARIFYING_QUESTIONS_KIND), visible: :visible)
+  end
+
+  # @spec INBOX-FOUNDATION-010
+  it "composes project-name search with availability narrowing" do
+    open_filters
+    check "Manual Review"
+    fill_in "Search projects", with: "alpha"
+
+    expect(page).to have_selector(project_option(project_a), visible: :hidden)
+    expect(page).to have_selector(project_option(project_b), visible: :hidden)
   end
 end
