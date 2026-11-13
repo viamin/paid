@@ -197,6 +197,35 @@ preserve the resulting artifact with this audit. This workspace has no Docker
 client or Docker socket, so that live execution could not be performed here;
 the criterion remains unvalidated rather than inferred from host commands.
 
+**Development live-validation addendum (2026-11-13):** The project's development
+environment now has a reachable Docker backend. Synthetic operational
+`AgentRun` #29123 provisioned a fresh isolated run container from image
+`sha256:65549c94629fa5b4df84224a1276e8f18bae409c082fe8c059cf5813feecea22`.
+Paid's `Containers::GitOperations#clone_and_setup_branch` pinned the checkout
+to `c4ce51452c3d1056d56be44b4cfa76029d9a87af`; `git rev-parse HEAD`
+inside the run container returned that same SHA. After
+`yarn install --frozen-lockfile --ignore-scripts --silent` completed with exit
+code 0, the run invoked the bounded, read-only target through
+`AgentRun#execute_in_execution_environment(..., stream: false)`:
+
+```text
+$ yarn eslint app/javascript/controllers/chat_controller.js --no-cache
+stdout: yarn run v1.22.22
+        $ /workspace/node_modules/.bin/eslint app/javascript/controllers/chat_controller.js --no-cache
+        Done in 0.40s.
+stderr: (empty)
+exit_code: 0
+```
+
+`AgentRun#cleanup_execution_environment(force: true)` cleared the recorded
+container ID, and a Docker lookup confirmed the run container was absent.
+The preceding synthetic run #29119 showed that RuboCop is not installed in
+the agent image (`bundler: command not found: rubocop`, exit 127); its run
+container was also removed. The successful ESLint run validates the native
+CLI execution path for a selected analyzer, with dependency installation
+inside the isolated checkout. It does not establish the pending sidecar
+interaction or accept RDR-075 as a whole.
+
 ### Sidecar interaction — RDR-073's contract is network-only; it does not grant checkout access
 
 `Containers::McpProvisioner#create_hardened_tool_sidecar_container`
