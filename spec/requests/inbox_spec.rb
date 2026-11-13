@@ -249,8 +249,13 @@ RSpec.describe "Inbox" do
     repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
     from_ref = "#{project.full_name}##{issues[0].github_number}"
     to_ref = "#{project.full_name}##{issues[1].github_number}"
-    expect(repair_form.at_css("input[type='submit']")["value"]).to eq("Remove the #{to_ref} dependency from #{from_ref}")
-    expect(repair_form["data-turbo-confirm"]).to include(from_ref, to_ref, "trusted comment", "edits GitHub")
+    expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
+      "Remove the #{to_ref} declaration from #{from_ref}'s trusted comment at " \
+      "https://github.com/acme/alpha/issues/1#issuecomment-42"
+    )
+    expect(repair_form["data-turbo-confirm"]).to include(
+      from_ref, to_ref, "trusted comment", "https://github.com/acme/alpha/issues/1#issuecomment-42", "edits GitHub"
+    )
     expect(repair_form.at_css("input[name='agent_run_id']")["value"]).to eq(run.id.to_s)
     expect(repair_form.at_css("input[name='candidate_index']")["value"]).to eq("0")
     before_after = document.at_css("[data-testid='manual-repair']").text
@@ -356,7 +361,13 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("No single safe repair")
     expect(response.body).to include("Owners disagree")
     expect(response.body).to include("apply one reviewed removal")
-    expect(response.body).to include("Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}")
+    document = Nokogiri::HTML(response.body)
+    repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
+    expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
+      "Remove the #{project.full_name}##{issues[1].github_number} declaration from " \
+      "#{project.full_name}##{issues[0].github_number}'s trusted comment at " \
+      "https://github.com/acme/alpha/issues/1#issuecomment-42"
+    )
   end
 
   def record_conflicting_recommendation!(run, removal_edge)

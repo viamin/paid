@@ -247,12 +247,18 @@ RSpec.describe CycleAnalyses::OperatorView do
     candidate = view_for(run).manual_repair_candidates.sole
 
     expect(candidate.repair_button_label).to eq(
-      "Remove the #{project.full_name}##{issues[1].github_number} dependency from #{project.full_name}##{issues[0].github_number}"
+      "Remove the #{project.full_name}##{issues[1].github_number} declaration from " \
+      "#{project.full_name}##{issues[0].github_number}'s trusted comment at " \
+      "https://github.com/acme/alpha/issues/1#issuecomment-42"
     )
     expect(candidate.repair_confirmation).to include(
-      "#{project.full_name}##{issues[0].github_number}", "#{project.full_name}##{issues[1].github_number}", "edits GitHub"
+      "#{project.full_name}##{issues[0].github_number}", "#{project.full_name}##{issues[1].github_number}",
+      "in a trusted comment at https://github.com/acme/alpha/issues/1#issuecomment-42", "edits GitHub"
     )
-    expect(candidate.before_description).to include("lists #{project.full_name}##{issues[1].github_number} as a dependency")
+    expect(candidate.before_description).to include(
+      "lists #{project.full_name}##{issues[1].github_number} as a dependency",
+      "in a trusted comment at https://github.com/acme/alpha/issues/1#issuecomment-42"
+    )
     expect(candidate.after_description).to include("stops waiting on #{project.full_name}##{issues[1].github_number}")
   end
 
