@@ -123,6 +123,14 @@ RSpec.describe BoundedDelegatedAction do
     expect(action.admission_snapshot).not_to be(action.evidence)
   end
 
+  it "rejects changes to persisted admission evidence" do # @spec PROJECT-DELEGATION-004
+    action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+    expect {
+      action.update!(evidence: action.evidence.merge("posture_signature" => "replacement"))
+    }.to raise_error(ActiveRecord::RecordInvalid, "Validation failed: Evidence cannot be changed after admission")
+  end
+
   it "rejects revocation by a user from another account" do
     action = create(:bounded_delegated_action, project:, issue:, created_by: user)
     other_user = create(:user)

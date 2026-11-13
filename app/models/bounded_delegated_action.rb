@@ -23,6 +23,7 @@ class BoundedDelegatedAction < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :expires_at, presence: true
   validate :evidence_is_bounded
+  validate :evidence_is_immutable, on: :update
   validate :account_matches_scope
   validate :creator_belongs_to_account
   validate :revoker_belongs_to_account
@@ -95,6 +96,12 @@ class BoundedDelegatedAction < ApplicationRecord
     return if evidence["acceptance_refs"].is_a?(Array) && evidence["acceptance_refs"].any?(&:present?)
 
     errors.add(:evidence, "must include acceptance_refs")
+  end
+
+  def evidence_is_immutable
+    return unless will_save_change_to_evidence?
+
+    errors.add(:evidence, "cannot be changed after admission")
   end
 
   def validate_intent_digest
