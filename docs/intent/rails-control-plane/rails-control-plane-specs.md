@@ -94,9 +94,11 @@
 - [x] **RAILS-CONTROL-PLANE-016** — When a tmux socket is at least one minute old
   and its server has no sessions, development startup SHALL stop that server
   and remove its socket. It SHALL preserve newer sockets while their first
-  session may be starting. Supervisor health checks SHALL ignore empty servers
-  rather than restart a healthy Overmind session, while still detecting dead
-  panes and failures when no tmux socket responds.
+session may be starting. Startup SHALL serialize same-workspace socket cleanup
+with Overmind launch so an inspected socket cannot be replaced before it is
+stopped. Supervisor health checks SHALL ignore empty servers rather than
+restart a healthy Overmind session, while still detecting dead panes and
+failures when no tmux socket responds.
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/lib/dev_supervisor.sh`.
 

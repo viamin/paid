@@ -28,6 +28,23 @@ dev_supervisor_tmux_socket_dir() {
   echo "${DEV_SUPERVISOR_TMUX_SOCKET_DIR:-/tmp/tmux-$(id -u)}"
 }
 
+dev_supervisor_tmux_startup_lock_path() {
+  local app_root_hash
+  app_root_hash="$(printf '%s' "${APP_ROOT:-$PWD}" | sha256sum | awk '{print $1}')"
+  echo "/tmp/overmind-$(id -u)-${app_root_hash}.startup.lock"
+}
+
+# @spec RAILS-CONTROL-PLANE-016
+dev_supervisor_acquire_tmux_startup_lock() {
+  local lock_path
+  lock_path="$(dev_supervisor_tmux_startup_lock_path)"
+
+  # Keep this descriptor open until bin/dev exits. Its child Overmind startup
+  # is therefore serialized with stale-socket cleanup for this workspace.
+  exec {DEV_SUPERVISOR_TMUX_STARTUP_LOCK_FD}>"$lock_path"
+  flock "$DEV_SUPERVISOR_TMUX_STARTUP_LOCK_FD"
+}
+
 dev_supervisor_prepare_logging() {
   mkdir -p "$(dev_supervisor_log_dir)" "$(dev_supervisor_diagnostics_dir)"
   touch "$(dev_supervisor_tmux_log)" "$(dev_supervisor_overmind_log)"

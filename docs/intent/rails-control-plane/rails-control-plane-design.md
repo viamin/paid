@@ -63,9 +63,12 @@ The supervisor checks tmux panes only on sockets with live sessions. An old
 tmux server can answer `tmux ls` successfully while listing no sessions; after
 one minute, startup stops that server and removes its socket. Health checks
 ignore empty servers so they cannot mark a newer Overmind session unhealthy.
-New sockets remain untouched while their first session starts. When Overmind's
-control socket is missing but a tmux session remains, startup refuses to launch
-duplicate services and directs the developer to inspect the old session.
+Startup holds a workspace-scoped lock while it cleans sockets and launches
+Overmind, so a concurrent startup cannot replace a checked empty socket before
+it is stopped. New sockets remain untouched while their first session starts.
+When Overmind's control socket is missing but a tmux session remains, startup
+refuses to launch duplicate services and directs the developer to inspect the
+old session.
 
 Resource profile refreshes read only the run fields needed for memory samples
 and load metric limits for the current bounded database batch. The five

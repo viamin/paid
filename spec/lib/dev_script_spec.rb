@@ -116,6 +116,27 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "serializes same-workspace startup while cleaning empty tmux servers" do # @spec RAILS-CONTROL-PLANE-016
+    Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        overmind: { active_tmux_socket_on_start: true, start_sleep: 1 },
+        tmux: { empty_session_socket: true }
+      )
+      empty_socket = File.join(dir, "tmux", "overmind-#{File.basename(dir)}-empty")
+      File.utime(Time.now - 120, Time.now - 120, empty_socket)
+      env = dev_script_env(dir)
+      first, ready_reader = start_dev_with_ready_pipe(env, script_path, dir)
+      expect(ready_reader.read(1)).to eq("1")
+      second_stdout, second_stderr, second_status = Open3.capture3(env, script_path, chdir: dir)
+      Process.wait(first)
+      ready_reader.close
+      expect(second_status.success?).to be(false), -> { "stdout: #{second_stdout}\nstderr: #{second_stderr}" }
+      expect(second_stderr).to include("existing or starting Overmind tmux session")
+      expect(File.read(File.join(dir, "overmind-start-count")).lines.count).to eq(1)
+    end
+  end
+
   it "refuses a duplicate start when the Overmind control socket is gone but panes remain live" do # @spec RAILS-CONTROL-PLANE-017
     Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, tmux: { orphan_live_session: true })
@@ -482,6 +503,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     other_worktree_session = tmux.fetch(:other_worktree_session, false)
     start_exit_status = overmind.fetch(:start_exit_status, 0)
     create_socket_on_start = overmind.fetch(:create_socket_on_start, false)
+    active_tmux_socket_on_start = overmind.fetch(:active_tmux_socket_on_start, false)
     start_sleep = overmind.fetch(:start_sleep, 0)
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -526,7 +548,14 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
             ;;
           start)
             touch "#{dir}/overmind-start-ran"
+            echo start >> "#{dir}/overmind-start-count"
             touch "#{dir}/overmind-running"
+            if [ "#{active_tmux_socket_on_start ? 1 : 0}" = "1" ]; then
+              ruby -rsocket -e 'path = ARGV.fetch(0); File.unlink(path) if File.exist?(path); UNIXServer.open(path) { |s| s.close }' "#{dir}/tmux/overmind-#{File.basename(dir)}-active"
+            fi
+            if [ -n "${DEV_SCRIPT_READY_FD:-}" ]; then
+              printf 1 >&"$DEV_SCRIPT_READY_FD"
+            fi
             if [ "#{create_socket_on_start ? 1 : 0}" = "1" ] && [ -n "${OVERMIND_SOCKET:-}" ]; then
               ruby -rsocket -e 'path = ENV.fetch("OVERMIND_SOCKET"); File.unlink(path) if File.exist?(path); UNIXServer.open(path) { |s| s.close }'
             fi
@@ -586,6 +615,10 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
         fi
 
         if [ "$1" = "-S" ] && [ "$3" = "list-panes" ]; then
+          if [[ "$6" == *pane_current_path* ]]; then
+            echo "$PWD"
+            exit 0
+          fi
           if [ "#{tmux_pane_dead ? 1 : 0}" = "1" ]; then
             echo "1 paid:web.0 ruby"
           else
@@ -621,6 +654,26 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       return if File.exist?(log_path) && File.read(log_path).include?("bin/dev exiting")
       sleep 0.1
     end
+  end
+
+  def dev_script_env(dir)
+    {
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "SKIP_DEV_CLEANUP" => "1",
+      "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+    }
+  end
+
+  def start_dev_with_ready_pipe(env, script_path, dir)
+    ready_reader, ready_writer = IO.pipe
+    pid = Process.spawn(
+      env.merge("DEV_SCRIPT_READY_FD" => ready_writer.fileno.to_s),
+      script_path,
+      chdir: dir,
+      ready_writer.fileno => ready_writer
+    )
+    ready_writer.close
+    [ pid, ready_reader ]
   end
 
   def assert_before_start_snapshot(dir)
