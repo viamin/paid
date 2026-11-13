@@ -644,6 +644,32 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+  it "skips restore without popping when a successful push creates no stash" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        dirty_tree: true,
+        stash_push_output: "No local changes to save",
+        pre_existing_stash: true
+      )
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Working tree has uncommitted changes; auto-stashing...")
+      expect(updater_log).to include("git stash: No local changes to save")
+      expect(updater_log).to include("Auto-stash created no stash entry; skipping restore.")
+      expect(updater_log).not_to include("Restoring auto-stashed changes...")
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(File.read(File.join(dir, "git-stash.log"))).to eq("stash: stash push --include-untracked -m dev-update-autostash\n")
+      expect(File.exist?(File.join(dir, "pre-existing-stash"))).to be(true)
+      expect(File.read(File.join(dir, "refs-stash")).strip).to eq("pre-existing-stash-sha")
+    end
+  end
+
   it "logs git stash pop output after restoring auto-stashed changes" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, dirty_tree: true, stash_pop_output: "Applied autostash cleanly")
@@ -901,6 +927,9 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
     FileUtils.touch(File.join(dir, "pre-existing-stash")) if pre_existing_stash
+    # Model refs/stash: a pre-existing stash occupies the ref until a push
+    # creates a new entry or a successful pop consumes it.
+    File.write(File.join(dir, "refs-stash"), "pre-existing-stash-sha\n") if pre_existing_stash
 
     script_path = File.join(dir, "bin", "dev-update")
     FileUtils.cp(script_source, script_path)
@@ -991,6 +1020,13 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
               --abbrev-ref)
                 echo "#{current_branch}"
                 ;;
+              --verify)
+                if [ "${4:-}" = "refs/stash" ] && [ -f "#{dir}/refs-stash" ]; then
+                  cat "#{dir}/refs-stash"
+                else
+                  exit 1
+                fi
+                ;;
               *)
                 if [ -f "#{dir}/pull-ran" ]; then
                   echo "post-pull-sha"
@@ -1010,10 +1046,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             echo "stash: $*" >> "#{dir}/git-stash.log"
             if [ "${2:-}" = "pop" ]; then
               rm -f "#{dir}/pre-existing-stash"
+              if [ #{stash_pop_exit_status} -eq 0 ]; then
+                rm -f "#{dir}/refs-stash"
+              fi
               printf '%s\n' "#{stash_pop_output}"
               exit #{stash_pop_exit_status}
             fi
             printf '%s\n' "#{stash_push_output}"
+            if [ #{stash_push_exit_status} -eq 0 ] && [ "#{stash_push_output}" != "No local changes to save" ]; then
+              printf '%s\n' "stub-stash-sha" > "#{dir}/refs-stash"
+            fi
             exit #{stash_push_exit_status}
             ;;
           checkout)
