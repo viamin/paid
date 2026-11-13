@@ -20,7 +20,9 @@ recognises them. Those directives do not apply when they appear as Markdown code
 examples or describe another numbered issue's prerequisites, including in a
 dependency-section list item. A sentence about another issue's ordering cannot
 impose that ordering on the issue carrying the sentence. Negative and removal
-directives retain their ordered-comment semantics.
+directives retain their ordered-comment semantics. When one list item contains
+both a bare declaration for the current item and another issue's ordering, the
+bare declaration remains in effect.
 
 Under a Markdown heading containing `Dependency` or `Dependencies`, a bare
 reference is a declaration only when it is in a Markdown list item: unordered

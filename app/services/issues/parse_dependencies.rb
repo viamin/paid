@@ -324,13 +324,11 @@ module Issues
     # bare references only in Markdown list items. This keeps implementation
     # inventories in ordinary prose from becoming unintended prerequisites.
     def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
-      scratch = without_fenced_code(section_body)
+      scratch = without_contextual_dependency_clauses(without_fenced_code(section_body))
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
       [ INLINE_DEPLOYMENT_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
         scratch.scan(pattern) do |(refs_str)|
-          next if describes_another_issue?(scratch, Regexp.last_match.begin(0))
-
           extract_all_refs(refs_str, local_deps, cross_deps, requires_deployment: true)
         end
         scratch = scratch.gsub(pattern, "")
@@ -370,7 +368,6 @@ module Issues
 
     def flush_list_item(item, local_deps, cross_deps)
       return unless item
-      return if describes_another_issue_directive?(item)
 
       extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
     end
@@ -409,27 +406,40 @@ module Issues
     end
 
     def describes_another_issue?(text, directive_start)
+      !contextual_subject_start(text, directive_start).nil?
+    end
+
+    def contextual_subject_start(text, directive_start)
       # Only the immediately preceding subject can own a directive. Limit the
       # lookback so many directives in a long issue body stay linear to parse.
-      prefix = text[[ directive_start - 256, 0 ].max...directive_start]
-      clause = prefix[(prefix.rindex(/[.!?;\n]/) || -1) + 1..]
+      lookback_start = [ directive_start - 256, 0 ].max
+      prefix = text[lookback_start...directive_start]
+      clause_start = (prefix.rindex(/[.!?;\n]/) || -1) + 1
+      clause = prefix[clause_start..]
       subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i)
-      return false unless subject
-      return false if clause[0...subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
+      return unless subject
+      return if clause[0...subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
+      return if subject[1].to_i == @current_issue_number
 
-      subject[1].to_i != @current_issue_number
+      lookback_start + clause_start + subject.begin(0)
     end
 
-    def describes_another_issue_directive?(text)
-      [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN ].any? do |pattern|
-        directive_starts(text, pattern).any? { |start| describes_another_issue?(text, start) }
+    # A list item can contain both a bare declaration for this issue and a
+    # sentence about another issue. Mask only the latter sentence so the bare
+    # declaration remains eligible for section extraction.
+    def without_contextual_dependency_clauses(text)
+      visible = text.dup
+      [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN ].each do |pattern|
+        text.to_enum(:scan, pattern).each do
+          match = Regexp.last_match
+          subject_start = contextual_subject_start(text, match.begin(0))
+          next unless subject_start
+
+          clause_end = text.match(/[.!?;](?=\s|\z)|\n/, match.end(0))&.end(0) || text.length
+          visible[subject_start...clause_end] = " " * (clause_end - subject_start)
+        end
       end
-    end
-
-    def directive_starts(text, pattern)
-      starts = []
-      text.scan(pattern) { starts << Regexp.last_match.begin(0) }
-      starts
+      visible
     end
 
     def without_markdown_code(text)

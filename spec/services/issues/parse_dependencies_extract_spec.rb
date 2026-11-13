@@ -86,6 +86,28 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       expect(cross_deps).to eq({})
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "keeps a bare declaration before another issue's dependency in the same list item" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- #42; Issue #500 depends on #41.\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-009
+    it "keeps a bare declaration before another issue's deployment dependency" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- #42; Issue #500 awaits deployment of #41.\n",
+        current_issue_number: 100
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-009
     it "keeps a directive after another directive in the same clause" do
       local_deps, cross_deps = described_class.extract(
