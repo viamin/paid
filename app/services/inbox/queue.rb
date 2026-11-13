@@ -367,7 +367,8 @@ module Inbox
       @query = query
     end
 
-    # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
+    # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-012
+    # @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
     def call
       sort_entries(Inbox::Search.call(entries: apply_scope(build_entries), query:))
     end
@@ -795,7 +796,7 @@ module Inbox
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
         .where.not(status: FeatureIntent::TERMINAL_STATUSES)
-      scope = scope.where(project: project) if project
+      scope = scope.where(project: projects) if projects.any?
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
@@ -885,7 +886,7 @@ module Inbox
     # project-level knowledge artifacts.
     def change_intent_draft_entries
       scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
-      scope = scope.where(project: project) if project
+      scope = scope.where(project: projects) if projects.any?
 
       only_record(scope).includes(:project, :issue).order(:created_at, :id).map do |change_intent|
         change_intent_draft_entry(change_intent)
@@ -1151,7 +1152,11 @@ module Inbox
     end
 
     def project_filter_excludes?(candidate_project)
-      project.present? && candidate_project.id != project.id
+      projects.any? && selected_project_ids.exclude?(candidate_project.id)
+    end
+
+    def selected_project_ids
+      @selected_project_ids ||= projects.map(&:id).to_set
     end
 
     def runner_project(runner)

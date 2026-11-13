@@ -20,4 +20,20 @@ RSpec.describe Inbox::Search do
     expect(described_class.call(entries:, query: { "text_cont" => "signing" })).to eq([ entries.first ])
     expect(described_class.call(entries:, query: { "paid_state_eq" => "manual_review" })).to eq(entries)
   end
+
+  # @spec INBOX-FOUNDATION-012
+  it "matches displayed titles and summaries for entries without issues" do
+    title_entry = Inbox::Queue::Entry.new(
+      id: "feature_decision:1", kind: "feature_decision", title_text: "Approve passkey rollout",
+      summary_text: "Ready for approval"
+    )
+    summary_entry = Inbox::Queue::Entry.new(
+      id: "layered_verification_finding:2", kind: "layered_verification_finding", title_text: "Verification finding",
+      summary_text: "Checkout obligations diverged"
+    )
+    entries = [ title_entry, summary_entry ]
+
+    expect(described_class.call(entries:, query: { "text_cont" => "passkey" })).to eq([ title_entry ])
+    expect(described_class.call(entries:, query: { "text_cont" => "obligations" })).to eq([ summary_entry ])
+  end
 end

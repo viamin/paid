@@ -640,9 +640,10 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
   Record relation. `Inbox::Search` therefore accepts only `q[text_cont]` and
   uses Ransack against the queue's already-authorized Project (`owner`, `repo`)
   and Issue (`title`, `body`) records before intersecting their IDs with queue
-  entries. Synthetic entries without a project or issue (notably dependency
-  cycles) have no durable Ransack field and are intentionally not text
-  searchable; their kind/project filters and direct links remain available.
+  entries. The adapter also compares that allowlisted term with the displayed
+  title and summary on each authorized entry. This narrow projection keeps
+  synthetic and non-Issue-backed lanes searchable without pretending the
+  heterogeneous queue can be represented by one Active Record relation.
 
 - **One queue service, not per-page queries**: the inbox page and any future
   queue consumers should share one typed discovery path.

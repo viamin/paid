@@ -177,7 +177,9 @@
   search as the allowlisted `q[text_cont]` predicate. `Inbox::Search` SHALL
   translate that predicate to Ransack searches over the already authorized
   Project repository fields and Issue title/body fields, then intersect those
-  results with the queue's typed entries; no other Ransack attributes or
+  results with the queue's typed entries. The scoped adapter SHALL also match
+  each authorized entry's displayed title and summary so synthetic and
+  non-Issue-backed lanes remain searchable; no other Ransack attributes or
   predicates are accepted. Empty filtered combinations SHALL retain the
   existing reset-to-unfiltered behavior, while direct-entry lookup continues
   to resolve hidden and personally removed entries through its existing

@@ -1490,10 +1490,11 @@ RSpec.describe "Inbox" do
     get inbox_path
 
     document = Nokogiri::HTML(response.body)
-    kind_label = document.at_css("label[data-project-ids]")
+    kind_label = document.at_css("input[name='kinds[]'][value='clarifying_questions']").parent
+    project_label = document.at_css("input[name='project_ids[]'][value='#{project.id}']").parent
 
     expect(kind_label.text).to include("Clarifying Questions (1)")
-    expect(document.at_css("label[data-kind-ids]").text).to include("#{project.full_name} (1)")
+    expect(project_label.text).to include("#{project.full_name} (1)")
   end
 
   # @spec INBOX-FOUNDATION-011
