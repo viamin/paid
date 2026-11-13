@@ -325,7 +325,7 @@ module Dashboard
           "COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)) FILTER (WHERE status = 'completed'), 0)"
         ),
         Arel.sql("COUNT(*) FILTER (WHERE status = 'completed')"),
-        Arel.sql("COALESCE(AVG(iterations) FILTER (WHERE status = 'completed' AND iterations > 0), 0)")
+        Arel.sql(average_main_agent_executions_sql)
       )
       trailing_totals = agent_runs.where(created_at: (now - 30.days)..now).pick(
         Arel.sql("COALESCE(SUM(cost_cents), 0)"),
@@ -340,8 +340,25 @@ module Dashboard
         trailing_30d_tokens: trailing_totals[1].to_i,
         avg_cost_per_run_cents: completed_count.zero? ? 0 : (totals[2].to_f / completed_count).round,
         avg_tokens_per_run: completed_count.zero? ? 0 : (totals[3].to_f / completed_count).round,
-        avg_iterations_per_run: totals[5].to_f.round(1)
+        avg_main_agent_executions_per_run: totals[5].to_f.round(1)
       }
+    end
+
+    # @spec QUALITY-LOOPS-009
+    def average_main_agent_executions_sql
+      <<~SQL.squish
+        COALESCE(AVG(
+          CASE WHEN iterations > 0 THEN iterations
+          ELSE (
+            SELECT COUNT(*)
+            FROM jsonb_array_elements(COALESCE(agent_runs.runners_attempted, '[]'::jsonb)) AS attempt(value)
+            WHERE ((attempt.value ->> 'success') = 'true'
+              OR (attempt.value ->> 'error_type') = 'timeout')
+              AND (attempt.value ->> 'output_chars') ~ '^\\d+$'
+              AND (attempt.value ->> 'output_chars')::integer > 0
+          ) END
+        ) FILTER (WHERE status = 'completed'), 0)
+      SQL
     end
 
     def phase_breakdown

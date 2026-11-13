@@ -216,9 +216,21 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:cost_and_tokens][:avg_tokens_per_run]).to eq(4000)
       end
 
-      it "calculates average iterations per completed run" do
+      # @spec QUALITY-LOOPS-009
+      it "calculates average main-agent executions per completed run" do
         # (3 + 5 + 8) / 3 = 5.3
-        expect(stats[:cost_and_tokens][:avg_iterations_per_run]).to eq(5.3)
+        expect(stats[:cost_and_tokens][:avg_main_agent_executions_per_run]).to eq(5.3)
+      end
+
+      # @spec QUALITY-LOOPS-009
+      it "uses persisted main-agent attempts when iterations is zero" do
+        create(:agent_run, :completed, project: project, iterations: 0,
+          runners_attempted: [
+            { "runner" => "codex", "success" => true, "output_chars" => 250 },
+            { "runner" => "codex", "success" => false, "error_type" => "timeout", "output_chars" => 125 }
+          ])
+
+        expect(stats[:cost_and_tokens][:avg_main_agent_executions_per_run]).to eq(4.5)
       end
 
       it "groups runs by agent type" do
