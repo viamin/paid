@@ -126,6 +126,12 @@ module Issues
     LIST_ITEM_PATTERN = /^([ ]{0,3}(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)(.+)$/
     # Indented non-blank content: a continuation of the preceding list item.
     CONTINUATION_LINE_PATTERN = /^[ \t]+\S/
+    CLAUSE_SUBJECT_PATTERN = /
+      (?:\b(?:issue|pr|pull request)\s+)?\#(\d+)(?:\s*:\s*|\s+)
+      (?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*
+      (?=depends?\s+on|blocked?\s+by|awaits\s+deployment\s+of)
+    /ix
+    DIRECTIVE_SUBJECT_PATTERN = /(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i
 
     attr_reader :issue, :adjacency, :comments, :body, :reconcile
 
@@ -415,13 +421,17 @@ module Issues
     end
 
     def describes_another_issue?(text, directive_start)
-      # Only the immediately preceding subject can own a directive. Limit the
-      # lookback so many directives in a long issue body stay linear to parse.
       prefix = text[[ directive_start - 256, 0 ].max...directive_start]
       clause = prefix[(prefix.rindex(/[.!?;\n]/) || -1) + 1..]
-      subject = clause.match(/(?:\b(?:issue|pr|pull request)\s+)?#(\d+)(?:\s*:\s*|\s+)(?:(?:is|was|are|were|has\s+been|have\s+been|had\s+been|explicitly|currently|also|now|no longer)\s+)*\z/i)
+      immediate_subject = clause.match(DIRECTIVE_SUBJECT_PATTERN)
+      return false if immediate_subject && immediate_subject[1].to_i == @current_issue_number
+
+      # A preceding directive makes the nearest reference its target, so retain
+      # the earlier clause subject for coordinated directives.
+      return true if immediate_subject && !clause[0...immediate_subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
+
+      subject = clause.match(CLAUSE_SUBJECT_PATTERN)
       return false unless subject
-      return false if clause[0...subject.begin(0)].match?(DIRECTIVE_KEYWORD_PATTERN)
 
       subject[1].to_i != @current_issue_number
     end

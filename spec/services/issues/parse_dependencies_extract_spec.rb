@@ -53,11 +53,11 @@ RSpec.describe Issues::ParseDependencies, :no_db do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
-    it "excludes another issue's prerequisites inside a dependency section" do
+    it "excludes another issue's coordinated prerequisites inside a dependency section" do
       local_deps, cross_deps = described_class.extract(
         body: <<~BODY,
           ## Rollout / dependency
-          - Draft because #4868 depends on #4863 and #4761.
+          - Draft because #4868 depends on #4863 and awaits deployment of #4761.
 
           Closes #4868
         BODY

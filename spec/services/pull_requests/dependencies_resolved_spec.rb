@@ -49,7 +49,7 @@ RSpec.describe PullRequests::DependenciesResolved do
     let(:issue) do
       create(:issue, :pull_request, project: project, github_number: 4981, body: <<~BODY)
         ## Rollout / dependency
-        - Draft because #4868 depends on #4863 and #4761.
+        - Draft because #4868 depends on #4863 and awaits deployment of #4761.
 
         Closes #4868
         Depends on #41
