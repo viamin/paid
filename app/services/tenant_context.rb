@@ -72,7 +72,7 @@ class TenantContext
     end
 
     def set_config(key, value)
-      connection.exec_query("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
+      connection.select_value("SELECT set_config($1, $2, false)", "TenantContext#set_config", setting_binds(key, value))
     rescue ActiveRecord::ConnectionNotEstablished
       nil
     rescue ActiveRecord::StatementInvalid => e
