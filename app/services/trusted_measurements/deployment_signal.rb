@@ -26,6 +26,9 @@ module TrustedMeasurements
     def self.current(root: Rails.root, environment: Rails.env)
       return ENV[ENV_KEY].presence unless environment.to_s == "development"
 
+      repository_root = git_output(root, "rev-parse", "--show-toplevel")
+      return unless repository_root && File.realpath(repository_root.strip) == File.realpath(root)
+
       head = git_output(root, "rev-parse", "HEAD")
       untracked = git_output(root, "ls-files", "--others", "--exclude-standard", "-z")
       return if [ head, untracked ].any?(&:nil?)
