@@ -96,8 +96,9 @@ reassessment design remain planned until that reassessment path lands.
 ## Rollback and measurement
 
 The implementation is behind the existing `automation_phases` flag and a
-default-off project `project_delegation` gate. Rolling back selects
-`conservative` through an auditable revisioned command, preserves
+default-off project `project_delegation` gate. The settings surface routes a
+selection of `conservative` through an auditable revisioned rollback command
+that requires an operator-supplied reason, preserves
 evidence/audit history, blocks future delegated boundaries, and creates
 focused recovery requests. Reaching the exclusive stop completes the
 authorization with a retained audit event; expiry, revocation, and explicit

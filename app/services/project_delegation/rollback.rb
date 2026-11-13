@@ -5,6 +5,8 @@ module ProjectDelegation
   # existing admissions retain their original evidence for audit and recheck.
   # @spec PROJECT-DELEGATION-006
   class Rollback
+    class ReasonRequired < StandardError; end
+
     def self.call(...)
       new(...).call
     end
@@ -16,7 +18,7 @@ module ProjectDelegation
     end
 
     def call
-      raise ArgumentError, "rollback reason is required" if reason.blank?
+      raise ReasonRequired, "rollback reason is required" if reason.blank?
 
       SelectPosture.call(project:, actor:, level: Posture::CONSERVATIVE, reason:, operation: :rollback)
     end
