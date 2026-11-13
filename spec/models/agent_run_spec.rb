@@ -5442,6 +5442,14 @@ RSpec.describe AgentRun do
     end
 
     # @spec AGENT-RUNS-INDEX-002
+    it "versions filter option cache keys when the cached shape changes" do
+      expect(described_class.filter_options_cache_key_for(account_id: 17))
+        .to eq("agent_runs/filter_options/v2/account/17/account")
+      expect(described_class.filter_options_cache_key_for(account_id: 17, project_id: 23))
+        .to eq("agent_runs/filter_options/v2/account/17/project/23")
+    end
+
+    # @spec AGENT-RUNS-INDEX-002
     it "caches filter options by account and project scope" do
       project = create(:project)
       create(:agent_run, :completed, project: project, agent_type: "claude_code", goal: "create_pr")

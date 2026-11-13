@@ -670,6 +670,7 @@ class AgentRun < ApplicationRecord
 
   RUNNER_OPTIONS_CACHE_TTL = 5.minutes
   FILTER_OPTIONS_CACHE_TTL = 90.seconds
+  FILTER_OPTIONS_CACHE_VERSION = 2
 
   def self.distinct_effective_runner_options(account_id:, cache_key: nil)
     if cache_key
@@ -712,7 +713,7 @@ class AgentRun < ApplicationRecord
 
   def self.filter_options_cache_key_for(account_id:, project_id: nil)
     scope = project_id ? "project/#{project_id}" : "account"
-    "agent_runs/filter_options/account/#{account_id}/#{scope}"
+    "agent_runs/filter_options/v#{FILTER_OPTIONS_CACHE_VERSION}/account/#{account_id}/#{scope}"
   end
 
   def self.invalidate_filter_options_cache(account_id:, project_id: nil)
