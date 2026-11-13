@@ -3,7 +3,7 @@
 module TechnicalPrerequisites
   # Creates the fresh, pinned operational run used by an authorized Inbox
   # validation. Commands come only from persisted reviewed requirements.
-  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-042 PARTIAL-CLOSEOUT-050
   class StartValidation
     Result = Data.define(:status, :agent_run, :message) do
       def success? = status == :queued
@@ -11,16 +11,18 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(source_run:, requirement:, actor:, criterion: nil, tool_name: nil)
+    def initialize(source_run:, requirement:, actor:, criterion: nil, tool_name: nil, authorization_id: nil)
       @source_run = source_run
       @requirement = requirement
       @actor = actor
       @criterion = criterion
       @tool_name = tool_name
+      @authorization_id = authorization_id
     end
 
     def call
       return failure("Select a run with a pinned checkout.") if source_run.base_commit_sha.blank?
+      return failure("Complete the named human authorization prerequisite before running this technical validation.") if authorization_required?
       return failure("Select the original implementation run, not a prior validation.") if source_run.technical_prerequisite_validation_goal?
       return failure("Select an enabled validation recipe for this project.") unless allowed_requirement?
       return failure("The selected validation recipe has an invalid command.") unless reviewed_command
@@ -40,7 +42,11 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :actor, :requirement, :source_run, :criterion, :tool_name
+    attr_reader :actor, :requirement, :source_run, :criterion, :tool_name, :authorization_id
+
+    def authorization_required?
+      authorization_id.present? && !Authorization.granted?(issue: source_run.issue, identifier: authorization_id)
+    end
 
     def admit_validation_run
       return [ create_validation_run!, true, nil ] unless performance_requirement?
@@ -92,6 +98,7 @@ module TechnicalPrerequisites
           "command" => reviewed_command,
           "criterion" => criterion,
           "tool_name" => tool_name,
+          "technical_authorization_id" => authorization_id,
           "source_run_id" => source_run.id,
           "performance_measurement" => performance_recipe.recipe
         }

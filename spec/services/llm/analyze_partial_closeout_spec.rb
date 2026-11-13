@@ -252,6 +252,34 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-050
+    it "requires a paired human authorization for an authorization-gated technical criterion" do
+      selected = create(:pre_commit_requirement, project:, account: project.account,
+        name: "Representative environment check", command: "bin/measure")
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [ { criterion: "Authorize the representative environment", kind: "human",
+          next_step: "Approve the named staging environment.", technical_authorization_id: "staging-v1",
+          attribution: { coverage: "established", source_issue_number: issue.github_number,
+            owner_issue_number: issue.github_number, criterion: "Authorize the representative environment" } } ],
+        criteria: [ { criterion: "Measure response time", state: "unknown", validation_kind: "native",
+          validation_requirement_id: selected.id, technical_authorization_id: "staging-v1" } ]
+      }.to_json)
+
+      result = described_class.call(agent_run:)
+
+      expect(result.dig("criteria", 0, "technical_authorization_id")).to eq("staging-v1")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-050
+    it "rejects a technical criterion that claims an unpaired authorization" do
+      allow(llm_response).to receive(:output).and_return({
+        gaps: [], criteria: [ { criterion: "Measure response time", state: "unknown", validation_kind: "native",
+          technical_authorization_id: "missing" } ]
+      }.to_json)
+
+      expect { described_class.call(agent_run:) }.to raise_error(described_class::AssessmentFailure, /invalid fields/)
+    end
+
     # @spec PARTIAL-CLOSEOUT-030
     it "identifies a failed CLI response without exposing provider output" do
       response = AgentHarness::Response.new(output: "secret payload", exit_code: 1,
