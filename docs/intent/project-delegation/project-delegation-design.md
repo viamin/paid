@@ -47,6 +47,26 @@ the delegated scope, and never opens a new lineage for the delegated work.
 Recovery stays inside the admitted lineage too. A remediation that needs its
 own work item is recorded as a follow-up or routed to a human decision.
 
+## Accepted issue closure (#4868)
+
+An acceptance audit may authorize automatic source-issue closure only when its
+request captured the project's effective `bounded_delivery` policy with the
+`evidence_gated_issue_closure` action and Merge phase enabled. The audit itself
+remains report-only. After its run completes, a separate closeout attempt
+compares the captured policy signature with current policy and reuses the
+existing GitHub closeout boundary. A later posture change never grants closure
+to an older audit. Conservative projects retain the human Inbox action.
+
+The close attempt requires a current, fully satisfied criterion assessment with
+at least one cited evidence item per criterion and a source-closure disposition;
+no open prerequisite, human hold, scanner check,
+native child, or active run may remain. It records the audit run, evidence
+digest, policy revision, and an evidence-linked rationale with a system actor.
+The existing closeout lease serializes concurrent attempts and reconciles a
+confirmed GitHub close. A refused or failed attempt leaves the issue visible
+with its existing Inbox recovery path. Upstream-managed and synthetic scanner
+issues remain outside Paid's GitHub mutation authority.
+
 ## Policy and surface parity
 
 `Automation::EffectivePolicy` composes intent/readiness, phase policy,
@@ -106,3 +126,4 @@ evidence as healthy.
 | Snapshot policy and evidence at admission | An owner can change future posture without retroactively enlarging consent. | Re-evaluating an in-flight admission against a broader setting. |
 | Focus a stop on one material delta | Settled intent should not be repeatedly re-litigated. | Reopen all questions for every downstream stop. |
 | Permit recording a follow-up, not executing it | The finding must be recorded and linked, but the follow-up carries its own authority. | Rejecting the follow-up record, or letting the delegated posture run it. |
+| Close after a terminal audit, not inside it | The audit run must no longer be an active-run blocker, and GitHub I/O must remain outside the assessment transaction. | Closing from the audit activity before its run completes. |

@@ -212,7 +212,8 @@ module Issues
         "source_revision" => PartialCloseouts::Assessment.source_revision_for(
           issue, closeout_evidence: evidence, technical_evidence: status.technical_evidence
         ),
-        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue)
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+        "closeout_policy_signature" => Issues::AutoResolveCloseout.authority_signature(issue)
       )
     end
 
