@@ -2042,8 +2042,23 @@ RSpec.describe AgentRun do
 
     # @spec MANUAL-RUN-RETRY-003
     describe "#no_observable_work?" do
-      it "is true when there are no iterations and no produced PR or issue" do
+      it "is true when there is no main-agent work and no produced PR or issue" do
         agent_run = build(:agent_run, :failed, iterations: 0, pull_request_number: nil, created_issue_number: nil)
+
+        expect(agent_run.no_observable_work?).to be true
+      end
+
+      it "is false when a successful main-agent attempt recorded output despite zero iterations" do
+        agent_run = build(:agent_run, :failed, iterations: 0, runners_attempted: [
+          { "runner" => "codex", "success" => true, "output_chars" => 250 }
+        ])
+
+        expect(agent_run.no_observable_work?).to be false
+      end
+
+      it "is true when only smoke turns were recorded" do
+        agent_run = build(:agent_run, :failed, iterations: 0, turns_completed: 1,
+          streaming_turns_data: [ { "turn_number" => 1 } ])
 
         expect(agent_run.no_observable_work?).to be true
       end

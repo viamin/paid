@@ -738,6 +738,17 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Claude Code")
       end
 
+      # @spec NO-OUTPUT-ISSUE-008
+      it "shows persisted main-agent executions instead of the legacy iteration counter" do
+        agent_run = create(:agent_run, :completed, project: project, iterations: 0,
+          runners_attempted: [ { "runner" => "codex", "success" => true, "output_chars" => 250 } ])
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Main agent executions")
+        expect(response.body).to include(">1</dd>")
+      end
+
       # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-024
       it "shows a layered-verification audit coverage report" do
         obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017")

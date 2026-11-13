@@ -68,6 +68,17 @@
   *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
   *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
 
+- [x] **NO-OUTPUT-ISSUE-008** — When an issue-scoped run has `iterations: 0`,
+  the no-output classifier SHALL derive observable main-agent work from a
+  successful persisted runner attempt with nonzero recorded output, excluding
+  smoke preflight and post-run commands. It SHALL permit that work to reach
+  `recommend_close` or a valid `no_code_required` declaration, while explicit
+  provider and infrastructure failure signals retain precedence and a
+  smoke-only run remains an infrastructure failure.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/models/agent_run.rb`,
+  `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
 ## PR-producing partial closeouts
 
 - [x] **NO-OUTPUT-ISSUE-007** — When a PR-producing run leaves an approved

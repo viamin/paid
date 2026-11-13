@@ -34,6 +34,18 @@ RSpec.describe Notifications::Rules::ZeroIterationTimeout do
     }.not_to change(Notification, :count)
   end
 
+  # @spec NOTIFICATION-SEVERITY-013
+  it "does not publish when a main-agent attempt recorded output" do
+    run = create(:agent_run, :timeout, project: project, issue: issue,
+      iterations: 0, tokens_input: 0, runners_attempted: [
+        { "runner" => "codex", "success" => true, "output_chars" => 250 }
+      ])
+
+    expect {
+      described_class.call(scope: run)
+    }.not_to change(Notification, :count)
+  end
+
   it "never auto-resolves" do
     run = create(:agent_run, :timeout, project: project, issue: issue,
       iterations: 0, tokens_input: 0)

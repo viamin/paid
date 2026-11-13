@@ -84,8 +84,9 @@ end
 A blind retry is only safe when nothing was produced yet. `create_issue`/
 `create_feature` runs can create a GitHub issue or open a PR before a later
 step fails (e.g. a post-publish verification gate); retrying those blindly
-risks a duplicate issue or PR. `iterations == 0` plus no recorded
-`pull_request_number`/`created_issue_number` precisely covers the
+risks a duplicate issue or PR. The absence of a successful persisted main
+runner attempt with recorded output, plus no recorded
+`pull_request_number`/`created_issue_number`, precisely covers the
 dispatch-exhaustion class this feature targets (runner/provider resolution
 failed before any model turn ran) and excludes anything with partial work,
 which is left terminally `failed` for an operator — consistent with issues #4212/#4221
