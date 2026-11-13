@@ -10,13 +10,13 @@ RSpec.describe "PgHero development route", :no_db do
     original_environment = PgHero.env
     ENV.delete("PGHERO_PASSWORD")
     PgHero.env = "development"
-    reset_pghero_auth_config
+    reset_pghero_config
     example.run
   ensure
     ENV["PGHERO_PASSWORD"] = original_password
     ENV.delete("PGHERO_PASSWORD") unless original_password
     PgHero.env = original_environment
-    reset_pghero_auth_config
+    reset_pghero_config
   end
 
   # @spec RAILS-CONTROL-PLANE-018
@@ -34,7 +34,7 @@ RSpec.describe "PgHero development route", :no_db do
   # @spec RAILS-CONTROL-PLANE-018
   it "allows an explicit password for development" do
     ENV["PGHERO_PASSWORD"] = "development-password"
-    reset_pghero_auth_config
+    reset_pghero_config
 
     expect(PgHero.password).to eq("development-password")
   end
@@ -62,13 +62,13 @@ RSpec.describe "PgHero development route", :no_db do
     expect(route).to be_nil
   end
 
-  def reset_pghero_auth_config
+  def reset_pghero_config
     pghero_config_variables.each do |name|
       PgHero.remove_instance_variable(:"@#{name}") if PgHero.instance_variable_defined?(:"@#{name}")
     end
   end
 
   def pghero_config_variables
-    %i[file_config password username]
+    %i[config databases file_config password username]
   end
 end
