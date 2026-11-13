@@ -90,6 +90,20 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       )
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-003
+    it "keeps a bare declaration beside a directive in the same list item" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          - #41; depends on #42
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq(41 => false, 42 => false)
+      expect(cross_deps).to eq({})
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-009
     it "keeps a directive after another directive in the same clause" do
       local_deps, cross_deps = described_class.extract(

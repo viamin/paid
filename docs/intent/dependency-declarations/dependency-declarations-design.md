@@ -38,9 +38,9 @@ section body is code, not Markdown list structure, so list-style lines inside it
 are not declarations. A fenced block closes only on the same delimiter
 character with a run at least as long as its opening delimiter. A subsequent
 heading ends the dependency section; child/sub-issue sections remain excluded
-from inline parsing. A list item that describes another issue's prerequisite
-relationship is contextual prose rather than a declaration for the item that
-carries it.
+from inline parsing. The contextual clause of a list item that describes
+another issue's prerequisite relationship is not a declaration for the item
+that carries it; an independent bare reference in that item remains one.
 
 ## Shared Consumers
 

@@ -376,15 +376,47 @@ module Issues
 
     def flush_list_item(item, local_deps, cross_deps, skip_directive_items:)
       return unless item
-      return if skip_directive_items && contains_dependency_directive?(item)
 
-      extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
+      refs = if skip_directive_items && contains_dependency_directive?(item)
+        bare_list_item_refs(item)
+      else
+        item
+      end
+
+      extract_all_refs(refs, local_deps, cross_deps, requires_deployment: false)
     end
 
     def contains_dependency_directive?(text)
       [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN, SECTION_DEPLOYMENT_PATTERN ].any? do |pattern|
         text.scan(pattern).any?
       end
+    end
+
+    # Directives are extracted in the inline pass. Mask their spans here so
+    # bare-ref extraction retains independent references from the same item.
+    def bare_list_item_refs(item)
+      item.dup.tap do |refs|
+        [ INLINE_DEPLOYMENT_PATTERN, INLINE_DEPENDS_PATTERN, SECTION_DEPLOYMENT_PATTERN ].each do |pattern|
+          item.to_enum(:scan, pattern).each do
+            directive = Regexp.last_match
+            mask_directive_span(refs, item, directive)
+          end
+        end
+      end
+    end
+
+    def mask_directive_span(refs, item, directive)
+      subject_start = directive_subject_start(item, directive.begin(0))
+      start = subject_start || directive.begin(0)
+      refs[start...directive.end(0)] = " " * (directive.end(0) - start)
+    end
+
+    def directive_subject_start(text, directive_start)
+      prefix = text[0...directive_start]
+      clause = prefix[(prefix.rindex(/[.!?;\n]/) || -1) + 1..]
+      subject = clause.match(DIRECTIVE_SUBJECT_PATTERN)
+
+      subject && prefix.length - clause.length + subject.begin(0)
     end
 
     def continuation_line?(line, indentation)
