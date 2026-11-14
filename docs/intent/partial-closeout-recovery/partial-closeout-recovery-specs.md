@@ -12,7 +12,10 @@
   to that stage's responsibility under RDR-077, and SHALL recheck the
   corresponding effective policy and normal scope, grant, actor, trust,
   budget, pause, and recipe/check authorization before execution. A merge SHALL
-  make only a merged-revision target eligible and SHALL NOT be treated as a
+  make only a merged-revision target eligible when that target is GitHub's
+  recorded merge, squash, or rebase revision for the source PR, or an
+  authoritatively verified descendant containing its reviewed head. An
+  ambiguous association SHALL be `unknown`. A merge SHALL NOT be treated as a
   deployment or live-environment signal.
   *Planned test:* goal/stage authorization and target-availability service
   coverage.
@@ -31,17 +34,20 @@
   coverage.
 
 - [ ] **PARTIAL-CLOSEOUT-054** — For every staged closeout verification
-  attempt, Paid SHALL retain the issue, criterion, source PR, selected stage,
-  target SHA or live-signal identity, recipe/check key/version/digest,
-  account/project and environment identity, executor provenance, observation
-  time, and bounded/redacted output or artifact references with exactly one
+  attempt, Paid SHALL retain the issue, criterion, source PR and reviewed-head
+  SHA, selected stage, target SHA or live-signal identity, and, for a merged
+  revision, the authoritative source-PR-to-target association; recipe/check
+  key/version/digest, account/project and environment identity, executor
+  provenance, observation time, and bounded/redacted output or artifact
+  references with exactly one
   terminal result of `pass`, `fail`, or `unknown`. Missing, ambiguous,
   superseded, or nonmatching targets; unavailable environments; inconclusive
   output; rejected evidence; and expired evidence SHALL remain `unknown` and
   leave the criterion unverified. A change to intent or criterion revision,
-  recipe/check mapping or version, source PR, target, environment, live signal,
-  or freshness period SHALL stale the evidence; prior evidence remains
-  inspectable but cannot satisfy the criterion.
+  recipe/check mapping or version, source PR, reviewed head, target or its
+  association, environment, live signal, or freshness period SHALL stale the
+  evidence; prior evidence remains inspectable but cannot satisfy the
+  criterion.
   *Planned test:* evidence-provenance, freshness, and invalidation service
   coverage.
 

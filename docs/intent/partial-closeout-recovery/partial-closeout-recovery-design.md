@@ -156,14 +156,17 @@ the RDR-077 phase that owns that check:
 | Stage | Target becomes available when | Owning phase | Target identity |
 | --- | --- | --- | --- |
 | `pre_merge` | the authoritative source PR has its reviewed head | Coding | repository-qualified source PR and head SHA |
-| `merged_revision` | GitHub has authoritatively recorded that source PR as merged and its merged/default-branch revision is known | Release & Deployment | source PR plus merged target SHA |
+| `merged_revision` | GitHub records the source PR's merge, squash, or rebase revision, or authoritatively verifies a descendant containing its reviewed head | Release & Deployment | source PR, reviewed head SHA, and associated merged target SHA |
 | `live_environment` | a trusted deployment or live signal names the environment and the revision it serves | Release & Deployment for deployment validation; Operations for a runtime observation | environment identity, signal identity, and served SHA |
 
-A merge only makes the `merged_revision` target eligible; it is never a
-deployment signal and cannot make a `live_environment` target available. A
-missing, ambiguous, superseded, or nonmatching target produces `unknown`
-evidence with a concrete recovery reason, rather than a fallback check against
-the source branch.
+A merged-revision target is never the current default-branch tip merely
+because the source PR is merged. It must be GitHub's recorded merge, squash,
+or rebase revision for that source PR, or a descendant authoritatively verified
+to contain that PR's reviewed head. A merge only makes that target eligible; it
+is never a deployment signal and cannot make a `live_environment` target
+available. A missing, ambiguous, superseded, or nonmatching association
+produces `unknown` evidence with a concrete recovery reason, rather than a
+fallback check against the source branch or default branch.
 
 #### Reviewed mapping and authorization
 
@@ -191,9 +194,11 @@ Merge grant into Release & Deployment or Operations authority.
 
 #### Evidence contract, freshness, and retries
 
-Each attempt records issue and criterion identity; source PR identity; selected
-stage; target SHA or live signal identity; recipe/check key, version, and
-digest; account/project and environment identity; executor provenance;
+Each attempt records issue and criterion identity; source PR identity and
+reviewed head SHA; selected stage; target SHA or live signal identity; for a
+merged revision, the authoritative source-PR-to-target association;
+recipe/check key, version, and digest; account/project and environment
+identity; executor provenance;
 observation time; bounded/redacted output and artifact references; and one
 result state: `pass`, `fail`, or `unknown`. Cancellation or inability to
 start records no passing result and leaves the criterion unverified. `unknown`
@@ -202,11 +207,12 @@ unavailable environments, inconclusive output, and any rejected or expired
 evidence; it is not a pass-like state.
 
 Evidence is current only while it matches the source issue's approved-intent
-and criterion revisions, the source PR, selected stage and target identity,
-recipe/check version and digest, declared environment, and recipe freshness
-period. A changed criterion or intent, mapping or recipe/check version, source
-PR, target SHA, environment, live signal, or expired freshness period
-invalidates the evidence and leaves the criterion unverified. The prior result
+and criterion revisions, the source PR and reviewed head, selected stage and
+target identity and association, recipe/check version and digest, declared
+environment, and recipe freshness period. A changed criterion or intent,
+mapping or recipe/check version, source PR, reviewed head, target SHA or its
+association, environment, live signal, or expired freshness period invalidates
+the evidence and leaves the criterion unverified. The prior result
 remains inspectable but cannot be reused for closure. Retries recheck those
 identities and all authorization at queue and claim time, use only the
 mapping's bounded retry class and attempt limit, and never retry a terminal
