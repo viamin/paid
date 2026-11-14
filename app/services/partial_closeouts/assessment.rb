@@ -44,8 +44,14 @@ module PartialCloseouts
       payload.merge(
         "source_revision" => input_revisions["source"].presence || source_revision_for(agent_run.issue),
         "intent_revision" => input_revisions["intent"].presence || intent_revision_for(agent_run.issue),
+        "verification_revision" => verification_revision_for(agent_run),
+        "pr_head_sha" => agent_run.result_commit_sha,
         "assessed_at" => Time.current.iso8601
       )
+    end
+
+    def self.verification_revision_for(agent_run)
+      Digest::SHA256.hexdigest(agent_run.verification_result.to_h.to_json)
     end
 
     def self.intent_revision_for(issue)

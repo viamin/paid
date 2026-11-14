@@ -33,4 +33,13 @@ RSpec.describe PullRequests::SourceClosureBody do
 
     expect(body.scan("Closes #42")).to eq([ "Closes #42" ])
   end
+
+  it "promotes only the source reference without duplicating it on replay" do # @spec PARTIAL-CLOSEOUT-050
+    body = "## Report\n\nTracks #42\n\nRelates to #99"
+
+    promoted = described_class.call(body:, issue:, project:, disposition: "close")
+
+    expect(promoted).to eq("## Report\n\nCloses #42\n\nRelates to #99")
+    expect(described_class.call(body: promoted, issue:, project:, disposition: "close")).to eq(promoted)
+  end
 end

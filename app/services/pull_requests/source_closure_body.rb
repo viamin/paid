@@ -6,7 +6,7 @@ module PullRequests
   # decision: PartialCloseouts::SourceClosureDisposition owns that decision.
   # @spec PARTIAL-CLOSEOUT-029
   class SourceClosureBody
-    CLOSING_KEYWORDS = "Close(?:s|d)?|Fix(?:es|ed)?|Resolve(?:s|d)?"
+    CLOSING_KEYWORDS = "Close\\w*|Fix\\w*|Resolve\\w*"
 
     def self.call(...) = new(...).call
 
@@ -20,10 +20,11 @@ module PullRequests
     def call
       return body if issue.nil?
 
-      normalized = body.gsub(closing_reference_pattern, "Tracks #{issue_reference}")
-      return normalized unless disposition == PartialCloseouts::SourceClosureDisposition::CLOSE
+      reference = disposition == PartialCloseouts::SourceClosureDisposition::CLOSE ? "Closes #{issue_reference}" : "Tracks #{issue_reference}"
+      pattern = source_reference_pattern
+      return body.gsub(pattern, reference) if body.match?(pattern)
 
-      "#{normalized.rstrip}\n\n---\n\nCloses #{issue_reference}"
+      "#{body.rstrip}\n\n---\n\n#{reference}"
     end
 
     private
@@ -36,8 +37,8 @@ module PullRequests
       "#{project.issue_target_repository}##{issue.github_number}"
     end
 
-    def closing_reference_pattern
-      /\b(?:#{CLOSING_KEYWORDS})\s*:?[ \t]+(?:#{source_issue_references})\b/i
+    def source_reference_pattern
+      /\b(?:Tracks|#{CLOSING_KEYWORDS})\s*:?[ \t]+(?:#{source_issue_references})/i
     end
 
     def source_issue_references
