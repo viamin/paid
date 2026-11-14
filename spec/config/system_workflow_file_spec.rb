@@ -27,9 +27,9 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(workflow).not_to have_key("concurrency")
   end
 
-  # @spec MOBILE-API-016
-  it "allows the browser suite to install the mobile contract toolchain from a cold cache" do
-    expect(system_job.fetch("timeout-minutes")).to eq(120)
+  # @spec TEST-SUITE-022
+  it "allows the hosted browser suite to complete within a bounded job window" do
+    expect(system_job.fetch("timeout-minutes")).to eq(180)
   end
 
   it "passes test credentials to the system job" do

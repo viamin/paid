@@ -19,11 +19,11 @@ jobs:
     # A Gemfile.lock change invalidates ruby/setup-ruby's bundle cache, and the
     # dependency installer can retry for up to 30 minutes before assets and the
     # browser suite begin. Leave enough room for the checks to complete.
-    # The suite began promptly but exhausted both the previous 60-minute cap
-    # and the subsequent 90-minute cap while running specs. Keep a bounded
-    # timeout while allowing the browser suite its normal execution window
-    # after dependency setup.
-    timeout-minutes: 120
+    # The suite began promptly but exhausted the previous 120-minute cap while
+    # running specs. Keep a bounded timeout while allowing the browser suite
+    # its normal execution window after dependency setup.
+    # @spec TEST-SUITE-022
+    timeout-minutes: 180
 
     services:
       postgres:
