@@ -147,10 +147,32 @@ tree_is_dirty() {
 stash_dirty_tree() {
   if tree_is_dirty; then
     log "Working tree has uncommitted changes; auto-stashing..."
+    local pre_stash_ref
+    pre_stash_ref="$(git rev-parse --verify -q refs/stash 2>/dev/null || true)"
     local stash_output
-    stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+    if ! stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"; then
+      log_command_output "git stash" "$stash_output"
+      record_failure "git-stash"
+      # A full restart may have stopped Overmind before pulling; bring it back
+      # before exiting so a stash failure does not leave dev down. No-op when
+      # this invocation never stopped Overmind.
+      recover_dev_if_needed
+      fail "git stash push failed. Resolve the Git error and rerun bin/dev-update."
+    fi
     log_command_output "git stash" "$stash_output"
-    STASHED_CHANGES=1
+    # A zero exit status does not prove this invocation created a stash: if
+    # another process cleans the tree between tree_is_dirty and the push, Git
+    # exits 0 with "No local changes to save" without moving refs/stash. Claim
+    # ownership only when refs/stash actually changed, so unstash_dirty_tree
+    # never pops an unrelated pre-existing dev-update-autostash entry.
+    local post_stash_ref
+    post_stash_ref="$(git rev-parse --verify -q refs/stash 2>/dev/null || true)"
+    if [ "$pre_stash_ref" != "$post_stash_ref" ]; then
+      STASHED_CHANGES=1
+    else
+      log "Auto-stash created no stash entry; skipping restore."
+    fi
   fi
 }
 
