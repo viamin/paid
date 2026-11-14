@@ -180,6 +180,56 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def recording_harness_preflight_provider
+    Class.new do
+      attr_reader :preflight_calls
+
+      def initialize
+        @preflight_calls = []
+      end
+
+      def preflight_check(env:, timeout:)
+        @preflight_calls << { env: env, timeout: timeout }
+        { healthy: true }
+      end
+    end.new
+  end
+
+  def allow_successful_agent_execution
+    allow(container_service).to receive(:execute).and_return(exec_success)
+    allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+    allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+  end
+
+  def stub_minimax_token_plan_preflight(minimax_runner:, reset_at:)
+    allow(activity).to receive(:run_harness_preflight!).and_call_original
+    allow(activity).to receive(:preflight_provider_instance).and_wrap_original do |original, command_context|
+      next original.call(command_context) unless minimax_runner.matches_identifier?(command_context.runner_candidate)
+
+      harness_provider = original.call(command_context)
+      expect(harness_provider).to be_a(AgentHarness::Providers::Opencode)
+      allow(harness_provider).to receive(:preflight_check).with(
+        env: kind_of(Hash),
+        timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS,
+        provider_runtime: have_attributes(api_provider: "minimax", model: "minimax/MiniMax-M3")
+      ).and_return(
+        { healthy: false, reason: "MiniMax Token Plan rate limit reached", error_category: :rate_limited, reset_at: reset_at }
+      )
+      harness_provider
+    end
+  end
+
+  def expect_minimax_rate_limited_fallback(agent_run:, minimax_runner:, fallback:, reset_at:)
+    expect(agent_run.reload.runners_attempted).to include(
+      include("runner" => minimax_runner.routing_key, "error_type" => "rate_limited",
+        "diagnostics" => { "limit_kind" => "subscription_usage" })
+    )
+    expect(agent_run.runners_attempted).to include(include("success" => true, "runner" => fallback.runner_key))
+    state = user.runner_states.find_by!(runner_name: minimax_runner.state_key)
+    expect(state.rate_limited_until).to eq(reset_at)
+    expect(state.rate_limit_kind).to eq("subscription_usage")
+  end
+
   def run_direct_outbound_preflight(activity:, agent_run:, container_service:, provider:, user:)
     command_context = Activities::RunAgentActivity::CommandContext.new(
       runner_candidate: provider,
@@ -3701,8 +3751,7 @@ expect(container_service).to receive(:execute).with(
         result = activity.execute(agent_run_id: agent_run.id)
 
         agent_run.reload
-        expect(result).to include(success: true)
-        expect(result.fetch(:final_runner)).not_to eq(minimax_runner.routing_key)
+        expect(result).to include(success: true, final_runner: "cursor")
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "codex", "success" => false, "error_type" => "error"),
           hash_including("runner" => "cursor", "success" => true)
@@ -3721,7 +3770,7 @@ expect(container_service).to receive(:execute).with(
         result = activity.execute(agent_run_id: agent_run.id)
 
         agent_run.reload
-        expect(result).to include(success: true, final_runner: fallback.routing_key)
+        expect(result).to include(success: true, final_runner: "cursor")
         expect(agent_run.status).to eq("running")
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "codex", "success" => false, "error_type" => "error"),
@@ -3815,7 +3864,7 @@ expect(container_service).to receive(:execute).with(
         result = activity.execute(agent_run_id: agent_run.id)
 
         agent_run.reload
-        expect(result).to include(success: true, final_runner: fallback.routing_key)
+        expect(result).to include(success: true, final_runner: "cursor")
         expect(agent_run.status).to eq("running")
         expect(agent_run.runners_attempted).to contain_exactly(
           hash_including("runner" => "codex", "success" => false, "error_type" => "error"),
@@ -4375,18 +4424,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "calls harness preflight_check with the main execution env and timeout" do
-        harness_provider = Class.new do
-          attr_reader :preflight_calls
-
-          def initialize
-            @preflight_calls = []
-          end
-
-          def preflight_check(env:, timeout:)
-            @preflight_calls << { env: env, timeout: timeout }
-            { healthy: true }
-          end
-        end.new
+        harness_provider = recording_harness_preflight_provider
         allow(activity).to receive(:preflight_provider_instance).and_return(harness_provider)
         allow(activity).to receive(:run_harness_preflight!).and_call_original
         allow(activity).to receive(:command_env_for).and_wrap_original do |original, command_context, prompt|
@@ -4396,9 +4434,7 @@ expect(container_service).to receive(:execute).with(
             original.call(command_context, prompt).merge("PROMPT_KIND" => "main")
           end
         end
-        allow(container_service).to receive(:execute).and_return(exec_success)
-        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
-        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+        allow_successful_agent_execution
 
         activity.execute(agent_run_id: agent_run.id)
 
@@ -4418,36 +4454,13 @@ expect(container_service).to receive(:execute).with(
         user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback.runner_key ])
         allow(activity).to receive(:build_runner_order).and_return([ minimax_runner.routing_key, fallback.routing_key ])
         reset_at = 45.minutes.from_now.change(usec: 0)
-        allow(activity).to receive(:run_harness_preflight!).and_call_original
-        allow(activity).to receive(:preflight_provider_instance).and_wrap_original do |original, command_context|
-          next original.call(command_context) unless minimax_runner.matches_identifier?(command_context.runner_candidate)
-
-          harness_provider = original.call(command_context)
-          expect(harness_provider).to be_a(AgentHarness::Providers::Opencode)
-          allow(harness_provider).to receive(:preflight_check).with(
-            env: kind_of(Hash),
-            timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS,
-            provider_runtime: have_attributes(api_provider: "minimax", model: "minimax/MiniMax-M3")
-          ).and_return(
-            { healthy: false, reason: "MiniMax Token Plan rate limit reached", error_category: :rate_limited, reset_at: reset_at }
-          )
-          harness_provider
-        end
-        allow(container_service).to receive(:execute).and_return(exec_success)
-        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
-        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+        stub_minimax_token_plan_preflight(minimax_runner:, reset_at:)
+        allow_successful_agent_execution
 
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result).to include(success: true)
-        expect(agent_run.reload.runners_attempted).to include(
-          include("runner" => minimax_runner.routing_key, "error_type" => "rate_limited",
-            "diagnostics" => { "limit_kind" => "subscription_usage" })
-        )
-        expect(agent_run.runners_attempted).to include(include("success" => true, "runner" => fallback.runner_key))
-        state = user.runner_states.find_by!(runner_name: minimax_runner.state_key)
-        expect(state.rate_limited_until).to eq(reset_at)
-        expect(state.rate_limit_kind).to eq("subscription_usage")
+        expect_minimax_rate_limited_fallback(agent_run:, minimax_runner:, fallback:, reset_at:)
       end
 
       # @spec RUNNER-FALLBACK-013
@@ -4516,9 +4529,14 @@ expect(container_service).to receive(:execute).with(
 
       # @spec RUNNER-FALLBACK-013
       it "handles an unhealthy harness preflight result without an error category" do
-        harness_provider = double("unhealthy preflight provider")
+        harness_provider = instance_double(AgentHarness::Providers::Codex)
+        preflight_signature = instance_double(
+          Method,
+          parameters: [ [ :keyreq, :env ], [ :keyreq, :timeout ] ]
+        )
         allow(activity).to receive(:run_harness_preflight!).and_call_original
-        allow(harness_provider).to receive(:preflight_check).and_return(
+        allow(harness_provider).to receive(:method).with(:preflight_check).and_return(preflight_signature)
+        allow(harness_provider).to receive(:preflight_check).with(env: {}, timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS).and_return(
           { healthy: false, reason: "provider reachability check failed" }
         )
 

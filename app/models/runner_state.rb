@@ -43,7 +43,7 @@ class RunnerState < ApplicationRecord
   #   user-facing diagnostics; never provider response content.
   def mark_rate_limited!(reset_at: nil, limit_kind: nil)
     reset_at ||= 60.seconds.from_now
-    next_metadata = metadata.dup
+    next_metadata = metadata.to_h
     if limit_kind
       next_metadata["rate_limit_kind"] = limit_kind.to_s
     else
@@ -54,7 +54,7 @@ class RunnerState < ApplicationRecord
 
   # Clears the rate limit for this runner.
   def clear_rate_limit!
-    update!(rate_limited_until: nil, metadata: metadata.except("rate_limit_kind"))
+    update!(rate_limited_until: nil, metadata: metadata.to_h.except("rate_limit_kind"))
   end
 
   def rate_limit_kind
