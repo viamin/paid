@@ -44,6 +44,23 @@ RSpec.describe AccountActivityEvent do
       end
       expect(described_class.exists?(event.id)).to be(true)
     end
+
+    # @spec PROJECT-DELEGATION-001
+    it "protects rollback events from direct database mutation" do
+      rollback = described_class.create!(
+        account: account,
+        action: "project_delegation.rollback",
+        metadata: { "level" => "conservative", "revision" => 2 }
+      )
+
+      expect_db_rejection(/append-only/) do
+        described_class.where(id: rollback.id).update_all(metadata: { "revision" => 3 })
+      end
+      expect_db_rejection(/append-only/) do
+        described_class.where(id: rollback.id).delete_all
+      end
+      expect(rollback.reload.metadata).to include("revision" => 2)
+    end
   end
 
   describe ".actions_for_category" do
