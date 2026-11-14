@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_13_164248) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_14_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -6258,7 +6258,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_164248) do
        LANGUAGE plpgsql
       AS $function$
       BEGIN
-        IF OLD.action = 'project_delegation.posture_selected'
+        IF OLD.action IN ('project_delegation.posture_selected', 'project_delegation.rollback')
            AND NOT (
              COALESCE(current_setting('paid.account_teardown_account_id', true), '') = OLD.account_id::text
              OR (pg_trigger_depth() > 1 AND NOT EXISTS (SELECT 1 FROM public.accounts WHERE id = OLD.account_id))
@@ -6267,8 +6267,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_13_164248) do
         END IF;
 
         IF TG_OP = 'UPDATE'
-           AND OLD.action IS DISTINCT FROM 'project_delegation.posture_selected'
-           AND NEW.action = 'project_delegation.posture_selected' THEN
+           AND OLD.action NOT IN ('project_delegation.posture_selected', 'project_delegation.rollback')
+           AND NEW.action IN ('project_delegation.posture_selected', 'project_delegation.rollback') THEN
           RAISE EXCEPTION 'existing account activity events cannot become project delegation posture audit events';
         END IF;
 
