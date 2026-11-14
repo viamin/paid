@@ -11,6 +11,7 @@ class AgentRun < ApplicationRecord
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
   MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
+  MAIN_AGENT_EXECUTION_KIND = "main_agent"
   RUNNER_ATTEMPT_SECRET_PATTERNS = [
     [ /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/, "[REDACTED:api_key]" ],
     [ /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/, "[REDACTED:github_token]" ],
@@ -2127,7 +2128,7 @@ class AgentRun < ApplicationRecord
 
   def observable_main_agent_execution_count
     Array(runners_attempted).count do |attempt|
-      (attempt["success"] || attempt["error_type"] == "timeout") && attempt["output_chars"].to_i.positive?
+      observable_main_agent_execution?(attempt)
     end
   end
 
@@ -3036,7 +3037,7 @@ class AgentRun < ApplicationRecord
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
   def record_runner_attempt(runner, success:, error_type: nil, error_message: nil, duration_seconds: nil,
                             diagnostics: nil, resolved_model_id: nil, resolved_provider_id: nil,
-                            resolution_source: nil, output_chars: nil)
+                            resolution_source: nil, output_chars: nil, execution_kind: nil)
     attempt = {
       "runner" => runner,
       "success" => success,
@@ -3051,10 +3052,18 @@ class AgentRun < ApplicationRecord
     attempt["resolved_provider_id"] = resolved_provider_id if resolved_provider_id.present?
     attempt["resolution_source"] = resolution_source if resolution_source.present?
     attempt["output_chars"] = output_chars if output_chars.present?
+    attempt["execution_kind"] = execution_kind if execution_kind.present?
 
     self.runners_attempted = (runners_attempted || []) + [ attempt ]
     save!
   end
+
+  def observable_main_agent_execution?(attempt)
+    return false unless attempt["execution_kind"].blank? || attempt["execution_kind"] == MAIN_AGENT_EXECUTION_KIND
+
+    (attempt["success"] || attempt["error_type"] == "timeout") && attempt["output_chars"].to_i.positive?
+  end
+  private :observable_main_agent_execution?
 
   # Logs a runner switch and increments the switch counter.
   #

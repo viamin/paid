@@ -104,7 +104,10 @@ contains no declaration retain today's classification behavior unchanged.
 `iterations` is a legacy counter and is not evidence that a provider-neutral
 agent run performed work. The no-output classifier instead derives observable
 main-agent work from the persisted runner-attempt record: a successful attempt,
-or a timed-out main-command attempt, that recorded nonzero output bytes.
+or a timed-out main-command attempt, tagged `main_agent` and recording nonzero
+output bytes. Historic untagged records retain the same successful-or-timed-out
+interpretation for continuity. Tagged smoke and maintenance attempts never
+count as main-agent work.
 `RunAgentActivity` writes successful attempts after the main runner command
 returns and writes timed-out attempts with the output observed before the
 timeout. Smoke preflight uses a distinct attempt type and maintenance commands

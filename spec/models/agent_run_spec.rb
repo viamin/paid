@@ -2060,7 +2060,7 @@ RSpec.describe AgentRun do
 
       it "is false when a successful main-agent attempt recorded output despite zero iterations" do
         agent_run = build(:agent_run, :failed, iterations: 0, runners_attempted: [
-          { "runner" => "codex", "success" => true, "output_chars" => 250 }
+          { "runner" => "codex", "success" => true, "execution_kind" => "main_agent", "output_chars" => 250 }
         ])
 
         expect(agent_run.no_observable_work?).to be false
@@ -2076,7 +2076,15 @@ RSpec.describe AgentRun do
 
       it "is true when a smoke preflight timeout recorded output" do
         agent_run = build(:agent_run, :failed, iterations: 0, runners_attempted: [
-          { "runner" => "codex", "success" => false, "error_type" => "preflight_timeout", "output_chars" => 250 }
+          { "runner" => "codex", "success" => false, "error_type" => "preflight_timeout", "execution_kind" => "smoke_preflight", "output_chars" => 250 }
+        ])
+
+        expect(agent_run.no_observable_work?).to be true
+      end
+
+      it "is true when a successful smoke preflight recorded output" do
+        agent_run = build(:agent_run, :failed, iterations: 0, runners_attempted: [
+          { "runner" => "codex", "success" => true, "execution_kind" => "smoke_preflight", "output_chars" => 250 }
         ])
 
         expect(agent_run.no_observable_work?).to be true

@@ -2905,6 +2905,17 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      # @spec NO-OUTPUT-ISSUE-008
+      it "tags output from the main agent command" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.runners_attempted).to include(
+          include("success" => true, "execution_kind" => "main_agent")
+        )
+      end
+
       it "captures HEAD SHA before running the agent" do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 

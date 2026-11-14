@@ -354,6 +354,7 @@ module Dashboard
             FROM jsonb_array_elements(COALESCE(agent_runs.runners_attempted, '[]'::jsonb)) AS attempt(value)
             WHERE ((attempt.value ->> 'success') = 'true'
               OR (attempt.value ->> 'error_type') = 'timeout')
+              AND COALESCE(attempt.value ->> 'execution_kind', 'main_agent') = 'main_agent'
               AND (attempt.value ->> 'output_chars') ~ '^\\d+$'
               AND (attempt.value ->> 'output_chars')::integer > 0
           ) END

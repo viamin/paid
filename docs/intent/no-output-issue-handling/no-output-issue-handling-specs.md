@@ -70,7 +70,7 @@
 
 - [x] **NO-OUTPUT-ISSUE-008** — When an issue-scoped run has `iterations: 0`,
   the no-output classifier SHALL derive observable main-agent work from a
-  successful or timed-out persisted main runner attempt with nonzero recorded
+  successful or timed-out persisted `main_agent` runner attempt with nonzero recorded
   output, excluding smoke preflight and post-run commands. It SHALL permit that
   work to reach
   `recommend_close` or a valid `no_code_required` declaration, while explicit
