@@ -1262,6 +1262,18 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
       end
 
+      it "defers a source-retained continuation whose assessment predates changed intent" do # @spec NO-OUTPUT-ISSUE-007
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        parent.agent_runs.last.update!(reconciliation: parent.agent_runs.last.reconciliation.deep_merge(
+          "assessment" => { "source_revision" => "stale", "intent_revision" => "stale" }
+        ))
+        parent.update!(body: "Updated successful CI evidence")
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        expect(described_class.eligible_scope(project)).not_to include(parent)
+      end
+
       it "keeps the re-audit exception when reconciliation fails after publishing a later PR" do # @spec NO-OUTPUT-ISSUE-007
         create(:agent_run, :failed, :automatic, project: project, issue: parent,
           goal: "create_pr", auto_pick: true, pull_request_number: 43,
@@ -1335,6 +1347,26 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
           expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
         end
+      end
+    end
+
+    describe "repeated no-progress implementation runs" do
+      it "rejects repeated unchanged no-PR outcomes at admission and dequeue" do # @spec NO-OUTPUT-ISSUE-009
+        issue = create(:issue, project: project, github_state: "open")
+        revisions = {
+          "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+          "outcome" => "recommend_close"
+        }
+        2.times do
+          create(:agent_run, :completed, :automatic, project: project, issue: issue, goal: "create_pr", auto_pick: true,
+            pull_request_number: nil, pull_request_url: nil, result_commit_sha: nil,
+            reconciliation: { "no_progress" => revisions })
+        end
+        queued = create(:agent_run, :queued, :automatic, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(described_class.eligible_scope(project)).not_to include(issue)
+        expect(described_class.eligible_for_dequeue?(project, issue.id, excluding_run_id: queued.id)).to be(false)
       end
     end
 

@@ -121,6 +121,14 @@
                         <span class="ml-2"><%= action.label %>.</span>
                       <% end %>
                     <% end %>
+                    <%# @spec NO-OUTPUT-ISSUE-009 %>
+                    <% if held.diagnostic %>
+                      <span class="ml-2" data-testid="held-diagnostic-<%= held.issue.id %>">
+                        Held reason: <%= held.diagnostic.fetch(:reason) %>.
+                        Contributing runs: <%= held.diagnostic.fetch(:run_ids).join(", ") %>.
+                        Next action: <%= held.diagnostic.fetch(:next_action) %>
+                      </span>
+                    <% end %>
                     <% if held.actions.empty? && held.blockers.any? %>
                       <span class="ml-2">Resolve the listed blockers to resume automatic work.</span>
                     <% end %>
