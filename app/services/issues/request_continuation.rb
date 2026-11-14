@@ -51,7 +51,7 @@ module Issues
         return dedupe_or_refuse(existing) if existing
 
         clear_unaccepted_legacy_resolution!
-        status = CloseoutStatus.call(issue)
+        status = CloseoutStatus.call(issue, acceptance_audit: continuation_mode == "acceptance_audit")
         refusal = refusal_for(status)
         return refusal if refusal
 

@@ -30,6 +30,10 @@ expected distinct coverage reports exist, then collates them with the original
 Rails filters and enforces the existing 80% minimum. Missing reports, failing
 shards, or insufficient combined coverage fail the final check. Separate query
 performance specs run once, and the system-test workflow remains unchanged.
+Allow each shard 90 minutes at the GitHub job boundary. This remains a bounded
+failure window while leaving headroom for hosted-runner contention beyond the
+normal shard duration; reaching the boundary still cancels the shard and fails
+the stable final check.
 
 ## Platform-dropped shard recovery
 
@@ -62,6 +66,12 @@ keeps at most one pending run in a concurrency group and cancels a superseded
 pending run even when cancellation of in-progress work is disabled. Leaving
 these required runs ungrouped ensures each pull-request check can reach a
 terminal result rather than being cancelled while queued.
+
+Allow the system-test job three hours at the GitHub job boundary. Dependency
+setup is separately bounded, while the browser suite contains enough examples
+to exceed the former two-hour job limit on a hosted runner. The larger limit
+remains a bounded failure window and does not change spec-level failure or retry
+behavior.
 
 ## Individual test costs
 

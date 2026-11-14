@@ -52,3 +52,12 @@
   *Test:* `spec/services/partial_closeouts/assessment_spec.rb`,
   `spec/services/partial_closeouts/auto_audit_spec.rb`,
   `spec/services/trusted_measurements/evidence_spec.rb`.
+
+- [x] **TRUSTED-MEASUREMENTS-007** — When development is the live application
+  environment, Paid SHALL identify its mounted checkout by the HEAD commit
+  and a digest of tracked and untracked source changes, SHALL change that
+  identity when source content changes, and SHALL leave production's explicit
+  deployment signal requirement unchanged. An unreadable or unavailable
+  checkout SHALL remain unknown rather than become a fabricated revision.
+  *Code:* `app/services/trusted_measurements/deployment_signal.rb`.
+  *Test:* `spec/services/trusted_measurements/deployment_signal_spec.rb`.

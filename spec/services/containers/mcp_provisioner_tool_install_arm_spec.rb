@@ -127,6 +127,25 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-002 # @spec TO
         ])
       end
 
+      # @spec TOOL-SIDECAR-007
+      it "uses the marketplace artifact's top-level port for the probe and endpoint" do
+        AgentRun.where(id: agent_run.id).update_all(tool_sidecar_snapshot: [
+          { "name" => "code-search", "install_type" => "tool", "image" => "postgres:16",
+            "port" => 4444, "env" => {} }
+        ])
+        agent_run.reload
+
+        provisioner.provision(agent_run)
+
+        expect(Containers::TcpHealthProbe).to have_received(:open?).with(
+          backend: anything, container: anything,
+          host: "paid-tool-code-search-run#{agent_run.id}", port: 4444
+        )
+        expect(agent_run.reload.tool_sidecar_endpoints.first).to include(
+          "port" => 4444, "url" => "http://paid-tool-code-search-run#{agent_run.id}:4444"
+        )
+      end
+
       it "does not register the tool as an MCP url server" do
         result = provisioner.provision(agent_run)
 

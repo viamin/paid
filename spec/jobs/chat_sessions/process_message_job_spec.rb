@@ -445,7 +445,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   end
 
   def configure_exhausted_token_limit
-    create(:tenant_setting, account:, features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+    create(:tenant_setting, account:, chat_settings: { "chat_session_token_limit" => 100 })
     chat_session.token_usages.create!(
       request_type: "chat_message", input_tokens: 80, output_tokens: 30,
       cost_cents: 1, llm_model: "test-model"

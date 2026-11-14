@@ -409,7 +409,7 @@ RSpec.describe "ChatMessages" do
       end
 
       def configure_token_limit(key)
-        create(:tenant_setting, account: account, features: { "chat_settings" => { key => 100 } })
+        create(:tenant_setting, account: account, chat_settings: { key => 100 })
         create(:token_usage, :chat, chat_session: chat_session, input_tokens: 80, output_tokens: 30)
       end
     end

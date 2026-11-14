@@ -1,11 +1,17 @@
 # RDR-075 M00 — RDR-073 Tool Handoff Validation — 2026-10-23
 
+**Status update (2026-11-13):** Both deferred live execution-environment
+validations were completed in Paid's development environment. The native
+analyzer and tool sidecar artifacts are recorded below. Critical assumption 2
+is validated for a native CLI analyzer and a network-callable sidecar; RDR-075
+remains Draft pending its separate design acceptance review.
+
 - **Draft design:** [PR #4308](https://github.com/viamin/paid/pull/4308)
 - **Issue:** [#4327](https://github.com/viamin/paid/issues/4327) (M00: plan
   maintenance intent and validate the RDR-073 tool handoff)
 - **Umbrella:** [#4326](https://github.com/viamin/paid/issues/4326) — tracked,
   not closed by this report
-- **Result:** Critical assumption 1 is **validated** by the shipped RDR-073
+- **2026-10-23 result:** Critical assumption 1 is **validated** by the shipped RDR-073
   contract and its focused tests. Critical assumption 2 is **not yet
   validated**: the recorded analyzer commands ran in this checkout, not via
   `AgentRun#execute_in_execution_environment`, and no execution-environment
@@ -197,6 +203,35 @@ preserve the resulting artifact with this audit. This workspace has no Docker
 client or Docker socket, so that live execution could not be performed here;
 the criterion remains unvalidated rather than inferred from host commands.
 
+**Development live-validation addendum (2026-11-13):** The project's development
+environment now has a reachable Docker backend. Synthetic operational
+`AgentRun` #29123 provisioned a fresh isolated run container from image
+`sha256:65549c94629fa5b4df84224a1276e8f18bae409c082fe8c059cf5813feecea22`.
+Paid's `Containers::GitOperations#clone_and_setup_branch` pinned the checkout
+to `c4ce51452c3d1056d56be44b4cfa76029d9a87af`; `git rev-parse HEAD`
+inside the run container returned that same SHA. After
+`yarn install --frozen-lockfile --ignore-scripts --silent` completed with exit
+code 0, the run invoked the bounded, read-only target through
+`AgentRun#execute_in_execution_environment(..., stream: false)`:
+
+```text
+$ yarn eslint app/javascript/controllers/chat_controller.js --no-cache
+stdout: yarn run v1.22.22
+        $ /workspace/node_modules/.bin/eslint app/javascript/controllers/chat_controller.js --no-cache
+        Done in 0.40s.
+stderr: (empty)
+exit_code: 0
+```
+
+`AgentRun#cleanup_execution_environment(force: true)` cleared the recorded
+container ID, and a Docker lookup confirmed the run container was absent.
+The preceding synthetic run #29119 showed that RuboCop is not installed in
+the agent image (`bundler: command not found: rubocop`, exit 127); its run
+container was also removed. The successful ESLint run validates the native
+CLI execution path for a selected analyzer, with dependency installation
+inside the isolated checkout. It does not establish the pending sidecar
+interaction or accept RDR-075 as a whole.
+
 ### Sidecar interaction — RDR-073's contract is network-only; it does not grant checkout access
 
 `Containers::McpProvisioner#create_hardened_tool_sidecar_container`
@@ -230,6 +265,42 @@ exit code, and both sidecar and run-container cleanup, then attach that
 artifact to this report. No such request was made in this workspace because
 it has no Docker client or Docker socket. The sidecar criterion remains
 unvalidated.
+
+**Development live-validation addendum (2026-11-13):** The project owner
+authorized a project-19-only `marketplace_tool_sidecars` pilot. A manual
+marketplace `tool` attachment (entry #3, version #3) recorded the allowlisted
+`selenium/standalone-chromium:latest` image and canonical port 4444 in
+synthetic operational `AgentRun` #29133. Paid provisioned the paired run
+container from image
+`sha256:65549c94629fa5b4df84224a1276e8f18bae409c082fe8c059cf5813feecea22`
+and the sidecar from image
+`sha256:872095170c6e0b147764f010d5a85662b4e9053b8b3455034d3ffaab50f477a`.
+The run's endpoint manifest contained
+`http://paid-tool-rdr-075-selenium-sidecar-pilot-1794592049-run29133:4444`.
+Using the run's actual Docker network, the paired run called Selenium's
+documented `/wd/hub/status` endpoint through
+`AgentRun#execute_in_execution_environment(..., stream: false)`:
+
+```text
+response top-level keys: value
+response value keys: ready, message, nodes
+ready: true
+message: Selenium Grid ready.
+nodes: 1
+stderr: (empty)
+exit_code: 0
+```
+
+Paid then cleared `tool_sidecar_container_ids` and the run container ID;
+Docker lookups confirmed both containers absent. The pilot entry was
+deprecated, and the project-only flag was disabled. No tenant-wide or global
+rollout was enabled. The first pilot exposed a tool-port handoff bug: the
+provisioner probed the legacy default port 8080 despite the marketplace
+artifact's top-level `port: 4444`. The focused fix is covered by
+`TOOL-SIDECAR-007`. A subsequent pilot call using the wrong network failed
+DNS resolution; repeating it with the production runtime's network selection
+produced the successful result above. All attempts cleaned up their paired
+containers and disabled the project flag.
 
 **Provisional design direction — pending the two live validations.** The first
 delivery's named analyzer candidates (Exhale, Knip, Debride, Vulture, PMD CPD
@@ -383,6 +454,22 @@ Docker-capable execution environment. RDR-075 remains Draft, its
 phases #4328–#4333 remain unreleased. Move the validation to a Docker-capable
 environment rather than inferring live lifecycle behavior from static tests
 or host-only commands.
+
+**Updated disposition (2026-11-13):** Paid's development environment supplied
+the Docker-capable execution path missing from the earlier attempts. Fresh
+run #29123 proved bounded native CLI invocation against a pinned checkout;
+run #29133 proved a manually attached, allowlisted tool sidecar's documented
+HTTP endpoint from its paired execution environment. Both run containers and
+the sidecar were removed. Critical assumption 2's two live artifacts are now
+collected, and #4604's technical validation criteria can be closed after
+this report is merged. No currently named RDR-075 analyzer needs full
+checkout access from a sidecar; native analyzers read the run checkout, while
+the validated sidecar path accepts bounded network requests. Therefore this
+evidence does not require an upstream RDR-073 bind-mount extension. A future
+recipe that truly needs sidecar checkout access must file that extension with
+explicit dependencies before its phase is released. RDR-075 remains Draft,
+and #4635's human design acceptance remains the next gate before implementation
+phases are released.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
