@@ -24,17 +24,27 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
   end
 
   # @spec PARTIAL-CLOSEOUT-050
-  it "binds a report-only audit assessment to the source PR-producing run head" do
+  it "binds a report-only audit assessment to the source PR-producing run evidence" do
     source_run = create(:agent_run, :completed, project:, issue:, goal: "create_pr",
-      pull_request_number: 42, result_commit_sha: "source-pr-head")
+      pull_request_number: 42, result_commit_sha: "source-pr-head",
+      verification_result: { "status" => "passed", "summary" => "source verification" })
+    run.update!(verification_result: { "status" => "not_run", "summary" => "report-only audit" })
     allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(
       "gaps" => [], "criteria" => [ { "criterion" => "works", "state" => "satisfied", "evidence" => [ { "label" => "spec/example_spec.rb:42" } ] } ]
     )
 
     described_class.new.execute(agent_run_id: run.id)
 
-    expect(source_run.result_commit_sha).to eq("source-pr-head")
-    expect(run.reload.reconciliation.dig("assessment", "pr_head_sha")).to eq("source-pr-head")
+    assessment = run.reload.reconciliation.fetch("assessment")
+    disposition = PartialCloseouts::SourceClosureDisposition.for_pull_request(
+      issue:, assessment:, head_sha: source_run.result_commit_sha,
+      verification_revision: PartialCloseouts::Assessment.verification_revision_for(source_run)
+    )
+    expect(assessment).to include(
+      "pr_head_sha" => "source-pr-head",
+      "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(source_run)
+    )
+    expect(disposition.fetch("disposition")).to eq("close")
   end
 
   # @spec PROJECT-DELEGATION-009

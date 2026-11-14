@@ -41,24 +41,25 @@ module PartialCloseouts
       payload = assessment.to_h.deep_stringify_keys
       input_revisions = payload.delete("audit_input_revisions")
       input_revisions = {} unless input_revisions.is_a?(Hash)
+      evidence_run = source_pull_request_evidence_run_for(agent_run)
       payload.merge(
         "source_revision" => input_revisions["source"].presence || source_revision_for(agent_run.issue),
         "intent_revision" => input_revisions["intent"].presence || intent_revision_for(agent_run.issue),
-        "verification_revision" => verification_revision_for(agent_run),
-        "pr_head_sha" => source_pull_request_head_sha_for(agent_run),
+        "verification_revision" => verification_revision_for(evidence_run),
+        "pr_head_sha" => evidence_run.result_commit_sha,
         "assessed_at" => Time.current.iso8601
       )
     end
 
     # A report-only acceptance audit has no result commit of its own. Bind its
-    # assessment to the PR-producing run for the same source issue so the
-    # merge boundary can compare the evidence to the PR GitHub will merge.
+    # head and verification revision to the PR-producing run for the same
+    # source issue so both merge-boundary comparisons use one evidence source.
     # @spec PARTIAL-CLOSEOUT-050
-    def self.source_pull_request_head_sha_for(agent_run)
-      return agent_run.result_commit_sha if agent_run.result_commit_sha.present?
+    def self.source_pull_request_evidence_run_for(agent_run)
+      return agent_run if agent_run.result_commit_sha.present?
 
       agent_run.issue.agent_runs.where(goal: "create_pr").where.not(result_commit_sha: nil)
-        .order(id: :desc).pick(:result_commit_sha)
+        .order(id: :desc).first || agent_run
     end
 
     def self.verification_revision_for(agent_run)
