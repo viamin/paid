@@ -126,7 +126,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-005 LLM-ROUTING-006
   it "writes harness preparation paths beneath the container user's home" do
-    Dir.mktmpdir("paid-text-home") do |home|
+    Dir.mktmpdir("paid-text-home", "/tmp") do |home|
       config_path = "~/.config/opencode/opencode.json"
       input = {
         command: [ "python3", "-c", "from pathlib import Path; print(Path('#{config_path}').expanduser().read_text())" ],
@@ -336,7 +336,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
   # @spec LLM-ROUTING-006
   it "rejects a home-relative preparation path that escapes the allowed roots" do
-    Dir.mktmpdir("paid-text-home") do |home|
+    Dir.mktmpdir("paid-text-home", "/tmp") do |home|
       input = {
         command: [ "true" ],
         preparation: [ { path: "~/../../etc/paid-text-escape", content: "blocked", mode: 0o600 } ],
