@@ -426,6 +426,31 @@ RSpec.describe Activities::MergePullRequestActivity do
         )
       end
 
+      it "refreshes the source closure before auto-merging a Paid-generated PR" do # @spec PARTIAL-CLOSEOUT-050
+        source_issue = create(:issue, project: project, github_number: 7)
+        issue.update!(parent_issue: source_issue)
+        source_run = create(:agent_run, :completed, project: project, issue: source_issue,
+          goal: "create_pr", pull_request_number: issue.github_number, pull_request_url: issue.github_url)
+        source_run.update!(reconciliation: { "assessment" => {
+          "gaps" => [],
+          "criteria" => [ { "criterion" => "works", "state" => "satisfied", "evidence" => [ { "label" => "spec:42" } ] } ],
+          "source_revision" => Issues::CloseoutEvidence.call(source_issue).digest,
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(source_issue),
+          "pr_head_sha" => "abc",
+          "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(source_run)
+        } })
+        client = instance_double(GithubClient, update_pull_request: nil)
+        allow(project).to receive(:client).and_return(client)
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: true)
+        expect(client).to have_received(:update_pull_request).with(project.pr_target_repository, 42, body: a_string_including("Closes #7"))
+        expect(provider).to have_received(:fetch_pull_request).twice
+        expect(provider).to have_received(:merge_pull_request)
+      end
+
       it "delivers merge subscription notifications" do
         expect(IssueMergeSubscriptions::Deliver).to receive(:call)
           .with(issue: issue, event: :merged)

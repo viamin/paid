@@ -179,6 +179,22 @@
   *Test:* `spec/services/partial_closeouts/source_closure_disposition_spec.rb`,
   `spec/services/pull_requests/source_closure_body_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-050** — When Paid is about to automatically merge an
+  open Paid-generated source PR, it SHALL re-publish that PR's source-issue
+  reference from a disposition bound to the fetched PR head, current source
+  intent revision, and cited criterion-level evidence. It SHALL publish
+  `Closes` only when every criterion is satisfied with cited evidence and the
+  current merge gates pass; a changed head, intent, verification result,
+  missing assessment, or failed publication SHALL retain or restore `Tracks`
+  before merge. The re-publication SHALL be idempotent, preserve unrelated PR
+  body content and references, and SHALL NOT edit a closed or merged PR.
+  *Code:* `app/services/pull_requests/refresh_source_closure.rb`,
+  `app/services/pull_requests/source_closure_body.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb`.
+  *Test:* `spec/services/pull_requests/refresh_source_closure_spec.rb`,
+  `spec/services/pull_requests/source_closure_body_spec.rb`,
+  `spec/temporal/activities/merge_pull_request_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-025** — When the daily legacy partial-closeout
   reconciliation sweep runs, the system SHALL invoke `ReconcileLegacy` once
   for each active account using the persisted account/run cursor in its chained
