@@ -841,8 +841,8 @@ arrows:
     parent: PAID
     taxonomy: runtime
     status: MAPPED
-    sampled: 2026-10-29
-    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-29: no Docker client, socket, configured remote endpoint, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to an authorized Docker-capable environment through Paid's supported lifecycle; do not release #4328-#4333 before design acceptance and that evidence."
+    sampled: 2026-11-14
+    next: "RDR-075 remains Draft and no maintenance implementation exists. The #4604 live native-analyzer and sidecar artifacts are recorded in the handoff audit, completing the technical tool-handoff gate. Obtain explicit owner acceptance of the exact RDR/HLD/LLD/EARS revisions in #4635 before releasing #4328-#4333; the evidence does not enable rollout."
   optimization-recipes:
     title: Optimization Recipes
     path: docs/intent/optimization-recipes/optimization-recipes-design.md
@@ -850,8 +850,8 @@ arrows:
     parent: PAID
     taxonomy: runtime
     status: MAPPED
-    sampled: 2026-10-28
-    next: "Owner accepted the optimization catalog, standing-based assessment, and bounded-repair policy in #4636. #4492 is tracking only. Base maintenance acceptance (#4635), M01-M04 contracts, and #4604 live tool-handoff evidence still gate the executable children #4493-#4496. This acceptance does not enable rollout."
+    sampled: 2026-11-14
+    next: "Owner accepted the optimization catalog, standing-based assessment, and bounded-repair policy in #4636. #4492 is tracking only. The #4604 live tool-handoff evidence is recorded; base maintenance acceptance (#4635) and M01-M04 contracts still gate the executable children #4493-#4496. This acceptance does not enable rollout."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

@@ -332,7 +332,7 @@ The implementation issue tree is filed under the linked umbrella. Planned
 implementation remains held until the design and required LID artifacts are
 finalized and merged. The umbrella, planning task, and each child explicitly
 depend on viamin/paid#4263 (closed; satisfied) and on the Critical
-assumption 2 validation outcome — recorded by #4327 and now owned by
+assumption 2 validation outcome — deferred by #4327 and recorded in
 [#4604](https://github.com/viamin/paid/issues/4604) — with phase
 dependencies controlling sequencing beyond planning. Closeout tracks the
 umbrella with non-closing
