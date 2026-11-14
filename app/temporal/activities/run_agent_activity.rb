@@ -2257,7 +2257,7 @@ module Activities
     end
 
     def harness_preflight_options(harness_provider, execution_env, provider_runtime)
-      options = {env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS}
+      options = { env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS }
       supports_runtime = harness_provider.method(:preflight_check).parameters.any? do |type, name|
         type == :keyrest || (%i[key keyreq].include?(type) && name == :provider_runtime)
       end
