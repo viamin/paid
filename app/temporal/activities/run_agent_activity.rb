@@ -979,6 +979,7 @@ module Activities
       )
     end
 
+    # @spec RUNNER-FALLBACK-013
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
       required_zdr = agent_run&.external_metadata.to_h["zdr_required"]
@@ -1022,7 +1023,13 @@ module Activities
         api_provider: configured_runtime.api_provider,
         base_url: configured_runtime.base_url,
         env: configured_runtime.env,
+        flags: configured_runtime.flags,
         unset_env: configured_runtime.unset_env,
+        chat_base_url: configured_runtime.chat_base_url,
+        chat_model: configured_runtime.chat_model,
+        chat_api_key: configured_runtime.chat_api_key,
+        chat_max_tokens: configured_runtime.chat_max_tokens,
+        chat_tools: configured_runtime.chat_tools,
         metadata: configured_runtime.metadata
       )
     end

@@ -1058,7 +1058,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: nil)
     end
 
-    it "provider-qualifies the resolved tier model for opencode MiniMax direct-outbound runs" do
+    # @spec RUNNER-FALLBACK-013
+    it "preserves the MiniMax chat endpoint while provider-qualifying a resolved tier model" do
       # Regression: the bare tier_model_ids value ("MiniMax-M3") overwrote the
       # qualified configured model, so opencode received an unqualified id and
       # raised ProviderModelNotFoundError (providerID="MiniMax-M3", modelID="").
@@ -1069,7 +1070,11 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
 
-      expect(runtime.model).to eq("minimax/MiniMax-M3")
+      expect(runtime).to have_attributes(
+        model: "minimax/MiniMax-M3",
+        chat_base_url: "https://api.minimax.io/anthropic/v1",
+        chat_model: "MiniMax-M3"
+      )
     end
 
     it "does not double-qualify an already-prefixed tier model" do
