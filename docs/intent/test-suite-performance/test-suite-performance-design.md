@@ -30,6 +30,10 @@ expected distinct coverage reports exist, then collates them with the original
 Rails filters and enforces the existing 80% minimum. Missing reports, failing
 shards, or insufficient combined coverage fail the final check. Separate query
 performance specs run once, and the system-test workflow remains unchanged.
+Allow each shard 90 minutes at the GitHub job boundary. This remains a bounded
+failure window while leaving headroom for hosted-runner contention beyond the
+normal shard duration; reaching the boundary still cancels the shard and fails
+the stable final check.
 
 ## Platform-dropped shard recovery
 

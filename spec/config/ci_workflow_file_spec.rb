@@ -38,6 +38,11 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(job.fetch("services").keys).to include("postgres", "qdrant")
   end
 
+  # @spec TEST-SUITE-020
+  it "allows hosted test shards 90 minutes before cancelling them" do
+    expect(workflow.fetch("jobs").fetch("test-shards").fetch("timeout-minutes")).to eq(90)
+  end
+
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")

@@ -221,7 +221,11 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     # Separate service containers and workspaces isolate each shard.
-    timeout-minutes: 60
+    # Hosted-runner contention can push an otherwise healthy shard beyond the
+    # normal runtime. Keep the allowance bounded; a timeout remains a cancelled
+    # shard and fails the stable test check below.
+    # @spec TEST-SUITE-020
+    timeout-minutes: 90
 
     services:
       postgres:
