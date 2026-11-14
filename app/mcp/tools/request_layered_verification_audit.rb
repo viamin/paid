@@ -73,7 +73,14 @@ module Tools
     def preview(project:, obligations:, target_revision:, budget:, selections:)
       target_revision = LayeredVerification::Audits::Request.resolve_target_revision!(project:, target_revision:)
       budget = LayeredVerification::Audits::Request.resolve_budget!(budget)
-      { "project_id" => project.id, "obligation_ids" => obligations.ids, "target_revision" => target_revision,
+      sources = obligations.map do |obligation|
+        { "obligation_id" => obligation.id, "scope_description" => obligation.scope_description,
+          "external_identity" => obligation.external_identity,
+          "canonical_source_path" => obligation.canonical_source_path,
+          "source_path" => obligation.canonical_source_path.presence || obligation.external_identity }
+      end
+      { "project_id" => project.id, "obligation_ids" => sources.map { |source| source.fetch("obligation_id") },
+        "sources" => sources, "target_revision" => target_revision,
         "budget" => budget, "plan" => LayeredVerification::Plans::Build.call(obligations:, selections:) }
     end
   end

@@ -44,6 +44,7 @@ RSpec.describe "Layered verification audits" do
     expect(response.body).to include(
       "Verification audit preview",
       "Checkout behavior",
+      "docs/intent/payments/payment-specs.md",
       "#{'a' * 40}",
       "15",
       "Semantic audit"

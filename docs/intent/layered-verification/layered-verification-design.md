@@ -357,9 +357,14 @@ One authorization boundary, two thin adapters — the existing
 `Tools::RequestLayeredVerificationRepair`, both `Tools::BaseTool` subclasses):
 
 - `write_operation? == true`, `confirmation_mode: :post_dispatch` for both —
-  a human confirms the resolved scope before the run actually dispatches,
+  a human confirms the resolved scope, canonical source paths, target revision,
+  and budget before the run actually dispatches,
   matching the manual-audit trigger's "show the resolved scope before
   dispatch" requirement and `record_change_intent`'s confirmation pattern.
+  The shared audit preview includes each obligation's scope description,
+  external identity, and canonical source path so chat and MCP confirmations
+  carry the same source context as the project page. Older obligations with
+  no recorded canonical path show their external identity as the source.
 - `authorize` declares the same Pundit action named in
   [Audit-only permissions](#audit-only-permissions-and-separately-authorized-repair)
   above — `:manage_issues?`/`ProjectPolicy` for the audit tool,

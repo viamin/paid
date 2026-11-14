@@ -18,11 +18,14 @@
       <div class="py-3">
         <dt class="text-sm font-medium text-gray-500">Scope</dt>
         <dd class="mt-1 space-y-2 text-sm text-gray-900">
-          <% @audit_obligations.each do |obligation| %>
+          <% @audit_preview.fetch("sources").each do |source| %>
             <p>
-              <span class="font-medium"><%= obligation.scope_description %></span><br>
-              <span class="text-gray-500"><%= obligation.external_identity %></span><br>
-              <span class="text-gray-600"><%= @audit_preview.dig("plan", obligation.id.to_s, "selected_checks").map(&:humanize).to_sentence %></span>
+              <span class="font-medium"><%= source.fetch("scope_description") %></span><br>
+              <span class="text-gray-500"><%= source.fetch("source_path") %></span><br>
+              <% if source.fetch("external_identity") != source.fetch("source_path") %>
+                <span class="text-gray-600"><%= source.fetch("external_identity") %></span><br>
+              <% end %>
+              <span class="text-gray-600"><%= @audit_preview.dig("plan", source.fetch("obligation_id").to_s, "selected_checks").map(&:humanize).to_sentence %></span>
             </p>
           <% end %>
         </dd>

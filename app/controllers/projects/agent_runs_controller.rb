@@ -374,8 +374,6 @@ module Projects
         respond_to do |format|
           format.html do
             @audit_preview = preview
-            @audit_obligations = @project.layered_verification_obligations
-              .where(id: preview.fetch("obligation_ids")).order(:external_identity).load
             render :request_layered_verification_audit
           end
           format.json { render json: preview }
