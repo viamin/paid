@@ -233,6 +233,16 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:cost_and_tokens][:avg_main_agent_executions_per_run]).to eq(4.5)
       end
 
+      # @spec QUALITY-LOOPS-009
+      it "preserves positive legacy iterations and excludes smoke-preflight output" do
+        create(:agent_run, :completed, project: project, iterations: 4,
+          runners_attempted: [ { "runner" => "codex", "success" => true, "output_chars" => 250 } ])
+        create(:agent_run, :completed, project: project, iterations: 0,
+          runners_attempted: [ { "runner" => "codex", "success" => false, "error_type" => "preflight_timeout", "output_chars" => 250 } ])
+
+        expect(stats[:cost_and_tokens][:avg_main_agent_executions_per_run]).to eq(4.0)
+      end
+
       it "groups runs by agent type" do
         expect(stats[:runs_by_agent_type]).to include([ "claude_code", 5 ])
       end
