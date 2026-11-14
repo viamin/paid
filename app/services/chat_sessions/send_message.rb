@@ -105,7 +105,12 @@ module ChatSessions
 
     # @spec CHAT-API-014
     def check_token_limit!
-      result = ChatSessions::CheckTokenLimit.call(chat_session: chat_session)
+      # Usage accounting is an authoritative guard, so it must not become
+      # permissive when a worker starts without (or loses) its tenant GUC.
+      # The query remains bounded to this already-resolved chat session.
+      result = TenantContext.with_system_access do
+        ChatSessions::CheckTokenLimit.call(chat_session: chat_session)
+      end
       # Capture the baseline so AgentLoop can guard mid-loop without re-running
       # the same SUM aggregation (see AgentLoop#token_budget).
       @token_budget = result[:remaining_tokens]
