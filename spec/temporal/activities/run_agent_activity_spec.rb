@@ -180,6 +180,56 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def recording_harness_preflight_provider
+    Class.new do
+      attr_reader :preflight_calls
+
+      def initialize
+        @preflight_calls = []
+      end
+
+      def preflight_check(env:, timeout:)
+        @preflight_calls << { env: env, timeout: timeout }
+        { healthy: true }
+      end
+    end.new
+  end
+
+  def allow_successful_agent_execution
+    allow(container_service).to receive(:execute).and_return(exec_success)
+    allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
+    allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+  end
+
+  def stub_minimax_token_plan_preflight(minimax_runner:, reset_at:)
+    allow(activity).to receive(:run_harness_preflight!).and_call_original
+    allow(activity).to receive(:preflight_provider_instance).and_wrap_original do |original, command_context|
+      next original.call(command_context) unless minimax_runner.matches_identifier?(command_context.runner_candidate)
+
+      harness_provider = original.call(command_context)
+      expect(harness_provider).to be_a(AgentHarness::Providers::Opencode)
+      allow(harness_provider).to receive(:preflight_check).with(
+        env: kind_of(Hash),
+        timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS,
+        provider_runtime: have_attributes(api_provider: "minimax", model: "minimax/MiniMax-M3")
+      ).and_return(
+        { healthy: false, reason: "MiniMax Token Plan rate limit reached", error_category: :rate_limited, reset_at: reset_at }
+      )
+      harness_provider
+    end
+  end
+
+  def expect_minimax_rate_limited_fallback(agent_run:, minimax_runner:, fallback:, reset_at:)
+    expect(agent_run.reload.runners_attempted).to include(
+      include("runner" => minimax_runner.routing_key, "error_type" => "rate_limited",
+        "diagnostics" => { "limit_kind" => "subscription_usage" })
+    )
+    expect(agent_run.runners_attempted).to include(include("success" => true, "runner" => fallback.runner_key))
+    state = user.runner_states.find_by!(runner_name: minimax_runner.state_key)
+    expect(state.rate_limited_until).to eq(reset_at)
+    expect(state.rate_limit_kind).to eq("subscription_usage")
+  end
+
   def run_direct_outbound_preflight(activity:, agent_run:, container_service:, provider:, user:)
     command_context = Activities::RunAgentActivity::CommandContext.new(
       runner_candidate: provider,
@@ -200,7 +250,8 @@ RSpec.describe Activities::RunAgentActivity do
       execution_environment: container_service,
       command_context: command_context,
       runner: provider.runner_key,
-      execution_env: {})
+      execution_env: {},
+      provider_runtime: nil)
   end
 
   def sigkill_preflight_failure(stderr: "> build · MiniMax-M3", container_running: true)
@@ -1057,7 +1108,8 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: nil)
     end
 
-    it "provider-qualifies the resolved tier model for opencode MiniMax direct-outbound runs" do
+    # @spec RUNNER-FALLBACK-013
+    it "preserves the MiniMax chat endpoint while provider-qualifying a resolved tier model" do
       # Regression: the bare tier_model_ids value ("MiniMax-M3") overwrote the
       # qualified configured model, so opencode received an unqualified id and
       # raised ProviderModelNotFoundError (providerID="MiniMax-M3", modelID="").
@@ -1068,7 +1120,11 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
 
-      expect(runtime.model).to eq("minimax/MiniMax-M3")
+      expect(runtime).to have_attributes(
+        model: "minimax/MiniMax-M3",
+        chat_base_url: "https://api.minimax.io/anthropic/v1",
+        chat_model: "MiniMax-M3"
+      )
     end
 
     it "does not double-qualify an already-prefixed tier model" do
@@ -4368,8 +4424,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "calls harness preflight_check with the main execution env and timeout" do
-        harness_provider = instance_double(AgentHarness::Providers::Codex)
-        allow(harness_provider).to receive(:preflight_check).and_return({ healthy: true })
+        harness_provider = recording_harness_preflight_provider
         allow(activity).to receive(:preflight_provider_instance).and_return(harness_provider)
         allow(activity).to receive(:run_harness_preflight!).and_call_original
         allow(activity).to receive(:command_env_for).and_wrap_original do |original, command_context, prompt|
@@ -4379,15 +4434,118 @@ expect(container_service).to receive(:execute).with(
             original.call(command_context, prompt).merge("PROMPT_KIND" => "main")
           end
         end
-        allow(container_service).to receive(:execute).and_return(exec_success)
-        allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
-        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(false)
+        allow_successful_agent_execution
 
         activity.execute(agent_run_id: agent_run.id)
 
-        expect(harness_provider).to have_received(:preflight_check).with(
+        expect(harness_provider.preflight_calls).to include(
           env: hash_including("PROMPT_KIND" => "main"),
           timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
+        )
+      end
+
+      # @spec RUNNER-FALLBACK-013
+      it "uses the structured MiniMax Token Plan limit to mark the attempt and fall back" do
+        api_key = create(:runner_api_key, user: user, api_service_type: "minimax")
+        minimax_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: api_key, config: { "opencode" => { "model" => "MiniMax-M3", "api_provider" => "minimax" } })
+        fallback = user.runners.find_or_create_by!(runner_key: "cursor")
+        agent_run.update!(agent_type: "opencode", runner: minimax_runner)
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback.runner_key ])
+        allow(activity).to receive(:build_runner_order).and_return([ minimax_runner.routing_key, fallback.routing_key ])
+        reset_at = 45.minutes.from_now.change(usec: 0)
+        stub_minimax_token_plan_preflight(minimax_runner:, reset_at:)
+        allow_successful_agent_execution
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result).to include(success: true)
+        expect_minimax_rate_limited_fallback(agent_run:, minimax_runner:, fallback:, reset_at:)
+      end
+
+      # @spec RUNNER-FALLBACK-013
+      it "parks a Token Plan-limited run using the bounded subscription retry window when no reset is supplied" do
+        api_key = create(:runner_api_key, user: user, api_service_type: "minimax")
+        minimax_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: api_key, config: { "opencode" => { "model" => "MiniMax-M3", "api_provider" => "minimax" } })
+        agent_run.update!(agent_type: "opencode", runner: minimax_runner)
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::ProviderRateLimitError.new(
+            "Subscription usage limit reached for opencode",
+            limit_kind: :subscription_usage
+          )
+        )
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("rate_limited")
+        expect(agent_run.error_message).to include("subscription usage limit")
+        expect(agent_run.rate_limited_until).to be_within(2.seconds).of(described_class::SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now)
+      end
+
+      # @spec RUNNER-FALLBACK-013
+      it "keeps a mixed rate-limit diagnostic from claiming every runner has a subscription limit" do
+        minimax_api_key = create(:runner_api_key, user: user, api_service_type: "minimax")
+        minimax_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: minimax_api_key,
+          config: { "opencode" => { "model" => "MiniMax-M3", "api_provider" => "minimax" } })
+        metered_runner = user.runners.find_by!(runner_key: "claude")
+        agent_run.update!(runner: metered_runner)
+        allow(activity).to receive(:build_runner_order).and_return([ metered_runner.routing_key, minimax_runner.routing_key ])
+
+        attempts = 0
+        allow(activity).to receive(:run_agent_with_runner).and_wrap_original do |_original, *_args|
+          attempts += 1
+          limit_kind = attempts == 1 ? :metered_credit : :subscription_usage
+          raise described_class::ProviderRateLimitError.new("Runner rate limited", limit_kind: limit_kind)
+        end
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        expect(agent_run.reload.error_message).to start_with("All runners rate limited:")
+        expect(agent_run.error_message).not_to include("subscription usage limit")
+      end
+
+      # @spec RUNNER-FALLBACK-013
+      it "leaves a non-limit harness preflight failure on the transport-error path" do
+        api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+        opencode_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: api_key, config: { "opencode" => { "model" => "moonshotai/kimi-k2", "api_provider" => "openrouter" } })
+        agent_run.update!(agent_type: "opencode", runner: opencode_runner)
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerExecutionError,
+          "Harness preflight failed: provider unavailable"
+        )
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        expect(agent_run.reload.status).to eq("failed")
+        expect(agent_run.runners_attempted.first).to include("error_type" => "error")
+      end
+
+      # @spec RUNNER-FALLBACK-013
+      it "handles an unhealthy harness preflight result without an error category" do
+        harness_provider = instance_double(AgentHarness::Providers::Codex)
+        preflight_signature = instance_double(
+          Method,
+          parameters: [ [ :keyreq, :env ], [ :keyreq, :timeout ] ]
+        )
+        allow(activity).to receive(:run_harness_preflight!).and_call_original
+        allow(harness_provider).to receive(:method).with(:preflight_check).and_return(preflight_signature)
+        allow(harness_provider).to receive(:preflight_check).with(env: {}, timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS).and_return(
+          { healthy: false, reason: "provider reachability check failed" }
+        )
+
+        expect {
+          activity.send(:run_harness_preflight!, agent_run: agent_run,
+            harness_provider: harness_provider, runner: "codex", execution_env: {}, provider_runtime: nil)
+        }.to raise_error(
+          described_class::RunnerExecutionError,
+          /Harness preflight failed: provider reachability check failed/
         )
       end
 
@@ -6119,9 +6277,12 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      # @spec RUNNER-FALLBACK-013
       it "detects a real quota error returned with exit code 0 and marks the runner rate-limited" do
+        provider_response_token = "provider-response-secret"
         quota_success = Containers::Provision::Result.success(
-          stdout: "Error: Your billing limit has been reached. Please add credits.", stderr: "", exit_code: 0
+          stdout: "Error: Your billing limit has been reached. Please add credits. token=#{provider_response_token}",
+          stderr: "", exit_code: 0
         )
         allow(container_service).to receive(:execute).and_return(quota_success)
 
@@ -6133,6 +6294,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
         expect(agent_run.runners_attempted.first["error_message"]).to include("credit/quota exhausted")
+        expect(agent_run.runners_attempted.first["error_message"]).not_to include(provider_response_token)
         runner_state = user.runner_states.find_by(runner_name: "claude")
         expect(runner_state&.rate_limited_until).to be_within(2.minutes).of(
           described_class::INSUFFICIENT_CREDITS_BACKOFF.from_now
@@ -6413,13 +6575,17 @@ expect(container_service).to receive(:execute).with(
         expect_opencode_fallback_execution(opencode_runner)
       end
 
-      it "marks run as rate_limited when all runners are already rate limited in ProviderState" do
+      # @spec RUNNER-FALLBACK-013
+      it "keeps the subscription classification when all runners are already rate limited" do
         reset_time = 2.hours.from_now
 
         # Pre-set all runner states as rate limited so runner_unavailable? skips them
         %w[claude cursor copilot].each do |provider_name|
           user.runner_states.find_or_create_by!(runner_name: provider_name).tap do |state|
-            state.update!(rate_limited_until: reset_time)
+            state.update!(
+              rate_limited_until: reset_time,
+              metadata: { "rate_limit_kind" => "subscription_usage" }
+            )
           end
         end
 
@@ -6432,7 +6598,7 @@ expect(container_service).to receive(:execute).with(
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
-        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.error_message).to include("subscription usage limit")
         expect(agent_run.rate_limited_until).to be_present
       end
 

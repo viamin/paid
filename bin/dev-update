@@ -147,10 +147,32 @@ tree_is_dirty() {
 stash_dirty_tree() {
   if tree_is_dirty; then
     log "Working tree has uncommitted changes; auto-stashing..."
+    local pre_stash_ref
+    pre_stash_ref="$(git rev-parse --verify -q refs/stash 2>/dev/null || true)"
     local stash_output
-    stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+    if ! stash_output="$(git stash push --include-untracked -m "dev-update-autostash" 2>&1)"; then
+      log_command_output "git stash" "$stash_output"
+      record_failure "git-stash"
+      # A full restart may have stopped Overmind before pulling; bring it back
+      # before exiting so a stash failure does not leave dev down. No-op when
+      # this invocation never stopped Overmind.
+      recover_dev_if_needed
+      fail "git stash push failed. Resolve the Git error and rerun bin/dev-update."
+    fi
     log_command_output "git stash" "$stash_output"
-    STASHED_CHANGES=1
+    # A zero exit status does not prove this invocation created a stash: if
+    # another process cleans the tree between tree_is_dirty and the push, Git
+    # exits 0 with "No local changes to save" without moving refs/stash. Claim
+    # ownership only when refs/stash actually changed, so unstash_dirty_tree
+    # never pops an unrelated pre-existing dev-update-autostash entry.
+    local post_stash_ref
+    post_stash_ref="$(git rev-parse --verify -q refs/stash 2>/dev/null || true)"
+    if [ "$pre_stash_ref" != "$post_stash_ref" ]; then
+      STASHED_CHANGES=1
+    else
+      log "Auto-stash created no stash entry; skipping restore."
+    fi
   fi
 }
 
@@ -394,43 +416,53 @@ stop_overmind() {
     if ! overmind_running; then
       log "Detected stale Overmind socket."
       remove_stale_overmind_socket
+    else
+      log "Stopping Overmind (detached)..."
+      # Use setsid to run overmind quit in a new session so that stopping
+      # Overmind does not kill this script (which may be a child of Overmind).
+      local quit_output
+      if ! quit_output="$(setsid env \
+        -u BUNDLE_BIN_PATH \
+        -u BUNDLE_GEMFILE \
+        -u BUNDLER_SETUP \
+        -u BUNDLER_VERSION \
+        -u RUBYLIB \
+        -u RUBYOPT \
+        -u RUBYGEMS_GEMDEPS \
+        overmind quit 2>&1)"; then
+        log "Warning: overmind quit returned a non-zero exit status."
+      fi
+      log_command_output "overmind quit" "$quit_output"
+      STOPPED_OVERMIND=1
+
+      # Give Overmind a moment to shut down gracefully and release its socket.
+      for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
+        if [ ! -e "$OVERMIND_SOCKET" ]; then
+          log "Overmind socket removed."
+          return
+        fi
+
+        if ! overmind_running; then
+          log "Overmind stopped; cleaning up socket if needed."
+          break
+        fi
+
+        sleep "$OVERMIND_POLL_INTERVAL"
+      done
+
+      remove_stale_overmind_socket
       return
     fi
+  fi
 
-    log "Stopping Overmind (detached)..."
-    # Use setsid to run overmind quit in a new session so that stopping
-    # Overmind does not kill this script (which may be a child of Overmind).
-    local quit_output
-    if ! quit_output="$(setsid env \
-      -u BUNDLE_BIN_PATH \
-      -u BUNDLE_GEMFILE \
-      -u BUNDLER_SETUP \
-      -u BUNDLER_VERSION \
-      -u RUBYLIB \
-      -u RUBYOPT \
-      -u RUBYGEMS_GEMDEPS \
-      overmind quit 2>&1)"; then
-      log "Warning: overmind quit returned a non-zero exit status."
-    fi
-    log_command_output "overmind quit" "$quit_output"
+  if ! dev_supervisor_stop_workspace_tmux_sessions; then
+    dev_supervisor_snapshot_state "dev-update-orphaned-tmux-stop-failed"
+    fail "Cannot safely stop orphaned Overmind tmux session ($(dev_supervisor_workspace_tmux_identities 'unknown identity')). Inspect tmux socket/session above and stop it before rerunning bin/dev-update."
+  fi
+
+  if [ -n "$(dev_supervisor_workspace_tmux_identities)" ]; then
+    log "Stopped orphaned Overmind tmux session: $(dev_supervisor_workspace_tmux_identities)."
     STOPPED_OVERMIND=1
-
-    # Give Overmind a moment to shut down gracefully and release its socket.
-    for ((i = 0; i < OVERMIND_STOP_POLL_COUNT; i += 1)); do
-      if [ ! -e "$OVERMIND_SOCKET" ]; then
-        log "Overmind socket removed."
-        return
-      fi
-
-      if ! overmind_running; then
-        log "Overmind stopped; cleaning up socket if needed."
-        break
-      fi
-
-      sleep "$OVERMIND_POLL_INTERVAL"
-    done
-
-    remove_stale_overmind_socket
   else
     log "Overmind not running, skipping stop."
   fi

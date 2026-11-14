@@ -147,6 +147,96 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "stops same-workspace orphaned tmux sessions before setup when the Overmind control socket is missing" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :same_workspace)
+      create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(true)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(File.readlines(File.join(dir, "calls.log"))).to include("tmux kill-session paid\n")
+      expect(read_updater_log(dir)).to include("Stopped orphaned Overmind tmux session")
+    end
+  end
+
+  it "does not stop an orphaned tmux session rooted in another worktree" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :other_worktree)
+      create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+    end
+  end
+
+  it "does not invoke tmux cleanup when no Overmind session exists" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :same_workspace)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+    end
+  end
+
+  it "fails before setup with session identity when an orphaned tmux session cannot be stopped" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :stop_fails)
+      socket = create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+      expect(read_updater_log(dir)).to include("Cannot safely stop orphaned Overmind tmux session (#{socket}|paid)")
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*dev-update-orphaned-tmux-stop-failed.log"))).not_to be_empty
+    end
+  end
+
+  it "fails before setup when an orphaned tmux session cannot be inspected" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :inspection_fails)
+      socket = create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+      expect(File.read(File.join(dir, "calls.log"))).not_to include("tmux kill-session")
+      expect(read_updater_log(dir)).to include("Cannot safely stop orphaned Overmind tmux session (#{socket}|<uninspectable>)")
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*dev-update-orphaned-tmux-stop-failed.log"))).not_to be_empty
+    end
+  end
+
   it "tries to recover the dev environment when setup fails after stopping Overmind" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, setup_exit_status: 1, start_overmind_running: true)
@@ -618,6 +708,81 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+  it "aborts after a failed auto-stash without pulling or popping a pre-existing stash" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        dirty_tree: true,
+        stash_push_exit_status: 1,
+        stash_push_output: "fatal: Unable to create .git/index.lock",
+        pre_existing_stash: true
+      )
+
+      stdout, stderr, status = Open3.capture3(failure_lock_env(dir), script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+      lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("git stash: fatal: Unable to create .git/index.lock")
+      expect(updater_log).to include("ERROR: git stash push failed. Resolve the Git error and rerun bin/dev-update.")
+      expect(File.exist?(File.join(dir, "pull-ran"))).to be(false)
+      expect(File.read(File.join(dir, "git-stash.log"))).to eq("stash: stash push --include-untracked -m dev-update-autostash\n")
+      expect(File.exist?(File.join(dir, "pre-existing-stash"))).to be(true)
+      expect(File.read(lock_path).strip).to eq("1")
+      expect(File.read("#{lock_path}.reason").strip).to eq("git-stash")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+  it "recovers Overmind when a migration-triggered update stops before a failed auto-stash" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        start_overmind_running: true,
+        dirty_tree: true,
+        stash_push_exit_status: 1,
+        stash_push_output: "fatal: Unable to create .git/index.lock"
+      )
+      create_stale_socket(dir)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true), -> { read_updater_log(dir) }
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Attempting recovery start because Overmind was stopped during this update.")
+      expect(updater_log).to include("Recovery start succeeded.")
+      expect(updater_log).to include("ERROR: git stash push failed. Resolve the Git error and rerun bin/dev-update.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-001
+  it "skips restore without popping when a successful push creates no stash" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        dirty_tree: true,
+        stash_push_output: "No local changes to save",
+        pre_existing_stash: true
+      )
+
+      env = poll_env.merge("PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "OVERMIND_SOCKET" => ".overmind.sock")
+      stdout, stderr, status = Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Working tree has uncommitted changes; auto-stashing...")
+      expect(updater_log).to include("git stash: No local changes to save")
+      expect(updater_log).to include("Auto-stash created no stash entry; skipping restore.")
+      expect(updater_log).not_to include("Restoring auto-stashed changes...")
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(File.read(File.join(dir, "git-stash.log"))).to eq("stash: stash push --include-untracked -m dev-update-autostash\n")
+      expect(File.exist?(File.join(dir, "pre-existing-stash"))).to be(true)
+      expect(File.read(File.join(dir, "refs-stash")).strip).to eq("pre-existing-stash-sha")
+    end
+  end
+
   it "logs git stash pop output after restoring auto-stashed changes" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, dirty_tree: true, stash_pop_output: "Applied autostash cleanly")
@@ -858,12 +1023,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     dirty_tree: false,
     current_branch: "main",
     pull_exit_status: 0,
+    stash_push_exit_status: 0,
+    stash_push_output: "Saved working directory and index state",
     stash_pop_exit_status: 0,
     stash_pop_output: "Applied stash",
+    pre_existing_stash: false,
     pull_diff_files: [],
     rails_migrate_exit_status: 0,
     rails_sync_exit_status: 0,
-    status_successes_after_start: nil
+    status_successes_after_start: nil,
+    tmux: nil
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -871,6 +1040,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
+    FileUtils.touch(File.join(dir, "pre-existing-stash")) if pre_existing_stash
+    # Model refs/stash: a pre-existing stash occupies the ref until a push
+    # creates a new entry or a successful pop consumes it.
+    File.write(File.join(dir, "refs-stash"), "pre-existing-stash-sha\n") if pre_existing_stash
 
     script_path = File.join(dir, "bin", "dev-update")
     FileUtils.cp(script_source, script_path)
@@ -961,6 +1134,13 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
               --abbrev-ref)
                 echo "#{current_branch}"
                 ;;
+              --verify)
+                if [ "${4:-}" = "refs/stash" ] && [ -f "#{dir}/refs-stash" ]; then
+                  cat "#{dir}/refs-stash"
+                else
+                  exit 1
+                fi
+                ;;
               *)
                 if [ -f "#{dir}/pull-ran" ]; then
                   echo "post-pull-sha"
@@ -979,9 +1159,18 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
           stash)
             echo "stash: $*" >> "#{dir}/git-stash.log"
             if [ "${2:-}" = "pop" ]; then
+              rm -f "#{dir}/pre-existing-stash"
+              if [ #{stash_pop_exit_status} -eq 0 ]; then
+                rm -f "#{dir}/refs-stash"
+              fi
               printf '%s\n' "#{stash_pop_output}"
               exit #{stash_pop_exit_status}
             fi
+            printf '%s\n' "#{stash_push_output}"
+            if [ #{stash_push_exit_status} -eq 0 ] && [ "#{stash_push_output}" != "No local changes to save" ]; then
+              printf '%s\n' "stub-stash-sha" > "#{dir}/refs-stash"
+            fi
+            exit #{stash_push_exit_status}
             ;;
           checkout)
             exit 0
@@ -1055,7 +1244,57 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
 
+    write_executable(
+      File.join(dir, "stubbin", "tmux"),
+      <<~BASH
+        #!/usr/bin/env bash
+        socket="$2"
+        command="$3"
+        format="$6"
+        case "$command" in
+          list-panes)
+            [ -e "#{dir}/tmux-session-stopped" ] && exit 0
+            case "#{tmux}" in
+              same_workspace|stop_fails) path="$PWD" ;;
+              inspection_fails) exit 1 ;;
+              other_worktree) path="/other/worktree" ;;
+              *) exit 1 ;;
+            esac
+            if [[ "$format" == *session_name* ]]; then
+              printf 'paid|%s\\n' "$path"
+            else
+              printf '%s\\n' "$path"
+            fi
+            ;;
+          kill-session)
+            printf 'tmux kill-session %s\\n' "$5" >> "#{dir}/calls.log"
+            if [ "#{tmux}" = "stop_fails" ]; then
+              echo "tmux stop failed" >&2
+              exit 1
+            fi
+            touch "#{dir}/tmux-session-stopped"
+            ;;
+          ls)
+            [ -e "#{dir}/tmux-session-stopped" ] && exit 0
+            echo "paid: 1 windows"
+            ;;
+          *)
+            echo "unexpected tmux command: $*" >&2
+            exit 1
+            ;;
+        esac
+      BASH
+    )
+
     script_path
+  end
+
+  def create_overmind_tmux_socket(dir)
+    socket_dir = File.join(dir, "tmux")
+    FileUtils.mkdir_p(socket_dir)
+    socket = File.join(socket_dir, "overmind-#{File.basename(dir)}-orphan")
+    UNIXServer.open(socket) { |server| server.close }
+    socket
   end
 
   def create_stale_socket(dir)

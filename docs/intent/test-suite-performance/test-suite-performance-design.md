@@ -61,6 +61,12 @@ hosted service time to recover between attempts. Any other failure exits
 immediately, and exhaustion of the bounded attempts still fails the job. The
 recovery does not skip examples or reinterpret assertion failures.
 
+System-test workflow runs do not use GitHub Actions workflow concurrency. GitHub
+keeps at most one pending run in a concurrency group and cancels a superseded
+pending run even when cancellation of in-progress work is disabled. Leaving
+these required runs ungrouped ensures each pull-request check can reach a
+terminal result rather than being cancelled while queued.
+
 ## Individual test costs
 
 Certificate behavior specs use the existing explicit test key-size parameter

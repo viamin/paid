@@ -216,9 +216,9 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 
 PgHero starts inside the existing Rails process; it does not need a separate
 container or service. Run `bin/setup` once, then start the normal development
-stack with `bin/dev` and open <http://localhost:3000/pghero>. Sign in as
-`paid`; its password defaults to Rails' local development secret. Set
-`PGHERO_PASSWORD` to use a separate local-only password, and optionally set
+stack with `bin/dev` and open <http://localhost:3000/pghero>. PgHero does not
+require authentication by default. Set `PGHERO_PASSWORD` to require HTTP Basic
+authentication (username `paid` by default), and optionally set
 `PGHERO_USERNAME` to choose another username. PgHero inspects the same
 development PostgreSQL database configured by `DATABASE_URL`; set that variable
 if your local database is not using the documented default.
@@ -226,13 +226,19 @@ if your local database is not using the documented default.
 The dashboard is intentionally mounted only in `RAILS_ENV=development`.
 `bin/dev` binds its web server to loopback, while Docker Compose publishes port
 3000 only to `127.0.0.1`; it is unavailable through Tailscale or other network
-interfaces. The required HTTP Basic password also prevents restricted agent
-containers that can reach the Compose proxy from loading database metadata.
-The checked-in `.devcontainer` already forwards its web port on all host
-interfaces so the whole app is reachable over Tailscale; PgHero rides along
-with it there, so the password is its only protection in that environment.
+interfaces. The checked-in `.devcontainer` forwards its web port on all host
+interfaces so the whole app is reachable over Tailscale. PgHero is also
+reachable without credentials by anyone who can access that forwarded port,
+including restricted agent containers that can reach the Compose proxy.
+The unauthenticated dashboard is read-only: requests that change database
+state are rejected, PgHero's kill and Explain controls are hidden, and query
+text is normalized to filter literal values.
 PgHero query history and cloud monitoring are not enabled, and no migrations or
 additional service are needed.
+The development PostgreSQL container enables current query stats with
+`pg_stat_statements`; PgHero's **Queries** page shows them after database
+activity. The overview flags queries averaging at least 100 ms over five calls.
+Historical query capture remains disabled.
 
 ## Provider Auth Setup
 

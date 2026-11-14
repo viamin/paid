@@ -4,6 +4,14 @@ require "rails_helper"
 
 RSpec.describe SchemaColumnOrder do
   # @spec POSTGRESQL-PERSISTENCE-009
+  it "omits the development-only query statistics extension from schema dumps" do
+    connection = instance_double(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter,
+      extensions: %w[hstore pg_stat_statements pg_trgm])
+
+    expect(described_class::Connection.new(connection).extensions).to eq(%w[hstore pg_trgm])
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-009
   it "dumps columns alphabetically with their definitions and indexes intact" do
     connection = ActiveRecord::Base.connection
     connection.create_table :schema_order_probe do |table|

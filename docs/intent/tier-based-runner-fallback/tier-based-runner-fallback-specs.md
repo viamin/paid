@@ -134,7 +134,7 @@
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`,
   `spec/services/agent_runs/issue_dispatch_failure_history_spec.rb`.
 
-- [ ] **RUNNER-FALLBACK-013** — When `agent-harness` reports a structured
+- [x] **RUNNER-FALLBACK-013** — When `agent-harness` reports a structured
   provider subscription usage limit for a runner attempt, the system SHALL
   record that public attempt as `rate_limited`, mark the corresponding
   `RunnerState` unavailable until the provider-supplied reset time or a bounded

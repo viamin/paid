@@ -19,11 +19,13 @@ module Inbox
       new(...).call
     end
 
-    def initialize(user:, project: nil, kind: nil, entries: nil)
+    def initialize(user:, project: nil, projects: nil, kind: nil, kinds: nil, entries: nil,
+      scope: Inbox::Queue::ACTIONABLE_SCOPE)
       @user = user
-      @project = project
-      @kind = kind.to_s.presence
+      @projects = Array(projects || project).compact
+      @kinds = Array(kinds || kind).map(&:to_s).intersection(Inbox::Queue::KINDS)
       @entries = entries
+      @scope = Inbox::Queue::SCOPES.include?(scope.to_s) ? scope.to_s : Inbox::Queue::ACTIONABLE_SCOPE
     end
 
     def call
@@ -41,7 +43,7 @@ module Inbox
     end
 
     def governed_entries
-      @governed_entries ||= Inbox::Queue.call(user: user)
+      @governed_entries ||= Inbox::Queue.call(user:, scope:)
     end
 
     # Kind => count, scoped to the active project filter (if any). Only
@@ -85,16 +87,16 @@ module Inbox
 
     private
 
-    attr_reader :user, :project, :kind
+    attr_reader :kinds, :projects, :scope, :user
 
     def count_for_kind(entry_kind)
       per_project = matrix[entry_kind]
-      project ? per_project[project.id].to_i : per_project.values.sum
+      projects.any? ? projects.sum { |project| per_project[project.id].to_i } : per_project.values.sum
     end
 
     def count_for_project(project_record)
-      if kind
-        matrix[kind][project_record.id].to_i
+      if kinds.any?
+        kinds.sum { |kind| matrix[kind][project_record.id].to_i }
       else
         Inbox::Queue::KINDS.sum { |k| matrix[k][project_record.id].to_i }
       end
@@ -102,7 +104,7 @@ module Inbox
 
     def projects_with_items
       @projects_with_items ||= begin
-        ids = kind ? matrix[kind].keys : matrix.values.flat_map(&:keys).uniq
+        ids = kinds.any? ? kinds.flat_map { |kind| matrix[kind].keys }.uniq : matrix.values.flat_map(&:keys).uniq
         if @entries
           @entries.flat_map { |entry| projects_for(entry) }.uniq(&:id).select { |candidate| ids.include?(candidate.id) }
             .sort_by { |candidate| [ candidate.owner, candidate.repo ] }
@@ -327,7 +329,7 @@ module Inbox
     end
 
     def cache_key
-      "inbox/availability/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}/#{governed_project_ids.join("-")}"
+      "inbox/availability/#{user.account_id}/#{user.id}/#{scope}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}/#{governed_project_ids.join("-")}"
     end
   end
 end

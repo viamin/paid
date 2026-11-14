@@ -1896,8 +1896,11 @@ class Runner < ApplicationRecord
 
     AgentHarness::ProviderRuntime.new(
       model: model_id,
+      api_provider: (opencode_api_provider if opencode_api_provider == "minimax"),
       env: env,
       unset_env: opencode_direct_outbound_unset_env(env),
+      chat_base_url: (api_config[:base_url] if opencode_api_provider == "minimax"),
+      chat_model: (opencode_model_id if opencode_api_provider == "minimax"),
       metadata: {
         config: opencode_runtime_metadata_config(api_config, provider_config, project, required_zdr: required_zdr)
       }

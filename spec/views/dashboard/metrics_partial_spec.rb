@@ -35,7 +35,7 @@ RSpec.describe "dashboard/_metrics", :no_db, type: :view do
         trailing_30d_cost_cents: 200,
         avg_cost_per_run_cents: 50,
         avg_tokens_per_run: 100,
-        avg_iterations_per_run: 1.5
+        avg_main_agent_executions_per_run: 1.5
       },
       duration_percentiles: { p50: 100, p75: 150, p90: 200, avg: 120 },
       duration_trend_chart: {
@@ -80,6 +80,14 @@ RSpec.describe "dashboard/_metrics", :no_db, type: :view do
       "Daily PR creation completion rate percentage for Cumulative.",
       "Daily average and median (p50) duration in seconds for completed PR creation runs."
     )
+  end
+
+  # @spec QUALITY-LOOPS-009
+  it "labels the replacement work metric without calling it iterations" do
+    render partial: "dashboard/metrics", locals: { stats: stats, account: nil, time_range: "cumulative" }
+
+    expect(rendered).to include("Avg Main Agent Executions / Run")
+    expect(rendered).not_to include("Avg Iterations / Run")
   end
 
   it "marks the active time range filter link with aria-current=page" do

@@ -116,16 +116,21 @@ drafts SHALL NOT participate in the one-draft invariant;
   Started chats and scoped Inbox or exploration chats SHALL remain
   unaffected. If a duplicate draft gains dependent records during a rolling
   deploy, the migration SHALL mark it started rather than delete it or fail on
-  its foreign-key references.
+  its foreign-key references. If the unique index is invalid, a repair SHALL
+  preserve surplus closed blank sessions by archiving them and rebuild the
+  index; an active, content-bearing, or resource-backed duplicate SHALL stop
+  the repair for review.
   *Tests:* `spec/system/chat_unstarted_draft_spec.rb`,
   `spec/services/chat_sessions/create_spec.rb`,
   `spec/services/chat_sessions/create_call_concurrency_spec.rb`,
   `spec/services/chat_sessions/unarchive_spec.rb`,
   `spec/services/chat_sessions/unarchive_call_concurrency_spec.rb`,
-  `spec/migrations/add_started_at_to_chat_sessions_spec.rb`.
+  `spec/migrations/add_started_at_to_chat_sessions_spec.rb`,
+  `spec/migrations/repair_unstarted_personal_chat_index_spec.rb`.
   *Code:* `ChatSession.unstarted_untitled_personal`, `ChatSession#start!`,
   `ChatSessions::Create#call`, `ChatSessions::WorkspaceCleanup#call`,
-  `ChatMessage#mark_chat_session_started`.
+  `ChatMessage#mark_chat_session_started`,
+  `db/migrate/20261113164248_repair_unstarted_personal_chat_index.rb`.
 
 - [x] **CHAT-API-002** — When an API-mode chat turn is sent through JSON, SSE,
   or ActionCable, the system SHALL persist the user/assistant conversation,

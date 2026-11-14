@@ -1,6 +1,10 @@
 development:
+  disable_kill: true
+  explain: false
+  filter_data: true
   databases:
     primary:
       spec: primary
+      slow_query_ms: 100
+      slow_query_calls: 5
   username: <%= ENV.fetch("PGHERO_USERNAME", "paid") %>
-  password: <%= ENV.fetch("PGHERO_PASSWORD", Rails.application.secret_key_base) %>

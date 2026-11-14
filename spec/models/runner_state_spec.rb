@@ -48,6 +48,15 @@ RSpec.describe RunnerState do
   end
 
   describe "#mark_rate_limited!" do
+    # @spec RUNNER-FALLBACK-013
+    it "records a public subscription usage classification" do
+      state = create(:runner_state)
+
+      state.mark_rate_limited!(limit_kind: :subscription_usage)
+
+      expect(state.reload.rate_limit_kind).to eq("subscription_usage")
+    end
+
     it "sets rate_limited_until to the given time" do
       state = create(:runner_state)
       reset_at = 2.hours.from_now
@@ -65,6 +74,16 @@ RSpec.describe RunnerState do
   end
 
   describe "#clear_rate_limit!" do
+    # @spec RUNNER-FALLBACK-013
+    it "removes the rate-limit classification while retaining other metadata" do
+      state = create(:runner_state, :rate_limited,
+        metadata: { "rate_limit_kind" => "subscription_usage", "other" => "value" })
+
+      state.clear_rate_limit!
+
+      expect(state.reload.metadata).to eq("other" => "value")
+    end
+
     it "clears the rate_limited_until" do
       state = create(:runner_state, :rate_limited)
       state.clear_rate_limit!

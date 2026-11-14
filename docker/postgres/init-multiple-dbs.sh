@@ -66,6 +66,13 @@ EOSQL
         ALTER SCHEMA public OWNER TO :"app_user";
         GRANT ALL ON SCHEMA public TO :"app_user";
 EOSQL
+
+    if [ "$database" = "paid_development" ]; then
+        psql -v ON_ERROR_STOP=1 \
+            --username "$POSTGRES_USER" \
+            --dbname "$database" \
+            --command 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements;'
+    fi
 }
 
 create_app_role

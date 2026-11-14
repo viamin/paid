@@ -148,7 +148,7 @@ structured subscription usage limit, `Activities::RunAgentActivity` records
 the attempt as `rate_limited`, marks the affected `RunnerState` unavailable,
 and continues through eligible fallback runners. A provider-supplied reset time
 is used when present; otherwise the runner uses a bounded subscription-limit
-retry window. If every eligible runner is limited, the run is parked for that
+retry window of 30 minutes. If every eligible runner is limited, the run is parked for that
 recovery time rather than failed as an execution or preflight timeout.
 
 Subscription usage limits and metered credit exhaustion are distinct outcomes.

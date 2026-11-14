@@ -15,6 +15,7 @@
 services:
   postgres:
     image: postgres:16.15
+    command: postgres -c shared_preload_libraries=pg_stat_statements
     restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -78,6 +79,7 @@ services:
       DB_ADMIN_PASSWORD: paid_admin
       RAILS_ENV: development
       PAID_WEB_BIND_ADDRESS: 0.0.0.0
+      PAID_ENABLE_DEV_QUERY_STATS: "1"
       RAILS_LOG_TO_STDOUT: "1"
       PAID_LOG_FORMAT: json
       REDIS_URL: redis://redis:6379/0

@@ -110,25 +110,44 @@ failures when no tmux socket responds.
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/dev`, `bin/lib/dev_supervisor.sh`.
 
+- [x] **RAILS-CONTROL-PLANE-019** — When a full `bin/dev-update` finds no
+  Overmind control socket but finds a live Overmind tmux pane rooted at its
+  workspace, it SHALL stop only that socket/session before setup and replacement
+  startup. It SHALL not stop another worktree's session or act when no matching
+  session exists. If inspection or stopping fails, it SHALL fail before setup
+  with the socket/session identity and a diagnostic snapshot.
+  *Tests:* `spec/lib/dev_update_spec.rb`.
+  *Code:* `bin/dev-update`, `bin/lib/dev_supervisor.sh`.
+
 - [x] **RAILS-CONTROL-PLANE-018** — When a developer starts Paid with
-  `bin/dev`, the development web process SHALL expose PgHero at `/pghero` for
-  password-authenticated requests from the development machine to the PostgreSQL
+  `bin/dev`, the development web process SHALL expose PgHero at `/pghero` without
+  authentication by default for requests to the PostgreSQL
   database configured through `DATABASE_URL`. PgHero's gem and route SHALL be
   absent from non-development environments, and the integration SHALL not
   require another service or database. The system-test environment SHALL NOT
   mount the PgHero route. Native development SHALL bind the web
   server to loopback; Docker Compose SHALL publish the web port only to host
   loopback while allowing the published request to reach PgHero. Requests from
-  Tailscale or restricted agent containers reaching `docker-compose.yml`'s
-  published port SHALL NOT load the PgHero dashboard without the password. The
+  Tailscale reaching `docker-compose.yml`'s published port SHALL NOT load the
+  PgHero dashboard. A configured `PGHERO_PASSWORD` SHALL enable HTTP Basic
+  authentication. The
   `.devcontainer` VS Code environment already forwards its web port for direct
   Tailscale reachability of the whole app, predating PgHero; that forwarding
-  SHALL continue, so the password — not network isolation — is PgHero's
-  protection there.
+  SHALL continue, so PgHero SHALL be accessible without credentials to anyone
+  who can reach that forwarded development web port, including restricted agent
+  containers that can reach the Compose proxy. PgHero SHALL reject non-GET
+  requests, hide query termination and Explain controls, and normalize displayed
+  query text to filter literal values. Development PostgreSQL SHALL
+  preload `pg_stat_statements`, and a newly initialized development primary
+  database SHALL install the extension so PgHero shows current query stats and
+  slow queries without requiring historical query capture. `bin/setup` SHALL
+  also install the extension on existing Compose development databases. The development
+  dashboard SHALL flag queries averaging at least 100 ms after five calls.
   *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
-  `spec/requests/pghero_development_spec.rb`.
-  *Code:* `Gemfile`, `config/routes.rb`, `bin/dev-web`, `docker-compose.yml`,
-  `.devcontainer/compose.yaml`.
+  `spec/requests/pghero_development_spec.rb`, `spec/lib/setup_script_spec.rb`.
+  *Code:* `Gemfile`, `config/routes.rb`, `config/routes/pghero_development_routes.rb`,
+  `config/pghero.yml`, `bin/dev-web`, `bin/setup`, `docker-compose.yml`,
+  `.devcontainer/compose.yaml`, `docker/postgres/init-multiple-dbs.sh`.
 
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping
