@@ -271,8 +271,9 @@ RDR-075, **General Maintenance Runs** (indexed above under Quality &
 Automation), remains Draft after [PR #4308](https://github.com/viamin/paid/pull/4308)
 merged. Its [2026-10-15 C75 audit](audit-report-2026-10-15-rdr-075.md)
 recorded the then-current blocked state. The live tool-validation dependency
-[#4604](https://github.com/viamin/paid/issues/4604) closed after merged PR
-#5060 recorded the native-analyzer and sidecar artifacts; the remaining
+[#4604](https://github.com/viamin/paid/issues/4604) closed after merged
+[PR #5060](https://github.com/viamin/paid/pull/5060) recorded the native-analyzer
+and sidecar artifacts; the remaining
 implementation prerequisite is accepted maintenance intent
 [#4635](https://github.com/viamin/paid/issues/4635). Runtime work #4328–#4333
 remains open. The `maintenance_runs` default-off tenant guard and the separate
