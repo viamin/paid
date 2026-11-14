@@ -156,7 +156,7 @@ module Activities
         )
         return { merged: false, skipped: true, pr_number: pr_number }
       else
-        attempt_merge(provider, project, issue, repo, pr_number)
+        attempt_merge(provider, project, issue, pr_data)
       end
 
       if merged
@@ -222,7 +222,7 @@ module Activities
     end
 
     def refetch_after_source_closure_update(provider, project, issue, pr_number, pr_data, refresh)
-      return pr_data unless refresh.evaluated && refresh.updated
+      return pr_data unless refresh.evaluated
 
       current = provider.fetch_pull_request(repo: project.full_name, number: pr_number)
       return current if current.head_sha == pr_data.head_sha
@@ -233,12 +233,18 @@ module Activities
         client: -> { project.client }
       )
       { merged: false, skipped: true, pr_number: }
-    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => error
+    rescue Automation::Providers::RepositoryProvider::ProviderError,
+      GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => error
       logger.warn(
         message: "pr_review.source_closure_recheck_failed",
         project_id: project.id,
         pr_number: pr_number,
         error: error.message
+      )
+      record_attempt(
+        project, issue, status: "blocked", reason_code: AutoMergeAttempt::REASON_SOURCE_CLOSURE_REFRESH_FAILED,
+        message: "Source closeout reference could not be rechecked; retry after GitHub is available.",
+        credential_mode: AutoMergeAttempt.primary_credential_mode(project)
       )
       { merged: false, skipped: true, pr_number: }
     end
@@ -256,18 +262,19 @@ module Activities
       )
     end
 
-    def attempt_merge(provider, project, issue, repo, pr_number)
+    def attempt_merge(provider, project, issue, pr_data)
       config = Automation::Configuration::AutoMerge.from_project(project)
 
       result = provider.merge_pull_request(
-        repo: repo,
-        number: pr_number,
-        method: config.merge_method.to_sym
+        repo: project.full_name,
+        number: pr_data.number,
+        method: config.merge_method.to_sym,
+        expected_head_sha: pr_data.head_sha
       )
       logger.info(
         message: "pr_review.merged",
         project_id: project.id,
-        pr_number: pr_number,
+        pr_number: pr_data.number,
         merge_method: config.merge_method
       )
       result.merged
@@ -275,10 +282,10 @@ module Activities
       logger.warn(
         message: "pr_review.merge_failed_expected",
         project_id: project.id,
-        pr_number: pr_number,
+        pr_number: pr_data.number,
         error: e.message
       )
-      handle_merge_failure(project, issue, repo, pr_number, config, e.message)
+      handle_merge_failure(project, issue, pr_data, config, e.message)
     end
 
     # @spec AUTO-MERGE-009
@@ -333,10 +340,10 @@ module Activities
       { merged: false, skipped: true, pr_number: pr_number }
     end
 
-    def handle_merge_failure(project, issue, repo, pr_number, config, message)
+    def handle_merge_failure(project, issue, pr_data, config, message)
       return false unless permission_rejection?(message)
 
-      fallback_merged = attempt_merge_with_pat_fallback(project, repo, pr_number, config)
+      fallback_merged = attempt_merge_with_pat_fallback(project, pr_data, config)
       return true if fallback_merged == :merged
 
       if fallback_merged == :retryable_failure
@@ -355,7 +362,7 @@ module Activities
       handle_merge_permission_rejection(
         project,
         issue,
-        pr_number,
+        pr_data.number,
         message,
         fallback_attempted: fallback_merged == :permission_rejected
       )
@@ -374,20 +381,21 @@ module Activities
     # - :merged when the retry succeeds
     # - :permission_rejected when the fallback hit the same terminal rejection
     # - :retryable_failure for transient or non-permission fallback failures
-    def attempt_merge_with_pat_fallback(project, repo, pr_number, config)
+    def attempt_merge_with_pat_fallback(project, pr_data, config)
       client = project.git_push_fallback_client
       return :not_configured unless client
 
       fallback_provider = Automation::Providers::Github::RepositoryProvider.new(project, client: client)
       result = fallback_provider.merge_pull_request(
-        repo: repo,
-        number: pr_number,
-        method: config.merge_method.to_sym
+        repo: project.full_name,
+        number: pr_data.number,
+        method: config.merge_method.to_sym,
+        expected_head_sha: pr_data.head_sha
       )
       logger.info(
         message: "pr_review.merged_with_pat_fallback",
         project_id: project.id,
-        pr_number: pr_number
+        pr_number: pr_data.number
       )
       @effective_credential_mode = AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK if result.merged
       result.merged ? :merged : :retryable_failure
@@ -395,7 +403,7 @@ module Activities
       logger.warn(
         message: "pr_review.merge_pat_fallback_failed",
         project_id: project.id,
-        pr_number: pr_number,
+        pr_number: pr_data.number,
         error: e.message
       )
       permission_rejection?(e.message) ? :permission_rejected : :retryable_failure

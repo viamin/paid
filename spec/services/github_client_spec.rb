@@ -276,6 +276,16 @@ RSpec.describe GithubClient do
 
       expect(stub).to have_been_requested.once
     end
+
+    it "includes the expected head SHA when provided" do
+      stub = stub_request(:put, merge_url)
+        .with { |request| JSON.parse(request.body)["sha"] == "abc123" }
+        .to_return(status: 200, body: { merged: true }.to_json, headers: { "Content-Type" => "application/json" })
+
+      client.merge_pull_request(repo, 42, expected_head_sha: "abc123")
+
+      expect(stub).to have_been_requested.once
+    end
   end
 
   describe "#dispatch_repository_event" do
