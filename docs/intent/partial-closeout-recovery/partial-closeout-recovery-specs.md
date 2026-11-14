@@ -4,6 +4,60 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [ ] **PARTIAL-CLOSEOUT-052** — When a current closeout criterion has a
+  reviewed staged-verification mapping, Paid SHALL create only one synthetic,
+  report-only `closeout_verification` AgentRun goal for its selected
+  `pre_merge`, `merged_revision`, or `live_environment` stage. The run SHALL
+  classify the check in Coding, Release & Deployment, or Operations according
+  to that stage's responsibility under RDR-077, and SHALL recheck the
+  corresponding effective policy and normal scope, grant, actor, trust,
+  budget, pause, and recipe/check authorization before execution. A merge SHALL
+  make only a merged-revision target eligible and SHALL NOT be treated as a
+  deployment or live-environment signal.
+  *Planned test:* goal/stage authorization and target-availability service
+  coverage.
+
+- [ ] **PARTIAL-CLOSEOUT-053** — Paid SHALL accept a staged closeout
+  verification mapping only when an authorized maintainer has reviewed a
+  versioned, inspectable record binding one stable issue criterion to its stage,
+  permitted target shape, recipe/check key, immutable version and digest,
+  environment class where applicable, freshness policy, and bounded retry
+  policy. Dispatch SHALL resolve only that persisted reviewed entry through the
+  existing isolated `TechnicalPrerequisites` recipe or
+  `TrustedMeasurements::ALLOWLIST` check path. Untrusted issue or PR prose,
+  comments, agent output, and live-signal payloads SHALL NOT select a command,
+  recipe/check, stage, target, or closure disposition.
+  *Planned test:* mapping validation and untrusted-input rejection service
+  coverage.
+
+- [ ] **PARTIAL-CLOSEOUT-054** — For every staged closeout verification
+  attempt, Paid SHALL retain the issue, criterion, source PR, selected stage,
+  target SHA or live-signal identity, recipe/check key/version/digest,
+  account/project and environment identity, executor provenance, observation
+  time, and bounded/redacted output or artifact references with exactly one
+  terminal result of `pass`, `fail`, or `unknown`. Missing, ambiguous,
+  superseded, or nonmatching targets; unavailable environments; inconclusive
+  output; rejected evidence; and expired evidence SHALL remain `unknown` and
+  leave the criterion unverified. A change to intent or criterion revision,
+  recipe/check mapping or version, source PR, target, environment, live signal,
+  or freshness period SHALL stale the evidence; prior evidence remains
+  inspectable but cannot satisfy the criterion.
+  *Planned test:* evidence-provenance, freshness, and invalidation service
+  coverage.
+
+- [ ] **PARTIAL-CLOSEOUT-055** — Paid SHALL retry a staged closeout
+  verification attempt only within the reviewed mapping's bounded retry policy,
+  after rechecking current target identity and all authorization at queue and
+  claim time. A changed target or mapping SHALL create a new attempt lineage;
+  a terminal `fail` or `unknown` result SHALL NOT be retried or represented
+  as a pass. Terminal staged evidence SHALL enter only the existing
+  criterion-level assessment and acceptance-audit path. A criterion requiring
+  `merged_revision` or `live_environment` evidence SHALL keep #4787's premerge
+  source-closure disposition at `Tracks`; any later issue closure SHALL still
+  require the existing acceptance decision and delegated-policy gates.
+  *Planned test:* bounded retry and source-closure-disposition integration
+  coverage.
+
 - [x] **PARTIAL-CLOSEOUT-050** — When an acceptance assessment identifies a
   human authorization or setup prerequisite for an isolated technical check,
   Paid SHALL represent the authorization as an attributed human prerequisite

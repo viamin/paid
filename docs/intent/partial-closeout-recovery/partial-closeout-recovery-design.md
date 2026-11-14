@@ -145,6 +145,84 @@ free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
 
+### Staged closeout verification (#5073)
+
+`closeout_verification` is one synthetic, report-only `AgentRun` goal for a
+criterion whose accepted verification plan needs a target that is not yet
+available during implementation. It is not an implementation retry, a generic
+command runner, or a deployment engine. A run has one selected stage and uses
+the RDR-077 phase that owns that check:
+
+| Stage | Target becomes available when | Owning phase | Target identity |
+| --- | --- | --- | --- |
+| `pre_merge` | the authoritative source PR has its reviewed head | Coding | repository-qualified source PR and head SHA |
+| `merged_revision` | GitHub has authoritatively recorded that source PR as merged and its merged/default-branch revision is known | Release & Deployment | source PR plus merged target SHA |
+| `live_environment` | a trusted deployment or live signal names the environment and the revision it serves | Release & Deployment for deployment validation; Operations for a runtime observation | environment identity, signal identity, and served SHA |
+
+A merge only makes the `merged_revision` target eligible; it is never a
+deployment signal and cannot make a `live_environment` target available. A
+missing, ambiguous, superseded, or nonmatching target produces `unknown`
+evidence with a concrete recovery reason, rather than a fallback check against
+the source branch.
+
+#### Reviewed mapping and authorization
+
+The criterion-to-check mapping is a versioned, inspectable record selected and
+reviewed by an authorized project maintainer as part of the accepted closeout
+plan. It contains the source issue and stable criterion identity, stage,
+recipe/check key, immutable recipe/check version and content digest, permitted
+target shape, declared environment class when applicable, expected result
+contract, freshness period, and bounded retry policy. The selected entry must
+resolve to one of the existing reviewed execution paths:
+
+- an isolated `TechnicalPrerequisites` recipe for checkout-bound technical
+  validation; or
+- a `TrustedMeasurements::ALLOWLIST` check for a live tenant observation.
+
+The plan may be proposed by an assessment, but untrusted issue text, PR text,
+comments, agent output, and live-signal payloads cannot select a recipe,
+interpolate a command, alter a stage, or create a closure verdict. At dispatch,
+deterministic code resolves the persisted key and immutable version again and
+passes only its reviewed inputs to the existing executor. It rechecks project
+and tenant scope, the stage's RDR-077 effective policy, the applicable manual
+authorization or continuation grant, actor permission, budget, trust, pause,
+and existing recipe/check authorization. A goal never converts a Coding or
+Merge grant into Release & Deployment or Operations authority.
+
+#### Evidence contract, freshness, and retries
+
+Each attempt records issue and criterion identity; source PR identity; selected
+stage; target SHA or live signal identity; recipe/check key, version, and
+digest; account/project and environment identity; executor provenance;
+observation time; bounded/redacted output and artifact references; and one
+result state: `pass`, `fail`, or `unknown`. Cancellation or inability to
+start records no passing result and leaves the criterion unverified. `unknown`
+is required for unavailable targets, absent or mismatched live signals,
+unavailable environments, inconclusive output, and any rejected or expired
+evidence; it is not a pass-like state.
+
+Evidence is current only while it matches the source issue's approved-intent
+and criterion revisions, the source PR, selected stage and target identity,
+recipe/check version and digest, declared environment, and recipe freshness
+period. A changed criterion or intent, mapping or recipe/check version, source
+PR, target SHA, environment, live signal, or expired freshness period
+invalidates the evidence and leaves the criterion unverified. The prior result
+remains inspectable but cannot be reused for closure. Retries recheck those
+identities and all authorization at queue and claim time, use only the
+mapping's bounded retry class and attempt limit, and never retry a terminal
+`fail` or `unknown` result as though it were a pass. A new target or changed
+mapping creates a new attempt lineage rather than overwriting provenance.
+
+Terminal evidence is supplied to the existing criterion-level closeout
+assessment and its ordinary stale-generation/acceptance-audit path. It does
+not itself satisfy a human judgment, close an issue, release an unrelated
+prerequisite, or authorize repair. If a criterion explicitly requires
+`merged_revision` or `live_environment` evidence, the #4787 premerge
+source-closure disposition remains `Tracks`, even if all currently available
+premerge checks pass. Any later closure remains subject to the existing
+criterion acceptance decision and delegated policy gates; no staged-verifier
+result, recipe, agent report, or PR prose is closure authority.
+
 ### Reviewed performance measurements (#4894)
 
 A performance prerequisite is a distinct reviewed recipe, not an inference
