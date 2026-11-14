@@ -117,6 +117,28 @@ RSpec.describe Knowledge::ContainerizedRunner, :no_db do
       )
     end
 
+    # @spec KNOWLEDGE-016
+    it "allows the pinned shallow fetch five minutes before timing out" do
+      allow(Timeout).to receive(:timeout).and_yield
+
+      described_class.new(project: project, commit_sha: commit_sha).run
+
+      expect(Timeout).to have_received(:timeout).with(300)
+    end
+
+    # @spec KNOWLEDGE-016
+    it "cleans up the host checkout when the pinned shallow fetch times out" do
+      allow(Open3).to receive(:capture3)
+        .with("git", "-C", "/tmp/paid-collector-test", "fetch", "--depth", "1", "origin", commit_sha)
+        .and_raise(Timeout::Error, "execution expired")
+
+      expect {
+        described_class.new(project: project, commit_sha: commit_sha).run
+      }.to raise_error(Knowledge::ContainerizedRunner::CloneError, /Failed to clone repo: execution expired/)
+
+      expect(FileUtils).to have_received(:rm_rf).with("/tmp/paid-collector-test")
+    end
+
     it "creates a named volume instead of bind-mounting host paths" do
       described_class.new(project: project, commit_sha: commit_sha).run
 

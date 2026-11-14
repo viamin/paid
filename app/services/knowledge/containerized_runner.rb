@@ -54,6 +54,7 @@ module Knowledge
     COMMIT_SHA_PATTERN = /\A[0-9a-f]{40}\z/i
     PROJECT_NAME_PATTERN = %r{\A[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+\z}
     ALLOWED_NETWORK_MODES = %w[none bridge].freeze
+    HOST_FETCH_TIMEOUT_SECONDS = 5.minutes.to_i
 
     # Minimal database.yml stub written over the repo's copy so the routes
     # collector can boot the target Rails app regardless of the original
@@ -210,6 +211,7 @@ module Knowledge
 
     private
 
+    # @spec KNOWLEDGE-016
     def clone_repo_on_host!
       validate_commit_sha!(commit_sha)
       validate_project_name!(project.full_name)
@@ -221,7 +223,8 @@ module Knowledge
 
       run_host_git("init", @host_repo_dir)
       run_host_git("-C", @host_repo_dir, "remote", "add", "origin", url)
-      run_host_git("-C", @host_repo_dir, "fetch", "--depth", "1", "origin", commit_sha, timeout: 120)
+      run_host_git("-C", @host_repo_dir, "fetch", "--depth", "1", "origin", commit_sha,
+        timeout: HOST_FETCH_TIMEOUT_SECONDS)
       run_host_git("-C", @host_repo_dir, "checkout", "FETCH_HEAD")
 
       # Ensure the container's agent user can read the bind-mounted directory.
