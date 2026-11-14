@@ -481,9 +481,10 @@ module Automation
               .to_h
             return [] if latest_run_ids.empty?
 
-            AgentRun.where(id: latest_run_ids.values).includes(:issue)
-              .where(PARTIAL_CLOSEOUT_GAPS_CONDITION)
-              .filter_map { |run| run.issue_id if assessment_current?(run) }
+            runs = AgentRun.where(id: latest_run_ids.values).includes(issue: :project)
+              .where(PARTIAL_CLOSEOUT_GAPS_CONDITION).to_a
+            source_revisions = PartialCloseouts::Assessment.source_revisions_for(runs.map(&:issue))
+            runs.filter_map { |run| run.issue_id if assessment_current?(run, source_revisions.fetch(run.issue_id)) }
           end
 
           # Agrees with {PartialCloseouts::Assessment#stale?}: an absent
@@ -495,11 +496,11 @@ module Automation
           # re-entering ordinary implementation selection (see
           # spec/services/partial_closeouts/assessment_spec.rb for the same
           # rule on the stale? side).
-          def assessment_current?(run)
+          def assessment_current?(run, source_revision)
             assessment = run.reconciliation.to_h["assessment"]
             return false unless assessment.is_a?(Hash)
 
-            assessment["source_revision"] == PartialCloseouts::Assessment.source_revision_for(run.issue) &&
+            assessment["source_revision"] == source_revision &&
               assessment["intent_revision"] == PartialCloseouts::Assessment.intent_revision_for(run.issue)
           end
 

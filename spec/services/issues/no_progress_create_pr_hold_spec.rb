@@ -76,4 +76,25 @@ RSpec.describe Issues::NoProgressCreatePrHold do
 
     expect(described_class.held_issue_ids(project)).to be_empty
   end
+
+  it "loads current evidence in a project-bounded number of queries" do # @spec NO-OUTPUT-ISSUE-009
+    2.times { record_no_progress_run }
+    single_issue_queries = count_queries { described_class.held_issue_ids(project) }
+
+    2.times do
+      additional_issue = create(:issue, project:)
+      2.times do
+        revisions = {
+          "source_revision" => PartialCloseouts::Assessment.source_revision_for(additional_issue),
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(additional_issue),
+          "outcome" => "recommend_close"
+        }
+        create(:agent_run, :completed, :automatic, project:, issue: additional_issue, goal: "create_pr", auto_pick: true,
+          pull_request_number: nil, pull_request_url: nil, result_commit_sha: nil,
+          reconciliation: { "no_progress" => revisions })
+      end
+    end
+
+    expect(count_queries { described_class.held_issue_ids(project) }).to eq(single_issue_queries)
+  end
 end

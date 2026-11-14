@@ -1324,6 +1324,27 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: queued.id)).to be(true)
       end
 
+      it "loads current re-audit evidence in a project-bounded number of queries" do # @spec NO-OUTPUT-ISSUE-007
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        stamp_current_assessment!(parent.agent_runs.find_by(pull_request_number: 42), [ dispatch_gap ])
+        single_issue_queries = count_queries { described_class.eligible_scope(project).load }
+
+        2.times do |index|
+          additional_parent = create(:issue, :in_progress, project: project, github_state: "open")
+          run = create(:agent_run, :completed, :automatic, project: project, issue: additional_parent,
+            goal: "create_pr", auto_pick: true, pull_request_number: 100 + index,
+            pull_request_url: "https://example.test/pr/#{100 + index}",
+            reconciliation: { "status" => "reconciled", "assessment" => { "gaps" => [ dispatch_gap ] } })
+          create(:issue, :pull_request, :closed, project: project, github_number: 100 + index,
+            pr_review_phase: "merged", parent_issue: additional_parent,
+            github_html_url: "https://example.test/pr/#{100 + index}")
+          stamp_current_assessment!(run, [ dispatch_gap ])
+        end
+
+        expect(count_queries { described_class.eligible_scope(project).load }).to eq(single_issue_queries)
+      end
+
       describe "human prerequisite notification (#4119 review)" do
         let(:continuation_run) { AgentRun.where(project: project, issue: parent, status: "queued").last }
 

@@ -20,11 +20,14 @@ module Issues
     end
 
     def diagnostics_by_issue_id
-      @diagnostics_by_issue_id ||= relevant_runs.group_by(&:issue_id).filter_map do |issue_id, runs|
-        issue = issues_by_id[issue_id]
-        diagnostic = diagnostic_for_runs(issue, runs) if issue
-        [ issue_id, diagnostic ] if diagnostic
-      end.to_h
+      @diagnostics_by_issue_id ||= begin
+        source_revisions = PartialCloseouts::Assessment.source_revisions_for(issues_by_id.values)
+        relevant_runs.group_by(&:issue_id).filter_map do |issue_id, runs|
+          issue = issues_by_id[issue_id]
+          diagnostic = diagnostic_for_runs(issue, runs, source_revisions.fetch(issue_id)) if issue
+          [ issue_id, diagnostic ] if diagnostic
+        end.to_h
+      end
     end
 
     def diagnostic_for(issue)
@@ -76,15 +79,14 @@ module Issues
       @issues_by_id ||= project.issues.where(id: relevant_runs.map(&:issue_id)).index_by(&:id)
     end
 
-    def diagnostic_for_runs(issue, runs)
-      runs = current_runs(issue, runs)
+    def diagnostic_for_runs(issue, runs, source_revision)
+      runs = current_runs(issue, runs, source_revision)
       return unless runs.size >= REQUIRED_ATTEMPTS
 
       { reason: "repeated_no_progress_create_pr", run_ids: runs.last(MAX_RECORDED_RUN_IDS).map(&:id), next_action: NEXT_ACTION }
     end
 
-    def current_runs(issue, runs)
-      source_revision = PartialCloseouts::Assessment.source_revision_for(issue)
+    def current_runs(issue, runs, source_revision)
       intent_revision = PartialCloseouts::Assessment.intent_revision_for(issue)
       runs.drop(progress_index(runs)).select do |run|
         next if run.pull_request_number.present? || run.result_commit_sha.present?
