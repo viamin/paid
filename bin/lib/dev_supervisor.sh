@@ -385,7 +385,7 @@ dev_supervisor_workspace_tmux_sessions() {
 
 # @spec RAILS-CONTROL-PLANE-019
 dev_supervisor_stop_workspace_tmux_sessions() {
-  local identities socket session_name
+  local identities remaining socket session_name
 
   if ! identities="$(dev_supervisor_workspace_tmux_sessions)"; then
     DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES="$identities"
@@ -403,12 +403,10 @@ dev_supervisor_stop_workspace_tmux_sessions() {
     fi
   done <<< "$identities"
 
-  if identities="$(dev_supervisor_workspace_tmux_sessions)"; then
-    identities="$(printf '%s\n' "$identities" | sed '/^$/d' | sort -u)"
-    DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES="$identities"
-    [ -z "$identities" ]
+  if remaining="$(dev_supervisor_workspace_tmux_sessions)"; then
+    remaining="$(printf '%s\n' "$remaining" | sed '/^$/d' | sort -u)"
+    [ -z "$remaining" ]
   else
-    DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES="$identities"
     return 1
   fi
 }

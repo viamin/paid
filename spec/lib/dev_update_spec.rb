@@ -218,6 +218,25 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "fails before setup when an orphaned tmux session cannot be inspected" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :inspection_fails)
+      socket = create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+      expect(File.read(File.join(dir, "calls.log"))).not_to include("tmux kill-session")
+      expect(read_updater_log(dir)).to include("Cannot safely stop orphaned Overmind tmux session (#{socket}|<uninspectable>)")
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*dev-update-orphaned-tmux-stop-failed.log"))).not_to be_empty
+    end
+  end
+
   it "tries to recover the dev environment when setup fails after stopping Overmind" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, setup_exit_status: 1, start_overmind_running: true)
@@ -1139,6 +1158,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             [ -e "#{dir}/tmux-session-stopped" ] && exit 0
             case "#{tmux}" in
               same_workspace|stop_fails) path="$PWD" ;;
+              inspection_fails) exit 1 ;;
               other_worktree) path="/other/worktree" ;;
               *) exit 1 ;;
             esac
