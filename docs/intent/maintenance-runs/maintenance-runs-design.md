@@ -207,6 +207,21 @@ shipped code in
   while a tool check that *was* planned and then failed to run keeps
   forcing `partial` (MAINT-022).
 
+## Advisory PR Audit and Closeout Contract
+
+PR audit reuses maintenance evidence through the existing review-publication
+lifecycle. It compares the actual base and head revisions, reports only
+introduced or worsened findings, and keeps pre-existing debt in maintenance
+reports. It is advisory: neither a tool match nor a finding may become a
+blocking review gate without separately accepted policy and analyzer-specific
+accuracy and failure-handling evidence.
+
+The final closeout audits every accepted MAINT claim against shipped code,
+tests, and external evidence. It records any remaining gap as an explicit
+dependency, retains `maintenance_runs` default-off until the RDR closeout
+decision, and leaves recurring schedules opt-in. Closing a child issue or
+merging a draft is not substitute evidence for either audit.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
