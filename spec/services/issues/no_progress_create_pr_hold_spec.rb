@@ -34,6 +34,16 @@ RSpec.describe Issues::NoProgressCreatePrHold do
     )
   end
 
+  it "uses only the latest attempts that can establish the hold" do # @spec NO-OUTPUT-ISSUE-009
+    first = record_no_progress_run
+    second = record_no_progress_run
+    third = record_no_progress_run
+    diagnostic = described_class.diagnostic_for(issue)
+
+    expect(diagnostic.fetch(:run_ids)).to contain_exactly(second.id, third.id)
+    expect(diagnostic.fetch(:run_ids)).not_to include(first.id)
+  end
+
   it "releases the hold when issue intent changes" do # @spec NO-OUTPUT-ISSUE-009
     2.times { record_no_progress_run }
     issue.update!(body: "Changed acceptance criterion")

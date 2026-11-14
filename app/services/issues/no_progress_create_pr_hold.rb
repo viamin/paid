@@ -36,9 +36,36 @@ module Issues
     attr_reader :project
 
     def relevant_runs
-      @relevant_runs ||= AgentRun.where(project:, goal: "create_pr", status: "completed", auto_pick: true)
-        .where("reconciliation ? 'no_progress' OR pull_request_number IS NOT NULL OR result_commit_sha IS NOT NULL")
-        .order(:id).to_a
+      @relevant_runs ||= AgentRun.from("(#{latest_no_progress_runs.to_sql}) agent_runs")
+        .where("sequence_position <= ?", REQUIRED_ATTEMPTS)
+        .order(:issue_id, :id).to_a
+    end
+
+    # This projection runs on every automatic-admission check. Rank in SQL so
+    # historical runs cannot grow the queue's in-memory work: only the two
+    # attempts that can establish a hold after the latest delivery progress
+    # are relevant to the current revision pair.
+    def latest_no_progress_runs
+      runs_after_latest_progress
+        .where("agent_runs.reconciliation ? 'no_progress'")
+        .select("agent_runs.*, ROW_NUMBER() OVER (PARTITION BY agent_runs.issue_id ORDER BY agent_runs.id DESC) AS sequence_position")
+    end
+
+    def runs_after_latest_progress
+      candidate_runs.joins(<<~SQL.squish)
+        LEFT JOIN (#{latest_progress_by_issue.to_sql}) latest_progress
+          ON latest_progress.issue_id = agent_runs.issue_id
+      SQL
+        .where("agent_runs.id > COALESCE(latest_progress.latest_id, 0)")
+    end
+
+    def latest_progress_by_issue
+      candidate_runs.where("pull_request_number IS NOT NULL OR result_commit_sha IS NOT NULL")
+        .group(:issue_id).select("issue_id, MAX(id) AS latest_id")
+    end
+
+    def candidate_runs
+      AgentRun.where(project:, goal: "create_pr", status: "completed", auto_pick: true).where.not(issue_id: nil)
     end
 
     def issues_by_id
