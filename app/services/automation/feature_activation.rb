@@ -115,15 +115,23 @@ module Automation
       trusted_pr_specific_label(project, pull_request, "auto_merge").present?
     end
 
-    # @spec LABEL-CONTROL-007
+    # @spec LABEL-CONTROL-007 @spec AUTOMATION-PHASES-006 @spec AUTOMATION-PHASES-007
     def any_pull_request_feature_enabled?(project:, feature:)
-      return false unless phase_authorized?(project:, capability: feature)
       return false if upstream_mode_disables?(project, feature)
 
-      return true if project_setting_enabled?(project, feature)
-      return false if project.paid_local_activation?
+      if phase_authorized?(project:, capability: feature)
+        return true if project_setting_enabled?(project, feature)
+        return false if project.paid_local_activation?
 
-      activation_candidate_prs(project, feature).find_each
+        candidates = activation_candidate_prs(project, feature)
+      else
+        # A project-wide phase setting cannot authorize work here, but an
+        # active grant can still authorize its own linked PR. Keep the scan
+        # bounded to those PRs rather than dropping them at this prefilter.
+        candidates = granted_pull_requests(project, feature)
+      end
+
+      candidates.find_each
         .any? { |pull_request| pull_request_feature_enabled?(project:, pull_request:, feature:) }
     end
 
@@ -163,6 +171,16 @@ module Automation
         .where("labels @> ?", [ catchall_label ].to_json)
         .select(:id)
       labeled.or(base.where(parent_issue_id: catchall_parents)).includes(:parent_issue)
+    end
+
+    private_class_method def granted_pull_requests(project, feature)
+      phase = Automation::Phases.for_capability(feature)
+      issue_ids = project.work_item_continuation_grants.active
+        .filter_map { |grant| grant.issue_id if grant.covers_phase?(phase) }
+      return project.issues.none if issue_ids.empty?
+
+      open_prs = project.issues.pull_requests_only.where(github_state: "open")
+      open_prs.where(id: issue_ids).or(open_prs.where(parent_issue_id: issue_ids))
     end
 
     private_class_method def upstream_mode_disables?(project, feature)

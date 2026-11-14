@@ -380,7 +380,22 @@ module Activities
         scannable_prs
       end
 
-      trusted_prs + untrusted_prs.select { |issue| authorized_for_automation_scan?(project, issue) }
+      prs = trusted_prs + untrusted_prs.select { |issue| authorized_for_automation_scan?(project, issue) }
+      return prs unless Automation::RolloutGuard.enabled?(project)
+
+      prs.select { |issue| phase_authorized_for_scan?(project, issue) }
+    end
+
+    # The project prefilter may be admitted by one grant. It must not then
+    # scan another PR whose phase has no standing or work-scoped authority.
+    # @spec AUTOMATION-PHASES-006 @spec AUTOMATION-PHASES-007
+    def phase_authorized_for_scan?(project, issue)
+      return true if %w[auto_scan_prs auto_merge auto_fix_merge_conflicts].any? do |feature|
+        Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature:)
+      end
+
+      project.auto_merge_dependabot? && dependency_update_bot_author?(issue.github_creator_login) &&
+        Automation::FeatureActivation.phase_authorized?(project:, capability: "auto_merge", work_item: issue)
     end
 
     # @spec UPSTREAM-GATE-006
