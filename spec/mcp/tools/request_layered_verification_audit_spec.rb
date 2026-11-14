@@ -37,6 +37,13 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
     preview = tool.dispatch(**audit_arguments)
 
     expect(preview.fetch("plan")).to have_key(obligation.id.to_s)
+    expect(preview.fetch("sources")).to include(
+      "obligation_id" => obligation.id,
+      "canonical_source_path" => obligation.canonical_source_path,
+      "source_path" => obligation.canonical_source_path,
+      "external_identity" => obligation.external_identity,
+      "scope_description" => obligation.scope_description
+    )
     expect(AgentRun.where(goal: "layered_verification_audit")).to be_empty
 
     result = tool.resolve_confirmation(decision: :approve, pending_result: preview)
@@ -56,6 +63,15 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
     expect {
       tool.resolve_confirmation(decision: :deny, pending_result: preview)
     }.not_to change(AgentRun, :count)
+  end
+
+  # @spec LAYERED-VERIFY-014
+  it "shows the external identity as the source for an older obligation without a canonical path" do
+    obligation.update_column(:canonical_source_path, nil)
+
+    preview = tool.dispatch(**audit_arguments)
+
+    expect(preview.fetch("sources").first.fetch("source_path")).to eq(obligation.external_identity)
   end
 
   # @spec LAYERED-VERIFY-012

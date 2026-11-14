@@ -251,8 +251,12 @@
   `Tools::RequestLayeredVerificationRepair`); each tool class SHALL declare
   the same authorization check named in `LAYERED-VERIFY-010`/`-011` for its
   action, and `available_to?`/`available_for_chat?` SHALL gate advertisement
-  identically across the UI, chat, and MCP surfaces.
+  identically across the UI, chat, and MCP surfaces. The audit confirmation
+  preview SHALL show every selected obligation's scope, canonical source path
+  (or external identity for older pathless records), target revision, and
+  budget before dispatch on all three surfaces.
   *Tests:* `spec/mcp/tools/request_layered_verification_audit_spec.rb`,
+  `spec/requests/projects/layered_verification_audits_spec.rb`,
   `spec/mcp/tools/request_layered_verification_repair_spec.rb`
   *Code:* `app/mcp/tools/request_layered_verification_audit.rb`,
   `app/mcp/tools/request_layered_verification_repair.rb` (#4433, #4436)
