@@ -60,6 +60,7 @@ module Automation
           :epic_ids,
           :reauditable_issue_ids,
           :reauditable_closeout_ids,
+          :no_progress_hold_ids,
           :prerequisite_block_ids,
           :unsynced_pr_produced_issue_ids,
           :merged_block_issue_ids,
@@ -305,6 +306,7 @@ module Automation
               epic_ids: epic_ids,
               reauditable_issue_ids: reauditable_issue_ids(project, epic_ids),
               reauditable_closeout_ids: partial_closeout_reaudit_issue_ids(project),
+              no_progress_hold_ids: Issues::NoProgressCreatePrHold.held_issue_ids(project),
               prerequisite_block_ids: partial_closeout_prerequisite_block_issue_ids(project),
               unsynced_pr_produced_issue_ids: unsynced_pr_produced_issue_ids(project),
               merged_block_issue_ids: merged_block_issue_ids(project),
@@ -343,6 +345,7 @@ module Automation
               # PR is partial progress, and the parent must re-enter
               # selection once the gap owners resolve (#4119).
               .where.not(id: inputs.merged_block_issue_ids - inputs.reauditable_issue_ids - inputs.reauditable_closeout_ids - authorized_ids)
+              .where.not(id: inputs.no_progress_hold_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -478,9 +481,19 @@ module Automation
               .to_h
             return [] if latest_run_ids.empty?
 
-            AgentRun.where(id: latest_run_ids.values)
+            AgentRun.where(id: latest_run_ids.values).includes(:issue)
               .where(PARTIAL_CLOSEOUT_GAPS_CONDITION)
-              .pluck(:issue_id)
+              .filter_map { |run| run.issue_id if assessment_current?(run) }
+          end
+
+          def assessment_current?(run)
+            assessment = run.reconciliation.to_h.fetch("assessment", {})
+            source_revision = assessment["source_revision"]
+            intent_revision = assessment["intent_revision"]
+            return true if source_revision.blank? && intent_revision.blank?
+
+            source_revision == PartialCloseouts::Assessment.source_revision_for(run.issue) &&
+              intent_revision == PartialCloseouts::Assessment.intent_revision_for(run.issue)
           end
 
           # Issue ids whose partial closeout surfaced one or more human

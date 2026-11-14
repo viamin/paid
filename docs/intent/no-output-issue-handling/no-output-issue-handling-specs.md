@@ -80,6 +80,21 @@
   *Code:* `app/models/agent_run.rb`,
   `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
 
+- [x] **NO-OUTPUT-ISSUE-009** — When two automatic `create_pr` runs for the
+  same issue and current closeout-evidence and intent revisions complete as
+  `recommend_close` without a pull request or result commit, the system SHALL
+  hold further automatic implementation admission and dequeue for that
+  revision pair using the recorded run facts, SHALL retain the bounded run IDs
+  and an operator next action in diagnostics, and SHALL release the hold only
+  after relevant evidence or intent changes or an authorized explicit retry.
+  A single no-progress outcome SHALL not hold the issue, and provider or
+  transport failures SHALL continue through their typed retry policy.
+  *Tests:* `spec/services/issues/no_progress_create_pr_hold_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Code:* `app/services/issues/no_progress_create_pr_hold.rb`,
+  `app/temporal/activities/handle_no_output_issue_run_activity.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+
 ## PR-producing partial closeouts
 
 - [x] **NO-OUTPUT-ISSUE-007** — When a PR-producing run leaves an approved

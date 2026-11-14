@@ -143,6 +143,23 @@ The activity remains safe to retry:
 This preserves marker-based deduplication while allowing a previously surfaced
 comment failure to self-heal once the human-visible rationale exists.
 
+## Repeated no-progress implementation runs
+
+A `recommend_close` result is not proof that an issue is complete and never
+authorizes Paid to close the source issue. It is, however, durable evidence
+that a `create_pr` run made no delivery progress when the run records no pull
+request and no result commit. The handler snapshots the current closeout-evidence
+and issue-intent revisions with that outcome. Auto-pick derives a hold from
+those run facts only after two automatic no-progress runs for the same revision
+pair. The hold applies both while admitting work and while dequeuing it, so
+overlapping poll, sweep, and worker claims cannot start another identical run.
+
+The hold is released automatically only when either revision changes; an
+authorized explicit retry remains outside automatic admission. Its diagnostic
+names the bounded run IDs and tells the operator to update the evidence or
+request an explicit retry. Provider and transport failures retain their typed
+retry paths and are not recorded as no-progress outcomes.
+
 ## PR-producing partial closeouts
 
 A run that creates a PR can still leave acceptance criteria unmet. The workflow
@@ -207,6 +224,15 @@ dependency resolution behave identically. Keying on the latest PR-producing
 run keeps the guard terminal after a later gap-free closeout completes the
 parent, and keeps the exception intact when a re-audit attempt fails before
 publishing another PR (a failed attempt supersedes nothing).
+
+The exception is not an implementation authorization when its assessment is
+stale. Before the parent can re-enter ordinary implementation selection, the
+existing bounded report-only acceptance-audit route refreshes the current
+closeout evidence and issue intent. The audit's issue lock and continuation
+request identity make poll, sweep, and dequeue races idempotent. A current
+audit that still identifies source-owned agent work may use the established
+continuation path; a current assessment that cannot advance remains visible
+with its concrete operator action rather than causing repeated no-change runs.
 
 The PR-link evidence does not skip
 with it: a dedicated `PostPartialCloseoutEvidenceActivity` posts a

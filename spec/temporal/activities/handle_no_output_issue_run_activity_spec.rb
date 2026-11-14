@@ -168,7 +168,7 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
     end
 
     context "when output_present is true (recommend_close)" do
-      # @spec NO-OUTPUT-ISSUE-001
+      # @spec NO-OUTPUT-ISSUE-001 NO-OUTPUT-ISSUE-009
       it "sets issue paid_state to recommend_close" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
@@ -177,6 +177,11 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(issue.reload.paid_state).to eq("recommend_close")
+        expect(agent_run.reload.reconciliation.fetch("no_progress")).to include(
+          "outcome" => "recommend_close",
+          "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue)
+        )
       end
 
       it "records the upstream outcome locally without mutating its issue" do # @spec UPSTREAM-ISSUE-004
