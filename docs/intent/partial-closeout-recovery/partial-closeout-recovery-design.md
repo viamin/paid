@@ -178,10 +178,13 @@ resolved RDR-077 owning phase and phase-scoped capability, recipe/check key,
 immutable recipe/check version and content digest, permitted target shape,
 declared environment class when applicable, expected result contract,
 freshness period, and bounded retry policy. The phase and capability are
-validated when the mapping is reviewed and are immutable for its version;
-`live_environment` mappings select exactly one of its two phase
-responsibilities. The selected entry must resolve to one of the existing
-reviewed execution paths:
+validated against the selected stage when the mapping is reviewed and are
+immutable for its version: a `pre_merge` mapping SHALL resolve Coding, a
+`merged_revision` mapping SHALL resolve Release & Deployment, and a
+`live_environment` mapping SHALL resolve exactly one of Release & Deployment
+or Operations. Mapping validation rejects every other stage/phase pairing
+before review or dispatch. The selected entry must resolve to one of the
+existing reviewed execution paths:
 
 - an isolated `TechnicalPrerequisites` recipe for checkout-bound technical
   validation; or

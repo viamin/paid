@@ -26,8 +26,11 @@
   resolved RDR-077 phase and phase-scoped capability, permitted target shape,
   recipe/check key, immutable version and digest, environment class where
   applicable, freshness policy, and bounded retry policy. A
-  `live_environment` mapping SHALL select exactly one of Release & Deployment
-  or Operations. Dispatch SHALL resolve only that persisted reviewed entry
+  `pre_merge` mapping SHALL resolve Coding; a `merged_revision` mapping SHALL
+  resolve Release & Deployment; and a `live_environment` mapping SHALL select
+  exactly one of Release & Deployment or Operations. Paid SHALL reject every
+  other stage/phase pairing before review or dispatch. Dispatch SHALL resolve
+  only that persisted reviewed entry
   through the
   existing isolated `TechnicalPrerequisites` recipe or
   `TrustedMeasurements::ALLOWLIST` check path. Untrusted issue or PR prose,
