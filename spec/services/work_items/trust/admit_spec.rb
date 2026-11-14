@@ -39,6 +39,15 @@ RSpec.describe WorkItems::Trust::Admit do
     expect(described_class.trusted?(project:, provider: "linear", identity_type: "user", external_id: "unknown")).to be false
   end
 
+  # @spec UNIFIED-WORK-ITEMS-005
+  it "does not admit GitHub identities through the non-GitHub trust path" do
+    create(:trusted_provider_identity, account:, provider: "github", identity_type: "user", external_id: "gh-user-1")
+    create(:provider_identity_mapping, account:, user: create(:user, account:), provider: "github", external_id: "gh-user-2")
+
+    expect(described_class.trusted?(project:, provider: "github", identity_type: "user", external_id: "gh-user-1")).to be false
+    expect(described_class.trusted?(project:, provider: "github", identity_type: "user", external_id: "gh-user-2")).to be false
+  end
+
   it "never trusts anything while the rollout guard is disabled" do
     # @spec UNIFIED-WORK-ITEMS-009
     other_project = create(:project)
