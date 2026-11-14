@@ -57,7 +57,7 @@
   attempt eligibility under a row lock immediately before claiming another
   attempt, not only at schedule time, so a duplicated or re-delivered
   delayed job cannot double-claim the same logical operation.
-  *Code:* `RetryFailedManualRunJob#perform`,
+  *Code:* `AgentRuns::RetryAttempt#claim`,
   `RetryTimedOutIssueGoalJob#perform`,
   `StaleRunDetectorJob#recover_rate_limited_run`.
 
@@ -66,7 +66,9 @@
   losing concurrent claim SHALL recognize its specific conflict and
   resolve to a no-op rather than an unhandled error.
   *Code:* `idx_agent_runs_unique_active_lid_planning` handling in
-  `RetryFailedManualRunJob`, `idx_agent_runs_unique_active_issue` /
+  `AgentRuns::RetryAttempt#claim` via
+  `AgentRuns::ManualRunRetryPolicy#duplicate_active_run_conflict?`,
+  `idx_agent_runs_unique_active_issue` /
   `idx_agent_runs_unique_active_pr` handling in
   `RetryTimedOutIssueGoalJob`'s `RecordNotUnique` rescue,
   `idx_apple_attempts_one_active_per_run`.
@@ -76,7 +78,8 @@
   from schedule time, so a toggle flipped, a sibling run claiming the
   identity's slot, or the run already being retried during the backoff
   window is visible to the claim.
-  *Code:* same locked re-checks as AGENT-RETRY-005.
+  *Code:* `AgentRuns::RetryAttempt#claim` for manual runs; same locked
+  re-checks as AGENT-RETRY-005 for the other paths.
 
 - [x] **AGENT-RETRY-008** — Partial external work: an attempt that already
   produced an observable side effect SHALL NOT be blindly retried; the
