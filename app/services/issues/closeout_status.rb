@@ -94,8 +94,9 @@ module Issues
 
       notifications = inputs ? inputs.prerequisite_notifications_by_issue_id.fetch(issue.id, []) : prerequisite_notifications(issue)
       return false if notifications.empty?
-      return false if notifications.any? do |notification|
-        external_prerequisite_states(notification, inputs:).any? { |state| state["state"] != "resolved" }
+      return false unless notifications.all? do |notification|
+        human_evidence_required?(notification) &&
+          external_prerequisite_states(notification, inputs:).all? { |state| state["state"] == "resolved" }
       end
 
       technical_evidence = inputs&.technical_evidence_by_issue_id&.fetch(issue.id, nil)
