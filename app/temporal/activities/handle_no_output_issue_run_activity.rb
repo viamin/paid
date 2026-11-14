@@ -133,6 +133,7 @@ module Activities
           agent_run.log!("system", "Completed without PR: #{outcome}")
         else
           handle_recommend_close(client, agent_run, agent_summary)
+          record_no_progress_outcome(agent_run, issue)
           agent_run.complete!
           agent_run.log!("system", "Completed without PR: #{outcome}")
         end
@@ -151,6 +152,17 @@ module Activities
     end
 
     private
+
+    # @spec NO-OUTPUT-ISSUE-009
+    def record_no_progress_outcome(agent_run, issue)
+      agent_run.update!(reconciliation: agent_run.reconciliation.merge(
+        "no_progress" => {
+          "outcome" => "recommend_close",
+          "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue)
+        }
+      ))
+    end
 
     # Determines the correct outcome for this run based on output presence
     # and evidence that the agent actually performed work. Defense in depth:
