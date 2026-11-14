@@ -52,14 +52,25 @@ module PartialCloseouts
     end
 
     # A report-only acceptance audit has no result commit of its own. Bind its
-    # head and verification revision to the PR-producing run for the same
-    # source issue so both merge-boundary comparisons use one evidence source.
+    # head and verification revision to the latest producing or follow-up run
+    # for the exact source PR so both merge comparisons use one evidence source.
     # @spec PARTIAL-CLOSEOUT-050
     def self.source_pull_request_evidence_run_for(agent_run)
       return agent_run if agent_run.result_commit_sha.present?
 
-      agent_run.issue.agent_runs.where(goal: "create_pr").where.not(result_commit_sha: nil)
-        .order(id: :desc).first || agent_run
+      source_run = agent_run.issue.agent_runs.where(goal: "create_pr")
+        .where.not(pull_request_number: nil).order(id: :desc).first
+      return agent_run unless source_run
+
+      latest_source_pull_request_evidence_run_for(
+        project: source_run.project, pull_request_number: source_run.pull_request_number
+      ) || agent_run
+    end
+
+    def self.latest_source_pull_request_evidence_run_for(project:, pull_request_number:)
+      runs = AgentRun.where(project:, goal: "create_pr").where.not(result_commit_sha: nil)
+      runs.where(pull_request_number:).or(runs.where(source_pull_request_number:))
+        .order(id: :desc).first
     end
 
     def self.verification_revision_for(agent_run)

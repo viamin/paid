@@ -57,9 +57,9 @@ module PullRequests
     end
 
     def producing_run
-      @producing_run ||= pull_request.project.agent_runs.where(
-        goal: "create_pr", pull_request_number: pull_request.github_number, pull_request_url: pull_request.github_url
-      ).order(id: :desc).first
+      @producing_run ||= PartialCloseouts::Assessment.latest_source_pull_request_evidence_run_for(
+        project: pull_request.project, pull_request_number: pull_request.github_number
+      )
     end
   end
 end

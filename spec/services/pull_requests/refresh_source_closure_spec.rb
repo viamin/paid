@@ -20,7 +20,8 @@ RSpec.describe PullRequests::RefreshSourceClosure do
 
   def record_assessment(head: "head-1", evidence: [ { "label" => "spec/services/example_spec.rb:42" } ])
     run = create(:agent_run, :completed, project:, issue: source_issue,
-      goal: "create_pr", pull_request_number: pull_request.github_number, pull_request_url: pull_request.github_url)
+      goal: "create_pr", pull_request_number: pull_request.github_number, pull_request_url: pull_request.github_url,
+      result_commit_sha: head)
     run.update!(reconciliation: { "assessment" => {
       "gaps" => [], "criteria" => [ { "criterion" => "works", "state" => "satisfied", "evidence" => evidence } ],
       "source_revision" => Issues::CloseoutEvidence.call(source_issue).digest,
@@ -28,6 +29,7 @@ RSpec.describe PullRequests::RefreshSourceClosure do
       "pr_head_sha" => head,
       "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(run)
     } })
+    run
   end
 
   it "promotes a current-head source PR with cited evidence" do # @spec PARTIAL-CLOSEOUT-050
@@ -37,6 +39,20 @@ RSpec.describe PullRequests::RefreshSourceClosure do
 
     expect(result).to have_attributes(evaluated: true, updated: true, disposition: "close")
     expect(client).to have_received(:update_pull_request).with(project.pr_target_repository, 42, body: "Summary\n\nCloses #7")
+  end
+
+  it "uses the latest follow-up verification for the source PR" do # @spec PARTIAL-CLOSEOUT-050
+    assessment_run = record_assessment
+    followup_run = create(:agent_run, :completed, project:, issue: source_issue, goal: "create_pr",
+      source_pull_request_number: pull_request.github_number, result_commit_sha: "head-1",
+      verification_result: { "status" => "passed", "summary" => "follow-up verification" })
+    assessment_run.update!(reconciliation: assessment_run.reconciliation.deep_merge(
+      "assessment" => { "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(followup_run) }
+    ))
+
+    result = described_class.call(pull_request:, pull_request_data: data, client:)
+
+    expect(result).to have_attributes(evaluated: true, updated: true, disposition: "close")
   end
 
   it "demotes a stale closing reference when the head changes" do # @spec PARTIAL-CLOSEOUT-050
