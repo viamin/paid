@@ -228,8 +228,12 @@ publishing another PR (a failed attempt supersedes nothing).
 The exception is not an implementation authorization when its assessment is
 stale. Before the parent can re-enter ordinary implementation selection, the
 existing bounded report-only acceptance-audit route refreshes the current
-closeout evidence and issue intent. The audit's issue lock and continuation
-request identity make poll, sweep, and dequeue races idempotent. A current
+closeout evidence and issue intent. Staleness follows
+`PartialCloseouts::Assessment#stale?`: a legacy gaps-only assessment that
+predates revision stamping carries no revision metadata and can never match
+the current revisions, so it defers exactly like any other stale evidence.
+The audit's issue lock and continuation request identity make poll, sweep,
+and dequeue races idempotent. A current
 audit that still identifies source-owned agent work may use the established
 continuation path; a current assessment that cannot advance remains visible
 with its concrete operator action rather than causing repeated no-change runs.

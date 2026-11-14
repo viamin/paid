@@ -130,10 +130,15 @@
   comment on the parent issue (idempotent across retries), and SHALL NOT be
   transitioned to `paid_state: "completed"` by the run's closeout path.
   Once the partial PR is no longer open and any recorded gap-owner
-  dependencies are satisfied, Auto-Pick SHALL re-admit the parent through a
-  partial-closeout re-audit exception to the permanent merged-PR guard,
-  keyed on the issue's latest PR-producing run; a later gap-free closeout
-  SHALL restore the guard.
+  dependencies are satisfied, and the latest PR-producing run carries a
+  current acceptance assessment, Auto-Pick SHALL re-admit the parent
+  through a partial-closeout re-audit exception to the permanent merged-PR
+  guard, keyed on the issue's latest PR-producing run; a later gap-free
+  closeout SHALL restore the guard. An absent or stale assessment —
+  including a legacy gaps-only assessment with no revision metadata, stale
+  by the same rule as `PartialCloseouts::Assessment#stale?` — SHALL defer
+  re-admission to the bounded report-only acceptance-audit refresh instead
+  of admitting another ordinary implementation run.
   *Tests:* `spec/services/partial_closeouts/reconcile_spec.rb`,
   `spec/services/llm/analyze_partial_closeout_spec.rb`,
   `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,

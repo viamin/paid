@@ -1182,6 +1182,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     describe "partial-closeout re-audit (#4119)" do
       let(:parent) { create(:issue, :in_progress, project: project, github_state: "open") }
       let(:owner) { create(:issue, project: project, github_state: "open") }
+      let(:dispatch_gap) { { "criterion" => "dispatch", "kind" => "agent", "title" => "Finish dispatch" } }
 
       before do
         create(:agent_run, :completed, :automatic, project: project, issue: parent,
@@ -1190,9 +1191,20 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
           completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute,
           reconciliation: {
             "status" => "reconciled",
-            "assessment" => { "gaps" => [ { "criterion" => "dispatch", "kind" => "agent", "title" => "Finish dispatch" } ] }
+            "assessment" => { "gaps" => [ dispatch_gap ] }
           })
         create(:issue_dependency, issue: parent, depends_on_issue: owner)
+      end
+
+      # Mirrors the revision snapshot a modern reconciliation persists on the
+      # PR-producing run before any GitHub retry exhausts itself
+      # (Activities::ReconcilePartialCloseoutActivity#persisted_assessment via
+      # PartialCloseouts::Assessment.snapshot). Callers must invoke it after
+      # the merged PR row exists — the source revision covers that evidence.
+      def stamp_current_assessment!(run, gaps)
+        run.update!(reconciliation: run.reconciliation.merge(
+          "assessment" => PartialCloseouts::Assessment.snapshot(run, { "gaps" => gaps })
+        ))
       end
 
       # Without the re-audit exception the permanent merged-PR guard keeps a
@@ -1201,6 +1213,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       it "re-admits the parent after the partial PR merges and its gap owners resolve" do # @spec NO-OUTPUT-ISSUE-007
         create(:issue, :pull_request, :closed, project: project, github_number: 42,
           pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        stamp_current_assessment!(parent.agent_runs.find_by(pull_request_number: 42), [ dispatch_gap ])
 
         expect(described_class.eligible_scope(project)).not_to include(parent)
 
@@ -1250,6 +1263,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       it "keeps the re-audit exception when a re-audit attempt fails before publishing another PR" do # @spec NO-OUTPUT-ISSUE-007
         create(:issue, :pull_request, :closed, project: project, github_number: 42,
           pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        stamp_current_assessment!(parent.agent_runs.find_by(pull_request_number: 42), [ dispatch_gap ])
         create(:agent_run, :failed, :automatic, project: project, issue: parent,
           goal: "create_pr", auto_pick: true, completed_at: 1.minute.ago)
         owner.update!(github_state: "closed", github_updated_at: Time.current)
@@ -1274,14 +1288,35 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(described_class.eligible_scope(project)).not_to include(parent)
       end
 
+      # @spec NO-OUTPUT-ISSUE-007 — a legacy gaps-only assessment predates
+      # revision stamping, and PartialCloseouts::Assessment#stale? treats
+      # exactly this shape as stale (see
+      # spec/services/partial_closeouts/assessment_spec.rb). The candidate
+      # source must agree: without current revisions the parent defers to the
+      # bounded report-only acceptance-audit refresh instead of re-entering
+      # ordinary implementation selection and looping unchanged runs.
+      it "defers a legacy gaps-only assessment to the report-only refresh" do
+        create(:issue, :pull_request, :closed, project: project, github_number: 42,
+          pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+        owner.update!(github_state: "closed", github_updated_at: Time.current)
+
+        expect(described_class.eligible_scope(project)).not_to include(parent)
+        expect(AgentRun.where(project: project, issue: parent, status: "queued")).not_to exist
+      end
+
       it "keeps the re-audit exception when reconciliation fails after publishing a later PR" do # @spec NO-OUTPUT-ISSUE-007
-        create(:agent_run, :failed, :automatic, project: project, issue: parent,
+        failed_run = create(:agent_run, :failed, :automatic, project: project, issue: parent,
           goal: "create_pr", auto_pick: true, pull_request_number: 43,
           pull_request_url: "https://example.test/pr/43",
           completed_at: described_class::PR_SYNC_GRACE_PERIOD.ago - 1.minute,
           reconciliation: { "status" => "retryable_failure", "error" => "LLM unavailable" })
         create(:issue, :pull_request, :closed, project: project, github_number: 43,
           pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/43")
+        # The reconciliation persisted its assessment snapshot before the
+        # failure exhausted the retry path (PartialCloseouts::Reconcile
+        # keeps the assessment when it records a retryable failure), so the
+        # latest PR-producing run still carries current evidence.
+        stamp_current_assessment!(failed_run, [ dispatch_gap ])
         owner.update!(github_state: "closed", github_updated_at: Time.current)
 
         queued = AgentRun.where(project: project, issue: parent, status: "queued").last
@@ -1301,6 +1336,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         before do
           create(:issue, :pull_request, :closed, project: project, github_number: 42,
             pr_review_phase: "merged", parent_issue: parent, github_html_url: "https://example.test/pr/42")
+          stamp_current_assessment!(parent.agent_runs.find_by(pull_request_number: 42), [ dispatch_gap ])
           # Close the synthetic gap-owner dependency the +before+ block above
           # added so each test isolates the notification block from the
           # shared dependency block. Closing the owner also enqueues a

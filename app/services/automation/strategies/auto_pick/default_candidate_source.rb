@@ -486,14 +486,21 @@ module Automation
               .filter_map { |run| run.issue_id if assessment_current?(run) }
           end
 
+          # Agrees with {PartialCloseouts::Assessment#stale?}: an absent
+          # assessment (the reconciliation failed before one was recorded) or
+          # a legacy gaps-only assessment that predates revision stamping
+          # carries no revision metadata, so it can never match the current
+          # closeout-evidence and intent revisions. The parent defers to the
+          # bounded report-only acceptance-audit refresh instead of
+          # re-entering ordinary implementation selection (see
+          # spec/services/partial_closeouts/assessment_spec.rb for the same
+          # rule on the stale? side).
           def assessment_current?(run)
-            assessment = run.reconciliation.to_h.fetch("assessment", {})
-            source_revision = assessment["source_revision"]
-            intent_revision = assessment["intent_revision"]
-            return true if source_revision.blank? && intent_revision.blank?
+            assessment = run.reconciliation.to_h["assessment"]
+            return false unless assessment.is_a?(Hash)
 
-            source_revision == PartialCloseouts::Assessment.source_revision_for(run.issue) &&
-              intent_revision == PartialCloseouts::Assessment.intent_revision_for(run.issue)
+            assessment["source_revision"] == PartialCloseouts::Assessment.source_revision_for(run.issue) &&
+              assessment["intent_revision"] == PartialCloseouts::Assessment.intent_revision_for(run.issue)
           end
 
           # Issue ids whose partial closeout surfaced one or more human
