@@ -150,8 +150,10 @@ the source-issue reference. This merge-edge disposition additionally requires
 the fetched head SHA and a cited evidence item for every satisfied criterion.
 The existing current intent and source-evidence revisions remain required. A
 changed head is fetched again after a promotion update; it is demoted to
-`Tracks` and the merge is deferred. GitHub update failures are recorded as
-retryable merge blockers, rather than merging with a stale closing reference.
+`Tracks` and the merge is deferred. A newer failed acceptance audit supersedes
+an older successful assessment at this boundary. GitHub update failures are
+recorded as retryable merge blockers, rather than merging with a stale closing
+reference.
 
 ### Reviewed performance measurements (#4894)
 

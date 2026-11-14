@@ -185,9 +185,10 @@
   intent revision, and cited criterion-level evidence. It SHALL publish
   `Closes` only when every criterion is satisfied with cited evidence and the
   current merge gates pass; a changed head, intent, verification result,
-  missing assessment, or failed publication SHALL retain or restore `Tracks`
-  before merge. The re-publication SHALL be idempotent, preserve unrelated PR
-  body content and references, and SHALL NOT edit a closed or merged PR.
+  missing or most-recently failed assessment, or failed publication SHALL
+  retain or restore `Tracks` before merge. The re-publication SHALL be
+  idempotent, preserve unrelated PR body content and references, and SHALL NOT
+  edit a closed or merged PR.
   *Code:* `app/services/pull_requests/refresh_source_closure.rb`,
   `app/services/pull_requests/source_closure_body.rb`,
   `app/temporal/activities/merge_pull_request_activity.rb`.

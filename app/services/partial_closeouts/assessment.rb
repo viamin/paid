@@ -134,7 +134,9 @@ module PartialCloseouts
     end
 
     def latest_run
-      @latest_run ||= issue.agent_runs.where("reconciliation ? 'assessment'")
+      @latest_run ||= issue.agent_runs.where(
+        "reconciliation ? 'assessment' OR reconciliation ? 'acceptance_audit_failure'"
+      )
         .select(:reconciliation).order(id: :desc).first
     end
 

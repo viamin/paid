@@ -65,6 +65,19 @@ RSpec.describe PullRequests::RefreshSourceClosure do
     expect(client).to have_received(:update_pull_request).with(project.pr_target_repository, 42, body: "Summary\n\nTracks #7")
   end
 
+  it "demotes a closing reference when the latest acceptance audit failed" do # @spec PARTIAL-CLOSEOUT-050
+    record_assessment
+    create(:agent_run, :failed, project:, issue: source_issue, goal: "analyze_issue",
+      reconciliation: { "acceptance_audit_failure" => { "category" => "transport_error" } })
+
+    result = described_class.call(
+      pull_request:, pull_request_data: data.with(body: "Summary\n\nCloses #7"), client:
+    )
+
+    expect(result).to have_attributes(updated: true, disposition: "track")
+    expect(client).to have_received(:update_pull_request).with(project.pr_target_repository, 42, body: "Summary\n\nTracks #7")
+  end
+
   it "does not promote criteria without cited evidence" do # @spec PARTIAL-CLOSEOUT-050
     record_assessment(evidence: [])
 
