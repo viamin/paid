@@ -101,6 +101,9 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(run).to include(
       "for attempt in 1 2 3; do",
       "undefined method 'cmd_tuples' for nil",
+      'test_log="log/test.log"',
+      ': > "$test_log"',
+      '"$failure_log" "$test_log"',
       "docker ps --filter 'publish=5432'",
       'docker restart "$postgres_container"',
       'pg_isready -h "$DB_HOST" -U postgres -d postgres',

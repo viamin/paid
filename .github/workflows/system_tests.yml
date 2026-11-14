@@ -296,8 +296,11 @@ jobs:
         run: |
           set -o pipefail
           failure_log="$(mktemp)"
+          test_log="log/test.log"
           trap 'rm -f "$failure_log"' EXIT
           for attempt in 1 2 3; do
+            : > "$failure_log"
+            : > "$test_log"
             if bin/rspec spec/system 2>&1 | tee "$failure_log"; then
               exit 0
             fi
@@ -307,7 +310,10 @@ jobs:
             # transport failure, not a spec assertion. Retry only this known
             # signature, keep the attempts bounded, and fail every other error
             # immediately.
-            if ! grep -Fq "undefined method 'cmd_tuples' for nil" "$failure_log"; then
+            # Action Cable writes this exception to Rails' test log instead of
+            # RSpec's stdout, so inspect the freshly cleared log for this
+            # attempt as well as the captured spec output.
+            if ! grep -Fq "undefined method 'cmd_tuples' for nil" "$failure_log" "$test_log"; then
               exit 1
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -339,7 +345,6 @@ jobs:
             done
 
             echo "::warning::PostgreSQL returned an empty result while setting tenant context; restarted the service and retrying system specs (attempt $attempt/3)"
-            : > "$failure_log"
             sleep "$((attempt * 5))"
           done
 
