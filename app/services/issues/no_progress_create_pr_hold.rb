@@ -60,8 +60,12 @@ module Issues
     end
 
     def latest_progress_by_issue
-      candidate_runs.where("pull_request_number IS NOT NULL OR result_commit_sha IS NOT NULL")
+      progress_runs.where("pull_request_number IS NOT NULL OR result_commit_sha IS NOT NULL")
         .group(:issue_id).select("issue_id, MAX(id) AS latest_id")
+    end
+
+    def progress_runs
+      AgentRun.where(project:, goal: "create_pr").where.not(issue_id: nil)
     end
 
     def candidate_runs

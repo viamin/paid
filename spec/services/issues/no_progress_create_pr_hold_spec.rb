@@ -60,6 +60,14 @@ RSpec.describe Issues::NoProgressCreatePrHold do
     expect(described_class.held_issue_ids(project)).to be_empty
   end
 
+  it "releases the hold when a failed explicit retry produces a commit" do # @spec NO-OUTPUT-ISSUE-009
+    2.times { record_no_progress_run }
+    create(:agent_run, :failed, project:, issue:, goal: "create_pr", auto_pick: false,
+      pull_request_number: nil, result_commit_sha: "abc123")
+
+    expect(described_class.held_issue_ids(project)).to be_empty
+  end
+
   it "does not treat provider failures as no-progress outcomes" do # @spec NO-OUTPUT-ISSUE-009
     2.times do
       create(:agent_run, :failed, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
