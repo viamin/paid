@@ -90,10 +90,14 @@
   A single no-progress outcome SHALL not hold the issue, and provider or
   transport failures SHALL continue through their typed retry policy.
   *Tests:* `spec/services/issues/no_progress_create_pr_hold_spec.rb`,
-  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/services/dashboard/eligibility_breakdown_spec.rb`,
+  `spec/requests/dashboard_spec.rb`.
   *Code:* `app/services/issues/no_progress_create_pr_hold.rb`,
   `app/temporal/activities/handle_no_output_issue_run_activity.rb`,
-  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/dashboard/held_work_details.rb`,
+  `app/views/dashboard/_eligibility_breakdown.html.erb`.
 
 ## PR-producing partial closeouts
 
