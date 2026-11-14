@@ -2227,7 +2227,7 @@ module Activities
 
       return if result[:healthy]
 
-      if result[:error_category].to_sym == :rate_limited
+      if result[:error_category]&.to_sym == :rate_limited
         reset_at = result[:reset_at] || SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now
         raise ProviderRateLimitError.new(
           "Subscription usage limit reached for #{runner}",

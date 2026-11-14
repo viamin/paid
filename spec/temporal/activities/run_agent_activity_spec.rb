@@ -4484,6 +4484,23 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first).to include("error_type" => "error")
       end
 
+      # @spec RUNNER-FALLBACK-013
+      it "handles an unhealthy harness preflight result without an error category" do
+        harness_provider = double("unhealthy preflight provider")
+        allow(activity).to receive(:run_harness_preflight!).and_call_original
+        allow(harness_provider).to receive(:preflight_check).and_return(
+          { healthy: false, reason: "provider reachability check failed" }
+        )
+
+        expect {
+          activity.send(:run_harness_preflight!, agent_run: agent_run,
+            harness_provider: harness_provider, runner: "codex", execution_env: {})
+        }.to raise_error(
+          described_class::RunnerExecutionError,
+          /Harness preflight failed: provider reachability check failed/
+        )
+      end
+
       context "when codex subscription auth is active" do
         let(:codex_provider) do
           user.runners.find_or_create_by!(runner_key: "codex").tap do |p|
