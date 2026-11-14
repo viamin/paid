@@ -150,14 +150,15 @@ owner/prerequisite workflow rather than creating a completion authority.
 `closeout_verification` is one synthetic, report-only `AgentRun` goal for a
 criterion whose accepted verification plan needs a target that is not yet
 available during implementation. It is not an implementation retry, a generic
-command runner, or a deployment engine. A run has one selected stage and uses
-the RDR-077 phase that owns that check:
+command runner, or a deployment engine. A run has one selected stage and
+persists the reviewed mapping's resolved RDR-077 phase and phase-scoped
+capability with that stage. The stage does not itself select a phase:
 
 | Stage | Target becomes available when | Owning phase | Target identity |
 | --- | --- | --- | --- |
 | `pre_merge` | the authoritative source PR has its reviewed head | Coding | repository-qualified source PR and head SHA |
 | `merged_revision` | GitHub records the source PR's merge, squash, or rebase revision, or authoritatively verifies a descendant containing its reviewed head | Release & Deployment | source PR, reviewed head SHA, and associated merged target SHA |
-| `live_environment` | a trusted deployment or live signal names the environment and the revision it serves | Release & Deployment for deployment validation; Operations for a runtime observation | environment identity, signal identity, and served SHA |
+| `live_environment` | a trusted deployment or live signal names the environment and the revision it serves | the mapping resolves Release & Deployment for deployment validation, or Operations for a runtime observation | environment identity, signal identity, and served SHA |
 
 A merged-revision target is never the current default-branch tip merely
 because the source PR is merged. It must be GitHub's recorded merge, squash,
@@ -173,10 +174,14 @@ fallback check against the source branch or default branch.
 The criterion-to-check mapping is a versioned, inspectable record selected and
 reviewed by an authorized project maintainer as part of the accepted closeout
 plan. It contains the source issue and stable criterion identity, stage,
-recipe/check key, immutable recipe/check version and content digest, permitted
-target shape, declared environment class when applicable, expected result
-contract, freshness period, and bounded retry policy. The selected entry must
-resolve to one of the existing reviewed execution paths:
+resolved RDR-077 owning phase and phase-scoped capability, recipe/check key,
+immutable recipe/check version and content digest, permitted target shape,
+declared environment class when applicable, expected result contract,
+freshness period, and bounded retry policy. The phase and capability are
+validated when the mapping is reviewed and are immutable for its version;
+`live_environment` mappings select exactly one of its two phase
+responsibilities. The selected entry must resolve to one of the existing
+reviewed execution paths:
 
 - an isolated `TechnicalPrerequisites` recipe for checkout-bound technical
   validation; or
@@ -184,19 +189,23 @@ resolve to one of the existing reviewed execution paths:
 
 The plan may be proposed by an assessment, but untrusted issue text, PR text,
 comments, agent output, and live-signal payloads cannot select a recipe,
-interpolate a command, alter a stage, or create a closure verdict. At dispatch,
-deterministic code resolves the persisted key and immutable version again and
-passes only its reviewed inputs to the existing executor. It rechecks project
-and tenant scope, the stage's RDR-077 effective policy, the applicable manual
-authorization or continuation grant, actor permission, budget, trust, pause,
+interpolate a command, alter a stage, phase, capability, or create a closure
+verdict. At dispatch, deterministic code resolves the persisted key and
+immutable version again and passes only its reviewed inputs to the existing
+executor. Queue and claim authorization use the persisted phase and
+capability, not an inference from the stage, check, or signal, and recheck
+their RDR-077 effective policy plus project and tenant scope, the applicable
+manual authorization or continuation grant, actor permission, budget, trust,
+pause,
 and existing recipe/check authorization. A goal never converts a Coding or
 Merge grant into Release & Deployment or Operations authority.
 
 #### Evidence contract, freshness, and retries
 
 Each attempt records issue and criterion identity; source PR identity and
-reviewed head SHA; selected stage; target SHA or live signal identity; for a
-merged revision, the authoritative source-PR-to-target association;
+reviewed head SHA; selected stage and its resolved phase and capability; target
+SHA or live signal identity; for a merged revision, the authoritative
+source-PR-to-target association;
 recipe/check key, version, and digest; account/project and environment
 identity; executor provenance;
 observation time; bounded/redacted output and artifact references; and one
@@ -207,17 +216,19 @@ unavailable environments, inconclusive output, and any rejected or expired
 evidence; it is not a pass-like state.
 
 Evidence is current only while it matches the source issue's approved-intent
-and criterion revisions, the source PR and reviewed head, selected stage and
-target identity and association, recipe/check version and digest, declared
-environment, and recipe freshness period. A changed criterion or intent,
-mapping or recipe/check version, source PR, reviewed head, target SHA or its
-association, environment, live signal, or expired freshness period invalidates
-the evidence and leaves the criterion unverified. The prior result
+and criterion revisions, the source PR and reviewed head, selected stage,
+phase and capability, and target identity and association, recipe/check
+version and digest, declared environment, and recipe freshness period. A
+changed criterion or intent, mapping, resolved phase or capability, or
+recipe/check version, source PR, reviewed head, target SHA or its association,
+environment, live signal, or expired freshness period invalidates the evidence
+and leaves the criterion unverified. The prior result
 remains inspectable but cannot be reused for closure. Retries recheck those
-identities and all authorization at queue and claim time, use only the
-mapping's bounded retry class and attempt limit, and never retry a terminal
-`fail` or `unknown` result as though it were a pass. A new target or changed
-mapping creates a new attempt lineage rather than overwriting provenance.
+identities and the persisted phase/capability's authorization at queue and
+claim time, use only the mapping's bounded retry class and attempt limit, and
+never retry a terminal `fail` or `unknown` result as though it were a pass. A
+new target or changed mapping creates a new attempt lineage rather than
+overwriting provenance.
 
 Terminal evidence is supplied to the existing criterion-level closeout
 assessment and its ordinary stale-generation/acceptance-audit path. It does

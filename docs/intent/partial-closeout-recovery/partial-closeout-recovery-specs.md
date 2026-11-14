@@ -7,10 +7,10 @@
 - [ ] **PARTIAL-CLOSEOUT-052** — When a current closeout criterion has a
   reviewed staged-verification mapping, Paid SHALL create only one synthetic,
   report-only `closeout_verification` AgentRun goal for its selected
-  `pre_merge`, `merged_revision`, or `live_environment` stage. The run SHALL
-  classify the check in Coding, Release & Deployment, or Operations according
-  to that stage's responsibility under RDR-077, and SHALL recheck the
-  corresponding effective policy and normal scope, grant, actor, trust,
+  `pre_merge`, `merged_revision`, or `live_environment` stage and the
+  mapping's resolved RDR-077 phase and phase-scoped capability. The run SHALL
+  recheck that persisted phase/capability's effective policy and normal scope,
+  grant, actor, trust,
   budget, pause, and recipe/check authorization before execution. A merge SHALL
   make only a merged-revision target eligible when that target is GitHub's
   recorded merge, squash, or rebase revision for the source PR, or an
@@ -23,29 +23,34 @@
 - [ ] **PARTIAL-CLOSEOUT-053** — Paid SHALL accept a staged closeout
   verification mapping only when an authorized maintainer has reviewed a
   versioned, inspectable record binding one stable issue criterion to its stage,
-  permitted target shape, recipe/check key, immutable version and digest,
-  environment class where applicable, freshness policy, and bounded retry
-  policy. Dispatch SHALL resolve only that persisted reviewed entry through the
+  resolved RDR-077 phase and phase-scoped capability, permitted target shape,
+  recipe/check key, immutable version and digest, environment class where
+  applicable, freshness policy, and bounded retry policy. A
+  `live_environment` mapping SHALL select exactly one of Release & Deployment
+  or Operations. Dispatch SHALL resolve only that persisted reviewed entry
+  through the
   existing isolated `TechnicalPrerequisites` recipe or
   `TrustedMeasurements::ALLOWLIST` check path. Untrusted issue or PR prose,
   comments, agent output, and live-signal payloads SHALL NOT select a command,
-  recipe/check, stage, target, or closure disposition.
+  recipe/check, stage, phase, capability, target, or closure disposition.
   *Planned test:* mapping validation and untrusted-input rejection service
   coverage.
 
 - [ ] **PARTIAL-CLOSEOUT-054** — For every staged closeout verification
   attempt, Paid SHALL retain the issue, criterion, source PR and reviewed-head
-  SHA, selected stage, target SHA or live-signal identity, and, for a merged
-  revision, the authoritative source-PR-to-target association; recipe/check
-  key/version/digest, account/project and environment identity, executor
-  provenance, observation time, and bounded/redacted output or artifact
+  SHA, selected stage, resolved RDR-077 phase and phase-scoped capability,
+  target SHA or live-signal identity, and, for a merged revision, the
+  authoritative source-PR-to-target association; recipe/check key/version/digest,
+  account/project and environment identity, executor provenance, observation
+  time, and bounded/redacted output or artifact
   references with exactly one
   terminal result of `pass`, `fail`, or `unknown`. Missing, ambiguous,
   superseded, or nonmatching targets; unavailable environments; inconclusive
   output; rejected evidence; and expired evidence SHALL remain `unknown` and
   leave the criterion unverified. A change to intent or criterion revision,
-  recipe/check mapping or version, source PR, reviewed head, target or its
-  association, environment, live signal, or freshness period SHALL stale the
+  recipe/check mapping or version, phase or capability, source PR, reviewed
+  head, target or its association, environment, live signal, or freshness
+  period SHALL stale the
   evidence; prior evidence remains inspectable but cannot satisfy the
   criterion.
   *Planned test:* evidence-provenance, freshness, and invalidation service
@@ -53,8 +58,9 @@
 
 - [ ] **PARTIAL-CLOSEOUT-055** — Paid SHALL retry a staged closeout
   verification attempt only within the reviewed mapping's bounded retry policy,
-  after rechecking current target identity and all authorization at queue and
-  claim time. A changed target or mapping SHALL create a new attempt lineage;
+  after rechecking current target identity and the persisted RDR-077
+  phase/capability's authorization at queue and claim time. A changed target or
+  mapping SHALL create a new attempt lineage;
   a terminal `fail` or `unknown` result SHALL NOT be retried or represented
   as a pass. Terminal staged evidence SHALL enter only the existing
   criterion-level assessment and acceptance-audit path. A criterion requiring

@@ -226,17 +226,18 @@ proof that its acceptance criteria passed.
 
 Some acceptance criteria can be credibly checked only at a source PR head, a
 merged revision, or an identified live environment. Paid records those as
-stage-bound closeout verification work: a reviewed, versioned recipe is bound
-to one criterion and one target, and its bounded result remains unverified
+stage-bound closeout verification work: a reviewed, versioned mapping binds a
+recipe, one criterion, one target, and its resolved RDR-077 phase and
+phase-scoped capability, and its bounded result remains unverified
 until current evidence for that exact pairing exists. A merged-revision target
 is GitHub's recorded merge, squash, or rebase revision for that source PR, or
 an authoritatively verified descendant containing its reviewed head; an
 ambiguous association is unknown. A merge never establishes deployment or
 live-environment identity. The work stays in the existing Coding, Release &
-Deployment, or Operations phase that owns its check, reuses isolated technical
-validation and trusted live measurements, and returns evidence to the existing
-criterion-level acceptance authority rather than creating a deployment engine
-or an independent closure path.
+Deployment, or Operations phase and capability recorded by its reviewed
+mapping, reuses isolated technical validation and trusted live measurements,
+and returns evidence to the existing criterion-level acceptance authority
+rather than creating a deployment engine or an independent closure path.
 
 A project may also host the layered-verification add-on: a bounded capability
 that checks correspondence between approved business intent and its
