@@ -7,9 +7,21 @@ module Issues
     MAX_RECORDED_RUN_IDS = 5
     REQUIRED_ATTEMPTS = 2
     NEXT_ACTION = "Update acceptance evidence or request an authorized retry."
+    RELEASE_KEY = "no_progress_hold_release"
 
     def self.held_issue_ids(project) = new(project:).held_issue_ids
     def self.diagnostic_for(issue) = new(project: issue.project).diagnostic_for(issue)
+
+    def self.release_fact_for(issue)
+      return {} unless issue && diagnostic_for(issue)
+
+      {
+        RELEASE_KEY => {
+          "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue)
+        }
+      }
+    end
 
     def initialize(project:)
       @project = project
@@ -63,7 +75,10 @@ module Issues
     end
 
     def latest_progress_by_issue
-      progress_runs.where("pull_request_number IS NOT NULL OR result_commit_sha IS NOT NULL")
+      progress_runs.where(<<~SQL.squish)
+        pull_request_number IS NOT NULL OR result_commit_sha IS NOT NULL
+        OR reconciliation ? '#{RELEASE_KEY}'
+      SQL
         .group(:issue_id).select("issue_id, MAX(id) AS latest_id")
     end
 
@@ -72,7 +87,7 @@ module Issues
     end
 
     def candidate_runs
-      AgentRun.where(project:, goal: "create_pr", status: "completed", auto_pick: true).where.not(issue_id: nil)
+      progress_runs.where(status: "completed", auto_pick: true)
     end
 
     def issues_by_id
@@ -88,17 +103,12 @@ module Issues
 
     def current_runs(issue, runs, source_revision)
       intent_revision = PartialCloseouts::Assessment.intent_revision_for(issue)
-      runs.drop(progress_index(runs)).select do |run|
+      runs.select do |run|
         next if run.pull_request_number.present? || run.result_commit_sha.present?
 
         outcome = run.reconciliation.to_h.fetch("no_progress", {})
         outcome["outcome"] == "recommend_close" && outcome["source_revision"] == source_revision && outcome["intent_revision"] == intent_revision
       end
-    end
-
-    def progress_index(runs)
-      index = runs.rindex { |run| run.pull_request_number.present? || run.result_commit_sha.present? }
-      index ? index + 1 : 0
     end
   end
 end

@@ -68,6 +68,26 @@ RSpec.describe Issues::NoProgressCreatePrHold do
     expect(described_class.held_issue_ids(project)).to be_empty
   end
 
+  it "releases the hold when an authorized retry produces no artifact" do # @spec NO-OUTPUT-ISSUE-009
+    2.times { record_no_progress_run }
+    release = described_class.release_fact_for(issue)
+    create(:agent_run, :completed, project:, issue:, goal: "create_pr", auto_pick: false,
+      pull_request_number: nil, result_commit_sha: nil, reconciliation: release)
+
+    expect(described_class.held_issue_ids(project)).to be_empty
+  end
+
+  it "requires another two no-progress runs after a revision-scoped retry release" do # @spec NO-OUTPUT-ISSUE-009
+    2.times { record_no_progress_run }
+    release = described_class.release_fact_for(issue)
+    create(:agent_run, :completed, project:, issue:, goal: "create_pr", auto_pick: false,
+      reconciliation: release)
+    issue.update!(body: "Changed acceptance criterion")
+    2.times { record_no_progress_run }
+
+    expect(described_class.held_issue_ids(project)).to contain_exactly(issue.id)
+  end
+
   it "does not treat provider failures as no-progress outcomes" do # @spec NO-OUTPUT-ISSUE-009
     2.times do
       create(:agent_run, :failed, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,

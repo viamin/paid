@@ -154,11 +154,14 @@ those run facts only after two automatic no-progress runs for the same revision
 pair. The hold applies both while admitting work and while dequeuing it, so
 overlapping poll, sweep, and worker claims cannot start another identical run.
 
-The hold is released automatically only when either revision changes; an
-authorized explicit retry remains outside automatic admission. Its diagnostic
-names the bounded run IDs and tells the operator to update the evidence or
-request an explicit retry. Provider and transport failures retain their typed
-retry paths and are not recorded as no-progress outcomes.
+The hold is released automatically when either revision changes. An authorized
+explicit retry remains outside automatic admission and records a release fact
+for the current revision pair on its replacement run, so the operator action
+clears the hold even when that run produces no delivery artifact. A stale
+release fact cannot clear a later revision's hold. The diagnostic names the
+bounded run IDs and tells the operator to update the evidence or request an
+explicit retry. Provider and transport failures retain their typed retry paths
+and are not recorded as no-progress outcomes.
 
 ## PR-producing partial closeouts
 
