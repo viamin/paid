@@ -305,7 +305,29 @@ jobs:
               exit 1
             fi
 
-            echo "::warning::PostgreSQL returned an empty result while setting tenant context; retrying system specs (attempt $attempt/3)"
+            # The result can remain empty for subsequent connections until the
+            # hosted service is reset. Restart its single, version-pinned
+            # container and wait for the health check before retrying the whole
+            # suite; a missing or ambiguous service container must fail closed.
+            postgres_container="$(docker ps --filter 'ancestor=postgres:16.15' --format '{{.ID}}')"
+            if [ "$(printf '%s\\n' "$postgres_container" | sed '/^$/d' | wc -l)" -ne 1 ]; then
+              echo "::error::Expected exactly one PostgreSQL service container for system-spec recovery"
+              exit 1
+            fi
+            docker restart "$postgres_container"
+            for readiness_attempt in 1 2 3; do
+              if pg_isready -h "$DB_HOST" -U postgres -d postgres; then
+                break
+              fi
+
+              if [ "$readiness_attempt" -eq 3 ]; then
+                echo "::error::PostgreSQL service did not become ready after restart"
+                exit 1
+              fi
+              sleep "$((readiness_attempt * 5))"
+            done
+
+            echo "::warning::PostgreSQL returned an empty result while setting tenant context; restarted the service and retrying system specs (attempt $attempt/3)"
             : > "$failure_log"
             sleep "$((attempt * 5))"
           done
