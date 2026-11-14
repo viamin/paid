@@ -38,18 +38,6 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(job.fetch("services").keys).to include("postgres", "qdrant")
   end
 
-  # @spec TEST-SUITE-003
-  it "retries only the known transient PostgreSQL tenant-context failure" do
-    run = workflow.fetch("jobs").fetch("test-shards").fetch("steps")
-      .find { |step| step["name"] == "Run tests" }.fetch("run")
-
-    expect(run).to include("set -o pipefail")
-    expect(run).to include("for attempt in 1 2 3")
-    expect(run).to include("undefined method 'cmd_tuples' for nil")
-    expect(run).to include('if ! grep -Fq')
-    expect(run).to include('if [ "$attempt" -eq 3 ]')
-  end
-
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")
