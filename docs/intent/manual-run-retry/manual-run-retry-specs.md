@@ -29,7 +29,8 @@
   `rate_limited` run with a recovery time, already owned by
   `StaleRunDetectorJob`'s in-place recovery) — avoiding a duplicate,
   competing retry path for state another mechanism already owns.
-  *Code:* `Activities::MarkAgentRunFailedActivity#manual_run_retry_eligible?`.
+  *Code:* `Activities::MarkAgentRunFailedActivity#schedule_manual_run_retry_if_eligible`,
+  `AgentRuns::ManualRunRetryPolicy#assess`.
   *Test:* `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
 
 ## Partial-work safety
@@ -80,17 +81,19 @@
   recorded with `result: { new_agent_run_id: ... }` so an operator can trace
   the chain from a superseded run to its replacement through
   `OrchestrationDecision` records, mirroring `RetryTimedOutIssueGoalJob`.
-  *Code:* `RetryFailedManualRunJob#perform`, `RetryFailedManualRunJob#create_retry_run`.
+  *Code:* `RetryFailedManualRunJob#perform`, `AgentRuns::RetryAttempt#claim`,
+  `AgentRuns::ManualRunRetryPolicy#build_successor!`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
 - [x] **MANUAL-RUN-RETRY-008** — When a delayed retry for a failed
   `lid_planning` run encounters `idx_agent_runs_unique_active_lid_planning`
   because an operator has started another active planning run during the
-  backoff window, `RetryFailedManualRunJob` SHALL log and skip the retry
+  backoff window, the retry mechanism SHALL record a skip reason
   without raising a terminal job failure. The retry transaction SHALL roll
   back, leaving the original run `failed` and the operator-started planning
   run active.
-  *Code:* `RetryFailedManualRunJob#create_retry_run_in_transaction`.
+  *Code:* `AgentRuns::RetryAttempt#claim`,
+  `AgentRuns::ManualRunRetryPolicy#duplicate_active_run_conflict?`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
 - [x] **MANUAL-RUN-RETRY-009** — The shared retry mechanism SHALL use the

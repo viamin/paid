@@ -111,7 +111,7 @@
   `bootstrap_readiness` (or any other explicitly operator-gated goal) to
   automatic retry.
   *Code:* `AgentRun#bootstrap_readiness_goal?` exclusion inside
-  `Activities::MarkAgentRunFailedActivity#manual_run_retry_eligible?`
+  `AgentRuns::ManualRunRetryPolicy#assess`
   (PROJECT-READINESS-007).
 
 ## Migration map and first slice
