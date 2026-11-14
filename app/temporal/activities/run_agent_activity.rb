@@ -371,6 +371,7 @@ module Activities
             record_runner_success(user_settings, runner_state_name, runner_states)
             agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration,
               output_chars: runner_result[:output_chars],
+              execution_kind: AgentRun::MAIN_AGENT_EXECUTION_KIND,
               **resolved_run_info)
             # Persist the routing key so multiple entries sharing the same
             # runner_key (e.g. several OpenCode API-key entries with
@@ -540,6 +541,7 @@ module Activities
               error_message: e.message,
               duration_seconds: attempt_duration,
               output_chars: e.output_chars,
+              execution_kind: AgentRun::MAIN_AGENT_EXECUTION_KIND,
               diagnostics: e.diagnostics,
               **resolved_run_info
             )

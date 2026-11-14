@@ -226,8 +226,8 @@ RSpec.describe Dashboard::Stats do
       it "uses persisted main-agent attempts when iterations is zero" do
         create(:agent_run, :completed, project: project, iterations: 0,
           runners_attempted: [
-            { "runner" => "codex", "success" => true, "output_chars" => 250 },
-            { "runner" => "codex", "success" => false, "error_type" => "timeout", "output_chars" => 125 }
+            { "runner" => "codex", "success" => true, "execution_kind" => "main_agent", "output_chars" => 250 },
+            { "runner" => "codex", "success" => false, "error_type" => "timeout", "execution_kind" => "main_agent", "output_chars" => 125 }
           ])
 
         expect(stats[:cost_and_tokens][:avg_main_agent_executions_per_run]).to eq(4.5)
@@ -238,7 +238,7 @@ RSpec.describe Dashboard::Stats do
         create(:agent_run, :completed, project: project, iterations: 4,
           runners_attempted: [ { "runner" => "codex", "success" => true, "output_chars" => 250 } ])
         create(:agent_run, :completed, project: project, iterations: 0,
-          runners_attempted: [ { "runner" => "codex", "success" => false, "error_type" => "preflight_timeout", "output_chars" => 250 } ])
+          runners_attempted: [ { "runner" => "codex", "success" => true, "execution_kind" => "smoke_preflight", "output_chars" => 250 } ])
 
         expect(stats[:cost_and_tokens][:avg_main_agent_executions_per_run]).to eq(4.0)
       end

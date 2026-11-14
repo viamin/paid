@@ -36,7 +36,7 @@
 
 - [x] **MANUAL-RUN-RETRY-003** — The system SHALL only schedule a retry when
   the failed run performed no observable work — no successful or timed-out
-  persisted main runner attempt with nonzero recorded output, no recorded
+  persisted `main_agent` runner attempt with nonzero recorded output, no recorded
   `pull_request_number`, and no recorded `created_issue_number`
   (`AgentRun#no_observable_work?`). Smoke preflight and post-run commands
   SHALL NOT count as main-agent work. A run with any of those present SHALL

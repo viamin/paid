@@ -528,7 +528,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue,
           iterations: 0, cost_cents: 100)
-        agent_run.record_runner_attempt("codex", success: true, output_chars: 250)
+        agent_run.record_runner_attempt("codex", success: true, output_chars: 250,
+          execution_kind: AgentRun::MAIN_AGENT_EXECUTION_KIND)
         agent_run.log!("stdout", declaration)
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
@@ -1083,7 +1084,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
       it "recommends close after successful main-agent work despite zero iterations" do
         issue = create(:issue, :in_progress, project: project)
         agent_run = create(:agent_run, :running, project: project, issue: issue, iterations: 0)
-        agent_run.record_runner_attempt("codex", success: true, output_chars: 250)
+        agent_run.record_runner_attempt("codex", success: true, output_chars: 250,
+          execution_kind: AgentRun::MAIN_AGENT_EXECUTION_KIND)
         agent_run.log!("stdout", "Inspected the implementation; no further code changes are needed.")
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
