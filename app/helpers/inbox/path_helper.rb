@@ -5,8 +5,11 @@ module Inbox
     # @spec INBOX-FOUNDATION-009 @spec INBOX-PHASE-RELEVANCE-002
     def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], **overrides)
       {
-        project_id: project&.id,
-        kind: kind,
+        project_ids: params[:project_ids],
+        project_id: project&.id || params[:project_id],
+        kinds: params[:kinds],
+        kind: kind || params[:kind],
+        q: params[:q].respond_to?(:permit) ? params[:q].permit(:text_cont).to_h : params[:q],
         sort: sort,
         scope: scope
       }.compact.merge(overrides)

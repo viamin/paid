@@ -142,18 +142,19 @@
 ## Filter availability (`Inbox::Availability`)
 
 - [x] **INBOX-FOUNDATION-010** — The Inbox filter dialog SHALL only offer
-  filter options that cannot yield an empty list: the Type selector SHALL list
-  only kinds with ≥1 waiting item (scoped to the active project filter when
-  one is applied) plus "All types", and the Project selector SHALL list only
-  projects with ≥1 waiting item (scoped to the active kind filter when one is
-  applied) plus "All projects". The clarifying-questions lane SHALL exclude
+  filter options that cannot yield an empty list within the active Inbox scope:
+  the Type selector SHALL list only kinds with ≥1 waiting item in that scope
+  (scoped to the active project filter when one is applied) plus "All types",
+  and the Project selector SHALL list only projects with ≥1 waiting item in
+  that scope (scoped to the active kind filter when one is applied) plus "All
+  projects". The clarifying-questions lane SHALL exclude
   `needs_input` rows that lack both parseable body questions and persisted
   `needs_input_questions`, because `Inbox::Queue` cannot render them. Each
   offered option SHALL display its item count. Availability SHALL be computed
   from per-kind lane scopes corresponding to `Inbox::Count` without building
   full queue entries; unlike the badge's bounded approximation, the matrix
-  SHALL apply each lane's renderability predicate. The per-user matrix SHALL
-  be cached behind the same dashboard cache version and
+  SHALL apply each lane's renderability predicate. The per-user-and-scope
+  matrix SHALL be cached behind the same dashboard cache version and
   short TTL the badge uses — every inbox render (`index`, `show`, and
   `open_chat` all build availability in `load_inbox`) pays one cache read
   instead of re-running every lane per request. The dialog
@@ -170,6 +171,24 @@
   `app/controllers/inbox_controller.rb#load_inbox`,
   `app/views/inbox/index.html.erb`,
   `app/javascript/controllers/inbox_filters_controller.js`.
+
+- [x] **INBOX-FOUNDATION-012** — When an operator filters the Inbox, the
+  dialog SHALL submit repeatable `project_ids[]` and `kinds[]` GET parameters
+  whose union is applied inside the selected scope. It SHALL submit its text
+  search as the allowlisted `q[text_cont]` predicate. `Inbox::Search` SHALL
+  translate that predicate to Ransack searches over the already authorized
+  Project repository fields and Issue title/body fields, then intersect those
+  results with the queue's typed entries. The scoped adapter SHALL also match
+  each authorized entry's displayed title and summary so synthetic and
+  non-Issue-backed lanes remain searchable; no other Ransack attributes or
+  predicates are accepted. Empty filtered combinations SHALL retain the
+  existing reset-to-unfiltered behavior, while direct-entry lookup continues
+  to resolve hidden and personally removed entries through its existing
+  targeted authorization path.
+  *Tests:* `spec/services/inbox/search_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/system/inbox_filters_dialog_spec.rb`.
+  *Code:* `app/services/inbox/search.rb`, `app/services/inbox/queue.rb`,
+  `app/controllers/inbox_controller.rb`, `app/views/inbox/index.html.erb`.
 
 - [x] **INBOX-FOUNDATION-011** — When a filtered Inbox URL (a `kind` and/or
   `project_id` parameter) matches zero entries while at least one item is

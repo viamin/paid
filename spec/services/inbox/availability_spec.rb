@@ -40,6 +40,38 @@ RSpec.describe Inbox::Availability do
   end
 
   describe "#kind_counts and #available_kinds" do
+    # @spec INBOX-FOUNDATION-010 @spec INBOX-PHASE-RELEVANCE-005
+    it "derives removed-scope options and counts from removed requests" do
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+      entry = Inbox::Queue.call(user: user).sole
+      Inbox::Removals::Remove.call(entry:, user: user)
+
+      availability = described_class.call(user: user, scope: Inbox::Queue::REMOVED_SCOPE)
+
+      expect(availability.kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]).to eq(1)
+      expect(availability.available_projects).to contain_exactly(project_a)
+      expect(availability.project_counts[project_a.id]).to eq(1)
+    end
+
+    # @spec INBOX-FOUNDATION-010 @spec INBOX-PHASE-RELEVANCE-005
+    it "derives disabled-phase options and counts from disabled requests" do
+      FeatureFlags.enable!(:automation_phases, project: project_a)
+      project_a.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "issue_preparation" => false },
+          Automation::PhaseSettings::RELEASE_KEY => false,
+          Automation::PhaseSettings::DEPLOYMENT_KEY => false
+        }
+      )
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+
+      availability = described_class.call(user: user, scope: Inbox::Queue::DISABLED_PHASES_SCOPE)
+
+      expect(availability.kind_counts[Inbox::Queue::CLARIFYING_QUESTIONS_KIND]).to eq(1)
+      expect(availability.available_projects).to contain_exactly(project_a)
+      expect(availability.project_counts[project_a.id]).to eq(1)
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-009
     it "excludes personally removed requests while the phase rollout is off" do
       allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
@@ -328,9 +360,23 @@ RSpec.describe Inbox::Availability do
       FeatureFlags.enable!(:automation_phases, project: project_a)
       create(:issue, :needs_input, project: project_a, body: questions_body)
 
-      expect(Inbox::Queue).to receive(:call).with(user: user).once.and_call_original
+      expect(Inbox::Queue).to receive(:call)
+        .with(user: user, scope: Inbox::Queue::ACTIONABLE_SCOPE).once.and_call_original
 
       2.times { described_class.call(user: user, project: project_a).kind_counts }
+    end
+
+    # @spec INBOX-FOUNDATION-010 @spec INBOX-PHASE-RELEVANCE-005
+    it "caches each Inbox scope in a distinct matrix" do
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+      entry = Inbox::Queue.call(user: user).sole
+      Inbox::Removals::Remove.call(entry:, user: user)
+
+      actionable = described_class.call(user: user).total_count
+      removed = described_class.call(user: user, scope: Inbox::Queue::REMOVED_SCOPE).total_count
+
+      expect(actionable).to eq(0)
+      expect(removed).to eq(1)
     end
 
     # @spec INBOX-FOUNDATION-010

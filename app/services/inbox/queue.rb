@@ -356,18 +356,21 @@ module Inbox
       label_gated.or(local_gated)
     end
 
-    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT, record_id: nil, scope: ACTIONABLE_SCOPE)
+    def initialize(user:, project: nil, projects: nil, kind: nil, kinds: nil, sort: DEFAULT_SORT, record_id: nil,
+      scope: ACTIONABLE_SCOPE, query: nil)
       @user = user
-      @project = project
-      @kind = kind.to_s.presence
+      @projects = Array(projects || project).compact
+      @kinds = Array(kinds || kind).map(&:to_s).intersection(KINDS)
       @sort = SORTS.key?(sort) ? sort : DEFAULT_SORT
       @record_id = record_id
       @scope = SCOPES.include?(scope.to_s) ? scope.to_s : ACTIONABLE_SCOPE
+      @query = query
     end
 
-    # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
+    # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-012
+    # @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
     def call
-      sort_entries(apply_scope(build_entries))
+      sort_entries(Inbox::Search.call(entries: apply_scope(build_entries), query:))
     end
 
     # Unfiltered source entries for read-only projections such as the phase
@@ -393,7 +396,17 @@ module Inbox
 
     private
 
-    attr_reader :kind, :project, :scope, :sort, :user
+    attr_reader :kinds, :projects, :query, :scope, :sort, :user
+
+    # Singular accessors preserve the targeted-entry path; list construction
+    # uses +projects+ and +kinds+ so a multi-value request remains a union.
+    def project
+      projects.first if projects.one?
+    end
+
+    def kind
+      kinds.first if kinds.one?
+    end
 
     # @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-009
     def apply_scope(entries, selected_scope = scope)
@@ -475,7 +488,7 @@ module Inbox
     end
 
     def include_kind?(entry_kind)
-      kind.blank? || kind == entry_kind
+      kinds.empty? || kinds.include?(entry_kind)
     end
 
     def sort_entries(entries)
@@ -542,9 +555,9 @@ module Inbox
     # @spec INBOX-FOUNDATION-006
     def scoped_projects
       projects = visible_projects
-      return projects unless project
+      return projects if self.projects.empty?
 
-      projects.select { |candidate| candidate.id == project.id }
+      projects.select { |candidate| self.projects.map(&:id).include?(candidate.id) }
     end
 
     # Authorized Inbox visibility: account isolation plus per-owner
@@ -573,7 +586,7 @@ module Inbox
 
     def plan_review_entries
       scope = PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve
-      scope = scope.where(project: project) if project
+      scope = scope.where(project: projects) if projects.any?
 
       only_record(scope.open_plan_reviews).includes(:project, :issue).map do |review|
         tasks = Array(review.plan_data&.dig("tasks"))
@@ -783,7 +796,7 @@ module Inbox
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
         .where.not(status: FeatureIntent::TERMINAL_STATUSES)
-      scope = scope.where(project: project) if project
+      scope = scope.where(project: projects) if projects.any?
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
@@ -873,7 +886,7 @@ module Inbox
     # project-level knowledge artifacts.
     def change_intent_draft_entries
       scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
-      scope = scope.where(project: project) if project
+      scope = scope.where(project: projects) if projects.any?
 
       only_record(scope).includes(:project, :issue).order(:created_at, :id).map do |change_intent|
         change_intent_draft_entry(change_intent)
@@ -1139,7 +1152,11 @@ module Inbox
     end
 
     def project_filter_excludes?(candidate_project)
-      project.present? && candidate_project.id != project.id
+      projects.any? && selected_project_ids.exclude?(candidate_project.id)
+    end
+
+    def selected_project_ids
+      @selected_project_ids ||= projects.map(&:id).to_set
     end
 
     def runner_project(runner)

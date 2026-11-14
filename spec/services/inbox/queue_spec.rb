@@ -977,6 +977,39 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to include(feature_intent)
     end
 
+    # @spec INBOX-FOUNDATION-012
+    it "applies a multi-project union to policy-scoped lanes" do
+      selected_project = create(:project, account:, created_by: user, owner: "acme", repo: "selected")
+      excluded_project = create(:project, account:, created_by: user, owner: "acme", repo: "excluded")
+      selected_feature = create(:feature_intent, :ready_for_approval, project: project)
+      other_feature = create(:feature_intent, :ready_for_approval, project: selected_project)
+      create(:feature_intent, :ready_for_approval, project: excluded_project)
+      selected_change = create(:change_intent, :draft, project: project)
+      other_change = create(:change_intent, :draft, project: selected_project)
+      create(:change_intent, :draft, project: excluded_project)
+
+      entries = described_class.call(
+        user:,
+        projects: [ project, selected_project ],
+        kinds: [ described_class::FEATURE_DECISION_KIND, described_class::CHANGE_INTENT_DRAFT_KIND ]
+      )
+
+      expect(entries.map(&:record)).to contain_exactly(selected_feature, other_feature, selected_change, other_change)
+    end
+
+    # @spec INBOX-FOUNDATION-012
+    it "applies a multi-project union to the notification lane" do
+      selected_project = create(:project, account:, created_by: user, owner: "acme", repo: "selected")
+      excluded_project = create(:project, account:, created_by: user, owner: "acme", repo: "excluded")
+      selected = create_action_required_notification(subject: project)
+      other = create_action_required_notification(subject: selected_project)
+      create_action_required_notification(subject: excluded_project)
+
+      entries = described_class.call(user:, projects: [ project, selected_project ], kind: described_class::ACTION_REQUIRED_KIND)
+
+      expect(entries.map(&:record)).to contain_exactly(selected, other)
+    end
+
     # @spec OPERATOR-INBOX-002E
     it "filters to retry_limited when kind: retry_limited is requested" do
       create_needs_input(body: questions_body)

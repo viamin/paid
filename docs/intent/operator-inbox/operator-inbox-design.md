@@ -634,6 +634,17 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
 
 ## Decisions
 
+- **Ransack adapter at the typed queue boundary:** Inbox entries are a
+  projection of different authorized records, phase-relevance calculations,
+  personal removals, and synthetic dependency cycles, not a common Active
+  Record relation. `Inbox::Search` therefore accepts only `q[text_cont]` and
+  uses Ransack against the queue's already-authorized Project (`owner`, `repo`)
+  and Issue (`title`, `body`) records before intersecting their IDs with queue
+  entries. The adapter also compares that allowlisted term with the displayed
+  title and summary on each authorized entry. This narrow projection keeps
+  synthetic and non-Issue-backed lanes searchable without pretending the
+  heterogeneous queue can be represented by one Active Record relation.
+
 - **One queue service, not per-page queries**: the inbox page and any future
   queue consumers should share one typed discovery path.
 - **Authorized visibility is independent of auto-pick eligibility (#4221)**:

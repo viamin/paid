@@ -1,6 +1,16 @@
 # frozen_string_literal: true
 
 class Issue < ApplicationRecord
+  def self.ransackable_attributes(auth_object = nil)
+    return %w[title body] if auth_object == :inbox
+
+    []
+  end
+
+  def self.ransackable_associations(_auth_object = nil)
+    []
+  end
+
   CLOSEOUT_CLOSING_TTL = 15.minutes
 
   belongs_to :reopened_by, class_name: "User", optional: true
