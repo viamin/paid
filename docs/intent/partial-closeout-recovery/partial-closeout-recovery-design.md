@@ -145,6 +145,104 @@ free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
 
+### Staged closeout verification (#5073)
+
+`closeout_verification` is one synthetic, report-only `AgentRun` goal for a
+criterion whose accepted verification plan needs a target that is not yet
+available during implementation. It is not an implementation retry, a generic
+command runner, or a deployment engine. A run has one selected stage and
+persists the reviewed mapping's resolved RDR-077 phase and phase-scoped
+capability with that stage. The stage does not itself select a phase:
+
+| Stage | Target becomes available when | Owning phase | Target identity |
+| --- | --- | --- | --- |
+| `pre_merge` | the authoritative source PR has its reviewed head | Coding | repository-qualified source PR and head SHA |
+| `merged_revision` | GitHub records the source PR's merge, squash, or rebase revision, or authoritatively verifies a descendant containing its reviewed head | Release & Deployment | source PR, reviewed head SHA, and associated merged target SHA |
+| `live_environment` | a trusted deployment or live signal names the environment and the revision it serves | the mapping resolves Release & Deployment for deployment validation, or Operations for a runtime observation | environment identity, signal identity, and served SHA |
+
+A merged-revision target is never the current default-branch tip merely
+because the source PR is merged. It must be GitHub's recorded merge, squash,
+or rebase revision for that source PR, or a descendant authoritatively verified
+to contain that PR's reviewed head. A merge only makes that target eligible; it
+is never a deployment signal and cannot make a `live_environment` target
+available. A missing, ambiguous, superseded, or nonmatching association
+produces `unknown` evidence with a concrete recovery reason, rather than a
+fallback check against the source branch or default branch.
+
+#### Reviewed mapping and authorization
+
+The criterion-to-check mapping is a versioned, inspectable record selected and
+reviewed by an authorized project maintainer as part of the accepted closeout
+plan. It contains the source issue and stable criterion identity, stage,
+resolved RDR-077 owning phase and phase-scoped capability, recipe/check key,
+immutable recipe/check version and content digest, permitted target shape,
+declared environment class when applicable, expected result contract,
+freshness period, and bounded retry policy. The phase and capability are
+validated against the selected stage when the mapping is reviewed and are
+immutable for its version: a `pre_merge` mapping SHALL resolve Coding, a
+`merged_revision` mapping SHALL resolve Release & Deployment, and a
+`live_environment` mapping SHALL resolve exactly one of Release & Deployment
+or Operations. Mapping validation rejects every other stage/phase pairing
+before review or dispatch. The selected entry must resolve to one of the
+existing reviewed execution paths:
+
+- an isolated `TechnicalPrerequisites` recipe for checkout-bound technical
+  validation; or
+- a `TrustedMeasurements::ALLOWLIST` check for a live tenant observation.
+
+The plan may be proposed by an assessment, but untrusted issue text, PR text,
+comments, agent output, and live-signal payloads cannot select a recipe,
+interpolate a command, alter a stage, phase, capability, or create a closure
+verdict. At dispatch, deterministic code resolves the persisted key and
+immutable version again and passes only its reviewed inputs to the existing
+executor. Queue and claim authorization use the persisted phase and
+capability, not an inference from the stage, check, or signal, and recheck
+their RDR-077 effective policy plus project and tenant scope, the applicable
+manual authorization or continuation grant, actor permission, budget, trust,
+pause,
+and existing recipe/check authorization. A goal never converts a Coding or
+Merge grant into Release & Deployment or Operations authority.
+
+#### Evidence contract, freshness, and retries
+
+Each attempt records issue and criterion identity; source PR identity and
+reviewed head SHA; selected stage and its resolved phase and capability; target
+SHA or live signal identity; for a merged revision, the authoritative
+source-PR-to-target association;
+recipe/check key, version, and digest; account/project and environment
+identity; executor provenance;
+observation time; bounded/redacted output and artifact references; and one
+result state: `pass`, `fail`, or `unknown`. Cancellation or inability to
+start records no passing result and leaves the criterion unverified. `unknown`
+is required for unavailable targets, absent or mismatched live signals,
+unavailable environments, inconclusive output, and any rejected or expired
+evidence; it is not a pass-like state.
+
+Evidence is current only while it matches the source issue's approved-intent
+and criterion revisions, the source PR and reviewed head, selected stage,
+phase and capability, and target identity and association, recipe/check
+version and digest, declared environment, and recipe freshness period. A
+changed criterion or intent, mapping, resolved phase or capability, or
+recipe/check version, source PR, reviewed head, target SHA or its association,
+environment, live signal, or expired freshness period invalidates the evidence
+and leaves the criterion unverified. The prior result
+remains inspectable but cannot be reused for closure. Retries recheck those
+identities and the persisted phase/capability's authorization at queue and
+claim time, use only the mapping's bounded retry class and attempt limit, and
+never retry a terminal `fail` or `unknown` result as though it were a pass. A
+new target or changed mapping creates a new attempt lineage rather than
+overwriting provenance.
+
+Terminal evidence is supplied to the existing criterion-level closeout
+assessment and its ordinary stale-generation/acceptance-audit path. It does
+not itself satisfy a human judgment, close an issue, release an unrelated
+prerequisite, or authorize repair. If a criterion explicitly requires
+`merged_revision` or `live_environment` evidence, the #4787 premerge
+source-closure disposition remains `Tracks`, even if all currently available
+premerge checks pass. Any later closure remains subject to the existing
+criterion acceptance decision and delegated policy gates; no staged-verifier
+result, recipe, agent report, or PR prose is closure authority.
+
 ### Reviewed performance measurements (#4894)
 
 A performance prerequisite is a distinct reviewed recipe, not an inference
