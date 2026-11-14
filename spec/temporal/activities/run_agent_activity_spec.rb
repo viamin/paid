@@ -200,7 +200,8 @@ RSpec.describe Activities::RunAgentActivity do
       execution_environment: container_service,
       command_context: command_context,
       runner: provider.runner_key,
-      execution_env: {})
+      execution_env: {},
+      provider_runtime: nil)
   end
 
   def sigkill_preflight_failure(stderr: "> build · MiniMax-M3", container_running: true)
@@ -4369,8 +4370,18 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "calls harness preflight_check with the main execution env and timeout" do
-        harness_provider = instance_double(AgentHarness::Providers::Codex)
-        allow(harness_provider).to receive(:preflight_check).and_return({ healthy: true })
+        harness_provider = Class.new do
+          attr_reader :preflight_calls
+
+          def initialize
+            @preflight_calls = []
+          end
+
+          def preflight_check(env:, timeout:)
+            @preflight_calls << { env: env, timeout: timeout }
+            { healthy: true }
+          end
+        end.new
         allow(activity).to receive(:preflight_provider_instance).and_return(harness_provider)
         allow(activity).to receive(:run_harness_preflight!).and_call_original
         allow(activity).to receive(:command_env_for).and_wrap_original do |original, command_context, prompt|
@@ -4386,7 +4397,7 @@ expect(container_service).to receive(:execute).with(
 
         activity.execute(agent_run_id: agent_run.id)
 
-        expect(harness_provider).to have_received(:preflight_check).with(
+        expect(harness_provider.preflight_calls).to include(
           env: hash_including("PROMPT_KIND" => "main"),
           timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS
         )
@@ -4402,30 +4413,20 @@ expect(container_service).to receive(:execute).with(
         user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback.runner_key ])
         allow(activity).to receive(:build_runner_order).and_return([ minimax_runner.routing_key, fallback.routing_key ])
         reset_at = 45.minutes.from_now.change(usec: 0)
-        harness_provider = double("MiniMax preflight provider")
-
-        allow(activity).to receive(:preflight_provider_instance).and_return(harness_provider)
         allow(activity).to receive(:run_harness_preflight!).and_call_original
-        allow(harness_provider).to receive(:preflight_check).and_return(
-          { healthy: false, reason: "MiniMax Token Plan rate limit reached", error_category: :rate_limited, reset_at: reset_at }
-        )
+        allow(activity).to receive(:preflight_provider_instance).and_wrap_original do |original, command_context|
+          next original.call(command_context) unless minimax_runner.matches_identifier?(command_context.runner_candidate)
 
-        expect {
-          activity.send(:run_harness_preflight!, agent_run: agent_run,
-            harness_provider: harness_provider, runner: "opencode", execution_env: {})
-        }.to raise_error(described_class::ProviderRateLimitError) { |error|
-          expect(error.reset_at).to eq(reset_at)
-          expect(error.limit_kind).to eq(:subscription_usage)
-        }
-
-        allow(activity).to receive(:run_runner_preflight!)
-        attempts = 0
-        allow(activity).to receive(:run_agent_with_runner).and_wrap_original do |original, *args|
-          attempts += 1
-          raise described_class::ProviderRateLimitError.new("Subscription usage limit reached for opencode",
-            reset_at: reset_at, limit_kind: :subscription_usage) if attempts == 1
-
-          original.call(*args)
+          harness_provider = original.call(command_context)
+          expect(harness_provider).to be_a(AgentHarness::Providers::Opencode)
+          allow(harness_provider).to receive(:preflight_check).with(
+            env: kind_of(Hash),
+            timeout: described_class::PREFLIGHT_TIMEOUT_SECONDS,
+            provider_runtime: have_attributes(api_provider: "minimax", model: "minimax/MiniMax-M3")
+          ).and_return(
+            { healthy: false, reason: "MiniMax Token Plan rate limit reached", error_category: :rate_limited, reset_at: reset_at }
+          )
+          harness_provider
         end
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive(:commit_uncommitted_changes).and_return(false)
@@ -4518,7 +4519,7 @@ expect(container_service).to receive(:execute).with(
 
         expect {
           activity.send(:run_harness_preflight!, agent_run: agent_run,
-            harness_provider: harness_provider, runner: "codex", execution_env: {})
+            harness_provider: harness_provider, runner: "codex", execution_env: {}, provider_runtime: nil)
         }.to raise_error(
           described_class::RunnerExecutionError,
           /Harness preflight failed: provider reachability check failed/

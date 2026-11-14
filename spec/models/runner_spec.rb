@@ -1977,6 +1977,9 @@ RSpec.describe Runner do
 
     def expect_minimax_runtime(runtime, model:, api_key:)
       expect(runtime.model).to eq("minimax/#{model}")
+      expect(runtime.api_provider).to eq("minimax")
+      expect(runtime.chat_base_url).to eq("https://api.minimax.io/anthropic/v1")
+      expect(runtime.chat_model).to eq(model)
       expect(runtime.env).to include(
         "ANTHROPIC_API_KEY" => api_key,
         "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"

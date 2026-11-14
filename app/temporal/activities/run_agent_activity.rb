@@ -1738,6 +1738,7 @@ module Activities
       command = build_command(command_context, prompt, agent_run: agent_run)
       command_env = command_env_for(command_context, prompt)
       command_preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
+      provider_runtime = selected_runner_runtime(runner_candidate, user_settings.user, agent_run)
 
       resolved_harness_provider = begin
         harness_provider_for(runner)
@@ -1772,7 +1773,8 @@ module Activities
         execution_environment: execution_environment,
         command_context: command_context,
         runner: runner,
-        execution_env: command_env
+        execution_env: command_env,
+        provider_runtime: provider_runtime
       )
 
       agent_run.log!("system", "Starting #{runner} agent in container")
@@ -1995,7 +1997,7 @@ module Activities
     end
 
     # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
-    def run_runner_preflight!(agent_run:, execution_environment:, command_context:, runner:, execution_env:)
+    def run_runner_preflight!(agent_run:, execution_environment:, command_context:, runner:, execution_env:, provider_runtime:)
       # Run the runner-owned harness preflight (auth, CLI version,
       # OPENAI_BASE_URL reachability) when available — fails fast before
       # the smoke exec below.  The smoke exec always runs as a safety
@@ -2017,7 +2019,8 @@ module Activities
           agent_run: agent_run,
           harness_provider: harness_provider,
           runner: runner,
-          execution_env: execution_env
+          execution_env: execution_env,
+          provider_runtime: provider_runtime
         )
         harness_preflight_passed = true
       end
@@ -2224,8 +2227,8 @@ module Activities
     end
 
     # @spec RUNNER-FALLBACK-013
-    def run_harness_preflight!(agent_run:, harness_provider:, runner:, execution_env:)
-      result = harness_provider.preflight_check(env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS)
+    def run_harness_preflight!(agent_run:, harness_provider:, runner:, execution_env:, provider_runtime:)
+      result = harness_provider.preflight_check(**harness_preflight_options(harness_provider, execution_env, provider_runtime))
 
       return if result[:healthy]
 
@@ -2244,6 +2247,15 @@ module Activities
       # Runner config unavailable — skip harness preflight and let the
       # smoke execution catch any real issues.
       nil
+    end
+
+    def harness_preflight_options(harness_provider, execution_env, provider_runtime)
+      options = {env: execution_env, timeout: PREFLIGHT_TIMEOUT_SECONDS}
+      supports_runtime = harness_provider.method(:preflight_check).parameters.any? do |type, name|
+        type == :keyrest || (%i[key keyreq].include?(type) && name == :provider_runtime)
+      end
+      options[:provider_runtime] = provider_runtime if supports_runtime
+      options
     end
 
     def preflight_timeout_seconds_for(provider_candidate, user)
