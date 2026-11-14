@@ -1240,11 +1240,13 @@ class GithubClient
   # @param merge_method [String] Merge method: "squash", "merge", or "rebase"
   # @param commit_title [String, nil] Custom commit title
   # @param commit_message [String, nil] Custom commit message
+  # @param expected_head_sha [String, nil] Head SHA that must still be current
   # @return [Sawyer::Resource] The merge response
-  def merge_pull_request(repo, number, merge_method: "squash", commit_title: nil, commit_message: nil)
+  def merge_pull_request(repo, number, merge_method: "squash", commit_title: nil, commit_message: nil, expected_head_sha: nil)
     options = { merge_method: merge_method }
     options[:commit_title] = commit_title if commit_title
     options[:commit_message] = commit_message if commit_message
+    options[:sha] = expected_head_sha if expected_head_sha
 
     path = "#{Octokit::Repository.path repo}/pulls/#{number}/merge"
     handle_errors { client.put(path, options) }
