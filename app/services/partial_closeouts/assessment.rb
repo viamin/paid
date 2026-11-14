@@ -45,9 +45,20 @@ module PartialCloseouts
         "source_revision" => input_revisions["source"].presence || source_revision_for(agent_run.issue),
         "intent_revision" => input_revisions["intent"].presence || intent_revision_for(agent_run.issue),
         "verification_revision" => verification_revision_for(agent_run),
-        "pr_head_sha" => agent_run.result_commit_sha,
+        "pr_head_sha" => source_pull_request_head_sha_for(agent_run),
         "assessed_at" => Time.current.iso8601
       )
+    end
+
+    # A report-only acceptance audit has no result commit of its own. Bind its
+    # assessment to the PR-producing run for the same source issue so the
+    # merge boundary can compare the evidence to the PR GitHub will merge.
+    # @spec PARTIAL-CLOSEOUT-050
+    def self.source_pull_request_head_sha_for(agent_run)
+      return agent_run.result_commit_sha if agent_run.result_commit_sha.present?
+
+      agent_run.issue.agent_runs.where(goal: "create_pr").where.not(result_commit_sha: nil)
+        .order(id: :desc).pick(:result_commit_sha)
     end
 
     def self.verification_revision_for(agent_run)

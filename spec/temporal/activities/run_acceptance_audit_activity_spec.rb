@@ -23,6 +23,20 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     expect(AutoResolveCloseoutJob).not_to have_been_enqueued
   end
 
+  # @spec PARTIAL-CLOSEOUT-050
+  it "binds a report-only audit assessment to the source PR-producing run head" do
+    source_run = create(:agent_run, :completed, project:, issue:, goal: "create_pr",
+      pull_request_number: 42, result_commit_sha: "source-pr-head")
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(
+      "gaps" => [], "criteria" => [ { "criterion" => "works", "state" => "satisfied", "evidence" => [ { "label" => "spec/example_spec.rb:42" } ] } ]
+    )
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(source_run.result_commit_sha).to eq("source-pr-head")
+    expect(run.reload.reconciliation.dig("assessment", "pr_head_sha")).to eq("source-pr-head")
+  end
+
   # @spec PROJECT-DELEGATION-009
   it "queues a closeout check only for an audit that captured delegated authority" do
     request = create(:issue_continuation_request, issue:, project:, requested_by: user,
