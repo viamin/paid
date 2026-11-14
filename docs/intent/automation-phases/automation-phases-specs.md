@@ -108,7 +108,8 @@
   before queued work starts, so that disabling a phase, revoking a grant, or
   losing eligibility prevents new unauthorized actions without abruptly
   terminating an already-running action, and retries that start a new execution
-  SHALL recheck authorization.
+  SHALL recheck authorization. A manual queue priority inherited by an
+  automatically scheduled PR repair SHALL NOT count as an explicit manual start.
   *Tests:* `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`
   *Code:* `AgentRuns::RecheckIssueEligibility`
 

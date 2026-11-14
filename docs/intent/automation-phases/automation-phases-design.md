@@ -145,7 +145,10 @@ from a grant, GitHub approval, review, or run.
 - `AgentRuns::RecheckIssueEligibility` rechecks phase authorization at dequeue
   and cancels queued work whose authorization disappeared, without touching a
   claimed or running run. Retries that create a new execution pass the same
-  gate.
+  gate. Workflow follow-ups and timed-out retries record automatic
+  authorization separately from queue priority: an inherited manual priority
+  or initiating user does not turn a new automatic execution into a manual
+  start.
 
 ## Migration preview
 

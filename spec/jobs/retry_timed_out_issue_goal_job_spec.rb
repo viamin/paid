@@ -24,6 +24,7 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       expect(new_run.issue).to eq(issue)
       expect(new_run.project).to eq(project)
       expect(new_run.trigger_type).to eq("manual")
+      expect(new_run.external_metadata["automatic_authorization"]).to be true
       expect(new_run.agent_type).to eq(agent_run.agent_type)
     end
 

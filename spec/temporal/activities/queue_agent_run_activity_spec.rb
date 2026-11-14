@@ -268,11 +268,14 @@ RSpec.describe Activities::QueueAgentRunActivity do
         project_id: project.id,
         issue_id: issue.id,
         source_pull_request_number: 42,
-        goal: "create_pr"
+        goal: "create_pr",
+        initiating_user_id: user.id
       )
 
       agent_run = AgentRun.find(result[:agent_run_id])
       expect(agent_run.trigger_type).to eq("manual")
+      expect(agent_run.initiating_user).to eq(user)
+      expect(agent_run.external_metadata["automatic_authorization"]).to be true
     end
 
     it "does not inherit manual priority for review runs" do
