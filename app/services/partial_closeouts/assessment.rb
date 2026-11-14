@@ -69,7 +69,7 @@ module PartialCloseouts
 
     def self.latest_source_pull_request_evidence_run_for(project:, pull_request_number:)
       runs = AgentRun.where(project:, goal: "create_pr").where.not(result_commit_sha: nil)
-      runs.where(pull_request_number:).or(runs.where(source_pull_request_number:))
+      runs.where(pull_request_number:).or(runs.where(source_pull_request_number: pull_request_number))
         .order(id: :desc).first
     end
 
