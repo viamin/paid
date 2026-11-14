@@ -6575,13 +6575,17 @@ expect(container_service).to receive(:execute).with(
         expect_opencode_fallback_execution(opencode_runner)
       end
 
-      it "marks run as rate_limited when all runners are already rate limited in ProviderState" do
+      # @spec RUNNER-FALLBACK-013
+      it "keeps the subscription classification when all runners are already rate limited" do
         reset_time = 2.hours.from_now
 
         # Pre-set all runner states as rate limited so runner_unavailable? skips them
         %w[claude cursor copilot].each do |provider_name|
           user.runner_states.find_or_create_by!(runner_name: provider_name).tap do |state|
-            state.update!(rate_limited_until: reset_time)
+            state.update!(
+              rate_limited_until: reset_time,
+              metadata: { "rate_limit_kind" => "subscription_usage" }
+            )
           end
         end
 
@@ -6594,7 +6598,7 @@ expect(container_service).to receive(:execute).with(
 
         agent_run.reload
         expect(agent_run.status).to eq("rate_limited")
-        expect(agent_run.error_message).to include("rate limited")
+        expect(agent_run.error_message).to include("subscription usage limit")
         expect(agent_run.rate_limited_until).to be_present
       end
 

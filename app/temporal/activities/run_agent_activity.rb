@@ -324,7 +324,10 @@ module Activities
           if runner_unavailable?(user_settings, runner_state_name, runner_states)
             state = runner_states[runner_state_name]
             error_type = state&.rate_limited? ? "rate_limited" : "unavailable"
-            skipped_rate_limited_count += 1 if error_type == "rate_limited"
+            if error_type == "rate_limited"
+              skipped_rate_limited_count += 1
+              rate_limit_kinds << state.rate_limit_kind&.to_sym
+            end
             skipped_circuit_open_count += 1 if error_type == "unavailable" && state&.circuit_open?
             error_message = if error_type == "rate_limited" && state&.rate_limited_until.present?
               "Skipped due to cached rate limit until #{state.rate_limited_until.iso8601}"
