@@ -153,10 +153,11 @@ module Automation
       #   {ProviderError} rather than silently downgrading.
       # @param commit_title [String, nil] Optional merge commit title.
       # @param commit_message [String, nil] Optional merge commit body.
+      # @param expected_head_sha [String, nil] Head SHA that must still be current.
       # @return [Automation::Providers::Data::MergeResult]
       # @raise [ProviderError] When the merge is rejected by the provider
       #   (e.g. merge conflict, protected branch violation).
-      def merge_pull_request(repo:, number:, method:, commit_title: nil, commit_message: nil)
+      def merge_pull_request(repo:, number:, method:, commit_title: nil, commit_message: nil, expected_head_sha: nil)
         raise NotImplementedError, not_implemented_message(__method__)
       end
 

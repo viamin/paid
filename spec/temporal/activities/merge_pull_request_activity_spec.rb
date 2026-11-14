@@ -201,7 +201,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(provider).to have_received(:merge_pull_request)
-          .with(repo: project.full_name, number: 42, method: :squash)
+          .with(repo: project.full_name, number: 42, method: :squash, expected_head_sha: "abc")
         expect(issue.reload.pr_review_phase).to eq("merged")
       end
     end
@@ -371,11 +371,25 @@ RSpec.describe Activities::MergePullRequestActivity do
         allow(provider).to receive(:add_comment)
       end
 
+      def record_source_closeout_assessment(source_issue)
+        issue.update!(parent_issue: source_issue)
+        source_run = create(:agent_run, :completed, project: project, issue: source_issue,
+          goal: "create_pr", pull_request_number: issue.github_number, pull_request_url: issue.github_url)
+        source_run.update!(reconciliation: { "assessment" => {
+          "gaps" => [],
+          "criteria" => [ { "criterion" => "works", "state" => "satisfied", "evidence" => [ { "label" => "spec:42" } ] } ],
+          "source_revision" => Issues::CloseoutEvidence.call(source_issue).digest,
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(source_issue),
+          "pr_head_sha" => "abc",
+          "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(source_run)
+        } })
+      end
+
       it "merges the PR using the project's configured merge method" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(provider).to have_received(:merge_pull_request)
-          .with(repo: project.full_name, number: 42, method: :squash)
+          .with(repo: project.full_name, number: 42, method: :squash, expected_head_sha: "abc")
       end
 
       it "updates issue phase to merged" do
@@ -428,17 +442,7 @@ RSpec.describe Activities::MergePullRequestActivity do
 
       it "refreshes the source closure before auto-merging a Paid-generated PR" do # @spec PARTIAL-CLOSEOUT-050
         source_issue = create(:issue, project: project, github_number: 7)
-        issue.update!(parent_issue: source_issue)
-        source_run = create(:agent_run, :completed, project: project, issue: source_issue,
-          goal: "create_pr", pull_request_number: issue.github_number, pull_request_url: issue.github_url)
-        source_run.update!(reconciliation: { "assessment" => {
-          "gaps" => [],
-          "criteria" => [ { "criterion" => "works", "state" => "satisfied", "evidence" => [ { "label" => "spec:42" } ] } ],
-          "source_revision" => Issues::CloseoutEvidence.call(source_issue).digest,
-          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(source_issue),
-          "pr_head_sha" => "abc",
-          "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(source_run)
-        } })
+        record_source_closeout_assessment(source_issue)
         client = instance_double(GithubClient, update_pull_request: nil)
         allow(project).to receive(:client).and_return(client)
         allow(Project).to receive(:find).with(project.id).and_return(project)
@@ -449,6 +453,41 @@ RSpec.describe Activities::MergePullRequestActivity do
         expect(client).to have_received(:update_pull_request).with(project.pr_target_repository, 42, body: a_string_including("Closes #7"))
         expect(provider).to have_received(:fetch_pull_request).twice
         expect(provider).to have_received(:merge_pull_request)
+      end
+
+      it "defers merge when an already-normalized PR head changes after assessment" do # @spec PARTIAL-CLOSEOUT-050
+        source_issue = create(:issue, project: project, github_number: 7)
+        record_source_closeout_assessment(source_issue)
+        current = pr_data.with(body: "Closes #7")
+        pushed = current.with(head_sha: "after-assessment")
+        allow(provider).to receive(:fetch_pull_request).and_return(current, pushed)
+        client = instance_double(GithubClient, update_pull_request: nil)
+        allow(project).to receive(:client).and_return(client)
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).to have_received(:fetch_pull_request).twice
+        expect(client).to have_received(:update_pull_request)
+          .with(project.pr_target_repository, 42, body: "Tracks #7")
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+
+      it "records a retryable blocker when the assessed head cannot be re-fetched" do # @spec PARTIAL-CLOSEOUT-050
+        source_issue = create(:issue, project: project, github_number: 7)
+        record_source_closeout_assessment(source_issue)
+        current = pr_data.with(body: "Closes #7")
+        provider_error = Automation::Providers::RepositoryProvider::ProviderError.new("GitHub unavailable")
+        allow(provider).to receive(:fetch_pull_request).and_invoke(->(**) { current }, ->(**) { raise provider_error })
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          status: "blocked", reason_code: AutoMergeAttempt::REASON_SOURCE_CLOSURE_REFRESH_FAILED
+        )
       end
 
       it "delivers merge subscription notifications" do
@@ -1039,7 +1078,8 @@ RSpec.describe Activities::MergePullRequestActivity do
           activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
           expect(client).to have_received(:merge_pull_request)
-            .with(project.full_name, 42, merge_method: "squash", commit_title: nil, commit_message: nil)
+            .with(project.full_name, 42, merge_method: "squash", commit_title: nil, commit_message: nil,
+              expected_head_sha: "abc")
         end
       end
 
@@ -1167,7 +1207,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
         expect(provider).to have_received(:merge_pull_request)
-          .with(repo: project.full_name, number: 42, method: :rebase)
+          .with(repo: project.full_name, number: 42, method: :rebase, expected_head_sha: "abc")
       end
     end
   end

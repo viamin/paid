@@ -6,7 +6,7 @@ module PullRequests
   # decision: PartialCloseouts::SourceClosureDisposition owns that decision.
   # @spec PARTIAL-CLOSEOUT-029
   class SourceClosureBody
-    CLOSING_KEYWORDS = "Close\\w*|Fix\\w*|Resolve\\w*"
+    CLOSING_KEYWORDS = %w[Close Closes Closed Fix Fixes Fixed Resolve Resolves Resolved].join("|")
 
     def self.call(...) = new(...).call
 
@@ -38,7 +38,7 @@ module PullRequests
     end
 
     def source_reference_pattern
-      /\b(?:Tracks|#{CLOSING_KEYWORDS})\s*:?[ \t]+(?:#{source_issue_references})/i
+      /\b(?:Tracks|#{CLOSING_KEYWORDS})\s*:?[ \t]+(?:#{source_issue_references})\b/i
     end
 
     def source_issue_references
