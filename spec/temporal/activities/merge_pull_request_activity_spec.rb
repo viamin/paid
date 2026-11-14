@@ -490,6 +490,23 @@ RSpec.describe Activities::MergePullRequestActivity do
         )
       end
 
+      it "records a retryable blocker when the source closure update is rate limited" do # @spec PARTIAL-CLOSEOUT-050
+        source_issue = create(:issue, project: project, github_number: 7)
+        record_source_closeout_assessment(source_issue)
+        client = instance_double(GithubClient)
+        allow(client).to receive(:update_pull_request).and_raise(GithubClient::RateLimitError)
+        allow(project).to receive(:client).and_return(client)
+        allow(Project).to receive(:find).with(project.id).and_return(project)
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+        expect(project.auto_merge_attempts.recent.first).to have_attributes(
+          status: "blocked", reason_code: AutoMergeAttempt::REASON_SOURCE_CLOSURE_REFRESH_FAILED
+        )
+      end
+
       it "delivers merge subscription notifications" do
         expect(IssueMergeSubscriptions::Deliver).to receive(:call)
           .with(issue: issue, event: :merged)

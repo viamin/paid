@@ -206,7 +206,7 @@ module Activities
 
     def refresh_source_closure(project, issue, pr_data)
       PullRequests::RefreshSourceClosure.call(pull_request: issue, pull_request_data: pr_data, client: -> { project.client })
-    rescue GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => error
+    rescue GithubClient::Error => error
       logger.warn(
         message: "pr_review.source_closure_refresh_failed",
         project_id: project.id,
@@ -233,8 +233,7 @@ module Activities
         client: -> { project.client }
       )
       { merged: false, skipped: true, pr_number: }
-    rescue Automation::Providers::RepositoryProvider::ProviderError,
-      GithubClient::ApiError, GithubClient::AuthenticationError, GithubClient::NotFoundError => error
+    rescue Automation::Providers::RepositoryProvider::ProviderError, GithubClient::Error => error
       logger.warn(
         message: "pr_review.source_closure_recheck_failed",
         project_id: project.id,

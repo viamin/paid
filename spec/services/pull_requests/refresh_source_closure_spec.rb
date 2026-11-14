@@ -89,4 +89,15 @@ RSpec.describe PullRequests::RefreshSourceClosure do
     expect(result.evaluated).to be(false)
     expect(client).not_to have_received(:update_pull_request)
   end
+
+  it "does not edit a fetched closed, unmerged PR while the local row is stale" do # @spec PARTIAL-CLOSEOUT-050
+    record_assessment
+
+    result = described_class.call(
+      pull_request:, pull_request_data: data.with(state: :closed, raw_state: "closed"), client:
+    )
+
+    expect(result.evaluated).to be(false)
+    expect(client).not_to have_received(:update_pull_request)
+  end
 end

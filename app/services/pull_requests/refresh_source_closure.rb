@@ -39,7 +39,7 @@ module PullRequests
     attr_reader :pull_request, :pull_request_data, :client
 
     def open_pull_request?
-      !pull_request_data.merged && pull_request.github_state == "open"
+      pull_request_data.state == :open && !pull_request_data.merged && pull_request.github_state == "open"
     end
 
     def source_issue
