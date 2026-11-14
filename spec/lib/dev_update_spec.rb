@@ -147,6 +147,96 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "stops same-workspace orphaned tmux sessions before setup when the Overmind control socket is missing" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :same_workspace)
+      create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(true)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(File.readlines(File.join(dir, "calls.log"))).to include("tmux kill-session paid\n")
+      expect(read_updater_log(dir)).to include("Stopped orphaned Overmind tmux session")
+    end
+  end
+
+  it "does not stop an orphaned tmux session rooted in another worktree" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :other_worktree)
+      create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+    end
+  end
+
+  it "does not invoke tmux cleanup when no Overmind session exists" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :same_workspace)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(File.exist?(File.join(dir, "tmux-session-stopped"))).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+    end
+  end
+
+  it "fails before setup with session identity when an orphaned tmux session cannot be stopped" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :stop_fails)
+      socket = create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+      expect(read_updater_log(dir)).to include("Cannot safely stop orphaned Overmind tmux session (#{socket}|paid)")
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*dev-update-orphaned-tmux-stop-failed.log"))).not_to be_empty
+    end
+  end
+
+  it "fails before setup when an orphaned tmux session cannot be inspected" do # @spec RAILS-CONTROL-PLANE-019
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, tmux: :inspection_fails)
+      socket = create_overmind_tmux_socket(dir)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "DEV_SUPERVISOR_TMUX_SOCKET_DIR" => File.join(dir, "tmux")
+      )
+
+      _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(false)
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(false)
+      expect(File.read(File.join(dir, "calls.log"))).not_to include("tmux kill-session")
+      expect(read_updater_log(dir)).to include("Cannot safely stop orphaned Overmind tmux session (#{socket}|<uninspectable>)")
+      expect(Dir.glob(File.join(dir, "log", "dev-update", "diagnostics", "*dev-update-orphaned-tmux-stop-failed.log"))).not_to be_empty
+    end
+  end
+
   it "tries to recover the dev environment when setup fails after stopping Overmind" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, setup_exit_status: 1, start_overmind_running: true)
@@ -941,7 +1031,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     pull_diff_files: [],
     rails_migrate_exit_status: 0,
     rails_sync_exit_status: 0,
-    status_successes_after_start: nil
+    status_successes_after_start: nil,
+    tmux: nil
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -1153,7 +1244,57 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
 
+    write_executable(
+      File.join(dir, "stubbin", "tmux"),
+      <<~BASH
+        #!/usr/bin/env bash
+        socket="$2"
+        command="$3"
+        format="$6"
+        case "$command" in
+          list-panes)
+            [ -e "#{dir}/tmux-session-stopped" ] && exit 0
+            case "#{tmux}" in
+              same_workspace|stop_fails) path="$PWD" ;;
+              inspection_fails) exit 1 ;;
+              other_worktree) path="/other/worktree" ;;
+              *) exit 1 ;;
+            esac
+            if [[ "$format" == *session_name* ]]; then
+              printf 'paid|%s\\n' "$path"
+            else
+              printf '%s\\n' "$path"
+            fi
+            ;;
+          kill-session)
+            printf 'tmux kill-session %s\\n' "$5" >> "#{dir}/calls.log"
+            if [ "#{tmux}" = "stop_fails" ]; then
+              echo "tmux stop failed" >&2
+              exit 1
+            fi
+            touch "#{dir}/tmux-session-stopped"
+            ;;
+          ls)
+            [ -e "#{dir}/tmux-session-stopped" ] && exit 0
+            echo "paid: 1 windows"
+            ;;
+          *)
+            echo "unexpected tmux command: $*" >&2
+            exit 1
+            ;;
+        esac
+      BASH
+    )
+
     script_path
+  end
+
+  def create_overmind_tmux_socket(dir)
+    socket_dir = File.join(dir, "tmux")
+    FileUtils.mkdir_p(socket_dir)
+    socket = File.join(socket_dir, "overmind-#{File.basename(dir)}-orphan")
+    UNIXServer.open(socket) { |server| server.close }
+    socket
   end
 
   def create_stale_socket(dir)

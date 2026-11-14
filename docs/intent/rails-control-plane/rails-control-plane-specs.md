@@ -110,6 +110,15 @@ failures when no tmux socket responds.
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `bin/dev`, `bin/lib/dev_supervisor.sh`.
 
+- [x] **RAILS-CONTROL-PLANE-019** — When a full `bin/dev-update` finds no
+  Overmind control socket but finds a live Overmind tmux pane rooted at its
+  workspace, it SHALL stop only that socket/session before setup and replacement
+  startup. It SHALL not stop another worktree's session or act when no matching
+  session exists. If inspection or stopping fails, it SHALL fail before setup
+  with the socket/session identity and a diagnostic snapshot.
+  *Tests:* `spec/lib/dev_update_spec.rb`.
+  *Code:* `bin/dev-update`, `bin/lib/dev_supervisor.sh`.
+
 - [x] **RAILS-CONTROL-PLANE-018** — When a developer starts Paid with
   `bin/dev`, the development web process SHALL expose PgHero at `/pghero` without
   authentication by default for requests to the PostgreSQL
