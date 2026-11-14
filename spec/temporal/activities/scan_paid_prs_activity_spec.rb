@@ -1407,6 +1407,25 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(github_client).not_to have_received(:pull_request).with(scan_off_project.full_name, 43)
       end
 
+      # @spec AUTOMATION-PHASES-002 @spec AUTO-MERGE-008
+      it "does not scan non-Dependabot PRs through Dependabot-only auto-merge" do
+        FeatureFlags.enable!(:automation_phases, project: scan_off_project)
+        scan_off_project.update!(auto_scan_prs: true, auto_merge_mode: "dependabot_only", automation_phase_settings: {
+          "phases" => { "coding" => false, "merge" => true }, "release" => false, "deployment" => false
+        })
+        create(:issue, :pull_request, project: scan_off_project, github_number: 42,
+          github_creator_login: "viamin", paid_state: "completed",
+          labels: [ scan_off_project.automation_label_name ])
+        create(:issue, :pull_request, project: scan_off_project, github_number: 43,
+          github_creator_login: "renovate[bot]", paid_state: "completed",
+          labels: [ scan_off_project.automation_label_name ])
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).not_to have_received(:pull_request).with(scan_off_project.full_name, 42)
+        expect(github_client).not_to have_received(:pull_request).with(scan_off_project.full_name, 43)
+      end
+
       # @spec AUTOMATION-ACTIVATION-006
       it "does not scan when an untrusted actor added the activation label" do
         create(:issue, :pull_request,

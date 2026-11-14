@@ -390,11 +390,13 @@ module Activities
     # scan another PR whose phase has no standing or work-scoped authority.
     # @spec AUTOMATION-PHASES-006 @spec AUTOMATION-PHASES-007
     def phase_authorized_for_scan?(project, issue)
-      return true if %w[auto_scan_prs auto_merge auto_fix_merge_conflicts].any? do |feature|
+      return true if %w[auto_scan_prs auto_fix_merge_conflicts].any? do |feature|
         Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature:)
       end
 
-      project.auto_merge_dependabot? && dependency_update_bot_author?(issue.github_creator_login) &&
+      return true if Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(project:, pull_request: issue)
+
+      project.auto_merge_dependabot? && DEPENDABOT_AUTO_MERGE_AUTHORS.include?(issue.github_creator_login.to_s.downcase) &&
         Automation::FeatureActivation.phase_authorized?(project:, capability: "auto_merge", work_item: issue)
     end
 
