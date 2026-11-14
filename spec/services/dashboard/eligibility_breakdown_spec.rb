@@ -29,6 +29,19 @@ RSpec.describe Dashboard::EligibilityBreakdown do
     { blocker:, issues: }
   end
 
+  def create_no_progress_runs(issue)
+    revisions = {
+      "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+      "outcome" => "recommend_close"
+    }
+    Array.new(2) do
+      create(:agent_run, :completed, :automatic, project: issue.project, issue:,
+        goal: "create_pr", auto_pick: true, pull_request_number: nil, result_commit_sha: nil,
+        reconciliation: { "no_progress" => revisions })
+    end
+  end
+
   describe ".call" do
     # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
     it "reports an unseeded eligible issue even with unrelated queued and active work" do
@@ -202,6 +215,25 @@ RSpec.describe Dashboard::EligibilityBreakdown do
             )
           )
         )
+      )
+    end
+
+    # @spec NO-OUTPUT-ISSUE-009
+    it "projects repeated no-progress diagnostics for held Queue work" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      runs = create_no_progress_runs(issue)
+
+      held_issue = described_class.call(user: user).sole.held_issues.sole
+
+      expect(held_issue).to have_attributes(
+        issue: issue,
+        blockers: [],
+        actions: [],
+        diagnostic: {
+          reason: "repeated_no_progress_create_pr",
+          run_ids: runs.map(&:id),
+          next_action: "Update acceptance evidence or request an authorized retry."
+        }
       )
     end
 
