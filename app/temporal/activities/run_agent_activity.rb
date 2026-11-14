@@ -243,7 +243,7 @@ module Activities
         last_attempted_label = nil
         timeout_error = nil
         rate_limit_reset_at = nil
-        last_rate_limit_kind = nil
+        rate_limit_kinds = []
         skipped_rate_limited_count = 0
         skipped_circuit_open_count = 0
 
@@ -453,7 +453,7 @@ module Activities
             }
           rescue RunnerRateLimitError => e
             last_error = "rate_limited"
-            last_rate_limit_kind = e.limit_kind if e.limit_kind
+            rate_limit_kinds << e.limit_kind
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
             rate_limit_reset_at = [ rate_limit_reset_at, e.reset_at ].compact.min
             persist_rate_limit(user_settings, runner_state_name, runner_states, e.reset_at, limit_kind: e.limit_kind)
@@ -809,7 +809,9 @@ module Activities
           else
             "All runners rate limited: #{runner_list}"
           end
-          unavailable_message = "All runners blocked by a subscription usage limit: #{runner_list}" if last_rate_limit_kind == :subscription_usage
+          if rate_limit_kinds.any? && rate_limit_kinds.all? { |kind| kind == :subscription_usage }
+            unavailable_message = "All runners blocked by a subscription usage limit: #{runner_list}"
+          end
           agent_run.rate_limit!(
             error: unavailable_message,
             reset_at: rate_limit_reset_at

@@ -4467,6 +4467,30 @@ expect(container_service).to receive(:execute).with(
       end
 
       # @spec RUNNER-FALLBACK-013
+      it "keeps a mixed rate-limit diagnostic from claiming every runner has a subscription limit" do
+        minimax_api_key = create(:runner_api_key, user: user, api_service_type: "minimax")
+        minimax_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: minimax_api_key,
+          config: { "opencode" => { "model" => "MiniMax-M3", "api_provider" => "minimax" } })
+        metered_runner = user.runners.find_by!(runner_key: "claude")
+        agent_run.update!(runner: metered_runner)
+        allow(activity).to receive(:build_runner_order).and_return([ metered_runner.routing_key, minimax_runner.routing_key ])
+
+        attempts = 0
+        allow(activity).to receive(:run_agent_with_runner).and_wrap_original do |_original, *_args|
+          attempts += 1
+          limit_kind = attempts == 1 ? :metered_credit : :subscription_usage
+          raise described_class::ProviderRateLimitError.new("Runner rate limited", limit_kind: limit_kind)
+        end
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        expect(agent_run.reload.error_message).to start_with("All runners rate limited:")
+        expect(agent_run.error_message).not_to include("subscription usage limit")
+      end
+
+      # @spec RUNNER-FALLBACK-013
       it "leaves a non-limit harness preflight failure on the transport-error path" do
         api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
         opencode_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
