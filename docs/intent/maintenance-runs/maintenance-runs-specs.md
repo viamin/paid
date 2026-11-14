@@ -108,11 +108,10 @@
 - [ ] **MAINT-040**: The system shall invoke native CLI analyzers through
       `AgentRun#execute_in_execution_environment` against the run's pinned
       checkout, without provisioning a `tool_sidecar` for that analyzer,
-      only where [#4604](https://github.com/viamin/paid/issues/4604) has
-      recorded the live execution-environment evidence establishing that
-      analyzer's availability in the agent image and its checkout-access,
-      invocation, bounded-output, exit-code, and cleanup behavior in a
-      provisioned run.
+      using the live execution-environment path validated in
+      [#4604](https://github.com/viamin/paid/issues/4604). Before selecting
+      an additional analyzer, the recipe shall verify that analyzer's
+      availability and supported invocation in the agent image.
 - [ ] **MAINT-041**: The system shall resolve RDR-073 marketplace tool
       attachments for a maintenance run using the same matching contract
       (language, repository-file, explicit attachment, task-text, and
