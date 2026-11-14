@@ -6277,9 +6277,12 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      # @spec RUNNER-FALLBACK-013
       it "detects a real quota error returned with exit code 0 and marks the runner rate-limited" do
+        provider_response_token = "provider-response-secret"
         quota_success = Containers::Provision::Result.success(
-          stdout: "Error: Your billing limit has been reached. Please add credits.", stderr: "", exit_code: 0
+          stdout: "Error: Your billing limit has been reached. Please add credits. token=#{provider_response_token}",
+          stderr: "", exit_code: 0
         )
         allow(container_service).to receive(:execute).and_return(quota_success)
 
@@ -6291,6 +6294,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.status).to eq("rate_limited")
         expect(agent_run.runners_attempted.first["error_type"]).to eq("rate_limited")
         expect(agent_run.runners_attempted.first["error_message"]).to include("credit/quota exhausted")
+        expect(agent_run.runners_attempted.first["error_message"]).not_to include(provider_response_token)
         runner_state = user.runner_states.find_by(runner_name: "claude")
         expect(runner_state&.rate_limited_until).to be_within(2.minutes).of(
           described_class::INSUFFICIENT_CREDITS_BACKOFF.from_now

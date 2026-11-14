@@ -2365,7 +2365,7 @@ module Activities
       end
 
       if insufficient_credits_error?(sanitized_output)
-        raise_credit_exhausted!(agent_run: agent_run, runner: runner, sanitized_output: sanitized_output)
+        raise_credit_exhausted!(agent_run: agent_run, runner: runner)
       end
 
       rejection = codex_model_rejection(runner, runner_candidate, user, stdout: stdout, stderr: stderr)
@@ -2864,6 +2864,7 @@ module Activities
       message.to_s.match?(Containers::CONTAINER_NOT_RUNNING_PATTERN)
     end
 
+    # @spec RUNNER-FALLBACK-013
     # Treat credit/quota exhaustion as a rate-limit-equivalent: mark the
     # runner unavailable for INSUFFICIENT_CREDITS_BACKOFF so subsequent
     # agent runs skip it instantly instead of burning preflight seconds
@@ -2872,17 +2873,16 @@ module Activities
     # runner_state.rate_limited? once the warning threshold elapses,
     # alerting the user to top up funds. Called from both the preflight
     # and main-execution paths, so it does not assume a preflight context.
-    def raise_credit_exhausted!(agent_run:, runner:, sanitized_output:)
+    def raise_credit_exhausted!(agent_run:, runner:)
       reset_at = INSUFFICIENT_CREDITS_BACKOFF.from_now
       logger.warn(
         message: "agent_execution.credit_exhausted",
         runner: runner,
         agent_run_id: agent_run.id,
-        reset_at: reset_at.iso8601,
-        reason: sanitized_output.truncate(500)
+        reset_at: reset_at.iso8601
       )
       raise ProviderRateLimitError.new(
-        "Runner credit/quota exhausted for #{runner}: #{sanitized_output.truncate(200)}",
+        "Runner credit/quota exhausted for #{runner}",
         reset_at: reset_at,
         limit_kind: :metered_credit
       )
