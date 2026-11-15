@@ -546,6 +546,22 @@ RSpec.describe Issue do
       end
     end
 
+    # @spec AGENT-RETRY-015
+    it "re-enqueues a current analysis failure when an older create_pr run failed" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      create(:agent_run, :failed, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+      allow(issue).to receive(:rand).with(10).and_return(0)
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.seconds.from_now)
+        expect(enqueued_jobs.none? { |job| job[:job] == RetryFailedAutoPickCreatePrJob }).to be(true)
+      end
+    end
+
     it "starts a fresh backoff window after an operator clears retry abandonment" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")

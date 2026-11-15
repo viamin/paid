@@ -1439,7 +1439,8 @@ class Issue < ApplicationRecord
       end
     end
 
-    return schedule_failed_auto_pick_create_pr_retry if paid_state == "failed" && failed_auto_pick_create_pr_run
+    failed_run = current_failed_auto_pick_create_pr_run if paid_state == "failed"
+    return schedule_failed_auto_pick_create_pr_retry(failed_run) if failed_run
 
     wait = auto_pick_reenqueue_delay
     job = Issues::ReenqueueEligibleJob
@@ -1460,8 +1461,7 @@ class Issue < ApplicationRecord
     )
   end
 
-  def schedule_failed_auto_pick_create_pr_retry
-    agent_run = failed_auto_pick_create_pr_run
+  def schedule_failed_auto_pick_create_pr_retry(agent_run)
     AgentRuns::RetryAttempt.new(
       policy: AgentRuns::AutoPickCreatePrRetryPolicy.new,
       decision_point: "auto_pick_create_pr_failed_run_retry"
@@ -1486,11 +1486,13 @@ class Issue < ApplicationRecord
     ((n**4) + 15 + (rand(10) * (n + 1))).seconds
   end
 
-  def failed_auto_pick_create_pr_run
-    agent_runs
-      .where(auto_pick: true, goal: "create_pr", status: AgentRun::FAILURE_STATUSES)
+  # @spec AGENT-RETRY-015
+  def current_failed_auto_pick_create_pr_run
+    run = agent_runs
+      .where(auto_pick: true, goal: %w[create_pr analyze_issue], status: AgentRun::FAILURE_STATUSES + %w[no_output])
       .order(created_at: :desc, id: :desc)
       .first
+    run if run&.goal == "create_pr" && run.status.in?(AgentRun::FAILURE_STATUSES)
   end
 
   public
