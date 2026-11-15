@@ -621,11 +621,11 @@ work (`LAYERED-VERIFY-010`/`-011`; `MAINT-073`'s no-repair-as-scan-side-effect
 rule holds for the audit objective too).
 
 **Dependency boundary.** These contracts are finalized now, but
-scheduled-audit runtime remains explicitly dependent on accepted RDR-075 and
-its scheduling milestone ([#4332](https://github.com/viamin/paid/issues/4332)):
-RDR-075 is still Status: Draft, its LLD/EARS are draft review artifacts, and
-nothing here releases that dependency or authorizes implementation ahead of
-it. The PR-triggered audit contracts above carry no such dependency — #4439
+scheduled-audit runtime remains explicitly dependent on RDR-075's scheduling
+milestone ([#4332](https://github.com/viamin/paid/issues/4332)). RDR-075 is
+Final and its LLD/EARS are accepted implementation intent, but nothing here
+releases that milestone or authorizes implementation ahead of it. The
+PR-triggered audit contracts above carry no such dependency — #4439
 implements against the core audit capability (#4435/#4434) without waiting
 for maintenance runtime. Neither task blocks core closeout (#4438).
 
@@ -679,7 +679,7 @@ project's existing host policy.
 | PR-trigger run dedup | `source_pull_request_number` + goal on the audit run, reusing the existing partial unique active-PR-run index, plus a scope/revision equivalence check across trigger sources | One audit per push; dedup by textual scope description | RDR-076 §2 forbids duplicate work for the same audit scope/revision; the index is the structural mechanism the PR-review lanes already rely on, and textual similarity is never identity (`LAYERED-VERIFY-017`). |
 | PR-trigger merge posture | Advisory: findings surface through the Inbox; no required status check, blocking label, or merge gate by default | A default merge-blocking status; PR comments as the primary surface | RDR-076 §2 explicitly rejects a new default merge gate; the Inbox is the primary surface for human-actionable findings, and mandatory host policies already run independently. |
 | Scheduled-audit trigger owner | Reuse the RDR-075 maintenance scheduling contract (`MAINT-060`–`MAINT-064`) dispatching the same `layered_verification_audit` operation | A layered-verification-owned scheduler; a maintenance-goal wrapper run | RDR-076 §2 marks the scheduled audit "owned by the maintenance scheduler"; a second scheduler or a wrapper goal would duplicate recurrence machinery and blur the audit operation's contracts. |
-| Scheduled-audit contract timing | Finalize the layered-verification trigger contracts now; defer only the scheduler representation and guard composition to RDR-075 acceptance | Hold all contract drafting until RDR-075 acceptance | The trigger contracts' layered-verification side (admission, scope/revision identity, budgets, evidence/Inbox lifecycle) is decided by the accepted RDR-076; only the recurrence representation genuinely depends on RDR-075's final shape. |
+| Scheduled-audit contract timing | Finalize the layered-verification trigger contracts now; defer only the scheduler representation and guard composition to RDR-075's scheduling milestone (#4332) | Hold all contract drafting until RDR-075 acceptance | The trigger contracts' layered-verification side (admission, scope/revision identity, budgets, evidence/Inbox lifecycle) is decided by the accepted RDR-076; RDR-075 is Final, while the recurrence representation and its guard composition remain implementation details for #4332. |
 
 ## Open Questions & Future Decisions
 
@@ -804,7 +804,7 @@ optional-automation slices (`LAYERED-VERIFY-026`–`-032`).
   existing `AgentRun` goal/focus precedent for the two new goals.
 - `docs/intent/artifact-storage/` — binary evidence storage reused unchanged.
 - [RDR-075](../../rdrs/RDR-075-general-maintenance-runs.md) (General
-  Maintenance Runs, Status: Draft) and `docs/intent/maintenance-runs/`
+  Maintenance Runs, Status: Final) and `docs/intent/maintenance-runs/`
   (`MAINT-060`–`MAINT-064`) — own the recurrence machinery the optional
   scheduled audit (#4440) consumes; this segment owns the trigger contracts
   (`LAYERED-VERIFY-030`–`-032`) and does not implement scheduling.

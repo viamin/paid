@@ -5,7 +5,7 @@ prefix: MAINT-OPT
 
 # Low-Level Design: Optimization Recipes
 
-> **Accepted intent; implementation gated.** This contract extends the draft
+> **Accepted intent; implementation gated.** This contract extends Final
 > [RDR-075](../../rdrs/RDR-075-general-maintenance-runs.md) and the
 > [`maintenance-runs`](../maintenance-runs/maintenance-runs-design.md) LLD.
 > Acceptance does not enable rollout or automatic repair.
@@ -41,9 +41,9 @@ The owner
 [accepted this HLD/LLD/EARS revision](https://github.com/viamin/paid/issues/4636#issuecomment-6534710003)
 on 2026-10-30, with exact source identities recorded in #4636. Acceptance
 resolves the optimization policy decision. Work under #4493–#4496 remains
-subject to base RDR-075 acceptance, live tool-handoff evidence, and normal
-implementation controls; it cannot enable `maintenance_runs` or auto-queue
-a repair from this decision alone.
+subject to normal implementation controls and the default-off rollout guards;
+it cannot enable `maintenance_runs` or auto-queue a repair from this decision
+alone.
 
 ## Catalog and Scope
 

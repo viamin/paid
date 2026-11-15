@@ -8,6 +8,6 @@ are reconciled in the LLD and EARS. The owner
 on 2026-10-30. #4636 records the acceptance and its source identities.
 
 Acceptance of this segment does not enable the `maintenance_runs` rollout
-guard or authorize automatic repair. Base RDR-075 acceptance, its live
-tool-handoff evidence, and normal implementation controls remain required.
+guard or authorize automatic repair. Normal implementation controls and the
+default-off rollout guards remain required.
 Issue #4492 tracks the family; #4493–#4496 own the executable deliverables.
