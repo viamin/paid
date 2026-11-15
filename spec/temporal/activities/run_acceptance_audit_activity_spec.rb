@@ -23,6 +23,52 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     expect(AutoResolveCloseoutJob).not_to have_been_enqueued
   end
 
+  # @spec PARTIAL-CLOSEOUT-050
+  it "binds a report-only audit assessment to the source PR-producing run evidence" do
+    source_run = create(:agent_run, :completed, project:, issue:, goal: "create_pr",
+      pull_request_number: 42, result_commit_sha: "source-pr-head",
+      verification_result: { "status" => "passed", "summary" => "source verification" })
+    run.update!(verification_result: { "status" => "not_run", "summary" => "report-only audit" })
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(
+      "gaps" => [], "criteria" => [ { "criterion" => "works", "state" => "satisfied", "evidence" => [ { "label" => "spec/example_spec.rb:42" } ] } ]
+    )
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    assessment = run.reload.reconciliation.fetch("assessment")
+    disposition = PartialCloseouts::SourceClosureDisposition.for_pull_request(
+      issue:, assessment:, head_sha: source_run.result_commit_sha,
+      verification_revision: PartialCloseouts::Assessment.verification_revision_for(source_run)
+    )
+    expect(assessment).to include(
+      "pr_head_sha" => "source-pr-head",
+      "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(source_run)
+    )
+    expect(disposition.fetch("disposition")).to eq("close")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-050
+  it "binds a report-only audit to the latest follow-up evidence for the source PR" do
+    create(:agent_run, :completed, project:, issue:, goal: "create_pr",
+      pull_request_number: 42, result_commit_sha: "original-pr-head",
+      verification_result: { "status" => "passed", "summary" => "original verification" })
+    followup_run = create(:agent_run, :completed, project:, issue:, goal: "create_pr",
+      source_pull_request_number: 42, result_commit_sha: "follow-up-pr-head",
+      verification_result: { "status" => "passed", "summary" => "follow-up verification" })
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(
+      "gaps" => [], "criteria" => [ { "criterion" => "works", "state" => "satisfied",
+        "evidence" => [ { "label" => "spec/example_spec.rb:42" } ] } ]
+    )
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    assessment = run.reload.reconciliation.fetch("assessment")
+    expect(assessment).to include(
+      "pr_head_sha" => "follow-up-pr-head",
+      "verification_revision" => PartialCloseouts::Assessment.verification_revision_for(followup_run)
+    )
+  end
+
   # @spec PROJECT-DELEGATION-009
   it "queues a closeout check only for an audit that captured delegated authority" do
     request = create(:issue_continuation_request, issue:, project:, requested_by: user,

@@ -28,9 +28,36 @@ RSpec.describe PullRequests::SourceClosureBody do
     expect(body).to eq(Array.new(closing_keywords.length, "Tracks #42").join("\n"))
   end
 
+  it "preserves words that merely begin with a closing keyword" do # @spec PARTIAL-CLOSEOUT-029
+    body = "Closeout #42 remains pending\nFixation #42 is unrelated\nResolver #42 owns follow-up"
+
+    normalized = described_class.call(body:, issue:, project:, disposition: "track")
+
+    expect(normalized).to start_with(body)
+    expect(normalized).to end_with("Tracks #42")
+  end
+
+  it "preserves references whose issue number merely begins with the source number" do # @spec PARTIAL-CLOSEOUT-029
+    body = "Fixes #420"
+
+    normalized = described_class.call(body:, issue:, project:, disposition: "track")
+
+    expect(normalized).to start_with(body)
+    expect(normalized).to end_with("Tracks #42")
+  end
+
   it "appends one canonical closing reference for supported completion" do # @spec PARTIAL-CLOSEOUT-029
     body = described_class.call(body: "## Report\n\nTracks #42", issue: issue, project: project, disposition: "close")
 
     expect(body.scan("Closes #42")).to eq([ "Closes #42" ])
+  end
+
+  it "promotes only the source reference without duplicating it on replay" do # @spec PARTIAL-CLOSEOUT-050
+    body = "## Report\n\nTracks #42\n\nRelates to #99"
+
+    promoted = described_class.call(body:, issue:, project:, disposition: "close")
+
+    expect(promoted).to eq("## Report\n\nCloses #42\n\nRelates to #99")
+    expect(described_class.call(body: promoted, issue:, project:, disposition: "close")).to eq(promoted)
   end
 end

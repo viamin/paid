@@ -332,12 +332,13 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
         42,
         merge_method: "squash",
         commit_title: "Title",
-        commit_message: "Body"
+        commit_message: "Body",
+        expected_head_sha: "abc123"
       ).and_return(OpenStruct.new(merged: true, sha: "def456", message: "Squashed"))
 
       result = adapter.merge_pull_request(
         repo: "acme/widgets", number: 42, method: :squash,
-        commit_title: "Title", commit_message: "Body"
+        commit_title: "Title", commit_message: "Body", expected_head_sha: "abc123"
       )
 
       expect(result).to be_a(Automation::Providers::Data::MergeResult)

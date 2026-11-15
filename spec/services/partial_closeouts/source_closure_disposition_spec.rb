@@ -35,4 +35,30 @@ RSpec.describe PartialCloseouts::SourceClosureDisposition do
 
     expect(result.fetch("disposition")).to eq("track")
   end
+
+  it "requires current-head cited evidence at the merge boundary" do # @spec PARTIAL-CLOSEOUT-050
+    result = described_class.for_pull_request(
+      issue:,
+      head_sha: "current-head",
+      verification_revision: "verification-revision",
+      assessment: assessment(criteria: [ {
+        "criterion" => "live validation", "state" => "satisfied", "evidence" => [ { "label" => "spec:42" } ]
+      } ]).merge("pr_head_sha" => "current-head", "verification_revision" => "verification-revision")
+    )
+
+    expect(result.fetch("disposition")).to eq("close")
+  end
+
+  it "tracks an assessment from a different PR head" do # @spec PARTIAL-CLOSEOUT-050
+    result = described_class.for_pull_request(
+      issue:,
+      head_sha: "new-head",
+      verification_revision: "verification-revision",
+      assessment: assessment(criteria: [ {
+        "criterion" => "live validation", "state" => "satisfied", "evidence" => [ { "label" => "spec:42" } ]
+      } ]).merge("pr_head_sha" => "old-head", "verification_revision" => "verification-revision")
+    )
+
+    expect(result.fetch("disposition")).to eq("track")
+  end
 end

@@ -95,20 +95,14 @@ module Automation
           nil
         end
 
-        def merge_pull_request(repo:, number:, method:, commit_title: nil, commit_message: nil)
+        def merge_pull_request(repo:, number:, method:, commit_title: nil, commit_message: nil, expected_head_sha: nil)
           unless MERGE_METHODS.include?(method.to_sym)
             raise PROVIDER_ERROR, "Unsupported merge method: #{method.inspect}"
           end
 
-          response = with_errors do
-            client.merge_pull_request(
-              repo,
-              number,
-              merge_method: method.to_s,
-              commit_title: commit_title,
-              commit_message: commit_message
-            )
-          end
+          options = { merge_method: method.to_s, commit_title:, commit_message: }
+          options[:expected_head_sha] = expected_head_sha if expected_head_sha
+          response = with_errors { client.merge_pull_request(repo, number, **options) }
 
           build_merge_result(response)
         end

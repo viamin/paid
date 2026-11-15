@@ -145,6 +145,16 @@ free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
 
+Before automatic merge, Paid fetches the current source PR and republishes only
+the source-issue reference. This merge-edge disposition additionally requires
+the fetched head SHA and a cited evidence item for every satisfied criterion.
+The existing current intent and source-evidence revisions remain required. A
+changed head is fetched again after a promotion update; it is demoted to
+`Tracks` and the merge is deferred. A newer failed acceptance audit supersedes
+an older successful assessment at this boundary. GitHub update failures are
+recorded as retryable merge blockers, rather than merging with a stale closing
+reference.
+
 ### Staged closeout verification (#5073)
 
 `closeout_verification` is one synthetic, report-only `AgentRun` goal for a

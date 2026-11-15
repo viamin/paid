@@ -13,6 +13,7 @@ class AutoMergeAttempt < ApplicationRecord
   REASON_MISSING_WORKFLOWS_PERMISSION = "missing_workflows_permission"
   REASON_NOT_MERGEABLE = "not_mergeable"
   REASON_PARSE_FAILED = "parse_failed"
+  REASON_SOURCE_CLOSURE_REFRESH_FAILED = "source_closure_refresh_failed"
   REASON_SKIP_LABEL = "skip_label"
 
   CREDENTIAL_MODE_GITHUB_APP = "github_app"

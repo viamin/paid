@@ -41,11 +41,40 @@ module PartialCloseouts
       payload = assessment.to_h.deep_stringify_keys
       input_revisions = payload.delete("audit_input_revisions")
       input_revisions = {} unless input_revisions.is_a?(Hash)
+      evidence_run = source_pull_request_evidence_run_for(agent_run)
       payload.merge(
         "source_revision" => input_revisions["source"].presence || source_revision_for(agent_run.issue),
         "intent_revision" => input_revisions["intent"].presence || intent_revision_for(agent_run.issue),
+        "verification_revision" => verification_revision_for(evidence_run),
+        "pr_head_sha" => evidence_run.result_commit_sha,
         "assessed_at" => Time.current.iso8601
       )
+    end
+
+    # A report-only acceptance audit has no result commit of its own. Bind its
+    # head and verification revision to the latest producing or follow-up run
+    # for the exact source PR so both merge comparisons use one evidence source.
+    # @spec PARTIAL-CLOSEOUT-050
+    def self.source_pull_request_evidence_run_for(agent_run)
+      return agent_run if agent_run.result_commit_sha.present?
+
+      source_run = agent_run.issue.agent_runs.where(goal: "create_pr")
+        .where.not(pull_request_number: nil).order(id: :desc).first
+      return agent_run unless source_run
+
+      latest_source_pull_request_evidence_run_for(
+        project: source_run.project, pull_request_number: source_run.pull_request_number
+      ) || agent_run
+    end
+
+    def self.latest_source_pull_request_evidence_run_for(project:, pull_request_number:)
+      runs = AgentRun.where(project:, goal: "create_pr").where.not(result_commit_sha: nil)
+      runs.where(pull_request_number:).or(runs.where(source_pull_request_number: pull_request_number))
+        .order(id: :desc).first
+    end
+
+    def self.verification_revision_for(agent_run)
+      Digest::SHA256.hexdigest(agent_run.verification_result.to_h.to_json)
     end
 
     def self.intent_revision_for(issue)
@@ -105,7 +134,9 @@ module PartialCloseouts
     end
 
     def latest_run
-      @latest_run ||= issue.agent_runs.where("reconciliation ? 'assessment'")
+      @latest_run ||= issue.agent_runs.where(
+        "reconciliation ? 'assessment' OR reconciliation ? 'acceptance_audit_failure'"
+      )
         .select(:reconciliation).order(id: :desc).first
     end
 
