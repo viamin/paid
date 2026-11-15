@@ -509,7 +509,7 @@ RSpec.describe Issue do
       freeze_time do
         expect {
           issue.update!(paid_state: "failed")
-        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.seconds.from_now)
+        }.to have_enqueued_job(RetryFailedAutoPickCreatePrJob).with(AgentRun.order(:id).last.id, 1).at(15.seconds.from_now)
       end
     end
 
@@ -525,7 +525,7 @@ RSpec.describe Issue do
       freeze_time do
         expect {
           issue.update!(paid_state: "failed")
-        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(16.seconds.from_now)
+        }.to have_enqueued_job(RetryFailedAutoPickCreatePrJob).with(AgentRun.order(:id).last.id, 2).at(16.seconds.from_now)
       end
     end
 
@@ -536,12 +536,29 @@ RSpec.describe Issue do
         create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
         create(:agent_run, :completed, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
       end
+      failed_run = issue.agent_runs.where(goal: "create_pr").order(created_at: :desc, id: :desc).first
       allow(issue).to receive(:rand).with(10).and_return(0)
 
       freeze_time do
         expect {
           issue.update!(paid_state: "failed")
-        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(31.seconds.from_now)
+        }.to have_enqueued_job(RetryFailedAutoPickCreatePrJob).with(failed_run.id, 3).at(31.seconds.from_now)
+      end
+    end
+
+    # @spec AGENT-RETRY-015
+    it "re-enqueues a current analysis failure when an older create_pr run failed" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")
+      create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr", auto_pick: true)
+      create(:agent_run, :failed, project: project, issue: issue, goal: "analyze_issue", auto_pick: true)
+      allow(issue).to receive(:rand).with(10).and_return(0)
+
+      freeze_time do
+        expect {
+          issue.update!(paid_state: "failed")
+        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.seconds.from_now)
+        expect(enqueued_jobs.none? { |job| job[:job] == RetryFailedAutoPickCreatePrJob }).to be(true)
       end
     end
 
@@ -557,7 +574,7 @@ RSpec.describe Issue do
       freeze_time do
         expect {
           issue.update!(paid_state: "failed")
-        }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id).at(15.seconds.from_now)
+        }.to have_enqueued_job(RetryFailedAutoPickCreatePrJob).with(AgentRun.order(:id).last.id, 1).at(15.seconds.from_now)
       end
     end
 
