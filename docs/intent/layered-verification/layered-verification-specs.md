@@ -416,10 +416,9 @@
   `LAYERED-VERIFY-010`. A scheduled occurrence SHALL NOT be dispatched while
   `layered_verification_add_on` is off for the project, and dispatch SHALL
   NOT grant repair authority or create a repair run or follow-up work as a
-  side effect. Scheduled-audit runtime additionally requires accepted
-  RDR-075 and its scheduling milestone
-  ([#4332](https://github.com/viamin/paid/issues/4332)); this contract does
-  not release that dependency.
+  side effect. Scheduled-audit runtime additionally requires RDR-075's
+  scheduling milestone ([#4332](https://github.com/viamin/paid/issues/4332));
+  this contract does not release that dependency.
   *Tests:* `spec/services/layered_verification/triggers/admit_scheduled_audit_spec.rb`
   *Code:* `LayeredVerification::Triggers::AdmitScheduledAudit` (#4440)
 

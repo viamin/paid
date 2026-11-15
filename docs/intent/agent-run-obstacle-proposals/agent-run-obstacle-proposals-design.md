@@ -24,9 +24,10 @@ auto-apply a repair, proposals did not retain a bounded scope/validation plan
 or uncertainty, dismissed identity could be recreated, and outcome counts did
 not establish comparable exposure.
 
-RDR-075 remains a proposed general-maintenance architecture. This segment does
-not claim to ship RDR-075 scheduling or broaden its authority; it supplies a
-bounded run-obstacle integration that can be reused by that future work.
+RDR-075 is Final accepted intent, while its maintenance runtime remains
+unshipped and default-off. This segment does not claim to ship RDR-075
+scheduling or broaden its authority; it supplies a bounded run-obstacle
+integration that can be reused by that future work.
 
 ## Design
 

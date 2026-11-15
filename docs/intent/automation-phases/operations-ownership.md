@@ -57,11 +57,11 @@ PR CI evaluation belongs to Release & Deployment; exception observation and
 notification triage belong to Operations; repository maintenance and
 correspondence verification have no shipped Operations execution path.
 
-RDR-075's general maintenance runs remain blocked on its explicit tool-handoff
-validation and are not available behavior. RDR-076's layered verification is
-accepted design whose implementation status remains unshipped. Neither design
-authorizes an Operations response, remediation, release, or deployment in this
-catalog.
+RDR-075's design and tool-handoff validation are complete, but its general
+maintenance runtime remains unshipped and default-off. RDR-076's layered
+verification is accepted design whose implementation status remains unshipped.
+Neither design authorizes an Operations response, remediation, release, or
+deployment in this catalog.
 
 ## Pilot and final-audit evidence
 

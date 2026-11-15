@@ -174,7 +174,7 @@ cycles.
 | [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P3 |
 | [RDR-068](RDR-068-apple-platform-verification-workers.md) | Apple Platform Verification Workers | Partially Implemented | P1 |
 | [RDR-074](RDR-074-project-readiness.md) | Settings-Aware Project Readiness | Implemented | P2 |
-| [RDR-075](RDR-075-general-maintenance-runs.md) | General Maintenance Runs — Directed Audits and Recurring Repository Care | Draft | — |
+| [RDR-075](RDR-075-general-maintenance-runs.md) | General Maintenance Runs — Directed Audits and Recurring Repository Care | Final | — |
 | [RDR-081](RDR-081-partial-closeout-lane-read-model.md) | Partial-Closeout Lane Read Model — Moving the Lane's Admission Off the Request Path | Accepted | P2 |
 
 ### Cloud Execution Readiness
@@ -268,14 +268,12 @@ evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
 the umbrella's own final acceptance audit may close #4309.
 
 RDR-075, **General Maintenance Runs** (indexed above under Quality &
-Automation), remains Draft after [PR #4308](https://github.com/viamin/paid/pull/4308)
-merged. Its [2026-10-15 C75 audit](audit-report-2026-10-15-rdr-075.md)
-recorded the then-current blocked state. The live tool-validation dependency
+Automation), has an [explicit owner decision](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906)
+and a finalized HLD → LLD → EARS handoff. Its [2026-10-15 C75 audit](audit-report-2026-10-15-rdr-075.md)
+recorded the earlier blocked state. The live tool-validation dependency
 [#4604](https://github.com/viamin/paid/issues/4604) closed after merged
 [PR #5060](https://github.com/viamin/paid/pull/5060) recorded the native-analyzer
-and sidecar artifacts; the remaining
-implementation prerequisite is accepted maintenance intent
-[#4635](https://github.com/viamin/paid/issues/4635). Runtime work #4328–#4333
+and sidecar artifacts. Runtime work #4328–#4333
 remains open. The `maintenance_runs` default-off tenant guard and the separate
 RDR-073 tool guard remain authoritative.
 [Umbrella #4326](https://github.com/viamin/paid/issues/4326) is open for its
@@ -296,8 +294,8 @@ work #4431–#4438 and optional integrations #4439–#4440. Their approved scope
 live in the accepted `docs/intent/layered-verification/` LLD/EARS — the 25
 core claims for the required tree, and the optional PR-trigger and
 scheduled-audit trigger contracts (`LAYERED-VERIFY-026`–`-032`) for the
-optional pair, whose scheduled runtime additionally awaits accepted RDR-075
-and its scheduling milestone. Implementation does not depend
+optional pair, whose scheduled runtime awaits only RDR-075's scheduling
+milestone ([#4332](https://github.com/viamin/paid/issues/4332)). Implementation does not depend
 on closure of its own umbrella. The previous draft PRs and issue trees are
 superseded by [consolidation PR #4430](https://github.com/viamin/paid/pull/4430).
 Historical audit files retain their original names and numbering; they are

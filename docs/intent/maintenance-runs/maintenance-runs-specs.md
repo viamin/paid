@@ -1,14 +1,11 @@
 # EARS: General Maintenance Runs
 
-> **Draft — pending design acceptance.** These specs trace to
-> [`maintenance-runs-design.md`](maintenance-runs-design.md), itself a
-> reviewable draft against the RDR-075 design from merged
-> [PR #4308](https://github.com/viamin/paid/pull/4308) (still Status: Draft).
-> All specs below are
-> `[ ]` active gaps: correct, current intent with no implementation yet.
-> None are implementable until RDR-075 is accepted and this LLD/EARS pair
-> merges — see `docs/rdrs/RDR-075-general-maintenance-runs.md` §Implementation
-> Plan step 1. Implementation phases are tracked at
+> **Accepted intent.** These specs trace to
+> [`maintenance-runs-design.md`](maintenance-runs-design.md) and the
+> [RDR-075 owner decision](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906).
+> All specs below are `[ ]` active implementation gaps. Delivery remains
+> subject to each issue's dependencies and the default-off rollout guard.
+> Implementation phases are tracked at
 > [#4328](https://github.com/viamin/paid/issues/4328)–[#4333](https://github.com/viamin/paid/issues/4333).
 
 ## Admission and Rollout Guard

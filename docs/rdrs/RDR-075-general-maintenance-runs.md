@@ -1,23 +1,24 @@
 # RDR-075: General Maintenance Runs — Directed Audits and Recurring Repository Care
 
-> Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
+> Accepted design. Runtime delivery remains gated by the implementation issues and rollout controls.
 
 ## Metadata
 
 - **Date**: 2026-10-11
-- **Status**: Draft
+- **Status**: Final
+- **Owner decision**: [#4635, 2026-11-15](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906), accepting the exact RDR/HLD/LLD/EARS blobs at `c1ddf761e46868f2293e9f8589aa00667c761983`.
 - **Type**: Architecture
 - **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
 - **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4635](https://github.com/viamin/paid/issues/4635) (design acceptance), [#4328](https://github.com/viamin/paid/issues/4328)–[#4333](https://github.com/viamin/paid/issues/4333) (implementation), [#4334](https://github.com/viamin/paid/issues/4334) (closeout), [#4492](https://github.com/viamin/paid/issues/4492) (optimization recipe family umbrella, tracking only), [#4493](https://github.com/viamin/paid/issues/4493)–[#4496](https://github.com/viamin/paid/issues/4496) (optimization recipe family children), [#4636](https://github.com/viamin/paid/issues/4636) (optimization policy-intent acceptance prerequisite)
-- **Blocked on**: Human design acceptance in
-  [#4635](https://github.com/viamin/paid/issues/4635) and the subsequent
-  LID handoff. Critical assumption 2's native-analyzer and sidecar live
+- **Design handoff**: Owner acceptance in
+  [#4635](https://github.com/viamin/paid/issues/4635) and the HLD → LLD → EARS
+  handoff are recorded. Critical assumption 2's native-analyzer and sidecar live
   validations are recorded in the
   [2026-10-23 handoff audit's 2026-11-13 addendum](audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md),
   completing the technical evidence owned by
-  [#4604](https://github.com/viamin/paid/issues/4604) without authorizing
-  implementation or changing this RDR's Draft status.
+  [#4604](https://github.com/viamin/paid/issues/4604). Implementation still
+  requires each issue's normal admission and the default-off rollout guard.
 
 ## Dependencies
 
@@ -33,9 +34,10 @@ The [#4604](https://github.com/viamin/paid/issues/4604) live validation now
 establishes both sides of Critical assumption 2: a selected native CLI
 analyzer read the pinned run checkout, and an allowlisted marketplace sidecar
 answered a request from its paired run. The handoff audit records the image,
-checkout, response, and cleanup evidence. This technical gate is complete;
-human design acceptance in [#4635](https://github.com/viamin/paid/issues/4635)
-and the LID handoff remain before implementation phases can be released.
+checkout, response, and cleanup evidence. This technical gate is complete.
+The [#4635 owner decision](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906)
+accepts this design and its LID handoff. Implementation phases remain subject
+to their own dependencies and rollout guard.
 
 ## Problem Statement
 
@@ -291,7 +293,7 @@ gaps. Budgets bound investigation cost, and limits appear in the report.
 
 ## Rollout Guard
 
-This draft is documentation only. Runtime implementation ships behind a
+This accepted design adds no runtime behavior. Runtime implementation ships behind a
 `maintenance_runs` feature flag, default off, with tenant opt-in through
 `tenant_settings.features`. Implementation Plan step 2 (#4328, M01) owns its
 registration in `FeatureFlags::DEFINITIONS` and runtime checks through
@@ -306,10 +308,11 @@ Recurring schedules remain explicitly opt-in after rollout.
 
 ## Implementation Plan
 
-1. **Prerequisites and LID planning:** RDR-073 final acceptance, acceptance of
-   this recommendation, and validation of the tool handoff assumptions.
-   Update the HLD and create the maintenance LLD/EARS segment and arrow
-   references before implementation. Resolve storage/API contracts there.
+1. **Prerequisites and LID planning:** RDR-073 final acceptance, the
+   [RDR-075 owner decision](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906),
+   and live tool-handoff validation are recorded. The HLD and maintenance
+   LLD/EARS arrow is linked; resolve storage/API details in the implementation
+   slices without changing the accepted report-only boundary.
 2. **Manual maintenance lifecycle:** maintenance goal, admission and rollout
    guard, objective/scope/guidance snapshots, report-only execution and
    successful empty outcomes. Provide UI and API/MCP entry points together.
@@ -352,8 +355,8 @@ language; only its final audit closes it.
 
 ## Validation
 
-Use behavior tests and failing-first EARS-linked implementation tests. A
-documentation-only draft does not require application tests.
+Use behavior tests and failing-first EARS-linked implementation tests. This
+design finalization changes documentation only and requires no application test.
 
 Acceptance scenarios:
 
@@ -389,7 +392,7 @@ cost, repeated-finding noise, and repair review outcomes. These measurements
 guide recipe selection and later blocking policies; they do not gate the
 existence of the general maintenance capability.
 
-## Open Questions Before Finalization
+## Implementation decisions deferred to their slices
 
 - Batch invocation/checkout access is validated by the 2026-11-13 live
   handoff audit: a native CLI analyzer read the pinned run checkout, and a
@@ -402,3 +405,13 @@ existence of the general maintenance capability.
   evidence, and how should unresolved user questions be resumed or rerun?
 - Should existing scheduled mutation sweeps migrate into maintenance recipes?
   Keep their current behavior until an explicit migration is designed.
+
+## Finalization record
+
+- **Contradictions:** The live handoff resolved the apparent sidecar checkout gap: native CLI analyzers read the pinned checkout through `execute_in_execution_environment`; network-service sidecars receive bounded requests and do not require a checkout mount. RDR-073 remains the sole attachment and tool-admission owner.
+- **Assumptions:** #4604 verified one native analyzer and one allowlisted sidecar from isolated runs, including cleanup. Recipe-specific analyzer accuracy and version choices are delivery evidence for #4330, not a premise for the general report-only capability. A future checkout-dependent sidecar requires a separate RDR-073 change.
+- **Decisive proof:** The pinned-checkout analyzer and paired-run sidecar artifacts in the [handoff audit](audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md) prove the two execution paths this design consumes. Implementation tests and external-project report quality remain owned by #4328–#4334.
+- **Cross-component effects:** The HLD states the maintenance boundary; the [LLD](../intent/maintenance-runs/maintenance-runs-design.md) owns run, report, finding, and schedule contracts; [EARS](../intent/maintenance-runs/maintenance-runs-specs.md) maps them to #4328–#4334. RDR-073 keeps tool provisioning, and the accepted optimization recipe policy does not enable automatic repair or bypass this base capability's guard.
+- **Proportionality:** The design review covered tool isolation, report-only outcomes, separate repair authority, recurrence, and the cross-RDR boundary. Column layouts, initial analyzer defaults, API pagination, and mutation-sweep migration are deferred to their named implementation slices without changing the accepted decision.
+
+The [owner decision](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906) names the exact accepted artifacts. #4334 owns criterion-level delivery closeout. After meaningful use on projects beyond Paid, review false positives, coverage gaps, latency, cost, and repeated-finding noise against the expected outcomes before considering the guard's default posture.

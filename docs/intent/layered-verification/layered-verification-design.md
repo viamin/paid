@@ -593,8 +593,8 @@ never dispatched while `layered_verification_add_on` is off for the project
 (`LAYERED-VERIFY-030`). Whether the maintenance scheduler additionally
 requires its own `maintenance_runs` guard for the non-maintenance objectives
 it dispatches is owned by the `maintenance-runs` segment and resolved at
-RDR-075 acceptance; this segment's contract requires only that no guard be
-bypassed.
+RDR-075 acceptance; the remaining scheduling implementation decision belongs
+to #4332. This segment's contract requires only that no guard be bypassed.
 
 **Scope, revision, budget, and interruption.** Each occurrence pins the
 then-current requested branch revision and carries the schedule's configured
@@ -621,11 +621,11 @@ work (`LAYERED-VERIFY-010`/`-011`; `MAINT-073`'s no-repair-as-scan-side-effect
 rule holds for the audit objective too).
 
 **Dependency boundary.** These contracts are finalized now, but
-scheduled-audit runtime remains explicitly dependent on accepted RDR-075 and
-its scheduling milestone ([#4332](https://github.com/viamin/paid/issues/4332)):
-RDR-075 is still Status: Draft, its LLD/EARS are draft review artifacts, and
-nothing here releases that dependency or authorizes implementation ahead of
-it. The PR-triggered audit contracts above carry no such dependency — #4439
+scheduled-audit runtime remains explicitly dependent on RDR-075's scheduling
+milestone ([#4332](https://github.com/viamin/paid/issues/4332)). RDR-075 is
+Final and its LLD/EARS are accepted implementation intent, but nothing here
+releases that milestone or authorizes implementation ahead of it. The
+PR-triggered audit contracts above carry no such dependency — #4439
 implements against the core audit capability (#4435/#4434) without waiting
 for maintenance runtime. Neither task blocks core closeout (#4438).
 
@@ -679,7 +679,7 @@ project's existing host policy.
 | PR-trigger run dedup | `source_pull_request_number` + goal on the audit run, reusing the existing partial unique active-PR-run index, plus a scope/revision equivalence check across trigger sources | One audit per push; dedup by textual scope description | RDR-076 §2 forbids duplicate work for the same audit scope/revision; the index is the structural mechanism the PR-review lanes already rely on, and textual similarity is never identity (`LAYERED-VERIFY-017`). |
 | PR-trigger merge posture | Advisory: findings surface through the Inbox; no required status check, blocking label, or merge gate by default | A default merge-blocking status; PR comments as the primary surface | RDR-076 §2 explicitly rejects a new default merge gate; the Inbox is the primary surface for human-actionable findings, and mandatory host policies already run independently. |
 | Scheduled-audit trigger owner | Reuse the RDR-075 maintenance scheduling contract (`MAINT-060`–`MAINT-064`) dispatching the same `layered_verification_audit` operation | A layered-verification-owned scheduler; a maintenance-goal wrapper run | RDR-076 §2 marks the scheduled audit "owned by the maintenance scheduler"; a second scheduler or a wrapper goal would duplicate recurrence machinery and blur the audit operation's contracts. |
-| Scheduled-audit contract timing | Finalize the layered-verification trigger contracts now; defer only the scheduler representation and guard composition to RDR-075 acceptance | Hold all contract drafting until RDR-075 acceptance | The trigger contracts' layered-verification side (admission, scope/revision identity, budgets, evidence/Inbox lifecycle) is decided by the accepted RDR-076; only the recurrence representation genuinely depends on RDR-075's final shape. |
+| Scheduled-audit contract timing | Finalize the layered-verification trigger contracts now; defer only the scheduler representation and guard composition to RDR-075's scheduling milestone (#4332) | Hold all contract drafting until RDR-075 acceptance | The trigger contracts' layered-verification side (admission, scope/revision identity, budgets, evidence/Inbox lifecycle) is decided by the accepted RDR-076; RDR-075 is Final, while the recurrence representation and its guard composition remain implementation details for #4332. |
 
 ## Open Questions & Future Decisions
 
@@ -713,7 +713,7 @@ project's existing host policy.
    key, or a sibling schedule record reuses the recurrence contract — and
    whether the scheduler's own `maintenance_runs` guard applies to the
    non-maintenance objectives it dispatches. Owned by the `maintenance-runs`
-   segment; decided at RDR-075 acceptance / #4332, not here.
+   segment; deferred to #4332, not here.
 6. Whether PR-triggered audit findings may additionally surface as advisory
    pull-request comments through the existing review publication lifecycle
    (the layered-verification analog of RDR-075's advisory PR audits, #4333).
@@ -768,12 +768,11 @@ accepted slice is allocated as actual canonical EARS in this segment:
 | Optional task | EARS IDs | Dependencies |
 | --- | --- | --- |
 | [#4439](https://github.com/viamin/paid/issues/4439) PR-triggered focused audits | LAYERED-VERIFY-026, -027, -028, -029 | #4435, #4434 |
-| [#4440](https://github.com/viamin/paid/issues/4440) Scheduled audits via RDR-075 maintenance scheduling | LAYERED-VERIFY-030, -031, -032 | #4435, #4434, accepted RDR-075 + [#4332](https://github.com/viamin/paid/issues/4332) |
+| [#4440](https://github.com/viamin/paid/issues/4440) Scheduled audits via RDR-075 maintenance scheduling | LAYERED-VERIFY-030, -031, -032 | #4435, #4434, [#4332](https://github.com/viamin/paid/issues/4332) |
 
 The PR-trigger contracts (#4439) do not await maintenance implementation;
 the scheduled trigger's runtime (#4440) remains explicitly dependent on
-accepted RDR-075 and its scheduling milestone
-(see [Optional automation](#optional-automation-pr-triggered-and-scheduled-audits)).
+RDR-075's scheduling milestone (#4332; see [Optional automation](#optional-automation-pr-triggered-and-scheduled-audits)).
 
 Per this issue's acceptance criteria, #4432–#4438's own EARS references and
 approved scopes are updated to cite these IDs **after** this planning segment
@@ -804,7 +803,7 @@ optional-automation slices (`LAYERED-VERIFY-026`–`-032`).
   existing `AgentRun` goal/focus precedent for the two new goals.
 - `docs/intent/artifact-storage/` — binary evidence storage reused unchanged.
 - [RDR-075](../../rdrs/RDR-075-general-maintenance-runs.md) (General
-  Maintenance Runs, Status: Draft) and `docs/intent/maintenance-runs/`
+  Maintenance Runs, Status: Final) and `docs/intent/maintenance-runs/`
   (`MAINT-060`–`MAINT-064`) — own the recurrence machinery the optional
   scheduled audit (#4440) consumes; this segment owns the trigger contracts
   (`LAYERED-VERIFY-030`–`-032`) and does not implement scheduling.
