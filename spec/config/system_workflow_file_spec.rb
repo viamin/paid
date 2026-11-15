@@ -105,13 +105,15 @@ RSpec.describe SystemWorkflowFile, :no_db do
       'mkdir -p "$(dirname "$test_log")"',
       ': > "$test_log"',
       '"$failure_log" "$test_log"',
-      "docker ps --filter 'publish=5432'",
+      "docker ps --format '{{.ID}} {{.Names}}'",
+      "awk '$2 ~ /_postgres[[:digit:]]*_/ { print $1 }'",
       'docker restart "$postgres_container"',
       'pg_isready -h "$DB_HOST" -U postgres -d postgres',
       'if [ "$attempt" -eq 3 ]; then',
       'sleep "$((attempt * 5))"',
       "exit 1"
     )
+    expect(run).not_to include("docker ps --filter 'publish=5432'")
     expect(run).not_to include("docker ps --filter 'ancestor=postgres:16.15'")
   end
 
