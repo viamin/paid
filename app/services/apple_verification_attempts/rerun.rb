@@ -1,9 +1,19 @@
 # frozen_string_literal: true
 
 module AppleVerificationAttempts
-  # Queues an immutable retry from a completed attempt.
-  # @spec APPLE-VERIFY-006
+  # Queues an immutable retry from a completed attempt by claiming through
+  # the shared retry mechanics; translates refused claims back into the
+  # operator-facing errors the controller surfaces.
+  # @spec APPLE-VERIFY-006 AGENT-RETRY-016
   class Rerun
+    OUTCOME_MESSAGES = {
+      attempt_active: "only a completed attempt can be rerun",
+      queue_full: "Apple verification queue is full",
+      run_attempt_limit_reached: "Apple verification attempt limit reached for agent run",
+      active_attempt_per_run: "Apple verification attempt limit reached for agent run"
+    }.freeze
+    DEFAULT_MESSAGE = "attempt failure is not retryable"
+
     def self.call(attempt:)
       new(attempt:).call
     end
@@ -13,48 +23,23 @@ module AppleVerificationAttempts
     end
 
     def call
-      raise ArgumentError, "only a completed attempt can be rerun" unless @attempt.terminal?
-      raise ArgumentError, "attempt failure is not retryable" unless RetryPolicy.call(attempt: @attempt).retryable
-
       return existing_retry if existing_retry
 
-      # The insert and the queue admission share one transaction so a queue
-      # limit refusal rolls the queued rerun back instead of stranding a
-      # phantom attempt the scheduler would later admit.
-      AppleVerificationAttempt.transaction do
-        raise ArgumentError, "Apple verification queue is full" if Queue.full?
-        raise ArgumentError, "Apple verification attempt limit reached for agent run" if agent_run_limit_reached?
+      result = retry_attempt.claim(source_id: @attempt.id)
+      return result.successor if result.claimed?
+      return @attempt.reload.retry_attempt if result.reason == :successor_already_claimed
 
-        @attempt.project.apple_verification_attempts.create_or_find_by!(retry_of_attempt: @attempt) do |rerun_attempt|
-          rerun_attempt.assign_attributes(retry_attributes)
-        end
-      end
+      raise ArgumentError, OUTCOME_MESSAGES.fetch(result.reason, DEFAULT_MESSAGE)
     end
 
     private
 
+    def retry_attempt
+      Retries::Attempt.new(policy: RetryPolicy.new, decision_point: RetryPolicy::DECISION_POINT)
+    end
+
     def existing_retry
       @attempt.retry_attempt
-    end
-
-    def agent_run_limit_reached?
-      @attempt.agent_run && AppleVerificationAttempt.where(agent_run: @attempt.agent_run).count >= Config.max_attempts_per_run
-    end
-
-    def retry_attributes
-      {
-        account: @attempt.account,
-        agent_run: @attempt.agent_run,
-        apple_verification_workflow_revision: @attempt.apple_verification_workflow_revision,
-        apple_worker_profile: @attempt.apple_worker_profile,
-        source_digest: @attempt.source_digest,
-        commit_sha: @attempt.commit_sha,
-        requested_capture: @attempt.requested_capture,
-        lifecycle_gate: @attempt.lifecycle_gate,
-        retry_number: @attempt.retry_number + 1,
-        status: "queued",
-        retry_of_attempt: @attempt
-      }
     end
   end
 end

@@ -57,7 +57,7 @@
   attempt eligibility under a row lock immediately before claiming another
   attempt, not only at schedule time, so a duplicated or re-delivered
   delayed job cannot double-claim the same logical operation.
-  *Code:* `AgentRuns::RetryAttempt#claim`,
+  *Code:* `Retries::Attempt#claim` (manual runs and Apple attempts),
   `RetryTimedOutIssueGoalJob#perform`,
   `StaleRunDetectorJob#recover_rate_limited_run`.
 
@@ -66,20 +66,22 @@
   losing concurrent claim SHALL recognize its specific conflict and
   resolve to a no-op rather than an unhandled error.
   *Code:* `idx_agent_runs_unique_active_lid_planning` handling in
-  `AgentRuns::RetryAttempt#claim` via
-  `AgentRuns::ManualRunRetryPolicy#duplicate_active_run_conflict?`,
+  `Retries::Attempt#claim` via
+  `AgentRuns::ManualRunRetryPolicy#duplicate_claim_conflict?`,
+  `idx_apple_attempts_one_retry_per_source` /
+  `idx_apple_attempts_one_active_per_run` handling via
+  `AppleVerificationAttempts::RetryPolicy#duplicate_claim_conflict?`,
   `idx_agent_runs_unique_active_issue` /
   `idx_agent_runs_unique_active_pr` handling in
-  `RetryTimedOutIssueGoalJob`'s `RecordNotUnique` rescue,
-  `idx_apple_attempts_one_active_per_run`.
+  `RetryTimedOutIssueGoalJob`'s `RecordNotUnique` rescue.
 
 - [x] **AGENT-RETRY-007** — State changes during backoff: eligibility
   SHALL be re-evaluated against current state at claim time, never trusted
   from schedule time, so a toggle flipped, a sibling run claiming the
   identity's slot, or the run already being retried during the backoff
   window is visible to the claim.
-  *Code:* `AgentRuns::RetryAttempt#claim` for manual runs; same locked
-  re-checks as AGENT-RETRY-005 for the other paths.
+  *Code:* `Retries::Attempt#claim` for manual runs and Apple attempts;
+  same locked re-checks as AGENT-RETRY-005 for the other paths.
 
 - [x] **AGENT-RETRY-008** — Partial external work: an attempt that already
   produced an observable side effect SHALL NOT be blindly retried; the
@@ -133,6 +135,35 @@
   *Code:* `app/temporal/activities/mark_agent_run_failed_activity.rb`,
   `app/jobs/retry_failed_manual_run_job.rb` (both unchanged by this
   segment — adoption is a documentation cross-reference only).
+
+- [x] **AGENT-RETRY-015** — The shared retry mechanics' public interface
+  (`Retries::Attempt`) SHALL NOT require the attempt record to be an
+  `AgentRun`; record access, the transaction boundary, supersede marking,
+  and decision-record wiring SHALL be supplied by the use-case-owned
+  policy, so an agent-run-style attempt model (e.g.
+  `AppleVerificationAttempt`) can adopt the mechanics without a
+  model-specific fork.
+  *Code:* `app/services/retries/attempt.rb`,
+  `AgentRuns::ManualRunRetryPolicy`,
+  `AppleVerificationAttempts::RetryPolicy`.
+  *Tests:* `spec/services/retries/attempt_spec.rb`,
+  `spec/services/apple_verification_attempts/retry_monitor_spec.rb`.
+
+- [x] **AGENT-RETRY-016** — The Apple verification adoption slice (#4993)
+  SHALL claim automatic and operator-requested retries through the shared
+  mechanics while keeping every Apple-owned rule (failure classification,
+  source digest/revision binding, queue capacity, per-agent-run limits,
+  successor immutability) in `AppleVerificationAttempts::RetryPolicy`;
+  the unique `retry_of_attempt_id` successor link SHALL remain the single
+  retry ledger, and every skipped, refused, or exhausted claim SHALL
+  carry an inspectable reason (claim `Result` reason, monitor skip
+  tally, or durable `OrchestrationDecision`).
+  *Code:* `AppleVerificationAttempts::RetryPolicy`,
+  `AppleVerificationAttempts::RetryMonitor`,
+  `AppleVerificationAttempts::Rerun`.
+  *Tests:* `spec/services/apple_verification_attempts/retry_policy_spec.rb`,
+  `spec/services/apple_verification_attempts/retry_monitor_spec.rb`,
+  `spec/services/apple_verification_attempts/rerun_spec.rb`.
 
 - [ ] **AGENT-RETRY-014** — Where a later acceptance-audit adapter is
   built (tracked as separate, in-progress work), it SHALL keep

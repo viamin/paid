@@ -35,7 +35,7 @@ Temporal-driven run failure passes through. Its existing issue-driven branch
 arms the issue-level auto-pick re-enqueue backoff (EAGER-QUEUE-007) and has
 no effect when `agent_run.issue` is nil. `#schedule_manual_run_retry_if_eligible`
 is the issue-less counterpart, called unconditionally after that branch. It
-asks `AgentRuns::RetryAttempt` to schedule the delayed job, while
+asks `Retries::Attempt` to schedule the delayed job, while
 `AgentRuns::ManualRunRetryPolicy#assess` owns the admission checks.
 
 The policy requires a manual trigger, no issue or source PR attachment, a
@@ -104,7 +104,7 @@ keys defined on `AgentRun`:
   (`"retried_from_agent_run_id"`) — the id of the run this one superseded,
   for traceability.
 
-`ManualRunRetryPolicy#next_attempt` computes
+`ManualRunRetryPolicy#next_attempt_number` computes
 `agent_run.manual_retry_attempt + 1`, and the policy declines to schedule
 once `attempt > AgentRun::MAX_MANUAL_RETRY_ATTEMPTS`
 (3, matching the existing small-cap convention of
@@ -125,7 +125,7 @@ the target failure class (dispatch-time provider exhaustion) is expected to
 clear within minutes, not hours.
 
 `#perform(agent_run_id, attempt)` delegates the claim to
-`AgentRuns::RetryAttempt`. The claim:
+`Retries::Attempt`. The claim:
 
 1. Re-checks eligibility under a row lock (`AgentRun.lock.find_by`) —
    state may have changed since scheduling (toggle flipped off, an operator

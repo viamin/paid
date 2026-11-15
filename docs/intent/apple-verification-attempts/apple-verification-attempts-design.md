@@ -113,6 +113,26 @@ deadline before recording the terminal state, while separately requesting
 durable cleanup for every live VM ledger entry. A rerun is an idempotent
 queued retry bound to its terminal source attempt (APPLE-VERIFY-006).
 
+Automatic infrastructure retries (the retry monitor) and operator reruns
+both claim through the shared retry mechanics (`Retries::Attempt`,
+`docs/intent/agent-run-retry-contract/`) with
+`AppleVerificationAttempts::RetryPolicy` owning every Apple rule:
+infrastructure-vs-project classification, the retry budget
+(`APPLE_VERIFICATION_MAX_RETRIES`), queue admission
+(`APPLE_VERIFICATION_MAX_QUEUE_DEPTH`), per-agent-run attempt caps, and
+the immutable successor copy (account, agent run, workflow revision,
+worker profile, source digest, commit, capture, gate, retry number). The
+unique `retry_of_attempt_id` link is the single retry ledger — a source
+attempt has at most one successor, enforced by
+`idx_apple_attempts_one_retry_per_source` and re-checked under the claim
+lock — and no supersede status is written on the source. Claims,
+conflicts, and refusals record inspectable reasons: the claim result
+carries a machine-readable reason, the monitor tallies skips by reason,
+and claim-path decisions are durably recorded as `OrchestrationDecision`
+rows scoped to the source attempt. The monitor's scan excludes sources
+that already exhausted the budget, so recurring sweeps do not re-decide
+them.
+
 ## Source and credential transfer
 
 For committed source, Paid supplies the exact commit identity plus a
@@ -151,8 +171,10 @@ taxonomy:
 Capacity exhaustion, admission refusal, and attempt timeout are classified as
 infrastructure results (`capacity_or_quota`, `worker_infrastructure`,
 `cancellation_or_timeout`), never as code failures. Paid may retry safe
-infrastructure failures within policy; it must not silently retry deterministic
-project failures or represent infrastructure failure as a code defect.
+infrastructure failures within policy through the shared retry mechanics; it
+must not silently retry deterministic project failures or represent
+infrastructure failure as a code defect. Every retry skip, refusal, or
+exhaustion carries an inspectable reason.
 
 ## Lifecycle-gate enforcement
 

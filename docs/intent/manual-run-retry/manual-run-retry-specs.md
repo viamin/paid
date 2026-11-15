@@ -81,7 +81,7 @@
   recorded with `result: { new_agent_run_id: ... }` so an operator can trace
   the chain from a superseded run to its replacement through
   `OrchestrationDecision` records, mirroring `RetryTimedOutIssueGoalJob`.
-  *Code:* `RetryFailedManualRunJob#perform`, `AgentRuns::RetryAttempt#claim`,
+  *Code:* `RetryFailedManualRunJob#perform`, `Retries::Attempt#claim`,
   `AgentRuns::ManualRunRetryPolicy#build_successor!`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
@@ -92,8 +92,8 @@
   without raising a terminal job failure. The retry transaction SHALL roll
   back, leaving the original run `failed` and the operator-started planning
   run active.
-  *Code:* `AgentRuns::RetryAttempt#claim`,
-  `AgentRuns::ManualRunRetryPolicy#duplicate_active_run_conflict?`.
+  *Code:* `Retries::Attempt#claim`,
+  `AgentRuns::ManualRunRetryPolicy#duplicate_claim_conflict?`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`.
 
 - [x] **MANUAL-RUN-RETRY-009** — The shared retry mechanism SHALL use the
@@ -102,7 +102,7 @@
   SHALL record an inspectable `OrchestrationDecision` reason; duplicate job
   delivery or a scheduler restart SHALL create at most one successor without
   inferring retryability from free-form failure text.
-  *Code:* `AgentRuns::RetryAttempt`, `AgentRuns::ManualRunRetryPolicy`.
+  *Code:* `Retries::Attempt`, `AgentRuns::ManualRunRetryPolicy`.
   *Test:* `spec/jobs/retry_failed_manual_run_job_spec.rb`,
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`.
 

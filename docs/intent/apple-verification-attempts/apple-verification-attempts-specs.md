@@ -111,12 +111,21 @@
 
 - [x] **APPLE-ATTEMPT-010** — The system MAY retry safe infrastructure
   failures within policy and SHALL NOT silently retry deterministic project
-  failures or represent an infrastructure failure as a code defect.
+  failures or represent an infrastructure failure as a code defect. Retry
+  claims (automatic monitor and operator rerun) SHALL go through the shared
+  retry mechanics (`Retries::Attempt`) with the Apple policy owning
+  classification, budget, queue admission, per-agent-run limits, and the
+  immutable successor link; a skipped, refused, or exhausted claim SHALL
+  carry an inspectable reason.
   *Tests:* `spec/services/apple_verification_attempts/retry_policy_spec.rb`,
   `spec/services/apple_verification_attempts/retry_monitor_spec.rb`,
+  `spec/services/apple_verification_attempts/rerun_spec.rb`,
+  `spec/services/retries/attempt_spec.rb`,
   `spec/jobs/apple_verification_retry_job_spec.rb`
   *Code:* `AppleVerificationAttempts::RetryPolicy`,
-  `AppleVerificationAttempts::RetryMonitor`, `AppleVerificationRetryJob`
+  `AppleVerificationAttempts::RetryMonitor`, `AppleVerificationRetryJob`,
+  `AppleVerificationAttempts::Rerun` (@spec AGENT-RETRY-015
+  AGENT-RETRY-016)
 
 - [x] **APPLE-ATTEMPT-011** — When an approved required workflow assigned to
   the `completion_verification` gate has not succeeded for an agent run that

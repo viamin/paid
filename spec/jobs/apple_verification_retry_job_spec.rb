@@ -12,7 +12,7 @@ RSpec.describe AppleVerificationRetryJob do
       block.call
     end
 
-    result = AppleVerificationAttempts::RetryMonitor::Result.new(retried: 1, scanned: 2)
+    result = AppleVerificationAttempts::RetryMonitor::Result.new(retried: 1, scanned: 2, skipped: {})
     allow(AppleVerificationAttempts::RetryMonitor).to receive(:call).and_return(result)
 
     described_class.new.perform
@@ -21,10 +21,10 @@ RSpec.describe AppleVerificationRetryJob do
     expect(AppleVerificationAttempts::RetryMonitor).to have_received(:call)
   end
 
-  it "logs the retried and scanned counts when non-zero" do
+  it "logs the retried, scanned, and skip-reason counts when work was scanned" do
     allow(TenantContext).to receive(:with_system_access).and_yield
 
-    result = AppleVerificationAttempts::RetryMonitor::Result.new(retried: 1, scanned: 2)
+    result = AppleVerificationAttempts::RetryMonitor::Result.new(retried: 1, scanned: 2, skipped: { queue_full: 1 })
     allow(AppleVerificationAttempts::RetryMonitor).to receive(:call).and_return(result)
 
     logger = instance_double(ActiveSupport::Logger)
@@ -32,7 +32,8 @@ RSpec.describe AppleVerificationRetryJob do
     expect(logger).to receive(:info).with(
       message: "apple_verification_retry.completed",
       retried: 1,
-      scanned: 2
+      scanned: 2,
+      skipped_by_reason: { queue_full: 1 }
     )
 
     described_class.new.perform
@@ -41,7 +42,7 @@ RSpec.describe AppleVerificationRetryJob do
   it "does not log when nothing was scanned" do
     allow(TenantContext).to receive(:with_system_access).and_yield
 
-    result = AppleVerificationAttempts::RetryMonitor::Result.new(retried: 0, scanned: 0)
+    result = AppleVerificationAttempts::RetryMonitor::Result.new(retried: 0, scanned: 0, skipped: {})
     allow(AppleVerificationAttempts::RetryMonitor).to receive(:call).and_return(result)
 
     logger = instance_double(ActiveSupport::Logger)
