@@ -2,7 +2,7 @@
 
 # Claims a failed Auto-Pick implementation source, then delegates successor
 # creation to the issue's ordinary eligibility and queue-admission path.
-# @spec AGENT-RETRY-015 EAGER-QUEUE-018 PARTIAL-CLOSEOUT-045
+# @spec AGENT-RETRY-017 EAGER-QUEUE-018 PARTIAL-CLOSEOUT-045
 class RetryFailedAutoPickCreatePrJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 

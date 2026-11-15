@@ -546,7 +546,7 @@ RSpec.describe Issue do
       end
     end
 
-    # @spec AGENT-RETRY-015
+    # @spec AGENT-RETRY-017
     it "re-enqueues a current analysis failure when an older create_pr run failed" do
       project = create(:project, auto_pick_enabled: true)
       issue = create(:issue, project: project, paid_state: "in_progress", github_state: "open")

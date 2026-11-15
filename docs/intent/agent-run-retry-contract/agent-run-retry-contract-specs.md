@@ -134,7 +134,25 @@
   `app/jobs/retry_failed_manual_run_job.rb` (both unchanged by this
   segment — adoption is a documentation cross-reference only).
 
-- [ ] **AGENT-RETRY-014** — Where a later acceptance-audit adapter is
+- [x] **AGENT-RETRY-014** — A timed-out `create_issue` run SHALL use the
+  shared locked-claim mechanism through a timeout-specific policy which admits
+  only terminal timeout runs, retains the existing three-replacement budget,
+  copied inputs and manual scheduling priority, and records its replacement,
+  active-sibling, or exhausted-budget decision through `OrchestrationDecision`.
+  *Code:* `AgentRuns::TimeoutIssueGoalRetryPolicy`,
+  `RetryTimedOutIssueGoalJob`.
+
+- [x] **AGENT-RETRY-015** — A new issue-less `create_issue` request SHALL
+  receive a UUID logical-operation key before validation, and its timed-out
+  replacements SHALL carry that key and an attempt number. Subsequent
+  replacements SHALL use that lineage rather than equal goal parameters or
+  prompt text to determine the retry budget. A legacy terminal run without
+  that lineage SHALL use the former identity/parameter count only when
+  establishing the first keyed replacement, which receives the
+  `agent-run:<id>` fallback key.
+  *Code:* `AgentRuns::TimeoutIssueGoalRetryPolicy`.
+
+- [ ] **AGENT-RETRY-016** — Where a later acceptance-audit adapter is
   built (tracked as separate, in-progress work), it SHALL keep
   `(issue_id, closeout_evidence_digest)` as the logical identity and add an
   attempt-lineage dimension beneath it so more than one execution attempt
@@ -144,7 +162,7 @@
   *Deferred to the separate audit-recovery work; no acceptance-audit
   runtime file is changed by this segment.*
 
-- [x] **AGENT-RETRY-015** — When an issue-attached, auto-picked `create_pr`
+- [x] **AGENT-RETRY-017** — When an issue-attached, auto-picked `create_pr`
   attempt fails before producing implementation work, the system SHALL use
   the shared retry decision and locked claim mechanism to re-enter the
   issue-owned Auto-Pick path. The issue SHALL remain the owner of retry
