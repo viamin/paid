@@ -33,6 +33,7 @@ module AgentRuns
         next record_skip(agent_run, assessment) unless assessment.eligible?
 
         successor = policy.build_successor!(agent_run, assessment.attempt)
+        next record_reason(agent_run, :not_admitted, assessment.attempt) unless successor
         agent_run.retry!(
           decision_point: decision_point,
           signals: retry_signals(assessment.attempt),

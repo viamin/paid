@@ -161,3 +161,18 @@
   any attempt budget.
   *Deferred to the separate audit-recovery work; no acceptance-audit
   runtime file is changed by this segment.*
+
+- [x] **AGENT-RETRY-017** — When an issue-attached, auto-picked `create_pr`
+  attempt fails before producing implementation work, the system SHALL use
+  the shared retry decision and locked claim mechanism to re-enter the
+  issue-owned Auto-Pick path. The issue SHALL remain the owner of retry
+  budget, delay, abandonment reset, and normal eligibility/admission checks;
+  a recoverable in-place rate limit, a produced PR or pushed revision, and
+  partial-closeout follow-up work SHALL not be converted into a fresh
+  implementation attempt. Repeated callbacks or delayed-job delivery SHALL
+  claim at most one successor and record an inspectable reason for every
+  applied or refused decision.
+  *Code:* `AgentRuns::AutoPickCreatePrRetryPolicy`,
+  `RetryFailedAutoPickCreatePrJob`, `AgentRuns::RetryAttempt`.
+  *Test:* `spec/services/agent_runs/auto_pick_create_pr_retry_policy_spec.rb`,
+  `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`.
