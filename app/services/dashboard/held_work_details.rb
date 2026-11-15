@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
 module Dashboard
-  # @spec QUEUE-HANDOFF-004
+  # @spec QUEUE-HANDOFF-004 NO-OUTPUT-ISSUE-009
   class HeldWorkDetails
     MAX_HELD_ISSUES = 20
 
     Blocker = Struct.new(:label, :url, keyword_init: true)
     Action = Struct.new(:label, :inbox_kind, :entry_id, keyword_init: true)
-    HeldIssue = Struct.new(:issue, :blockers, :actions, keyword_init: true)
+    HeldIssue = Struct.new(:issue, :blockers, :actions, :diagnostic, keyword_init: true)
 
     def self.call(...) = new(...).call
 
@@ -20,7 +20,8 @@ module Dashboard
       issue_ids = held_issue_ids
       blockers = dependency_blockers(issue_ids)
       actions = decision_actions(issue_ids)
-      held_issues(issue_ids, blockers, actions).group_by { |held_issue| held_issue.issue.project_id }
+      diagnostics = no_progress_diagnostics
+      held_issues(issue_ids, blockers, actions, diagnostics).group_by { |held_issue| held_issue.issue.project_id }
     end
 
     private
@@ -48,14 +49,29 @@ module Dashboard
 
     def held_issue_candidate_scopes
       [ local_dependency_blocker_scope, deployment_dependency_blocker_scope, external_dependency_blocker_scope,
-       design_amendment_action_scope, feature_decision_action_scope ]
+       design_amendment_action_scope, feature_decision_action_scope, no_progress_hold_scope ]
     end
 
-    def held_issues(issue_ids, blockers, actions)
+    def held_issues(issue_ids, blockers, actions, diagnostics)
       return [] if issue_ids.empty?
 
       excluded.where(id: issue_ids).order(:project_id, :github_number).map do |issue|
-        HeldIssue.new(issue:, blockers: blockers.fetch(issue.id, []), actions: actions.fetch(issue.id, []))
+        HeldIssue.new(
+          issue:,
+          blockers: blockers.fetch(issue.id, []),
+          actions: actions.fetch(issue.id, []),
+          diagnostic: diagnostics[issue.id]
+        )
+      end
+    end
+
+    def no_progress_hold_scope(issue_ids = excluded.select(:id))
+      AgentRun.where(issue_id: no_progress_diagnostics.keys).where(issue_id: issue_ids)
+    end
+
+    def no_progress_diagnostics
+      @no_progress_diagnostics ||= projects.each_with_object({}) do |project, diagnostics|
+        diagnostics.merge!(Issues::NoProgressCreatePrHold.new(project:).diagnostics_by_issue_id)
       end
     end
 

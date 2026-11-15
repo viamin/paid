@@ -9,7 +9,10 @@
   fail explicitly without consulting another tenant or implicit host provider.
 - [x] **LLM-ROUTING-003** — Text generation and JSON assessments SHALL support
   both API-key and subscription runners through `agent_harness`, preserve
-  selected authentication mode, and validate structured output locally.
+  selected authentication mode, identify standalone application requests as
+  text operations to the harness, make the selected API credential available
+  to provider-owned transport selection without exposing it in Docker exec
+  environment entries, and validate structured output locally.
 - [x] **LLM-ROUTING-004** — Persisted model provenance SHALL identify the actual
   model returned by the selected runner rather than a hardcoded vendor model.
 - [x] **LLM-ROUTING-005** — Standalone text calls SHALL execute through a

@@ -37,6 +37,14 @@ runner's materialized credentials through the existing container credential
 path and invokes the harness with tools disabled. A `tools: none` option alone
 is not evidence that a driver disables its tools; the container boundary is
 therefore required even when the driver advertises tool control.
+Standalone application requests identify themselves to the harness as text
+operations so provider-owned transport selection can use the API-key text
+contract without changing coding-agent or subscription execution.
+For an API-key Codex runner, the selected key is present in the in-memory
+provider runtime when the harness chooses its transport. The disposable
+executor removes that key from the Docker exec environment and retrieves it
+inside the container through the scoped credential identity. A host key must
+never substitute for the runner's selected credential.
 Rotating managed credentials (Codex, OpenCode, OMP) reuse the provisioner's
 refresh/lease/harvest lifecycle — `Runners::ManagedCredentialLifecycle` — so a
 standalone request materializes a refreshed token and writes an in-container

@@ -166,6 +166,43 @@ RSpec.describe RetryTimedOutIssueGoalJob do
           .not_to change(AgentRun, :count)
       end
 
+      it "does not charge a new request against equal-prompt legacy retries" do
+        legacy_attributes = {
+          project: project,
+          issue: nil,
+          goal: "create_issue",
+          custom_prompt: "Create a GitHub issue for the requested task",
+          status: "retried",
+          external_metadata: {}
+        }
+        described_class::MAX_RETRIES.times do
+          legacy_run = create(:agent_run, :create_issue_goal, **legacy_attributes)
+          legacy_run.update_columns(external_metadata: {})
+        end
+        agent_run = create(:agent_run, :timeout, :create_issue_goal,
+          project: project, custom_prompt: legacy_attributes[:custom_prompt])
+
+        expect { described_class.perform_now(agent_run.id) }
+          .to change(AgentRun, :count).by(1)
+      end
+
+      it "uses the carried operation key for successors instead of prompt text" do
+        first_request = create(:agent_run, :timeout, :create_issue_goal,
+          project: project, custom_prompt: "Create a GitHub issue for the requested task")
+        second_request = create(:agent_run, :timeout, :create_issue_goal,
+          project: project, custom_prompt: first_request.custom_prompt)
+
+        described_class.perform_now(first_request.id)
+        described_class.perform_now(second_request.id)
+
+        operation_key = AgentRuns::TimeoutIssueGoalRetryPolicy::OPERATION_KEY
+        successors = AgentRun.where(status: "queued", project: project).order(:id)
+        expect(successors.pluck(Arel.sql("external_metadata ->> '#{operation_key}'"))).to contain_exactly(
+          first_request.reload.external_metadata[operation_key],
+          second_request.reload.external_metadata[operation_key]
+        )
+      end
+
       it "stops after three replacements in one keyed retry chain" do
         agent_run = create(:agent_run, :timeout, :create_issue_goal, project: project)
 

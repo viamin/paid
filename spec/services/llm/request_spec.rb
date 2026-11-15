@@ -37,7 +37,7 @@ RSpec.describe Llm::Request do
       account: project.account, runner: runner, timeout: 30
     )
     expect(provider).to have_received(:send_message).with(hash_including(prompt: "Assess",
-      tools: :none, dangerous_mode: false,
+      mode: :text, tools: :none, dangerous_mode: false,
       provider_runtime: an_object_having_attributes(unset_env: [ "OPENAI_API_KEY" ])
     ))
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
@@ -358,7 +358,7 @@ RSpec.describe Llm::Request do
     expect(provider).to have_received(:send_message)
   end
 
-  # @spec PARTIAL-CLOSEOUT-031
+  # @spec LLM-ROUTING-003 LLM-ROUTING-005 PARTIAL-CLOSEOUT-031
   it "uses the selected API credential in isolated requests" do
     credential = create(:runner_api_key, user: owner, api_service_type: "openai")
     runner.update!(auth_type: "api_key", provider_api_key: credential)
@@ -366,7 +366,10 @@ RSpec.describe Llm::Request do
 
     expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
 
-    expect(provider).to have_received(:send_message)
+    expect(provider).to have_received(:send_message).with(hash_including(
+      mode: :text,
+      provider_runtime: an_object_having_attributes(env: hash_including("OPENAI_API_KEY" => credential.api_key))
+    ))
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 

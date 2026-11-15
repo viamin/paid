@@ -28,14 +28,15 @@ RSpec.describe Llm::GenerateIssueTitle do
     end
 
 
-    it "preserves the configured subscription billing mode" do
+    # @spec LLM-ROUTING-003
+    it "identifies the configured subscription request as a text operation" do
       response = instance_double(AgentHarness::Response, success?: true, output: "JWT authentication system review")
       allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
 
       described_class.call(summary: summary)
 
       expect(AgentHarness.conductor).to have_received(:execute_direct) do |_prompt, **opts|
-        expect(opts).not_to have_key(:mode)
+        expect(opts).to include(mode: :text)
       end
     end
 

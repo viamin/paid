@@ -60,6 +60,7 @@ module Automation
           :epic_ids,
           :reauditable_issue_ids,
           :reauditable_closeout_ids,
+          :no_progress_hold_ids,
           :prerequisite_block_ids,
           :unsynced_pr_produced_issue_ids,
           :merged_block_issue_ids,
@@ -305,6 +306,7 @@ module Automation
               epic_ids: epic_ids,
               reauditable_issue_ids: reauditable_issue_ids(project, epic_ids),
               reauditable_closeout_ids: partial_closeout_reaudit_issue_ids(project),
+              no_progress_hold_ids: Issues::NoProgressCreatePrHold.held_issue_ids(project),
               prerequisite_block_ids: partial_closeout_prerequisite_block_issue_ids(project),
               unsynced_pr_produced_issue_ids: unsynced_pr_produced_issue_ids(project),
               merged_block_issue_ids: merged_block_issue_ids(project),
@@ -343,6 +345,7 @@ module Automation
               # PR is partial progress, and the parent must re-enter
               # selection once the gap owners resolve (#4119).
               .where.not(id: inputs.merged_block_issue_ids - inputs.reauditable_issue_ids - inputs.reauditable_closeout_ids - authorized_ids)
+              .where.not(id: inputs.no_progress_hold_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
@@ -478,9 +481,27 @@ module Automation
               .to_h
             return [] if latest_run_ids.empty?
 
-            AgentRun.where(id: latest_run_ids.values)
-              .where(PARTIAL_CLOSEOUT_GAPS_CONDITION)
-              .pluck(:issue_id)
+            runs = AgentRun.where(id: latest_run_ids.values).includes(issue: :project)
+              .where(PARTIAL_CLOSEOUT_GAPS_CONDITION).to_a
+            source_revisions = PartialCloseouts::Assessment.source_revisions_for(runs.map(&:issue))
+            runs.filter_map { |run| run.issue_id if assessment_current?(run, source_revisions.fetch(run.issue_id)) }
+          end
+
+          # Agrees with {PartialCloseouts::Assessment#stale?}: an absent
+          # assessment (the reconciliation failed before one was recorded) or
+          # a legacy gaps-only assessment that predates revision stamping
+          # carries no revision metadata, so it can never match the current
+          # closeout-evidence and intent revisions. The parent defers to the
+          # bounded report-only acceptance-audit refresh instead of
+          # re-entering ordinary implementation selection (see
+          # spec/services/partial_closeouts/assessment_spec.rb for the same
+          # rule on the stale? side).
+          def assessment_current?(run, source_revision)
+            assessment = run.reconciliation.to_h["assessment"]
+            return false unless assessment.is_a?(Hash)
+
+            assessment["source_revision"] == source_revision &&
+              assessment["intent_revision"] == PartialCloseouts::Assessment.intent_revision_for(run.issue)
           end
 
           # Issue ids whose partial closeout surfaced one or more human

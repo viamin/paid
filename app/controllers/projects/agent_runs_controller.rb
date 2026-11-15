@@ -844,6 +844,7 @@ module Projects
         # original run was queued.
         review_depth_snapshot: @agent_run.review_depth_snapshot,
         tdd_phase: @agent_run.tdd_phase,
+        reconciliation: Issues::NoProgressCreatePrHold.release_fact_for(@agent_run.issue),
         **resolved_container_host_attributes(runner: retry_runner),
         trigger_type: "manual",
         status: "queued"

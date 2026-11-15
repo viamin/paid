@@ -101,6 +101,19 @@ module PartialCloseouts
       Digest::SHA256.hexdigest(revisions.join("\0"))
     end
 
+    def self.source_revisions_for(issues)
+      closeout_evidence = Issues::CloseoutEvidence.results_for(issues)
+      technical_evidence = TechnicalPrerequisites::Evidence.records_for_issues(issues)
+      trusted_evidence = TrustedMeasurements::Evidence.records_for_issues(issues)
+
+      issues.to_h do |issue|
+        revision = source_revision_for(issue, closeout_evidence: closeout_evidence.fetch(issue.id),
+          technical_evidence: technical_evidence.fetch(issue.id),
+          trusted_measurement_evidence: trusted_evidence.fetch(issue.id))
+        [ issue.id, revision ]
+      end
+    end
+
     # @spec OPERATOR-INBOX-016
     def initialize(issue, evidence: nil, technical_evidence: nil, trusted_measurement_evidence: nil,
       persisted_assessment: nil)

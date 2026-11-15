@@ -200,8 +200,10 @@ lineage — each already has a column or record that does the job:
 
 - `AgentRun#external_metadata["manual_retry_attempt"]` /
   `"retried_from_agent_run_id"` (manual-run-retry).
-- The issue/PR identity columns on `AgentRun` itself, read by
-  `RetryTimedOutIssueGoalJob#count_previous_retries`.
+- `AgentRun#external_metadata["create_issue_operation_key"]` and
+  `["create_issue_retry_attempt"]` for timed-out `create_issue`
+  replacements. A terminal legacy row without those values uses the former
+  identity/parameter count only to establish its first keyed replacement.
 - `Issue#consecutive_auto_pick_failure_count` (EAGER-QUEUE-007), with the
   failed `create_pr` `AgentRun` as the locked source for the shared claim.
 - `AgentRun#stale_requeue_count` (in-place rate-limit recovery).
@@ -271,11 +273,13 @@ documented landing spot.
 mint-new-row half of this contract. `RetryableAttempts::RetryAttempt` owns
 scheduling, locked claim, and durable decision recording;
 `AgentRuns::ManualRunRetryPolicy` retains manual eligibility, lineage, and
-successor construction. **Second implementation slice:** Apple verification
-uses the same mechanics for a locked linked-row claim while
+successor construction. Timed-out `create_issue` and issue-owned Auto-Pick
+`create_pr` retries adopt the same locked-claim mechanics while retaining
+their operation-key identity, scheduling, admission, and decision policy.
+Apple verification uses the same mechanics for a locked linked-row claim while
 `AppleVerificationAttempts::RetryPolicy` retains its classification, queue,
-per-run limit, immutable source, and lifecycle policy. Timed-out-issue-goal
-retry and in-place rate-limit recovery remain deferred.
+per-run limit, immutable source, and lifecycle policy. In-place rate-limit
+recovery remains deferred.
 
 **Rollback:** disable `Project#retry_failed_manual_runs` to stop new manual
 retry scheduling. The service preserves the existing cap, backoff, input
@@ -292,16 +296,13 @@ copying, and locked recheck, so no other retry path is changed.
 | First migration slice | Issue-less manual-run retry | Timed-out-issue-goal retry; in-place rate-limit recovery | Smallest blast radius and a concrete mint-new-row adopter for validating shared mechanics without changing another path's identity. |
 | New persisted state | None introduced | A shared `retry_attempts` table across every path | Every path's existing identity/lineage column (`external_metadata` keys, `retry_of_attempt_id`, `consecutive_auto_pick_failure_count`, `stale_requeue_count`) already covers attempt bookkeeping for that path; a shared table would duplicate data without adding capability. |
 | Acceptance-audit multi-attempt support | Documented extension point only, not implemented | Implement the adapter now | Acceptance-audit recovery is explicitly separate, in-progress work (per issue scope); this design intentionally stops at naming the landing spot so that work is not duplicated or pre-empted here. |
-| Shared interface as a shipped Ruby service | `RetryableAttempts::RetryAttempt` with manual-run, issue-owned `create_pr`, and Apple verification policy adapters | A universal `AgentRun#replay!`; copied schedule/job predicates | Shared mechanics support AgentRun and Apple-attempt rows plus both mint-a-row and issue-owned admission shapes, while policy-owned admission avoids averaging incompatible identities and dispatch rules. |
+| Shared interface as a shipped Ruby service | `RetryableAttempts::RetryAttempt` with manual-run, timed-out `create_issue`, issue-owned `create_pr`, and Apple verification policy adapters | A universal `AgentRun#replay!`; copied schedule/job predicates | Shared mechanics support AgentRun and Apple-attempt rows plus both mint-a-row and issue-owned admission shapes, while policy-owned admission avoids averaging incompatible identities and dispatch rules. |
 
 ## Open Questions & Future Decisions
 
 ### Deferred
 
-1. Whether `RetryTimedOutIssueGoalJob` should be refactored onto the shared
-   Ruby interface, or should retain its path-specific mechanics —
-   decide when the second migration slice is actually scoped.
-2. Whether EAGER-QUEUE-007 needs its own `logical_identity`-shaped adapter
+1. Whether EAGER-QUEUE-007 needs its own `logical_identity`-shaped adapter
    note, since its identity owner (the issue) differs from every other
    path's identity owner (a row). This crosses into
    `docs/intent/eager-queue-seeding/`'s own territory and is flagged here
