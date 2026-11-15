@@ -34,27 +34,16 @@ Temporal-driven run failure passes through. Its existing issue-driven branch
 (`if agent_run.issue && agent_run.status.in?(AgentRun::FAILURE_STATUSES)`)
 arms the issue-level auto-pick re-enqueue backoff (EAGER-QUEUE-007) and has
 no effect when `agent_run.issue` is nil. `#schedule_manual_run_retry_if_eligible`
-is the issue-less counterpart, called unconditionally after that branch:
+is the issue-less counterpart, called unconditionally after that branch. It
+asks `AgentRuns::RetryAttempt` to schedule the delayed job, while
+`AgentRuns::ManualRunRetryPolicy#assess` owns the admission checks.
 
-```ruby
-def manual_run_retry_eligible?(agent_run)
-  agent_run.manual? &&
-    !agent_run.bootstrap_readiness_goal? &&
-    agent_run.issue.nil? &&
-    agent_run.source_pull_request_number.nil? &&
-    agent_run.status.in?(AgentRun::FAILURE_STATUSES) &&
-    !agent_run.recoverable_rate_limited? &&
-    agent_run.project&.retry_failed_manual_runs? &&
-    agent_run.no_observable_work?
-end
-```
-
-`issue.nil? && source_pull_request_number.nil?` together with the explicit
-`!bootstrap_readiness_goal?` exclusion scopes this to exactly the four goals
-named above: `AgentRun#issue_goal_requires_issue` requires an issue for
-`enhance_issue`/`analyze_issue`, and
-`#review_goal_requires_pull_request` requires a PR for `review` — no other
-goal can be issue-less and PR-less by validation.
+The policy requires a manual trigger, no issue or source PR attachment, a
+failed status, an enabled project toggle, and no observable work. It excludes
+`bootstrap_readiness` and layered-verification goals explicitly. For the
+ordinary manual goals, `AgentRun#issue_goal_requires_issue` requires an
+issue for `enhance_issue`/`analyze_issue`, and
+`#review_goal_requires_pull_request` requires a PR for `review`.
 
 `bootstrap_readiness` also has no issue or source PR, but it is deliberately
 excluded: PROJECT-READINESS-007 requires a failed bootstrap attempt to remain
@@ -115,8 +104,9 @@ keys defined on `AgentRun`:
   (`"retried_from_agent_run_id"`) — the id of the run this one superseded,
   for traceability.
 
-`MarkAgentRunFailedActivity` computes `attempt = agent_run.manual_retry_attempt + 1`
-and declines to schedule once `attempt > AgentRun::MAX_MANUAL_RETRY_ATTEMPTS`
+`ManualRunRetryPolicy#next_attempt` computes
+`agent_run.manual_retry_attempt + 1`, and the policy declines to schedule
+once `attempt > AgentRun::MAX_MANUAL_RETRY_ATTEMPTS`
 (3, matching the existing small-cap convention of
 `RetryTimedOutIssueGoalJob::MAX_RETRIES` and
 `AgentRun::MAX_RATE_LIMITED_REQUEUES`'s shape). The cap is enforced by the
@@ -134,40 +124,42 @@ EAGER-QUEUE-007's `(n**4)+15` curve: the retry cap here is 3, not ~50, and
 the target failure class (dispatch-time provider exhaustion) is expected to
 clear within minutes, not hours.
 
-`#perform(agent_run_id, attempt)`:
+`#perform(agent_run_id, attempt)` delegates the claim to
+`AgentRuns::RetryAttempt`. The claim:
 
 1. Re-checks eligibility under a row lock (`AgentRun.lock.find_by`) —
    state may have changed since scheduling (toggle flipped off, an operator
    intervened, the run was already retried).
-2. Calls `agent_run.retry!` on the original — the same `"retried"` terminal
-   status review-goal bookkeeping already uses to mark a superseded run, so
-   dashboards and queries that already understand `"retried"` do not need a
-   new status to special-case.
-3. Mints a new `AgentRun` by whitelisting the fields that define "what to
-    run" from the original — `project`, `initiating_user`, `runner`,
-    `agent_type`, `custom_prompt`, `plan_doc_source`, `goal` — plus
-    `external_metadata` merged with the retry-bookkeeping keys above. This
-    mirrors `RetryTimedOutIssueGoalJob#perform`'s `AgentRun.create!` call,
-    with two additions: `external_metadata` must be carried forward because
-    `create_feature` derives its prompt from
-    `external_metadata["feature_brief"]`
-    (`AgentRun#has_prompt_source`) — a fresh empty hash would silently strip
-    it — and `plan_doc_source` must be carried forward because a manually
-    started `lid_planning` run can fail before
-    `ensure_lid_planning_prompt!` persists `custom_prompt`, leaving
-    `plan_doc_source` as the only record of the operator-selected design
-    document. Execution-state columns (container, temporal workflow, PR/issue
-    artifacts, timestamps) are intentionally not copied; they belong to the
-    old run's attempt, not the new one.
-4. Marking "retried" happens *before* the insert, in the same transaction.
-   An operator can still start a `lid_planning` run while the delayed retry is
+2. Mints a new `AgentRun` through `ManualRunRetryPolicy#build_successor!`,
+   whitelisting the fields that define "what to run" from the original —
+   `project`, `initiating_user`, `runner`, `agent_type`, `custom_prompt`,
+   `plan_doc_source`, `goal`, `priority_tier` — plus `external_metadata`
+   merged with the retry-bookkeeping keys above. This mirrors
+   `RetryTimedOutIssueGoalJob#perform`'s `AgentRun.create!` call, with two
+   additions: `external_metadata` must be carried forward because
+   `create_feature` derives its prompt from
+   `external_metadata["feature_brief"]` (`AgentRun#has_prompt_source`) — a
+   fresh empty hash would silently strip it — and `plan_doc_source` must be
+   carried forward because a manually started `lid_planning` run can fail
+   before `ensure_lid_planning_prompt!` persists `custom_prompt`, leaving
+   `plan_doc_source` as the only record of the operator-selected design
+   document. Execution-state columns (container, temporal workflow, PR/issue
+   artifacts, timestamps) are intentionally not copied; they belong to the
+   old run's attempt, not the new one.
+3. Calls `agent_run.retry!` on the original after creating the successor,
+   recording the successor ID in the applied `OrchestrationDecision`. The
+   `"retried"` status marks the original as superseded. A later delivery
+   observes that status under the lock and records a skipped decision.
+4. Both operations happen in the same transaction. An operator can still
+   start a `lid_planning` run while the delayed retry is
    pending; if that creates an active planning run first,
    `idx_agent_runs_unique_active_lid_planning` rejects the retry insert. The
-   job recognizes that specific conflict, logs a skipped retry, and returns
-   normally. The transaction rolls back, leaving the original run `failed`;
+   policy recognizes that specific conflict and records a skipped retry.
+   The transaction rolls back, leaving the original run `failed`;
    the operator-started run is the active attempt.
-5. Enqueues `ProcessRunQueueJob` (idempotent) so the new queued run is
-   picked up promptly.
+
+After the claim commits, `RetryFailedManualRunJob` enqueues
+`ProcessRunQueueJob` so the new queued run is picked up promptly.
 
 ## Project-level toggle
 

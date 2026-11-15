@@ -145,7 +145,7 @@ answers.
 | Temporal activity recovery | Temporal server + `AgentExecutionWorkflow`'s per-activity `RetryPolicy` (e.g. `RUN_AGENT_RETRY_POLICY`, `max_attempts: 2`) | The in-flight workflow execution / activity task — not an `AgentRun` | Infra-only re-invocation of the *same* activity call inside one logical attempt (worker crash, heartbeat timeout); application errors are marked `non_retryable` in the activity itself | `max_attempts` exhausted → activity failure propagates to `MarkAgentRunFailedActivity`, which is where this contract's scope begins | **Not migrated — different layer**, named here only so it is not mistaken for an unmapped gap (see Scope and non-goals). |
 | Acceptance audits | Acceptance-audit sweep / `PartialCloseouts::Advance` (`docs/intent/partial-closeout-recovery/`, #4595) | `(issue_id, closeout_evidence_digest)` | Deliberately **not retried**: at most one automatic audit attempt per issue and evidence digest, including terminal attempts, so a failed audit never loops. A new digest (new merged PR, or a no-code outcome) earns exactly one new audit | Any terminal attempt recorded for the current digest; digest unchanged | **Out of scope for this issue.** No acceptance-audit runtime file is touched by this change. See "Acceptance-audit adapter" below for the documented extension point the separate audit-recovery work can land on. |
 | Apple verification attempts | `AppleVerificationAttempts::RetryMonitor` + `AppleVerificationRetryJob` (`docs/intent/apple-verification-attempts/`, APPLE-ATTEMPT-010) and the rerun flow (APPLE-VERIFY-006) | `retry_of_attempt_id` lineage to the terminal source attempt, scoped by `agent_run_id` | An idempotent queued retry bound to its terminal source attempt; retries only infra-classified failures (`capacity_or_quota`, `worker_infrastructure`, `cancellation_or_timeout`), bounded by a configurable retry limit and queue depth; `idx_apple_attempts_one_active_per_run` enforces one active attempt per run | Non-infra failure classification (deterministic project failure); retry limit reached; queue depth cap | Later — same shape (lineage column + bounded retry + failure-classification gate) as the contract's "mint a linked row" half; a candidate third reference once a second slice is scoped, tracked separately. |
-| `bootstrap_readiness` (explicit operator policy) | `AgentRun#bootstrap_readiness_goal?` exclusion inside `Activities::MarkAgentRunFailedActivity#manual_run_retry_eligible?`; PROJECT-READINESS-007 | `(project, bootstrap_readiness goal)` | **No automatic retry of any kind.** A failed bootstrap run stays terminal until an operator explicitly starts a replacement from the project-setup Inbox entry | N/A — only an explicit operator action unblocks it | **Must not be migrated.** No adoption of the shared shape may silently add automatic retry to this path; its absence of retry is the policy, not a gap. |
+| `bootstrap_readiness` (explicit operator policy) | `AgentRun#bootstrap_readiness_goal?` exclusion inside `AgentRuns::ManualRunRetryPolicy#assess`; PROJECT-READINESS-007 | `(project, bootstrap_readiness goal)` | **No automatic retry of any kind.** A failed bootstrap run stays terminal until an operator explicitly starts a replacement from the project-setup Inbox entry | N/A — only an explicit operator action unblocks it | **Must not be migrated.** No adoption of the shared shape may silently add automatic retry to this path; its absence of retry is the policy, not a gap. |
 
 ## Cross-cutting safety requirements
 
@@ -155,22 +155,25 @@ must hold the following, each grounded in an existing exemplar:
 
 - **Duplicate jobs.** Re-check attempt eligibility under a row lock
   immediately before claiming, not only at schedule time, so a duplicated
-  or re-delivered delayed job cannot double-claim. (`RetryFailedManualRunJob#perform`'s
-  `AgentRun.lock.find_by` re-check; `RetryTimedOutIssueGoalJob#perform`'s
+  or re-delivered delayed job cannot double-claim. (`AgentRuns::RetryAttempt#claim`'s
+  `AgentRun.lock.find_by` re-check for manual runs; `RetryTimedOutIssueGoalJob#perform`'s
   locked re-check; `StaleRunDetectorJob#recover_rate_limited_run`'s
   `with_lock`.)
 - **Concurrent schedulers.** The claim is a single atomic transaction keyed
   off a unique index or row lock, and a losing concurrent claim recognizes
   its specific conflict and resolves to a no-op rather than an unhandled
   error. (`idx_agent_runs_unique_active_lid_planning` handling in
-  `RetryFailedManualRunJob`; `idx_agent_runs_unique_active_issue`/`_pr`
+  `AgentRuns::RetryAttempt#claim` via
+  `AgentRuns::ManualRunRetryPolicy#duplicate_active_run_conflict?`;
+  `idx_agent_runs_unique_active_issue`/`_pr`
   handling in `RetryTimedOutIssueGoalJob`'s `RecordNotUnique` rescue;
   `idx_apple_attempts_one_active_per_run`.)
 - **State changes during backoff.** Eligibility is re-evaluated against
   current state at claim time, never trusted from schedule time — a
   toggle flipped, another run claiming the slot, or the run already being
   retried must all be visible to the claim, not just the schedule.
-  (Same locked re-checks as above.)
+  (For manual runs, `AgentRuns::RetryAttempt#claim` performs the locked
+  re-check above.)
 - **Partial external work.** An attempt that already produced an
   observable side effect must not be blindly retried; the side-effect
   check is a hard precondition independent of terminal status, never

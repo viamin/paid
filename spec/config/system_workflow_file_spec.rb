@@ -101,6 +101,10 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(run).to include(
       "for attempt in 1 2 3; do",
       "undefined method 'cmd_tuples' for nil",
+      'test_log="log/test.log"',
+      'mkdir -p "$(dirname "$test_log")"',
+      ': > "$test_log"',
+      '"$failure_log" "$test_log"',
       "docker ps --filter 'publish=5432'",
       'docker restart "$postgres_container"',
       'pg_isready -h "$DB_HOST" -U postgres -d postgres',
@@ -117,10 +121,13 @@ RSpec.describe SystemWorkflowFile, :no_db do
     run = runtime_step.fetch("run")
 
     expect(run).to include(
+      "for attempt in 1 2 3; do",
       "timeout 5m apt-get",
       "Acquire::http::Timeout=30",
       "Acquire::https::Timeout=30",
       "Acquire::Retries=3",
+      'Chromium runtime dependency installation failed (attempt $attempt/3); retrying',
+      'sleep "$((attempt * 10))"',
       "libglib2.0-0t64",
       "libgtk-3-0t64",
       "libnss3",
