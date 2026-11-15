@@ -157,6 +157,8 @@ module Screenshots
       mcp_server_definition_show: Target.new(slug: "mcp_server_definition_show", path_builder: ->(seed_data) { "/mcp_server_definitions/#{seed_data.fetch(:mcp_server_definition).id}" }, requires_auth: true),
       mcp_server_definition_edit: Target.new(slug: "mcp_server_definition_edit", path_builder: ->(seed_data) { "/mcp_server_definitions/#{seed_data.fetch(:mcp_server_definition).id}/edit" }, requires_auth: true),
       agent_runs: Target.new(slug: "agent_runs", path_builder: "/agent_runs", requires_auth: true),
+      # @spec UNIFIED-WORK-ITEMS-004
+      work_items: Target.new(slug: "work_items", path_builder: "/work_items", requires_auth: true),
       prompts: Target.new(slug: "prompts", path_builder: "/prompts", requires_auth: true),
       prompt_new: Target.new(slug: "prompt_new", path_builder: "/prompts/new", requires_auth: true),
       prompt_show: Target.new(slug: "prompt_show", path_builder: ->(seed_data) { "/prompts/#{seed_data.fetch(:prompt).id}" }, requires_auth: true),
@@ -304,6 +306,7 @@ module Screenshots
       "projects_controller.rb" => %i[projects project_new project_show project_edit],
       "previews_controller.rb" => [ :preview_session_show ],
       "agent_runs_controller.rb" => [ :agent_runs ],
+      "work_items_controller.rb" => [ :work_items ],
       "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit prompt_diff],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
       "plan_reviews_controller.rb" => [ :plan_reviews ],
@@ -366,6 +369,7 @@ module Screenshots
       "accounts/egress_allowlist_entries_controller.rb" => [ :account_egress_allowlist ],
       "projects/egress_allowlist_entries_controller.rb" => [ :project_egress_allowlist ],
       "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show project_agent_run_provenance],
+      "projects/work_items_controller.rb" => [ :project_show ],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
       "projects/cost_snapshots_controller.rb" => [ :project_cost_snapshot ],
@@ -635,6 +639,7 @@ module Screenshots
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)
       when "agent_runs/_detail.html.erb", "agent_runs/_detail_actions.html.erb" then [ :project_agent_run_show ]
       when /\Aagent_runs\// then [ :agent_runs ]
+      when /\Awork_items\// then [ :work_items ]
       when /\Aprompt_reviews\// then prompt_review_targets(relative_path.delete_prefix("prompt_reviews/"))
       when /\Aplan_reviews\// then [ :plan_reviews ]
       when /\Astrategy_reviews\// then strategy_review_targets(relative_path.delete_prefix("strategy_reviews/"))
