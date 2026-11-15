@@ -132,6 +132,12 @@ alone imply. `RunCollectorsJob` therefore has a 45-minute wall-clock ceiling:
 long enough to finish a complete bounded collection while still terminating a
 genuinely stuck container, git, network, or database operation.
 
+Before container provisioning, the containerized collection path performs a
+shallow host-side fetch of the pinned commit. That fetch has its own five-minute
+budget: long enough for a large repository or a transiently slow GitHub transfer
+without consuming the full collection ceiling, while still failing as a
+`CloneError` and removing its temporary checkout when the budget is exceeded.
+
 ### Derived vector indexing
 
 Embeddings are generated for active chunks that still need vectors, then synced
