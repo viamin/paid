@@ -14,8 +14,8 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
   let(:selections) do
     {
       obligation.id => {
-        selected_checks: [ "spec_to_code" ],
-        fit: "mapped specification",
+        selected_checks: [ "implementation_conformance" ],
+        fit: "mapped implementation",
         exclusions: [ "no formal model" ]
       }
     }
@@ -51,8 +51,8 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
     stored_plan = run.external_metadata.dig("layered_verification", "plan", obligation.id.to_s)
 
     expect(stored_plan).to include(
-      "selected_checks" => [ "spec_to_code" ],
-      "fit" => "mapped specification",
+      "selected_checks" => [ "implementation_conformance" ],
+      "fit" => "mapped implementation",
       "exclusions" => [ "no formal model" ]
     )
   end
@@ -71,6 +71,15 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
 
     expect { tool.dispatch(**audit_arguments) }
       .to raise_error(LayeredVerification::Plans::Build::UnexplainedOmissionsError)
+    expect(AgentRun.where(goal: "layered_verification_audit")).to be_empty
+  end
+
+  # @spec LAYERED-VERIFY-021
+  it "rejects an unsupported check from the MCP request" do
+    selections[obligation.id][:selected_checks] = [ "made_up_check" ]
+
+    expect { tool.dispatch(**audit_arguments) }
+      .to raise_error(LayeredVerification::Plans::Build::UnsupportedCheckError)
     expect(AgentRun.where(goal: "layered_verification_audit")).to be_empty
   end
 

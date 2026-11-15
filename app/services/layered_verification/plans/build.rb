@@ -9,6 +9,7 @@ module LayeredVerification
       class EmptySelectionError < ArgumentError; end
       class MissingFitError < ArgumentError; end
       class UnexplainedOmissionsError < ArgumentError; end
+      class UnsupportedCheckError < ArgumentError; end
 
       def self.call(...) = new(...).call
 
@@ -21,6 +22,7 @@ module LayeredVerification
         obligations.to_h do |obligation|
           plan = plan_for(obligation)
           raise EmptySelectionError, "select at least one verification check for every obligation" if plan["selected_checks"].empty?
+          raise UnsupportedCheckError, "select only supported verification checks" if unsupported_checks?(plan)
           raise MissingFitError, "state why the selected checks fit every obligation" if plan["fit"].blank?
           if (LayeredVerificationCheckResult::PRODUCERS - plan["selected_checks"]).any? && plan["exclusions"].empty?
             raise UnexplainedOmissionsError, "explain omitted checks for every obligation"
@@ -49,6 +51,10 @@ module LayeredVerification
 
       def values(raw)
         Array(raw).map { |value| value.to_s.strip }.reject(&:blank?).uniq
+      end
+
+      def unsupported_checks?(plan)
+        (plan["selected_checks"] - LayeredVerificationCheckResult::PRODUCERS).any?
       end
     end
   end

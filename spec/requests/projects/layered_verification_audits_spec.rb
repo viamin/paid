@@ -128,6 +128,7 @@ RSpec.describe "Layered verification audits" do
 
     form = Nokogiri::HTML5(response.body).at_css('[data-testid="layered-verification-audit-request"]')
     expect(form.at_css('input[value="formal_verification"]')).to be_present
+    expect(form.at_css('input[value="semantic_audit"]')["checked"]).to be_nil
     expect(form.at_css("textarea[name='selections[#{obligation.id}][fit]']")).to be_present
     expect(form.at_css("textarea[name='selections[#{obligation.id}][exclusions][]']")).to be_present
   end

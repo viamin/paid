@@ -123,7 +123,8 @@
 ## Model-check command integration
 
 - [x] **LAYERED-VERIFY-021** — A verification plan SHALL state its selected
-  checks, fit, exclusions/non-applicability, required inputs, assumptions,
+  checks (each one a supported `LayeredVerificationCheckResult` producer), fit,
+  exclusions/non-applicability, required inputs, assumptions,
   resource expectations, and residual gaps; it SHALL permit a justified
   single-layer plan, SHALL NOT impose a minimum layer count, and SHALL NOT be
   able to waive CI, security, branch protection, code review, or approved-intent
