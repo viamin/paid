@@ -134,7 +134,24 @@
   `app/jobs/retry_failed_manual_run_job.rb` (both unchanged by this
   segment — adoption is a documentation cross-reference only).
 
-- [ ] **AGENT-RETRY-014** — Where a later acceptance-audit adapter is
+- [x] **AGENT-RETRY-014** — A timed-out `create_issue` run SHALL use the
+  shared locked-claim mechanism through a timeout-specific policy which admits
+  only terminal timeout runs, retains the existing three-replacement budget,
+  copied inputs and manual scheduling priority, and records its replacement,
+  active-sibling, or exhausted-budget decision through `OrchestrationDecision`.
+  *Code:* `AgentRuns::TimeoutIssueGoalRetryPolicy`,
+  `RetryTimedOutIssueGoalJob`.
+
+- [x] **AGENT-RETRY-015** — An issue-less timed-out `create_issue`
+  replacement SHALL carry a stable logical-operation key derived from its
+  source request and an attempt number, and subsequent replacements SHALL use
+  that lineage rather than equal goal parameters or prompt text to determine
+  the retry budget. A legacy terminal run without that lineage SHALL use the
+  former identity/parameter count only when establishing the first keyed
+  replacement.
+  *Code:* `AgentRuns::TimeoutIssueGoalRetryPolicy`.
+
+- [ ] **AGENT-RETRY-016** — Where a later acceptance-audit adapter is
   built (tracked as separate, in-progress work), it SHALL keep
   `(issue_id, closeout_evidence_digest)` as the logical identity and add an
   attempt-lineage dimension beneath it so more than one execution attempt

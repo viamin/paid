@@ -139,7 +139,7 @@ answers.
 | Path | Owner | Identity | Existing retry behavior | Stop conditions | Migration slice |
 | --- | --- | --- | --- | --- | --- |
 | Manual issue-less runs (`create_feature`, `create_issue`, `lid_planning`, issue-less `create_pr`) | `Activities::MarkAgentRunFailedActivity#schedule_manual_run_retry_if_eligible` + `RetryFailedManualRunJob` (`docs/intent/manual-run-retry/`) | `(project, goal, runner, agent_type, custom_prompt, plan_doc_source)` shape carried forward on a fresh row; lineage via `external_metadata["manual_retry_attempt"]` / `"retried_from_agent_run_id"` | Mints a new `AgentRun`, marks the original `"retried"`, bounded exponential backoff (30s/1m/2m, capped 5m), budget 3 (`AgentRun::MAX_MANUAL_RETRY_ATTEMPTS`), gated by `Project#retry_failed_manual_runs`, only when `AgentRun#no_observable_work?` | Budget exhausted; any observable work produced; `recoverable_rate_limited?`; `bootstrap_readiness` goal; project toggle off | **First slice** (adopted as-is, see below). |
-| Timed-out `create_issue` | `RetryTimedOutIssueGoalJob` | `(project, issue_id)` when issue-attached, else `(project, goal, runner, agent_type, custom_prompt, source_pull_request_number)` | Mints a new `AgentRun` (or marks an existing active sibling retried on a unique-index race), budget 3 (`MAX_RETRIES`), counts prior `timeout`/`retried` rows for the same identity, records the decision via `AgentRun#retry!` | Budget reached; an existing active run already claims the identity's unique slot | Later — same mint-new-row shape and lock-recheck as manual-run-retry; a candidate second slice once a second concrete adopter is scoped, tracked separately from this issue. |
+| Timed-out `create_issue` | `RetryTimedOutIssueGoalJob` + `AgentRuns::TimeoutIssueGoalRetryPolicy` | Issue-attached: `(project, issue_id)`; issue-less: an operation key minted from the terminal request's `AgentRun` ID and carried by each replacement | Mints a new `AgentRun` (or marks an existing active sibling retried on a unique-index race), budget 3 (`MAX_RETRIES`), records the decision via `AgentRun#retry!` | Budget reached; an existing active run already claims the identity's unique slot | **Second slice** — policy adapter on `AgentRuns::RetryAttempt`; legacy rows without an operation key retain the former parameter-count heuristic until a replacement establishes lineage. |
 | Auto-picked `create_pr`/`analyze_issue` (issue-driven) | `Issue#enqueue_self_if_became_auto_pick_eligible` → `Issues::ReenqueueEligibleJob` (`docs/intent/eager-queue-seeding/`, EAGER-QUEUE-007) | `issue_id` — the *issue* carries the retry-chain state (`consecutive_auto_pick_failure_count`), not a terminal row | No attempt row is minted ahead of time: the issue re-enters the eligibility queue and `Issues::EnqueueEligible` mints the `AgentRun` only when a scheduler actually claims it. Backoff `(n**4)+15+jitter` (no numeric cap); effectively bounded by parking the issue in the retry-limited Inbox once the effective retry cap is reached | Issue no longer eligible; retry-limited Inbox parks the issue; `auto_pick_enabled` off | Later — identity owner is the issue, not a row, so adoption needs its own adapter note in `docs/intent/eager-queue-seeding/` (cross-segment; not resolved here, see Open Questions). |
 | In-place rate-limit recovery | `StaleRunDetectorJob#recover_rate_limited_run` | The same `AgentRun` row (`status: "rate_limited"`, `rate_limited_until` elapsed) | No new row — in-place re-queue under row lock, budget via `stale_requeue_count` against `AgentRun::MAX_RATE_LIMITED_REQUEUES`, admission recheck via `active_sibling_exists?`, capacity-parked attempts exempt from budget decrement | Budget exhausted → terminal `failed`; active sibling already owns the identity's unique slot → terminal `failed`, superseded | Later — already in-place-attempt-shaped; a natural second reference for the in-place half of the contract (as opposed to manual-run-retry's mint-new-row half), tracked separately. |
 | Temporal activity recovery | Temporal server + `AgentExecutionWorkflow`'s per-activity `RetryPolicy` (e.g. `RUN_AGENT_RETRY_POLICY`, `max_attempts: 2`) | The in-flight workflow execution / activity task — not an `AgentRun` | Infra-only re-invocation of the *same* activity call inside one logical attempt (worker crash, heartbeat timeout); application errors are marked `non_retryable` in the activity itself | `max_attempts` exhausted → activity failure propagates to `MarkAgentRunFailedActivity`, which is where this contract's scope begins | **Not migrated — different layer**, named here only so it is not mistaken for an unmapped gap (see Scope and non-goals). |
@@ -199,8 +199,10 @@ lineage — each already has a column or record that does the job:
 
 - `AgentRun#external_metadata["manual_retry_attempt"]` /
   `"retried_from_agent_run_id"` (manual-run-retry).
-- The issue/PR identity columns on `AgentRun` itself, read by
-  `RetryTimedOutIssueGoalJob#count_previous_retries`.
+- `AgentRun#external_metadata["timeout_issue_goal_operation_key"]` and
+  `["timeout_issue_goal_retry_attempt"]` for timed-out `create_issue`
+  replacements. A terminal legacy row without those values uses the former
+  identity/parameter count only to establish its first keyed replacement.
 - `Issue#consecutive_auto_pick_failure_count` (EAGER-QUEUE-007).
 - `AgentRun#stale_requeue_count` (in-place rate-limit recovery).
 - `AppleVerificationAttempt#retry_of_attempt_id` (Apple verification).
@@ -266,10 +268,15 @@ documented landing spot.
 mint-new-row half of this contract. `AgentRuns::RetryAttempt` owns
 scheduling, locked claim, and durable decision recording;
 `AgentRuns::ManualRunRetryPolicy` retains manual eligibility, lineage, and
-successor construction. Timed-out-issue-goal retry, in-place rate-limit recovery,
-and Apple verification attempts are named as candidate second/third slices
-(one mint-new-row-shaped, one in-place-shaped, one lineage-column-shaped)
-but are explicitly deferred to their own tracked follow-up work.
+successor construction. Timed-out `create_issue` retry is the second
+implementation slice. Its policy retains timeout-only admission, the existing
+copied inputs and manual scheduling tier, active-run conflict handling, and
+`OrchestrationDecision` lineage while `AgentRuns::RetryAttempt` owns the
+locked claim mechanics. It mints an issue-less operation key from the source
+run ID, rather than deriving identity from equal prompt text, so separate
+operator requests never share a retry budget. A legacy row without a key uses
+the former count heuristic only for its transition attempt. In-place rate-limit
+recovery and Apple verification remain separate candidate slices.
 
 **Rollback:** disable `Project#retry_failed_manual_runs` to stop new manual
 retry scheduling. The service preserves the existing cap, backoff, input
@@ -287,6 +294,7 @@ copying, and locked recheck, so no other retry path is changed.
 | New persisted state | None introduced | A shared `retry_attempts` table across every path | Every path's existing identity/lineage column (`external_metadata` keys, `retry_of_attempt_id`, `consecutive_auto_pick_failure_count`, `stale_requeue_count`) already covers attempt bookkeeping for that path; a shared table would duplicate data without adding capability. |
 | Acceptance-audit multi-attempt support | Documented extension point only, not implemented | Implement the adapter now | Acceptance-audit recovery is explicitly separate, in-progress work (per issue scope); this design intentionally stops at naming the landing spot so that work is not duplicated or pre-empted here. |
 | Shared interface as a shipped Ruby service | `AgentRuns::RetryAttempt` with a manual policy adapter | A universal `AgentRun#replay!`; copied schedule/job predicates | Shared mechanics need one real adopter to prove the boundary, while policy-owned admission avoids averaging incompatible identities and dispatch rules. |
+| Timed-out issue-less retry identity | A persisted source-run operation key | Goal and prompt parameters | Equal prompt text can describe separate operator requests; a carried source-run key preserves one request's budget without conflating another's. Legacy rows lack that key, so the old heuristic is retained only for their transition attempt. |
 
 ## Open Questions & Future Decisions
 
