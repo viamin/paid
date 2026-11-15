@@ -45,8 +45,11 @@
   runs for the same linked work chain, and SHALL NOT authorize a mere issue
   mention, a shared project, a dependency, or any additional or child issue
   created for the same work.
-  *Tests:* `spec/services/automation/continuation_grant_lookup_spec.rb`
-  *Code:* `Automation::ContinuationGrantLookup`
+  *Tests:* `spec/services/automation/continuation_grant_lookup_spec.rb`,
+  `spec/services/automation/feature_activation_phase_gate_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`
+  *Code:* `Automation::ContinuationGrantLookup`, `Automation::FeatureActivation`,
+  `Activities::ScanPaidPrsActivity`
 
 - [x] **AUTOMATION-PHASES-007** — While a grant covers an action, the system
   SHALL authorize that action even when the project phase or the automatic
@@ -54,8 +57,11 @@
   methods, CI requirements, merge rules, budgets, trust rules, tenant
   permissions, and scheduler safety holds.
   *Tests:* `spec/services/automation/effective_policy_spec.rb`,
-  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`
-  *Code:* `Automation::EffectivePolicy`
+  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
+  `spec/services/automation/feature_activation_phase_gate_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`
+  *Code:* `Automation::EffectivePolicy`, `Automation::FeatureActivation`,
+  `Activities::ScanPaidPrsActivity`
 
 - [x] **AUTOMATION-PHASES-008** — Reaching a grant's endpoint SHALL complete
   the grant, reopening the work SHALL NOT silently reactivate it, and
@@ -102,7 +108,8 @@
   before queued work starts, so that disabling a phase, revoking a grant, or
   losing eligibility prevents new unauthorized actions without abruptly
   terminating an already-running action, and retries that start a new execution
-  SHALL recheck authorization.
+  SHALL recheck authorization. A manual queue priority inherited by an
+  automatically scheduled PR repair SHALL NOT count as an explicit manual start.
   *Tests:* `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`
   *Code:* `AgentRuns::RecheckIssueEligibility`
 

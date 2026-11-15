@@ -427,11 +427,34 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
     it "does not cancel a manually started run" do
       issue = create(:issue, project: project, github_state: "open")
-      run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr", trigger_type: "manual")
+      run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr",
+        trigger_type: "manual", initiating_user: project.created_by)
       configure_phases({ "coding" => false })
 
       expect(described_class.call(run)).to be false
       expect(run.reload.status).to eq("queued")
+    end
+
+    it "cancels an automatic PR repair whose manual trigger only inherited queue priority" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr",
+        source_pull_request_number: 42, trigger_type: "manual", initiating_user: nil)
+      configure_phases({ "coding" => false })
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.error_message).to include("Authorization for create_pr was withdrawn")
+    end
+
+    it "cancels an automatic refactor follow-up even when it carries the initiating user" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr",
+        source_pull_request_number: 42, trigger_type: "manual", initiating_user: project.created_by,
+        external_metadata: { "automatic_authorization" => true })
+      configure_phases({ "coding" => false })
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
     end
 
     it "does not cancel an already-claimed run that started before the phase was disabled" do

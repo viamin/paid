@@ -84,6 +84,43 @@ RSpec.describe Automation::FeatureActivation do
 
       expect(described_class.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(false)
     end
+
+    it "keeps a granted PR visible to project-wide scanning when its coding phase is disabled" do
+      configure({ "coding" => false })
+      project.update!(auto_scan_prs: true)
+      pull_request = create(:issue, :pull_request, project:, parent_issue: issue, github_state: "open")
+
+      expect(described_class.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")).to be(false)
+
+      create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_scan_prs")).to be(true)
+      expect(described_class.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")).to be(true)
+    end
+
+    it "finds a granted PR with a trusted scan label when project scanning is off" do
+      configure({ "coding" => false })
+      pull_request = create(:issue, :pull_request, project:, parent_issue: issue, github_state: "open",
+        labels: [ project.feature_activation_label_for("auto_scan_prs") ])
+      grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_scan_prs")).to be(true)
+      expect(described_class.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")).to be(true)
+
+      grant.revoke!
+
+      expect(described_class.any_pull_request_feature_enabled?(project:, feature: "auto_scan_prs")).to be(false)
+    end
+
+    it "finds only a granted PR for merge when the merge phase is disabled" do
+      configure({ "merge" => false })
+      pull_request = create(:issue, :pull_request, project:, parent_issue: issue, github_state: "open",
+        labels: [ project.feature_activation_label_for("auto_merge") ])
+      create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+
+      expect(described_class.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(true)
+      expect(described_class.any_pull_request_feature_enabled?(project:, feature: "auto_merge")).to be(true)
+    end
   end
 
   describe "while the rollout flag is off" do

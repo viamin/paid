@@ -137,11 +137,18 @@ from a grant, GitHub approval, review, or run.
 - `Automation::FeatureActivation` gates every capability entry point through
   `Automation::Phases.for_capability(feature)` and the effective policy, so a
   disabled phase cannot be re-enabled by a trusted activation label or by a
-  catch-all label.
+  catch-all label. Project-wide PR scanner prefilters still consider open PRs
+  linked to active grants when the phase default is disabled; each candidate
+  then passes its own effective-policy and capability-signal checks before the
+  scanner fetches it. An exception for one work chain does not admit other PRs
+  in the same project.
 - `AgentRuns::RecheckIssueEligibility` rechecks phase authorization at dequeue
   and cancels queued work whose authorization disappeared, without touching a
   claimed or running run. Retries that create a new execution pass the same
-  gate.
+  gate. Workflow follow-ups and timed-out retries record automatic
+  authorization separately from queue priority: an inherited manual priority
+  or initiating user does not turn a new automatic execution into a manual
+  start.
 
 ## Migration preview
 
