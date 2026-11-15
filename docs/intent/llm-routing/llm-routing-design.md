@@ -48,6 +48,10 @@ declared input byte arrived before starting the CLI. The transport waits for
 process completion and checks the exit status before returning output. The container
 root filesystem remains read-only. Docker's archive endpoint rejects writes
 to read-only containers, including paths backed by tmpfs.
+Harness preparation paths using `~/` resolve against the container user's home
+before the materializer validates their allowed root and writes them. OpenCode
+uses this form for its model configuration; treating the tilde as a literal
+directory would make the CLI ignore the selected model.
 An unavailable exit status, missing setup output, or Docker read timeout is a
 transport failure, never success or a permanent configuration failure.
 Caller environment entries are bounded per entry.
