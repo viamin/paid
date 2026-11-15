@@ -63,6 +63,23 @@ RSpec.describe "Layered verification audits" do
     expect(response.body).to match(/name="confirmed"[^>]*value="true"/)
   end
 
+  # @spec LAYERED-VERIFY-021
+  it "does not render omissions when every verification check is selected" do
+    all_checks_parameters = request_parameters.deep_merge(
+      selections: {
+        obligation.id => {
+          selected_checks: LayeredVerificationCheckResult::PRODUCERS,
+          exclusions: []
+        }
+      }
+    )
+
+    post request_layered_verification_audit_project_agent_runs_path(project), params: all_checks_parameters
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("Omissions:")
+  end
+
   it "queues the confirmed preview with its selected checks" do
     expect {
       post request_layered_verification_audit_project_agent_runs_path(project),

@@ -28,9 +28,11 @@
               <% plan = @audit_preview.dig("plan", source.fetch("obligation_id").to_s) %>
               <span class="text-gray-600">Checks: <%= plan.fetch("selected_checks").map(&:humanize).to_sentence %></span><br>
               <span class="text-gray-600">Fit: <%= plan.fetch("fit") %></span><br>
-              <span class="text-gray-600">Omissions: <%= plan.fetch("exclusions").to_sentence %></span>
+              <% if plan.fetch("exclusions").any? %>
+                <span class="text-gray-600">Omissions: <%= plan.fetch("exclusions").to_sentence %></span><br>
+              <% end %>
               <% if plan.fetch("required_inputs").any? %>
-                <br><span class="text-gray-600">Inputs: <%= plan.fetch("required_inputs").to_sentence %></span>
+                <span class="text-gray-600">Inputs: <%= plan.fetch("required_inputs").to_sentence %></span>
               <% end %>
             </p>
           <% end %>
