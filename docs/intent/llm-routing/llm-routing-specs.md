@@ -24,7 +24,8 @@
   the container. Request input SHALL reach the container through an upgraded
   Docker exec stdin connection that verifies its declared length and waits for command completion; a missing
   exec exit status SHALL fail explicitly. The container root filesystem SHALL
-  remain read-only.
+  remain read-only. Harness preparation paths beginning with `~/` SHALL resolve
+  within the container user's home before validation and materialization.
   Post-run
   background summaries and diagnostics SHALL route independently of a cleaned-up environment.
 - [x] **LLM-ROUTING-007** — Decision drafting SHALL honor the shared fallback

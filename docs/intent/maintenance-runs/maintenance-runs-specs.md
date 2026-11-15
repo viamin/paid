@@ -160,3 +160,44 @@
       an explicit user selection; an explicit election captured at run start
       counts as such a selection, and that election is itself never a
       tenant-wide, project-wide, or recipe-wide setting.
+
+## Advisory PR Audit and Closeout
+
+- [ ] **MAINT-080**: When auditing a pull request, the system shall compare
+      the actual base and head revisions and report only findings introduced
+      or worsened by that comparison.
+- [ ] **MAINT-081**: The system shall retain pre-existing debt in maintenance
+      reporting and publish PR-audit evidence through the existing review
+      publication lifecycle without duplicate or stale-head reviews.
+- [ ] **MAINT-082**: Where PR-audit tool evidence requires execution, the
+      system shall collect it inside the established isolated execution
+      boundary and shall not infer analyzer execution from the no-container
+      review pilot.
+- [ ] **MAINT-083**: The system shall keep PR-audit findings advisory unless
+      a separately accepted policy and analyzer-specific accuracy and
+      failure-handling evidence authorize a blocking gate.
+- [ ] **MAINT-090**: At closeout, the system shall audit every accepted MAINT
+      claim against shipped behavior, tests, and required human or external
+      evidence; it shall record each remaining gap as an explicit dependency
+      and shall not infer completion from closed child issues.
+- [ ] **MAINT-091**: The closeout shall preserve the `maintenance_runs`
+      default-off admission guard and opt-in recurring schedules unless an
+      evidence-backed RDR closeout decision explicitly changes them.
+
+## Implementation Slice Traceability
+
+| Task | Assigned claims |
+| --- | --- |
+| [#4328](https://github.com/viamin/paid/issues/4328) (M01) | MAINT-001–002, MAINT-004, MAINT-010–017 |
+| [#4329](https://github.com/viamin/paid/issues/4329) (M02) | MAINT-020–029 |
+| [#4330](https://github.com/viamin/paid/issues/4330) (M03) | MAINT-040–045 |
+| [#4331](https://github.com/viamin/paid/issues/4331) (M04) | MAINT-018, MAINT-070–073 |
+| [#4332](https://github.com/viamin/paid/issues/4332) (M05) | MAINT-003, MAINT-060–064 |
+| [#4333](https://github.com/viamin/paid/issues/4333) (M06) | MAINT-080–083 |
+| [#4334](https://github.com/viamin/paid/issues/4334) (C75) | MAINT-090–091 |
+
+MAINT-004 is shared rollout preservation work: M01 implements readable
+reports and cancellable active runs during rollback; later slices must retain
+that behavior. This table assigns implementation and closeout accountability;
+it does not authorize runtime work before #4635 has an owner acceptance
+record.

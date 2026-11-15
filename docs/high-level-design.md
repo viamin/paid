@@ -224,6 +224,21 @@ actionable owner or a clearly routed operator prerequisite. The parent retains
 the PR evidence and explicit dependency edges; a merged audit alone is never
 proof that its acceptance criteria passed.
 
+Some acceptance criteria can be credibly checked only at a source PR head, a
+merged revision, or an identified live environment. Paid records those as
+stage-bound closeout verification work: a reviewed, versioned mapping binds a
+recipe, one criterion, one target, and its resolved RDR-077 phase and
+phase-scoped capability, and its bounded result remains unverified
+until current evidence for that exact pairing exists. A merged-revision target
+is GitHub's recorded merge, squash, or rebase revision for that source PR, or
+an authoritatively verified descendant containing its reviewed head; an
+ambiguous association is unknown. A merge never establishes deployment or
+live-environment identity. The work stays in the existing Coding, Release &
+Deployment, or Operations phase and capability recorded by its reviewed
+mapping, reuses isolated technical validation and trusted live measurements,
+and returns evidence to the existing criterion-level acceptance authority
+rather than creating a deployment engine or an independent closure path.
+
 A project may also host the layered-verification add-on: a bounded capability
 that checks correspondence between approved business intent and its
 representations (specs, formal models, tests, code) without treating a

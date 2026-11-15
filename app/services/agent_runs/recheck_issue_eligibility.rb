@@ -74,11 +74,14 @@ module AgentRuns
 
     # Authorization is rechecked before queued work starts. Disabling a phase
     # or revoking a grant prevents the queued run from starting; it never
-    # terminates a run that already started, and manual runs keep the
-    # authorization their explicit start carried.
+    # terminates a run that already started. A manual queue priority alone
+    # does not establish manual authorization: automated PR repairs can
+    # inherit that priority from a failed manual run.
     # @spec AUTOMATION-PHASES-013
     def phase_revoked?
-      return false unless agent_run.automatic?
+      automatic_authorization = agent_run.automatic? || agent_run.external_metadata["automatic_authorization"] ||
+        (agent_run.manual? && agent_run.source_pull_request_number.present? && agent_run.initiating_user_id.nil?)
+      return false unless automatic_authorization
       return false unless Automation::RolloutGuard.enabled?(agent_run.project)
 
       capability = PHASE_CAPABILITIES[agent_run.goal]

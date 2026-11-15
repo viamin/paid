@@ -27,6 +27,13 @@
   `spec/services/knowledge/artifact_store_spec.rb`,
   `spec/jobs/run_collectors_job_spec.rb`.
 
+- [x] **KNOWLEDGE-016** — When the containerized knowledge collector fetches a
+  pinned repository commit on the host, it SHALL allow the shallow fetch up to
+  five minutes before failing as a `CloneError`, and SHALL remove the temporary
+  host checkout on failure.
+  *Code:* `app/services/knowledge/containerized_runner.rb`.
+  *Test:* `spec/services/knowledge/containerized_runner_spec.rb`.
+
 - [x] **KNOWLEDGE-015** — When import-time knowledge collection or collector
   execution encounters a transient PostgreSQL connection failure, it SHALL
   retry through its bounded job retry policy, retain the project's

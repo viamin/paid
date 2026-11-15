@@ -30,7 +30,7 @@ module Containers
       import json, os, pathlib, selectors, signal, subprocess, sys, threading, urllib.request
 
       def write_file(name, content, allowed_roots, mode=0o600):
-          path = pathlib.Path(os.path.realpath(name))
+          path = pathlib.Path(os.path.realpath(os.path.expanduser(name)))
           if not path.is_absolute() or not any(path == root or root in path.parents for root in allowed_roots):
               raise ValueError("materialized file path is outside its allowed roots")
           path.parent.mkdir(parents=True, exist_ok=True)

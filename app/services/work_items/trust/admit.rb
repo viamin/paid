@@ -11,6 +11,9 @@ module WorkItems
       module_function
 
       def trusted?(project:, provider:, identity_type:, external_id:)
+        # GitHub content stays behind its existing user allowlist and
+        # issue.trusted? gate, even if a generic identity row was recorded.
+        return false if provider.to_s.casecmp?("github")
         return false unless Automation::Providers::UnifiedWorkItemsRolloutGuard.enabled?(project)
 
         trusted_identity?(project:, provider:, identity_type:, external_id:) || mapped_user?(project:, provider:,

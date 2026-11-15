@@ -1361,6 +1361,71 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(github_client).to have_received(:pull_request).with(scan_off_project.full_name, 42)
       end
 
+      # @spec AUTOMATION-PHASES-006 @spec AUTOMATION-PHASES-007
+      it "scans a granted PR when the coding phase is disabled" do
+        FeatureFlags.enable!(:automation_phases, project: scan_off_project)
+        scan_off_project.update!(automation_phase_settings: {
+          "phases" => { "coding" => false }, "release" => false, "deployment" => false
+        })
+        parent = create(:issue, project: scan_off_project, github_number: 7)
+        create(:work_item_continuation_grant, project: scan_off_project, issue: parent,
+          start_phase: "coding", endpoint: "coding")
+        create(:issue, :pull_request, project: scan_off_project, github_number: 42,
+          github_creator_login: "viamin", parent_issue: parent, paid_state: "completed",
+          labels: [ scan_off_project.feature_activation_label_for("auto_scan_prs") ])
+        create(:issue, :pull_request, project: scan_off_project, github_number: 43,
+          github_creator_login: "viamin", parent_issue: create(:issue, project: scan_off_project, github_number: 8),
+          paid_state: "completed",
+          labels: [ scan_off_project.feature_activation_label_for("auto_scan_prs") ])
+        stub_automation_label_events!(issue_number: 42, proj: scan_off_project,
+          label_name: scan_off_project.feature_activation_label_for("auto_scan_prs"))
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).to have_received(:pull_request).with(scan_off_project.full_name, 42)
+        expect(github_client).not_to have_received(:pull_request).with(scan_off_project.full_name, 43)
+      end
+
+      # @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-007
+      it "retains scan settings without scanning unrelated PRs after coding is disabled" do
+        FeatureFlags.enable!(:automation_phases, project: scan_off_project)
+        scan_off_project.update!(auto_scan_prs: true, automation_phase_settings: {
+          "phases" => { "coding" => false }, "release" => false, "deployment" => false
+        })
+        parent = create(:issue, project: scan_off_project, github_number: 7)
+        create(:work_item_continuation_grant, project: scan_off_project, issue: parent,
+          start_phase: "coding", endpoint: "coding")
+        [ [ 42, parent ], [ 43, create(:issue, project: scan_off_project, github_number: 8) ] ].each do |number, source|
+          create(:issue, :pull_request, project: scan_off_project, github_number: number,
+            github_creator_login: "viamin", parent_issue: source, paid_state: "completed",
+            labels: [ scan_off_project.automation_label_name ])
+        end
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).to have_received(:pull_request).with(scan_off_project.full_name, 42)
+        expect(github_client).not_to have_received(:pull_request).with(scan_off_project.full_name, 43)
+      end
+
+      # @spec AUTOMATION-PHASES-002 @spec AUTO-MERGE-008
+      it "does not scan non-Dependabot PRs through Dependabot-only auto-merge" do
+        FeatureFlags.enable!(:automation_phases, project: scan_off_project)
+        scan_off_project.update!(auto_scan_prs: true, auto_merge_mode: "dependabot_only", automation_phase_settings: {
+          "phases" => { "coding" => false, "merge" => true }, "release" => false, "deployment" => false
+        })
+        create(:issue, :pull_request, project: scan_off_project, github_number: 42,
+          github_creator_login: "viamin", paid_state: "completed",
+          labels: [ scan_off_project.automation_label_name ])
+        create(:issue, :pull_request, project: scan_off_project, github_number: 43,
+          github_creator_login: "renovate[bot]", paid_state: "completed",
+          labels: [ scan_off_project.automation_label_name ])
+
+        activity.execute(project_id: scan_off_project.id)
+
+        expect(github_client).not_to have_received(:pull_request).with(scan_off_project.full_name, 42)
+        expect(github_client).not_to have_received(:pull_request).with(scan_off_project.full_name, 43)
+      end
+
       # @spec AUTOMATION-ACTIVATION-006
       it "does not scan when an untrusted actor added the activation label" do
         create(:issue, :pull_request,

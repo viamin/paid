@@ -70,6 +70,7 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
           # the run to reserved-slot throttling and lowest queue priority —
           # inappropriate for retrying already-approved work.
           trigger_type: "manual",
+          external_metadata: locked_run.external_metadata.merge("automatic_authorization" => true),
           status: "queued"
         )
         locked_run.retry!(

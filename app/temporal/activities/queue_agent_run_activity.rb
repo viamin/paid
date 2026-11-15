@@ -16,6 +16,7 @@ module Activities
       goal = input[:goal]
       focus = input[:focus] || "general"
       trigger_type = input[:trigger_type]
+      automatic_authorization = trigger_type.nil? || trigger_type == "automatic"
       auto_pick = input.fetch(:auto_pick, false)
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
@@ -120,6 +121,9 @@ module Activities
               focus: focus,
               tdd_phase: tdd_phase,
               trigger_type: trigger_type,
+              # A PR repair may inherit manual queue priority, but its
+              # authorization still comes from the automatic workflow.
+              external_metadata: automatic_authorization ? { "automatic_authorization" => true } : {},
               auto_pick: auto_pick,
               count_toward_draft_review_round: count_toward_draft_review_round,
               expected_draft_review_count: expected_draft_review_count,
