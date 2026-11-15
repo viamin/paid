@@ -5,19 +5,15 @@ prefix: MAINT
 
 # Low-Level Design: General Maintenance Runs
 
-> **Draft — pending design acceptance.** Companion to
-> [`docs/high-level-design.md`](../../high-level-design.md) and the draft
-> [`RDR-075` design](../../rdrs/RDR-075-general-maintenance-runs.md)
-> (`docs/rdrs/RDR-075-general-maintenance-runs.md`, merged to main via
-> #4308). RDR-075 is still **Status: Draft**, not yet accepted. This LLD and
-> its EARS specs are
-> reviewable contracts produced for the human review gate that RDR
-> acceptance requires; they are not accepted intent and authorize no
-> implementation. See
+> **Accepted intent.** Companion to
+> [`docs/high-level-design.md`](../../high-level-design.md) and
+> [`RDR-075`](../../rdrs/RDR-075-general-maintenance-runs.md). The
+> [owner decision](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906)
+> accepts the exact HLD/LLD/EARS revision. Implementation remains subject to
+> explicit issue dependencies, tests, and the default-off rollout guard. See
 > [`audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md`](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md)
 > for the completed native-analyzer and sidecar tool-handoff evidence this
-> design relies on. The technical validation does not replace RDR-075's
-> separate human acceptance gate (#4635).
+> design relies on.
 
 ## Purpose
 
@@ -226,10 +222,10 @@ merging a draft is not substitute evidence for either audit.
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
-| New run type vs. custom prompt on an existing goal | New `"maintenance"` `AgentRun` goal | Custom prompts on existing creation goals | A custom prompt cannot represent report-only success, recurring finding identity, or a maintenance-shaped scope without overloading an unrelated goal's semantics (RDR-075 draft, Alternatives Considered). |
+| New run type vs. custom prompt on an existing goal | New `"maintenance"` `AgentRun` goal | Custom prompts on existing creation goals | A custom prompt cannot represent report-only success, recurring finding identity, or a maintenance-shaped scope without overloading an unrelated goal's semantics (RDR-075, Alternatives Considered). |
 | Checkout access for batch analyzers | Native CLI analyzers use the #4604-validated `execute_in_execution_environment` path; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services. #4604 validated pinned-checkout execution and cleanup for one native CLI analyzer; each additional analyzer must be checked before use. No current recipe needs a sidecar checkout mount. |
-| Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
-| Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075, Evidence and reporting). |
+| Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075, Alternatives Considered). |
 
 ## Open Questions & Future Decisions
 
@@ -245,13 +241,13 @@ merging a draft is not substitute evidence for either audit.
    (JSON structure, pagination) — resolve during #4328/#4329 implementation,
    not before design acceptance.
 2. Whether `ScheduledMutationSweepJob`/`MutationSweeps::Run` migrate into a
-   maintenance recipe — RDR-075 draft leaves this open; keep current sweep
+   maintenance recipe — RDR-075 leaves this open; keep current sweep
    behavior unchanged until an explicit migration is designed.
 3. Initial analyzer version pins and project-configuration defaults for the
    unnecessary-code recipe — belongs to #4330 once tool-assisted recipes are
    implemented and measured against prompt-only baselines.
 4. A bind-mounted `tool_sidecar` variant for checkout-dependent network-service
-   analyzers — not needed by any analyzer named in the current draft; file as
+   analyzers — not needed by any analyzer named in the current design; file as
    upstream RDR-073 work only if a future recipe requires it.
 
 ## What This Is Not
@@ -267,7 +263,7 @@ merging a draft is not substitute evidence for either audit.
 
 ## References
 
-- [RDR-075 draft (PR #4308)](https://github.com/viamin/paid/pull/4308)
+- [RDR-075 owner acceptance](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906)
 - [RDR-073: Marketplace Tool Sidecars](../../rdrs/RDR-073-marketplace-tool-sidecars.md)
   and its [LLD](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md)
 - [layered-verification LLD](../layered-verification/layered-verification-design.md)

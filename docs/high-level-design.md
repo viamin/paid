@@ -422,12 +422,12 @@ budgets, idempotency, and revalidation remain deterministic code gates.
 Automatic repair has an accepted, per-run, off-by-default policy, bounded to the
 approved finding and unavailable to security hardening. See
 `docs/intent/optimization-recipes/`; #4636 records the explicit owner
-acceptance. This scoped policy decision does not enable implementation or
-rollout while the base maintenance contract remains unaccepted.
-**Draft, not yet accepted**: see RDR-075 (merged to
-`docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
-`docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+acceptance. This scoped policy decision does not itself enable implementation
+or rollout; the base maintenance contract and its own guards still govern.
+The [RDR-075 owner decision](https://github.com/viamin/paid/issues/4635#issuecomment-6901990906)
+accepts the maintenance direction and its HLD → LLD → EARS handoff. See
+`docs/intent/maintenance-runs/` for the implementation contract; runtime
+admission remains default-off and issue-gated.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
