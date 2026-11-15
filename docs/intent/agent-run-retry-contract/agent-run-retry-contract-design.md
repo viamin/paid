@@ -199,8 +199,8 @@ lineage — each already has a column or record that does the job:
 
 - `AgentRun#external_metadata["manual_retry_attempt"]` /
   `"retried_from_agent_run_id"` (manual-run-retry).
-- `AgentRun#external_metadata["timeout_issue_goal_operation_key"]` and
-  `["timeout_issue_goal_retry_attempt"]` for timed-out `create_issue`
+- `AgentRun#external_metadata["create_issue_operation_key"]` and
+  `["create_issue_retry_attempt"]` for timed-out `create_issue`
   replacements. A terminal legacy row without those values uses the former
   identity/parameter count only to establish its first keyed replacement.
 - `Issue#consecutive_auto_pick_failure_count` (EAGER-QUEUE-007).

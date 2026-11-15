@@ -77,6 +77,7 @@ module AgentRuns
       if assessment.reason == :retry_limit_reached
         agent_run.update!(error_message: "Auto-retry limit reached (#{MAX_RETRIES} retries)")
         record_decision(agent_run, status: "noop", attempt: assessment.attempt, result: { reason: "retry_limit_reached", retry_attempt: assessment.attempt })
+        log_retry_limit_reached(agent_run, assessment.attempt)
       elsif assessment.reason == :existing_active_run
         mark_existing_run_retry!(agent_run, assessment.existing_run, assessment.attempt, decision_point)
         return RetryAttempt::Result.new(:existing_active_run, :existing_active_run, agent_run, assessment.existing_run)
@@ -124,7 +125,18 @@ module AgentRuns
       scope = AgentRun.where(project_id: agent_run.project_id, goal: agent_run.goal, status: AgentRun::UNFINISHED_STATUSES)
         .where.not(id: agent_run.id)
       return scope.find_by(issue_id: agent_run.issue_id) if agent_run.issue_id.present?
-      return scope.find_by(source_pull_request_number: agent_run.source_pull_request_number) if agent_run.source_pull_request_number.present?
+      scope.find_by(source_pull_request_number: agent_run.source_pull_request_number) if agent_run.source_pull_request_number.present?
+    end
+
+    def log_retry_limit_reached(agent_run, attempt)
+      Rails.logger.info(
+        message: "agent_execution.issue_goal_retry_limit_reached",
+        agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        project_id: agent_run.project_id,
+        previous_retries: attempt - 1,
+        max_retries: MAX_RETRIES
+      )
     end
 
     def mark_existing_run_retry!(agent_run, existing_run, attempt, decision_point)

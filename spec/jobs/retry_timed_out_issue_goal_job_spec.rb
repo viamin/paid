@@ -62,7 +62,6 @@ RSpec.describe RetryTimedOutIssueGoalJob do
     end
 
     it "does not retry when max retries reached and sets error_message" do
-      # Create MAX_RETRIES previous timed-out runs
       described_class::MAX_RETRIES.times do
         create(:agent_run, :timeout, :create_issue_goal,
           project: project, issue: issue, status: "retried")
@@ -70,11 +69,20 @@ RSpec.describe RetryTimedOutIssueGoalJob do
 
       agent_run = create_timed_out_issue_goal_run
 
+      allow(Rails.logger).to receive(:info).and_call_original
+      expect(Rails.logger).to receive(:info).with(
+        message: "agent_execution.issue_goal_retry_limit_reached",
+        agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        project_id: agent_run.project_id,
+        previous_retries: described_class::MAX_RETRIES,
+        max_retries: described_class::MAX_RETRIES
+      )
+
       expect { described_class.perform_now(agent_run.id) }
         .not_to change(AgentRun, :count)
 
-      expect(agent_run.reload.error_message)
-        .to eq("Auto-retry limit reached (#{described_class::MAX_RETRIES} retries)")
+      expect(agent_run.reload.error_message).to eq("Auto-retry limit reached (#{described_class::MAX_RETRIES} retries)")
       event = OrchestrationDecision.last
       expect(event.context["decision_status"]).to eq("noop")
       expect(event.inputs["retry_attempt"]).to eq(described_class::MAX_RETRIES + 1)
@@ -220,7 +228,16 @@ RSpec.describe RetryTimedOutIssueGoalJob do
     it "skips retry but marks original as retried and enqueues queue processing when an active run already exists" do
       agent_run = create_timed_out_issue_goal_run
       # Create an active (queued) run for the same project+issue to trigger unique index
-      create(:agent_run, :create_issue_goal, project: project, issue: issue, status: "queued")
+      existing_run = create(:agent_run, :create_issue_goal, project: project, issue: issue, status: "queued")
+
+      allow(Rails.logger).to receive(:info).and_call_original
+      expect(Rails.logger).to receive(:info).with(
+        message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
+        original_agent_run_id: agent_run.id,
+        existing_agent_run_id: existing_run.id,
+        issue_id: issue.id,
+        project_id: project.id
+      )
 
       ActiveJob::Base.queue_adapter.enqueued_jobs.clear
       described_class.perform_now(agent_run.id)
