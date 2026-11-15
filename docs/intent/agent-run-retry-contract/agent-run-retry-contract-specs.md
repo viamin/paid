@@ -142,13 +142,14 @@
   *Code:* `AgentRuns::TimeoutIssueGoalRetryPolicy`,
   `RetryTimedOutIssueGoalJob`.
 
-- [x] **AGENT-RETRY-015** — An issue-less timed-out `create_issue`
-  replacement SHALL carry a stable logical-operation key derived from its
-  source request and an attempt number, and subsequent replacements SHALL use
-  that lineage rather than equal goal parameters or prompt text to determine
-  the retry budget. A legacy terminal run without that lineage SHALL use the
-  former identity/parameter count only when establishing the first keyed
-  replacement.
+- [x] **AGENT-RETRY-015** — A new issue-less `create_issue` request SHALL
+  receive a UUID logical-operation key before validation, and its timed-out
+  replacements SHALL carry that key and an attempt number. Subsequent
+  replacements SHALL use that lineage rather than equal goal parameters or
+  prompt text to determine the retry budget. A legacy terminal run without
+  that lineage SHALL use the former identity/parameter count only when
+  establishing the first keyed replacement, which receives the
+  `agent-run:<id>` fallback key.
   *Code:* `AgentRuns::TimeoutIssueGoalRetryPolicy`.
 
 - [ ] **AGENT-RETRY-016** — Where a later acceptance-audit adapter is
