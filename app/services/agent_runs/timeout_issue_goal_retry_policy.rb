@@ -93,8 +93,9 @@ module AgentRuns
       message.include?(ACTIVE_ISSUE_CONSTRAINT) || message.include?(ACTIVE_PR_CONSTRAINT)
     end
 
-    def handle_duplicate_active_run!(agent_run, attempt)
+    def handle_duplicate_active_run!(agent_run, attempt, error: nil)
       existing_run = existing_active_run_for(agent_run)
+      raise error if error && !existing_run
       raise ActiveRecord::RecordNotUnique unless existing_run
 
       mark_existing_run_retry!(agent_run, existing_run, attempt, "timeout_auto_retry")

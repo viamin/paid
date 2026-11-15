@@ -47,7 +47,7 @@ module AgentRuns
       agent_run = AgentRun.find_by(id: agent_run_id)
       return Result.new(:skipped, :missing_run, nil, nil) unless agent_run
 
-      return policy.handle_duplicate_active_run!(agent_run, attempt || policy.next_attempt(agent_run)) if policy.respond_to?(:handle_duplicate_active_run!)
+      return policy.handle_duplicate_active_run!(agent_run, attempt || policy.next_attempt(agent_run), error: error) if policy.respond_to?(:handle_duplicate_active_run!)
 
       record_reason(agent_run, :active_lid_planning_run, attempt || policy.next_attempt(agent_run))
     end

@@ -269,5 +269,14 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       )
       expect(ProcessRunQueueJob).to have_been_enqueued
     end
+
+    it "preserves the original unique-index error when the conflicting run finishes before recovery" do # @spec AGENT-RETRY-014
+      agent_run = create_timed_out_issue_goal_run
+      error = ActiveRecord::RecordNotUnique.new("PG::UniqueViolation: idx_agent_runs_unique_active_issue")
+
+      expect {
+        AgentRuns::TimeoutIssueGoalRetryPolicy.new.handle_duplicate_active_run!(agent_run, 1, error: error)
+      }.to raise_error(error)
+    end
   end
 end
