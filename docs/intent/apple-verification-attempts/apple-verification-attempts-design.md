@@ -154,6 +154,14 @@ infrastructure results (`capacity_or_quota`, `worker_infrastructure`,
 infrastructure failures within policy; it must not silently retry deterministic
 project failures or represent infrastructure failure as a code defect.
 
+`RetryableAttempts::RetryAttempt` supplies the shared lock, fresh assessment,
+and successor-claim mechanics for these retries. Apple policy retains the
+classification, retry limit, fair-queue and per-agent-run admission checks,
+immutable source/revision copy, and lifecycle behavior. Its unique
+`retry_of_attempt_id` link is the retry ledger and source identity; the shared
+mechanism returns an inspectable claim or refusal reason and never adds an
+`AgentRun`-specific retry record.
+
 ## Lifecycle-gate enforcement
 
 Blocking behavior is tied to an approved committed workflow digest and its

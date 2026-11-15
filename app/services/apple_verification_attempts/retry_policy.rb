@@ -4,9 +4,10 @@ module AppleVerificationAttempts
   # Decides whether a failed Apple verification attempt is eligible for an
   # automatic retry. Infrastructure failures are retried up to Config.max_retries;
   # project failures are deterministic and never silently retried.
-  # @spec APPLE-ATTEMPT-010
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-015
   class RetryPolicy
     Result = Data.define(:retryable, :reason)
+    Assessment = Data.define(:eligible?, :reason, :attempt)
 
     def self.call(attempt:)
       new(attempt:).call
@@ -30,6 +31,59 @@ module AppleVerificationAttempts
       return Result.new(false, "deterministic project failure") if FailureClassification.project?(classification)
 
       Result.new(false, "no failure classification")
+    end
+
+    def assess(terminal_attempt = @attempt, retry_number: terminal_attempt.retry_number + 1)
+      result = self.class.new(attempt: terminal_attempt).call
+      return Assessment.new(false, result.reason, retry_number) unless result.retryable
+      return Assessment.new(false, "retry already claimed", retry_number) if terminal_attempt.retry_attempt
+      return Assessment.new(false, "Apple verification queue is full", retry_number) if Queue.full?
+      return Assessment.new(false, "Apple verification attempt limit reached for agent run", retry_number) if agent_run_limit_reached?(terminal_attempt)
+
+      Assessment.new(true, "retryable infrastructure failure", retry_number)
+    end
+
+    def attempt_class
+      AppleVerificationAttempt
+    end
+
+    def build_successor!(attempt, retry_number)
+      attempt.project.apple_verification_attempts.create!(retry_attributes(attempt, retry_number))
+    end
+
+    def duplicate_claim_conflict?(_error)
+      true
+    end
+
+    # Apple attempts already persist their retry ledger through the unique
+    # retry_of_attempt link. Recording a second AgentRun-oriented decision
+    # would create conflicting identities for the same retry.
+    def record_claim!(_attempt, successor:, decision_point:, retry_number:)
+    end
+
+    def record_skip!(_attempt, reason:, decision_point:, retry_number:)
+    end
+
+    private
+
+    def agent_run_limit_reached?(attempt)
+      attempt.agent_run && AppleVerificationAttempt.where(agent_run: attempt.agent_run).count >= Config.max_attempts_per_run
+    end
+
+    def retry_attributes(attempt, retry_number)
+      {
+        account: attempt.account,
+        agent_run: attempt.agent_run,
+        apple_verification_workflow_revision: attempt.apple_verification_workflow_revision,
+        apple_worker_profile: attempt.apple_worker_profile,
+        source_digest: attempt.source_digest,
+        commit_sha: attempt.commit_sha,
+        requested_capture: attempt.requested_capture,
+        lifecycle_gate: attempt.lifecycle_gate,
+        retry_number:,
+        status: "queued",
+        retry_of_attempt: attempt
+      }
     end
   end
 end

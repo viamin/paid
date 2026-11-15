@@ -9,8 +9,8 @@ prefix: AGENT-RETRY
 > segment names the shared vocabulary and minimal interface shape for
 > "another attempt at the same logical operation" across Paid's existing
 > retry (and deliberate no-retry) paths for agent runs and agent-run-style
-> attempts (#4986). It is a map and a contract with one runtime reference
-> adopter: every path keeps its own owner, identity, and dispatch logic.
+> attempts (#4986). It is a map and a contract with reusable claim mechanics:
+> every path keeps its own owner, identity, and dispatch logic.
 
 ## Purpose
 
@@ -102,7 +102,7 @@ decisions. Naming them gives future adopters (and reviewers) a shared
 vocabulary without forcing a shared base class:
 
 ```ruby
-# `AgentRuns::RetryAttempt` ships this mechanics shape. A use-case-owned
+# `RetryableAttempts::RetryAttempt` ships this mechanics shape. A use-case-owned
 # policy supplies admission and successor construction.
 module Retryable
   module AttemptPolicy
@@ -144,7 +144,7 @@ answers.
 | In-place rate-limit recovery | `StaleRunDetectorJob#recover_rate_limited_run` | The same `AgentRun` row (`status: "rate_limited"`, `rate_limited_until` elapsed) | No new row — in-place re-queue under row lock, budget via `stale_requeue_count` against `AgentRun::MAX_RATE_LIMITED_REQUEUES`, admission recheck via `active_sibling_exists?`, capacity-parked attempts exempt from budget decrement | Budget exhausted → terminal `failed`; active sibling already owns the identity's unique slot → terminal `failed`, superseded | Later — already in-place-attempt-shaped; a natural second reference for the in-place half of the contract (as opposed to manual-run-retry's mint-new-row half), tracked separately. |
 | Temporal activity recovery | Temporal server + `AgentExecutionWorkflow`'s per-activity `RetryPolicy` (e.g. `RUN_AGENT_RETRY_POLICY`, `max_attempts: 2`) | The in-flight workflow execution / activity task — not an `AgentRun` | Infra-only re-invocation of the *same* activity call inside one logical attempt (worker crash, heartbeat timeout); application errors are marked `non_retryable` in the activity itself | `max_attempts` exhausted → activity failure propagates to `MarkAgentRunFailedActivity`, which is where this contract's scope begins | **Not migrated — different layer**, named here only so it is not mistaken for an unmapped gap (see Scope and non-goals). |
 | Acceptance audits | Acceptance-audit sweep / `PartialCloseouts::Advance` (`docs/intent/partial-closeout-recovery/`, #4595) | `(issue_id, closeout_evidence_digest)` | Deliberately **not retried**: at most one automatic audit attempt per issue and evidence digest, including terminal attempts, so a failed audit never loops. A new digest (new merged PR, or a no-code outcome) earns exactly one new audit | Any terminal attempt recorded for the current digest; digest unchanged | **Out of scope for this issue.** No acceptance-audit runtime file is touched by this change. See "Acceptance-audit adapter" below for the documented extension point the separate audit-recovery work can land on. |
-| Apple verification attempts | `AppleVerificationAttempts::RetryMonitor` + `AppleVerificationRetryJob` (`docs/intent/apple-verification-attempts/`, APPLE-ATTEMPT-010) and the rerun flow (APPLE-VERIFY-006) | `retry_of_attempt_id` lineage to the terminal source attempt, scoped by `agent_run_id` | An idempotent queued retry bound to its terminal source attempt; retries only infra-classified failures (`capacity_or_quota`, `worker_infrastructure`, `cancellation_or_timeout`), bounded by a configurable retry limit and queue depth; `idx_apple_attempts_one_active_per_run` enforces one active attempt per run | Non-infra failure classification (deterministic project failure); retry limit reached; queue depth cap | Later — same shape (lineage column + bounded retry + failure-classification gate) as the contract's "mint a linked row" half; a candidate third reference once a second slice is scoped, tracked separately. |
+| Apple verification attempts | `AppleVerificationAttempts::RetryMonitor` + `AppleVerificationRetryJob` (`docs/intent/apple-verification-attempts/`, APPLE-ATTEMPT-010) and the rerun flow (APPLE-VERIFY-006) | `retry_of_attempt_id` lineage to the terminal source attempt, scoped by `agent_run_id` | An idempotent queued retry bound to its terminal source attempt; retries only infra-classified failures (`capacity_or_quota`, `worker_infrastructure`, `cancellation_or_timeout`), bounded by a configurable retry limit and queue depth; `idx_apple_attempts_one_active_per_run` enforces one active attempt per run | Non-infra failure classification (deterministic project failure); retry limit reached; queue depth cap | **Second slice** — `RetryableAttempts::RetryAttempt` locks and re-assesses the terminal attempt before `AppleVerificationAttempts::RetryPolicy` admits and creates its linked successor. |
 | `bootstrap_readiness` (explicit operator policy) | `AgentRun#bootstrap_readiness_goal?` exclusion inside `AgentRuns::ManualRunRetryPolicy#assess`; PROJECT-READINESS-007 | `(project, bootstrap_readiness goal)` | **No automatic retry of any kind.** A failed bootstrap run stays terminal until an operator explicitly starts a replacement from the project-setup Inbox entry | N/A — only an explicit operator action unblocks it | **Must not be migrated.** No adoption of the shared shape may silently add automatic retry to this path; its absence of retry is the policy, not a gap. |
 
 ## Cross-cutting safety requirements
@@ -203,7 +203,10 @@ lineage — each already has a column or record that does the job:
   `RetryTimedOutIssueGoalJob#count_previous_retries`.
 - `Issue#consecutive_auto_pick_failure_count` (EAGER-QUEUE-007).
 - `AgentRun#stale_requeue_count` (in-place rate-limit recovery).
-- `AppleVerificationAttempt#retry_of_attempt_id` (Apple verification).
+- `AppleVerificationAttempt#retry_of_attempt_id` (Apple verification). This
+  remains Apple verification's only retry ledger: the shared claim result
+  exposes a refusal reason but does not create an `AgentRun` or a second
+  `OrchestrationDecision` identity for the attempt.
 - The `(issue_id, closeout_evidence_digest)` pair recorded on the acceptance
   audit's continuation request (partial-closeout-recovery).
 
@@ -263,13 +266,14 @@ documented landing spot.
 
 **First implementation slice:** issue-less manual-run retry
 (`docs/intent/manual-run-retry/`) is the reference adopter of the
-mint-new-row half of this contract. `AgentRuns::RetryAttempt` owns
+mint-new-row half of this contract. `RetryableAttempts::RetryAttempt` owns
 scheduling, locked claim, and durable decision recording;
 `AgentRuns::ManualRunRetryPolicy` retains manual eligibility, lineage, and
-successor construction. Timed-out-issue-goal retry, in-place rate-limit recovery,
-and Apple verification attempts are named as candidate second/third slices
-(one mint-new-row-shaped, one in-place-shaped, one lineage-column-shaped)
-but are explicitly deferred to their own tracked follow-up work.
+successor construction. **Second implementation slice:** Apple verification
+uses the same mechanics for a locked linked-row claim while
+`AppleVerificationAttempts::RetryPolicy` retains its classification, queue,
+per-run limit, immutable source, and lifecycle policy. Timed-out-issue-goal
+retry and in-place rate-limit recovery remain deferred.
 
 **Rollback:** disable `Project#retry_failed_manual_runs` to stop new manual
 retry scheduling. The service preserves the existing cap, backoff, input
@@ -286,15 +290,14 @@ copying, and locked recheck, so no other retry path is changed.
 | First migration slice | Issue-less manual-run retry | Timed-out-issue-goal retry; in-place rate-limit recovery | Smallest blast radius and a concrete mint-new-row adopter for validating shared mechanics without changing another path's identity. |
 | New persisted state | None introduced | A shared `retry_attempts` table across every path | Every path's existing identity/lineage column (`external_metadata` keys, `retry_of_attempt_id`, `consecutive_auto_pick_failure_count`, `stale_requeue_count`) already covers attempt bookkeeping for that path; a shared table would duplicate data without adding capability. |
 | Acceptance-audit multi-attempt support | Documented extension point only, not implemented | Implement the adapter now | Acceptance-audit recovery is explicitly separate, in-progress work (per issue scope); this design intentionally stops at naming the landing spot so that work is not duplicated or pre-empted here. |
-| Shared interface as a shipped Ruby service | `AgentRuns::RetryAttempt` with a manual policy adapter | A universal `AgentRun#replay!`; copied schedule/job predicates | Shared mechanics need one real adopter to prove the boundary, while policy-owned admission avoids averaging incompatible identities and dispatch rules. |
+| Shared interface as a shipped Ruby service | `RetryableAttempts::RetryAttempt` with policy adapters | A universal `AgentRun#replay!`; copied schedule/job predicates | Shared mechanics support both AgentRun and Apple-attempt rows while policy-owned admission avoids averaging incompatible identities and dispatch rules. |
 
 ## Open Questions & Future Decisions
 
 ### Deferred
 
-1. Whether `RetryTimedOutIssueGoalJob` and the Apple verification retry
-   monitor should be refactored onto a literal shared Ruby interface, or
-   whether documenting the shape (as done here) remains sufficient —
+1. Whether `RetryTimedOutIssueGoalJob` should be refactored onto the shared
+   Ruby interface, or should retain its path-specific mechanics —
    decide when the second migration slice is actually scoped.
 2. Whether EAGER-QUEUE-007 needs its own `logical_identity`-shaped adapter
    note, since its identity owner (the issue) differs from every other

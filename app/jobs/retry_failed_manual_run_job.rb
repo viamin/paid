@@ -31,15 +31,15 @@ class RetryFailedManualRunJob < ApplicationJob
   end
 
   def perform(agent_run_id, attempt) # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005 MANUAL-RUN-RETRY-008 MANUAL-RUN-RETRY-009
-    result = retry_attempt.claim(agent_run_id: agent_run_id, attempt: attempt)
+    result = retry_attempt.claim(attempt_id: agent_run_id, retry_number: attempt)
     return unless result.claimed?
 
     Rails.logger.info(
       message: "agent_execution.manual_failed_run_auto_retry",
-      original_agent_run_id: result.agent_run.id,
+      original_agent_run_id: result.attempt.id,
       new_agent_run_id: result.successor.id,
-      project_id: result.agent_run.project_id,
-      goal: result.agent_run.goal,
+      project_id: result.attempt.project_id,
+      goal: result.attempt.goal,
       attempt: attempt
     )
 
@@ -49,7 +49,7 @@ class RetryFailedManualRunJob < ApplicationJob
   private
 
   def retry_attempt
-    AgentRuns::RetryAttempt.new(
+    RetryableAttempts::RetryAttempt.new(
       policy: AgentRuns::ManualRunRetryPolicy.new,
       decision_point: "manual_failed_run_auto_retry"
     )

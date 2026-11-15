@@ -57,7 +57,7 @@
   attempt eligibility under a row lock immediately before claiming another
   attempt, not only at schedule time, so a duplicated or re-delivered
   delayed job cannot double-claim the same logical operation.
-  *Code:* `AgentRuns::RetryAttempt#claim`,
+  *Code:* `RetryableAttempts::RetryAttempt#claim`,
   `RetryTimedOutIssueGoalJob#perform`,
   `StaleRunDetectorJob#recover_rate_limited_run`.
 
@@ -66,7 +66,7 @@
   losing concurrent claim SHALL recognize its specific conflict and
   resolve to a no-op rather than an unhandled error.
   *Code:* `idx_agent_runs_unique_active_lid_planning` handling in
-  `AgentRuns::RetryAttempt#claim` via
+  `RetryableAttempts::RetryAttempt#claim` via
   `AgentRuns::ManualRunRetryPolicy#duplicate_active_run_conflict?`,
   `idx_agent_runs_unique_active_issue` /
   `idx_agent_runs_unique_active_pr` handling in
@@ -78,7 +78,8 @@
   from schedule time, so a toggle flipped, a sibling run claiming the
   identity's slot, or the run already being retried during the backoff
   window is visible to the claim.
-  *Code:* `AgentRuns::RetryAttempt#claim` for manual runs; same locked
+  *Code:* `RetryableAttempts::RetryAttempt#claim` for manual runs and Apple
+  verification; same locked
   re-checks as AGENT-RETRY-005 for the other paths.
 
 - [x] **AGENT-RETRY-008** — Partial external work: an attempt that already
@@ -133,6 +134,18 @@
   *Code:* `app/temporal/activities/mark_agent_run_failed_activity.rb`,
   `app/jobs/retry_failed_manual_run_job.rb` (both unchanged by this
   segment — adoption is a documentation cross-reference only).
+
+- [x] **AGENT-RETRY-015** — Apple verification retries SHALL use the shared
+  row-lock, reassessment, and successor-claim mechanics without requiring an
+  attempt to be an `AgentRun`. `retry_of_attempt_id` SHALL remain the sole
+  persisted Apple retry lineage; retry limit, queue, per-agent-run admission,
+  failure classification, source binding, and VM lifecycle policy remain
+  owned by `AppleVerificationAttempts::RetryPolicy` and its lifecycle
+  services.
+  *Tests:* `spec/services/apple_verification_attempts/retry_monitor_spec.rb`,
+  `spec/services/apple_verification_attempts/rerun_concurrency_spec.rb`.
+  *Code:* `RetryableAttempts::RetryAttempt`,
+  `AppleVerificationAttempts::RetryPolicy`.
 
 - [ ] **AGENT-RETRY-014** — Where a later acceptance-audit adapter is
   built (tracked as separate, in-progress work), it SHALL keep

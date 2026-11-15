@@ -21,6 +21,8 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
     expect(retry_attempt).to be_present
     expect(retry_attempt.status).to eq("queued")
     expect(retry_attempt.retry_number).to eq(1)
+    expect(retry_attempt.source_digest).to eq(original.source_digest)
+    expect(retry_attempt.apple_verification_workflow_revision).to eq(original.apple_verification_workflow_revision)
   end
 
   it "does not re-enqueue a deterministic project failure" do
@@ -29,6 +31,7 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
     result = described_class.call
 
     expect(result.retried).to eq(0)
+    expect(result.reasons).to contain_exactly("deterministic project failure")
     expect(AppleVerificationAttempt.where(status: "queued")).to be_empty
   end
 
@@ -44,6 +47,7 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
 
     expect(result.retried).to eq(0)
     expect(result.scanned).to eq(1)
+    expect(result.reasons).to contain_exactly("retry limit reached")
     expect(AppleVerificationAttempt.where(status: "queued")).to be_empty
   end
 
@@ -55,6 +59,7 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
 
     expect(result.retried).to eq(0)
     expect(result.scanned).to eq(0)
+    expect(result.reasons).to contain_exactly("Apple verification queue is full")
     expect(AppleVerificationAttempt.where(status: "queued")).to be_empty
   end
 
@@ -67,5 +72,13 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
     expect(result.retried).to eq(0)
     expect(result.scanned).to eq(0)
     expect(AppleVerificationAttempt.where(status: "queued").count).to eq(1)
+  end
+
+  it "creates one successor across duplicate monitor passes" do # @spec AGENT-RETRY-005 AGENT-RETRY-006
+    original = create(:apple_verification_attempt, status: "unavailable", failure_classification: "worker_infrastructure")
+
+    2.times { described_class.call }
+
+    expect(AppleVerificationAttempt.where(retry_of_attempt: original).count).to eq(1)
   end
 end
