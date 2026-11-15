@@ -952,6 +952,29 @@ RSpec.describe "Inbox" do
       expect(response.body).not_to include("Completion rationale", resolve_closeout_project_agent_runs_path(project))
     end
 
+    # @spec PARTIAL-CLOSEOUT-056
+    it "shows why automatic audit retries stopped and keeps the operator's fresh-audit action" do
+      exhausted_issue = create(:issue, project: project, github_number: 516, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 517, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: exhausted_issue, created_at: 2.days.ago)
+      3.times do
+        request = Issues::RequestAcceptanceAudit.call(issue: exhausted_issue, actor: user)
+        request.agent_run.update!(status: "failed", completed_at: 2.hours.ago,
+          error_message: "Partial closeout assessment transport failed. Retry after runner recovery.")
+      end
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, exhausted_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Automatic acceptance-audit retries for this evidence generation stopped")
+      expect(response.body).to include("3 of 3 attempts", "retry exhausted")
+      expect(response.body).to include("Run acceptance audit")
+    end
+
     it "hides the GitHub closure action when acceptance criteria remain unmet" do
       record_closeout_assessment(guided_issue, criteria: [ { "criterion" => "Pilot p95", "state" => "unmet" } ])
 

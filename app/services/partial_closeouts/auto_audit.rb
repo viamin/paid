@@ -1,22 +1,19 @@
 # frozen_string_literal: true
 
 module PartialCloseouts
-  # Schedules one report-only audit after terminal closeout evidence appears.
-  # The issue lock covers the historical-attempt check and admission so
-  # overlapping sweeps cannot schedule the same retry.
-  # @spec PARTIAL-CLOSEOUT-037 TRUSTED-MEASUREMENTS-006 PARTIAL-CLOSEOUT-051
+  # Schedules one report-only audit after terminal closeout evidence appears,
+  # and claims the next bounded retry for a transiently failed attempt
+  # through the shared retry mechanism. The issue lock covers the
+  # historical-attempt check and admission so overlapping sweeps cannot
+  # schedule the same retry.
+  # @spec PARTIAL-CLOSEOUT-037 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-051 PARTIAL-CLOSEOUT-056 TRUSTED-MEASUREMENTS-006
   class AutoAudit
     MAX_ATTEMPTS = 3
-    RETRY_DELAY = 30.minutes
-    TRANSIENT_FAILURE_CATEGORIES = %w[transport_error timeout unsuccessful_response invalid_json].freeze
-    TRANSIENT_FAILURE_MESSAGES = [
-      "Partial closeout assessment transport failed.",
-      "Partial closeout assessment timed out.",
-      "partial closeout assessment failed: transport returned an unsuccessful response."
-    ].freeze
+    RETRYABLE_STATUSES = %w[failed timeout retried].freeze
     Result = Data.define(:agent_run, :code) do
       def scheduled? = agent_run.present?
     end
+    RetryState = Data.define(:code, :attempts, :max_attempts)
 
     def self.call(...) = new(...).call
 
@@ -35,12 +32,35 @@ module PartialCloseouts
         )
         return result(:assessment_current) unless assessment.stale?
         return result(:blocked) if status.blockers.any? { |blocker| blocker.code != :human_prerequisite_notification }
-        attempt_status = prior_attempt_status(assessment.current_source_revision)
-        return result(attempt_status) if attempt_status
+
+        decision = retry_decision(assessment.current_source_revision)
+        return result(decision) if decision.is_a?(Symbol)
+        return claim_retry(decision) if decision
 
         request = Issues::RequestAcceptanceAudit.call(issue:, actor: issue.project.effective_owner, origin: :automatic)
         Result.new(agent_run: request.agent_run, code: request.code)
       end
+    end
+
+    # Visible automatic-retry state for the issue's current evidence
+    # generation: why automatic audits stopped, and how many attempts that
+    # generation spent. nil when no audit attempt exists yet.
+    # @spec PARTIAL-CLOSEOUT-056
+    def self.retry_state(issue)
+      new(issue:).retry_state
+    end
+
+    def retry_state
+      requests = acceptance_audit_requests(Assessment.source_revision_for(issue))
+      attempts = audit_attempt_count(requests)
+      return nil if attempts.zero?
+
+      newest = audit_runs(requests).first
+      return nil if newest.blank?
+
+      failure = AcceptanceAuditFailure.classify(newest)
+      code = failure == :transient_transport && attempts >= MAX_ATTEMPTS ? :retry_exhausted : failure
+      RetryState.new(code: code, attempts: attempts, max_attempts: MAX_ATTEMPTS)
     end
 
     private
@@ -58,11 +78,15 @@ module PartialCloseouts
       end
     end
 
-    # @spec PARTIAL-CLOSEOUT-048
-    def prior_attempt_status(source_revision)
+    # Decides whether the current evidence generation's history admits
+    # another attempt: a blocking Symbol, the transient-failed run to claim
+    # through the shared mechanism, or nil for a fresh request under the
+    # current approved intent.
+    # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-056
+    def retry_decision(source_revision)
       requests = acceptance_audit_requests(source_revision)
       intent_runs = audit_runs(requests, intent_revision: Assessment.intent_revision_for(issue))
-      return :already_audited if intent_runs.any? { |run| !run.status.in?(%w[failed timeout]) || !transient_failure?(run) }
+      return :already_audited unless intent_runs.all? { |run| retryable_failure?(run) }
       # The retry budget belongs to the source revision — the evidence
       # generation — not to the approved-intent revision. Any issue-body edit
       # changes the intent revision, so a budget keyed to it would let one edit
@@ -70,14 +94,47 @@ module PartialCloseouts
       # review).
       attempt_count = audit_attempt_count(requests)
       return :retry_exhausted if attempt_count >= MAX_ATTEMPTS
-      # A changed approved intent may permit a further attempt against the same
-      # source revision without resetting that revision's attempt budget.
       return if intent_runs.empty?
 
-      delay = RETRY_DELAY * (2**(attempt_count - 1))
-      return :retry_backoff if intent_runs.first.completed_at.blank? || intent_runs.first.completed_at > delay.ago
+      newest = intent_runs.first
+      if newest.completed_at.blank? || newest.completed_at > AcceptanceAuditRetryJob.retry_delay(attempt_count + 1).ago
+        arm_delayed_retry(newest, attempt_count + 1)
+        return :retry_backoff
+      end
 
-      nil
+      newest
+    end
+
+    def retryable_failure?(run)
+      run.status.in?(RETRYABLE_STATUSES) && AcceptanceAuditFailure.transient?(run)
+    end
+
+    # Claims the shared-mechanism retry under the issue lock this sweep
+    # already holds. The claim re-runs the ordinary request path so every
+    # normal guard is rechecked, marks the failed attempt retried, and
+    # records successor lineage; sweep, delayed job, and operator requests
+    # are idempotent because they converge on one open request.
+    # @spec PARTIAL-CLOSEOUT-056
+    def claim_retry(run)
+      claim = RetryAcceptanceAudit.call(agent_run_id: run.id)
+      return Result.new(agent_run: claim.successor, code: nil) if claim.claimed?
+
+      result(claim.reason)
+    end
+
+    # Re-arms the delayed retry job from the sweep so a lost failure-time
+    # schedule still recovers; GoodJob's concurrency key discards the
+    # duplicate while the failure-time schedule is queued.
+    def arm_delayed_retry(run, attempt)
+      AcceptanceAuditRetryJob.set(wait: AcceptanceAuditRetryJob.retry_delay(attempt)).perform_later(run.id, attempt)
+    rescue StandardError => error
+      Rails.logger.warn(
+        message: "partial_closeout.audit_retry_arm_failed",
+        issue_id: issue.id,
+        agent_run_id: run.id,
+        error_class: error.class.name,
+        error: error.message
+      )
     end
 
     def acceptance_audit_requests(source_revision)
@@ -106,31 +163,6 @@ module PartialCloseouts
         "(issue_continuation_requests.evidence->>'intent_revision' IS NULL AND " \
         "(agent_runs.reconciliation #>> '{assessment,intent_revision}' = :revision OR " \
         "agent_runs.reconciliation->'assessment' IS NULL))"
-    end
-
-    def transient_failure?(run)
-      return true if run.status == "timeout"
-
-      category = run.reconciliation.to_h.dig("acceptance_audit_failure", "category")
-      return TRANSIENT_FAILURE_CATEGORIES.include?(category) if category.present?
-      # A Temporal-level activity timeout never reaches the audit activity's
-      # own rescue, so no typed category is recorded: the run is marked failed
-      # with the runtime's timeout message instead. Treat that signature — and
-      # an exhausted runner pool, which never reached a runner — as transient
-      # so the revision still earns a bounded retry (#5002 review).
-      return true if transport_interruption?(run)
-
-      TRANSIENT_FAILURE_MESSAGES.any? { |message| run.error_message.to_s.start_with?(message) }
-    end
-
-    # Failure messages that name a transport-level interruption rather than a
-    # permanent cause: the audit never obtained a usable answer.
-    def transport_interruption?(run)
-      return false unless run.status == "failed"
-
-      message = run.error_message.to_s.downcase
-      message.include?(AgentRun::ACTIVITY_TIMEOUT_MESSAGE.downcase) ||
-        AgentRun::PROVIDER_UNAVAILABLE_KEYWORDS.any? { |keyword| message.include?(keyword.downcase) }
     end
 
     def result(code) = Result.new(agent_run: nil, code:)

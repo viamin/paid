@@ -4,15 +4,19 @@ module AgentRuns
   # Shared scheduling and atomic-claim mechanics for retry policies. Policies
   # retain their own eligibility rules and successor shape.
   # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005 MANUAL-RUN-RETRY-008 MANUAL-RUN-RETRY-009
+  # @spec AGENT-RETRY-014
   class RetryAttempt
+    DEFAULT_ACTION = "manual_failed_run_auto_retry"
+
     Result = Data.define(:outcome, :reason, :agent_run, :successor) do
       def claimed? = outcome == :claimed
       def scheduled? = outcome == :scheduled
     end
 
-    def initialize(policy:, decision_point:)
+    def initialize(policy:, decision_point:, action: DEFAULT_ACTION)
       @policy = policy
       @decision_point = decision_point
+      @action = action
     end
 
     def schedule(agent_run:, job_class:, delay:)
@@ -51,7 +55,7 @@ module AgentRuns
 
     private
 
-    attr_reader :policy, :decision_point
+    attr_reader :policy, :decision_point, :action
 
     def record_skip(agent_run, assessment)
       record_reason(agent_run, assessment.reason, assessment.attempt)
@@ -62,7 +66,7 @@ module AgentRuns
         project: agent_run.project,
         agent_run: agent_run,
         decision_point: decision_point,
-        action: "manual_failed_run_auto_retry",
+        action: action,
         status: "noop",
         signals: retry_signals(attempt).merge(reason: reason.to_s),
         result: { reason: reason.to_s }

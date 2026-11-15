@@ -59,7 +59,10 @@
   delayed job cannot double-claim the same logical operation.
   *Code:* `AgentRuns::RetryAttempt#claim`,
   `RetryTimedOutIssueGoalJob#perform`,
-  `StaleRunDetectorJob#recover_rate_limited_run`.
+  `StaleRunDetectorJob#recover_rate_limited_run`,
+  `PartialCloseouts::RetryAcceptanceAudit` (locked re-assess under the
+  issue lock; `AcceptanceAuditRetryJob`'s GoodJob concurrency key
+  discards duplicate enqueues).
 
 - [x] **AGENT-RETRY-006** — Concurrent schedulers: the claim SHALL be a
   single atomic transaction keyed off a unique index or row lock, and a
@@ -71,7 +74,9 @@
   `idx_agent_runs_unique_active_issue` /
   `idx_agent_runs_unique_active_pr` handling in
   `RetryTimedOutIssueGoalJob`'s `RecordNotUnique` rescue,
-  `idx_apple_attempts_one_active_per_run`.
+  `idx_apple_attempts_one_active_per_run`,
+  `index_issue_continuation_requests_open_per_issue` and the issue row
+  lock in `PartialCloseouts::RetryAcceptanceAudit`.
 
 - [x] **AGENT-RETRY-007** — State changes during backoff: eligibility
   SHALL be re-evaluated against current state at claim time, never trusted
@@ -95,8 +100,10 @@
   terminal, durably visible stop; none SHALL retry unboundedly.
   *Code:* `AgentRun::MAX_MANUAL_RETRY_ATTEMPTS`,
   `RetryTimedOutIssueGoalJob::MAX_RETRIES`,
-  `AgentRun::MAX_RATE_LIMITED_REQUEUES`, Apple verification's retry limit
-  and queue-depth cap, acceptance audit's one-attempt-per-digest cap.
+  `AgentRun::MAX_RATE_LIMIT_REQUEUES`, Apple verification's retry limit
+  and queue-depth cap, acceptance audit's three-attempts-per-digest cap
+  (`PartialCloseouts::AutoAudit::MAX_ATTEMPTS`,
+  `AgentRuns::AcceptanceAuditRetryPolicy#maximum_attempts`).
 
 - [x] **AGENT-RETRY-010** — Restart recovery: recovery SHALL re-derive
   state from durable rows rather than in-memory job state, so a process
@@ -134,12 +141,31 @@
   `app/jobs/retry_failed_manual_run_job.rb` (both unchanged by this
   segment — adoption is a documentation cross-reference only).
 
-- [ ] **AGENT-RETRY-014** — Where a later acceptance-audit adapter is
+- [x] **AGENT-RETRY-014** — Where a later acceptance-audit adapter is
   built (tracked as separate, in-progress work), it SHALL keep
   `(issue_id, closeout_evidence_digest)` as the logical identity and add an
   attempt-lineage dimension beneath it so more than one execution attempt
   can occur under one evidence digest, and it SHALL classify an audit
   failure as infrastructure or deterministic before counting it against
   any attempt budget.
-  *Deferred to the separate audit-recovery work; no acceptance-audit
-  runtime file is changed by this segment.*
+  *Built by the separate audit-recovery work (#4991 bounded the budget;
+  #4992 migrated the claim to this contract).* The logical identity stays
+  the issue plus the source revision recorded on the acceptance-audit
+  continuation request; each execution attempt is one continuation request
+  and run, with lineage carried on
+  `AgentRun::ACCEPTANCE_AUDIT_RETRY_ATTEMPT_METADATA_KEY` /
+  `ACCEPTANCE_AUDIT_RETRY_PARENT_METADATA_KEY`.
+  `PartialCloseouts::AcceptanceAuditFailure` classifies
+  infrastructure/transient unavailability separately from substantive
+  assessment, cancellation, authentication/configuration, rate-limit
+  recovery, and budget exhaustion before any attempt counts.
+  *Code:* `app/services/agent_runs/acceptance_audit_retry_policy.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`,
+  `app/services/partial_closeouts/retry_acceptance_audit.rb`,
+  `app/jobs/acceptance_audit_retry_job.rb`.
+  *Test:* `spec/services/agent_runs/acceptance_audit_retry_policy_spec.rb`,
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`,
+  `spec/services/partial_closeouts/retry_acceptance_audit_spec.rb`,
+  `spec/jobs/acceptance_audit_retry_job_spec.rb`.
+  *Spec:* PARTIAL-CLOSEOUT-056 in
+  `docs/intent/partial-closeout-recovery/`.

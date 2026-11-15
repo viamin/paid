@@ -211,6 +211,12 @@ class AgentRun < ApplicationRecord
   # manual runs, since there is no issue/PR to carry that bookkeeping.
   MANUAL_RETRY_ATTEMPT_METADATA_KEY = "manual_retry_attempt".freeze
   MANUAL_RETRY_PARENT_METADATA_KEY = "retried_from_agent_run_id".freeze
+  # external_metadata keys tracking the execution-attempt lineage beneath an
+  # acceptance-audit logical identity (issue + closeout-evidence source
+  # revision); attempts exist as separate continuation requests, so the
+  # chain is carried on each successor run (#4992).
+  ACCEPTANCE_AUDIT_RETRY_ATTEMPT_METADATA_KEY = "acceptance_audit_retry_attempt".freeze
+  ACCEPTANCE_AUDIT_RETRY_PARENT_METADATA_KEY = "acceptance_audit_retry_of_agent_run_id".freeze
   CLAIMED_SENTINEL = "claimed"
   SMOKE_TEST_CUSTOM_PROMPT = "smoke_test"
   STALE_CLAIMED_TIMEOUT = 15.minutes
@@ -2136,6 +2142,13 @@ class AgentRun < ApplicationRecord
   # run (see MANUAL_RETRY_ATTEMPT_METADATA_KEY); 0 for the original run.
   def manual_retry_attempt
     external_metadata.fetch(MANUAL_RETRY_ATTEMPT_METADATA_KEY, 0).to_i
+  end
+
+  # The 1-indexed attempt number of an acceptance-audit retry chain for one
+  # closeout-evidence source revision (see
+  # ACCEPTANCE_AUDIT_RETRY_ATTEMPT_METADATA_KEY); 0 for the original attempt.
+  def acceptance_audit_retry_attempt
+    external_metadata.fetch(ACCEPTANCE_AUDIT_RETRY_ATTEMPT_METADATA_KEY, 0).to_i
   end
 
   def total_tokens

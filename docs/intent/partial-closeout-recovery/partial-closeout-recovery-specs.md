@@ -4,6 +4,46 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-056** — When a report-only acceptance-audit execution
+  attempt under one logical audit identity — the issue plus the closeout-evidence
+  source revision — fails transiently because transport or infrastructure was
+  unavailable and left no usable assessment, Paid SHALL claim another bounded
+  execution attempt for that same identity through the shared retry mechanism
+  (`AgentRuns::RetryAttempt` with `AgentRuns::AcceptanceAuditRetryPolicy`),
+  after bounded increasing backoff (30, then 60 minutes) and at most three
+  attempts per source revision, counting operator-requested attempts. The
+  claim SHALL recheck, under the issue lock, that the failed attempt is still
+  the current transient attempt, that terminal evidence has not changed the
+  logical identity, that no continuation authorization is open, and that
+  backoff has elapsed, and SHALL re-run the ordinary
+  `Issues::RequestAcceptanceAudit` admission path so auto-pick, trust, pause,
+  dependency, budget, and one-open-request guards stay authoritative; the
+  superseded attempt SHALL be marked retried with recorded successor lineage,
+  so sweep, delayed retry, and operator-requested audits are idempotent and
+  cannot mint concurrent or unbounded audits. Paid SHALL classify a failure
+  before counting it against any attempt budget: a completed substantive
+  assessment — including one reporting unmet criteria — cancellation,
+  authentication/configuration failure, budget exhaustion, rate-limit
+  recovery, and every non-transient or indeterminate failure SHALL NOT be
+  retried, and a stale retry after changed evidence SHALL be refused rather
+  than publish a current-looking result. Retry exhaustion and the
+  non-transient stop reasons SHALL remain visible with the attempt count and
+  a supported operator action.
+  *Code:* `app/services/agent_runs/acceptance_audit_retry_policy.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`,
+  `app/services/partial_closeouts/retry_acceptance_audit.rb`,
+  `app/jobs/acceptance_audit_retry_job.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/agent_runs/acceptance_audit_retry_policy_spec.rb`,
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`,
+  `spec/services/partial_closeouts/retry_acceptance_audit_spec.rb`,
+  `spec/jobs/acceptance_audit_retry_job_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [ ] **PARTIAL-CLOSEOUT-052** — When a current closeout criterion has a
   reviewed staged-verification mapping, Paid SHALL create only one synthetic,
   report-only `closeout_verification` AgentRun goal for its selected
@@ -993,8 +1033,11 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   SHALL automatically queue one report-only acceptance audit for that evidence
   generation after normal auto-pick, budget, trust, pause, dependency, and
   continuation guards pass. A completed, cancelled, or non-transient failed
-  audit for the same generation SHALL prevent another automatic attempt; new
-  terminal evidence MAY permit a new bounded audit. The sweep SHALL bound new audits
+  audit for the same generation SHALL prevent another automatic attempt; a
+  transiently failed attempt that left no usable assessment MAY instead claim
+  another bounded execution attempt for the same generation through the
+  shared retry mechanism (PARTIAL-CLOSEOUT-056); new terminal evidence MAY
+  permit a new bounded audit. The sweep SHALL bound new audits
   per project and SHALL not close the GitHub issue, authorize implementation,
   or bypass a human prerequisite. A GitHub-sync repair of a merged, non-closing
   source PR SHALL enter this evidence-backed lane rather than treating a
@@ -1018,10 +1061,13 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   reset that revision's attempt budget. Paid SHALL NOT automatically repeat a
   completed, cancelled, or non-transient failed audit for the same
   approved-intent revision, bypass admission guards, or treat a failed attempt
-  as acceptance evidence.
+  as acceptance evidence. The retry executes through the shared
+  agent-run retry mechanism as PARTIAL-CLOSEOUT-056 requires.
   *Code:* `app/services/partial_closeouts/auto_audit.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`,
   `app/services/issues/request_continuation.rb`.
-  *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`.
+  *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-049** — When a report-only acceptance audit runs and
   the project owner's fallback setting is enabled, Paid SHALL try the run's

@@ -237,6 +237,15 @@
         No criterion-level assessment with revision metadata is recorded; treat the recorded gaps as unverified and request a bounded acceptance audit before treating work as complete.
       </p>
     <% end %>
+    <% audit_retry_state = assessment.stale? ? PartialCloseouts::AutoAudit.retry_state(issue) : nil %>
+    <% if audit_retry_state && %i[retry_exhausted authentication_or_configuration non_transient_failure cancelled].include?(audit_retry_state.code) %>
+      <p class="rounded-md bg-amber-50 p-2 text-sm text-amber-900">
+        Automatic acceptance-audit retries for this evidence generation stopped after
+        <%= audit_retry_state.attempts %> of <%= audit_retry_state.max_attempts %> attempts
+        (<%= audit_retry_state.code.to_s.humanize.downcase %>). Repair the named cause and request a
+        fresh audit; a changed evidence generation earns a new bounded audit.
+      </p>
+    <% end %>
     <p class="text-sm text-gray-600">
       Classification: <span class="font-medium"><%= assessment.assessment["classification"].to_s.humanize.presence || "unknown" %></span>.
       Source revision <code class="break-all text-xs"><%= assessment.source_revision || "not recorded" %></code> ·

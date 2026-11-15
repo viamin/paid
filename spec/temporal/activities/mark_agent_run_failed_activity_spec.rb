@@ -670,5 +670,76 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
         expect(issue.reload.push_permission_abandoned?).to be(true)
       end
     end
+
+    # @spec PARTIAL-CLOSEOUT-056 AGENT-RETRY-005
+    context "with a failed report-only acceptance audit (#4992)" do
+      let(:account) { create(:account) }
+      let(:owner) { create(:user, account: account) }
+      let(:audit_project) { create(:project, account: account, created_by: owner, auto_pick_enabled: true) }
+
+      def audit_issue_with_run
+        issue = create(:issue, project: audit_project, github_state: "open", paid_state: "completed")
+        create(:issue, :pull_request, project: audit_project, parent_issue: issue, github_number: 12,
+          github_state: "closed", pr_review_phase: "merged")
+        request = Issues::RequestAcceptanceAudit.call(issue: issue, actor: owner, origin: :automatic)
+        request.agent_run.update!(status: "running")
+        [ issue, request.agent_run ]
+      end
+
+      it "schedules one bounded delayed retry through the shared retry mechanism" do
+        _issue, agent_run = audit_issue_with_run
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id,
+            error: "Partial closeout assessment transport failed. Retry after runner recovery.")
+        }.to have_enqueued_job(AcceptanceAuditRetryJob)
+          .with(agent_run.id, 2)
+          .at(a_value_within(1.second).of(AcceptanceAuditRetryJob.retry_delay(2).from_now))
+      end
+
+      it "does not schedule an acceptance-audit retry for an ordinary issue run" do
+        issue = create(:issue, :in_progress, project: audit_project)
+        agent_run = create(:agent_run, :running, project: audit_project, issue: issue)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(AcceptanceAuditRetryJob)
+      end
+
+      it "records a durable skip reason instead of scheduling a retry for a deterministic failure" do
+        _issue, agent_run = audit_issue_with_run
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id,
+            error: "Partial closeout assessment could not authenticate with the configured runner. Reconnect its credential and retry.")
+        }.not_to have_enqueued_job(AcceptanceAuditRetryJob)
+
+        decision = OrchestrationDecision.where(agent_run: agent_run, actor: "acceptance_audit_auto_retry").last
+        expect(decision).to be_present
+        expect(decision.inputs).to include("reason" => "non_transient_failure")
+      end
+
+      it "records retry exhaustion durably when the source revision's budget is spent" do
+        issue, agent_run = audit_issue_with_run
+        agent_run.update!(status: "failed", completed_at: 2.hours.ago,
+          error_message: "Partial closeout assessment transport failed.")
+        2.times do
+          request = Issues::RequestAcceptanceAudit.call(issue: issue, actor: owner)
+          request.agent_run.update!(status: "failed", completed_at: 2.hours.ago,
+            error_message: "Partial closeout assessment transport failed.")
+        end
+        newest = issue.agent_runs.order(:id).last
+        newest.update!(status: "running", completed_at: nil)
+
+        expect {
+          activity.execute(agent_run_id: newest.id,
+            error: "Partial closeout assessment transport failed. Retry after runner recovery.")
+        }.not_to have_enqueued_job(AcceptanceAuditRetryJob)
+
+        decision = OrchestrationDecision.where(agent_run: newest, actor: "acceptance_audit_auto_retry").last
+        expect(decision).to be_present
+        expect(decision.inputs).to include("reason" => "retry_budget_exhausted")
+      end
+    end
   end
 end

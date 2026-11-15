@@ -284,4 +284,73 @@ RSpec.describe PartialCloseouts::AutoAudit do
     expect(result.code).to eq(:automation_disabled)
     expect(issue.agent_runs).to be_empty
   end
+
+  # @spec PARTIAL-CLOSEOUT-056
+  it "claims the retry through the shared mechanism and marks the failed attempt retried" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed",
+      error_message: "Partial closeout assessment transport failed. Retry after runner recovery.", completed_at: 2.hours.ago)
+
+    result = described_class.call(issue:)
+
+    expect(result).to be_scheduled
+    expect(first.agent_run.reload.status).to eq("retried")
+    expect(result.agent_run.continuation_request.evidence["source_revision"])
+      .to eq(first.agent_run.continuation_request.evidence["source_revision"])
+    expect(result.agent_run.external_metadata[AgentRun::ACCEPTANCE_AUDIT_RETRY_PARENT_METADATA_KEY])
+      .to eq(first.agent_run.id)
+    expect(issue.agent_runs.count).to eq(2)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-056
+  it "arms one delayed retry job while the backoff window is open" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed",
+      error_message: "Partial closeout assessment transport failed. Retry after runner recovery.", completed_at: Time.current)
+
+    expect {
+      expect(described_class.call(issue:).code).to eq(:retry_backoff)
+    }.to have_enqueued_job(AcceptanceAuditRetryJob).with(first.agent_run.id, 2)
+
+    expect(issue.agent_runs.count).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-056
+  it "does not arm a delayed retry once the attempt budget is exhausted" do
+    3.times do
+      result = Issues::RequestAcceptanceAudit.call(issue:, actor: owner)
+      result.agent_run.update!(status: "failed",
+        error_message: "Partial closeout assessment transport failed.", completed_at: 2.hours.ago)
+    end
+
+    expect {
+      expect(described_class.call(issue:).code).to eq(:retry_exhausted)
+    }.not_to have_enqueued_job(AcceptanceAuditRetryJob)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-056
+  it "reports retry-exhaustion state with its reason for the Inbox" do
+    3.times do
+      result = Issues::RequestAcceptanceAudit.call(issue:, actor: owner)
+      result.agent_run.update!(status: "failed",
+        error_message: "Partial closeout assessment transport failed.", completed_at: 2.hours.ago)
+    end
+
+    state = described_class.retry_state(issue)
+
+    expect(state.code).to eq(:retry_exhausted)
+    expect(state.attempts).to eq(3)
+    expect(state.max_attempts).to eq(3)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-056
+  it "reports a deterministic failure as the retry state's reason" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed",
+      error_message: "Partial closeout assessment could not authenticate with the configured runner.",
+      reconciliation: { "acceptance_audit_failure" => { "category" => "authentication_unavailable" } },
+      completed_at: 2.hours.ago)
+
+    expect(described_class.retry_state(issue).code).to eq(:authentication_or_configuration)
+  end
 end
