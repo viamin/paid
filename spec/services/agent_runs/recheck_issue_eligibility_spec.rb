@@ -405,6 +405,17 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(run.error_message).to include("Authorization for create_pr was withdrawn")
     end
 
+    it "cancels a queued PR review follow-up when coding is disabled before dequeue" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = create(:agent_run, :queued, :automatic, :review_goal,
+        project: project, issue: issue, source_pull_request_number: 42)
+      configure_phases({ "coding" => false })
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.error_message).to include("Authorization for review was withdrawn")
+    end
+
     it "keeps queued work covered by an active continuation grant" do
       issue = create(:issue, project: project, github_state: "open")
       run = queued_auto_pick_run(issue: issue)
