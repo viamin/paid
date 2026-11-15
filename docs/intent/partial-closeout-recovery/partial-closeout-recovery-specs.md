@@ -976,7 +976,9 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   SHALL automatically queue one report-only acceptance audit for that evidence
   generation after normal auto-pick, budget, trust, pause, dependency, and
   continuation guards pass. A completed, cancelled, or non-transient failed
-  audit for the same generation SHALL prevent another automatic attempt; new
+  audit for the same generation SHALL prevent another automatic attempt,
+  except the bounded transient-failure retry owned by PARTIAL-CLOSEOUT-048
+  and PARTIAL-CLOSEOUT-056 through the shared retry contract; new
   terminal evidence MAY permit a new bounded audit. The sweep SHALL bound new audits
   per project and SHALL not close the GitHub issue, authorize implementation,
   or bypass a human prerequisite. A GitHub-sync repair of a merged, non-closing
@@ -990,21 +992,70 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
 
 - [x] **PARTIAL-CLOSEOUT-048** — When an acceptance audit for the current
   source and approved-intent revisions fails because assessment transport
-  failed, timed out, or returned invalid JSON — including a Temporal activity
-  timeout that ends the audit before it can record a typed failure, and an
-  exhausted runner pool that
-  never reached one — and the issue remains eligible for an audit, Paid SHALL
-  retry after bounded increasing delays, with at most three attempts for the
-  current source revision, counting operator-requested attempts and attempts
-  made under an earlier approved-intent revision. A changed approved intent MAY
-  permit a further attempt against the same source revision, but SHALL NOT
-  reset that revision's attempt budget. Paid SHALL NOT automatically repeat a
-  completed, cancelled, or non-transient failed audit for the same
-  approved-intent revision, bypass admission guards, or treat a failed attempt
-  as acceptance evidence.
+  failed, timed out, or returned an unsuccessful response — including a
+  Temporal activity timeout that ends the audit before it can record a typed
+  failure, and an exhausted runner pool that never reached one — and the
+  issue remains eligible for an audit, Paid SHALL retry after bounded
+  increasing delays, with at most three attempts for the current source
+  revision, counting operator-requested attempts and attempts made under an
+  earlier approved-intent revision. A changed approved intent MAY permit a
+  further attempt against the same source revision, but SHALL NOT reset that
+  revision's attempt budget. Paid SHALL NOT automatically repeat a
+  completed, cancelled, or otherwise non-transient failed audit for the same
+  approved-intent revision, bypass admission guards, or treat a failed
+  attempt as acceptance evidence. An invalid or stale assessment input —
+  including invalid JSON or an invalid assessment shape — is deterministic
+  input failure, not transient transport, and SHALL NOT earn an automatic
+  retry (#4992).
   *Code:* `app/services/partial_closeouts/auto_audit.rb`,
+  `app/services/partial_closeouts/audit_failure_classification.rb`,
+  `app/services/partial_closeouts/acceptance_audit_retry_policy.rb`,
   `app/services/issues/request_continuation.rb`.
-  *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`.
+  *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
+  `spec/services/partial_closeouts/audit_failure_classification_spec.rb`,
+  `spec/services/partial_closeouts/acceptance_audit_retry_policy_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-056** — Acceptance-audit recovery SHALL use the
+  shared retry contract (`docs/intent/agent-run-retry-contract/`,
+  AGENT-RETRY-014): the audit's logical identity is its issue plus the
+  closeout-evidence source revision recorded on the admitted request, each
+  execution attempt under that identity is counted, and a fresh logical
+  audit requires changed terminal evidence admitted through ordinary
+  audit admission. The policy SHALL classify each terminal attempt —
+  transient transport/infrastructure unavailability separately from a
+  completed substantive assessment, invalid or stale input,
+  authentication/configuration failure, cancellation, budget exhaustion,
+  in-place rate-limit recovery, and an in-flight or superseded attempt —
+  and SHALL arm a delayed automatic retry only for a transient
+  classification with remaining budget. The claim SHALL recheck current
+  evidence, assessment staleness, the auto-pick gate, and the one-open-
+  request constraint under lock, so overlapping sweeps, delayed retry
+  jobs, and operator-requested audits are idempotent and never create
+  concurrent or unbounded audits; the superseded attempt and its successor
+  SHALL be linked by a durable decision reason. Evidence that changed
+  since the admitted attempt SHALL refuse the claim so a stale retry
+  cannot publish a current-looking result, and the existing dequeue-time
+  digest recheck SHALL remain authoritative. A stopped retry state —
+  exhaustion or any deterministic classification — SHALL stay visible with
+  its reason and its supported operator action, and every automatic retry
+  remains report-only without GitHub closure, implementation
+  authorization, or bypass of trust, holds, dependencies, budget, or the
+  one-open-request constraint.
+  *Code:* `app/services/partial_closeouts/acceptance_audit_retry_policy.rb`,
+  `app/services/partial_closeouts/audit_failure_classification.rb`,
+  `app/services/partial_closeouts/audit_retry_notice.rb`,
+  `app/jobs/partial_closeouts/acceptance_audit_retry_job.rb`,
+  `app/services/partial_closeouts/auto_audit.rb`,
+  `app/services/agent_runs/retry_attempt.rb`,
+  `app/temporal/activities/mark_agent_run_failed_activity.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/partial_closeouts/acceptance_audit_retry_policy_spec.rb`,
+  `spec/services/partial_closeouts/audit_failure_classification_spec.rb`,
+  `spec/services/partial_closeouts/audit_retry_notice_spec.rb`,
+  `spec/jobs/partial_closeouts/acceptance_audit_retry_job_spec.rb`,
+  `spec/services/partial_closeouts/auto_audit_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-049** — When a report-only acceptance audit runs and
   the project owner's fallback setting is enabled, Paid SHALL try the run's

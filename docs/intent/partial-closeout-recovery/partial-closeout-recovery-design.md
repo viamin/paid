@@ -686,15 +686,38 @@ when the current assessment is missing or stale and ordinary continuation
 guards permit it. It records at most three audit attempts per source revision
 — the evidence generation — including operator-requested attempts and attempts
 made under an earlier approved-intent revision, because an issue-body edit
-changes the approved intent without changing the evidence. Transport, timeout,
-and invalid JSON failures are eligible for another automatic attempt, including
-a Temporal activity timeout that ends the audit before it records a typed
-failure and an exhausted runner pool that never reached one; retries wait 30
-and then 60 minutes. A completed, cancelled, or non-transient failed audit
-stops automatic attempts for that approved-intent revision. New terminal or
-technical evidence may permit a new bounded audit, and a changed approved
-intent may permit a further attempt against the same source revision without
-resetting that revision's attempt budget.
+changes the approved intent without changing the evidence. Transport,
+timeout, and unsuccessful-response failures are eligible for another
+automatic attempt, including a Temporal activity timeout that ends the audit
+before it records a typed failure and an exhausted runner pool that never
+reached one; retries wait 30 and then 60 minutes. An invalid or stale
+assessment input — invalid JSON or an invalid assessment shape — is a
+deterministic input failure, not transient transport, so it records its
+reason and stops (#4992). A completed, cancelled, or otherwise non-transient
+failed audit stops automatic attempts for that approved-intent revision. New
+terminal or technical evidence may permit a new bounded audit, and a changed
+approved intent may permit a further attempt against the same source revision
+without resetting that revision's attempt budget.
+
+Transient-failure retry is an adapter on the shared retry contract
+(`docs/intent/agent-run-retry-contract/`, AGENT-RETRY-014):
+`PartialCloseouts::AcceptanceAuditRetryPolicy` supplies the audit's logical
+identity — the issue plus the source revision recorded on the admitted
+request — while `AgentRuns::RetryAttempt` owns scheduling, the locked claim,
+and the durable decision record (`OrchestrationDecision` actor
+`acceptance_audit_auto_retry`). `MarkAgentRunFailedActivity` arms a delayed
+`AcceptanceAuditRetryJob` after a transiently failed audit; the sweep
+re-derives the same state from durable rows, so a lost job cannot strand a
+retryable evidence generation. The claim rechecks current evidence,
+assessment staleness, the auto-pick gate, and the one-open-request constraint
+under lock, so overlapping sweeps, delayed retries, and operator-requested
+audits converge on one idempotent claim; evidence that changed since the
+admitted attempt refuses the claim, and the dequeue-time digest recheck
+remains authoritative so a stale retry can never publish a current-looking
+result. A stopped retry state — exhaustion or a deterministic
+classification such as authentication/configuration failure — stays visible
+in the partial-closeout pane with its reason and supported operator action
+(`PartialCloseouts::AuditRetryNotice`).
 The existing auto-pick control governs this work;
 there is no separate audit setting. The GitHub-sync repair leaves a gap-free,
 audit-pending source issue out of manual review while its non-closing PR is

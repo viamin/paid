@@ -961,6 +961,28 @@ RSpec.describe "Inbox" do
       expect(response.body).not_to include("Completion rationale", resolve_closeout_project_agent_runs_path(project))
     end
 
+    # @spec PARTIAL-CLOSEOUT-056
+    it "states audit retry exhaustion with its reason and the supported operator action" do
+      source_revision = PartialCloseouts::Assessment.source_revision_for(guided_issue)
+      intent_revision = PartialCloseouts::Assessment.intent_revision_for(guided_issue)
+      3.times do
+        request = create(:issue_continuation_request, issue: guided_issue, project: project, status: "consumed",
+          evidence: { "merged_prs" => [], "continuation_mode" => "acceptance_audit",
+            "source_revision" => source_revision, "intent_revision" => intent_revision },
+          evidence_digest: source_revision)
+        create(:agent_run, :automatic, project: project, issue: guided_issue, goal: "analyze_issue",
+          continuation_request: request, status: "failed",
+          error_message: "Partial closeout assessment transport failed. Retry after runner recovery.",
+          completed_at: 2.hours.ago)
+      end
+
+      render_guided_pane
+
+      expect(response.body).to include("Automatic acceptance-audit retries stopped")
+      expect(response.body).to include("three automatic audit attempts")
+      expect(response.body).to include("request a fresh acceptance audit")
+    end
+
     it "collects an editable rationale and explains the evidence-gated close action for an accepted issue" do
       record_closeout_assessment(guided_issue, criteria: [ { "criterion" => "Pilot p95", "state" => "satisfied" } ])
 

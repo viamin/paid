@@ -31,7 +31,7 @@ RSpec.describe PartialCloseouts::AutoAudit do
     first.agent_run.update!(status: "completed", completed_at: Time.current)
     second = described_class.call(issue:)
 
-    expect(second.code).to eq(:already_audited)
+    expect(second.code).to eq(:substantive_assessment)
     expect(issue.agent_runs.count).to eq(1)
   end
 
@@ -53,7 +53,7 @@ RSpec.describe PartialCloseouts::AutoAudit do
 
     result = described_class.call(issue:)
 
-    expect(result.code).to eq(:already_audited)
+    expect(result.code).to eq(:substantive_assessment)
     expect(issue.agent_runs.count).to eq(1)
   end
 
@@ -86,7 +86,7 @@ RSpec.describe PartialCloseouts::AutoAudit do
     expect(described_class.call(issue:)).to be_scheduled
   end
 
-  # @spec PARTIAL-CLOSEOUT-037
+  # @spec PARTIAL-CLOSEOUT-048
   it "retries a transiently failed audit for the same evidence after backoff" do
     first = described_class.call(issue:)
     first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment transport failed. Retry after runner recovery.", completed_at: 2.hours.ago)
@@ -94,6 +94,23 @@ RSpec.describe PartialCloseouts::AutoAudit do
     result = described_class.call(issue:)
 
     expect(result).to be_scheduled
+    expect(issue.agent_runs.count).to eq(2)
+    # The shared retry mechanism claims under lock: the failed attempt is
+    # superseded and its replacement is durably linked.
+    expect(first.agent_run.reload.status).to eq("retried")
+    decision = OrchestrationDecision.where(agent_run: first.agent_run).order(id: :desc).first
+    expect(decision.actor).to eq("acceptance_audit_auto_retry")
+    expect(decision.outputs["new_agent_run_id"]).to eq(result.agent_run.id)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-056
+  it "does not schedule another audit while an audit authorization is already open" do
+    first = described_class.call(issue:)
+    first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment transport failed. Retry after runner recovery.", completed_at: 2.hours.ago)
+    second = described_class.call(issue:)
+
+    expect(second).to be_scheduled
+    expect(described_class.call(issue:).code).to eq(:not_stalled)
     expect(issue.agent_runs.count).to eq(2)
   end
 
@@ -125,23 +142,13 @@ RSpec.describe PartialCloseouts::AutoAudit do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
-  it "retries a bounded invalid JSON audit after the transport is repaired" do
+  it "does not automatically retry a bounded invalid JSON audit — invalid input is deterministic, not transport" do
     first = described_class.call(issue:)
     first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment returned invalid JSON.",
       reconciliation: { "acceptance_audit_failure" => { "category" => "invalid_json" } }, completed_at: 2.hours.ago)
 
-    second = described_class.call(issue:)
-    expect(second).to be_scheduled
-    second.agent_run.update!(status: "failed", error_message: "Partial closeout assessment returned invalid JSON.",
-      reconciliation: { "acceptance_audit_failure" => { "category" => "invalid_json" } }, completed_at: 2.hours.ago)
-
-    third = described_class.call(issue:)
-    expect(third).to be_scheduled
-    third.agent_run.update!(status: "failed", error_message: "Partial closeout assessment returned invalid JSON.",
-      reconciliation: { "acceptance_audit_failure" => { "category" => "invalid_json" } }, completed_at: 2.hours.ago)
-
-    expect(described_class.call(issue:).code).to eq(:retry_exhausted)
-    expect(issue.agent_runs.count).to eq(3)
+    expect(described_class.call(issue:).code).to eq(:invalid_input)
+    expect(issue.agent_runs.count).to eq(1)
   end
 
   # @spec PARTIAL-CLOSEOUT-048
@@ -199,7 +206,7 @@ RSpec.describe PartialCloseouts::AutoAudit do
     first = described_class.call(issue:)
     first.agent_run.update!(status: "failed", error_message: "Partial closeout assessment could not authenticate with the configured runner.", completed_at: 2.hours.ago)
 
-    expect(described_class.call(issue:).code).to eq(:already_audited)
+    expect(described_class.call(issue:).code).to eq(:authentication_configuration)
     expect(issue.agent_runs.count).to eq(1)
   end
 
@@ -260,7 +267,7 @@ RSpec.describe PartialCloseouts::AutoAudit do
     attempt.update!(executed_at: 1.hour.from_now)
     second = described_class.call(issue:)
 
-    expect(second.code).to eq(:already_audited)
+    expect(second.code).to eq(:substantive_assessment)
     expect(issue.agent_runs.count).to eq(1)
   end
 

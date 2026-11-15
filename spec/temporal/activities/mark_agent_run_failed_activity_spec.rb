@@ -582,6 +582,54 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       end
     end
 
+    # @spec PARTIAL-CLOSEOUT-056
+    context "with a failed report-only acceptance audit (#4992)" do
+      let(:project) { create(:project, auto_pick_enabled: true) }
+      let(:audit_issue) do
+        issue = create(:issue, :in_progress, project: project)
+        create(:issue, :pull_request, project: project, parent_issue: issue, github_number: 12,
+          github_state: "closed", pr_review_phase: "merged")
+        issue.update!(paid_state: "completed")
+        issue
+      end
+
+      def audit_run
+        request = create(:issue_continuation_request, issue: audit_issue, project: project, status: "queued",
+          evidence: { "merged_prs" => [], "continuation_mode" => "acceptance_audit",
+            "source_revision" => PartialCloseouts::Assessment.source_revision_for(audit_issue),
+            "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(audit_issue) })
+        create(:agent_run, :automatic, :running, project: project, issue: audit_issue,
+          goal: "analyze_issue", continuation_request: request)
+      end
+
+      it "arms a delayed retry through the shared mechanism for a transient transport failure" do
+        agent_run = audit_run
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Partial closeout assessment transport failed. Retry after runner recovery.")
+        }.to have_enqueued_job(PartialCloseouts::AcceptanceAuditRetryJob)
+          .with(agent_run.id, 2)
+          .at(a_value_within(1.second).of(PartialCloseouts::AcceptanceAuditRetryJob.retry_delay(2).from_now))
+      end
+
+      it "does not arm an automatic retry for a deterministic audit failure" do
+        agent_run = audit_run
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "Partial closeout assessment could not authenticate with the configured runner. Reconnect its credential and retry.")
+        }.not_to have_enqueued_job(PartialCloseouts::AcceptanceAuditRetryJob)
+      end
+
+      it "does not arm an acceptance-audit retry for an ordinary analyze_issue run" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :automatic, :running, project: project, issue: issue, goal: "analyze_issue")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted: claude")
+        }.not_to have_enqueued_job(PartialCloseouts::AcceptanceAuditRetryJob)
+      end
+    end
+
     context "with a GitHub App push-permission rejection" do
       let(:client) { instance_double(GithubClient) }
 

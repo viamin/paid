@@ -134,12 +134,22 @@
   `app/jobs/retry_failed_manual_run_job.rb` (both unchanged by this
   segment — adoption is a documentation cross-reference only).
 
-- [ ] **AGENT-RETRY-014** — Where a later acceptance-audit adapter is
-  built (tracked as separate, in-progress work), it SHALL keep
-  `(issue_id, closeout_evidence_digest)` as the logical identity and add an
-  attempt-lineage dimension beneath it so more than one execution attempt
-  can occur under one evidence digest, and it SHALL classify an audit
-  failure as infrastructure or deterministic before counting it against
-  any attempt budget.
-  *Deferred to the separate audit-recovery work; no acceptance-audit
-  runtime file is changed by this segment.*
+- [x] **AGENT-RETRY-014** — The acceptance-audit adapter
+  (`PartialCloseouts::AcceptanceAuditRetryPolicy`, #4992) keeps
+  `(issue_id, closeout_evidence_digest)` — the issue plus the source
+  revision recorded on the admitted request — as the logical identity and
+  counts every execution attempt under that identity, classifying an audit
+  failure as transient infrastructure or deterministic
+  (`PartialCloseouts::AuditFailureClassification`) before counting it
+  against any attempt budget; claims run through `AgentRuns::RetryAttempt`
+  with its locked re-check and durable decision reason, and deterministic
+  classifications (invalid/stale input, authentication/configuration,
+  cancellation, budget exhaustion) record their reason without another
+  automatic attempt.
+  *Code:* `app/services/partial_closeouts/acceptance_audit_retry_policy.rb`,
+  `app/services/partial_closeouts/audit_failure_classification.rb`,
+  `app/jobs/partial_closeouts/acceptance_audit_retry_job.rb`.
+  *Test:* `spec/services/partial_closeouts/acceptance_audit_retry_policy_spec.rb`,
+  `spec/jobs/partial_closeouts/acceptance_audit_retry_job_spec.rb`.
+  *Spec:* PARTIAL-CLOSEOUT-056 in
+  `docs/intent/partial-closeout-recovery/partial-closeout-recovery-specs.md`.
