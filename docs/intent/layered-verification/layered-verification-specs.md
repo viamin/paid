@@ -127,7 +127,10 @@
   resource expectations, and residual gaps; it SHALL permit a justified
   single-layer plan, SHALL NOT impose a minimum layer count, and SHALL NOT be
   able to waive CI, security, branch protection, code review, or approved-intent
-  conformance — those host checks run independent of any plan outcome.
+  conformance — those host checks run independent of any plan outcome. The
+  project request SHALL offer non-semantic checks and require a stated fit and
+  reason for omitted checks; its preview SHALL show those choices before
+  dispatch. Chat and MCP requests SHALL obey the same plan validation.
   *Tests:* `spec/services/layered_verification/plans/build_spec.rb`
   *Code:* `LayeredVerification::Plans::Build` (#4433)
 

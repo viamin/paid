@@ -19,7 +19,8 @@ RSpec.describe LayeredVerification::Audits::Request do
       run = described_class.call(
         project:, user:, obligation_ids: [ obligation.id ], target_revision: "abc123",
         budget: { "max_minutes" => 15 },
-        selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ] } }
+        selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ],
+          "fit" => "Check the specification mapping", "exclusions" => [ "No formal model is declared" ] } }
       )
     }.to have_enqueued_job(ProcessRunQueueJob)
 
@@ -57,7 +58,8 @@ RSpec.describe LayeredVerification::Audits::Request do
     run = described_class.call(
       project:, user:, obligation_ids: [ obligation.id ], target_revision: long_revision,
       budget: { "max_minutes" => 15 },
-      selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ] } }
+      selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ],
+        "fit" => "Check the specification mapping", "exclusions" => [ "No formal model is declared" ] } }
     )
 
     expect(run.base_commit_sha).to eq("resolved-sha")

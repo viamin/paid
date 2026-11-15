@@ -65,6 +65,15 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
     }.not_to change(AgentRun, :count)
   end
 
+  # @spec LAYERED-VERIFY-021
+  it "rejects an unexplained check choice from the MCP request" do
+    selections[obligation.id].delete(:exclusions)
+
+    expect { tool.dispatch(**audit_arguments) }
+      .to raise_error(LayeredVerification::Plans::Build::UnexplainedOmissionsError)
+    expect(AgentRun.where(goal: "layered_verification_audit")).to be_empty
+  end
+
   # @spec LAYERED-VERIFY-014
   it "shows the external identity as the source for an older obligation without a canonical path" do
     obligation.update_column(:canonical_source_path, nil)
