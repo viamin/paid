@@ -60,6 +60,16 @@ RSpec.describe Llm::Request do
     )
   end
 
+  # @spec LLM-ROUTING-006
+  it "closes the disposable executor when provider execution is interrupted" do
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(provider).to receive(:send_message).and_raise(Interrupt)
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }.to raise_error(Interrupt)
+
+    expect(standalone_executor).to have_received(:close)
+  end
+
   # @spec LLM-ROUTING-001 LLM-ROUTING-002
   it "tries an authorized configured fallback after authentication fails" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
