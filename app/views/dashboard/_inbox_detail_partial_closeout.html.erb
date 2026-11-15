@@ -238,7 +238,7 @@
       </p>
     <% end %>
     <% audit_retry_state = assessment.stale? ? PartialCloseouts::AutoAudit.retry_state(issue) : nil %>
-    <% if audit_retry_state && %i[retry_exhausted authentication_or_configuration non_transient_failure cancelled].include?(audit_retry_state.code) %>
+    <% if audit_retry_state && %i[retry_exhausted authentication_or_configuration budget_exhausted non_transient_failure cancelled].include?(audit_retry_state.code) %>
       <p class="rounded-md bg-amber-50 p-2 text-sm text-amber-900">
         Automatic acceptance-audit retries for this evidence generation stopped after
         <%= audit_retry_state.attempts %> of <%= audit_retry_state.max_attempts %> attempts

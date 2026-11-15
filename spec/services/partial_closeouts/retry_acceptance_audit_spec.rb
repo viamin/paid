@@ -57,6 +57,16 @@ RSpec.describe PartialCloseouts::RetryAcceptanceAudit do
     expect(result.successor.external_metadata[AgentRun::ACCEPTANCE_AUDIT_RETRY_ATTEMPT_METADATA_KEY]).to eq(2)
   end
 
+  it "derives the next attempt number under the lock when the job payload is stale" do
+    original = failed_attempt
+    failed_attempt
+
+    result = described_class.call(agent_run_id: original.id, attempt: 2)
+
+    expect(result).to be_claimed
+    expect(result.successor.external_metadata[AgentRun::ACCEPTANCE_AUDIT_RETRY_ATTEMPT_METADATA_KEY]).to eq(3)
+  end
+
   it "is idempotent: a duplicate claim cannot mint a second successor" do
     original = failed_attempt
 
@@ -109,6 +119,17 @@ RSpec.describe PartialCloseouts::RetryAcceptanceAudit do
 
     expect(result.reason).to eq(:retry_budget_exhausted)
     expect(issue.agent_runs.count).to eq(3)
+  end
+
+  it "refuses a delayed claim whose supplied attempt is stale after the budget is spent" do
+    delayed_run = failed_attempt
+    2.times { failed_attempt }
+
+    result = described_class.call(agent_run_id: delayed_run.id, attempt: 3)
+
+    expect(result.reason).to eq(:retry_budget_exhausted)
+    expect(issue.agent_runs.count).to eq(3)
+    expect(delayed_run.reload.status).to eq("failed")
   end
 
   it "refuses a claim when the ordinary request path still refuses admission" do

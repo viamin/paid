@@ -34,7 +34,7 @@ module AgentRuns
     def assess(agent_run, attempt: next_attempt(agent_run))
       return Assessment.new(false, :not_acceptance_audit, attempt) unless self.class.acceptance_audit_run?(agent_run)
       return Assessment.new(false, :already_retried, attempt) if agent_run.status == "retried"
-      return Assessment.new(false, :retry_budget_exhausted, attempt) if attempt > maximum_attempts
+      return Assessment.new(false, :retry_budget_exhausted, attempt) if attempt_count(agent_run) >= maximum_attempts
 
       classification = PartialCloseouts::AcceptanceAuditFailure.classify(agent_run)
       unless classification == :transient_transport

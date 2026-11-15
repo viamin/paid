@@ -30,7 +30,10 @@ module PartialCloseouts
 
       issue.with_lock do
         agent_run.reload
-        attempt ||= policy.next_attempt(agent_run)
+        # Delayed jobs carry the attempt that was next at enqueue time, but
+        # operator or sweep attempts may join this source revision before it
+        # runs. Derive the live number under the identity lock instead.
+        attempt = policy.next_attempt(agent_run)
         assessment = policy.assess(agent_run, attempt: attempt)
         return skipped(assessment.reason, agent_run) unless assessment.eligible?
         return skipped(:retry_backoff, agent_run) unless backoff_elapsed?(agent_run)
