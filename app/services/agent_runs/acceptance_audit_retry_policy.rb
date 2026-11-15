@@ -54,6 +54,10 @@ module AgentRuns
       PartialCloseouts::AutoAudit::MAX_ATTEMPTS
     end
 
+    def retry_action
+      "acceptance_audit_auto_retry"
+    end
+
     # Attempts already executed against this run's logical identity: every
     # run whose continuation request recorded the same source revision,
     # including operator-requested attempts and attempts made under earlier

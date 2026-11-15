@@ -187,8 +187,7 @@ module Activities
 
       AgentRuns::RetryAttempt.new(
         policy: AgentRuns::AcceptanceAuditRetryPolicy.new,
-        decision_point: "acceptance_audit_auto_retry",
-        action: "acceptance_audit_auto_retry"
+        decision_point: "acceptance_audit_auto_retry"
       ).schedule(
         agent_run: agent_run,
         job_class: AcceptanceAuditRetryJob,

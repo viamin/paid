@@ -716,6 +716,7 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
 
         decision = OrchestrationDecision.where(agent_run: agent_run, actor: "acceptance_audit_auto_retry").last
         expect(decision).to be_present
+        expect(decision.decision_type).to eq("acceptance_audit_auto_retry")
         expect(decision.inputs).to include("reason" => "non_transient_failure")
       end
 
