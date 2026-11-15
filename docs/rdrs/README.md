@@ -294,8 +294,8 @@ work #4431–#4438 and optional integrations #4439–#4440. Their approved scope
 live in the accepted `docs/intent/layered-verification/` LLD/EARS — the 25
 core claims for the required tree, and the optional PR-trigger and
 scheduled-audit trigger contracts (`LAYERED-VERIFY-026`–`-032`) for the
-optional pair, whose scheduled runtime additionally awaits accepted RDR-075
-and its scheduling milestone. Implementation does not depend
+optional pair, whose scheduled runtime awaits only RDR-075's scheduling
+milestone ([#4332](https://github.com/viamin/paid/issues/4332)). Implementation does not depend
 on closure of its own umbrella. The previous draft PRs and issue trees are
 superseded by [consolidation PR #4430](https://github.com/viamin/paid/pull/4430).
 Historical audit files retain their original names and numbering; they are

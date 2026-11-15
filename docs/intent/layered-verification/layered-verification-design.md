@@ -593,8 +593,8 @@ never dispatched while `layered_verification_add_on` is off for the project
 (`LAYERED-VERIFY-030`). Whether the maintenance scheduler additionally
 requires its own `maintenance_runs` guard for the non-maintenance objectives
 it dispatches is owned by the `maintenance-runs` segment and resolved at
-RDR-075 acceptance; this segment's contract requires only that no guard be
-bypassed.
+RDR-075 acceptance; the remaining scheduling implementation decision belongs
+to #4332. This segment's contract requires only that no guard be bypassed.
 
 **Scope, revision, budget, and interruption.** Each occurrence pins the
 then-current requested branch revision and carries the schedule's configured
@@ -713,7 +713,7 @@ project's existing host policy.
    key, or a sibling schedule record reuses the recurrence contract — and
    whether the scheduler's own `maintenance_runs` guard applies to the
    non-maintenance objectives it dispatches. Owned by the `maintenance-runs`
-   segment; decided at RDR-075 acceptance / #4332, not here.
+   segment; deferred to #4332, not here.
 6. Whether PR-triggered audit findings may additionally surface as advisory
    pull-request comments through the existing review publication lifecycle
    (the layered-verification analog of RDR-075's advisory PR audits, #4333).
@@ -768,12 +768,11 @@ accepted slice is allocated as actual canonical EARS in this segment:
 | Optional task | EARS IDs | Dependencies |
 | --- | --- | --- |
 | [#4439](https://github.com/viamin/paid/issues/4439) PR-triggered focused audits | LAYERED-VERIFY-026, -027, -028, -029 | #4435, #4434 |
-| [#4440](https://github.com/viamin/paid/issues/4440) Scheduled audits via RDR-075 maintenance scheduling | LAYERED-VERIFY-030, -031, -032 | #4435, #4434, accepted RDR-075 + [#4332](https://github.com/viamin/paid/issues/4332) |
+| [#4440](https://github.com/viamin/paid/issues/4440) Scheduled audits via RDR-075 maintenance scheduling | LAYERED-VERIFY-030, -031, -032 | #4435, #4434, [#4332](https://github.com/viamin/paid/issues/4332) |
 
 The PR-trigger contracts (#4439) do not await maintenance implementation;
 the scheduled trigger's runtime (#4440) remains explicitly dependent on
-accepted RDR-075 and its scheduling milestone
-(see [Optional automation](#optional-automation-pr-triggered-and-scheduled-audits)).
+RDR-075's scheduling milestone (#4332; see [Optional automation](#optional-automation-pr-triggered-and-scheduled-audits)).
 
 Per this issue's acceptance criteria, #4432–#4438's own EARS references and
 approved scopes are updated to cite these IDs **after** this planning segment
