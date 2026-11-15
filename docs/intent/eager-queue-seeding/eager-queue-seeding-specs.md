@@ -101,6 +101,23 @@
   `Issues::ReenqueueEligibleJob`.
   *Test:* `spec/models/issue_spec.rb`.
 
+- [x] **EAGER-QUEUE-018** — When an auto-picked issue-attached `create_pr`
+  run fails without a pushed revision, PR, or other observable implementation
+  work, the failed-run re-enqueue SHALL be claimed through the shared retry
+  mechanism before `Issues::EnqueueEligible` creates a successor. The issue
+  SHALL retain its existing Sidekiq-style delay, retry cap, abandonment-reset
+  boundary, project gate, labels, dependencies, trust, budget, provider-cap,
+  and queue-admission checks. A run awaiting in-place rate-limit recovery or
+  a run with a PR, pushed revision, or partial-closeout continuation SHALL not
+  mint a blind replacement; duplicate callbacks, delayed jobs, and sweeps
+  SHALL converge on one active implementation run.
+  *Code:* `Issue#enqueue_self_if_became_auto_pick_eligible`,
+  `AgentRuns::AutoPickCreatePrRetryPolicy`,
+  `RetryFailedAutoPickCreatePrJob`, `Issues::EnqueueEligible`.
+  *Test:* `spec/models/issue_spec.rb`,
+  `spec/services/agent_runs/auto_pick_create_pr_retry_policy_spec.rb`,
+  `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`.
+
 ## Failed-run retry cap
 
 - [x] **EAGER-QUEUE-010** — When the number of consecutive failed or

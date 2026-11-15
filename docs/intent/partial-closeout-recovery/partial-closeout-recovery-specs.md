@@ -175,6 +175,8 @@
   isolated assessment environment as needed, reassess before PR publication,
   and reuse the same AgentRun and pushed branch. Cancellation and concurrent or
   replayed claims SHALL not rerun coding or duplicate PR publication. A claim
+  SHALL remain outside fresh Auto-Pick implementation retry admission once the
+  run has recorded that pushed revision or other implementation work. A claim
   that outlives its bounded lease SHALL be reclaimable, and successful recovery
   SHALL run the same best-effort screenshot, decision-record, and applicable
   LID-planning post-publication steps as the primary workflow. A branch mismatch

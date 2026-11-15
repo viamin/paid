@@ -100,6 +100,10 @@ invalid-response failures remain actionable and fail closed; timeout, transport,
 and unsuccessful runner responses persist a `waiting_recovery` record on the
 original run. An unsuccessful runner response is retried as a transport outcome
 because its nonzero exit alone cannot establish a permanent assessment error.
+The Auto-Pick failed-implementation adapter is not a source-closure recovery
+path: it rejects any run with a pushed revision or observable implementation
+work, leaving this record and its original run as the sole owner of
+post-push recovery rather than minting a second implementation attempt.
 The new unsuccessful-response recovery path uses a Temporal patch marker so
 existing workflow histories retain their original replay behavior.
 That record carries only the failed step, branch, pinned pushed commit, attempt
