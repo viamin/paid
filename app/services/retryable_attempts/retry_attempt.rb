@@ -3,7 +3,7 @@
 module RetryableAttempts
   # Shared claim mechanics for a terminal row that may create one successor.
   # Policies own eligibility, identity, admission, and successor construction.
-  # @spec AGENT-RETRY-005 AGENT-RETRY-006 AGENT-RETRY-007 AGENT-RETRY-015
+  # @spec AGENT-RETRY-005 AGENT-RETRY-006 AGENT-RETRY-007 AGENT-RETRY-015 AGENT-RETRY-016
   class RetryAttempt
     Result = Data.define(:outcome, :reason, :attempt, :successor) do
       def claimed? = outcome == :claimed
@@ -32,6 +32,8 @@ module RetryableAttempts
         next record_skip(terminal_attempt, assessment) unless assessment.eligible?
 
         successor = policy.build_successor!(terminal_attempt, retry_number)
+        next record_reason(terminal_attempt, :not_admitted, retry_number) unless successor
+
         policy.record_claim!(terminal_attempt, successor:, decision_point:, retry_number:)
         Result.new(:claimed, :retry_claimed, terminal_attempt, successor)
       end
@@ -41,7 +43,7 @@ module RetryableAttempts
       terminal_attempt = policy.attempt_class.find_by(id: attempt_id)
       return Result.new(:skipped, :missing_attempt, nil, nil) unless terminal_attempt
 
-      record_reason(terminal_attempt, :already_claimed, retry_number)
+      record_reason(terminal_attempt, policy.conflict_reason(error), retry_number)
     end
 
     private

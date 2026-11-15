@@ -88,6 +88,7 @@ RSpec.describe RetryFailedManualRunJob do
       expect(AgentRun.count).to eq(agent_run_count)
       expect(original.reload.status).to eq("failed")
       expect(active_run.reload.status).to eq("queued")
+      expect(OrchestrationDecision.last.outputs["reason"]).to eq("active_lid_planning_run")
     end
 
     it "does nothing when the run no longer exists" do

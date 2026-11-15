@@ -4,12 +4,13 @@ module AppleVerificationAttempts
   # Decides whether a failed Apple verification attempt is eligible for an
   # automatic retry. Infrastructure failures are retried up to Config.max_retries;
   # project failures are deterministic and never silently retried.
-  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-015
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-016
   class RetryPolicy
     Result = Data.define(:retryable, :reason)
     Assessment = Data.define(:eligible?, :reason, :attempt)
 
     RETRY_LINEAGE_CONSTRAINT = "idx_apple_attempts_one_retry_per_source"
+    RETRY_ALREADY_CLAIMED = :retry_already_claimed
 
     def self.call(attempt:)
       new(attempt:).call
@@ -38,7 +39,7 @@ module AppleVerificationAttempts
     def assess(terminal_attempt = @attempt, retry_number: terminal_attempt.retry_number + 1)
       result = self.class.new(attempt: terminal_attempt).call
       return Assessment.new(false, result.reason, retry_number) unless result.retryable
-      return Assessment.new(false, "retry already claimed", retry_number) if terminal_attempt.retry_attempt
+      return Assessment.new(false, RETRY_ALREADY_CLAIMED, retry_number) if terminal_attempt.retry_attempt
       return Assessment.new(false, "Apple verification queue is full", retry_number) if Queue.full?
       return Assessment.new(false, "Apple verification attempt limit reached for agent run", retry_number) if agent_run_limit_reached?(terminal_attempt)
 
@@ -60,6 +61,10 @@ module AppleVerificationAttempts
     # misreported as an already-claimed retry.
     def duplicate_claim_conflict?(error)
       error.cause&.result&.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME) == RETRY_LINEAGE_CONSTRAINT
+    end
+
+    def conflict_reason(_error)
+      :already_claimed
     end
 
     # Apple attempts already persist their retry ledger through the unique

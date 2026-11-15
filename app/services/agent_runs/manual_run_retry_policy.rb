@@ -66,6 +66,10 @@ module AgentRuns
       duplicate_active_run_conflict?(error)
     end
 
+    def conflict_reason(_error)
+      :active_lid_planning_run
+    end
+
     def record_claim!(agent_run, successor:, decision_point:, retry_number:)
       agent_run.retry!(
         decision_point:,

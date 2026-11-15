@@ -2,7 +2,7 @@
 
 module AppleVerificationAttempts
   # Queues an immutable retry from a completed attempt.
-  # @spec APPLE-VERIFY-006 AGENT-RETRY-015
+  # @spec APPLE-VERIFY-006 AGENT-RETRY-016
   class Rerun
     def self.call(attempt:)
       new(attempt:).call
@@ -27,11 +27,8 @@ module AppleVerificationAttempts
       @attempt.retry_attempt
     end
 
-    # The locked re-check reports "retry already claimed"; the unique-lineage
-    # constraint backstop reports :already_claimed. Both mean this source
-    # already has its one successor.
     def already_claimed?(result)
-      result.reason.in?([ "retry already claimed", :already_claimed ])
+      result.reason.in?([ RetryPolicy::RETRY_ALREADY_CLAIMED, :already_claimed ])
     end
 
     def retry_attempt

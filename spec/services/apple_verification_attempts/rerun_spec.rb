@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Rerun do
-  # @spec APPLE-VERIFY-006
+  # @spec APPLE-VERIFY-006 AGENT-RETRY-016
   it "preserves a capture selection on the retry" do
     attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "worker_infrastructure", requested_capture: "ios-app.initial-screen")
 
@@ -13,6 +13,14 @@ RSpec.describe AppleVerificationAttempts::Rerun do
       requested_capture: "ios-app.initial-screen",
       retry_of_attempt: attempt
     )
+  end
+
+  it "returns the existing retry when the source has already been claimed" do
+    attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "worker_infrastructure")
+
+    retry_attempt = described_class.call(attempt:)
+
+    expect(described_class.call(attempt:)).to eq(retry_attempt)
   end
 
   it "refuses a deterministic project failure with an inspectable reason" do

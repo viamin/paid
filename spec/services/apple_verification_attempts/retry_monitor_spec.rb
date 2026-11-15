@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::RetryMonitor do
-  # @spec APPLE-ATTEMPT-010
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-016
 
   it "re-enqueues an unavailable worker-infrastructure attempt" do
     original = create(

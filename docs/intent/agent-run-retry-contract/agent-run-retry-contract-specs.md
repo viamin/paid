@@ -135,7 +135,7 @@
   `app/jobs/retry_failed_manual_run_job.rb` (both unchanged by this
   segment — adoption is a documentation cross-reference only).
 
-- [x] **AGENT-RETRY-015** — Apple verification retries SHALL use the shared
+- [x] **AGENT-RETRY-016** — Apple verification retries SHALL use the shared
   row-lock, reassessment, and successor-claim mechanics without requiring an
   attempt to be an `AgentRun`. `retry_of_attempt_id` SHALL remain the sole
   persisted Apple retry lineage; retry limit, queue, per-agent-run admission,
@@ -168,6 +168,6 @@
   claim at most one successor and record an inspectable reason for every
   applied or refused decision.
   *Code:* `AgentRuns::AutoPickCreatePrRetryPolicy`,
-  `RetryFailedAutoPickCreatePrJob`, `AgentRuns::RetryAttempt`.
+  `RetryFailedAutoPickCreatePrJob`, `RetryableAttempts::RetryAttempt`.
   *Test:* `spec/services/agent_runs/auto_pick_create_pr_retry_policy_spec.rb`,
   `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`.
