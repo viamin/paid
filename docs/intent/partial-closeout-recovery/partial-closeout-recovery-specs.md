@@ -9,7 +9,8 @@
   source revision — fails transiently because transport or infrastructure was
   unavailable and left no usable assessment, Paid SHALL claim another bounded
   execution attempt for that same identity through the shared retry mechanism
-  (`AgentRuns::RetryAttempt` with `AgentRuns::AcceptanceAuditRetryPolicy`),
+  (`RetryableAttempts::RetryAttempt` with
+  `AgentRuns::AcceptanceAuditRetryPolicy`),
   after bounded increasing backoff (30, then 60 minutes) and at most three
   attempts per source revision, counting operator-requested attempts. The
   claim SHALL recheck, under the issue lock, that the failed attempt is still

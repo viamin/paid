@@ -18,12 +18,13 @@ class AppleVerificationRetryJob < ApplicationJob
   def perform
     result = TenantContext.with_system_access { AppleVerificationAttempts::RetryMonitor.call }
 
-    return if result.retried.zero? && result.scanned.zero?
+    return if result.retried.zero? && result.scanned.zero? && result.reasons.empty?
 
     Rails.logger.info(
       message: "apple_verification_retry.completed",
       retried: result.retried,
-      scanned: result.scanned
+      scanned: result.scanned,
+      reasons: result.reasons
     )
   end
 end

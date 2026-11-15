@@ -1462,11 +1462,11 @@ class Issue < ApplicationRecord
   end
 
   def schedule_failed_auto_pick_create_pr_retry(agent_run)
-    AgentRuns::RetryAttempt.new(
+    RetryableAttempts::RetryAttempt.new(
       policy: AgentRuns::AutoPickCreatePrRetryPolicy.new,
       decision_point: "auto_pick_create_pr_failed_run_retry"
     ).schedule(
-      agent_run: agent_run,
+      attempt: agent_run,
       job_class: RetryFailedAutoPickCreatePrJob,
       delay: ->(_attempt) { auto_pick_reenqueue_delay }
     )

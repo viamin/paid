@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::RetryPolicy do
-  # @spec APPLE-ATTEMPT-010
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-018
   it "retries an infrastructure failure before the retry limit" do
     attempt = create(:apple_verification_attempt, :failed,
       failure_classification: "capacity_or_quota", retry_number: 0)
@@ -46,5 +46,58 @@ RSpec.describe AppleVerificationAttempts::RetryPolicy do
     result = described_class.call(attempt:)
 
     expect(result).to have_attributes(retryable: false, reason: "attempt is still active")
+  end
+
+  it "assesses a supplied attempt when initialized without one" do
+    attempt = create(:apple_verification_attempt, :failed,
+      failure_classification: "capacity_or_quota", retry_number: 1)
+
+    assessment = described_class.new(attempt: nil).assess(attempt)
+
+    expect(assessment).to have_attributes(eligible?: true, attempt: 2)
+  end
+
+  it "supports a shared claim without an explicit retry number" do
+    attempt = create(:apple_verification_attempt, :failed,
+      failure_classification: "capacity_or_quota", retry_number: 0)
+    retry_attempt = RetryableAttempts::RetryAttempt.new(
+      policy: described_class.new(attempt: nil),
+      decision_point: "apple_verification_retry"
+    )
+
+    result = retry_attempt.claim(attempt_id: attempt.id)
+
+    expect(result).to be_claimed
+    expect(result.successor).to have_attributes(retry_number: 1, retry_of_attempt: attempt)
+  end
+
+  describe "#duplicate_claim_conflict?" do
+    it "recognizes only the retry-lineage constraint as a duplicate claim" do
+      policy = described_class.new(attempt: nil)
+
+      expect(policy.duplicate_claim_conflict?(record_not_unique("idx_apple_attempts_one_retry_per_source"))).to be(true)
+      expect(policy.duplicate_claim_conflict?(record_not_unique("idx_apple_attempts_one_active_per_run"))).to be(false)
+    end
+  end
+
+  private
+
+  def record_not_unique(constraint_name)
+    pg_result = Object.new
+    pg_result.define_singleton_method(:error_field) do |field|
+      PG::Result::PG_DIAG_CONSTRAINT_NAME == field ? constraint_name : nil
+    end
+
+    violation = PG::UniqueViolation.new
+    violation.define_singleton_method(:result) { pg_result }
+    begin
+      raise violation
+    rescue PG::UniqueViolation
+      begin
+        raise ActiveRecord::RecordNotUnique, "duplicate key value"
+      rescue ActiveRecord::RecordNotUnique => error
+        error
+      end
+    end
   end
 end

@@ -2,7 +2,7 @@
 
 module AgentRuns
   # Acceptance-audit policy for the shared retry mechanism
-  # ({AgentRuns::RetryAttempt}). The audit's logical identity is the issue
+  # ({RetryableAttempts::RetryAttempt}). The audit's logical identity is the issue
   # plus the closeout-evidence source revision: every execution attempt
   # under that identity is one continuation request and run, so a fresh
   # logical audit needs new terminal evidence rather than another attempt.
@@ -31,19 +31,19 @@ module AgentRuns
       end
     end
 
-    def assess(agent_run, attempt: next_attempt(agent_run))
-      return Assessment.new(false, :not_acceptance_audit, attempt) unless self.class.acceptance_audit_run?(agent_run)
-      return Assessment.new(false, :already_retried, attempt) if agent_run.status == "retried"
-      return Assessment.new(false, :retry_budget_exhausted, attempt) if attempt_count(agent_run) >= maximum_attempts
+    def assess(agent_run, retry_number: next_attempt(agent_run))
+      return Assessment.new(false, :not_acceptance_audit, retry_number) unless self.class.acceptance_audit_run?(agent_run)
+      return Assessment.new(false, :already_retried, retry_number) if agent_run.status == "retried"
+      return Assessment.new(false, :retry_budget_exhausted, retry_number) if attempt_count(agent_run) >= maximum_attempts
 
       classification = PartialCloseouts::AcceptanceAuditFailure.classify(agent_run)
       unless classification == :transient_transport
-        return Assessment.new(false, SKIP_REASONS.fetch(classification, :non_transient_failure), attempt)
+        return Assessment.new(false, SKIP_REASONS.fetch(classification, :non_transient_failure), retry_number)
       end
-      return Assessment.new(false, :evidence_changed, attempt) if evidence_changed?(agent_run)
-      return Assessment.new(false, :open_request_present, attempt) if IssueContinuationRequest.open_for_issue(agent_run.issue).present?
+      return Assessment.new(false, :evidence_changed, retry_number) if evidence_changed?(agent_run)
+      return Assessment.new(false, :open_request_present, retry_number) if IssueContinuationRequest.open_for_issue(agent_run.issue).present?
 
-      Assessment.new(true, :eligible, attempt)
+      Assessment.new(true, :eligible, retry_number)
     end
 
     def next_attempt(agent_run)
@@ -52,6 +52,27 @@ module AgentRuns
 
     def maximum_attempts
       PartialCloseouts::AutoAudit::MAX_ATTEMPTS
+    end
+
+    def attempt_class
+      AgentRun
+    end
+
+    def record_skip!(agent_run, reason:, decision_point:, retry_number:)
+      OrchestrationDecision.record(
+        project: agent_run.project,
+        agent_run:,
+        decision_point:,
+        action: retry_action,
+        status: "noop",
+        signals: {
+          attempt: retry_number,
+          max_attempts: maximum_attempts,
+          source_revision: logical_source_revision(agent_run),
+          reason: reason.to_s
+        },
+        result: { reason: reason.to_s }
+      )
     end
 
     def retry_action

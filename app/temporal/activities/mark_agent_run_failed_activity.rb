@@ -167,11 +167,11 @@ module Activities
     # the retry state.
     # @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-009
     def schedule_manual_run_retry_if_eligible(agent_run)
-      AgentRuns::RetryAttempt.new(
+      RetryableAttempts::RetryAttempt.new(
         policy: AgentRuns::ManualRunRetryPolicy.new,
         decision_point: "manual_failed_run_auto_retry"
       ).schedule(
-        agent_run: agent_run,
+        attempt: agent_run,
         job_class: RetryFailedManualRunJob,
         delay: RetryFailedManualRunJob.method(:retry_delay)
       )
@@ -185,11 +185,11 @@ module Activities
     def schedule_acceptance_audit_retry_if_eligible(agent_run)
       return unless AgentRuns::AcceptanceAuditRetryPolicy.acceptance_audit_run?(agent_run)
 
-      AgentRuns::RetryAttempt.new(
+      RetryableAttempts::RetryAttempt.new(
         policy: AgentRuns::AcceptanceAuditRetryPolicy.new,
         decision_point: "acceptance_audit_auto_retry"
       ).schedule(
-        agent_run: agent_run,
+        attempt: agent_run,
         job_class: AcceptanceAuditRetryJob,
         delay: AcceptanceAuditRetryJob.method(:retry_delay)
       )
