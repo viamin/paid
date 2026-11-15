@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Rerun do
-  # @spec APPLE-VERIFY-006 AGENT-RETRY-016
+  # @spec APPLE-VERIFY-006 AGENT-RETRY-018
   it "preserves a capture selection on the retry" do
     attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "worker_infrastructure", requested_capture: "ios-app.initial-screen")
 

@@ -5,7 +5,7 @@ module AppleVerificationAttempts
   # Config.max_retries and only while the queue has room. Idempotent: Rerun
   # links each queued retry back to its source via retry_of_attempt, so an
   # attempt that already has a retry is never scanned again.
-  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-016
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-018
   class RetryMonitor
     # `reasons` defaults to empty so count-only callers (e.g. the job) can
     # construct a result without refusal reasons.
@@ -45,7 +45,7 @@ module AppleVerificationAttempts
         reasons << result.reason unless result.claimed?
       end
 
-      Result.new(retried:, scanned:, reasons: reasons.uniq)
+      Result.new(retried:, scanned:, reasons: reasons.uniq.map(&:to_s))
     end
 
     private

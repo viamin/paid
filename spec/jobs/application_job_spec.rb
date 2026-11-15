@@ -369,7 +369,7 @@ RSpec.describe ApplicationJob do # @spec EXCEPTION-NOTIFY-003
       expect(job.send(:tenant_account)).to eq(account)
     end
 
-    # @spec AGENT-RETRY-015
+    # @spec AGENT-RETRY-017
     it "extracts agent_run_id from RetryFailedAutoPickCreatePrJob arguments" do
       account = instance_double(Account)
       project = instance_double(Project, account: account)

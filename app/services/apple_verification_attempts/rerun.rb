@@ -2,7 +2,7 @@
 
 module AppleVerificationAttempts
   # Queues an immutable retry from a completed attempt.
-  # @spec APPLE-VERIFY-006 AGENT-RETRY-016
+  # @spec APPLE-VERIFY-006 AGENT-RETRY-018
   class Rerun
     def self.call(attempt:)
       new(attempt:).call

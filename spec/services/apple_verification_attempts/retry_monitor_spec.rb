@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::RetryMonitor do
-  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-016
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-018
 
   it "re-enqueues an unavailable worker-infrastructure attempt" do
     original = create(
@@ -49,6 +49,7 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
     expect(result.retried).to eq(0)
     expect(result.scanned).to eq(1)
     expect(result.reasons).to contain_exactly("retry limit reached")
+    expect(result.reasons).to all(be_a(String))
     expect(AppleVerificationAttempt.where(status: "queued")).to be_empty
   end
 
@@ -61,6 +62,7 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
     expect(result.retried).to eq(0)
     expect(result.scanned).to eq(0)
     expect(result.reasons).to contain_exactly("Apple verification queue is full")
+    expect(result.reasons).to all(be_a(String))
     expect(AppleVerificationAttempt.where(status: "queued")).to be_empty
   end
 

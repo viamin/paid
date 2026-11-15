@@ -3,7 +3,7 @@
 module AgentRuns
   # Preserves issue-owned Auto-Pick admission while using the shared locked
   # decision recording for a failed implementation source.
-  # @spec AGENT-RETRY-015 EAGER-QUEUE-018 PARTIAL-CLOSEOUT-045
+  # @spec AGENT-RETRY-017 EAGER-QUEUE-018 PARTIAL-CLOSEOUT-045
   class AutoPickCreatePrRetryPolicy
     Assessment = Data.define(:eligible?, :reason, :attempt)
 

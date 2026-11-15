@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::RetryPolicy do
-  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-016
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-018
   it "retries an infrastructure failure before the retry limit" do
     attempt = create(:apple_verification_attempt, :failed,
       failure_classification: "capacity_or_quota", retry_number: 0)

@@ -1486,7 +1486,7 @@ class Issue < ApplicationRecord
     ((n**4) + 15 + (rand(10) * (n + 1))).seconds
   end
 
-  # @spec AGENT-RETRY-015
+  # @spec AGENT-RETRY-017
   def current_failed_auto_pick_create_pr_run
     run = agent_runs
       .where(auto_pick: true, goal: %w[create_pr analyze_issue], status: AgentRun::FAILURE_STATUSES + %w[no_output])

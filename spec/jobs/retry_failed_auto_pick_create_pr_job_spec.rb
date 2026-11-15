@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec AGENT-RETRY-015 EAGER-QUEUE-018 PARTIAL-CLOSEOUT-045
+# @spec AGENT-RETRY-017 EAGER-QUEUE-018 PARTIAL-CLOSEOUT-045
 RSpec.describe RetryFailedAutoPickCreatePrJob do
   let(:project) { create(:project, auto_pick_enabled: true) }
 

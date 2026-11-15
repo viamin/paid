@@ -4,7 +4,7 @@ module AppleVerificationAttempts
   # Decides whether a failed Apple verification attempt is eligible for an
   # automatic retry. Infrastructure failures are retried up to Config.max_retries;
   # project failures are deterministic and never silently retried.
-  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-016
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-018
   class RetryPolicy
     Result = Data.define(:retryable, :reason)
     Assessment = Data.define(:eligible?, :reason, :attempt)

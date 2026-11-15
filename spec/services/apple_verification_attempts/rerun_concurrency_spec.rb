@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe AppleVerificationAttempts::Rerun do
   self.use_transactional_tests = false
 
-  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-006 AGENT-RETRY-016
+  # @spec APPLE-ATTEMPT-010 AGENT-RETRY-006 AGENT-RETRY-018
   it "creates at most one successor when concurrent reruns claim the same attempt" do
     attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "worker_infrastructure")
 
