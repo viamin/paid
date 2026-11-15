@@ -1423,7 +1423,7 @@ class Issue < ApplicationRecord
     paid_state.in?(%w[new planning failed completed analyzed])
   end
 
-  def enqueue_self_if_became_auto_pick_eligible # @spec EAGER-QUEUE-007 EAGER-QUEUE-010
+  def enqueue_self_if_became_auto_pick_eligible # @spec EAGER-QUEUE-007 EAGER-QUEUE-010 EAGER-QUEUE-018
     return if runner_retry_abandoned?
 
     if paid_state == "failed"
@@ -1438,6 +1438,8 @@ class Issue < ApplicationRecord
         return
       end
     end
+
+    return schedule_failed_auto_pick_create_pr_retry if paid_state == "failed" && failed_auto_pick_create_pr_run
 
     wait = auto_pick_reenqueue_delay
     job = Issues::ReenqueueEligibleJob
@@ -1458,6 +1460,18 @@ class Issue < ApplicationRecord
     )
   end
 
+  def schedule_failed_auto_pick_create_pr_retry
+    agent_run = failed_auto_pick_create_pr_run
+    AgentRuns::RetryAttempt.new(
+      policy: AgentRuns::AutoPickCreatePrRetryPolicy.new,
+      decision_point: "auto_pick_create_pr_failed_run_retry"
+    ).schedule(
+      agent_run: agent_run,
+      job_class: RetryFailedAutoPickCreatePrJob,
+      delay: ->(_attempt) { auto_pick_reenqueue_delay }
+    )
+  end
+
   # Sidekiq's retry curve: (n ** 4) + 15 + jitter seconds, where n is the
   # zero-indexed retry attempt (n=0 is the first retry, after the first
   # failure). Lenient on the first few retries (~20s, ~26s, ~46s, ~2m, ~5m)
@@ -1471,6 +1485,15 @@ class Issue < ApplicationRecord
     n = [ consecutive_auto_pick_failure_count - 1, 0 ].max
     ((n**4) + 15 + (rand(10) * (n + 1))).seconds
   end
+
+  def failed_auto_pick_create_pr_run
+    agent_runs
+      .where(auto_pick: true, goal: "create_pr", status: AgentRun::FAILURE_STATUSES)
+      .order(created_at: :desc, id: :desc)
+      .first
+  end
+
+  public
 
   # Counts consecutive failed/no_output auto-pick runs for the latest failed
   # goal. A successful analysis cannot reset a create_pr failure streak.
