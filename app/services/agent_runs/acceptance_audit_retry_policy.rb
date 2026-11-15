@@ -11,7 +11,7 @@ module AgentRuns
   # ({PartialCloseouts::AcceptanceAuditFailure}); the claim itself is owned
   # by {PartialCloseouts::RetryAcceptanceAudit}, which serializes on the
   # issue because that is where this path's identity lives.
-  # @spec PARTIAL-CLOSEOUT-056 AGENT-RETRY-014
+  # @spec PARTIAL-CLOSEOUT-056 AGENT-RETRY-016
   class AcceptanceAuditRetryPolicy
     SKIP_REASONS = {
       substantive_assessment: :substantive_assessment_recorded,

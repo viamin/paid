@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PARTIAL-CLOSEOUT-056 AGENT-RETRY-014
+# @spec PARTIAL-CLOSEOUT-056 AGENT-RETRY-016
 RSpec.describe AgentRuns::AcceptanceAuditRetryPolicy do
   let(:account) { create(:account) }
   let(:owner) { create(:user, account:) }

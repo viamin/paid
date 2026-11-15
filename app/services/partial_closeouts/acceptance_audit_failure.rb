@@ -8,7 +8,7 @@ module PartialCloseouts
   # input coverage — is a substantive assessment, never a retry candidate,
   # and changed evidence is a fresh logical audit through ordinary
   # admission, not a re-run of a stale attempt.
-  # @spec PARTIAL-CLOSEOUT-056 AGENT-RETRY-014
+  # @spec PARTIAL-CLOSEOUT-056 AGENT-RETRY-016
   class AcceptanceAuditFailure
     TRANSIENT_CATEGORIES = %w[transport_error timeout unsuccessful_response invalid_json].freeze
     AUTHENTICATION_CATEGORIES = %w[authentication_unavailable].freeze

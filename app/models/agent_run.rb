@@ -217,6 +217,7 @@ class AgentRun < ApplicationRecord
   # chain is carried on each successor run (#4992).
   ACCEPTANCE_AUDIT_RETRY_ATTEMPT_METADATA_KEY = "acceptance_audit_retry_attempt".freeze
   ACCEPTANCE_AUDIT_RETRY_PARENT_METADATA_KEY = "acceptance_audit_retry_of_agent_run_id".freeze
+  CREATE_ISSUE_OPERATION_KEY_METADATA_KEY = "create_issue_operation_key".freeze
   CLAIMED_SENTINEL = "claimed"
   SMOKE_TEST_CUSTOM_PROMPT = "smoke_test"
   STALE_CLAIMED_TIMEOUT = 15.minutes
@@ -305,6 +306,7 @@ class AgentRun < ApplicationRecord
   attr_readonly :mcp_server_snapshot, :tool_sidecar_snapshot
 
   before_validation :set_initiating_user_from_current_user, on: :create
+  before_validation :assign_create_issue_operation_key, on: :create
   before_validation :refresh_queue_entered_at, if: :should_refresh_queue_entered_at?
   before_validation :assign_default_tdd_phase, on: :create
   before_validation :snapshot_feature_intent_revision, on: :create
@@ -1839,6 +1841,11 @@ class AgentRun < ApplicationRecord
     goal == "create_issue"
   end
 
+  # @spec AGENT-RETRY-015
+  def create_issue_operation_key
+    external_metadata[CREATE_ISSUE_OPERATION_KEY_METADATA_KEY]
+  end
+
   def create_pr_goal?
     goal == "create_pr"
   end
@@ -1908,6 +1915,15 @@ class AgentRun < ApplicationRecord
     self.tdd_phase = inferred_tdd_phase
   end
   private :assign_default_tdd_phase
+
+  # @spec AGENT-RETRY-015
+  def assign_create_issue_operation_key
+    return unless create_issue_goal? && issue_id.nil?
+    return if create_issue_operation_key.present?
+
+    self.external_metadata = external_metadata.merge(CREATE_ISSUE_OPERATION_KEY_METADATA_KEY => SecureRandom.uuid)
+  end
+  private :assign_create_issue_operation_key
 
   # @spec AUTOMATION-ACTIVATION-005
   # Label-based overrides only apply when an issue or parent issue is present;

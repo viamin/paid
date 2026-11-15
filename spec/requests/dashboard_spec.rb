@@ -1082,6 +1082,28 @@ RSpec.describe "Dashboard" do
       expect(held_issue.text).to include("Review the design amendment hold in the issue")
     end
 
+    # @spec NO-OUTPUT-ISSUE-009
+    it "renders the reason, runs, and next action for no-progress-held work" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      revisions = {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+        "outcome" => "recommend_close"
+      }
+      runs = Array.new(2) do
+        create(:agent_run, :completed, :automatic, project: project, issue: issue,
+          goal: "create_pr", auto_pick: true, pull_request_number: nil, result_commit_sha: nil,
+          reconciliation: { "no_progress" => revisions })
+      end
+
+      get dashboard_eligibility_breakdown_path
+
+      diagnostic = Nokogiri::HTML(response.body).at_css("[data-testid='held-diagnostic-#{issue.id}']")
+      expect(diagnostic.text).to include("Held reason: repeated_no_progress_create_pr")
+      expect(diagnostic.text).to include("Contributing runs: #{runs.map(&:id).join(', ')}")
+      expect(diagnostic.text).to include("Next action: Update acceptance evidence or request an authorized retry.")
+    end
+
     # @spec QUEUE-HANDOFF-001
     it "explains eligible work that has not reached the scheduler queue" do
       create(:issue, project: project, github_state: "open", paid_state: "new")

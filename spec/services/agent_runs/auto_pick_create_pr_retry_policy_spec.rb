@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec AGENT-RETRY-015 EAGER-QUEUE-018
+# @spec AGENT-RETRY-017 EAGER-QUEUE-018
 RSpec.describe AgentRuns::AutoPickCreatePrRetryPolicy do
   subject(:policy) { described_class.new }
 

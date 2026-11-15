@@ -702,7 +702,7 @@ closeout-evidence source revision; every execution attempt under that identity
 is one continuation request and run, so a fresh logical audit needs new
 terminal evidence through ordinary admission. #4992 migrated transient-failure
 recovery onto the shared retry mechanism
-(`docs/intent/agent-run-retry-contract/`, AGENT-RETRY-014): when an attempt
+(`docs/intent/agent-run-retry-contract/`, AGENT-RETRY-016): when an attempt
 fails transiently, `MarkAgentRunFailedActivity` schedules one delayed
 `AcceptanceAuditRetryJob` (GoodJob concurrency-keyed per run) whose claim
 (`PartialCloseouts::RetryAcceptanceAudit`, eligibility from
