@@ -3606,6 +3606,29 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.reload.status).to eq("retried")
       end
 
+      it "records a revision-scoped no-progress hold release on an authorized retry" do # @spec NO-OUTPUT-ISSUE-009
+        issue = create(:issue, project:)
+        revisions = {
+          "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+          "outcome" => "recommend_close"
+        }
+        2.times do
+          create(:agent_run, :completed, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+            pull_request_number: nil, pull_request_url: nil, result_commit_sha: nil,
+            reconciliation: { "no_progress" => revisions })
+        end
+
+        post retry_project_agent_run_path(project, AgentRun.last)
+
+        retry_run = AgentRun.last
+        expect(retry_run.reconciliation).to eq(
+          "no_progress_hold_release" => revisions.except("outcome")
+        )
+        retry_run.update!(status: "completed", result_commit_sha: nil, pull_request_number: nil)
+        expect(Issues::NoProgressCreatePrHold.held_issue_ids(project)).to be_empty
+      end
+
       it "carries the original run's review_depth_snapshot forward on retry" do # @spec REVIEW-DEPTH-006
         allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
         agent_run = create(:agent_run, :failed, :review_goal, project: project, review_depth_snapshot: "thorough")

@@ -80,6 +80,29 @@
   *Code:* `app/models/agent_run.rb`,
   `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
 
+- [x] **NO-OUTPUT-ISSUE-009** — When two automatic `create_pr` runs for the
+  same issue and current closeout-evidence and intent revisions complete as
+  `recommend_close` without a pull request or result commit, the system SHALL
+  hold further automatic implementation admission and dequeue for that
+  revision pair using the recorded run facts, SHALL retain the bounded run IDs
+  and an operator next action in diagnostics, and SHALL release the hold only
+  after relevant evidence or intent changes or an authorized explicit retry,
+  whose replacement run SHALL retain a release fact bound to the current
+  evidence and intent revisions even when it produces no delivery artifact.
+  A single no-progress outcome SHALL not hold the issue, and provider or
+  transport failures SHALL continue through their typed retry policy.
+  *Tests:* `spec/services/issues/no_progress_create_pr_hold_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/services/dashboard/eligibility_breakdown_spec.rb`,
+  `spec/requests/dashboard_spec.rb`.
+  *Code:* `app/services/issues/no_progress_create_pr_hold.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/temporal/activities/handle_no_output_issue_run_activity.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/dashboard/held_work_details.rb`,
+  `app/views/dashboard/_eligibility_breakdown.html.erb`.
+
 ## PR-producing partial closeouts
 
 - [x] **NO-OUTPUT-ISSUE-007** — When a PR-producing run leaves an approved
@@ -111,10 +134,15 @@
   comment on the parent issue (idempotent across retries), and SHALL NOT be
   transitioned to `paid_state: "completed"` by the run's closeout path.
   Once the partial PR is no longer open and any recorded gap-owner
-  dependencies are satisfied, Auto-Pick SHALL re-admit the parent through a
-  partial-closeout re-audit exception to the permanent merged-PR guard,
-  keyed on the issue's latest PR-producing run; a later gap-free closeout
-  SHALL restore the guard.
+  dependencies are satisfied, and the latest PR-producing run carries a
+  current acceptance assessment, Auto-Pick SHALL re-admit the parent
+  through a partial-closeout re-audit exception to the permanent merged-PR
+  guard, keyed on the issue's latest PR-producing run; a later gap-free
+  closeout SHALL restore the guard. An absent or stale assessment —
+  including a legacy gaps-only assessment with no revision metadata, stale
+  by the same rule as `PartialCloseouts::Assessment#stale?` — SHALL defer
+  re-admission to the bounded report-only acceptance-audit refresh instead
+  of admitting another ordinary implementation run.
   *Tests:* `spec/services/partial_closeouts/reconcile_spec.rb`,
   `spec/services/llm/analyze_partial_closeout_spec.rb`,
   `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,
