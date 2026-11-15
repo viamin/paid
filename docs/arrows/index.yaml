@@ -878,8 +878,8 @@ arrows:
     parent: PAID
     taxonomy: integrations
     status: PARTIAL
-    audited: 2026-11-05
-    next: "Phase 1 provider-neutral contracts and the default-off rollout guard are implemented; add provider adapters and guarded runtime entry points in subsequent phases."
+    audited: 2026-11-15
+    next: "Phases 1, 3, and 4 (contracts, assignment/lifecycle policy, and the guarded browser + project-page run integration) are implemented with checked EARS claims. Phase 2 data coverage (#4856), Phase 5 GitHub migration/cutover (#4859), Phase 6 PR relationships, and closeout (#4861) remain open under RDR-079."
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

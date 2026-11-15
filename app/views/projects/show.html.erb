@@ -386,6 +386,14 @@
                paused_runs_by_issue_id: @paused_runs_by_issue_id,
                merge_notification_issue_ids: @merge_notification_issue_ids %>
 
+    <%# RDR-079: unified tracker tickets assigned to this project. %>
+    <%# @spec UNIFIED-WORK-ITEMS-004 %>
+    <% if feature_enabled?(:unified_work_items, project: @project) %>
+      <%= turbo_frame_tag dom_id(@project, :work_items), src: project_work_items_path(@project), loading: :lazy do %>
+        <div class="mt-8 h-14 animate-pulse rounded-lg bg-gray-100"></div>
+      <% end %>
+    <% end %>
+
     <%= render "projects/pull_requests", project: @project, pull_requests: @pull_requests,
                merge_notification_issue_ids: @merge_notification_issue_ids,
                paused_runs_by_pr_number: @paused_runs_by_pr_number,

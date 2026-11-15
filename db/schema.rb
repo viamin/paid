@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_14_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_15_173923) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -409,6 +409,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_000000) do
     t.integer "turns_completed", default: 0, null: false, comment: "Number of agent turns completed, tracked via streaming JSONL progress events"
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
+    t.bigint "work_item_id"
     t.string "worktree_path", limit: 500
     t.index "status, COALESCE(completed_at, updated_at)", name: "index_agent_runs_on_status_terminal_timestamp"
     t.index ["approved_design_revision"], name: "index_agent_runs_on_approved_design_revision"
@@ -442,6 +443,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_000000) do
     t.index ["status", "completed_at"], name: "index_agent_runs_on_status_completed_at"
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
+    t.index ["work_item_id"], name: "index_agent_runs_on_work_item_id"
   end
 
   create_table "api_usage_attempts", comment: "Idempotent accounting reports for individual API provider requests.", force: :cascade do |t|
@@ -4972,6 +4974,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_14_000000) do
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
+  add_foreign_key "agent_runs", "work_items"
   add_foreign_key "api_usage_attempts", "accounts"
   add_foreign_key "api_usage_attempts", "agent_runs", on_delete: :cascade
   add_foreign_key "api_usage_attempts", "chat_messages", on_delete: :nullify

@@ -15,7 +15,11 @@
   for issue-level reconciliation. Phase 2's adapter transport, account ticket
   store, selected account API key, guarded sync, and cadence foundation are
   implemented by #4856; full data coverage and live workspace validation
-  remain open, as do later phases. The design is still Draft; partial
+  remain open, as do later phases. Phase 4 (#4858) ships the guarded account
+  work-item browser, the project-page work-item panel, unified-ticket run
+  starts through the existing run-creation path, trusted-comment admission,
+  the provider comment-posting seam, and the independent agent-run lifecycle
+  write toggle. The design is still Draft; partial
   foundation work is not final design acceptance.
 - **LID**: Full mode, version 1.3.0; the linked LLD and EARS artifacts record
   the implementation cascade.

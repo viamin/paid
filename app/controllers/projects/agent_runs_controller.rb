@@ -111,6 +111,9 @@ module Projects
     def new
       authorize @project, :run_agent?
       selected_goal = params[:goal].presence || "create_pr"
+      # @spec UNIFIED-WORK-ITEMS-005 — the form can be prefilled from an
+      # assigned unified ticket while the rollout guard is enabled.
+      @work_item = resolve_work_item
       @default_runner_identifiers_by_goal = AgentRun::GOALS.index_with do |goal|
         settings_owner&.settings&.default_runner_identifier_for_goal(goal)
       end.compact
@@ -164,6 +167,7 @@ module Projects
       goal = manual_create_goal
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
+      work_item = resolve_work_item
       priority_tier = resolve_priority_tier
       blocked_by_issue_ids = resolve_blocked_by_issue_ids
       plan_docs = resolve_plan_docs
@@ -221,7 +225,7 @@ module Projects
         )
       else
         source_pr_number = resolve_pull_request
-        unless issue || custom_prompt || source_pr_number || (goal == "lid_planning" && plan_docs.present?)
+        unless issue || custom_prompt || source_pr_number || work_item || (goal == "lid_planning" && plan_docs.present?)
           redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select an issue, provide a custom prompt, or select a pull request."
           return
@@ -235,9 +239,15 @@ module Projects
           end
         end
 
+        # @spec UNIFIED-WORK-ITEMS-005 — a run started from a unified ticket
+        # composes its prompt through the unified work-item contract, whose
+        # trusted-comment admission never widens the GitHub path.
+        custom_prompt ||= WorkItems::BuildRunPrompt.call(work_item:, project: @project) if work_item
+
         create_run_and_redirect(
           on_error_path: new_project_agent_run_path(@project, goal: goal),
           issue: issue,
+          work_item: work_item,
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pr_number,
           goal: goal,
@@ -1052,6 +1062,19 @@ module Projects
       @project.issues.find(params[:issue_id])
     end
 
+    # A unified work item is a valid manual run source while the rollout guard
+    # is enabled for this project; otherwise it is ignored so existing GitHub
+    # issue behavior is unchanged.
+    # @spec UNIFIED-WORK-ITEMS-005 UNIFIED-WORK-ITEMS-009
+    def resolve_work_item
+      return nil if params[:work_item_id].blank?
+      return nil unless Automation::Providers::UnifiedWorkItemsRolloutGuard.enabled?(@project)
+
+      @project.work_items.find(params[:work_item_id])
+    rescue ActiveRecord::RecordNotFound
+      nil
+    end
+
     def closeout_flash(result, success_message)
       result.success? ? { notice: success_message } : { alert: result.message }
     end
@@ -1247,7 +1270,7 @@ module Projects
       @agent_run.reload
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, runner_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil, blocked_by_issue_ids: [], plan_docs: [])
+    def create_agent_run(issue: nil, work_item: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, runner_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil, blocked_by_issue_ids: [], plan_docs: [])
       goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
@@ -1284,6 +1307,8 @@ module Projects
         agent_run = AgentRun.create!(
           project: @project,
           issue: issue,
+          # @spec UNIFIED-WORK-ITEMS-005
+          work_item: work_item,
           initiating_user: current_user,
           runner: resolved_runner,
           agent_type: resolved_agent_type,
