@@ -57,6 +57,7 @@
   configured independently.
   *Tests:* `spec/requests/projects/work_items_spec.rb`,
   `spec/services/work_items/build_run_prompt_spec.rb`,
+  `spec/system/work_items_browser_spec.rb`,
   `spec/services/work_items/post_comment_spec.rb`
   *Code:* `WorkItems::BuildRunPrompt`, `WorkItems::PostComment`,
   `Projects::AgentRunsController#resolve_work_item`,
