@@ -16,7 +16,7 @@ module AppleVerificationAttempts
       raise ArgumentError, "only a completed attempt can be rerun" unless @attempt.terminal?
       result = retry_attempt.claim(attempt_id: @attempt.id, retry_number: @attempt.retry_number + 1)
       return result.successor if result.claimed?
-      return existing_retry if result.reason == "retry already claimed" && existing_retry
+      return existing_retry if already_claimed?(result) && existing_retry
 
       raise ArgumentError, result.reason
     end
@@ -25,6 +25,13 @@ module AppleVerificationAttempts
 
     def existing_retry
       @attempt.retry_attempt
+    end
+
+    # The locked re-check reports "retry already claimed"; the unique-lineage
+    # constraint backstop reports :already_claimed. Both mean this source
+    # already has its one successor.
+    def already_claimed?(result)
+      result.reason.in?([ "retry already claimed", :already_claimed ])
     end
 
     def retry_attempt

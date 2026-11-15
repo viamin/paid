@@ -9,6 +9,8 @@ module AppleVerificationAttempts
     Result = Data.define(:retryable, :reason)
     Assessment = Data.define(:eligible?, :reason, :attempt)
 
+    RETRY_LINEAGE_CONSTRAINT = "idx_apple_attempts_one_retry_per_source"
+
     def self.call(attempt:)
       new(attempt:).call
     end
@@ -51,8 +53,13 @@ module AppleVerificationAttempts
       attempt.project.apple_verification_attempts.create!(retry_attributes(attempt, retry_number))
     end
 
-    def duplicate_claim_conflict?(_error)
-      true
+    # Only a retry-lineage uniqueness violation means another claim already
+    # owns this source's successor. Any other uniqueness violation — e.g. the
+    # one-active-attempt-per-run admission race between two different terminal
+    # attempts of the same agent run — must surface instead of being
+    # misreported as an already-claimed retry.
+    def duplicate_claim_conflict?(error)
+      error.cause&.result&.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME) == RETRY_LINEAGE_CONSTRAINT
     end
 
     # Apple attempts already persist their retry ledger through the unique

@@ -15,6 +15,14 @@ RSpec.describe AppleVerificationAttempts::Rerun do
     )
   end
 
+  it "refuses a deterministic project failure with an inspectable reason" do
+    attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "test_assertion")
+
+    expect { described_class.call(attempt:) }
+      .to raise_error(ArgumentError, "deterministic project failure")
+    expect(AppleVerificationAttempt.where(retry_of_attempt: attempt)).to be_empty
+  end
+
   it "leaves no queued rerun behind when the fair queue refuses it" do
     attempt = create(:apple_verification_attempt, status: "failed", failure_classification: "worker_infrastructure")
 

@@ -7,7 +7,13 @@ module AppleVerificationAttempts
   # attempt that already has a retry is never scanned again.
   # @spec APPLE-ATTEMPT-010 AGENT-RETRY-015
   class RetryMonitor
-    Result = Data.define(:retried, :scanned, :reasons)
+    # `reasons` defaults to empty so count-only callers (e.g. the job) can
+    # construct a result without refusal reasons.
+    Result = Data.define(:retried, :scanned, :reasons) do
+      def initialize(retried:, scanned:, reasons: [])
+        super
+      end
+    end
 
     RETRYABLE_STATUSES = %w[unavailable timed_out failed].freeze
 
@@ -16,6 +22,9 @@ module AppleVerificationAttempts
     end
 
     def call
+      # The classification prefilter keeps deterministic project failures out
+      # of the scan entirely; RetryPolicy#assess still refuses them for direct
+      # Rerun callers.
       candidates = AppleVerificationAttempt
         .where(status: RETRYABLE_STATUSES, failure_classification: FailureClassification::INFRASTRUCTURE)
         .where.missing(:retry_attempt)

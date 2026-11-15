@@ -155,7 +155,7 @@ must hold the following, each grounded in an existing exemplar:
 
 - **Duplicate jobs.** Re-check attempt eligibility under a row lock
   immediately before claiming, not only at schedule time, so a duplicated
-  or re-delivered delayed job cannot double-claim. (`AgentRuns::RetryAttempt#claim`'s
+  or re-delivered delayed job cannot double-claim. (`RetryableAttempts::RetryAttempt#claim`'s
   `AgentRun.lock.find_by` re-check for manual runs; `RetryTimedOutIssueGoalJob#perform`'s
   locked re-check; `StaleRunDetectorJob#recover_rate_limited_run`'s
   `with_lock`.)
@@ -163,7 +163,7 @@ must hold the following, each grounded in an existing exemplar:
   off a unique index or row lock, and a losing concurrent claim recognizes
   its specific conflict and resolves to a no-op rather than an unhandled
   error. (`idx_agent_runs_unique_active_lid_planning` handling in
-  `AgentRuns::RetryAttempt#claim` via
+  `RetryableAttempts::RetryAttempt#claim` via
   `AgentRuns::ManualRunRetryPolicy#duplicate_active_run_conflict?`;
   `idx_agent_runs_unique_active_issue`/`_pr`
   handling in `RetryTimedOutIssueGoalJob`'s `RecordNotUnique` rescue;
@@ -172,7 +172,7 @@ must hold the following, each grounded in an existing exemplar:
   current state at claim time, never trusted from schedule time — a
   toggle flipped, another run claiming the slot, or the run already being
   retried must all be visible to the claim, not just the schedule.
-  (For manual runs, `AgentRuns::RetryAttempt#claim` performs the locked
+  (For manual runs, `RetryableAttempts::RetryAttempt#claim` performs the locked
   re-check above.)
 - **Partial external work.** An attempt that already produced an
   observable side effect must not be blindly retried; the side-effect

@@ -25,13 +25,14 @@ RSpec.describe AppleVerificationAttempts::RetryMonitor do
     expect(retry_attempt.apple_verification_workflow_revision).to eq(original.apple_verification_workflow_revision)
   end
 
-  it "does not re-enqueue a deterministic project failure" do
+  it "excludes a deterministic project failure from the scan" do
     create(:apple_verification_attempt, status: "failed", failure_classification: "test_assertion")
 
     result = described_class.call
 
     expect(result.retried).to eq(0)
-    expect(result.reasons).to contain_exactly("deterministic project failure")
+    expect(result.scanned).to eq(0)
+    expect(result.reasons).to be_empty
     expect(AppleVerificationAttempt.where(status: "queued")).to be_empty
   end
 

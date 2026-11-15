@@ -47,4 +47,34 @@ RSpec.describe AppleVerificationAttempts::RetryPolicy do
 
     expect(result).to have_attributes(retryable: false, reason: "attempt is still active")
   end
+
+  describe "#duplicate_claim_conflict?" do
+    it "recognizes only the retry-lineage constraint as a duplicate claim" do
+      policy = described_class.new(attempt: nil)
+
+      expect(policy.duplicate_claim_conflict?(record_not_unique("idx_apple_attempts_one_retry_per_source"))).to be(true)
+      expect(policy.duplicate_claim_conflict?(record_not_unique("idx_apple_attempts_one_active_per_run"))).to be(false)
+    end
+  end
+
+  private
+
+  def record_not_unique(constraint_name)
+    pg_result = Object.new
+    pg_result.define_singleton_method(:error_field) do |field|
+      PG::Result::PG_DIAG_CONSTRAINT_NAME == field ? constraint_name : nil
+    end
+
+    violation = PG::UniqueViolation.new
+    violation.define_singleton_method(:result) { pg_result }
+    begin
+      raise violation
+    rescue PG::UniqueViolation
+      begin
+        raise ActiveRecord::RecordNotUnique, "duplicate key value"
+      rescue ActiveRecord::RecordNotUnique => error
+        error
+      end
+    end
+  end
 end

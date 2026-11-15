@@ -160,7 +160,11 @@ classification, retry limit, fair-queue and per-agent-run admission checks,
 immutable source/revision copy, and lifecycle behavior. Its unique
 `retry_of_attempt_id` link is the retry ledger and source identity; the shared
 mechanism returns an inspectable claim or refusal reason and never adds an
-`AgentRun`-specific retry record.
+`AgentRun`-specific retry record. Only a violation of
+`idx_apple_attempts_one_retry_per_source` counts as a duplicate claim; other
+uniqueness violations — such as an `idx_apple_attempts_one_active_per_run`
+admission race between two terminal attempts of the same agent run — surface
+to the caller instead of being reported as an already-claimed retry.
 
 ## Lifecycle-gate enforcement
 
