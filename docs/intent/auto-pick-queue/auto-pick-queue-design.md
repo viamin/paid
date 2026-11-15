@@ -63,6 +63,24 @@ and incidental issue references never create a scheduling hold. Readiness
 dependencies come only from declared dependency records and authoritative
 child relationships.
 
+## Failed create_pr recovery
+
+An issue-attached auto-picked `create_pr` failure remains an issue-owned
+recovery decision. The issue computes the existing backoff, retry cap, and
+operator-reset boundary before it schedules the shared retry adapter. At its
+delayed claim, the adapter locks the failed run, rechecks that it is an
+automatic `create_pr` failure for that issue, and delegates to the ordinary
+Auto-Pick admission path. It does not mint a replacement directly, so project
+pauses, labels, dependencies, trust, budget, provider caps, and queue capacity
+remain authoritative at the same boundary as every other Auto-Pick run.
+
+Rate-limited runs with an in-place recovery time stay owned by rate-limit
+recovery. A recorded PR, pushed revision, observable implementation work, or
+partial-closeout continuation is not fresh implementation work and is never
+blindly retried by this adapter. The locked claim marks its source retried and
+records the successor decision, which makes duplicate callbacks, delayed jobs,
+and concurrent sweeps converge on the one admission result.
+
 ## Existing dependency cycles
 
 Newly parsed dependencies are guarded against cycles, but a previously

@@ -12,6 +12,8 @@ RSpec.describe "Chat background provisioning", type: :system do
   let(:chat_session) { ChatSessions::Create.call(account:, user:, container_capability: "pending") }
 
   before do
+    clear_enqueued_jobs
+    clear_performed_jobs
     Warden.test_mode!
     login_as(user, scope: :user)
   end
@@ -22,6 +24,7 @@ RSpec.describe "Chat background provisioning", type: :system do
     Warden.test_reset!
   end
 
+  # @spec CHAT-CONTAINER-PROVISIONING-003, MULTI-REPO-CHAT-002
   it "renders the assistant response and the ready capability after background provisioning completes" do
     allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:, **|
       chat_session.update!(
@@ -44,6 +47,7 @@ RSpec.describe "Chat background provisioning", type: :system do
     expect(chat_session.reload.container_capability).to eq("ready")
   end
 
+  # @spec CHAT-CONTAINER-PROVISIONING-004
   it "shows the provisioning failure notice while chat remains usable inline" do
     allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:, **|
       chat_session.update!(container_capability: "failed")
