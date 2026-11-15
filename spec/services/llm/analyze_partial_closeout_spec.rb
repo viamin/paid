@@ -303,7 +303,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         end
     end
 
-    # @spec PARTIAL-CLOSEOUT-031
+    # @spec LLM-ROUTING-003 PARTIAL-CLOSEOUT-031
     it "uses the effective Codex runner and its configured model in the container" do
       stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "unrelated-key"))
 
@@ -314,7 +314,7 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       )
       expect(provider).to have_received(:send_message).with(
         prompt: a_string_including("Return only a JSON object"), timeout: described_class::TIMEOUT,
-        tools: :none, dangerous_mode: false, mcp_servers: [],
+        mode: :text, tools: :none, dangerous_mode: false, mcp_servers: [],
         provider_runtime: an_object_having_attributes(model: "runner-mid")
       )
     end
