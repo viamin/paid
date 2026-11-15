@@ -199,6 +199,41 @@ Lifecycle mappings work in both directions, prevent synchronization loops,
 and surface simultaneous conflicting changes for human review. Agent-run
 lifecycle writes are independently configurable.
 
+### Browser and project-page integration
+
+Phase 4 exposes the assignment services as HTTP surfaces. The account browser
+(`/work_items`) lists unassigned work first with provider, native-project, and
+review-flag filters, supports individual and bulk assignment through
+`WorkItems::AssignToProjects`, resolves review flags, and starts runs through
+`WorkItems::ExecutionProjectResolver`. Every action evaluates the account
+tenant-setting rollout guard and returns not-found while it is disabled.
+
+The project page loads a lazy frame of the tickets assigned to that project.
+From the browser or the panel, starting a run redirects into the existing
+new-run form with the work item linked; submission routes through the normal
+`run_agent?`-authorized create path, so runner resolution, budget checks, and
+queueing behavior are unchanged. A run started without an explicit custom
+prompt composes its task prompt through `WorkItems::BuildRunPrompt`, whose
+conversation section admits comments only through `WorkItems::Trust::Admit`.
+GitHub-provider work items never take that path: `resolve_work_item` ignores
+them and `WorkItems::BuildRunPrompt` raises rather than embedding their title
+or body, so GitHub content reaches a run only through the existing GitHub
+issue flow behind the user allowlist and `issue.trusted?` gate. `AgentRun`
+references the originating work item for traceability.
+
+The browser and the project panel paginate their listings (Pagy) and preload
+assignment and project data, so a large synchronized tracker backlog renders
+a bounded page with a fixed query budget instead of materializing every
+matching ticket with per-row association queries.
+
+`WorkItems::PostComment` is the host-side seam for posting Paid-authored
+comments to a provider ticket as the configured API-key user; quiet mode
+suppresses posting, provider failures are reported without raising, and
+imported comments are never reposted. Run-completion comment triggers land
+with the phase that links pull requests to work items. The project automation
+settings expose the independent agent-run lifecycle write toggle
+(`agent_run_lifecycle_sync_enabled`).
+
 ### GitHub migration and rollout
 
 GitHub issues migrate offline and idempotently into the unified model while

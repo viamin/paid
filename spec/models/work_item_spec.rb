@@ -47,4 +47,30 @@ RSpec.describe WorkItem do
       expect { work_item.clear_review_flag! }.to change(work_item, :needs_review?).from(true).to(false)
     end
   end
+
+  describe "#github?" do
+    it "matches the GitHub provider regardless of case" do
+      expect(create(:work_item, provider: "github")).to be_github
+      expect(create(:work_item, provider: "GitHub")).to be_github
+      expect(create(:work_item, provider: "linear")).not_to be_github
+    end
+  end
+
+  describe "#default_execution_assignment" do
+    it "returns the assignment marked as the default execution" do
+      # @spec UNIFIED-WORK-ITEMS-004
+      work_item = create(:work_item)
+      other_project = create(:project, account: work_item.account)
+      default_project = create(:project, account: work_item.account)
+      create(:work_item_assignment, account: work_item.account, work_item:, project: other_project)
+      default = create(:work_item_assignment, account: work_item.account, work_item:,
+        project: default_project, default_execution: true)
+
+      expect(work_item.default_execution_assignment).to eq(default)
+    end
+
+    it "is nil without a default execution assignment" do
+      expect(create(:work_item).default_execution_assignment).to be_nil
+    end
+  end
 end

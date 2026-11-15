@@ -1,0 +1,88 @@
+<% content_for(:title) { "Work Items - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Work Items</h1>
+      <p class="mt-1 text-sm text-gray-500">Tracker tickets across providers, unassigned first. Assign them to repository-backed projects to start Paid workflows.</p>
+    </div>
+  </div>
+
+  <%= form_with url: work_items_path, method: :get, class: "mt-6 grid grid-cols-1 gap-4 sm:grid-cols-4" do |form| %>
+    <div>
+      <%= form.label :provider, "Provider", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :provider, value: params[:provider], placeholder: "linear", class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+    </div>
+    <div>
+      <%= form.label :native_project_id, "Native project", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :native_project_id, value: params[:native_project_id], class: "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" %>
+    </div>
+    <div class="flex items-end">
+      <label class="flex items-center gap-2 text-sm font-medium text-gray-700">
+        <%= form.check_box :needing_review, checked: params[:needing_review].present?, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+        Needs review only
+      </label>
+    </div>
+    <div class="flex items-end">
+      <%= form.submit "Filter", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+  <% end %>
+
+  <% if @work_items.any? %>
+    <div class="mt-8 overflow-hidden bg-white shadow sm:rounded-lg">
+      <ul role="list" class="divide-y divide-gray-200">
+        <% @work_items.each do |work_item| %>
+          <li class="px-4 py-4 sm:px-6">
+            <div class="flex items-center justify-between gap-4">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <% if work_item.unassigned? %>
+                    <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Unassigned</span>
+                  <% else %>
+                    <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Assigned</span>
+                  <% end %>
+                  <% if work_item.needs_review? %>
+                    <span class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Needs review</span>
+                  <% end %>
+                  <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"><%= work_item.provider %></span>
+                </div>
+                <p class="mt-1 truncate text-sm font-medium text-gray-900"><%= link_to work_item.title, work_item_path(work_item) %></p>
+                <p class="mt-0.5 text-xs text-gray-500">
+                  <%= work_item.raw_payload["identifier"].presence || work_item.external_id %>
+                  <% if work_item.native_project_name.present? %> · <%= work_item.native_project_name %><% end %>
+                  <% if work_item.projects.any? %> · <%= pluralize(work_item.projects.size, "project") %><% end %>
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <% if work_item.projects.any? %>
+                  <%= link_to "Start run", start_run_work_item_path(work_item), class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+                <% end %>
+                <%= link_to "Open", work_item_path(work_item), class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+              </div>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+    <% if @pagy.pages > 1 %>
+      <div class="mt-4 flex items-center justify-between">
+        <p class="text-sm text-gray-700">
+          Showing <span class="font-medium"><%= @pagy.from %></span> to <span class="font-medium"><%= @pagy.to %></span> of <span class="font-medium"><%= @pagy.count %></span> work items
+        </p>
+        <nav class="flex gap-1">
+          <% if @pagy.previous %>
+            <%= link_to "Previous", work_items_path(page: @pagy.previous, provider: params[:provider], native_project_id: params[:native_project_id], needing_review: params[:needing_review]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+          <% if @pagy.next %>
+            <%= link_to "Next", work_items_path(page: @pagy.next, provider: params[:provider], native_project_id: params[:native_project_id], needing_review: params[:needing_review]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+        </nav>
+      </div>
+    <% end %>
+  <% else %>
+    <div class="mt-8 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
+      <h3 class="text-sm font-semibold text-gray-900">No work items</h3>
+      <p class="mt-1 text-sm text-gray-500">Tickets appear here once your tracker connection synchronizes them.</p>
+    </div>
+  <% end %>
+</div>

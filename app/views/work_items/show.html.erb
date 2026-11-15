@@ -1,0 +1,88 @@
+<% content_for(:title) { "#{@work_item.title} - Work Items - Paid" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"><%= @work_item.provider %></span>
+        <% if @work_item.needs_review? %>
+          <span class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Needs review</span>
+        <% end %>
+      </div>
+      <h1 class="mt-2 text-2xl font-bold text-gray-900"><%= @work_item.title %></h1>
+      <p class="mt-1 text-sm text-gray-500">
+        <%= @work_item.raw_payload["identifier"].presence || @work_item.external_id %>
+        <% if @work_item.native_project_name.present? %> · <%= @work_item.native_project_name %><% end %>
+        <% if @work_item.url.present? %> · <%= link_to "View on #{@work_item.provider}", @work_item.url, class: "text-indigo-600 hover:underline", target: "_blank", rel: "noopener" %><% end %>
+      </p>
+    </div>
+    <div class="mt-4 flex gap-3 sm:mt-0">
+      <%= link_to "Back to work items", work_items_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% if @work_item.projects.any? %>
+        <%= link_to "Start run", start_run_work_item_path(@work_item), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+    </div>
+  </div>
+
+  <% if @work_item.needs_review? && policy(@work_item).review? %>
+    <div class="mt-6 rounded-md border border-red-200 bg-red-50 p-4 sm:flex sm:items-center sm:justify-between">
+      <p class="text-sm text-red-700">A mapping or native-project change affected this ticket's assignment. Review it before automation continues.</p>
+      <%= button_to "Clear review flag", clear_review_flag_work_item_path(@work_item), method: :post, class: "mt-3 rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:mt-0" %>
+    </div>
+  <% end %>
+
+  <div class="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+    <section class="rounded-lg bg-white p-6 shadow">
+      <h2 class="text-base font-semibold text-gray-900">Ticket</h2>
+      <dl class="mt-4 space-y-3 text-sm">
+        <div class="flex justify-between"><dt class="font-medium text-gray-500">Provider state</dt><dd class="text-gray-900"><%= @work_item.native_state.presence || "Unknown" %></dd></div>
+        <div class="flex justify-between"><dt class="font-medium text-gray-500">Paid lifecycle</dt><dd class="text-gray-900"><%= @work_item.paid_lifecycle_state.presence || "Unmapped" %></dd></div>
+        <div class="flex justify-between"><dt class="font-medium text-gray-500">Archived</dt><dd class="text-gray-900"><%= @work_item.archived_at? ? "Yes" : "No" %></dd></div>
+        <div class="flex justify-between"><dt class="font-medium text-gray-500">Last synced</dt><dd class="text-gray-900"><%= local_time(@work_item.last_synced_at) %></dd></div>
+      </dl>
+      <% if @work_item.body.present? %>
+        <div class="mt-4 border-t border-gray-200 pt-4">
+          <h3 class="text-sm font-medium text-gray-500">Description</h3>
+          <p class="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-sm text-gray-900"><%= @work_item.body %></p>
+        </div>
+      <% end %>
+    </section>
+
+    <section class="rounded-lg bg-white p-6 shadow">
+      <h2 class="text-base font-semibold text-gray-900">Project assignments</h2>
+      <% assignments = @work_item.work_item_assignments.includes(:project) %>
+      <% if assignments.any? %>
+        <ul role="list" class="mt-4 divide-y divide-gray-200">
+          <% assignments.each do |assignment| %>
+            <li class="flex items-center justify-between py-3 text-sm">
+              <div>
+                <span class="font-medium text-gray-900"><%= assignment.project.name %></span>
+                <span class="ml-2 text-xs text-gray-500"><%= assignment.provenance %></span>
+                <% if assignment.default_execution %><span class="ml-2 inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">Default execution</span><% end %>
+              </div>
+              <%= link_to "Start run here", new_project_agent_run_path(assignment.project, goal: "create_pr", work_item_id: @work_item.id), class: "text-sm font-semibold text-indigo-600 hover:underline" %>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <p class="mt-4 text-sm text-gray-500">Not assigned to any project yet.</p>
+      <% end %>
+
+      <% assignable = @projects.select { |project| policy(@work_item).assign_to_project?(project) } - @work_item.projects %>
+      <% if assignable.any? %>
+        <%= form_with url: assign_work_item_path(@work_item), method: :post, class: "mt-6 border-t border-gray-200 pt-4" do |form| %>
+          <fieldset class="space-y-2">
+            <legend class="text-sm font-medium text-gray-700">Assign to projects</legend>
+            <% assignable.each do |project| %>
+              <label class="flex items-center gap-2 text-sm text-gray-900">
+                <%= check_box_tag "project_ids[]", project.id, false, id: "project_ids_#{project.id}", class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+                <%= project.name %>
+              </label>
+            <% end %>
+          </fieldset>
+          <%= form.submit "Assign", class: "mt-4 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+        <% end %>
+      <% end %>
+    </section>
+  </div>
+</div>

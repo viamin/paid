@@ -36,14 +36,17 @@
   execution-project defaults.
   *Tests:* `spec/services/work_items/browse_spec.rb`,
   `spec/services/work_items/assign_to_projects_spec.rb`,
-  `spec/services/work_items/project_mappings/`,
+  `spec/services/work_items/`,
   `spec/services/work_items/overrides/`,
-  `spec/services/work_items/execution_project_resolver_spec.rb`
+  `spec/services/work_items/execution_project_resolver_spec.rb`,
+  `spec/requests/work_items_spec.rb`,
+  `spec/requests/projects/work_items_spec.rb`
   *Code:* `WorkItems::Browse`, `WorkItems::AssignToProjects`,
   `WorkItems::ProjectMappings`, `WorkItems::Overrides`,
-  `WorkItems::ExecutionProjectResolver`
+  `WorkItems::ExecutionProjectResolver`, `WorkItemsController`,
+  `Projects::WorkItemsController`
 
-- [ ] **UNIFIED-WORK-ITEMS-005** — When a user starts a workflow from a
+- [x] **UNIFIED-WORK-ITEMS-005** — When a user starts a workflow from a
   unified ticket, the system SHALL preserve existing project permissions and
   issue workflow behavior. GitHub-sourced content SHALL remain admitted only
   through the existing GitHub-user allowlist and `issue.trusted?` gate;
@@ -52,6 +55,13 @@
   or widen that GitHub path. The system SHALL post comments as the configured
   API-key user when permitted and allow agent-run lifecycle writes to be
   configured independently.
+  *Tests:* `spec/requests/projects/work_items_spec.rb`,
+  `spec/services/work_items/build_run_prompt_spec.rb`,
+  `spec/system/work_items_browser_spec.rb`,
+  `spec/services/work_items/post_comment_spec.rb`
+  *Code:* `WorkItems::BuildRunPrompt`, `WorkItems::PostComment`,
+  `Projects::AgentRunsController#resolve_work_item`,
+  `Project::AUTOMATION_SETTINGS` (`agent_run_lifecycle_sync_enabled`)
 
 - [x] **UNIFIED-WORK-ITEMS-006** — When lifecycle mappings are configured
   between Linear and Paid, the system SHALL synchronize supported changes in

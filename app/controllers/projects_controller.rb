@@ -741,6 +741,7 @@ class ProjectsController < ApplicationController
       :auto_release_granularity,
       :plan_review_timeout_hours,
       :max_issue_runner_failures,
+      :agent_run_lifecycle_sync_enabled,
       :pr_target, :upstream_full_name,
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],

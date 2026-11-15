@@ -70,6 +70,23 @@ module Screenshots
             record.allowed_github_usernames = [ user.email ]
           end
 
+          # @spec UNIFIED-WORK-ITEMS-004
+          tenant_setting = account.tenant_setting!
+          tenant_setting.update!(features: tenant_setting.features.merge("unified_work_items" => true))
+
+          work_item = account.work_items.find_or_create_by!(
+            provider: "linear",
+            resource_type: "issue",
+            external_id: "screenshot-work-item"
+          ) do |record|
+            record.title = "Capture the unified work-item browser"
+            record.last_synced_at = Time.current
+          end
+
+          WorkItemAssignment.find_or_create_by!(account: account, work_item: work_item, project: project) do |record|
+            record.default_execution = true
+          end
+
           installation_project = Project.find_or_create_by!(account: account, github_id: 9_999_998) do |record|
             record.github_installation = github_installation
             record.created_by = user

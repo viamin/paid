@@ -360,6 +360,19 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
         .to eq([ "project_agent_run_show" ])
     end
 
+    # @spec UNIFIED-WORK-ITEMS-004
+    it "maps unified work-item browser changes to its screenshot target" do
+      controller_targets = described_class.call(changed_files: [ "app/controllers/work_items_controller.rb" ])
+      browser_targets = described_class.call(changed_files: [ "app/views/work_items/index.html.erb" ])
+      detail_targets = described_class.call(changed_files: [ "app/views/work_items/show.html.erb" ])
+      project_panel_targets = described_class.call(changed_files: [ "app/views/projects/work_items/index.html.erb" ])
+
+      expect(controller_targets.map(&:slug)).to eq([ "work_items" ])
+      expect(browser_targets.map(&:slug)).to eq([ "work_items" ])
+      expect(detail_targets.map(&:slug)).to eq([ "work_items" ])
+      expect(project_panel_targets.map(&:slug)).to eq([ "project_show" ])
+    end
+
     it "maps the new project run provenance view to its screenshot target" do
       targets = described_class.call(changed_files: [ "app/views/projects/agent_runs/provenance.html.erb" ])
 

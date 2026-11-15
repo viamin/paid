@@ -123,6 +123,16 @@ Rails.application.routes.draw do
   # Issue tracker configurations (account/user/project-level)
   resources :tracker_configurations, only: [ :index, :show, :create, :update, :destroy ]
 
+  # RDR-079: account-scoped unified work-item browser.
+  # @spec UNIFIED-WORK-ITEMS-004 UNIFIED-WORK-ITEMS-005
+  resources :work_items, only: [ :index, :show ] do
+    member do
+      get :start_run
+      post :assign
+      post :clear_review_flag
+    end
+  end
+
   # LLM provider API keys
   resources :provider_api_keys, only: [ :index, :new, :create, :show, :edit, :update, :destroy ]
 
@@ -364,6 +374,13 @@ Rails.application.routes.draw do
       resource :clarifying_questions, only: [ :show, :create ],
         controller: "projects/clarifying_questions"
       post "clarifying_questions/chat", to: "projects/clarifying_questions#chat", as: :clarifying_questions_chat
+    end
+    # RDR-079: the project page's assigned unified work items.
+    # @spec UNIFIED-WORK-ITEMS-004 UNIFIED-WORK-ITEMS-005
+    resources :work_items, only: [ :index ], controller: "projects/work_items" do
+      member do
+        post :set_default_execution
+      end
     end
     resources :change_intents, only: [ :show ], controller: "projects/change_intents" do
       member do

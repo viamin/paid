@@ -252,6 +252,8 @@ class AgentRun < ApplicationRecord
 
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
+  # @spec UNIFIED-WORK-ITEMS-005
+  belongs_to :work_item, optional: true
   belongs_to :continuation_request, class_name: "IssueContinuationRequest", optional: true
   belongs_to :prompt_version, optional: true
   belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
@@ -389,6 +391,7 @@ class AgentRun < ApplicationRecord
   validates :guardrail_violation_type, inclusion: { in: GUARDRAIL_VIOLATION_TYPES }, allow_nil: true
   validates :priority_tier, inclusion: { in: Project::PRIORITY_TIERS }, allow_nil: true
   validate :issue_belongs_to_same_project, if: -> { issue.present? }
+  validate :work_item_belongs_to_project_account, if: -> { work_item.present? && project.present? }
   validate :initiating_user_belongs_to_project_account, if: -> { initiating_user.present? && project.present? }
   validate :runner_belongs_to_project_owner, if: -> { runner.present? }
   validate :has_prompt_source, on: :create, unless: :external_execution?
@@ -4259,6 +4262,13 @@ class AgentRun < ApplicationRecord
     return if issue.project_id == project_id
 
     errors.add(:issue, "must belong to the same project")
+  end
+
+  # @spec UNIFIED-WORK-ITEMS-005
+  def work_item_belongs_to_project_account
+    return if work_item.account_id == project.account_id
+
+    errors.add(:work_item, "must belong to the same account as the project")
   end
 
   def has_prompt_source

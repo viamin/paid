@@ -19,9 +19,9 @@ RSpec.describe "TenantConfigurations" do
   before do
     sign_in user
     FeatureFlags.flipper.features.each(&:remove)
-    stub_const("#{FeatureFlags}::DEFINITIONS", {
+    stub_const("#{FeatureFlags}::DEFINITIONS", FeatureFlags::DEFINITIONS.merge(
       test_feature_flag: test_definition
-    }.freeze)
+    ).freeze)
   end
 
   describe "GET /tenant_configuration/edit" do

@@ -36,6 +36,18 @@
         goal_toggle_continuation_plans_value: (@continuation_plans_by_goal || {}).to_json,
         goal_toggle_docker_host_options_url_value: docker_host_options_project_agent_runs_path(@project, format: :json)
       } do |f| %>
+        <%# RDR-079: keep the unified ticket linked to the run being created. %>
+        <%# @spec UNIFIED-WORK-ITEMS-005 %>
+        <% if @work_item.present? %>
+          <div class="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3">
+            <p class="text-sm text-indigo-700">
+              Starting from <%= @work_item.provider %> ticket
+              <strong><%= @work_item.raw_payload["identifier"].presence || @work_item.external_id %></strong>:
+              <%= @work_item.title %>
+            </p>
+          </div>
+          <%= hidden_field_tag "work_item_id", @work_item.id %>
+        <% end %>
 
         <fieldset>
           <legend class="text-base font-semibold text-gray-900">Goal</legend>

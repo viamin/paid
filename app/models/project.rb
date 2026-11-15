@@ -236,8 +236,13 @@ class Project < ApplicationRecord
     { label: "Knowledge evolution", attribute: :knowledge_evolution_enabled,
      description: "Weekly analysis of knowledge gaps and collector effectiveness" }.freeze,
     { label: "Retry Failed Manual Runs", attribute: :retry_failed_manual_runs,
-     description: "Automatically re-queue a failed manual run with no issue/PR attachment " \
-       "and no observable work, with backoff, up to a small retry cap." }.freeze
+      description: "Automatically re-queue a failed manual run with no issue/PR attachment " \
+       "and no observable work, with backoff, up to a small retry cap." }.freeze,
+    # RDR-079: agent-run lifecycle writes push to the mapped tracker state
+    # independently of human-driven lifecycle synchronization.
+    # @spec UNIFIED-WORK-ITEMS-005
+    { label: "Agent-Run Lifecycle Sync", attribute: :agent_run_lifecycle_sync_enabled,
+      description: "Let agent-run-driven lifecycle changes push to mapped tracker tickets. Disable to keep agent runs from writing ticket state while human changes still sync." }.freeze
   ].freeze
 
   AUTO_MERGE_MODE_OPTIONS = [
