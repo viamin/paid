@@ -369,6 +369,20 @@ RSpec.describe ApplicationJob do # @spec EXCEPTION-NOTIFY-003
       expect(job.send(:tenant_account)).to eq(account)
     end
 
+    # @spec AGENT-RETRY-015
+    it "extracts agent_run_id from RetryFailedAutoPickCreatePrJob arguments" do
+      account = instance_double(Account)
+      project = instance_double(Project, account: account)
+      agent_run = instance_double(AgentRun, project: project)
+      job = RetryFailedAutoPickCreatePrJob.new(123, 1)
+
+      allow(AgentRun).to receive(:includes).and_call_original
+      allow(AgentRun).to receive(:includes).with(:project).and_return(AgentRun)
+      allow(AgentRun).to receive(:find_by).with(id: 123).and_return(agent_run)
+
+      expect(job.send(:tenant_account)).to eq(account)
+    end
+
     it "extracts agent_run_id from CaptureAgentRunSessionSummaryJob arguments" do
       account = instance_double(Account)
       project = instance_double(Project, account: account)
