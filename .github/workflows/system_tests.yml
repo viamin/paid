@@ -297,6 +297,7 @@ jobs:
           set -o pipefail
           failure_log="$(mktemp)"
           test_log="log/test.log"
+          mkdir -p "$(dirname "$test_log")"
           trap 'rm -f "$failure_log"' EXIT
           for attempt in 1 2 3; do
             : > "$failure_log"

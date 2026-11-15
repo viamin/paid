@@ -102,6 +102,7 @@ RSpec.describe SystemWorkflowFile, :no_db do
       "for attempt in 1 2 3; do",
       "undefined method 'cmd_tuples' for nil",
       'test_log="log/test.log"',
+      'mkdir -p "$(dirname "$test_log")"',
       ': > "$test_log"',
       '"$failure_log" "$test_log"',
       "docker ps --filter 'publish=5432'",
