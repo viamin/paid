@@ -152,7 +152,7 @@ module Llm
       runtime = runtime_for(runner)
       runtime = subscription_runtime(provider, runtime) unless runner.api_key?
       validate_model_policy!(runner, @policy_model_id || runtime.model)
-      provider.send_message(prompt: @prompt, timeout: timeout, tools: :none, dangerous_mode: false,
+      provider.send_message(prompt: @prompt, timeout: timeout, mode: :text, tools: :none, dangerous_mode: false,
         mcp_servers: [], provider_runtime: runtime)
     ensure
       executor&.close
@@ -219,10 +219,13 @@ module Llm
         )
       end
 
+      env = configured&.env || {}
+      env = env.merge("OPENAI_API_KEY" => runner.effective_api_secret) if runner.api_key? && runner.runner_key == "codex"
+
       AgentHarness::ProviderRuntime.new(
         model: runner.qualified_model_for(resolved.model_id),
         api_provider: configured&.api_provider, base_url: configured&.base_url,
-        env: configured&.env || {}, unset_env: configured&.unset_env || [],
+        env: env, unset_env: configured&.unset_env || [],
         flags: configured&.flags || [], metadata: configured&.metadata || {}
       )
     end

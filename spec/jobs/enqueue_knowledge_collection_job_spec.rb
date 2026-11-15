@@ -15,6 +15,7 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
     allow(worktree_service).to receive(:with_temporary_checkout).with(commit_sha).and_yield(checkout_path)
     allow(ProjectConventions::DetectForImport).to receive(:call)
     allow(Projects::DetectRepoProfile).to receive(:call).and_return({ "languages" => [ "ruby" ] })
+    allow(RunCollectorBatchJob).to receive(:perform_later)
   end
 
   describe "#perform" do
@@ -44,9 +45,9 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
     end
 
     it "enqueues RunCollectorBatchJob with the HEAD SHA" do
-      expect {
-        described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "main")
+      described_class.new.perform(project.id)
+
+      expect(RunCollectorBatchJob).to have_received(:perform_later).with(project.id, commit_sha, branch: "main")
     end
 
     it "runs import-time convention detection before enqueuing full collection" do
@@ -78,9 +79,9 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
     it "uses the project default_branch" do
       project.update!(default_branch: "develop")
 
-      expect {
-        described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "develop")
+      described_class.new.perform(project.id)
+
+      expect(RunCollectorBatchJob).to have_received(:perform_later).with(project.id, commit_sha, branch: "develop")
     end
 
     it "does not overwrite terminal knowledge_status" do
@@ -95,9 +96,9 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       allow(ProjectConventions::DetectForImport).to receive(:call).and_raise(StandardError, "boom")
       allow(Rails.logger).to receive(:error)
 
-      expect {
-        described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "main")
+      described_class.new.perform(project.id)
+
+      expect(RunCollectorBatchJob).to have_received(:perform_later).with(project.id, commit_sha, branch: "main")
 
       expect(Rails.logger).to have_received(:error).with(
         hash_including(
@@ -112,9 +113,9 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       allow(Projects::DetectRepoProfile).to receive(:call).and_raise(StandardError, "boom")
       allow(Rails.logger).to receive(:error)
 
-      expect {
-        described_class.new.perform(project.id)
-      }.to have_enqueued_job(RunCollectorBatchJob).with(project.id, commit_sha, branch: "main")
+      described_class.new.perform(project.id)
+
+      expect(RunCollectorBatchJob).to have_received(:perform_later).with(project.id, commit_sha, branch: "main")
 
       expect(Rails.logger).to have_received(:error).with(
         hash_including(
