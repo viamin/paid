@@ -563,6 +563,50 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "partial_closeout")
     end
+
+    # @spec PARTIAL-CLOSEOUT-056
+    it "renders the retry-exhaustion stop reason with its attempt count and operator action" do
+      TenantContext.with_system_access do
+        assessment_result = Struct.new(:stale?, :source_revision, :intent_revision,
+          :assessment, :criteria, :next_action, :assessed_at, keyword_init: true)
+          .new(stale?: true, source_revision: "abc", intent_revision: "def",
+            assessment: { "classification" => "partial" }, criteria: [],
+            next_action: { "explanation" => "Ask a human." }, assessed_at: nil)
+        allow(PartialCloseouts::Assessment).to receive(:call).and_return(assessment_result)
+        allow(PartialCloseouts::AutoAudit).to receive(:retry_state).and_return(
+          PartialCloseouts::AutoAudit::RetryState.new(code: :retry_exhausted, attempts: 3, max_attempts: 3)
+        )
+      end
+
+      fragment = render_detail_partial(entry)
+
+      expect(fragment.text).to include("Automatic acceptance-audit retries for this evidence generation stopped after")
+      expect(fragment.text).to include("3 of 3 attempts")
+      expect(fragment.text).to include("(retry exhausted)")
+      expect(fragment.text).to include("fresh audit")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-056
+    it "renders the budget-exhaustion stop reason with its attempt count and operator action" do
+      TenantContext.with_system_access do
+        assessment_result = Struct.new(:stale?, :source_revision, :intent_revision,
+          :assessment, :criteria, :next_action, :assessed_at, keyword_init: true)
+          .new(stale?: true, source_revision: "abc", intent_revision: "def",
+            assessment: { "classification" => "partial" }, criteria: [],
+            next_action: { "explanation" => "Ask a human." }, assessed_at: nil)
+        allow(PartialCloseouts::Assessment).to receive(:call).and_return(assessment_result)
+        allow(PartialCloseouts::AutoAudit).to receive(:retry_state).and_return(
+          PartialCloseouts::AutoAudit::RetryState.new(code: :budget_exhausted, attempts: 1, max_attempts: 3)
+        )
+      end
+
+      fragment = render_detail_partial(entry)
+
+      expect(fragment.text).to include("Automatic acceptance-audit retries for this evidence generation stopped after")
+      expect(fragment.text).to include("1 of 3 attempts")
+      expect(fragment.text).to include("(budget exhausted)")
+      expect(fragment.text).to include("fresh audit")
+    end
   end
 
   describe "test_review_pending" do

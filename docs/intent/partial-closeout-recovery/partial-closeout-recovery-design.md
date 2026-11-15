@@ -697,18 +697,48 @@ an advance attempt may correctly report `not_stalled`. A bounded periodic
 acceptance-audit sweep revisits open partial closeouts after merge. For active
 auto-pick projects, it queues a report-only `analyze_issue` acceptance audit
 when the current assessment is missing or stale and ordinary continuation
-guards permit it. It records at most three audit attempts per source revision
-— the evidence generation — including operator-requested attempts and attempts
-made under an earlier approved-intent revision, because an issue-body edit
-changes the approved intent without changing the evidence. Transport, timeout,
-and invalid JSON failures are eligible for another automatic attempt, including
-a Temporal activity timeout that ends the audit before it records a typed
-failure and an exhausted runner pool that never reached one; retries wait 30
-and then 60 minutes. A completed, cancelled, or non-transient failed audit
-stops automatic attempts for that approved-intent revision. New terminal or
-technical evidence may permit a new bounded audit, and a changed approved
-intent may permit a further attempt against the same source revision without
-resetting that revision's attempt budget.
+guards permit it. The audit's logical identity is the issue plus the
+closeout-evidence source revision; every execution attempt under that identity
+is one continuation request and run, so a fresh logical audit needs new
+terminal evidence through ordinary admission. #4992 migrated transient-failure
+recovery onto the shared retry mechanism
+(`docs/intent/agent-run-retry-contract/`, AGENT-RETRY-016): when an attempt
+fails transiently, `MarkAgentRunFailedActivity` schedules one delayed
+`AcceptanceAuditRetryJob` (GoodJob concurrency-keyed per run) whose claim
+(`PartialCloseouts::RetryAcceptanceAudit`, eligibility from
+`AgentRuns::AcceptanceAuditRetryPolicy`) serializes on the issue lock,
+rechecks that the attempt is still the current transient failure for an
+unchanged digest, and re-runs the ordinary `Issues::RequestAcceptanceAudit`
+path — so every auto-pick, trust, pause, dependency, budget, and
+one-open-request guard stays authoritative — then marks the failed attempt
+`retried` and records successor lineage in `external_metadata`
+(`acceptance_audit_retry_attempt` / `acceptance_audit_retry_of_agent_run_id`).
+The sweep converges on the same claim: while backoff is open it re-arms the
+delayed job (the concurrency key discards the duplicate), and once backoff has
+elapsed it claims directly, so sweep, delayed retry, and operator-requested
+audits are idempotent — they can neither mint concurrent audits nor exceed
+the budget.
+
+`PartialCloseouts::AcceptanceAuditFailure` classifies a terminal attempt
+before it counts against any budget: transient transport/infrastructure
+unavailability (typed transport/timeout/invalid-JSON categories, a
+Temporal activity timeout that ends the audit before it records a typed
+failure, an exhausted runner pool, and legacy transport failure messages)
+is the only retryable class; a substantive assessment — including one
+reporting unmet criteria or incomplete input coverage — cancellation,
+authentication/configuration failure, budget exhaustion, rate-limit
+recovery, and any other deterministic failure never loops, and human
+prerequisites remain admission blockers rather than retry cues. Attempts
+are bounded at three per source revision — the evidence generation —
+including operator-requested attempts and attempts made under an earlier
+approved-intent revision, because an issue-body edit changes the approved
+intent without changing the evidence; retries wait 30 and then 60 minutes.
+A changed approved intent may permit a further attempt against the same
+source revision without resetting that revision's attempt budget. When
+automatic retries stop, the Inbox detail pane shows the stop reason and
+attempt count (`AutoAudit.retry_state`) with the supported operator
+action: repair the named cause and request a fresh audit, or let new
+terminal evidence earn a new bounded audit.
 The existing auto-pick control governs this work;
 there is no separate audit setting. The GitHub-sync repair leaves a gap-free,
 audit-pending source issue out of manual review while its non-closing PR is

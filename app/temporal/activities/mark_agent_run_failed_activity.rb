@@ -98,6 +98,8 @@ module Activities
 
       # @spec MANUAL-RUN-RETRY-001
       schedule_manual_run_retry_if_eligible(agent_run)
+      # @spec PARTIAL-CLOSEOUT-056
+      schedule_acceptance_audit_retry_if_eligible(agent_run)
 
       logger.info(
         message: "agent_execution.failed",
@@ -172,6 +174,24 @@ module Activities
         attempt: agent_run,
         job_class: RetryFailedManualRunJob,
         delay: RetryFailedManualRunJob.method(:retry_delay)
+      )
+    end
+
+    # A transiently failed report-only acceptance audit gets one bounded
+    # delayed retry through the shared retry mechanism instead of waiting
+    # for the periodic sweep to observe the failure. Non-transient failures
+    # and an exhausted per-revision budget record a durable skip reason.
+    # @spec PARTIAL-CLOSEOUT-056
+    def schedule_acceptance_audit_retry_if_eligible(agent_run)
+      return unless AgentRuns::AcceptanceAuditRetryPolicy.acceptance_audit_run?(agent_run)
+
+      RetryableAttempts::RetryAttempt.new(
+        policy: AgentRuns::AcceptanceAuditRetryPolicy.new,
+        decision_point: "acceptance_audit_auto_retry"
+      ).schedule(
+        attempt: agent_run,
+        job_class: AcceptanceAuditRetryJob,
+        delay: AcceptanceAuditRetryJob.method(:retry_delay)
       )
     end
 
