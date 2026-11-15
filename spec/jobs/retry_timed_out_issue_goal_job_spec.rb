@@ -251,5 +251,23 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       expect(agent_run.reload.status).to eq("retried")
       expect(OrchestrationDecision.last.outputs["retry_attempt"]).to eq(1)
     end
+
+    it "recovers from an active PR-slot conflict when the issue slot is free" do # @spec AGENT-RETRY-014
+      source_pull_request_number = 42
+      agent_run = create_timed_out_issue_goal_run(source_pull_request_number: source_pull_request_number)
+      existing_run = create(:agent_run, :create_issue_goal, project: project,
+        issue: create(:issue, project: project), source_pull_request_number: source_pull_request_number,
+        status: "queued")
+
+      expect { described_class.perform_now(agent_run.id) }
+        .not_to change(AgentRun, :count)
+
+      expect(agent_run.reload.status).to eq("retried")
+      expect(OrchestrationDecision.last.outputs).to include(
+        "existing_agent_run_id" => existing_run.id,
+        "reason" => "existing_active_run"
+      )
+      expect(ProcessRunQueueJob).to have_been_enqueued
+    end
   end
 end

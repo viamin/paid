@@ -124,7 +124,9 @@ module AgentRuns
     def existing_active_run_for(agent_run)
       scope = AgentRun.where(project_id: agent_run.project_id, goal: agent_run.goal, status: AgentRun::UNFINISHED_STATUSES)
         .where.not(id: agent_run.id)
-      return scope.find_by(issue_id: agent_run.issue_id) if agent_run.issue_id.present?
+      existing_run = scope.find_by(issue_id: agent_run.issue_id) if agent_run.issue_id.present?
+      return existing_run if existing_run
+
       scope.find_by(source_pull_request_number: agent_run.source_pull_request_number) if agent_run.source_pull_request_number.present?
     end
 
