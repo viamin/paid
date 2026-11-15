@@ -10,7 +10,8 @@ module AgentRuns
 
     Assessment = Data.define(:eligible?, :reason, :attempt)
 
-    def assess(agent_run, attempt: next_attempt(agent_run))
+    def assess(agent_run, retry_number: next_attempt(agent_run))
+      attempt = retry_number
       return Assessment.new(false, :retry_budget_exhausted, attempt) if attempt > AgentRun::MAX_MANUAL_RETRY_ATTEMPTS
       return Assessment.new(false, :not_manual, attempt) unless agent_run.manual?
       return Assessment.new(false, :bootstrap_readiness_goal, attempt) if agent_run.bootstrap_readiness_goal?
@@ -34,8 +35,8 @@ module AgentRuns
       AgentRun::MAX_MANUAL_RETRY_ATTEMPTS
     end
 
-    def retry_action
-      "manual_failed_run_auto_retry"
+    def attempt_class
+      AgentRun
     end
 
     def build_successor!(original, attempt)
@@ -61,7 +62,39 @@ module AgentRuns
       error.cause&.result&.error_field(PG::Result::PG_DIAG_CONSTRAINT_NAME) == ACTIVE_LID_PLANNING_CONSTRAINT
     end
 
+    def duplicate_claim_conflict?(error)
+      duplicate_active_run_conflict?(error)
+    end
+
+    def conflict_reason(_error)
+      :active_lid_planning_run
+    end
+
+    def record_claim!(agent_run, successor:, decision_point:, retry_number:)
+      agent_run.retry!(
+        decision_point:,
+        signals: retry_signals(retry_number),
+        result: { new_agent_run_id: successor.id, reason: "retry_claimed" }
+      )
+    end
+
+    def record_skip!(agent_run, reason:, decision_point:, retry_number:)
+      OrchestrationDecision.record(
+        project: agent_run.project,
+        agent_run:,
+        decision_point:,
+        action: "manual_failed_run_auto_retry",
+        status: "noop",
+        signals: retry_signals(retry_number).merge(reason: reason.to_s),
+        result: { reason: reason.to_s }
+      )
+    end
+
     private
+
+    def retry_signals(attempt)
+      { attempt:, max_attempts: maximum_attempts }
+    end
 
     def active_lid_planning_run?(agent_run)
       return false unless agent_run.goal == "lid_planning"

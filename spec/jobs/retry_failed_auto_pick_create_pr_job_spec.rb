@@ -49,6 +49,20 @@ RSpec.describe RetryFailedAutoPickCreatePrJob do
       expect(OrchestrationDecision.last.outputs["reason"]).to eq("implementation_work_produced")
     end
 
+    it "records a refusal when issue admission does not create a successor" do
+      issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
+      original = create(:agent_run, :failed, :automatic, project: project, issue: issue,
+        goal: "create_pr", auto_pick: true)
+      project.update!(auto_pick_enabled: false)
+
+      expect {
+        described_class.new.perform(original.id, 1)
+      }.not_to change(AgentRun, :count)
+
+      expect(original.reload.status).to eq("failed")
+      expect(OrchestrationDecision.last.outputs["reason"]).to eq("not_admitted")
+    end
+
     it "claims only one successor when a delayed job is delivered twice" do
       issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
       original = create(:agent_run, :failed, :automatic, project: project, issue: issue,

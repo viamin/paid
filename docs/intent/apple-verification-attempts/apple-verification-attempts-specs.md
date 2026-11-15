@@ -111,7 +111,11 @@
 
 - [x] **APPLE-ATTEMPT-010** — The system MAY retry safe infrastructure
   failures within policy and SHALL NOT silently retry deterministic project
-  failures or represent an infrastructure failure as a code defect.
+  failures or represent an infrastructure failure as a code defect. The shared
+  retry claim SHALL lock and freshly assess the terminal Apple attempt before
+  creating its one linked successor; queue-full, exhausted, and duplicate
+  claims SHALL return an inspectable refusal reason without creating another
+  retry ledger.
   *Tests:* `spec/services/apple_verification_attempts/retry_policy_spec.rb`,
   `spec/services/apple_verification_attempts/retry_monitor_spec.rb`,
   `spec/jobs/apple_verification_retry_job_spec.rb`

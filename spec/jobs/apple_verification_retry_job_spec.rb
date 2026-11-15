@@ -32,7 +32,8 @@ RSpec.describe AppleVerificationRetryJob do
     expect(logger).to receive(:info).with(
       message: "apple_verification_retry.completed",
       retried: 1,
-      scanned: 2
+      scanned: 2,
+      reasons: []
     )
 
     described_class.new.perform
@@ -47,6 +48,25 @@ RSpec.describe AppleVerificationRetryJob do
     logger = instance_double(ActiveSupport::Logger)
     allow(Rails).to receive(:logger).and_return(logger)
     expect(logger).not_to receive(:info)
+
+    described_class.new.perform
+  end
+
+  it "logs refusal reasons when the queue is full before scanning" do
+    allow(TenantContext).to receive(:with_system_access).and_yield
+    result = AppleVerificationAttempts::RetryMonitor::Result.new(
+      retried: 0, scanned: 0, reasons: [ "Apple verification queue is full" ]
+    )
+    allow(AppleVerificationAttempts::RetryMonitor).to receive(:call).and_return(result)
+
+    logger = instance_double(ActiveSupport::Logger)
+    allow(Rails).to receive(:logger).and_return(logger)
+    expect(logger).to receive(:info).with(
+      message: "apple_verification_retry.completed",
+      retried: 0,
+      scanned: 0,
+      reasons: [ "Apple verification queue is full" ]
+    )
 
     described_class.new.perform
   end

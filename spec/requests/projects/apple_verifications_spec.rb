@@ -169,7 +169,7 @@ RSpec.describe "Projects::AppleVerifications" do
       post rerun_project_apple_verification_path(project), params: { attempt_id: attempt.id }
 
       expect(response).to redirect_to(project_apple_verification_path(project))
-      expect(flash[:alert]).to eq("attempt failure is not retryable")
+      expect(flash[:alert]).to eq("deterministic project failure")
       expect(project.apple_verification_attempts.count).to eq(1)
     end
   end
