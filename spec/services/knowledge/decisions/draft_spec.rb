@@ -153,14 +153,15 @@ RSpec.describe Knowledge::Decisions::Draft do
       )
     end
 
-    it "does not route non-claude providers through text mode (text transport is Anthropic-only)" do
+    # @spec LLM-ROUTING-003
+    it "identifies non-Claude application requests as text operations" do
       project.created_by.settings.update!(kb_chat_runner: "cursor", kb_chat_fallback_runners: [])
 
       described_class.call(agent_run: agent_run)
 
       expect(AgentHarness.conductor).to have_received(:execute_direct) do |_prompt, **opts|
         expect(opts[:provider]).to eq(:cursor)
-        expect(opts).not_to have_key(:mode)
+        expect(opts).to include(mode: :text)
       end
     end
 
