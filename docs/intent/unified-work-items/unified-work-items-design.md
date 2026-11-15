@@ -214,9 +214,17 @@ new-run form with the work item linked; submission routes through the normal
 `run_agent?`-authorized create path, so runner resolution, budget checks, and
 queueing behavior are unchanged. A run started without an explicit custom
 prompt composes its task prompt through `WorkItems::BuildRunPrompt`, whose
-conversation section admits comments only through `WorkItems::Trust::Admit`;
-GitHub-provider content is never admitted on that path. `AgentRun` references
-the originating work item for traceability.
+conversation section admits comments only through `WorkItems::Trust::Admit`.
+GitHub-provider work items never take that path: `resolve_work_item` ignores
+them and `WorkItems::BuildRunPrompt` raises rather than embedding their title
+or body, so GitHub content reaches a run only through the existing GitHub
+issue flow behind the user allowlist and `issue.trusted?` gate. `AgentRun`
+references the originating work item for traceability.
+
+The browser and the project panel paginate their listings (Pagy) and preload
+assignment and project data, so a large synchronized tracker backlog renders
+a bounded page with a fixed query budget instead of materializing every
+matching ticket with per-row association queries.
 
 `WorkItems::PostComment` is the host-side seam for posting Paid-authored
 comments to a provider ticket as the configured API-key user; quiet mode

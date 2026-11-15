@@ -38,6 +38,19 @@ class WorkItem < ApplicationRecord
 
   def locked_from_mapping? = work_item_assignments.exists?(locked: true)
 
+  # GitHub tickets stay on the existing GitHub issue flow; their content is
+  # gated by the GitHub-user allowlist and `issue.trusted?`, never the
+  # unified work-item admission path.
+  # @spec UNIFIED-WORK-ITEMS-005
+  def github? = provider.to_s.casecmp?("github")
+
+  # The issue-level default execution assignment, if one is set. Reads the
+  # loaded association when preloaded so list views avoid per-row queries.
+  # @spec UNIFIED-WORK-ITEMS-004
+  def default_execution_assignment
+    work_item_assignments.detect(&:default_execution)
+  end
+
   def flag_for_review!
     update!(assignment_review_flagged_at: Time.current)
   end

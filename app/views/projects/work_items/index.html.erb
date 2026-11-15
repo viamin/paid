@@ -13,7 +13,7 @@
     <div class="mt-4 overflow-hidden bg-white shadow sm:rounded-lg">
       <ul role="list" class="divide-y divide-gray-200">
         <% @work_items.each do |work_item| %>
-          <% default_assignment = work_item.work_item_assignments.default_execution.first %>
+          <% default_assignment = work_item.default_execution_assignment %>
           <li class="px-4 py-4 sm:px-6">
             <div class="flex items-center justify-between gap-4">
               <div class="min-w-0">
@@ -46,6 +46,21 @@
         <% end %>
       </ul>
     </div>
+    <% if @pagy.pages > 1 %>
+      <div class="mt-4 flex items-center justify-between">
+        <p class="text-sm text-gray-700">
+          Showing <span class="font-medium"><%= @pagy.from %></span> to <span class="font-medium"><%= @pagy.to %></span> of <span class="font-medium"><%= @pagy.count %></span> tickets
+        </p>
+        <nav class="flex gap-1">
+          <% if @pagy.previous %>
+            <%= link_to "Previous", project_work_items_path(@project, page: @pagy.previous), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+          <% if @pagy.next %>
+            <%= link_to "Next", project_work_items_path(@project, page: @pagy.next), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+        </nav>
+      </div>
+    <% end %>
   <% else %>
     <div class="mt-4 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
       <h3 class="text-sm font-semibold text-gray-900">No tracker work items assigned</h3>

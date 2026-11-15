@@ -64,6 +64,21 @@
         <% end %>
       </ul>
     </div>
+    <% if @pagy.pages > 1 %>
+      <div class="mt-4 flex items-center justify-between">
+        <p class="text-sm text-gray-700">
+          Showing <span class="font-medium"><%= @pagy.from %></span> to <span class="font-medium"><%= @pagy.to %></span> of <span class="font-medium"><%= @pagy.count %></span> work items
+        </p>
+        <nav class="flex gap-1">
+          <% if @pagy.previous %>
+            <%= link_to "Previous", work_items_path(page: @pagy.previous, provider: params[:provider], native_project_id: params[:native_project_id], needing_review: params[:needing_review]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+          <% if @pagy.next %>
+            <%= link_to "Next", work_items_path(page: @pagy.next, provider: params[:provider], native_project_id: params[:native_project_id], needing_review: params[:needing_review]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+          <% end %>
+        </nav>
+      </div>
+    <% end %>
   <% else %>
     <div class="mt-8 text-center rounded-lg border-2 border-dashed border-gray-300 p-8">
       <h3 class="text-sm font-semibold text-gray-900">No work items</h3>

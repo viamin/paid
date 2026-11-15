@@ -54,16 +54,13 @@ RSpec.describe WorkItems::BuildRunPrompt do
       expect(prompt).not_to include("Untrusted text")
     end
 
-    it "never admits GitHub-provider comments through the unified path" do
+    it "refuses a GitHub-provider work item so its title and body never reach the prompt" do
       # @spec UNIFIED-WORK-ITEMS-005
-      work_item = create(:work_item, account:, provider: "github")
-      create(:trusted_provider_identity, account:, provider: "github", identity_type: "user", external_id: "gh-user")
+      work_item = create(:work_item, account:, provider: "github",
+        title: "Untrusted GitHub title", body: "Untrusted GitHub body")
 
-      prompt = described_class.call(work_item:, project:, comments: [
-        { author_external_id: "gh-user", author_identity_type: "user", body: "GitHub body" }
-      ])
-
-      expect(prompt).not_to include("GitHub body")
+      expect { described_class.call(work_item:, project:, comments: []) }
+        .to raise_error(WorkItems::BuildRunPrompt::UntrustedProviderError)
     end
 
     it "admits comments retained in the raw payload" do

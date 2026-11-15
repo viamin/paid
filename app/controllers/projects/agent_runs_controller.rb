@@ -1064,13 +1064,17 @@ module Projects
 
     # A unified work item is a valid manual run source while the rollout guard
     # is enabled for this project; otherwise it is ignored so existing GitHub
-    # issue behavior is unchanged.
+    # issue behavior is unchanged. GitHub-provider tickets are also ignored:
+    # their content stays behind the existing GitHub-user allowlist and
+    # `issue.trusted?` gate on the GitHub issue flow, never the unified
+    # work-item prompt path.
     # @spec UNIFIED-WORK-ITEMS-005 UNIFIED-WORK-ITEMS-009
     def resolve_work_item
       return nil if params[:work_item_id].blank?
       return nil unless Automation::Providers::UnifiedWorkItemsRolloutGuard.enabled?(@project)
 
-      @project.work_items.find(params[:work_item_id])
+      work_item = @project.work_items.find(params[:work_item_id])
+      work_item.github? ? nil : work_item
     rescue ActiveRecord::RecordNotFound
       nil
     end

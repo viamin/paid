@@ -14,7 +14,7 @@ class WorkItemsController < ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
-    @work_items = browse_scope.to_a
+    @pagy, @work_items = pagy(browse_scope.includes(:work_item_assignments, :projects))
   end
 
   def show

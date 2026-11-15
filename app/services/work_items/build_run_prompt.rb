@@ -9,6 +9,11 @@ module WorkItems
   #
   # @spec UNIFIED-WORK-ITEMS-005 UNIFIED-WORK-ITEMS-009
   class BuildRunPrompt
+    # A GitHub-sourced work item was passed to the unified prompt path: its
+    # title, body, and comments must instead reach a run through the existing
+    # trusted GitHub issue flow (user allowlist + `issue.trusted?`).
+    UntrustedProviderError = Class.new(StandardError)
+
     DEFAULT_MAX_COMMENTS = 20
     DEFAULT_MAX_COMMENT_LENGTH = 2000
 
@@ -24,6 +29,8 @@ module WorkItems
     end
 
     def call
+      raise UntrustedProviderError, "GitHub work items must run through the trusted GitHub issue flow" if work_item.github?
+
       [ task_section, conversation_section ].compact_blank.join("\n")
     end
 

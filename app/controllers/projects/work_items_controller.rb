@@ -15,8 +15,10 @@ module Projects
     skip_after_action :verify_authorized, only: :index
 
     def index
-      @work_items = WorkItems::Browse.call(account: @project.account, project: @project)
-        .merge(policy_scope(WorkItem)).to_a
+      @pagy, @work_items = pagy(
+        WorkItems::Browse.call(account: @project.account, project: @project)
+          .merge(policy_scope(WorkItem)).includes(:work_item_assignments, :projects)
+      )
     end
 
     def set_default_execution

@@ -32,6 +32,39 @@ RSpec.describe "Projects work-item integration" do
 
       expect(response).to have_http_status(:not_found)
     end
+
+    it "paginates the panel instead of materializing every assigned ticket" do
+      # @spec UNIFIED-WORK-ITEMS-004
+      create_list(:work_item, 26, account: account) do |item, index|
+        item.update!(title: format("Panel ticket %02d", index), created_at: index.hours.ago)
+        create(:work_item_assignment, account: account, work_item: item, project: project)
+      end
+
+      get project_work_items_path(project)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Panel ticket 00")
+      expect(response.body).not_to include("Panel ticket 25")
+      expect(response.body).to include("Next")
+
+      get project_work_items_path(project, page: 2)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Panel ticket 25")
+      expect(response.body).not_to include("Panel ticket 00")
+    end
+
+    it "batches assignment loading for the page" do
+      # @spec UNIFIED-WORK-ITEMS-004
+      5.times do
+        item = create(:work_item, account: account)
+        create(:work_item_assignment, account: account, work_item: item, project: project)
+      end
+
+      queries = capture_queries { get project_work_items_path(project) }
+
+      expect(queries.count { |sql| sql.include?('FROM "work_item_assignments"') }).to be <= 2
+    end
   end
 
   describe "POST /projects/:project_id/work_items/:id/set_default_execution" do
@@ -97,6 +130,18 @@ RSpec.describe "Projects work-item integration" do
       expect(response).to have_http_status(:ok)
       expect(response.body).not_to include(%(name="work_item_id"))
     end
+
+    it "ignores a GitHub-provider work item so its untrusted content cannot prefill the form" do
+      # @spec UNIFIED-WORK-ITEMS-005
+      github_item = create(:work_item, account: account, provider: "github", title: "Untrusted GitHub title")
+      create(:work_item_assignment, account: account, work_item: github_item, project: project)
+
+      get new_project_agent_run_path(project, goal: "create_pr", work_item_id: github_item.id)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include(%(name="work_item_id"))
+      expect(response.body).not_to include("Untrusted GitHub title")
+    end
   end
 
   describe "POST /projects/:project_id/agent_runs with a work item" do
@@ -158,6 +203,20 @@ RSpec.describe "Projects work-item integration" do
       }.not_to change(AgentRun, :count)
 
       expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+    end
+
+    it "refuses to compose a prompt from a GitHub-provider work item" do
+      # @spec UNIFIED-WORK-ITEMS-005
+      github_item = create(:work_item, account: account, provider: "github",
+        title: "Untrusted GitHub title", body: "Untrusted GitHub body")
+      create(:work_item_assignment, account: account, work_item: github_item, project: project)
+
+      expect {
+        post project_agent_runs_path(project), params: { work_item_id: github_item.id }
+      }.not_to change(AgentRun, :count)
+
+      expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+      expect(flash[:alert]).to include("Please select an issue")
     end
   end
 end

@@ -45,6 +45,39 @@ RSpec.describe "WorkItems browser" do
 
       expect(response).to have_http_status(:not_found)
     end
+
+    it "paginates the listing instead of materializing the backlog" do
+      # @spec UNIFIED-WORK-ITEMS-004
+      create_list(:work_item, 26, account:) do |item, index|
+        item.update!(title: format("Ticket %02d", index), created_at: index.hours.ago)
+      end
+
+      get work_items_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Ticket 00")
+      expect(response.body).not_to include("Ticket 25")
+      expect(response.body).to include("Next")
+
+      get work_items_path, params: { page: 2 }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Ticket 25")
+      expect(response.body).not_to include("Ticket 00")
+    end
+
+    it "batches assignment and project loading for the page" do
+      # @spec UNIFIED-WORK-ITEMS-004
+      5.times do |index|
+        item = create(:work_item, account:, title: "Ticket #{index}")
+        create(:work_item_assignment, account:, work_item: item, project:)
+      end
+
+      queries = capture_queries { get work_items_path }
+
+      expect(queries.count { |sql| sql.include?('FROM "work_item_assignments"') }).to be <= 2
+      expect(queries.count { |sql| sql.include?('FROM "projects"') }).to be <= 2
+    end
   end
 
   describe "GET /work_items/:id" do
