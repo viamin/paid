@@ -16,10 +16,33 @@
                   <%= check_box_tag "obligation_ids[]", obligation.id, false, id: dom_id(obligation, :audit) %>
                   <span><%= obligation.scope_description %> <span class="text-gray-500">(<%= obligation.external_identity %>)</span></span>
                 </label>
-                <label class="ml-6 mt-2 flex gap-2 text-xs text-gray-600">
-                  <%= check_box_tag "selections[#{obligation.id}][selected_checks][]", "semantic_audit", true, id: dom_id(obligation, :semantic_audit) %>
-                  <span>Semantic audit</span>
-                </label>
+                <fieldset class="ml-6 mt-2">
+                  <legend class="text-xs font-medium text-gray-700">Checks for this obligation</legend>
+                  <p class="text-xs text-gray-500">Choose checks that fit the failure mode and available artifacts. A semantic audit is optional.</p>
+                  <div class="mt-2 grid gap-1 sm:grid-cols-2">
+                    <% LayeredVerificationCheckResult::PRODUCERS.each do |check| %>
+                      <label class="flex gap-2 text-xs text-gray-600">
+                        <%= check_box_tag "selections[#{obligation.id}][selected_checks][]", check, false, id: dom_id(obligation, check) %>
+                        <span><%= check.humanize %></span>
+                      </label>
+                    <% end %>
+                  </div>
+                </fieldset>
+                <div class="ml-6 mt-3 space-y-2">
+                  <label class="block text-xs text-gray-700">
+                    Why these checks fit
+                    <%= text_area_tag "selections[#{obligation.id}][fit]", nil, rows: 2, class: "mt-1 block w-full rounded-md border-gray-300 text-sm", placeholder: "Name the failure mode and available evidence" %>
+                  </label>
+                  <label class="block text-xs text-gray-700">
+                    Omitted checks and why
+                    <%= text_area_tag "selections[#{obligation.id}][exclusions][]", nil, rows: 2, class: "mt-1 block w-full rounded-md border-gray-300 text-sm", placeholder: "For example, no formal model is declared" %>
+                  </label>
+                  <label class="block text-xs text-gray-700">
+                    Required input paths for command checks (optional)
+                    <%= text_field_tag "selections[#{obligation.id}][required_inputs][]", nil, class: "mt-1 block w-full rounded-md border-gray-300 text-sm", placeholder: "Model.tla" %>
+                    <%= text_field_tag "selections[#{obligation.id}][required_inputs][]", nil, class: "mt-1 block w-full rounded-md border-gray-300 text-sm", placeholder: "Model.cfg" %>
+                  </label>
+                </div>
               </div>
             <% end %>
           </div>

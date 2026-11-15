@@ -106,7 +106,7 @@ RSpec.describe SystemWorkflowFile, :no_db do
       ': > "$test_log"',
       '"$failure_log" "$test_log"',
       "docker ps --format '{{.ID}} {{.Names}}'",
-      "awk '$2 ~ /_postgres[[:digit:]]*_/ { print $1 }'",
+      "awk '$2 ~ /_postgres([[:digit:]]+)?_/ { print $1 }'",
       'docker restart "$postgres_container"',
       'pg_isready -h "$DB_HOST" -U postgres -d postgres',
       'if [ "$attempt" -eq 3 ]; then',

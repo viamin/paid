@@ -349,6 +349,14 @@ audit... create an audit run without requiring a GitHub issue"), the one
 documented exception to the normal issue-driven run-creation path; the run
 still carries a `project_id`, a resolved obligation scope, a budget, and full
 provenance.
+The project request offers the supported check producers for each obligation,
+including checks that do not require a semantic audit. The requester selects
+checks against the failure mode and available artifacts, states why they fit,
+names omitted or inapplicable checks, and supplies inputs needed by a selected
+command. The shared plan builder rejects an empty selection, unsupported check
+name, an unexplained fit, or omitted checks without a reason. The confirmation preview shows the
+selected checks, fit, omissions, inputs, source paths, revision, and budget;
+chat and MCP requests use the same plan validation.
 
 ## Tool parity: UI, project-scoped chat, and MCP
 

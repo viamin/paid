@@ -19,13 +19,14 @@ RSpec.describe LayeredVerification::Audits::Request do
       run = described_class.call(
         project:, user:, obligation_ids: [ obligation.id ], target_revision: "abc123",
         budget: { "max_minutes" => 15 },
-        selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ] } }
+        selections: { obligation.id => { "selected_checks" => [ "implementation_conformance" ],
+          "fit" => "Check the implementation mapping", "exclusions" => [ "No formal model is declared" ] } }
       )
     }.to have_enqueued_job(ProcessRunQueueJob)
 
     expect(run).to have_attributes(goal: "layered_verification_audit", issue: nil, status: "queued")
     expect(run).to have_attributes(base_commit_sha: "resolved-sha")
-    expect(run.effective_prompt).to include("Layered-verification audit", "resolved-sha", "spec_to_code")
+    expect(run.effective_prompt).to include("Layered-verification audit", "resolved-sha", "implementation_conformance")
     expect(run.external_metadata.dig("layered_verification", "budget", "max_minutes")).to eq(15)
   end
 
@@ -39,7 +40,7 @@ RSpec.describe LayeredVerification::Audits::Request do
     [ nil, "fifteen", 0, 121 ].each do |max_minutes|
       expect {
         described_class.call(project:, user:, obligation_ids: [ obligation.id ], target_revision: "main",
-          budget: { "max_minutes" => max_minutes }, selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ] } })
+          budget: { "max_minutes" => max_minutes }, selections: { obligation.id => { "selected_checks" => [ "implementation_conformance" ] } })
       }.to raise_error(described_class::InvalidBudgetError, "budget must be between 1 and 120 minutes")
     end
   end
@@ -57,7 +58,8 @@ RSpec.describe LayeredVerification::Audits::Request do
     run = described_class.call(
       project:, user:, obligation_ids: [ obligation.id ], target_revision: long_revision,
       budget: { "max_minutes" => 15 },
-      selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ] } }
+      selections: { obligation.id => { "selected_checks" => [ "implementation_conformance" ],
+        "fit" => "Check the implementation mapping", "exclusions" => [ "No formal model is declared" ] } }
     )
 
     expect(run.base_commit_sha).to eq("resolved-sha")

@@ -8,22 +8,23 @@ RSpec.describe LayeredVerification::Plans::Build do
     obligation = create(:layered_verification_obligation)
 
     plan = described_class.call(obligations: [ obligation ], selections: {
-      obligation.id => { selected_checks: [ "spec_to_code" ], fit: "mapped specification", exclusions: [ "no formal model" ] }
+      obligation.id => { selected_checks: [ "implementation_conformance" ], fit: "mapped implementation", exclusions: [ "no formal model" ] }
     }).fetch(obligation.id.to_s)
 
-    expect(plan).to include("selected_checks" => [ "spec_to_code" ], "exclusions" => [ "no formal model" ])
+    expect(plan).to include("selected_checks" => [ "implementation_conformance" ], "exclusions" => [ "no formal model" ])
   end
 
   # @spec LAYERED-VERIFY-021
   it "normalizes controller parameters at the input boundary" do
     obligation = create(:layered_verification_obligation)
     selections = ActionController::Parameters.new(
-      obligation.id.to_s => { selected_checks: [ "spec_to_code" ], fit: "mapped specification" }
-    ).permit(obligation.id.to_s => [ :fit, { selected_checks: [] } ])
+      obligation.id.to_s => { selected_checks: [ "implementation_conformance" ], fit: "mapped implementation",
+        exclusions: [ "no formal model" ] }
+    ).permit(obligation.id.to_s => [ :fit, { selected_checks: [], exclusions: [] } ])
 
     plan = described_class.call(obligations: [ obligation ], selections:).fetch(obligation.id.to_s)
 
-    expect(plan).to include("selected_checks" => [ "spec_to_code" ], "fit" => "mapped specification")
+    expect(plan).to include("selected_checks" => [ "implementation_conformance" ], "fit" => "mapped implementation")
   end
 
   # @spec LAYERED-VERIFY-021
@@ -36,5 +37,44 @@ RSpec.describe LayeredVerification::Plans::Build do
       LayeredVerification::Plans::Build::EmptySelectionError,
       "select at least one verification check for every obligation"
     )
+  end
+
+  # @spec LAYERED-VERIFY-021
+  it "rejects a selected check without a stated fit" do
+    obligation = create(:layered_verification_obligation)
+
+    expect {
+      described_class.call(obligations: [ obligation ], selections: {
+        obligation.id => { selected_checks: [ "formal_verification" ], exclusions: [ "No semantic review needed" ] }
+      })
+    }.to raise_error(ArgumentError, /state why the selected checks fit/)
+  end
+
+  # @spec LAYERED-VERIFY-021
+  it "rejects a check not supported by the result producer contract" do
+    obligation = create(:layered_verification_obligation)
+
+    expect {
+      described_class.call(obligations: [ obligation ], selections: {
+        obligation.id => {
+          selected_checks: [ *LayeredVerificationCheckResult::PRODUCERS, "made_up_check" ],
+          fit: "all supported checks apply"
+        }
+      })
+    }.to raise_error(
+      LayeredVerification::Plans::Build::UnsupportedCheckError,
+      "select only supported verification checks"
+    )
+  end
+
+  # @spec LAYERED-VERIFY-021
+  it "rejects unexplained omissions from a single-check plan" do
+    obligation = create(:layered_verification_obligation)
+
+    expect {
+      described_class.call(obligations: [ obligation ], selections: {
+        obligation.id => { selected_checks: [ "formal_verification" ], fit: "TLA+ model is available" }
+      })
+    }.to raise_error(ArgumentError, /explain omitted checks/)
   end
 end
