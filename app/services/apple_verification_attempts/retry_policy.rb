@@ -36,7 +36,7 @@ module AppleVerificationAttempts
       Result.new(false, "no failure classification")
     end
 
-    def assess(terminal_attempt = @attempt, retry_number: terminal_attempt.retry_number + 1)
+    def assess(terminal_attempt, retry_number: next_attempt(terminal_attempt))
       result = self.class.new(attempt: terminal_attempt).call
       return Assessment.new(false, result.reason, retry_number) unless result.retryable
       return Assessment.new(false, RETRY_ALREADY_CLAIMED, retry_number) if terminal_attempt.retry_attempt
@@ -44,6 +44,10 @@ module AppleVerificationAttempts
       return Assessment.new(false, "Apple verification attempt limit reached for agent run", retry_number) if agent_run_limit_reached?(terminal_attempt)
 
       Assessment.new(true, "retryable infrastructure failure", retry_number)
+    end
+
+    def next_attempt(attempt)
+      attempt.retry_number + 1
     end
 
     def attempt_class

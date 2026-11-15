@@ -48,6 +48,29 @@ RSpec.describe AppleVerificationAttempts::RetryPolicy do
     expect(result).to have_attributes(retryable: false, reason: "attempt is still active")
   end
 
+  it "assesses a supplied attempt when initialized without one" do
+    attempt = create(:apple_verification_attempt, :failed,
+      failure_classification: "capacity_or_quota", retry_number: 1)
+
+    assessment = described_class.new(attempt: nil).assess(attempt)
+
+    expect(assessment).to have_attributes(eligible?: true, attempt: 2)
+  end
+
+  it "supports a shared claim without an explicit retry number" do
+    attempt = create(:apple_verification_attempt, :failed,
+      failure_classification: "capacity_or_quota", retry_number: 0)
+    retry_attempt = RetryableAttempts::RetryAttempt.new(
+      policy: described_class.new(attempt: nil),
+      decision_point: "apple_verification_retry"
+    )
+
+    result = retry_attempt.claim(attempt_id: attempt.id)
+
+    expect(result).to be_claimed
+    expect(result.successor).to have_attributes(retry_number: 1, retry_of_attempt: attempt)
+  end
+
   describe "#duplicate_claim_conflict?" do
     it "recognizes only the retry-lineage constraint as a duplicate claim" do
       policy = described_class.new(attempt: nil)
