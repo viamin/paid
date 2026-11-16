@@ -23,6 +23,19 @@ RSpec.describe OperationalSupervisor::PersistIncident do
     expect(second.incident.supervisor_incident_audits.pluck(:action)).to eq(%w[opened observed])
   end
 
+  it "deduplicates target sets regardless of order or repeated IDs" do # @spec OPERATIONAL-SUPERVISOR-007
+    second_project = create(:project, account:)
+    snapshot.update!(included_project_ids: [ project.id, second_project.id ])
+    targets = { "project_ids" => [ project.id, second_project.id ] }
+
+    first = described_class.call(account:, snapshot:, **attributes.merge(affected_project_ids: targets.fetch("project_ids"), target_ids: targets))
+    second = described_class.call(account:, snapshot:, **attributes.merge(affected_project_ids: [ second_project.id, project.id, project.id ], target_ids: { "project_ids" => [ second_project.id, project.id, project.id ] }))
+
+    expect(first.incident).to eq(second.incident)
+    expect(second.incident.occurrence_count).to eq(2)
+    expect(second.incident.target_ids).to eq({ "project_ids" => targets.fetch("project_ids").sort })
+  end
+
   it "recovers from a concurrent creation race and still appends the observed audit" do # @spec OPERATIONAL-SUPERVISOR-007
     winner = create(:supervisor_incident, account:, fingerprint: deduplication_fingerprint,
       category: "queue_starvation", target_ids: { "project_ids" => [ project.id ] })

@@ -5,6 +5,7 @@ module OperationalSupervisor
     METRIC_NAMES = %w[conversion cost guardrail queue_starvation rework stage_age].freeze
     METRIC_STATUSES = %w[available unavailable].freeze
     INCLUSION_RULES = %w[enabled_projects_only].freeze
+    MAX_METRICS = METRIC_NAMES.length
 
     # @spec OPERATIONAL-SUPERVISOR-001
     def sanitized_payload?(value, type:)
@@ -22,7 +23,7 @@ module OperationalSupervisor
 
     def snapshot_digest?(value)
       exact_hash?(value, "schema_version", "metrics") && positive_integer?(value["schema_version"]) &&
-        value["metrics"].is_a?(Array) && value["metrics"].all? { |metric| metric?(metric) }
+        bounded_unique_metrics?(value["metrics"])
     end
 
     def metric?(value)
@@ -30,7 +31,8 @@ module OperationalSupervisor
     end
 
     def metric_provenance?(value)
-      exact_hash?(value, "window", "inclusion_rule") && value["window"].is_a?(String) && value["window"].match?(/\APT(?:\d+D)?(?:\d+H)?(?:\d+M)?(?:\d+S)?\z/) &&
+      exact_hash?(value, "window", "denominator", "inclusion_rule") && value["window"].is_a?(String) && value["window"].match?(/\APT(?:\d+D)?(?:\d+H)?(?:\d+M)?(?:\d+S)?\z/) &&
+        non_negative_integer?(value["denominator"]) &&
         INCLUSION_RULES.include?(value["inclusion_rule"])
     end
 
@@ -39,7 +41,7 @@ module OperationalSupervisor
     end
 
     def incident_evidence?(value)
-      exact_hash?(value, "metric_names") && value["metric_names"].is_a?(Array) && value["metric_names"].all? { |name| METRIC_NAMES.include?(name) }
+      exact_hash?(value, "metric_names") && bounded_unique_metric_names?(value["metric_names"])
     end
 
     def audit_evidence?(value)
@@ -54,8 +56,22 @@ module OperationalSupervisor
       value.is_a?(Array) && value.all? { |id| positive_integer?(id) }
     end
 
+    def bounded_unique_metrics?(value)
+      value.is_a?(Array) && value.length <= MAX_METRICS && value.all? { |metric| metric?(metric) } &&
+        value.map { |metric| metric.fetch("name") }.uniq.length == value.length
+    end
+
+    def bounded_unique_metric_names?(value)
+      value.is_a?(Array) && value.length <= MAX_METRICS && value.all? { |name| METRIC_NAMES.include?(name) } &&
+        value.uniq.length == value.length
+    end
+
     def positive_integer?(value)
       value.is_a?(Integer) && value.positive?
+    end
+
+    def non_negative_integer?(value)
+      value.is_a?(Integer) && value >= 0
     end
   end
 end

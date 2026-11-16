@@ -11,7 +11,7 @@ module OperationalSupervisor
     def initialize(account:, snapshot:, category:, severity:, affected_project_ids:, target_ids:, evidence:, model_identifier:, prompt_identifier:, policy_identifier:, now: Time.current)
       @account = account
       @snapshot = snapshot
-      @attributes = { category:, severity:, affected_project_ids:, target_ids:, evidence:, model_identifier:, prompt_identifier:, policy_identifier: }
+      @attributes = { category:, severity:, affected_project_ids: canonical_project_ids(affected_project_ids), target_ids: canonical_target_ids(target_ids), evidence:, model_identifier:, prompt_identifier:, policy_identifier: }
       @now = now
     end
 
@@ -56,6 +56,18 @@ module OperationalSupervisor
 
     def fingerprint
       @fingerprint ||= Digest::SHA256.hexdigest({ account_id: account.id, category: attributes.fetch(:category), target_ids: attributes.fetch(:target_ids) }.to_json)
+    end
+
+    def canonical_target_ids(target_ids)
+      return target_ids unless target_ids.is_a?(Hash) && target_ids.keys == [ "project_ids" ]
+
+      { "project_ids" => canonical_project_ids(target_ids["project_ids"]) }
+    end
+
+    def canonical_project_ids(project_ids)
+      return project_ids unless project_ids.is_a?(Array) && project_ids.all?(Integer)
+
+      project_ids.uniq.sort
     end
 
     def incident_attributes
