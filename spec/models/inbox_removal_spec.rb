@@ -20,7 +20,9 @@ RSpec.describe InboxRemoval do
     described_class.insert_all!([ attributes ])
 
     expect do
-      described_class.insert_all!([ attributes.merge(request_occurrence: "2026-11-16T07:41:00.000000Z") ])
+      described_class.transaction(requires_new: true) do
+        described_class.insert_all!([ attributes.merge(request_occurrence: "2026-11-16T07:41:00.000000Z") ])
+      end
     end.to raise_error(ActiveRecord::RecordNotUnique)
 
     expect do
