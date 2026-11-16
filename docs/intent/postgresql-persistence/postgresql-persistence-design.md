@@ -60,6 +60,12 @@ explicit system-access setting so independently opened test connections retain
 the harness context; tenant-isolation examples set the value false before
 asserting scoped behavior.
 
+The container-runtime provisioner applies that same boundary to agent test
+services: bootstrap credentials administer PostgreSQL, while each run receives
+a separate `NOSUPERUSER NOBYPASSRLS` application role owning its isolated
+database. `CREATEDB` and `CREATEROLE` support database setup and restricted-role
+regression tests; they do not grant superuser or tenant-policy bypass.
+
 Sensitive GitHub tokens are encrypted at rest through Rails encrypted
 attributes, and the token records retain change history through Logidze.
 
