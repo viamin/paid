@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "rake"
 require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
 require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage_stats")
 require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_rule_states")
@@ -144,6 +145,23 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       end
       described_class.clear!
       expect(TrustedMeasurementAttempt.all).to be_empty
+    end
+  end
+
+  # @spec TRUSTED-MEASUREMENTS-003
+  it "collects an operator measurement from a restricted process without tenant context" do
+    project = described_class.with_system_access { create(:project, account: account_a) }
+    described_class.with_system_access { create(:issue, project:, github_number: 4812) }
+    as_restricted_role do
+      with_trusted_measurement_task(project) do |task|
+        described_class.with(nil) do
+          expect { task.invoke }.to output(/status:\s+succeeded/).to_stdout
+          expect(described_class.bypass_enabled?).to be(false)
+        end
+      end
+    end
+    described_class.with(account_a) do
+      expect(TrustedMeasurementAttempt.find_by!(project:).status).to eq("succeeded")
     end
   end
 
@@ -325,6 +343,22 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     yield
   ensure
     ActiveRecord::Base.connection.execute("RESET ROLE")
+  end
+
+  def with_trusted_measurement_task(project)
+    keys = %w[PROJECT_ID TARGET_REVISION CHECK_KEY EXTERNAL_ISSUE_NUMBER CRITERION_KEY]
+    previous = ENV.to_h.slice(*keys)
+    keys.each { |key| ENV.delete(key) }
+    ENV["PROJECT_ID"] = project.id.to_s
+    ENV["TARGET_REVISION"] = "reviewed-revision"
+    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return("reviewed-revision")
+    Rails.application.load_tasks unless Rake::Task.task_defined?("trusted_measurements:run_check")
+    task = Rake::Task["trusted_measurements:run_check"]
+    task.reenable
+    yield task
+  ensure
+    keys&.each { |key| ENV.delete(key) }
+    previous&.each { |key, value| ENV[key] = value }
   end
 
   def install_tenant_policies

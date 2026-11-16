@@ -20,11 +20,16 @@
   Paid SHALL execute it through project tenant context, persist an idempotent
   revision-bound result, retain a new row for a newer deployed revision, and
   record execution failure without fabricating success or retaining a partial
-  result as evidence.
+  result as evidence. The operator task SHALL resolve the project and its
+  account before establishing tenant context, including from a process with
+  no existing tenant context, and SHALL execute the check without system access.
   *Code:* `app/services/trusted_measurements/run_check.rb`,
-  `app/jobs/trusted_measurements/run_check_job.rb`.
+  `app/jobs/trusted_measurements/run_check_job.rb`,
+  `lib/tasks/trusted_measurements.rake`.
   *Test:* `spec/services/trusted_measurements/run_check_spec.rb`,
-  `spec/jobs/trusted_measurements/run_check_job_spec.rb`.
+  `spec/jobs/trusted_measurements/run_check_job_spec.rb`,
+  `spec/tasks/rake/task_trusted_measurements_spec.rb`,
+  `spec/security/tenant_context_spec.rb`.
 
 - [x] **TRUSTED-MEASUREMENTS-004** — When deployment identity or the source
   issue is unavailable, or when deployment identity does not equal the target
