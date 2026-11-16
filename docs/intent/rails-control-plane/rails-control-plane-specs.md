@@ -114,7 +114,10 @@ failures when no tmux socket responds.
   Overmind control socket but finds a live Overmind tmux pane rooted at its
   workspace, it SHALL stop only that socket/session before setup and replacement
   startup. It SHALL not stop another worktree's session or act when no matching
-  session exists. If inspection or stopping fails, it SHALL fail before setup
+  session exists. If tmux explicitly reports no server running at a socket
+  or that its path no longer exists,
+  it SHALL continue setup and replacement startup without attempting to stop
+  a session at that socket. If inspection otherwise fails or stopping fails, it SHALL fail before setup
   with the socket/session identity and a diagnostic snapshot.
   *Tests:* `spec/lib/dev_update_spec.rb`.
   *Code:* `bin/dev-update`, `bin/lib/dev_supervisor.sh`.
