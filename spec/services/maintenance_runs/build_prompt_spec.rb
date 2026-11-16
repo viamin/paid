@@ -52,6 +52,17 @@ RSpec.describe MaintenanceRuns::BuildPrompt do
     expect(prompt).to include("Focus on workflows")
   end
 
+  # @spec MAINT-OPT-001
+  it "composes recipe instructions with a selected optimization type" do
+    type = MaintenanceRuns::OptimizationTypes.fetch("performance")
+
+    prompt = build_prompt(objective: "unnecessary_code", type:, type_value: type.key)
+
+    expect(prompt).to match(/unused|unnecessary/i)
+    expect(prompt).to include(type.investigation_description)
+    expect(prompt).to include(type.metric_hints.first)
+  end
+
   # @spec MAINT-OPT-006
   it "gives an unmapped type actionable direction without guidance" do
     prompt = build_prompt(type_value: "future_type")

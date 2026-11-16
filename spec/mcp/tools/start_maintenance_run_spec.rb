@@ -33,7 +33,7 @@ RSpec.describe Tools::StartMaintenanceRun do
 
     expect(definition).to include(name: "start_maintenance_run")
     expect(definition.dig(:inputSchema, :properties, :confirmed)).to include(type: "boolean")
-    expect(definition.dig(:inputSchema, :properties, :type, :enum)).to eq(MaintenanceRuns::OptimizationTypes.keys)
+    expect(definition.dig(:inputSchema, :properties, :type, :examples)).to eq(MaintenanceRuns::OptimizationTypes.keys)
   end
 
   # @spec MAINT-OPT-004 MAINT-OPT-005
@@ -41,6 +41,16 @@ RSpec.describe Tools::StartMaintenanceRun do
     tool.call(project_id: project.id, type: "performance", scope: "the dashboard", confirmed: true)
 
     expect(project.agent_runs.sole.maintenance_type).to eq("performance")
+  end
+
+  # @spec MAINT-OPT-006
+  it "retains an unmapped chat type as a custom objective" do
+    tool.call(project_id: project.id, type: "future_type", confirmed: true)
+
+    expect(project.agent_runs.sole).to have_attributes(
+      maintenance_type: "future_type",
+      maintenance_objective: nil
+    )
   end
 
   # @spec MAINT-002

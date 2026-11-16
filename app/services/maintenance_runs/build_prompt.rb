@@ -48,17 +48,21 @@ module MaintenanceRuns
     attr_reader :objective, :guidance, :scope, :type, :type_value
 
     def objective_section
-      recipe = Recipes.fetch(objective) if objective
-      return recipe.objective_instructions if recipe
+      instructions = [ recipe_instructions, type_instructions, custom_type_instructions ].compact
+      instructions.any? ? instructions.join("\n\n") : guidance
+    end
 
-      return "#{type.name}: #{type.investigation_description}\nDefault metric hints: #{type.metric_hints.join(", ")}" if type
+    def recipe_instructions
+      Recipes.fetch(objective)&.objective_instructions if objective
+    end
 
-      return custom_type_instructions if type_value
-
-      guidance
+    def type_instructions
+      "#{type.name}: #{type.investigation_description}\nDefault metric hints: #{type.metric_hints.join(", ")}" if type
     end
 
     def custom_type_instructions
+      return if type || type_value.blank?
+
       direction = if guidance.present?
         "use the guidance below to determine what to investigate"
       else

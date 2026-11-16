@@ -570,7 +570,7 @@ paths:
               type: object
               properties:
                 objective: {type: string}
-                type: {type: string, maxLength: 100, description: Optional curated optimization type key.}
+                type: {type: string, description: Optional curated optimization type key. Values longer than 100 characters receive the standard maintenance-run validation error.}
                 guidance: {type: string}
                 scope: {type: string}
       responses:

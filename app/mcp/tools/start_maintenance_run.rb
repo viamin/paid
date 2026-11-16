@@ -24,7 +24,7 @@ module Tools
         properties: {
           project_id: { type: "integer", description: "The project ID" },
           objective: { type: "string", description: "Optional recipe objective key", enum: MaintenanceRuns::Recipes.keys },
-          type: { type: "string", maxLength: 100, description: "Optional curated optimization type. Unmapped values become a retained custom objective.", enum: MaintenanceRuns::OptimizationTypes.keys },
+          type: { type: "string", description: "Optional curated optimization type. Unmapped values become a retained custom objective.", examples: MaintenanceRuns::OptimizationTypes.keys },
           guidance: { type: "string", description: "Free-text maintenance question or instructions. Required unless an optimization type or recipe objective is selected; captured verbatim." },
           scope: { type: "string", description: "Optional scope: paths, symbols, or a free-form target. Ambiguous or missing named targets produce a clarification outcome instead of a whole-repository scan." },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
