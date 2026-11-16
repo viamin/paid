@@ -100,7 +100,13 @@ module StagedCloseoutAdoption
     end
 
     def criteria
-      PartialCloseouts::Assessment.call(issue).criteria.map { |criterion| criterion.fetch("criterion") }
+      raise Error, "closeout assessment is stale" if assessment.stale?
+
+      assessment.criteria.map { |criterion| criterion.fetch("criterion") }
+    end
+
+    def assessment
+      @assessment ||= PartialCloseouts::Assessment.call(issue)
     end
 
     def criterion_key

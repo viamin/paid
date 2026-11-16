@@ -56,6 +56,15 @@ RSpec.describe StagedCloseoutAdoption::Mappings do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-003
+  it "rejects a criterion from an assessment made before the issue intent changed" do
+    issue.update!(body: "The reviewed acceptance intent changed.")
+
+    expect { described_class.approve(project:, actor: maintainer, issue:, attributes:) }
+      .to raise_error(StagedCloseoutAdoption::Error, /assessment is stale/)
+    expect(project.staged_closeout_mappings).to be_empty
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-003
   it "rejects incomplete mapping attributes with a domain validation error" do
     %i[criterion_key stage phase target_shape execution_path target_key freshness_seconds].each do |key|
       expect { described_class.approve(project:, actor: maintainer, issue:, attributes: attributes.except(key)) }
