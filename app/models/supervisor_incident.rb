@@ -7,6 +7,7 @@ class SupervisorIncident < ApplicationRecord
   CATEGORIES = %w[conversion cost guardrail queue_starvation rework stage_age].freeze
   SEVERITIES = %w[info warning urgent].freeze
   STATUSES = %w[open waiting_for_human mitigated resolved dismissed].freeze
+  OPEN_STATUSES = %w[open waiting_for_human mitigated].freeze
 
   belongs_to :account
   belongs_to :supervisor_snapshot, optional: true
@@ -21,7 +22,7 @@ class SupervisorIncident < ApplicationRecord
   validate :affected_projects_belong_to_account
   validate :snapshot_belongs_to_account
 
-  scope :open_incidents, -> { where(status: %w[open waiting_for_human mitigated]) }
+  scope :open_incidents, -> { where(status: OPEN_STATUSES) }
   scope :expired, -> { where("retention_expires_at <= ?", Time.current) }
 
   private

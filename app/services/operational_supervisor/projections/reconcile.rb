@@ -21,7 +21,7 @@ module OperationalSupervisor
       attr_reader :existing, :incidents
 
       def desired
-        @desired ||= incidents.select { |incident| incident.status.in?(%w[open waiting_for_human mitigated]) }.map do |incident|
+        @desired ||= incidents.select { |incident| incident.status.in?(SupervisorIncident::OPEN_STATUSES) }.map do |incident|
           { "incident_id" => incident.id, "fingerprint" => incident.fingerprint, "severity" => incident.severity }
         end
       end

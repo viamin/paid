@@ -23,6 +23,19 @@ RSpec.describe OperationalSupervisor::PersistIncident do
     expect(second.incident.supervisor_incident_audits.pluck(:action)).to eq(%w[opened observed])
   end
 
+  it "recovers from a concurrent creation race and still appends the observed audit" do # @spec OPERATIONAL-SUPERVISOR-007
+    winner = create(:supervisor_incident, account:, fingerprint: deduplication_fingerprint,
+      category: "queue_starvation", target_ids: { "project_ids" => [ project.id ] })
+    simulate_deduplication_race!
+
+    result = described_class.call(account:, snapshot:, **attributes)
+
+    expect(result).not_to be_failure
+    expect(result.incident).to eq(winner)
+    expect(winner.reload.occurrence_count).to eq(2)
+    expect(winner.supervisor_incident_audits.pluck(:action)).to eq(%w[observed])
+  end
+
   it "fails closed when snapshot membership or tenant ownership is invalid" do # @spec OPERATIONAL-SUPERVISOR-004, OPERATIONAL-SUPERVISOR-006
     other_project = create(:project)
 
@@ -39,5 +52,26 @@ RSpec.describe OperationalSupervisor::PersistIncident do
 
     expect(result).to be_failure
     expect(SupervisorIncident.count).to eq(0)
+  end
+
+  private
+
+  def deduplication_fingerprint
+    Digest::SHA256.hexdigest({ account_id: account.id, category: attributes.fetch(:category), target_ids: attributes.fetch(:target_ids) }.to_json)
+  end
+
+  # Reproduces the concurrent-creation race window: the first locked lookup
+  # happens before the winning transaction commits (so it misses), and the
+  # insert then loses the unique-index race. The locked recovery path runs
+  # against the real persisted records.
+  def simulate_deduplication_race!
+    locked_lookups = 0
+    allow(account.supervisor_incidents).to receive(:lock).and_wrap_original do |original|
+      locked_lookups += 1
+      locked_lookups == 1 ? SupervisorIncident.none : original.call
+    end
+    allow(account.supervisor_incidents).to receive(:create!) do
+      raise ActiveRecord::RecordNotUnique, "index_supervisor_incidents_on_account_and_fingerprint"
+    end
   end
 end

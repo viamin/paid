@@ -87,8 +87,10 @@ module OperationalSupervisor
     end
 
     def retry_after_deduplication_race
-      incident = account.supervisor_incidents.find_by!(fingerprint:)
-      observe!(incident)
+      SupervisorIncident.transaction do
+        incident = account.supervisor_incidents.lock.find_by!(fingerprint:)
+        observe!(incident)
+      end
     end
 
     def failure(error) = Result.new(nil, false, error)

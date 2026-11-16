@@ -52,6 +52,12 @@ class CreateSupervisorPersistence < ActiveRecord::Migration[8.1]
   end
 
   def down
+    safety_assured do
+      execute <<~SQL
+        DROP TRIGGER IF EXISTS prevent_supervisor_incident_audit_update ON supervisor_incident_audits;
+        DROP FUNCTION IF EXISTS prevent_supervisor_incident_audit_mutation();
+      SQL
+    end
     drop_table :supervisor_incident_audits
     drop_table :supervisor_incidents
     drop_table :supervisor_snapshots
