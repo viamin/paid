@@ -20,12 +20,13 @@ RSpec.describe "Project maintenance runs" do
   end
 
   describe "GET /projects/:project_id/maintenance_runs/new" do
-    # @spec MAINT-010
+    # @spec MAINT-OPT-004
     it "renders the maintenance start form for an authorized user" do
       get new_project_maintenance_run_path(project)
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Maintenance run")
+      expect(response.body).to include("Performance", "Test Coverage &amp; Quality")
     end
 
     # @spec MAINT-002
@@ -40,6 +41,15 @@ RSpec.describe "Project maintenance runs" do
   end
 
   describe "POST /projects/:project_id/maintenance_runs" do
+    # @spec MAINT-OPT-004 MAINT-OPT-005
+    it "starts a selected optimization type with a free-form scope" do
+      post project_maintenance_runs_path(project), params: {
+        type: "performance", scope: "the account settings page"
+      }
+
+      expect(project.agent_runs.where(goal: "maintenance").sole.maintenance_type).to eq("performance")
+    end
+
     # @spec MAINT-010
     it "starts an issue-less maintenance run from the UI" do
       expect {

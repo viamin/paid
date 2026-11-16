@@ -5,7 +5,7 @@ module MaintenanceRuns
   # The UI controller and the MCP tool both start runs through this service so
   # the `maintenance_runs` rollout guard, the objective admission rule, and the
   # start-time context snapshot are identical on every surface.
-  # @spec MAINT-002 @spec MAINT-010 @spec MAINT-011 @spec MAINT-015
+  # @spec MAINT-002 @spec MAINT-010 @spec MAINT-011 @spec MAINT-015 MAINT-OPT-005 MAINT-OPT-006 MAINT-OPT-007
   class Start
     class FeatureDisabledError < StandardError; end
     class MissingObjectiveError < StandardError; end
@@ -18,12 +18,13 @@ module MaintenanceRuns
       new(...).call
     end
 
-    def initialize(project:, actor:, objective: nil, guidance: nil, scope: nil)
+    def initialize(project:, actor:, objective: nil, guidance: nil, scope: nil, type: nil)
       @project = project
       @actor = actor
       @objective = objective.to_s.presence
       @guidance = guidance.to_s.strip
       @scope = scope.to_s.strip.presence
+      @type = type.to_s.strip.presence
     end
 
     def call
@@ -41,10 +42,11 @@ module MaintenanceRuns
         runner_id: runner_id,
         agent_type: agent_type,
         goal: AgentRun::MAINTENANCE_GOAL,
-        custom_prompt: BuildPrompt.call(objective: objective, guidance: guidance, scope: scope),
+        custom_prompt: BuildPrompt.call(objective: objective, guidance: guidance, scope: scope, type: selected_type, type_value: type),
         trigger_type: "manual",
         status: "queued",
         maintenance_objective: objective,
+        maintenance_type: type,
         maintenance_recipe_version: resolved_recipe&.version,
         maintenance_scope: scope,
         maintenance_scope_kind: scope.present? ? "named" : "broad",
@@ -58,7 +60,7 @@ module MaintenanceRuns
 
     private
 
-    attr_reader :project, :actor, :objective, :guidance, :scope
+    attr_reader :project, :actor, :objective, :guidance, :scope, :type
 
     # @spec MAINT-002 — every surface refuses admission identically while the
     # guard is off for the project's tenant.
@@ -69,10 +71,11 @@ module MaintenanceRuns
             "Maintenance runs are not enabled for this project's tenant (maintenance_runs feature flag)."
     end
 
-    # @spec MAINT-011 — a recipe objective or nonblank free-text guidance is
+    # @spec MAINT-011 MAINT-OPT-005 — a recipe objective, selected catalog
+    # type, or nonblank free-text guidance is
     # required; scope alone is not an investigation objective.
     def ensure_objective!
-      raise MissingObjectiveError, "Provide a recipe objective or nonblank guidance to start a maintenance run." if objective.blank? && guidance.blank?
+      raise MissingObjectiveError, "Provide a recipe objective, optimization type, or nonblank guidance to start a maintenance run." if objective.blank? && guidance.blank? && type.blank?
 
       return if objective.blank?
       return if Recipes.exists?(objective)
@@ -92,6 +95,14 @@ module MaintenanceRuns
       return @resolved_recipe if defined?(@resolved_recipe)
 
       @resolved_recipe = objective.present? ? Recipes.fetch(objective) : nil
+    end
+
+    # An unmapped value is intentionally nil here. Its raw snapshot remains on
+    # the run, while BuildPrompt treats its raw value as a custom goal.
+    def selected_type
+      return @selected_type if defined?(@selected_type)
+
+      @selected_type = OptimizationTypes.fetch(type)
     end
 
     # Resolve the mutable default branch once at admission. The resulting SHA

@@ -87,6 +87,26 @@ RSpec.describe MaintenanceRuns::Start do
     expect(run.agent_type).to eq("claude_code")
   end
 
+  # @spec MAINT-OPT-005 MAINT-OPT-007
+  it "starts a selected optimization type without free-form guidance and snapshots it" do
+    run = start(type: "performance", scope: "the billing dashboard")
+
+    expect(run).to have_attributes(
+      maintenance_type: "performance",
+      maintenance_objective: nil,
+      maintenance_scope: "the billing dashboard"
+    )
+    expect(run.custom_prompt).to include("Performance", "latency reduction")
+  end
+
+  # @spec MAINT-OPT-006
+  it "retains an unmapped type and falls back to a custom-objective run" do
+    run = start(type: "future_type", guidance: "Investigate the request path")
+
+    expect(run).to have_attributes(maintenance_type: "future_type", maintenance_objective: nil)
+    expect(run.custom_prompt).to include("Investigate the request path")
+  end
+
   # @spec MAINT-015
   it "refuses admission when the default branch does not resolve to a commit SHA" do
     allow(project.client).to receive(:ref)

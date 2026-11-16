@@ -14,6 +14,13 @@ module Api
         before_action :set_project
         before_action :set_run, only: %i[show cancel]
 
+        def types
+          authorize @project, :run_agent?
+          return render_maintenance_runs_disabled unless FeatureFlags.enabled?(:maintenance_runs, project: @project)
+
+          render json: { types: MaintenanceRuns::OptimizationTypes.menu }
+        end
+
         def create
           authorize @project, :run_agent?
           run = MaintenanceRuns::Start.call(project: @project, actor: current_user, **start_attributes)
@@ -50,7 +57,7 @@ module Api
         end
 
         def start_attributes
-          params.permit(:objective, :guidance, :scope).to_h.symbolize_keys
+          params.permit(:objective, :type, :guidance, :scope).to_h.symbolize_keys
         end
 
         def run_payload(run)
@@ -64,6 +71,7 @@ module Api
             scope_kind: run.maintenance_scope_kind,
             created_at: run.created_at,
             maintenance: {
+              type: run.maintenance_type,
               objective: run.maintenance_objective,
               recipe_version: run.maintenance_recipe_version,
               scope: run.maintenance_scope,
@@ -74,6 +82,14 @@ module Api
               report_only: true
             }
           }
+        end
+
+        def render_maintenance_runs_disabled
+          render_error(
+            :unprocessable_content,
+            :maintenance_run_unavailable,
+            "Maintenance runs are not enabled for this project's tenant (maintenance_runs feature flag)."
+          )
         end
       end
     end

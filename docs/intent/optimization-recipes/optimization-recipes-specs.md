@@ -9,15 +9,31 @@
 
 ## Catalog and Type Menu — [#4493](https://github.com/viamin/paid/issues/4493)
 
-- [ ] **MAINT-OPT-001**: The system shall define a code-defined optimization recipe registry whose entries carry a stable identifier, display name, investigation description, metric hints, recipe pointer, and repair standing.
-- [ ] **MAINT-OPT-002**: The system shall include Performance, Design/Architecture, Code Duplication, Security Hardening, Cost/Resource Efficiency, Maintainability/Readability, and Test Coverage & Quality as initial types.
-- [ ] **MAINT-OPT-003**: Adding a type shall require a catalog entry only, not an enum change or migration.
-- [ ] **MAINT-OPT-004**: When starting maintenance, UI, authenticated API, and MCP shall expose equivalent type-menu entries and project-scoped authorization.
-- [ ] **MAINT-OPT-005**: When no type is selected, the system shall start a custom-objective investigation.
-- [ ] **MAINT-OPT-006**: When a selected type is unmapped, the system shall start a custom-objective investigation, record that value, and not fail selection alone.
-- [ ] **MAINT-OPT-007**: The system shall snapshot the selected type beside objective, scope, and guidance and not mutate it after start.
-- [ ] **MAINT-OPT-008**: The system shall retain selected and unmapped type values across retries.
-- [ ] **MAINT-OPT-009**: When `maintenance_runs` is disabled, the system shall identically refuse optimization-run admission on UI, API, and MCP.
+- [x] **MAINT-OPT-001**: The system shall define a code-defined optimization recipe registry whose entries carry a stable identifier, display name, investigation description, metric hints, recipe pointer, and repair standing.
+*Tests:* `spec/services/maintenance_runs/optimization_types_spec.rb`
+*Code:* `app/services/maintenance_runs/optimization_types.rb`
+- [x] **MAINT-OPT-002**: The system shall include Performance, Design/Architecture, Code Duplication, Security Hardening, Cost/Resource Efficiency, Maintainability/Readability, and Test Coverage & Quality as initial types.
+*Tests:* `spec/services/maintenance_runs/optimization_types_spec.rb`
+- [x] **MAINT-OPT-003**: Adding a type shall require a catalog entry only, not an enum change or migration.
+*Tests:* `spec/services/maintenance_runs/optimization_types_spec.rb`
+- [x] **MAINT-OPT-004**: When starting maintenance, UI, authenticated API, and MCP shall expose equivalent type-menu entries and project-scoped authorization.
+*Tests:* `spec/requests/projects/maintenance_runs_spec.rb`, `spec/requests/api/v1/projects/maintenance_runs_spec.rb`, `spec/mcp/tools/start_maintenance_run_spec.rb`
+*Code:* `app/views/projects/maintenance_runs/new.html.erb`, `app/controllers/api/v1/projects/maintenance_runs_controller.rb`, `app/mcp/tools/start_maintenance_run.rb`
+- [x] **MAINT-OPT-005**: When no type is selected, the system shall start a custom-objective investigation.
+*Tests:* `spec/services/maintenance_runs/start_spec.rb`
+*Code:* `app/services/maintenance_runs/start.rb`
+- [x] **MAINT-OPT-006**: When a selected type is unmapped, the system shall start a custom-objective investigation, record that value, and not fail selection alone.
+*Tests:* `spec/services/maintenance_runs/start_spec.rb`, `spec/requests/api/v1/projects/maintenance_runs_spec.rb`
+*Code:* `app/services/maintenance_runs/start.rb`, `app/services/maintenance_runs/build_prompt.rb`
+- [x] **MAINT-OPT-007**: The system shall snapshot the selected type beside objective, scope, and guidance and not mutate it after start.
+*Tests:* `spec/services/maintenance_runs/start_spec.rb`
+*Code:* `app/models/agent_run.rb`, `app/services/maintenance_runs/start.rb`
+- [x] **MAINT-OPT-008**: The system shall retain selected and unmapped type values across retries.
+*Tests:* `spec/models/agent_run_maintenance_spec.rb`, `spec/services/agent_runs/manual_run_retry_policy_spec.rb`
+*Code:* `app/models/agent_run.rb`, `app/services/agent_runs/manual_run_retry_policy.rb`
+- [x] **MAINT-OPT-009**: When `maintenance_runs` is disabled, the system shall identically refuse optimization-run admission on UI, API, and MCP.
+*Tests:* `spec/requests/projects/maintenance_runs_spec.rb`, `spec/requests/api/v1/projects/maintenance_runs_spec.rb`, `spec/mcp/tools/start_maintenance_run_spec.rb`
+*Code:* `app/services/maintenance_runs/start.rb`
 
 ## Scope — [#4493](https://github.com/viamin/paid/issues/4493), [#4494](https://github.com/viamin/paid/issues/4494)
 

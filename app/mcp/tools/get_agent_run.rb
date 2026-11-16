@@ -55,6 +55,7 @@ module Tools
 
       {
         maintenance: {
+          type: run.maintenance_type,
           objective: run.maintenance_objective,
           recipe_version: run.maintenance_recipe_version,
           scope: run.maintenance_scope,

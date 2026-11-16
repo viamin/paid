@@ -23,6 +23,7 @@ module Projects
         project: @project,
         actor: current_user,
         objective: params[:objective].presence,
+        type: params[:type].presence,
         guidance: params[:guidance]&.strip,
         scope: params[:scope]&.strip
       )

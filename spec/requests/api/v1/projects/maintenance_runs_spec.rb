@@ -33,6 +33,34 @@ RSpec.describe "Maintenance runs API" do
     expect(response.parsed_body).to include("project_id" => project.id, "goal" => "maintenance", "status" => "queued")
   end
 
+  # @spec MAINT-OPT-004
+  it "lists the same curated types available to the authenticated project API" do
+    get "/api/v1/projects/#{project.id}/maintenance_runs/types", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("types").map { |type| type.fetch("key") }).to eq(MaintenanceRuns::OptimizationTypes.keys)
+  end
+
+  # @spec MAINT-OPT-009
+  it "hides the type menu while the maintenance_runs guard is disabled" do
+    allow(FeatureFlags).to receive(:enabled?).with(:maintenance_runs, project:).and_return(false)
+
+    get "/api/v1/projects/#{project.id}/maintenance_runs/types", headers: headers
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.dig("error", "code")).to eq("maintenance_run_unavailable")
+  end
+
+  # @spec MAINT-OPT-004 MAINT-OPT-006 MAINT-OPT-007
+  it "starts and returns an unmapped type as a custom-objective snapshot" do
+    post "/api/v1/projects/#{project.id}/maintenance_runs", params: {
+      type: "future_type", guidance: "Investigate the request path"
+    }.to_json, headers: headers
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig("maintenance", "type")).to eq("future_type")
+  end
+
   # @spec MAINT-002
   it "refuses API admission while the maintenance_runs guard is disabled" do
     allow(FeatureFlags).to receive(:enabled?).with(:maintenance_runs, project:).and_return(false)
