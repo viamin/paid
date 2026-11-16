@@ -6,6 +6,8 @@ class ModelSelection < ApplicationRecord
   belongs_to :agent_run
   belongs_to :llm_model, optional: true
 
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
+
   validates :selector_type, presence: true, inclusion: { in: SELECTOR_TYPES }
   validates :agent_run_id, uniqueness: true
   validates :complexity_score, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 10 }, allow_nil: true
@@ -16,5 +18,11 @@ class ModelSelection < ApplicationRecord
 
   def escalated?
     escalated_from_tier.present?
+  end
+
+  private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(agent_run.project)
   end
 end

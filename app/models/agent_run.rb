@@ -342,6 +342,8 @@ class AgentRun < ApplicationRecord
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
   after_commit :close_finished_continuation_request, on: :update, if: :continuation_run_just_finished?
   after_commit :enqueue_project_readiness_evaluation, on: :update, if: :project_readiness_refresh_needed?
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ],
+    if: :partial_closeout_projection_input_changed?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -4451,6 +4453,14 @@ class AgentRun < ApplicationRecord
 
   def enqueue_resource_profile_refresh
     AgentRunResourceProfileRefreshJob.perform_later(id) if resource_profile_runner_key.present?
+  end
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(project) if project
+  end
+
+  def partial_closeout_projection_input_changed?
+    destroyed? || saved_change_to_status? || saved_change_to_issue_id?
   end
 
   # @spec PROJECT-READINESS-006 @spec PROJECT-READINESS-007

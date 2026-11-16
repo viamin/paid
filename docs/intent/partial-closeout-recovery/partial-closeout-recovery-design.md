@@ -399,9 +399,10 @@ decision, its evidence, and its alternatives:
 | B — persisted stall read model | Recompute the stalled-closeout projection outside Inbox rendering, on every input that changes admission or lane membership; a durable project checkpoint represents both populated and empty results; the Inbox reads the projection after that checkpoint exists; live `eligible_scope` remains the admission authority at continuation preflight, dequeue, and run start. | Removes admission from the hot path and mirrors the persisted project-readiness snapshot, but adds a durable derived record, invalidation coverage, freshness semantics, and a rollout guard. |
 | C — per-project cache | Cache the `StalledCloseouts` result per project behind the account's `inbox` `Dashboard::CacheVersion`, shared by Queue, Count, and Availability. | Lowest implementation cost, but the cache boundary is the badge boundary, not the admission-input boundary, so it serves badge-grade staleness to the lane list and returns to live admission on every cold cache. |
 
-**Recorded decision: the owner chose Option B on 2026-11-05; it is accepted but
-not yet implemented.** The lane keeps live admission until RDR-081's read model
-is implemented and enabled. The decision rests on three findings: the request-path
+**Recorded decision: the owner chose Option B on 2026-11-05; issue #4912
+implements it behind a default-off rollout guard.** Enabled projects use the
+persisted checkpoint after a successful recomputation and retain live admission
+for unevaluated projects. The decision rests on three findings: the request-path
 cost grows with the number of projects that have closeout candidates rather
 than with the number of stalls; Option C needs the same invalidation coverage
 as the projection to be correct, because the `inbox` cache version does not
@@ -410,7 +411,12 @@ appears, when a skip label changes, or when runner configuration changes the
 tier feasibility set; and a display-only projection cannot authorize work,
 because the continuation preflight and the dequeue recheck still decide
 admission live. `PARTIAL-CLOSEOUT-042` and `PARTIAL-CLOSEOUT-043` state the
-accepted implementation contract.
+accepted implementation contract. Project-keyed GoodJob concurrency coalesces
+invalidation bursts into one queued recomputation while permitting one queued
+follow-up when inputs change during a running recomputation. The reconciliation
+fingerprint includes the current counts of active time-bound analysis backoffs
+and unsynced-PR grace periods, so expiry makes a checkpoint stale even when no
+row is updated.
 
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 
@@ -1006,10 +1012,10 @@ mistaken for actionable roots.
 - *Per-project cache of the stalled-closeout result (#4558)*: rejected — the
   `inbox` cache version is a badge boundary rather than an admission-input
   boundary, so the lane list would inherit the badge's staleness.
-- *Persisted stall read model (#4558)*: accepted in RDR-081 but not yet in force —
-  it is the chosen direction for the lane's request-path cost, and it
-  supersedes only the live-evaluation part of the derived-lane decision, never
-  the admission authority.
+- *Persisted stall read model (#4558)*: accepted in RDR-081 and enabled per
+  project by #4912's default-off rollout guard; it supersedes only the
+  live-evaluation part of the derived-lane decision, never the admission
+  authority.
 
 ## Open Questions & Future Decisions
 
@@ -1020,7 +1026,8 @@ mistaken for actionable roots.
 2. ✅ The lane's membership stays derived from evidence, not persisted as Inbox
    items.
 3. ✅ The owner chose Option B, the persisted stall read model in RDR-081, for
-   the lane's request-path cost (#4558). Implementation and rollout remain open.
+   the lane's request-path cost (#4558); #4912 implements the guarded read path
+   and recomputation contract.
 
 ## Report-only audit through a stale prerequisite
 

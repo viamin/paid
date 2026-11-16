@@ -11,6 +11,7 @@ class FeatureIntentIssuePrerequisite < ApplicationRecord
   belongs_to :feature_intent_facet_direction, optional: true
 
   validates :materiality_rationale, presence: true
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
   validate :tenant_owns_links
   validate :direction_belongs_to_facet
   validate :facet_belongs_to_linked_feature
@@ -24,6 +25,11 @@ class FeatureIntentIssuePrerequisite < ApplicationRecord
   end
 
   private
+
+  def enqueue_partial_closeout_projection
+    mapping = feature_intent_issue_prerequisite_mapping
+    Issues::StalledCloseoutProjection.enqueue(mapping.feature_intent_issue.issue.project)
+  end
 
   def tenant_owns_links
     errors.add(:feature_intent_facet, "must belong to the prerequisite account") if feature_intent_facet.present? && feature_intent_facet.account_id != account_id

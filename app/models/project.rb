@@ -9,6 +9,7 @@ class Project < ApplicationRecord
   has_many :work_items, through: :work_item_assignments
   has_many :work_item_project_mapping_targets, dependent: :destroy
   has_many :work_item_project_mappings, through: :work_item_project_mapping_targets
+  has_one :partial_closeout_projection, dependent: :delete
   has_many :trusted_provider_identities, dependent: :destroy
   has_many :work_item_lifecycle_mappings, dependent: :destroy
 
@@ -399,6 +400,7 @@ class Project < ApplicationRecord
   before_validation :apply_opt_in_label_integration_default, on: :create
   after_update_commit :invalidate_relationship_parsing_on_trust_change
   after_update_commit :bump_inbox_cache_for_membership_change, if: :inbox_cache_membership_changed?
+  after_update_commit :enqueue_partial_closeout_projection, if: :partial_closeout_projection_input_changed?
 
   validates :name, presence: true
   validates :owner, presence: true
@@ -1970,6 +1972,16 @@ class Project < ApplicationRecord
     saved_change_to_auto_merge_mode? ||
       saved_change_to_owner_reviewer_login? ||
       saved_change_to_automation_phase_settings?
+  end
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(self)
+  end
+
+  def partial_closeout_projection_input_changed?
+    saved_change_to_paused? || saved_change_to_quality_paused_at? ||
+      saved_change_to_scheduler_paused_at? || saved_change_to_allowed_github_usernames? ||
+      saved_change_to_auto_pick_skip_labels?
   end
 
   def reset_issue_sync_state # @spec UPSTREAM-ISSUE-006

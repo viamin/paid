@@ -167,6 +167,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily bounded reconciliation of legacy partial closeouts"
     },
+    partial_closeout_projection_reconciliation_sweep: {
+      cron: "6-59/15 * * * *",
+      class: "PartialCloseoutProjectionReconciliationSweepJob",
+      queue: "maintenance",
+      description: "Recompute stale partial-closeout Inbox projections after missed event triggers"
+    },
     design_artifact_reconciliation_sweep: {
       cron: "0 6 * * *",
       class: "FeatureIntents::DesignArtifactReconciliationSweepJob",

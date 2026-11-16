@@ -184,6 +184,7 @@ class Issue < ApplicationRecord
   after_update_commit :complete_continuation_grants, if: :continuation_endpoint_reached?
   after_update_commit :record_project_delegation_pilot_transition
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
 
   # UI -> GitHub: whenever the local `paused` flag flips, mirror it onto the
   # issue/PR by adding or removing the `paid-paused` label. `before_save`
@@ -1000,6 +1001,10 @@ class Issue < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(project)
   end
 
   # @spec INBOX-PHASE-RELEVANCE-001

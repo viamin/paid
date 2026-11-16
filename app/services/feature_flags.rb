@@ -114,6 +114,13 @@ class FeatureFlags
       rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
       cleanup_criteria: "Remove after closeout verifies migration and complete execution-path coverage."
     ),
+    partial_closeout_lane_read_model: Definition.new(
+      name: :partial_closeout_lane_read_model,
+      owner: "partial-closeout-recovery",
+      intent: "Read the partial-closeout Inbox lane from a persisted display-only stall projection.",
+      rollout_plan: "Default-off; enable selected projects only after projection recomputation, live-admission fallback, and Inbox parity checks pass.",
+      cleanup_criteria: "Remove after the persisted projection is the default for every project and its live fallback remains covered."
+    ),
     project_delegation: Definition.new(
       name: :project_delegation,
       owner: "project-delegation",
@@ -170,6 +177,14 @@ class FeatureFlags
     end
 
     def enabled?(flag_name, project: nil, actor: nil)
+      enabled_value(flag_name, project:, actor:)
+    end
+
+    def partial_closeout_lane_read_model_enabled?(project:)
+      enabled_value(:partial_closeout_lane_read_model, project:)
+    end
+
+    def enabled_value(flag_name, project:, actor: nil)
       tenant_value = tenant_override(flag_name, project:)
       return tenant_value unless tenant_value.nil?
 
@@ -178,12 +193,15 @@ class FeatureFlags
 
       feature(flag_name).enabled?(resolved_actor)
     end
+    private :enabled_value
 
     def enable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
       return feature(flag_name).enable unless resolved_actor
 
-      feature(flag_name).enable(resolved_actor)
+      feature(flag_name).enable(resolved_actor).tap do
+        enqueue_partial_closeout_projection(flag_name, project)
+      end
     end
 
     def disable!(flag_name, project: nil, actor: nil)
@@ -238,6 +256,12 @@ class FeatureFlags
     end
 
     private
+
+    def enqueue_partial_closeout_projection(flag_name, project)
+      return unless flag_name.to_sym == :partial_closeout_lane_read_model && project
+
+      Issues::StalledCloseoutProjection.enqueue(project)
+    end
 
     def feature(flag_name)
       flipper[definition(flag_name).name]

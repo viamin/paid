@@ -20,6 +20,8 @@ class FeatureIntentIssue < ApplicationRecord
   validates :issue_id, uniqueness: { scope: :feature_intent_id }
   validates :release_state, inclusion: { in: RELEASE_STATES }
 
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
+
   # The normalized prerequisite mapping is the current readiness producer.
   # Keep the JSON column as a compatibility fallback for links created before
   # prerequisite mappings were persisted.
@@ -65,6 +67,10 @@ class FeatureIntentIssue < ApplicationRecord
   end
 
   private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(issue.project)
+  end
 
   def planning_task_contract?
     planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&

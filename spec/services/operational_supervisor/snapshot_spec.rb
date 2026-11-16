@@ -112,7 +112,8 @@ RSpec.describe OperationalSupervisor::Snapshot do
                     error: "raw exception text", secret: "sk-super-secret-token" }
       issue = create(:issue, project:, title: forbidden[:title], body: forbidden[:body])
       run = create(:agent_run, :failed, :with_metrics, project:, issue:, custom_prompt: forbidden[:prompt],
-        error_message: forbidden[:error], guardrail_context: { "credential" => forbidden[:secret] }, completed_at: now - 1.hour)
+        error_message: forbidden[:error], guardrail_context: { "credential" => forbidden[:secret] },
+        created_at: now - 1.hour, completed_at: now - 1.hour)
       create(:agent_run_log, agent_run: run, content: forbidden[:log])
       create(:agent_run_anomaly, agent_run: run, project:, message: forbidden[:error])
       create(:token_usage, agent_run: run, metadata: { "token" => forbidden[:secret] }, created_at: now - 1.hour)

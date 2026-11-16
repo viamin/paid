@@ -24,6 +24,7 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
         ProcessRunQueueJob
         ProjectHealthCheckJob
         QdrantCollectionCleanupJob
+        RecomputePartialCloseoutProjectionJob
         RetryFailedAutoPickCreatePrJob
         RetryFailedManualRunJob
         RetryTimedOutIssueGoalJob
@@ -68,6 +69,7 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
         ModelHealthCheckJob
         OrphanBranchReaperJob
         PartialCloseoutAcceptanceAuditSweepJob
+        PartialCloseoutProjectionReconciliationSweepJob
         PollWorkflowHealthCheckJob
         PoolReplenishmentJob
         ProjectDashboardMetricsSweepJob

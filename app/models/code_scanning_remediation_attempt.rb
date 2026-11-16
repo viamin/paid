@@ -12,6 +12,8 @@ class CodeScanningRemediationAttempt < ApplicationRecord
   belongs_to :issue
   belongs_to :agent_run, optional: true
 
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
+
   delegate :project, to: :issue, allow_nil: true
 
   validates :pull_request_number, presence: true, numericality: { greater_than: 0 }
@@ -32,4 +34,10 @@ class CodeScanningRemediationAttempt < ApplicationRecord
   # prevention guards remain the durable stop against a second concurrent
   # fix PR (EAGER-QUEUE-009).
   scope :latest_per_issue, -> { where(id: unscoped.select("MAX(id)").group(:issue_id)) }
+
+  private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(issue.project)
+  end
 end

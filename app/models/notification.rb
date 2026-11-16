@@ -16,6 +16,8 @@ class Notification < ApplicationRecord
   validate :blocking_requires_error_severity
 
   after_commit :bump_inbox_cache_version, if: :saved_change_to_action_required_membership?
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ],
+    if: :partial_closeout_projection_input?
   # When prerequisite reconciliation resolves a partial-closeout human
   # prerequisite notification, the auto-pick eligibility block in
   # {Automation::Strategies::AutoPick::DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids}
@@ -75,6 +77,15 @@ class Notification < ApplicationRecord
   end
 
   private
+
+  def enqueue_partial_closeout_projection
+    project = resolved_project
+    Issues::StalledCloseoutProjection.enqueue(project) if project
+  end
+
+  def partial_closeout_projection_input?
+    source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE && subject.is_a?(Issue)
+  end
 
   # @spec NOTIFICATION-SEVERITY-007
   def blocking_requires_error_severity

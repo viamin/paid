@@ -49,6 +49,8 @@ class FeatureIntent < ApplicationRecord
   has_many :design_amendments, dependent: :restrict_with_error
   has_one :feature_intent_completion, dependent: :destroy
 
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
+
   validates :title, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :criteria_clarity_state, presence: true, inclusion: { in: CRITERIA_CLARITY_STATES }
@@ -180,6 +182,10 @@ class FeatureIntent < ApplicationRecord
   end
 
   private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(project)
+  end
 
   # @spec FEATURE-APPROVAL-019 — the criteria-clarity evaluation owns the
   # `needs_decision` / `ready_for_approval` transitions. A vague verdict with
