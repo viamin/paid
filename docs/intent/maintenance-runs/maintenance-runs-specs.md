@@ -38,8 +38,8 @@
       maintenance run from a project without an associated issue, through the
       UI, the authenticated API, and the MCP surface, applying the same
       project-scoped start authorization on every surface.
-      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb`, `spec/mcp/tools/start_maintenance_run_spec.rb`
-      *Code:* `app/services/maintenance_runs/start.rb`, `app/controllers/projects/maintenance_runs_controller.rb`, `app/mcp/tools/start_maintenance_run.rb` (#4328)
+      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb`, `spec/requests/api/v1/projects/maintenance_runs_spec.rb`, `spec/mcp/tools/start_maintenance_run_spec.rb`
+      *Code:* `app/services/maintenance_runs/start.rb`, `app/controllers/projects/maintenance_runs_controller.rb`, `app/controllers/api/v1/projects/maintenance_runs_controller.rb`, `app/mcp/tools/start_maintenance_run.rb` (#4328)
 
 - [x] **MAINT-011**: The system shall accept an optional recipe objective, an
       optional scope (paths, symbols, or a free-form natural-language target),
@@ -78,7 +78,10 @@
       maintenance run, its terminal report, and its findings through the UI,
       authenticated API, and MCP surface, applying the same project-scoped
       inspection authorization on every surface. *(M01 shipped run/context
-      inspection on UI and MCP — `spec/requests/projects/maintenance_runs_spec.rb`,
+      inspection on UI, authenticated API, and MCP —
+      `spec/requests/projects/maintenance_runs_spec.rb`,
+      `spec/requests/api/v1/projects/maintenance_runs_spec.rb`,
+      `app/controllers/api/v1/projects/maintenance_runs_controller.rb`,
       `app/mcp/tools/get_agent_run.rb`; terminal-report and findings
       inspection lands with the #4329 report model.)*
 
@@ -86,8 +89,8 @@
       in-flight maintenance run through the UI, authenticated API, and MCP
       surface, applying the same project-scoped cancellation authorization on
       every surface and preserving evidence already collected.
-      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb` (UI cancel, incl. during rollback), `spec/temporal/activities/complete_maintenance_run_activity_spec.rb` (evidence preservation)
-      *Code:* shared cancel paths (`AgentRunCancellable`, `Tools::CancelAgentRun`) over `AgentRunPolicy#cancel?`; `app/temporal/activities/complete_maintenance_run_activity.rb` (#4328)
+      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb` (UI cancel, incl. during rollback), `spec/requests/api/v1/projects/maintenance_runs_spec.rb` (authenticated API cancel), `spec/temporal/activities/complete_maintenance_run_activity_spec.rb` (evidence preservation)
+      *Code:* shared cancel paths (`AgentRunCancellable`, `Tools::CancelAgentRun`) over `AgentRunPolicy#cancel?`; `app/controllers/api/v1/projects/maintenance_runs_controller.rb`; `app/temporal/activities/complete_maintenance_run_activity.rb` (#4328)
 - [ ] **MAINT-018**: The system shall allow an authorized user to select
       findings for bounded repair work through the UI, authenticated API, and
       MCP surface, applying the same project-scoped selection authorization

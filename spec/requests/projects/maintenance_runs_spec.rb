@@ -64,6 +64,19 @@ RSpec.describe "Project maintenance runs" do
       expect(flash[:alert]).to be_present
     end
 
+    # @spec MAINT-015
+    it "returns to the form when the default branch revision is unavailable" do
+      stub_request(:get, "https://api.github.com/repos/#{project.full_name}/git/refs/heads/#{project.default_branch.presence || "main"}")
+        .to_return(status: :not_found, body: "{}", headers: { "Content-Type" => "application/json" })
+
+      expect {
+        post project_maintenance_runs_path(project), params: { guidance: "Audit workflow A" }
+      }.not_to change { project.agent_runs.count }
+
+      expect(response).to redirect_to(new_project_maintenance_run_path(project))
+      expect(flash[:alert]).to include("Could not resolve")
+    end
+
     # @spec MAINT-002
     it "refuses admission while the maintenance_runs guard is disabled" do
       allow(FeatureFlags).to receive(:enabled?).with(:maintenance_runs, project:).and_return(false)

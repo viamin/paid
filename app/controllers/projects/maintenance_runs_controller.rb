@@ -36,7 +36,8 @@ module Projects
            MaintenanceRuns::Start::UnknownObjectiveError => e
       redirect_to new_project_maintenance_run_path(@project), alert: e.message
     rescue MaintenanceRuns::Start::BudgetExceededError,
-           MaintenanceRuns::Start::NoRunnableRunnerError => e
+           MaintenanceRuns::Start::NoRunnableRunnerError,
+           MaintenanceRuns::Start::RevisionUnavailableError => e
       redirect_to new_project_maintenance_run_path(@project), alert: e.message
     end
 

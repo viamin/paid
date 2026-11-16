@@ -490,6 +490,11 @@ Rails.application.routes.draw do
       post "projects/:project_id/design_artifact_findings/:id/file_issue", to: "design_artifact_findings#file_issue"
       post "projects/:project_id/design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links"
       post "projects/:project_id/design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck"
+      resources :projects, only: [] do
+        resources :maintenance_runs, controller: "projects/maintenance_runs", only: %i[create show] do
+          post :cancel, on: :member
+        end
+      end
       scope "chat" do
         resources :sessions, controller: "chat_sessions", only: %i[index create show update destroy] do
           patch :archive, on: :member
