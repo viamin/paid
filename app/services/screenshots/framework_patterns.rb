@@ -26,7 +26,8 @@ module Screenshots
         %r{\Aapp/views/pwa/},
         %r{\Aconfig/locales/devise\.},
         %r{\Aapp/controllers/health_controller\.rb\z},
-        %r{\Aapp/controllers/operator_console_access_controller\.rb\z}
+        %r{\Aapp/controllers/operator_console_access_controller\.rb\z},
+        %r{\Aapp/controllers/projects/staged_closeout_adoptions_controller\.rb\z}
       ].freeze
     }.freeze
 

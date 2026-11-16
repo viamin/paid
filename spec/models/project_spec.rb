@@ -189,7 +189,7 @@ RSpec.describe Project do
     let(:enrollment) do
       StagedCloseoutEnrollment.create!(account: project.account, project:, reviewed_by: reviewer)
     end
-    let!(:mapping) do
+    let(:mapping) do
       StagedCloseoutMapping.create!(
         account: project.account,
         project:,
@@ -211,6 +211,8 @@ RSpec.describe Project do
       )
     end
 
+    before { mapping }
+
     # @spec STAGED-CLOSEOUT-ADOPTION-005
     it "deletes mappings before their issue and enrollment parents" do
       expect { project.destroy! }
@@ -224,7 +226,7 @@ RSpec.describe Project do
       expect { project.account.destroy! }
         .to change(StagedCloseoutMapping, :count).by(-1)
         .and change(StagedCloseoutEnrollment, :count).by(-1)
-        .and change(Project, :count).by(-1)
+        .and change(described_class, :count).by(-1)
       expect { reviewer.reload }.to raise_error(ActiveRecord::RecordNotFound)
     end
   end
