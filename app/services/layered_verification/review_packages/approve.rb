@@ -20,7 +20,7 @@ module LayeredVerification
       def call
         AuditAccess.authorize!(user:, project: package.project)
 
-        package.with_lock do
+        package.agent_run.with_lock do
           validate_current_revision!
           validate_bound_revisions!
           package.approvals.create!(
