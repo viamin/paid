@@ -3,8 +3,19 @@
 require "rails_helper"
 
 RSpec.describe OperationalSupervisor::TransitionIncidentStatus do
-  let(:incident) { create(:supervisor_incident, status: "open") }
+  let(:project) { create(:project) }
+  let(:incident) do
+    create(:supervisor_incident, account: project.account, status: "open", affected_project_ids: [ project.id ],
+      target_ids: { "project_ids" => [ project.id ] })
+  end
   let(:now) { Time.zone.at(Time.utc(2026, 1, 1, 12, 0, 0)) }
+
+  around do |example|
+    FeatureFlags.enable!(:operational_supervisor, project:)
+    example.run
+  ensure
+    FeatureFlags.disable!(:operational_supervisor, project:)
+  end
 
   it "transitions the lifecycle and appends a status_changed audit in one transaction" do # @spec OPERATIONAL-SUPERVISOR-007
     result = described_class.call(incident:, status: "resolved", now:)
@@ -31,6 +42,16 @@ RSpec.describe OperationalSupervisor::TransitionIncidentStatus do
 
     expect(result).to be_failure
     expect(result.error).to include("is not included")
+    expect(result.incident.reload.status).to eq("open")
+    expect(result.incident.supervisor_incident_audits.count).to eq(0)
+  end
+
+  it "does not transition or append an audit after an incident project is disabled" do # @spec OPERATIONAL-SUPERVISOR-008
+    FeatureFlags.disable!(:operational_supervisor, project:)
+
+    result = described_class.call(incident:, status: "resolved", now:)
+
+    expect(result).to be_failure
     expect(result.incident.reload.status).to eq("open")
     expect(result.incident.supervisor_incident_audits.count).to eq(0)
   end

@@ -7,6 +7,7 @@ module OperationalSupervisor
     INCLUSION_RULES = %w[enabled_projects_only].freeze
     INCIDENT_STATUSES = %w[open waiting_for_human mitigated resolved dismissed].freeze
     MAX_METRICS = METRIC_NAMES.length
+    MAX_METRIC_VALUE = 1_000_000_000_000
 
     # @spec OPERATIONAL-SUPERVISOR-001
     def sanitized_payload?(value, type:)
@@ -28,13 +29,26 @@ module OperationalSupervisor
     end
 
     def metric?(value)
-      exact_hash?(value, "name", "status") && METRIC_NAMES.include?(value["name"]) && METRIC_STATUSES.include?(value["status"])
+      exact_hash?(value, "name", "status", "value") && METRIC_NAMES.include?(value["name"]) &&
+        METRIC_STATUSES.include?(value["status"]) && metric_value?(value["value"], value["status"])
     end
 
     def metric_provenance?(value)
-      exact_hash?(value, "window", "denominator", "inclusion_rule") && value["window"].is_a?(String) && value["window"].match?(/\APT(?:\d+D)?(?:\d+H)?(?:\d+M)?(?:\d+S)?\z/) &&
+      value.is_a?(Array) && value.length <= MAX_METRICS && value.all? { |provenance| metric_provenance_entry?(provenance) } &&
+        value.pluck("name").uniq.length == value.length
+    end
+
+    def metric_provenance_entry?(value)
+      exact_hash?(value, "name", "window", "denominator", "inclusion_rule") && METRIC_NAMES.include?(value["name"]) &&
+        value["window"].is_a?(String) && value["window"].match?(/\APT(?:\d+D)?(?:\d+H)?(?:\d+M)?(?:\d+S)?\z/) &&
         non_negative_integer?(value["denominator"]) &&
         INCLUSION_RULES.include?(value["inclusion_rule"])
+    end
+
+    def metric_value?(value, status)
+      return value.nil? if status == "unavailable"
+
+      value.is_a?(Numeric) && value.finite? && value.between?(0, MAX_METRIC_VALUE)
     end
 
     def incident_targets?(value)

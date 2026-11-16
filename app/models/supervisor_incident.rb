@@ -8,6 +8,8 @@ class SupervisorIncident < ApplicationRecord
   SEVERITIES = %w[info warning urgent].freeze
   STATUSES = %w[open waiting_for_human mitigated resolved dismissed].freeze
   OPEN_STATUSES = %w[open waiting_for_human mitigated].freeze
+  PROVENANCE_IDENTIFIER_FORMAT = /\A[a-zA-Z0-9][a-zA-Z0-9._:\/-]*\z/
+  PROVENANCE_IDENTIFIER_LIMIT = 128
 
   belongs_to :account
   belongs_to :supervisor_snapshot, optional: true
@@ -17,6 +19,8 @@ class SupervisorIncident < ApplicationRecord
   validates :category, inclusion: { in: CATEGORIES }
   validates :severity, inclusion: { in: SEVERITIES }
   validates :status, inclusion: { in: STATUSES }
+  validates :model_identifier, :prompt_identifier, :policy_identifier, presence: true,
+    length: { maximum: PROVENANCE_IDENTIFIER_LIMIT }, format: { with: PROVENANCE_IDENTIFIER_FORMAT }
   validates :first_seen_at, :last_seen_at, :retention_expires_at, presence: true
   # @spec OPERATIONAL-SUPERVISOR-007
   validate :status_transition_is_audited, on: :update

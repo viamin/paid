@@ -107,6 +107,19 @@ RSpec.describe OperationalSupervisor::PersistIncident do
     expect(SupervisorIncident.count).to eq(0)
   end
 
+  it "rejects prompt content and unbounded provenance identifiers" do # @spec OPERATIONAL-SUPERVISOR-001, OPERATIONAL-SUPERVISOR-007
+    prompt_content = described_class.call(
+      account:, snapshot:, **attributes.merge(prompt_identifier: "Review this customer's private issue")
+    )
+    unbounded_identifier = described_class.call(
+      account:, snapshot:, **attributes.merge(model_identifier: "m" * 129)
+    )
+
+    expect(prompt_content).to be_failure
+    expect(unbounded_identifier).to be_failure
+    expect(SupervisorIncident.count).to eq(0)
+  end
+
   private
 
   def deduplication_fingerprint
