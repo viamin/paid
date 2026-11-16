@@ -90,7 +90,7 @@ module MaintenanceReports
     end
 
     def identity_digest(attributes)
-      digest(category: attributes.fetch(:category), claim: attributes.fetch(:claim).squish, symbols: Array(attributes.fetch(:symbols)).map(&:to_s).sort)
+      digest(claim: attributes.fetch(:claim).squish, symbols: Array(attributes.fetch(:symbols)).map(&:to_s).sort)
     end
 
     def digest(value)

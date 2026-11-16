@@ -86,4 +86,12 @@ RSpec.describe MaintenanceRuns::BuildPrompt do
     expect(prompt).to match(/callers|tests|design documents/i)
     expect(prompt).to match(/beyond the requested scope/i)
   end
+
+  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025
+  it "requires a marker-delimited structured report for durable persistence" do
+    prompt = build_prompt(guidance: "Audit workflow A")
+
+    expect(prompt).to include("<!-- maintenance-report-start -->", "<!-- maintenance-report-end -->")
+    expect(prompt).to include("completed_checks", "incomplete_checks", "findings", "evidence")
+  end
 end

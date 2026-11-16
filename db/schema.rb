@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_183631) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_223347) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3117,6 +3117,68 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_183631) do
     t.index ["session_token"], name: "index_login_sessions_on_session_token", unique: true
   end
 
+  create_table "maintenance_finding_occurrences", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "agent_assessment", limit: 32
+    t.jsonb "analyzer_provenance", default: {}, null: false
+    t.string "category", limit: 100, null: false
+    t.text "claim", null: false
+    t.jsonb "contrary_evidence", default: [], null: false
+    t.datetime "created_at", null: false
+    t.jsonb "locations", default: [], null: false
+    t.bigint "maintenance_finding_id", null: false
+    t.bigint "maintenance_report_id", null: false
+    t.string "observed_status", limit: 32, null: false
+    t.text "proposed_action"
+    t.decimal "raw_tool_confidence", precision: 5, scale: 4
+    t.jsonb "supporting_evidence", default: [], null: false
+    t.jsonb "symbols", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.text "validation_plan"
+    t.string "verification_disposition", limit: 32, null: false
+    t.index ["account_id"], name: "index_maintenance_finding_occurrences_on_account_id"
+    t.index ["maintenance_finding_id"], name: "idx_on_maintenance_finding_id_3dbd81edcc"
+    t.index ["maintenance_report_id", "maintenance_finding_id"], name: "index_maintenance_occurrences_on_report_and_finding", unique: true
+    t.index ["maintenance_report_id"], name: "index_maintenance_finding_occurrences_on_maintenance_report_id"
+  end
+
+  create_table "maintenance_findings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "category", limit: 100, null: false
+    t.text "claim", null: false
+    t.datetime "created_at", null: false
+    t.text "dismissal_reason"
+    t.string "identity_digest", limit: 64, null: false
+    t.jsonb "locations", default: [], null: false
+    t.bigint "project_id", null: false
+    t.boolean "reassessment_required", default: false, null: false
+    t.string "recipe_key", limit: 100, default: "custom", null: false
+    t.string "status", limit: 32, default: "open", null: false
+    t.string "supporting_evidence_digest", limit: 64
+    t.jsonb "symbols", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_maintenance_findings_on_account_id"
+    t.index ["project_id", "recipe_key", "identity_digest"], name: "index_maintenance_findings_on_recurring_identity", unique: true
+    t.index ["project_id"], name: "index_maintenance_findings_on_project_id"
+  end
+
+  create_table "maintenance_reports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_run_id", null: false
+    t.jsonb "completed_checks", default: [], null: false
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.jsonb "exclusions", default: [], null: false
+    t.jsonb "incomplete_checks", default: [], null: false
+    t.string "outcome", limit: 32, null: false
+    t.bigint "project_id", null: false
+    t.text "resolved_scope"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_maintenance_reports_on_account_id"
+    t.index ["agent_run_id"], name: "index_maintenance_reports_on_agent_run_id", unique: true
+    t.index ["project_id"], name: "index_maintenance_reports_on_project_id"
+  end
+
   create_table "marketplace_entries", comment: "Team-shareable agent enhancements that can be attached to agent runs", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "added_by_email", limit: 255, null: false
@@ -5407,6 +5469,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_183631) do
   add_foreign_key "login_sessions", "integration_credentials"
   add_foreign_key "login_sessions", "runner_credentials"
   add_foreign_key "login_sessions", "users", column: "created_by_id"
+  add_foreign_key "maintenance_finding_occurrences", "accounts", on_delete: :cascade
+  add_foreign_key "maintenance_finding_occurrences", "maintenance_findings", on_delete: :cascade
+  add_foreign_key "maintenance_finding_occurrences", "maintenance_reports", on_delete: :cascade
+  add_foreign_key "maintenance_findings", "accounts", on_delete: :cascade
+  add_foreign_key "maintenance_findings", "projects", on_delete: :cascade
+  add_foreign_key "maintenance_reports", "accounts", on_delete: :cascade
+  add_foreign_key "maintenance_reports", "agent_runs", on_delete: :cascade
+  add_foreign_key "maintenance_reports", "projects", on_delete: :cascade
   add_foreign_key "marketplace_entries", "accounts"
   add_foreign_key "marketplace_entries", "marketplace_entry_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "marketplace_entry_rules", "marketplace_entries"

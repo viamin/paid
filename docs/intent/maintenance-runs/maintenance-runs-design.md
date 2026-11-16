@@ -80,7 +80,9 @@ alone). It does not belong to one report: it owns the durable current finding
 identity and lifecycle, so a repeated scan updates that same canonical finding
 rather than creating duplicate repair work. A canonical finding records:
 
-- Its identity inputs: `category`, current `locations`/`symbols`, and `claim`.
+- Its identity inputs: project, recipe, normalized `claim`, and affected
+  `symbols`. Category and current locations remain mutable classification and
+  navigation metadata, not identity inputs.
 - `status`: `open`, `dismissed` (with a required reason), or
   `repaired` (linked to the repair work that addressed it).
 - A revalidation marker set when supporting evidence materially changes

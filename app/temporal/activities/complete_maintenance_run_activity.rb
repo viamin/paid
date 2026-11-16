@@ -7,7 +7,7 @@ module Activities
   # produced changes, the run fails loudly with the collected evidence
   # preserved — a scan must never mutate source files, and the violation must
   # not be presented as a successful clean scan.
-  # @spec MAINT-020
+  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025
   class CompleteMaintenanceRunActivity < BaseActivity
     activity_name "CompleteMaintenanceRun"
 
@@ -28,7 +28,7 @@ module Activities
     private
 
     def complete_report_only(agent_run)
-      MaintenanceReports::Persist.call(run: agent_run)
+      persist_agent_report(agent_run)
       completed = agent_run.complete!
       agent_run.log!("system", "Maintenance investigation completed report-only; no source files were changed.")
       ProcessRunQueueJob.perform_later if completed
@@ -37,6 +37,16 @@ module Activities
         agent_run_id: agent_run.id,
         status: agent_run.reload.status
       )
+    end
+
+    def persist_agent_report(agent_run)
+      attributes = MaintenanceReports::AgentReport.parse(agent_run.agent_summary_with_stderr_fallback)
+      MaintenanceReports::Persist.call(run: agent_run, **attributes)
+    rescue MaintenanceReports::AgentReport::InvalidReport => e
+      MaintenanceReports::Persist.call(run: agent_run,
+        incomplete_checks: [ { "name" => "agent_report", "reason" => "parse_failure" } ])
+      logger.warn(message: "agent_execution.maintenance_report_parse_failed", agent_run_id: agent_run.id,
+        error_class: e.class.name, error: e.message)
     end
 
     def fail_with_write_boundary_violation(agent_run)
