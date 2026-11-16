@@ -2,8 +2,8 @@
 
 > Accepted intent under the [RDR-063 owner decision](https://github.com/viamin/paid/issues/4341#issuecomment-6908868779). `[ ]` denotes implementation gaps that remain subject to their issue dependencies and default-off rollout guard.
 
-- [ ] **OPERATIONAL-SUPERVISOR-001** — When building a supervisor snapshot, the system SHALL include only the RDR-063 typed allowlist and SHALL exclude authored content, repository content, logs, prompts, raw errors, credentials, secrets, and raw provider responses.
-- [ ] **OPERATIONAL-SUPERVISOR-002** — When a snapshot contains a metric, the system SHALL retain its window, denominator, inclusion rule, and unavailable state, and SHALL bound deterministic top-N selection without encoding a semantic quality judgment.
+- [x] **OPERATIONAL-SUPERVISOR-001** — When building a supervisor snapshot, the system SHALL include only the RDR-063 typed allowlist and SHALL exclude authored content, repository content, logs, prompts, raw errors, credentials, secrets, and raw provider responses.
+- [x] **OPERATIONAL-SUPERVISOR-002** — When a snapshot contains a metric, the system SHALL retain its window, denominator, inclusion rule, and unavailable state, and SHALL bound deterministic top-N selection without encoding a semantic quality judgment.
 - [ ] **OPERATIONAL-SUPERVISOR-003** — When persisting a supervisor snapshot, the system SHALL retain its bounded typed sanitized digest, included-project provenance, metric provenance, creation time, and retention expiry, and SHALL purge it after its recorded retention interval.
 - [ ] **OPERATIONAL-SUPERVISOR-004** — When constructing an account snapshot, the system SHALL include facts, targets, and account-level rollups only from projects for which `operational_supervisor` is enabled, and SHALL limit supervisor projections to authorized operators for those enabled projects.
 - [ ] **OPERATIONAL-SUPERVISOR-005** — When analyzing a snapshot, the system SHALL call only `agent_harness` and SHALL accept only a strict structured response whose known targets are members of that snapshot.
