@@ -48,14 +48,17 @@ class CreateStagedCloseoutAdoption < ActiveRecord::Migration[8.1]
     drop_table :staged_closeout_enrollments
   end
 
-  private
-
   def enable_tenant_rls
-    %w[staged_closeout_enrollments staged_closeout_mappings].each do |table|
+    tenant_conditions.each do |table, condition|
       safety_assured do
         execute "ALTER TABLE #{table} ENABLE ROW LEVEL SECURITY"
         execute "ALTER TABLE #{table} FORCE ROW LEVEL SECURITY"
-        execute "CREATE POLICY tenant_isolation ON #{table} AS PERMISSIVE FOR ALL USING (paid_tenant_bypass() OR (#{table}.account_id = paid_current_account_id())) WITH CHECK (paid_tenant_bypass() OR (#{table}.account_id = paid_current_account_id()))"
+        execute <<~SQL
+          CREATE POLICY tenant_isolation ON #{table}
+            AS PERMISSIVE FOR ALL
+            USING (paid_tenant_bypass() OR (#{condition}))
+            WITH CHECK (paid_tenant_bypass() OR (#{condition}))
+        SQL
       end
     end
   end
@@ -68,5 +71,86 @@ class CreateStagedCloseoutAdoption < ActiveRecord::Migration[8.1]
         execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
       end
     end
+  end
+
+  private
+
+  def tenant_conditions
+    {
+      "staged_closeout_enrollments" => enrollment_tenant_condition,
+      "staged_closeout_mappings" => mapping_tenant_condition
+    }
+  end
+
+  def enrollment_tenant_condition
+    <<~SQL.squish
+      staged_closeout_enrollments.account_id = paid_current_account_id()
+      AND EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = staged_closeout_enrollments.project_id
+          AND projects.account_id = paid_current_account_id()
+      )
+      AND (
+        staged_closeout_enrollments.reviewed_by_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM users
+          WHERE users.id = staged_closeout_enrollments.reviewed_by_id
+            AND users.account_id = paid_current_account_id()
+        )
+      )
+    SQL
+  end
+
+  def mapping_tenant_condition
+    ([ mapping_owner_conditions ] + mapping_reviewer_conditions).join(" AND ")
+  end
+
+  def mapping_owner_conditions
+    <<~SQL.squish
+      staged_closeout_mappings.account_id = paid_current_account_id()
+      AND EXISTS (
+        SELECT 1 FROM projects
+        WHERE projects.id = staged_closeout_mappings.project_id
+          AND projects.account_id = paid_current_account_id()
+      )
+      AND EXISTS (
+        SELECT 1 FROM issues
+        INNER JOIN projects ON projects.id = issues.project_id
+        WHERE issues.id = staged_closeout_mappings.issue_id
+          AND issues.project_id = staged_closeout_mappings.project_id
+          AND projects.account_id = paid_current_account_id()
+      )
+      AND EXISTS (
+        SELECT 1 FROM staged_closeout_enrollments
+        WHERE staged_closeout_enrollments.id = staged_closeout_mappings.staged_closeout_enrollment_id
+          AND staged_closeout_enrollments.project_id = staged_closeout_mappings.project_id
+          AND staged_closeout_enrollments.account_id = paid_current_account_id()
+      )
+    SQL
+  end
+
+  def mapping_reviewer_conditions
+    conditions = [ user_reference_condition("reviewed_by_id") ]
+    conditions << optional_user_reference_condition("invalidated_by_id") if column_exists?(:staged_closeout_mappings, :invalidated_by_id)
+    conditions
+  end
+
+  def user_reference_condition(foreign_key)
+    <<~SQL.squish
+      EXISTS (
+        SELECT 1 FROM users
+        WHERE users.id = staged_closeout_mappings.#{foreign_key}
+          AND users.account_id = paid_current_account_id()
+      )
+    SQL
+  end
+
+  def optional_user_reference_condition(foreign_key)
+    <<~SQL.squish
+      (
+        staged_closeout_mappings.#{foreign_key} IS NULL
+        OR #{user_reference_condition(foreign_key)}
+      )
+    SQL
   end
 end
