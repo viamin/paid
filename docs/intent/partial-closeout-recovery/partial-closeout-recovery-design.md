@@ -394,9 +394,25 @@ decision, its evidence, and its alternatives:
 | B — persisted stall read model | Recompute the stalled-closeout projection outside Inbox rendering, on every input that changes admission or lane membership; a durable project checkpoint represents both populated and empty results; the Inbox reads the projection after that checkpoint exists; live `eligible_scope` remains the admission authority at continuation preflight, dequeue, and run start. | Removes admission from the hot path and mirrors the persisted project-readiness snapshot, but adds a durable derived record, invalidation coverage, freshness semantics, and a rollout guard. |
 | C — per-project cache | Cache the `StalledCloseouts` result per project behind the account's `inbox` `Dashboard::CacheVersion`, shared by Queue, Count, and Availability. | Lowest implementation cost, but the cache boundary is the badge boundary, not the admission-input boundary, so it serves badge-grade staleness to the lane list and returns to live admission on every cold cache. |
 
-**Recorded decision: the owner chose Option B on 2026-11-05; it is accepted but
-not yet implemented.** The lane keeps live admission until RDR-081's read model
-is implemented and enabled. The decision rests on three findings: the request-path
+**Recorded decision: the owner chose Option B on 2026-11-05; it is implemented
+behind the default-off `partial_closeout_lane_read_model` rollout guard
+(#4912).** The projection is a per-project checkpoint table plus
+stalled-issue rows (`stalled_closeout_projection_checks` /
+`stalled_closeout_projection_rows`, tenant-isolated by the same row-level
+security policies the rest of the Inbox uses); recomputation runs in
+`RecomputeStalledCloseoutProjectionJob` outside rendering, with direct
+triggers on closeout evidence, blocking runs, continuation requests, explicit
+holds, and runner configuration, plus a periodic
+`StalledCloseoutProjectionSweepJob` whose input-watermark comparison
+self-heals a missed trigger or an interrupted backfill. `Inbox::Queue`,
+`Inbox::Count`, and `Inbox::Availability` read one shared reader
+(`Issues::StalledCloseoutProjection.pairs_for`); a rollout-enabled project
+reads the projection only after its checkpoint commits, and every other
+project — including a checkpoint-less enabled one — stays on live admission.
+The lane keeps live admission until the guard is enabled per project, exactly
+as RDR-081's rollout section requires; the flag is not yet enabled anywhere
+and the guard cannot be removed until RDR-081's closeout audit passes. The
+decision rests on three findings: the request-path
 cost grows with the number of projects that have closeout candidates rather
 than with the number of stalls; Option C needs the same invalidation coverage
 as the projection to be correct, because the `inbox` cache version does not

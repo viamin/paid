@@ -815,8 +815,8 @@ arrows:
     parent: PAID
     taxonomy: operations
     status: PARTIAL
-    audited: 2026-11-10
-    next: "Implement RDR-081's accepted persisted display projection under #4912; keep live admission authoritative until its rollout guard is enabled."
+    audited: 2026-11-16
+    next: "Enable the implemented partial_closeout_lane_read_model guard for a pilot project under RDR-081's rollout rules, then run its closeout audit; live admission stays authoritative at preflight, dequeue, and run start."
   trusted-measurements:
     title: Trusted Post-Deploy Measurements
     path: docs/intent/trusted-measurements/trusted-measurements-design.md

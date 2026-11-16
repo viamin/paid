@@ -30,6 +30,12 @@ class IssueContinuationRequest < ApplicationRecord
 
   after_commit :bump_inbox_cache_version, on: [ :create, :update ]
 
+  # RDR-081 Option B: opening, closing, or superseding a request changes lane
+  # membership for the persisted stall projection; recomputation runs off the
+  # request path for rollout-enabled projects.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :schedule_stalled_closeout_projection_recompute, on: [ :create, :update, :destroy ]
+
   def self.open_for_issue(issue)
     open.where(issue: issue).last
   end
@@ -59,5 +65,9 @@ class IssueContinuationRequest < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def schedule_stalled_closeout_projection_recompute
+    Issues::StalledCloseoutProjection.schedule(project)
   end
 end

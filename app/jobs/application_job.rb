@@ -172,6 +172,7 @@ class ApplicationJob < ActiveJob::Base
       ProjectConventions::OpenHookGuardrailPullRequestJob,
       ProjectHealthCheckJob,
       PoolReplenishmentJob,
+      RecomputeStalledCloseoutProjectionJob,
       RunCollectorsJob,
       StyleGuideExtractionJob,
       TrustedMeasurements::RunCheckJob

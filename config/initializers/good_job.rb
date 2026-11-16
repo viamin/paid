@@ -208,6 +208,12 @@ Rails.application.configure do
       class: "PartialCloseoutAcceptanceAuditSweepJob",
       description: "Queue one report-only audit per eligible merged closeout evidence generation"
     },
+    stalled_closeout_projection_sweep: {
+      cron: "13-59/15 * * * *",
+      class: "StalledCloseoutProjectionSweepJob",
+      queue: "maintenance",
+      description: "Recompute the persisted partial-closeout stall projection for rollout-enabled projects with changed admission inputs"
+    },
     analyze_issue_followup_backfill: {
       cron: "15 * * * *",
       class: "AnalyzeIssueFollowupBackfillJob",

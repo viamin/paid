@@ -231,6 +231,15 @@ class Issue < ApplicationRecord
   # @spec INBOX-PHASE-RELEVANCE-001
   after_commit :record_inbox_phase_ownership, on: [ :create, :update ], if: :inbox_phase_ownership_changed?
 
+  # RDR-081 Option B: an issue save can change closeout evidence (a merged PR
+  # row linking to its parent, a no-code outcome), explicit holds (pause,
+  # needs-input, skip labels, retry abandonment), or lane membership (issue
+  # closure). Projects reading the persisted stall projection recompute off
+  # the request path; the guard check makes this a no-op elsewhere.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :schedule_stalled_closeout_projection_recompute,
+    on: [ :create, :update, :destroy ], if: :stalled_closeout_projection_inputs_changed?
+
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
@@ -1050,6 +1059,26 @@ class Issue < ApplicationRecord
 
   def partial_closeout_inbox_candidate?
     Issues::StalledCloseouts.call([ project ], issue_id: id).any?
+  end
+
+  # Columns whose changes can alter closeout evidence, explicit holds, or
+  # lane membership for the persisted stall projection (RDR-081). Everything
+  # else (body syncs, comment timestamps) leaves the projection unchanged.
+  STALLED_CLOSEOUT_PROJECTION_WATCHED_COLUMNS = %w[
+    github_state paid_state paused labels parent_issue_id pr_review_phase
+    no_code_required_at runner_retry_abandoned_at closeout_resolved_at
+    closeout_resolution_digest issue_analysis_next_attempt_at
+    auto_pick_excluded_reason paid_activation_state
+  ].freeze
+
+  def stalled_closeout_projection_inputs_changed?
+    return true if previously_new_record? || destroyed?
+
+    (saved_changes.keys & STALLED_CLOSEOUT_PROJECTION_WATCHED_COLUMNS).any?
+  end
+
+  def schedule_stalled_closeout_projection_recompute
+    Issues::StalledCloseoutProjection.schedule(project)
   end
 
   # The lane never admits pull requests. For source issues, check its own

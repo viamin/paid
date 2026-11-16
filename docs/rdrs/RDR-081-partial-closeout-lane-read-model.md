@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-10-28
-- **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implementation pending
+- **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implemented behind the default-off `partial_closeout_lane_read_model` rollout guard (#4912); per-project enablement and closeout audit pending
 - **Type**: Architecture
 - **Related RDRs**: [RDR-074](RDR-074-project-readiness.md) (the persisted project-readiness snapshot this read model mirrors), [RDR-032](RDR-032-eager-queue-seeding.md) (auto-pick admission authority)
 - **Related Issues**: #4558 (this decision), #4912 (persisted projection implementation), #4120 (partial-closeout recovery umbrella), #4119 (gap ownership), #4556 (eligible-scope query optimization)
@@ -256,6 +256,11 @@ the same coverage Option C would need and the main implementation risk.
 
 The owner chose Option B on 2026-11-05. This accepts the display-only read
 model while keeping live admission authoritative at preflight, dequeue, and run
-start. The lane continues using live admission until the projection is
-implemented and the rollout guard is enabled; accepting this RDR does not
-create a projection table or change runtime behavior.
+start. The implementation landed under #4912 behind the default-off
+`partial_closeout_lane_read_model` flag: the checkpoint and stalled-issue-row
+tables, the off-request-path recomputation job and watermark sweep, the
+model triggers, and the shared projection reader used by `Inbox::Queue`,
+`Inbox::Count`, and `Inbox::Availability`. The flag is not yet enabled for any
+project; until a project is enabled and its first checkpoint commits, the lane
+keeps evaluating live admission. The cleanup criteria above still gate removing
+the guard.

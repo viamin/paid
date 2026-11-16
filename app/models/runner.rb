@@ -130,6 +130,11 @@ class Runner < ApplicationRecord
   before_discard :clear_provider_api_key_reference
   after_commit :invalidate_agent_run_runner_option_caches, if: :agent_run_runner_option_cache_invalidation_needed?
   after_commit :enqueue_parked_run_recovery, if: :became_available_for_agent_runs?
+  # RDR-081 Option B: runner configuration changes the tier feasibility set
+  # admission reads, so every project the owner runs re-schedules its stall
+  # projection recomputation. A no-op while the rollout guard is disabled.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :schedule_stalled_closeout_projection_recomputes, on: [ :create, :update, :destroy ]
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :monthly_token_budget,
@@ -1088,6 +1093,14 @@ class Runner < ApplicationRecord
     return unless Runners::RecoverParkedRunsJob.parked_runs_for(user).exists?
 
     Runners::RecoverParkedRunsJob.perform_later(user_id)
+  end
+
+  def schedule_stalled_closeout_projection_recomputes
+    return if user_id.blank?
+
+    user.created_projects.active.find_each do |project|
+      Issues::StalledCloseoutProjection.schedule(project)
+    end
   end
 
   def display_name_config_changed?

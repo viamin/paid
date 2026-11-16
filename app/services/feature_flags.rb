@@ -141,6 +141,13 @@ class FeatureFlags
       intent: "Gate manual maintenance-run admission (UI, API, and MCP) and future scheduled maintenance dispatch behind per-tenant opt-in.",
       rollout_plan: "Default-off; opt in per tenant via tenant_settings.features. Disabling admission preserves existing maintenance reports and active-run cancellation; remove only after focused audits, report outcomes, tool isolation, recurrence and deduplication, and UI/API parity are verified.",
       cleanup_criteria: "Remove only after the default posture is approved; recurring schedules stay explicitly opt-in."
+    ),
+    partial_closeout_lane_read_model: Definition.new(
+      name: :partial_closeout_lane_read_model,
+      owner: "partial-closeout-recovery",
+      intent: "Gate the persisted, display-only partial-closeout stall projection (RDR-081 Option B) so the Inbox lane reads projected membership instead of evaluating live admission on the request path, while live eligible_scope stays the admission authority at continuation preflight, dequeue recheck, and run start.",
+      rollout_plan: "Default-off; enable selected projects only after projection recomputation, invalidation, failure retention, and shared-reader agreement are verified together. Enabling schedules an initial recomputation and the project reads the projection only after its checkpoint commits; until then, and after any checkpoint loss, it stays on the live path. Disabling restores the live path with no schema change and no data migration of operator-visible state.",
+      cleanup_criteria: "Remove only after the RDR-081 closeout audit records every validation criterion passing and production has run with the flag enabled for every project for 14 consecutive days with no projection-membership mismatch and no read-model rollback."
     )
   }.freeze
 

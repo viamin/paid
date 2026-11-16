@@ -342,6 +342,12 @@ class AgentRun < ApplicationRecord
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
   after_commit :close_finished_continuation_request, on: :update, if: :continuation_run_just_finished?
   after_commit :enqueue_project_readiness_evaluation, on: :update, if: :project_readiness_refresh_needed?
+  # RDR-081 Option B: a run starting, finishing, or being cancelled changes
+  # blocking-run admission inputs for the persisted stall projection; the
+  # recomputation runs off the request path for rollout-enabled projects.
+  # @spec PARTIAL-CLOSEOUT-042
+  after_commit :schedule_stalled_closeout_projection_recompute,
+    on: [ :create, :update, :destroy ], if: :stalled_closeout_projection_inputs_changed?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -4460,6 +4466,21 @@ class AgentRun < ApplicationRecord
 
   def enqueue_project_readiness_evaluation
     EvaluateProjectReadinessJob.perform_later(project_id)
+  end
+
+  # Run lifecycle inputs the persisted stall projection depends on: the
+  # blocking-run set (status), terminal evidence timestamps
+  # (completed_at), and the recorded PR number an evidence join matches
+  # against. Everything else leaves the projection unchanged.
+  def stalled_closeout_projection_inputs_changed?
+    return true if previously_new_record? || destroyed?
+
+    saved_change_to_status? || saved_change_to_completed_at? || saved_change_to_pull_request_number? ||
+      saved_change_to_issue_id?
+  end
+
+  def schedule_stalled_closeout_projection_recompute
+    Issues::StalledCloseoutProjection.schedule(project)
   end
 
   # Records the dispatch circuit breaker outcome for every terminal run,
