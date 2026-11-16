@@ -103,7 +103,7 @@ that human decision for a particular PR by applying the structured
 actionable Inbox item until a human releases it.
 
 Execution delegation is distinct from an attestation that a particular pull
-request head was reviewed. Subject to the pending owner acceptance of
+request head was reviewed. Under the accepted design in
 [RDR-078](rdrs/RDR-078-bounded-delivery-phase-authorization.md), a project may
 offer an authorized user an explicit, auditable authorization for one identified
 work item's `Automation::Phases` delivery phase and same-work repair lineage.

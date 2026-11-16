@@ -3,10 +3,12 @@
 ## Metadata
 
 - **Date**: 2026-10-24
-- **Status**: Proposed
-- **Acceptance**: Pending explicit acceptance by an authorized owner through
-  the review of this exact revision. Until that happens, this RDR is neither
-  runtime authority nor an amendment to RDR-077.
+- **Status**: Final
+- **Acceptance**: The owner accepted the HLD, RDR, LLD, and EARS design blobs at
+  PR #5109 head `a3e4c658679218019e89355afc89db28e597dcff`, recorded in
+  [#4996's owner decision](https://github.com/viamin/paid/issues/4996#issuecomment-6908815294).
+  A later PR commit changed only the CI workflow; the accepted design blobs
+  remained identical. This decision does not itself authorize runtime use.
 - **Type**: Architecture + Authorization + Delivery UX
 - **Related Issues**: #4624 (delivered proposal); #4995 (tracking umbrella), #4996 (design acceptance), #4997–#4999 (implementation), #5000 (closeout)
 - **Related RDRs**: [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), and [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md)
@@ -14,29 +16,28 @@
 - **Implementation status**: The narrower bounded-action foundation and
   deterministic boundary rechecks (`BOUNDED-PHASE-AUTHORIZATION-010`, `-011`,
   and `-004`) are checked in the linked EARS. The eight phase-lifecycle claims
-  remain proposed and are tracked under #4995. No exclusive stop is accepted
-  or enabled; approval freshness and project settings, including Forager's
-  `auto_merge_mode`, remain unchanged.
+  are accepted implementation gaps tracked under #4995. No exclusive stop is
+  implemented or enabled; approval freshness and project settings, including
+  Forager's `auto_merge_mode`, remain unchanged.
 
 ## Acceptance boundary
 
-An authorized owner must accept this exact RDR, the HLD statement, this
-segment's LLD, and its EARS through the normal review path before this RDR may
-be marked accepted or its exclusive-stop exception may take effect. The review
-record must identify the accepted repository revision. A GitHub approval, PR
-review, run, continuation grant, issue relationship, or milestone membership
-does not constitute this acceptance or mint a bounded authorization. Until the
-acceptance is recorded, the status remains `Proposed`, RDR-077's grant rules
-remain unchanged, and `automation_phases` remains default-off.
+The owner decision linked above accepts the exact HLD, RDR, LLD, and EARS
+blobs. A GitHub approval, PR review, run, continuation grant, issue
+relationship, or milestone membership does not mint a bounded authorization.
+The RDR-077 exception takes effect only when the accepted phase lifecycle is
+implemented and separately enabled; until then, RDR-077's runtime grant rules
+remain unchanged and `automation_phases` remains default-off.
 
-## Decision required
+## Decision
 
-Approve a separate explicit authorization action for a bounded delivery phase.
+The accepted design adds a separate explicit authorization action for a bounded
+delivery phase.
 The action delegates execution within a precisely identified work lineage; it
 does not attest that any commit has been reviewed and it is not derived from a
-GitHub approval. On acceptance, this decision replaces RDR-077's prohibition
-on a per-item stop only for the new authorization type. Existing continuation
-grants and their endpoint behavior remain unchanged.
+GitHub approval. When implemented and enabled, this decision narrows RDR-077's
+prohibition on a per-item stop only for the new authorization type. Existing
+continuation grants and their endpoint behavior remain unchanged.
 
 ## Problem
 
@@ -48,14 +49,14 @@ defined coding phase and stop before the next phase. Conversely, a stale owner
 review is evidence about an earlier head, not a delegation for future repairs
 or a current-head review attestation.
 
-## Proposed decision
+## Accepted direction
 
 ### Project policy is the default
 
 Without a bounded authorization for the identified lineage, Paid follows the
 project's existing phase and merge policy. A project configured for fully
 automatic delivery may merge a qualifying PR after its configured CI, review,
-security, branch-protection, dependency, and mergeability checks; this proposal
+security, branch-protection, dependency, and mergeability checks; this decision
 adds no per-PR human checkpoint to that path. The authorization action is an
 explicit per-work choice to delegate a narrower phase and enforce a stop.
 The consent surface defaults to **inherit project policy** and creates no
@@ -169,7 +170,7 @@ adds neither a feature-design approval nor an issue-readiness exception.
    service for Inbox, work detail, chat, API, and MCP/tool paths; it completes
    fresh-review gates and terminal-race handling.
 4. **#5000** maps every claim to shipped code and test assertions before any
-   RDR status or rollout decision.
+   implementation-complete status or rollout decision.
 5. Keep `automation_phases` default-off and do not expose the action until all
    enforcement paths are behind the RDR-077 rollout guard. No migration grants
    authority from existing reviews, runs, or continuation grants.
@@ -179,7 +180,48 @@ adds neither a feature-design approval nor an issue-readiness exception.
 
 ## Rollout guard
 
-RDR-077's `automation_phases` guard remains the required gate. This proposal
+RDR-077's `automation_phases` guard remains the required gate. This decision
 does not authorize enabling it, changing Forager settings, or merging PR #20
-or #21. A future accepted implementation must add a named enablement surface
+or #21. Implementation must add a named enablement surface
 and keep it disabled until all execution paths and concurrency checks pass.
+
+## Finalization record
+
+- **Contradictions resolved:** RDR-077's continuation grant has no stopping
+  power, while this decision needs an exclusive stop for one identified
+  lineage. The new authorization type alone supplies that exception; existing
+  grants keep their endpoint behavior. The HLD, owning LLD, and EARS now state
+  that fully automatic project policy remains the ordinary default, and only
+  an explicitly selected bounded stop overrides it.
+- **Load-bearing assumptions:** The shipped action-specific authorization
+  record and shared admission recheck (`-010`, `-011`, `-004`) provide a single
+  authority path and fail-closed action boundaries; their checked EARS and
+  linked tests are the current evidence. The accepted LLD maps same-work
+  lineage and policy-signature checks onto those boundaries, so no second
+  authorization source is required by the design. #4997 and #5000 must prove
+  the implementation actually enforces the exclusive stop at every boundary.
+  If it cannot, keep the guard off and revise the decision. The accepted EARS
+  require semantic scope assessment through `agent_harness` to fail closed;
+  #4998 must demonstrate that behavior before rollout.
+- **Decisive proof:** #4997–#4999 implement the unchecked EARS claims with
+  failing-first tests for enabled project defaults, lineage isolation,
+  authorization transitions, stale reviews, and admission races. #5000 maps
+  each claim to shipped code and tests. This is the minimum proof for the
+  selected same-work boundary; no broader milestone or release scope is
+  claimed. The devcontainer is the available production-like acceptance
+  environment until a deployment exists.
+- **Cross-record effect:** RDR-077 retains ordinary phase settings and
+  additive continuation grants; RDR-078 alone owns the accepted narrow
+  exclusive-stop exception, designed in the bounded-phase LLD. RDR-080's
+  project posture remains an input to effective policy and cannot overrule a
+  selected RDR-078 stop. Neither RDR-066 approval nor RDR-071 issue readiness
+  is changed. The HLD owns the platform authority boundary; the LLD and EARS
+  own the lifecycle and observable behavior.
+- **Proportionality and follow-up:** Because this changes authorization across
+  phase, review, and merge paths, the owner reviewed the exact artifact blobs,
+  and implementation remains gated by criterion-level closeout and default-off
+  rollout. The RDR leaves component mechanics and test assertions to the LLD
+  and EARS. After a guarded pilot has processed meaningful bounded lineages,
+  compare stops, reassessments, and attempted boundary crossings with this
+  decision in a plan-versus-reality post-mortem; record surprises in #5000 or
+  a focused follow-up issue.

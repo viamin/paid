@@ -5,11 +5,11 @@ prefix: BOUNDED-PHASE-AUTHORIZATION
 
 # Low-Level Design: Bounded Delivery-Phase Authorization
 
-Implements proposed [RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authorization.md).
+Implements accepted [RDR-078](../../rdrs/RDR-078-bounded-delivery-phase-authorization.md).
 
 ## Boundary
 
-`BoundedPhaseAuthorization` is a proposed execution delegation, not a pull
+`BoundedPhaseAuthorization` is an accepted execution-delegation design, not a pull
 request review record. Its identity is `(account, project, root work item,
 selected phase, stop-before phase, intent digest)`. A phase is an
 `Automation::Phases` value, never a project delivery milestone. The root work
@@ -28,7 +28,7 @@ are service write boundaries (`Automation::AuthorizeBoundedAction`,
 `Automation::RevokeBoundedAction`) that delegate permission checks to the
 project policy; the model stays validation-only.
 
-The proposed phase lifecycle stores its author, consent projection, permitted
+The planned phase lifecycle stores its author, consent projection, permitted
 actions, intent/acceptance references, policy signature, lifecycle timestamps,
 and audit references around that foundation. All records use project/account
 tenant scoping and normal actor policy checks. Completion leaves its exclusive
@@ -44,7 +44,7 @@ supersedes it with newly consented scope, or resumes only unchanged scope.
 ## Policy composition
 
 `Automation::EffectivePolicy` remains the sole execution-policy result. Its
-proposed bounded-authorization input has three outcomes:
+accepted bounded-authorization input has three outcomes:
 
 No bounded authorization is the normal case: the existing project phase and
 auto-merge policy decides whether a qualifying PR proceeds, including under
@@ -65,8 +65,8 @@ required human review remains a separate gate.
 The boundary override is deliberately limited to this explicit authorization.
 Ordinary RDR-077 continuation grants preserve their existing additive behavior:
 project defaults can continue after their endpoint, including after grant
-revocation. The proposal remains inactive until its owner acceptance and
-implementation are both complete.
+revocation. The accepted design remains inactive until implementation and
+separate rollout are complete.
 
 ## Scope assessment and invalidation
 
@@ -129,4 +129,4 @@ into this record.
    terminal races, completion/reopening, and no implicit release, deployment,
    child-work, or setting-enable authority.
 4. **#5000** independently maps the complete implementation to `-001` through
-   `-011` and this LLD before status or rollout changes.
+   `-011` and this LLD before implementation-complete status or rollout changes.
