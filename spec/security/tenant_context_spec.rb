@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "rake"
 require Rails.root.join("db/migrate/20260421162139_enable_tenant_row_level_security")
 require Rails.root.join("db/migrate/20260425113212_enable_rls_on_knowledge_usage_stats")
 require Rails.root.join("db/migrate/20260425060000_enable_rls_on_notification_rule_states")
@@ -25,6 +26,7 @@ require Rails.root.join("db/migrate/20261029221250_create_inbox_history_events")
 require Rails.root.join("db/migrate/20261105195000_create_bounded_delegated_actions")
 require Rails.root.join("db/migrate/20261107082941_create_trusted_measurement_attempts")
 require Rails.root.join("db/migrate/20261107200000_create_project_delegation_postures")
+require Rails.root.join("db/migrate/20261116080000_create_staged_closeout_adoption")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -144,6 +146,60 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       end
       described_class.clear!
       expect(TrustedMeasurementAttempt.all).to be_empty
+    end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-006 STAGED-CLOSEOUT-ADOPTION-003
+  it "rejects cross-tenant staged closeout enrollment references" do
+    project_a, reviewer_a, enrollment_a = described_class.with_system_access do
+      project = create(:project, account: account_a)
+      reviewer = create(:user, account: account_a)
+      enrollment = StagedCloseoutEnrollment.create!(account: account_a, project:, reviewed_by: reviewer)
+      [ project, reviewer, enrollment ]
+    end
+    project_b, reviewer_b = described_class.with_system_access do
+      [ create(:project, account: account_b), create(:user, account: account_b) ]
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect_rls_rejection { insert_staged_closeout_enrollment(account_a, project_b, reviewer_a) }
+        expect_rls_rejection { insert_staged_closeout_enrollment(account_a, project_a, reviewer_b) }
+        expect_rls_rejection { update_staged_closeout_enrollment(enrollment_a, reviewed_by: reviewer_b) }
+      end
+    end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-006 STAGED-CLOSEOUT-ADOPTION-003
+  it "rejects cross-tenant staged closeout mapping references on inserts and updates" do
+    scope_a = described_class.with_system_access { staged_closeout_scope(account_a) }
+    scope_b = described_class.with_system_access { staged_closeout_scope(account_b) }
+    mapping_a = described_class.with_system_access { create_staged_closeout_mapping(scope_a) }
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        %i[project issue enrollment reviewed_by invalidated_by].each do |reference|
+          expect_rls_rejection { insert_staged_closeout_mapping(scope_a.merge(reference => scope_b.fetch(reference))) }
+        end
+        expect_rls_rejection { update_staged_closeout_mapping(mapping_a, issue: scope_b.fetch(:issue)) }
+      end
+    end
+  end
+
+  # @spec TRUSTED-MEASUREMENTS-003
+  it "collects an operator measurement from a restricted process without tenant context" do
+    project = described_class.with_system_access { create(:project, account: account_a) }
+    described_class.with_system_access { create(:issue, project:, github_number: 4812) }
+    as_restricted_role do
+      with_trusted_measurement_task(project) do |task|
+        described_class.with(nil) do
+          expect { task.invoke }.to output(/status:\s+succeeded/).to_stdout
+          expect(described_class.bypass_enabled?).to be(false)
+        end
+      end
+    end
+    described_class.with(account_a) do
+      expect(TrustedMeasurementAttempt.find_by!(project:).status).to eq("succeeded")
     end
   end
 
@@ -327,6 +383,22 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     ActiveRecord::Base.connection.execute("RESET ROLE")
   end
 
+  def with_trusted_measurement_task(project)
+    keys = %w[PROJECT_ID TARGET_REVISION CHECK_KEY EXTERNAL_ISSUE_NUMBER CRITERION_KEY]
+    previous = ENV.to_h.slice(*keys)
+    keys.each { |key| ENV.delete(key) }
+    ENV["PROJECT_ID"] = project.id.to_s
+    ENV["TARGET_REVISION"] = "reviewed-revision"
+    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return("reviewed-revision")
+    Rails.application.load_tasks unless Rake::Task.task_defined?("trusted_measurements:run_check")
+    task = Rake::Task["trusted_measurements:run_check"]
+    task.reenable
+    yield task
+  ensure
+    keys&.each { |key| ENV.delete(key) }
+    previous&.each { |key, value| ENV[key] = value }
+  end
+
   def install_tenant_policies
     ActiveRecord::Migration.suppress_messages do
       TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.down if orchestration_decisions_have_strategy_version_reference?
@@ -350,6 +422,8 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateBoundedDelegatedActions.new.enable_tenant_rls
       CreateTrustedMeasurementAttempts.new.enable_tenant_rls
       CreateProjectDelegationPostures.new.enable_tenant_rls
+      CreateStagedCloseoutAdoption.new.disable_tenant_rls
+      CreateStagedCloseoutAdoption.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -403,12 +477,14 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateBoundedDelegatedActions.new.disable_tenant_rls
       CreateTrustedMeasurementAttempts.new.disable_tenant_rls
       CreateProjectDelegationPostures.new.disable_tenant_rls
+      CreateStagedCloseoutAdoption.new.disable_tenant_rls
       EnableTenantRowLevelSecurity.new.down
 
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
       CreateTrustedMeasurementAttempts.new.enable_tenant_rls
       CreateProjectDelegationPostures.new.enable_tenant_rls
+      CreateStagedCloseoutAdoption.new.enable_tenant_rls
       EnableRlsOnNotificationRuleStates.new.up
       EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
       EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
@@ -650,6 +726,71 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
         1, 'pending', '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
     SQL
+  end
+
+  def insert_staged_closeout_enrollment(account, project, reviewed_by)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO staged_closeout_enrollments (
+        account_id, project_id, reviewed_by_id, revision, enabled, created_at, updated_at
+      ) VALUES (
+        #{account.id}, #{project.id}, #{reviewed_by.id}, 1, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def update_staged_closeout_enrollment(enrollment, reviewed_by:)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      UPDATE staged_closeout_enrollments
+      SET reviewed_by_id = #{reviewed_by.id}
+      WHERE id = #{enrollment.id}
+    SQL
+  end
+
+  def staged_closeout_scope(account)
+    project = create(:project, account:)
+    {
+      account:, project:, issue: create(:issue, project:),
+      enrollment: StagedCloseoutEnrollment.create!(account:, project:),
+      reviewed_by: create(:user, account:), invalidated_by: create(:user, account:)
+    }
+  end
+
+  def create_staged_closeout_mapping(scope)
+    StagedCloseoutMapping.create!(staged_closeout_mapping_attributes(scope))
+  end
+
+  def insert_staged_closeout_mapping(scope)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO staged_closeout_mappings (
+        account_id, project_id, issue_id, staged_closeout_enrollment_id,
+        reviewed_by_id, invalidated_by_id, criterion_key, criterion_digest,
+        stage, phase, target_shape, execution_path, target_key, target_version,
+        target_digest, freshness_seconds, retry_policy, revision, reviewed_at,
+        created_at, updated_at
+      ) VALUES (
+        #{scope.fetch(:account).id}, #{scope.fetch(:project).id}, #{scope.fetch(:issue).id},
+        #{scope.fetch(:enrollment).id}, #{scope.fetch(:reviewed_by).id}, #{scope.fetch(:invalidated_by).id},
+        #{quote("AC-#{SecureRandom.hex(4)}")}, 'criterion-digest', 'pre_merge', 'implementation',
+        'checkout', 'technical_prerequisite', 'bin/ci', '1', 'target-digest', 300,
+        '{}'::jsonb, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def update_staged_closeout_mapping(mapping, issue:)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      UPDATE staged_closeout_mappings SET issue_id = #{issue.id} WHERE id = #{mapping.id}
+    SQL
+  end
+
+  def staged_closeout_mapping_attributes(scope)
+    scope.slice(:account, :project, :issue, :reviewed_by, :invalidated_by).merge(
+      staged_closeout_enrollment: scope.fetch(:enrollment), criterion_key: "AC-1",
+      criterion_digest: "criterion-digest", stage: "pre_merge", phase: "implementation",
+      target_shape: "checkout", execution_path: "technical_prerequisite", target_key: "bin/ci",
+      target_version: "1", target_digest: "target-digest", freshness_seconds: 300,
+      retry_policy: {}, revision: 1, reviewed_at: Time.current
+    )
   end
 
   def insert_project_mcp_server(project, mcp_server)

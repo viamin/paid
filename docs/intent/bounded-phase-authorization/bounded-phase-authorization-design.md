@@ -132,7 +132,13 @@ into this record.
 ## Test-first implementation slices
 
 1. **#4997 (`-001`–`-003`)** adds phase identity, lineage non-inheritance, and
-   exclusive-stop composition to the shipped foundation.
+   exclusive-stop composition to the shipped foundation. Delivered: the
+   admission evidence pins the established same-work lineage, admission
+   resolves the governing authorization through that lineage and rechecks the
+   pinned root's revisions, and `EffectivePolicy` returns a visible
+   `bounded_phase_stop` at the selected boundary that overrides project
+   defaults and ordinary continuation grants while surviving terminal
+   lifecycle states.
 2. **#4998 (`-005`–`-006`)** adds reassessment resolution and bounded
    `agent_harness` correspondence, including fail-closed output handling.
 3. **#4999 (`-007`–`-009`)** adds consent-surface parity, fresh-review gates,

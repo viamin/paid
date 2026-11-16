@@ -769,7 +769,8 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
           path.include?("/api/") ||
             path.include?("/concerns/") ||
             path.end_with?("health_controller.rb") ||
-            path.end_with?("operator_console_access_controller.rb")
+            path.end_with?("operator_console_access_controller.rb") ||
+            path.end_with?("projects/staged_closeout_adoptions_controller.rb")
         end
 
       expect {

@@ -175,8 +175,11 @@
   weakening, removing, or re-prompting the detecting check in a later plan;
   only fresh supporting evidence recorded against a current revision SHALL
   resolve it.
-  *Tests:* `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`
-  *Code:* `LayeredVerification::Audits::SynthesizeCoverage` (#4433)
+  *Tests:* `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`,
+  `spec/temporal/activities/complete_layered_verification_audit_activity_spec.rb`,
+  `spec/requests/projects/layered_verification_audits_spec.rb`
+  *Code:* `LayeredVerification::Audits::SynthesizeCoverage`,
+  `Activities::CompleteLayeredVerificationAuditActivity` (#4433)
 
 ## Audit-only permissions and separately authorized repair
 
@@ -189,7 +192,8 @@
   human-reviewed draft proposals. An audit run SHALL be able to complete with
   findings and SHALL NOT start a repair run on its own completion.
   *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
-  `spec/policies/project_policy_spec.rb`
+  `spec/policies/project_policy_spec.rb`,
+  `spec/requests/projects/layered_verification_audits_spec.rb`
   *Code:* `app/temporal/workflows/agent_execution_workflow.rb`,
   `app/policies/project_policy.rb` (#4432, #4433)
 
@@ -268,7 +272,7 @@
 ## Inbox, stale-action validation, and deduplication
 
 - [x] **LAYERED-VERIFY-015** — `Inbox::Queue::KINDS` SHALL include
-  `LAYERED_VERIFICATION_FINDING_KIND`, backed by `Inbox::LayeredVerificationFinding`,
+  `LAYERED_VERIFICATION_FINDING_KIND`, backed by `LayeredVerificationFinding`,
   scoped by project-policy visibility and independent of
   `auto_pick_enabled`. Its detail pane SHALL show the obligation's scope and
   source reference, conflicting source/model/spec claims, observed
@@ -276,8 +280,10 @@
   needed, and the possible resolutions with consequences. A clean audit
   report (every in-scope obligation `supported`) SHALL NOT create an Inbox
   entry.
-  *Tests:* `spec/services/inbox/layered_verification_finding_spec.rb`
-  *Code:* `app/services/inbox/layered_verification_finding.rb` (#4433)
+  *Tests:* `spec/requests/inbox_spec.rb`,
+  `spec/requests/projects/layered_verification_audits_spec.rb`
+  *Code:* `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_layered_verification_finding.html.erb` (#4433)
 
 - [x] **LAYERED-VERIFY-016** — Chat discussion, acknowledgment, and deferral
   of a `LayeredVerificationFinding` SHALL NOT resolve it or approve any
@@ -285,8 +291,9 @@
   state in the Inbox until its owning framework record is approved per
   `LAYERED-VERIFY-004`, and dependent repair requests SHALL be blocked until
   then.
-  *Tests:* `spec/services/inbox/layered_verification_finding_spec.rb`
-  *Code:* `app/services/inbox/layered_verification_finding.rb` (#4433)
+  *Tests:* `spec/requests/inbox_spec.rb`
+  *Code:* `app/services/inbox/decide_layered_verification_finding.rb`,
+  `app/controllers/inbox_controller.rb` (#4433)
 
 - [x] **LAYERED-VERIFY-017** — `LayeredVerificationFinding` identity SHALL be
   `(project_id, obligation_external_identity, correspondence_claim_type,
@@ -294,8 +301,10 @@
   attach a new observation to the existing unresolved finding rather than
   creating a second Inbox entry. Two findings SHALL NOT be merged on textual
   similarity alone.
-  *Tests:* `spec/models/layered_verification_finding_spec.rb`
-  *Code:* `app/models/layered_verification_finding.rb` (#4433, #4434)
+  *Tests:* `spec/models/layered_verification_finding_spec.rb`,
+  `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`
+  *Code:* `app/models/layered_verification_finding.rb`,
+  `app/services/layered_verification/audits/synthesize_coverage.rb` (#4433, #4434)
 
 - [x] **LAYERED-VERIFY-018** — Before honoring an Inbox action on a finding
   (approve a clarification, request a repair, request a rerun), the handling
@@ -307,7 +316,7 @@
   A stale revision, a lapsed permission, or an existing duplicate run SHALL
   cause the action to be rejected with an explicit reason, never silently
   proceed.
-  *Tests:* `spec/requests/inbox/layered_verification_findings_spec.rb`
+  *Tests:* `spec/requests/inbox_spec.rb`
   *Code:* `app/controllers/inbox_controller.rb` (#4433, #4434)
 
 ## Change impact, interruption, and cancellation

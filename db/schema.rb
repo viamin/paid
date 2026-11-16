@@ -753,6 +753,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
   create_table "bounded_delegated_actions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "action", null: false
+    t.datetime "completed_at"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.jsonb "evidence", default: {}, null: false
@@ -4319,6 +4320,56 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
+  create_table "staged_closeout_enrollments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: false, null: false
+    t.bigint "project_id", null: false
+    t.datetime "reviewed_at"
+    t.bigint "reviewed_by_id"
+    t.integer "revision", default: 1, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_staged_closeout_enrollments_on_account_id"
+    t.index ["project_id"], name: "index_staged_closeout_enrollments_on_project_id", unique: true
+    t.index ["reviewed_by_id"], name: "index_staged_closeout_enrollments_on_reviewed_by_id"
+  end
+
+  create_table "staged_closeout_mappings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.string "criterion_digest", null: false
+    t.string "criterion_key", null: false
+    t.string "environment_class"
+    t.string "execution_path", null: false
+    t.integer "freshness_seconds", null: false
+    t.datetime "invalidated_at"
+    t.bigint "invalidated_by_id"
+    t.string "invalidation_reason"
+    t.bigint "issue_id", null: false
+    t.string "phase", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "retry_policy", default: {}, null: false
+    t.datetime "reviewed_at", null: false
+    t.bigint "reviewed_by_id", null: false
+    t.integer "revision", null: false
+    t.string "stage", null: false
+    t.bigint "staged_closeout_enrollment_id", null: false
+    t.string "status", default: "approved", null: false
+    t.string "target_digest", null: false
+    t.string "target_key", null: false
+    t.string "target_shape", null: false
+    t.string "target_version", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_staged_closeout_mappings_on_account_id"
+    t.index ["invalidated_by_id"], name: "index_staged_closeout_mappings_on_invalidated_by_id"
+    t.index ["issue_id", "criterion_key", "revision"], name: "index_staged_closeout_mapping_revisions", unique: true
+    t.index ["issue_id"], name: "index_staged_closeout_mappings_on_issue_id"
+    t.index ["project_id", "status"], name: "index_staged_closeout_mappings_on_project_id_and_status"
+    t.index ["project_id"], name: "index_staged_closeout_mappings_on_project_id"
+    t.index ["reviewed_by_id"], name: "index_staged_closeout_mappings_on_reviewed_by_id"
+    t.index ["staged_closeout_enrollment_id"], name: "index_staged_closeout_mappings_on_enrollment"
+  end
+
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false
@@ -5435,6 +5486,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
   add_foreign_key "scaling_observations", "projects", on_delete: :cascade
   add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
   add_foreign_key "service_containers", "accounts"
+  add_foreign_key "staged_closeout_enrollments", "accounts"
+  add_foreign_key "staged_closeout_enrollments", "projects"
+  add_foreign_key "staged_closeout_enrollments", "users", column: "reviewed_by_id"
+  add_foreign_key "staged_closeout_mappings", "accounts"
+  add_foreign_key "staged_closeout_mappings", "issues"
+  add_foreign_key "staged_closeout_mappings", "projects"
+  add_foreign_key "staged_closeout_mappings", "staged_closeout_enrollments"
+  add_foreign_key "staged_closeout_mappings", "users", column: "invalidated_by_id"
+  add_foreign_key "staged_closeout_mappings", "users", column: "reviewed_by_id"
   add_foreign_key "strategies", "accounts", on_delete: :cascade
   add_foreign_key "strategies", "projects", on_delete: :cascade
   add_foreign_key "strategies", "strategy_versions", column: "current_version_id", on_delete: :nullify

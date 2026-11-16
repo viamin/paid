@@ -21,6 +21,9 @@ class Account < ApplicationRecord
   before_destroy :destroy_apple_verification_records
   before_destroy :destroy_chat_records
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-005
+  has_many :staged_closeout_mappings, dependent: :destroy
+  has_many :staged_closeout_enrollments, dependent: :destroy
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
   # The database cascades these rows so immutable events remain protected from

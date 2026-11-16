@@ -318,6 +318,10 @@ Rails.application.routes.draw do
     # RDR-080: the project delegation posture selection.
     # @spec PROJECT-DELEGATION-001
     resource :delegation_posture, only: [ :update ], controller: "projects/delegation_postures"
+    resource :staged_closeout_adoption, only: [ :show, :update ], controller: "projects/staged_closeout_adoptions" do
+      post :mappings, action: :create_mapping
+      delete "mappings/:id", to: "projects/staged_closeout_adoptions#revoke_mapping", as: :mapping
+    end
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resource :docker_host_preference, only: [ :update ], controller: "projects/docker_host_preferences"
@@ -485,6 +489,11 @@ Rails.application.routes.draw do
       # mobile API.
       # @spec PROJECT-DELEGATION-005
       get "projects/:project_id/delegation", to: "projects/delegation#show"
+      resource :staged_closeout_adoption, only: %i[show update],
+        controller: "projects/staged_closeout_adoptions", path: "projects/:project_id/staged_closeout_adoption" do
+        post :mappings, action: :create_mapping
+        delete "mappings/:id", action: :revoke_mapping
+      end
       get "projects/:project_id/design_artifact_findings", to: "design_artifact_findings#index"
       post "projects/:project_id/design_artifact_findings/:id/resolve", to: "design_artifact_findings#resolve"
       post "projects/:project_id/design_artifact_findings/:id/file_issue", to: "design_artifact_findings#file_issue"
