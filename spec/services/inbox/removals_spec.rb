@@ -97,6 +97,15 @@ RSpec.describe Inbox::Removals do
       expect(entry).to be_nil
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-008
+    it "bounds retries when concurrent inserts keep conflicting" do
+      allow(InboxRemoval).to receive(:find_or_initialize_by).and_raise(ActiveRecord::RecordNotUnique)
+
+      expect { remove! }.to raise_error(ActiveRecord::RecordNotUnique)
+      expect(InboxRemoval).to have_received(:find_or_initialize_by)
+        .exactly(Inbox::Removals::Remove::MAX_CONCURRENT_WRITE_ATTEMPTS).times
+    end
+
     # @spec OPERATOR-INBOX-023
     it "records remove, restore, and a fresh-occurrence return against the stable issue" do
       remove!

@@ -84,6 +84,11 @@ an older suppression cannot override a newer return event. Removal writes
 re-check this boundary under the row lock before assigning attributes, so a
 replayed, delayed, or racing removal call carrying an occurrence an active row
 already suppresses is a no-op and the newest persisted occurrence always wins.
+The concurrent unique-index build retries this deduplication and rebuild cycle a
+bounded number of times, reporting every retry and the terminal failure before
+leaving the migration unapplied for operator recovery.
+Removal writes also retry a concurrent insert only a bounded number of times;
+after exhaustion they surface the database failure instead of looping.
 Removal is presentation-only: the underlying work,
 questions, comments, and authorization are untouched, other users are
 unaffected, and the item stays inspectable via the **Removed** filter, direct

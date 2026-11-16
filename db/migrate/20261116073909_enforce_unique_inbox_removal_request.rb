@@ -2,18 +2,29 @@
 
 class EnforceUniqueInboxRemovalRequest < ActiveRecord::Migration[8.1] # @spec INBOX-PHASE-RELEVANCE-008
   INDEX_NAME = "index_inbox_removals_on_user_and_request"
+  MAX_INDEX_BUILD_ATTEMPTS = 3
 
   disable_ddl_transaction!
 
   def up
-    deduplicate_removals
-    add_unique_index
-  rescue ActiveRecord::StatementInvalid => error
-    raise unless error.cause.is_a?(PG::UniqueViolation)
+    attempts = 0
 
-    deduplicate_removals
-    remove_index :inbox_removals, name: INDEX_NAME, algorithm: :concurrently if index_exists?(:inbox_removals, name: INDEX_NAME)
-    add_unique_index
+    begin
+      attempts += 1
+      deduplicate_removals
+      add_unique_index
+    rescue ActiveRecord::StatementInvalid => error
+      raise unless unique_violation?(error)
+
+      remove_failed_index
+      if attempts >= MAX_INDEX_BUILD_ATTEMPTS
+        say "Unable to create unique inbox removal index after #{attempts} concurrent duplicate-write attempts"
+        raise
+      end
+
+      say "Retrying unique inbox removal index after concurrent duplicate write (attempt #{attempts + 1}/#{MAX_INDEX_BUILD_ATTEMPTS})"
+      retry
+    end
   end
 
   def down
@@ -26,6 +37,14 @@ class EnforceUniqueInboxRemovalRequest < ActiveRecord::Migration[8.1] # @spec IN
     add_index :inbox_removals, %i[user_id request_key], unique: true,
       name: INDEX_NAME, algorithm: :concurrently,
       comment: "One durable personal suppression per user and Inbox request."
+  end
+
+  def remove_failed_index
+    remove_index :inbox_removals, name: INDEX_NAME, algorithm: :concurrently if index_exists?(:inbox_removals, name: INDEX_NAME)
+  end
+
+  def unique_violation?(error)
+    error.cause.is_a?(PG::UniqueViolation)
   end
 
   def deduplicate_removals

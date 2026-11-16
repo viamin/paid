@@ -30,7 +30,45 @@ RSpec.describe EnforceUniqueInboxRemovalRequest do
     expect(InboxRemoval.exists?(older.id)).to be(false)
   end
 
+  # @spec INBOX-PHASE-RELEVANCE-008
+  it "retries concurrent unique-index build races until the index can be created" do
+    allow(migration).to receive(:deduplicate_removals)
+    allow(migration).to receive(:remove_failed_index)
+    allow(migration).to receive(:unique_violation?).and_return(true)
+    allow(migration).to receive(:say)
+    fail_build_attempts(migration, 2)
+
+    expect { migration.migrate(:up) }.not_to raise_error
+    expect(migration).to have_received(:deduplicate_removals).exactly(3).times
+    expect(migration).to have_received(:remove_failed_index).twice
+    expect(migration).to have_received(:say).twice
+  end
+
+  # @spec INBOX-PHASE-RELEVANCE-008
+  it "raises after bounded concurrent unique-index build retries" do
+    allow(migration).to receive(:deduplicate_removals)
+    allow(migration).to receive(:remove_failed_index)
+    allow(migration).to receive(:unique_violation?).and_return(true)
+    allow(migration).to receive(:say)
+    fail_build_attempts(migration, described_class::MAX_INDEX_BUILD_ATTEMPTS)
+
+    expect { migration.migrate(:up) }.to raise_error(ActiveRecord::StatementInvalid, "duplicate rows")
+    expect(migration).to have_received(:deduplicate_removals)
+      .exactly(described_class::MAX_INDEX_BUILD_ATTEMPTS).times
+    expect(migration).to have_received(:remove_failed_index)
+      .exactly(described_class::MAX_INDEX_BUILD_ATTEMPTS).times
+    expect(migration).to have_received(:say).exactly(described_class::MAX_INDEX_BUILD_ATTEMPTS).times
+  end
+
   private
+
+  def fail_build_attempts(migration, count)
+    attempts = 0
+    allow(migration).to receive(:add_unique_index) do
+      attempts += 1
+      raise ActiveRecord::StatementInvalid, "duplicate rows" if attempts <= count
+    end
+  end
 
   def insert_removal(removed_at:, cleared_at:, updated_at:)
     InboxRemoval.insert_all!([ {

@@ -8,6 +8,8 @@ module Inbox
     #
     # @spec INBOX-PHASE-RELEVANCE-006 @spec INBOX-PHASE-RELEVANCE-008 @spec OPERATOR-INBOX-023
     class Remove
+      MAX_CONCURRENT_WRITE_ATTEMPTS = 3
+
       def self.call(...)
         new(...).call
       end
@@ -18,15 +20,24 @@ module Inbox
       end
 
       def call
-        removal = find_removal
-        persist(removal) unless covered?(removal)
-        removal
-      rescue ActiveRecord::RecordNotUnique
-        retry
-      rescue ActiveRecord::RecordInvalid => error
-        raise unless error.record.errors.added?(:request_key, :taken)
+        attempts = 0
+        begin
+          attempts += 1
+          removal = find_removal
+          persist(removal) unless covered?(removal)
+          removal
+        rescue ActiveRecord::RecordNotUnique
+          raise unless retry_concurrent_write?(attempts)
 
-        retry
+          log_concurrent_write_retry(attempts)
+          retry
+        rescue ActiveRecord::RecordInvalid => error
+          raise unless error.record.errors.added?(:request_key, :taken)
+          raise unless retry_concurrent_write?(attempts)
+
+          log_concurrent_write_retry(attempts)
+          retry
+        end
       end
 
       private
@@ -72,6 +83,19 @@ module Inbox
       def record_history(removal)
         HistoryRecorder.call(entry:, event_key: "inbox-removed:#{removal.id}:#{removal.removed_at.to_f}",
           action: "Removed from Inbox", actor: user, result: "completed", occurred_at: removal.removed_at)
+      end
+
+      def retry_concurrent_write?(attempts)
+        attempts < MAX_CONCURRENT_WRITE_ATTEMPTS
+      end
+
+      def log_concurrent_write_retry(attempts)
+        Rails.logger.warn(
+          message: "inbox.removal.concurrent_write_retry",
+          user_id: user.id,
+          attempt: attempts,
+          max_attempts: MAX_CONCURRENT_WRITE_ATTEMPTS
+        )
       end
 
       def request_occurrence
