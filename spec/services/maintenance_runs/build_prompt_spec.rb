@@ -3,8 +3,8 @@
 require "rails_helper"
 
 RSpec.describe MaintenanceRuns::BuildPrompt do
-  def build_prompt(objective: nil, guidance: nil, scope: nil)
-    described_class.call(objective:, guidance:, scope:)
+  def build_prompt(objective: nil, guidance: nil, scope: nil, type: nil, type_value: nil)
+    described_class.call(objective:, guidance:, scope:, type:, type_value:)
   end
 
   # @spec MAINT-011
@@ -50,6 +50,14 @@ RSpec.describe MaintenanceRuns::BuildPrompt do
 
     expect(prompt).to match(/unused|unnecessary/i)
     expect(prompt).to include("Focus on workflows")
+  end
+
+  # @spec MAINT-OPT-006
+  it "gives an unmapped type actionable direction without guidance" do
+    prompt = build_prompt(type_value: "future_type")
+
+    expect(prompt).to include("infer the investigation goal from this value")
+    expect(prompt).not_to include("use the guidance below to determine what to investigate")
   end
 
   # @spec MAINT-017

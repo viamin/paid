@@ -369,6 +369,7 @@ class AgentRun < ApplicationRecord
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
+  validates :maintenance_type, length: { maximum: 100 }, allow_nil: true
   validates :base_commit_sha, length: { maximum: 40 }
   validates :approved_design_revision, length: { maximum: 40 }
   validates :result_commit_sha, length: { maximum: 40 }

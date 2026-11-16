@@ -34,6 +34,7 @@ module Projects
     rescue MaintenanceRuns::Start::FeatureDisabledError => e
       redirect_to project_path(@project), alert: e.message
     rescue MaintenanceRuns::Start::MissingObjectiveError,
+           MaintenanceRuns::Start::InvalidTypeError,
            MaintenanceRuns::Start::UnknownObjectiveError => e
       redirect_to new_project_maintenance_run_path(@project), alert: e.message
     rescue MaintenanceRuns::Start::BudgetExceededError,

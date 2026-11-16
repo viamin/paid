@@ -61,6 +61,19 @@ RSpec.describe "Maintenance runs API" do
     expect(response.parsed_body.dig("maintenance", "type")).to eq("future_type")
   end
 
+  # @spec MAINT-OPT-006
+  it "returns a validation error when type exceeds the snapshot limit" do
+    expect {
+      post "/api/v1/projects/#{project.id}/maintenance_runs", params: {
+        type: "x" * 101
+      }.to_json, headers: headers
+    }.not_to change { project.agent_runs.count }
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.dig("error", "code")).to eq("maintenance_run_unavailable")
+    expect(response.parsed_body.dig("error", "message")).to include("100 characters or fewer")
+  end
+
   # @spec MAINT-002
   it "refuses API admission while the maintenance_runs guard is disabled" do
     allow(FeatureFlags).to receive(:enabled?).with(:maintenance_runs, project:).and_return(false)

@@ -27,6 +27,8 @@ RSpec.describe "Project maintenance runs" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Maintenance run")
       expect(response.body).to include("Performance", "Test Coverage &amp; Quality")
+      expect(response.body).to include("Unnecessary code")
+      expect(response.body).to include("Required unless an optimization type or recipe objective is selected")
     end
 
     # @spec MAINT-002

@@ -107,6 +107,14 @@ RSpec.describe MaintenanceRuns::Start do
     expect(run.custom_prompt).to include("Investigate the request path")
   end
 
+  # @spec MAINT-OPT-006
+  it "rejects a type that cannot fit in the immutable snapshot" do
+    expect { start(type: "x" * 101) }
+      .to raise_error(MaintenanceRuns::Start::InvalidTypeError, /100 characters or fewer/)
+
+    expect(project.agent_runs.where(goal: "maintenance")).to be_empty
+  end
+
   # @spec MAINT-015
   it "refuses admission when the default branch does not resolve to a commit SHA" do
     allow(project.client).to receive(:ref)

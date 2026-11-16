@@ -28,6 +28,7 @@ module Api
           render json: run_payload(run), status: :created
         rescue MaintenanceRuns::Start::FeatureDisabledError,
                MaintenanceRuns::Start::MissingObjectiveError,
+               MaintenanceRuns::Start::InvalidTypeError,
                MaintenanceRuns::Start::UnknownObjectiveError,
                MaintenanceRuns::Start::BudgetExceededError,
                MaintenanceRuns::Start::NoRunnableRunnerError,

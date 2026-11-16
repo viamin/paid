@@ -36,6 +36,15 @@ RSpec.describe AgentRun do
       expect(with_type).to be_valid
     end
 
+    # @spec MAINT-OPT-006
+    it "validates the immutable optimization type snapshot length" do
+      run = build(:agent_run, goal: "maintenance", issue: nil,
+        maintenance_type: "x" * 101, custom_prompt: "Investigate custom objective")
+
+      expect(run).to be_invalid
+      expect(run.errors[:maintenance_type]).to include("is too long (maximum is 100 characters)")
+    end
+
     # @spec MAINT-015 MAINT-OPT-008
     it "keeps maintenance context immutable once the run starts" do
       run = create(:agent_run, goal: "maintenance", issue: nil, custom_prompt: "Audit A",

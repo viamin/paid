@@ -570,7 +570,7 @@ paths:
               type: object
               properties:
                 objective: {type: string}
-                type: {type: string, description: Optional curated optimization type key.}
+                type: {type: string, maxLength: 100, description: Optional curated optimization type key.}
                 guidance: {type: string}
                 scope: {type: string}
       responses:
@@ -913,8 +913,9 @@ components:
         message: {type: string}
         maintenance:
           type: object
-          required: [objective, recipe_version, scope, scope_kind, guidance, pinned_revision, limits, report_only]
+          required: [type, objective, recipe_version, scope, scope_kind, guidance, pinned_revision, limits, report_only]
           properties:
+            type: {type: string, maxLength: 100, nullable: true}
             objective: {type: string, nullable: true}
             recipe_version: {type: string, nullable: true}
             scope: {type: string, nullable: true}

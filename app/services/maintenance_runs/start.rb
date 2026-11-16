@@ -9,6 +9,7 @@ module MaintenanceRuns
   class Start
     class FeatureDisabledError < StandardError; end
     class MissingObjectiveError < StandardError; end
+    class InvalidTypeError < StandardError; end
     class UnknownObjectiveError < StandardError; end
     class BudgetExceededError < StandardError; end
     class NoRunnableRunnerError < StandardError; end
@@ -30,6 +31,7 @@ module MaintenanceRuns
     def call
       ensure_feature_enabled!
       ensure_objective!
+      ensure_type_fits_snapshot!
       ensure_budget!
 
       runner_id, agent_type = AgentRuns::RunnerResolver.call(project: project, goal: AgentRun::MAINTENANCE_GOAL)
@@ -82,6 +84,14 @@ module MaintenanceRuns
 
       raise UnknownObjectiveError,
             "Unknown maintenance objective: #{objective}. Available objectives: #{Recipes.keys.join(", ")}."
+    end
+
+    # @spec MAINT-OPT-006 — unmapped values remain valid custom objectives,
+    # provided the raw value fits the immutable snapshot column.
+    def ensure_type_fits_snapshot!
+      return if type.blank? || type.length <= 100
+
+      raise InvalidTypeError, "Optimization type must be 100 characters or fewer."
     end
 
     def ensure_budget!

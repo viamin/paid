@@ -53,9 +53,18 @@ module MaintenanceRuns
 
       return "#{type.name}: #{type.investigation_description}\nDefault metric hints: #{type.metric_hints.join(", ")}" if type
 
-      return "Custom optimization objective selected: #{type_value}. Treat this as a requester-defined objective; use the guidance below to determine what to investigate." if type_value
+      return custom_type_instructions if type_value
 
       guidance
+    end
+
+    def custom_type_instructions
+      direction = if guidance.present?
+        "use the guidance below to determine what to investigate"
+      else
+        "infer the investigation goal from this value and record that interpretation in the report"
+      end
+      "Custom optimization objective selected: #{type_value}. Treat this as a requester-defined objective; #{direction}."
     end
 
     def scope_section
