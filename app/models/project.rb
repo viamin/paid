@@ -307,6 +307,8 @@ class Project < ApplicationRecord
 
   has_many :project_memberships, dependent: :destroy
   has_many :members, through: :project_memberships, source: :user
+  # @spec STAGED-CLOSEOUT-ADOPTION-005
+  has_many :staged_closeout_mappings, dependent: :destroy
   has_many :issues, dependent: :destroy
   has_many :intent_conformance_shadow_evaluations, dependent: :destroy
   has_many :facet_confidence_evaluations, dependent: :destroy
@@ -326,7 +328,6 @@ class Project < ApplicationRecord
     inverse_of: :project
   has_many :trusted_measurement_attempts, dependent: :destroy
   has_one :staged_closeout_enrollment, dependent: :destroy
-  has_many :staged_closeout_mappings, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy

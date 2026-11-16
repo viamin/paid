@@ -182,6 +182,53 @@ RSpec.describe Project do
     end
   end
 
+  describe "staged closeout records" do
+    let(:project) { create(:project) }
+    let(:reviewer) { create(:user, :owner, account: project.account) }
+    let(:issue) { create(:issue, project:) }
+    let(:enrollment) do
+      StagedCloseoutEnrollment.create!(account: project.account, project:, reviewed_by: reviewer)
+    end
+    let!(:mapping) do
+      StagedCloseoutMapping.create!(
+        account: project.account,
+        project:,
+        issue:,
+        staged_closeout_enrollment: enrollment,
+        reviewed_by: reviewer,
+        criterion_key: "The report renders",
+        criterion_digest: "criterion-digest",
+        stage: "pre_merge",
+        phase: "coding",
+        target_shape: "source_pr_head",
+        execution_path: "technical_prerequisite",
+        target_key: "recipe-key",
+        target_version: "1",
+        target_digest: "target-digest",
+        freshness_seconds: 3600,
+        revision: 1,
+        reviewed_at: Time.current
+      )
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-005
+    it "deletes mappings before their issue and enrollment parents" do
+      expect { project.destroy! }
+        .to change(StagedCloseoutMapping, :count).by(-1)
+        .and change(StagedCloseoutEnrollment, :count).by(-1)
+        .and change(Issue, :count).by(-1)
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-005
+    it "deletes mappings before account-owned reviewers and parents" do
+      expect { project.account.destroy! }
+        .to change(StagedCloseoutMapping, :count).by(-1)
+        .and change(StagedCloseoutEnrollment, :count).by(-1)
+        .and change(Project, :count).by(-1)
+      expect { reviewer.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+  end
+
   # @spec MANUAL-RUN-RETRY-004
   describe "retry_failed_manual_runs" do
     it "defaults to enabled" do

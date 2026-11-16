@@ -17,6 +17,11 @@ Each project has one default-off enrollment. An authorized project maintainer
 may enable or disable it. Disabling it immediately makes every mapping
 ineligible without deleting its history.
 
+Enrollments, mappings, and their source issues are tenant-owned records. When a
+project or its account is deleted, mappings are removed before their referenced
+parents and reviewers so the ordinary owner lifecycle can remove the complete
+adoption graph.
+
 A reviewed mapping is an append-only revision for one source issue and stable
 criterion string. It pins its stage, target shape, existing execution-path
 key, version and digest, optional environment class, freshness, retry policy,

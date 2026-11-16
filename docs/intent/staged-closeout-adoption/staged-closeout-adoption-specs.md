@@ -11,3 +11,6 @@
 
 - [x] **STAGED-CLOSEOUT-ADOPTION-004** — When an enrollment is disabled, a mapping is replaced or revoked, or its target changes, mapping admission SHALL reject it with an inspectable reason while retaining history.
   *Test:* `spec/services/staged_closeout_adoption/mappings_eligibility_spec.rb`.
+
+- [x] **STAGED-CLOSEOUT-ADOPTION-005** — When a project or account with reviewed staged-closeout mappings is deleted, Paid SHALL delete its mappings, source issues, enrollment, and owning tenant records without a dependency-order failure.
+  *Test:* `spec/models/project_spec.rb`.
