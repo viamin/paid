@@ -325,6 +325,8 @@ class Project < ApplicationRecord
   has_one :delegation_posture, class_name: "ProjectDelegationPosture", dependent: :destroy,
     inverse_of: :project
   has_many :trusted_measurement_attempts, dependent: :destroy
+  has_one :staged_closeout_enrollment, dependent: :destroy
+  has_many :staged_closeout_mappings, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy
