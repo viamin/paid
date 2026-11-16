@@ -16,11 +16,14 @@ module OperationalSupervisor
 
     # @spec OPERATIONAL-SUPERVISOR-007, OPERATIONAL-SUPERVISOR-008
     def call
-      return Result.new(incident, nil) if incident.status == status
-      return Result.new(incident, "operational supervisor is disabled for incident projects") unless incident_projects_enabled?
+      incident.with_lock do
+        incident.reload
+        return Result.new(incident, nil) if incident.status == status
+        return Result.new(incident, "operational supervisor is disabled for incident projects") unless incident_projects_enabled?
 
-      persist_transition
-      Result.new(incident, nil)
+        persist_transition
+        Result.new(incident, nil)
+      end
     rescue ActiveRecord::RecordInvalid => error
       Result.new(incident, error.record.errors.full_messages.to_sentence)
     end
@@ -30,14 +33,12 @@ module OperationalSupervisor
     attr_reader :incident, :status, :now
 
     def persist_transition
-      incident.transaction do
-        previous_status = incident.status
-        enable_status_transition!
-        incident.authorize_status_transition!
-        incident.update!(status:)
-        incident.supervisor_incident_audits.create!(account: incident.account, action: "status_changed", occurred_at: now,
-          evidence: { "previous_status" => previous_status, "next_status" => status })
-      end
+      previous_status = incident.status
+      enable_status_transition!
+      incident.authorize_status_transition!
+      incident.update!(status:)
+      incident.supervisor_incident_audits.create!(account: incident.account, action: "status_changed", occurred_at: now,
+        evidence: { "previous_status" => previous_status, "next_status" => status })
     end
 
     def enable_status_transition!
