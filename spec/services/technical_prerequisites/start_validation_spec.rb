@@ -203,6 +203,63 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
   end
 
   # @spec PARTIAL-CLOSEOUT-042
+  def performance_identity_context
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)
+    create(:issue, :pull_request, project:, github_number: source_run.pull_request_number,
+      last_scanned_head_sha: "c" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account,
+      check_type: "performance_measurement", command: "bin/measure", measurement_recipe: {
+        "baseline_commit_sha" => "b" * 40,
+        "workload" => { "identity" => "inbox-fixture", "provenance" => "reviewed fixture v1", "representative" => true },
+        "metrics" => [ "wall_ms" ], "samples" => 3, "environment" => "isolated-linux",
+        "budget_seconds" => 60, "artifact_contract" => [ "raw_samples", "comparison" ]
+      })
+    [ project, source_run, requirement ]
+  end
+
+  %i[changed_command different_requirement].each do |change|
+    # @spec PARTIAL-CLOSEOUT-042
+    it "starts a new measurement for a #{change.to_s.tr('_', ' ')} with the same workload and revisions" do
+      project, source_run, requirement = performance_identity_context
+      original = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+      original.agent_run.update!(status: "completed")
+
+      if change == :changed_command
+        requirement.update!(command: "bin/measure --representative")
+      else
+        requirement = create(:pre_commit_requirement, project:, account: project.account,
+          check_type: "performance_measurement", command: "bin/measure", measurement_recipe: requirement.measurement_recipe)
+      end
+      fresh = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+
+      expect(fresh).to be_success
+      expect(fresh.agent_run.id).not_to eq(original.agent_run.id)
+      expect(fresh.agent_run.external_metadata.fetch(TechnicalPrerequisites::RECIPE_KEY))
+        .to include("requirement_id" => requirement.id, "command" => requirement.command)
+      expect(TechnicalPrerequisiteValidationJob).to have_been_enqueued.with(fresh.agent_run.id)
+    end
+  end
+
+  %w[queued running paused waiting_recovery].each do |status|
+    # @spec PARTIAL-CLOSEOUT-042
+    it "preserves an active measurement in #{status} when the command changes" do
+      project, source_run, requirement = performance_identity_context
+      original = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+      original.agent_run.update!(status:)
+      requirement.update!(command: "bin/measure --representative")
+
+      fresh = nil
+      expect {
+        fresh = described_class.call(source_run:, requirement:, actor: project.created_by, criterion: "Inbox allocations")
+      }.not_to change(AgentRun, :count)
+
+      expect(fresh).not_to be_success
+      expect(fresh.message).to include("#{original.agent_run.id}", "wait", "cancel")
+      expect(original.agent_run.reload.status).to eq(status)
+    end
+  end
+
   it "keeps a performance comparison unknown when the linked pull request head has advanced" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "d" * 40, result_commit_sha: "c" * 40)

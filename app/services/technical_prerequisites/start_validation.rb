@@ -31,8 +31,8 @@ module TechnicalPrerequisites
       return failure("Select an implementation run linked to an issue to measure.") if performance_requirement? && source_run.issue.nil?
       return failure("The linked pull request head changed or is unavailable; performance evidence remains unknown.") if performance_requirement? && !current_revision?
 
-      run, created, pause_message = admit_validation_run
-      return failure(pause_message) if pause_message
+      run, created, admission_error = admit_validation_run
+      return failure(admission_error) if admission_error
       # Enqueued after the run is committed: the job claims the run by id, and
       # a job that starts before the commit would not find it.
       TechnicalPrerequisiteValidationJob.perform_later(run.id) if created
@@ -54,6 +54,9 @@ module TechnicalPrerequisites
       source_run.issue.with_lock do
         existing = existing_run
         return [ existing, false, nil ] if existing
+        if (active_id = active_validation_id)
+          return [ nil, false, "Validation run ##{active_id} is already active; wait for it to finish or cancel it before changing the measurement." ]
+        end
 
         pause_message = TechnicalPrerequisites.scheduler_pause_message(source_run.project)
         return [ nil, false, pause_message ] if pause_message
@@ -169,6 +172,8 @@ module TechnicalPrerequisites
       source_run.project.agent_runs.where(issue: source_run.issue, goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL)
         .order(created_at: :desc).detect do |run|
           run.status.in?(%w[queued running completed]) &&
+            run.external_metadata.dig(RECIPE_KEY, "requirement_id") == requirement.id &&
+            run.external_metadata.dig(RECIPE_KEY, "command") == reviewed_command &&
             run.external_metadata.dig(RECIPE_KEY, "criterion") == criterion &&
             run.external_metadata.dig(RECIPE_KEY, "performance_measurement") == performance_recipe.recipe
         end
@@ -176,6 +181,11 @@ module TechnicalPrerequisites
 
     def failure(message)
       Result.new(status: :invalid, agent_run: nil, message:)
+    end
+
+    def active_validation_id
+      source_run.issue.agent_runs.where(goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL,
+        status: AgentRun::DEDUP_BLOCKING_STATUSES).pick(:id)
     end
   end
 end

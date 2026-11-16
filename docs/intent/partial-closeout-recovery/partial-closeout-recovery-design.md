@@ -276,7 +276,13 @@ isolated environment, retains bounded raw output for every sample on the
 synthetic validation run, and projects only sample counts and digests into the
 source run's closeout evidence. It derives only mechanical p50/p95 values for
 the reviewed metric keys. It deduplicates
-the issue, criterion, revisions, recipe, and workload identity. Any unavailable
+the issue, criterion, revisions, reviewed requirement identity and exact command,
+recipe contract, and workload identity. A different requirement or a changed
+reviewed command requires a fresh measurement even when the workload and
+revision pair are unchanged. If a non-equivalent validation still owns the
+issue's active-run slot, admission reports that run and asks the operator to
+wait or cancel it; it neither reuses that run as current evidence nor fails
+with a uniqueness error. Any unavailable
 baseline/environment/metric, nonrepresentative workload, changed head, or
 partial sample is durable `unknown` evidence, never an improvement claim.
 Terminal measurement evidence schedules the normal report-only acceptance
