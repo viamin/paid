@@ -1119,7 +1119,13 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   definitions, sample count, isolated environment identity, time budget, and
   raw-artifact contract. It SHALL execute those samples only through the
   capability-aware isolated runner, deduplicate an equivalent issue/criterion/
-  revisions/recipe/workload attempt, and retain bounded raw samples plus a
+  revisions/recipe/workload attempt only when the reviewed requirement identity
+  and exact command also match. A different requirement or changed command
+  SHALL require a fresh attempt rather than reuse an earlier result. Paid SHALL
+  refuse a non-equivalent attempt with an actionable wait/cancel reason while
+  another validation owns the issue's active-run slot, preserving that run.
+  Paid SHALL
+  retain bounded raw samples plus a
   mechanical p50/p95 comparison. Missing baseline or metrics, nonrepresentative
   workload, unavailable environment, changed head, partial samples, or a
   project- or account-level scheduler pause SHALL remain unknown and SHALL not
