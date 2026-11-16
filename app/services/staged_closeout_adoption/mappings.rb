@@ -142,7 +142,7 @@ module StagedCloseoutAdoption
       when "trusted_measurement"
         key = attributes.fetch("target_key")
         check = TrustedMeasurements.check_class(key)
-        { key:, version: check.version.to_s, digest: Digest::SHA256.hexdigest([ key, check.version, check.name ].join("\0")) }
+        { key:, version: check.version.to_s, digest: TrustedMeasurements.implementation_digest(key) }
       else
         raise Error, "execution path is not permitted"
       end
