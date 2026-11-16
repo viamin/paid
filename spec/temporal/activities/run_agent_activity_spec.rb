@@ -3020,6 +3020,25 @@ expect(container_service).to receive(:execute).with(
         expect(git_ops).not_to have_received(:has_changes_since?)
       end
 
+    context "when the run is for maintenance" do
+        let(:agent_run) do
+          create(:agent_run, :with_git_context, project: project, issue: nil,
+            goal: "maintenance", container_id: "abc123", custom_prompt: "Audit workflow A",
+            maintenance_guidance: "Audit workflow A", maintenance_scope_kind: "named",
+            maintenance_scope: "app/workflows/a.rb")
+        end
+
+        # @spec MAINT-020
+        it "detects workspace changes without auto-committing them" do
+          allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result).to include(success: true, has_changes: true)
+          expect(git_ops).not_to have_received(:commit_uncommitted_changes)
+        end
+      end
+
       it "returns review_threads_already_addressed when the agent emits the marker" do
         marker_success = Containers::Provision::Result.success(
           stdout: "Reviewed the branch.\n#{Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER}\n",

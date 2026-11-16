@@ -713,6 +713,66 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
   end
 
+  describe "maintenance goal" do
+    let(:input) { { project_id: 1, goal: "maintenance" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+    end
+
+    def stub_maintenance_activities(has_changes: false, success: true, completion_success: true)
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAgentActivity" then { success: success, has_changes: has_changes, output_present: true }
+        when "Activities::CompleteMaintenanceRunActivity" then { agent_run_id: 42, success: completion_success }
+        else {}
+        end
+      end
+    end
+
+    # @spec MAINT-020
+    it "completes report-only without PR creation even when the agent reports no changes" do
+      stub_maintenance_activities(has_changes: false)
+
+      result = workflow.execute(input)
+
+      expect(result[:success]).to be true
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CompleteMaintenanceRunActivity, { agent_run_id: 42, has_changes: false }, timeout: 30, retry_policy: described_class::NO_RETRY)
+    end
+
+    # @spec MAINT-073
+    it "never pushes or creates a pull request for a maintenance run" do
+      stub_maintenance_activities(has_changes: true)
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::PushBranchActivity, anything, timeout: anything)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreatePullRequestActivity, anything, timeout: anything)
+    end
+
+    it "routes an agent write-boundary violation through the maintenance completion activity" do
+      stub_maintenance_activities(has_changes: true)
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CompleteMaintenanceRunActivity, { agent_run_id: 42, has_changes: true },
+              timeout: 30, retry_policy: described_class::NO_RETRY)
+    end
+
+    # @spec MAINT-020
+    it "returns failure when report-only completion detects a write-boundary violation" do
+      stub_maintenance_activities(has_changes: true, completion_success: false)
+
+      expect(workflow.execute(input)).to include(success: false, agent_run_id: 42)
+    end
+  end
+
   describe "review goal independent verification pilot" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "review", source_pull_request_number: 42 } }
 

@@ -23,6 +23,7 @@ RSpec.describe Activities::CloneRepoActivity do
       allow(git_ops).to receive(:install_git_hooks)
       allow(git_ops).to receive(:install_co_author_hook)
       allow(container_service).to receive(:execute)
+      allow(container_service).to receive(:make_workspace_read_only!)
 
       # Simulate what clone_and_setup_branch does to agent_run
       agent_run.update!(
@@ -72,6 +73,21 @@ RSpec.describe Activities::CloneRepoActivity do
         .with(container_service: container_service)
 
       activity.execute(agent_run_id: agent_run.id)
+    end
+
+    context "when the run is for maintenance" do
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: nil, goal: "maintenance",
+          container_id: "abc123", custom_prompt: "Audit the repository",
+          maintenance_guidance: "Audit the repository", maintenance_scope_kind: "broad")
+      end
+
+      # @spec MAINT-020
+      it "seals the checkout after Paid finishes setup" do
+        expect(container_service).to receive(:make_workspace_read_only!)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
     end
 
     context "when project has a running database container" do

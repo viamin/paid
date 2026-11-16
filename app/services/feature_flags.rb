@@ -134,6 +134,13 @@ class FeatureFlags
       intent: "Gate provider-neutral work-item surfaces while tracker providers migrate from GitHub issue contracts.",
       rollout_plan: "Default-off; enable only for selected account and project combinations through tenant_settings.features or a project actor gate after provider identity, lifecycle, and relationship parity are verified.",
       cleanup_criteria: "Remove only after every supported tracker uses the unified work-item contract and the GitHub compatibility path is retired."
+    ),
+    maintenance_runs: Definition.new(
+      name: :maintenance_runs,
+      owner: "maintenance-runs",
+      intent: "Gate manual maintenance-run admission (UI, API, and MCP) and future scheduled maintenance dispatch behind per-tenant opt-in.",
+      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features. Disabling admission preserves existing maintenance reports and active-run cancellation; remove only after focused audits, report outcomes, tool isolation, recurrence and deduplication, and UI/API parity are verified.",
+      cleanup_criteria: "Remove only after the default posture is approved; recurring schedules stay explicitly opt-in."
     )
   }.freeze
 

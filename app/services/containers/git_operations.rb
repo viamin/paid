@@ -1047,6 +1047,8 @@ module Containers
     end
 
     def checkout_approved_revision
+      # @spec MAINT-015
+      return checkout_pinned_commit(agent_run.maintenance_pinned_revision) if agent_run.maintenance_goal?
       return unless agent_run.issue&.feature_intent && agent_run.base_commit_sha.present?
 
       result = execute_git("checkout", agent_run.base_commit_sha)

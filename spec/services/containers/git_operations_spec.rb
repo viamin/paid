@@ -219,6 +219,33 @@ RSpec.describe Containers::GitOperations do
       git_ops.clone_and_setup_branch
     end
 
+    # @spec MAINT-015
+    it "checks out a maintenance run's pinned commit before creating its branch" do
+      revision = "b" * 40
+      maintenance_run = create(:agent_run, :running, project: project, runner: runner,
+        goal: "maintenance", issue: nil, custom_prompt: "Audit A", maintenance_guidance: "Audit A",
+        maintenance_pinned_revision: revision)
+      maintenance_git_ops = described_class.new(container_service: container_service, agent_run: maintenance_run)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result, Containers::Provision::Result.success(stdout: "#{revision}\n", stderr: "", exit_code: 0))
+      expect(container_service).to receive(:execute)
+        .with([ "git", "cat-file", "-e", "#{revision}^{commit}" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", revision ],
+          timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", revision ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      maintenance_git_ops.clone_and_setup_branch
+
+      expect(maintenance_run.reload.base_commit_sha).to eq(revision)
+    end
+
     it "sets worktree_path to /workspace" do
       git_ops.clone_and_setup_branch
 

@@ -124,6 +124,39 @@ RSpec.describe "Api::GitCredentials" do
       end
     end
 
+    context "with a prepared maintenance checkout" do
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: nil, goal: "maintenance",
+          custom_prompt: "Audit the repository", maintenance_guidance: "Audit the repository",
+          maintenance_scope_kind: "broad", worktree_path: "/workspace")
+      end
+
+      # @spec MAINT-020
+      it "refuses credentials after the report-only checkout is prepared" do
+        get "/api/proxy/git-credentials", headers: valid_headers
+
+        expect(response).to have_http_status(:forbidden)
+        expect(response.parsed_body).to eq(
+          "error" => "Git credentials are unavailable after a report-only checkout is prepared"
+        )
+      end
+    end
+
+    context "with a maintenance run before checkout preparation" do
+      let(:agent_run) do
+        create(:agent_run, :running, project: project, issue: nil, goal: "maintenance",
+          custom_prompt: "Audit the repository", maintenance_guidance: "Audit the repository",
+          maintenance_scope_kind: "broad", worktree_path: nil)
+      end
+
+      # @spec MAINT-020
+      it "supplies the transient read credential needed to clone the checkout" do
+        get "/api/proxy/git-credentials", headers: valid_headers
+
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
     context "with inactive github token" do
       before do
         github_token.update!(revoked_at: Time.current)

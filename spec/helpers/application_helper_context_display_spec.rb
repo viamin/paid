@@ -489,6 +489,12 @@ RSpec.describe ApplicationHelper, :no_db do
       expect(helper.agent_run_goal_text(run)).to eq("Feature Creation")
     end
 
+    # @spec MAINT-010
+    it "returns 'Maintenance' for maintenance goal" do
+      run = goal_text_run(goal: "maintenance")
+      expect(helper.agent_run_goal_text(run)).to eq("Maintenance")
+    end
+
     # @spec LAYERED-VERIFY-013
     it "returns labels for layered-verification goals" do
       expect(helper.agent_run_goal_text(goal_text_run(goal: "layered_verification_audit")))

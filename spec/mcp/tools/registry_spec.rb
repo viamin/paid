@@ -18,6 +18,7 @@ RSpec.describe Tools::Registry do
   let(:write_tool_names) do
     %w[
       trigger_agent_run
+      start_maintenance_run
       trigger_readiness_bootstrap
       cancel_agent_run
       request_issue_continuation

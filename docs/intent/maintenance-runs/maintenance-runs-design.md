@@ -39,8 +39,8 @@ consumed rather than duplicated.
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
 model. Each run persists, immutably once started:
 
-- `project_id`, the pinned repository revision (branch/SHA) the run
-  investigated, and `issue_id` (nullable — issue-less manual runs are
+- `project_id`, the default branch's commit SHA resolved at admission as the
+  pinned repository revision the run investigated, and `issue_id` (nullable — issue-less manual runs are
   first-class).
 - `objective` (the recipe key, or `nil` for a free-text user question),
   `scope` (optional paths/symbols or a free-form natural-language target the

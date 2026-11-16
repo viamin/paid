@@ -463,6 +463,25 @@ module Containers
       with_codex_auth_lock(command) { execute_unlocked(command, timeout:, startup_timeout:, idle_timeout:, stream:, env:, preparation:, heartbeat_path:, abort_patterns:, &block) }
     end
 
+    # Seals a prepared checkout before a report-only runner starts. The agent
+    # executes as the unprivileged `agent` user, so root ownership prevents it
+    # from restoring write access even though the workspace volume was mounted
+    # writable to allow Paid to clone and prepare the checkout.
+    # @spec MAINT-020
+    def make_workspace_read_only!
+      workspace_mount = Shellwords.escape(options[:workspace_mount])
+      _stdout, stderr, status = backend.exec_in_container(
+        container,
+        [ "sh", "-lc", "chown -R root:root #{workspace_mount} && chmod -R a-w #{workspace_mount}" ],
+        user: "root"
+      )
+      return if status.to_i.zero?
+
+      raise ProvisionError, "Could not seal report-only workspace: #{Array(stderr).join.strip}"
+    rescue Docker::Error::DockerError => e
+      raise ProvisionError, "Could not seal report-only workspace: #{e.message}"
+    end
+
     def network_name
       network_contract.network
     end

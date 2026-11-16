@@ -428,7 +428,11 @@ module Activities
                   }
                 end
 
-                commit_uncommitted_changes(agent_run)
+                # Maintenance runs are report-only. Preserve workspace changes
+                # for change detection so the workflow can fail the run without
+                # creating a commit from a write-boundary violation.
+                # @spec MAINT-020
+                commit_uncommitted_changes(agent_run) unless agent_run.maintenance_goal?
               end
 
               {

@@ -21,6 +21,10 @@ RSpec.describe Committee::Drivers do
       "/projects/{project_id}/delegation",
       "/projects/{project_id}/design_artifact_findings",
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links",
+      # @spec MAINT-010
+      "/projects/{project_id}/maintenance_runs",
+      "/projects/{project_id}/maintenance_runs/{id}",
+      "/projects/{project_id}/maintenance_runs/{id}/cancel",
       "/chat/sessions",
       "/chat/sessions/{id}",
       "/chat/sessions/{id}/{transition}",

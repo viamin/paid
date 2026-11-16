@@ -463,6 +463,81 @@ paths:
                       status: {type: string, enum: [queued, running, paused]}
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/maintenance_runs:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    post:
+      operationId: createMaintenanceRun
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                objective: {type: string}
+                guidance: {type: string}
+                scope: {type: string}
+      responses:
+        '201':
+          description: Queued report-only maintenance run.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MaintenanceRun'}
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{project_id}/maintenance_runs/{id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: getMaintenanceRun
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Maintenance run status and scope.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MaintenanceRun'}
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{project_id}/maintenance_runs/{id}/cancel:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    post:
+      operationId: cancelMaintenanceRun
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Maintenance run cancellation result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MaintenanceRun'}
+        default:
+          $ref: '#/components/responses/Error'
   /chat/sessions:
     get:
       operationId: listChatSessions
@@ -698,6 +773,31 @@ components:
         format: inbox-entry-id
         pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
   schemas:
+    MaintenanceRun:
+      type: object
+      required: [id, project_id, issue_id, status, goal, scope_kind, created_at, maintenance]
+      properties:
+        id: {type: integer}
+        project_id: {type: integer}
+        issue_id: {type: integer, nullable: true}
+        status: {type: string}
+        goal: {type: string, enum: [maintenance]}
+        scope: {type: string, nullable: true}
+        scope_kind: {type: string, enum: [named, broad], nullable: true}
+        created_at: {type: string, format: date-time}
+        message: {type: string}
+        maintenance:
+          type: object
+          required: [objective, recipe_version, scope, scope_kind, guidance, pinned_revision, limits, report_only]
+          properties:
+            objective: {type: string, nullable: true}
+            recipe_version: {type: string, nullable: true}
+            scope: {type: string, nullable: true}
+            scope_kind: {type: string, enum: [named, broad], nullable: true}
+            guidance: {type: string, nullable: true}
+            pinned_revision: {type: string, nullable: true}
+            limits: {type: object, nullable: true, additionalProperties: true}
+            report_only: {type: boolean}
     InboxEntryId:
       type: string
       maxLength: 40
@@ -715,7 +815,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
+              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, maintenance_run_unavailable, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
             message: {type: string}
             details: {type: object, additionalProperties: true}
     ChatSessionListResponse:

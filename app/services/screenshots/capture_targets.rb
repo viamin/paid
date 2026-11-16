@@ -208,6 +208,11 @@ module Screenshots
       project_health_check: Target.new(slug: "project_health_check", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/health" }, requires_auth: true),
       project_agent_runs: Target.new(slug: "project_agent_runs", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs" }, requires_auth: true),
       project_agent_run_new: Target.new(slug: "project_agent_run_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/new" }, requires_auth: true),
+      project_maintenance_run_new: Target.new(
+        slug: "project_maintenance_run_new",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/maintenance_runs/new" },
+        requires_auth: true
+      ),
       project_agent_run_show: Target.new(slug: "project_agent_run_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/#{seed_data.fetch(:agent_run).id}" }, requires_auth: true),
       project_agent_run_provenance: Target.new(
         slug: "project_agent_run_provenance",
@@ -369,6 +374,7 @@ module Screenshots
       "accounts/egress_allowlist_entries_controller.rb" => [ :account_egress_allowlist ],
       "projects/egress_allowlist_entries_controller.rb" => [ :project_egress_allowlist ],
       "projects/agent_runs_controller.rb" => %i[project_agent_runs project_agent_run_new project_agent_run_show project_agent_run_provenance],
+      "projects/maintenance_runs_controller.rb" => [ :project_maintenance_run_new ],
       "projects/work_items_controller.rb" => [ :project_show ],
       "projects/bundle_performance_dashboards_controller.rb" => [ :project_bundle_performance_dashboard ],
       "projects/cost_dashboards_controller.rb" => [ :project_cost_dashboard ],
@@ -659,6 +665,7 @@ module Screenshots
       when /\Aquality_dashboards\// then [ :quality_dashboard ]
       when "projects/agent_runs/provenance.html.erb" then [ :project_agent_run_provenance ]
       when /\Aprojects\/agent_runs\// then rest_resource_targets(relative_path, "projects/agent_runs", index: :project_agent_runs, new: :project_agent_run_new, show: :project_agent_run_show, edit: :project_agent_run_show)
+      when /\Aprojects\/maintenance_runs\// then [ :project_maintenance_run_new ]
       when /\Aprojects\/bundle_performance_dashboards\// then [ :project_bundle_performance_dashboard ]
       when /\Aprojects\/cost_dashboards\// then [ :project_cost_dashboard ]
       when /\Aprojects\/cost_snapshots\// then [ :project_cost_snapshot ]

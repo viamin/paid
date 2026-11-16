@@ -10,49 +10,87 @@
 
 ## Admission and Rollout Guard
 
-- [ ] **MAINT-001**: The system shall define a `maintenance_runs` feature
+- [x] **MAINT-001**: The system shall define a `maintenance_runs` feature
       flag in `FeatureFlags::DEFINITIONS`, default off.
-- [ ] **MAINT-002**: Where `maintenance_runs` is disabled for a project's
+      *Tests:* `spec/services/feature_flags_maintenance_runs_spec.rb`
+      *Code:* `app/services/feature_flags.rb` (#4328)
+
+- [x] **MAINT-002**: Where `maintenance_runs` is disabled for a project's
       tenant, the system shall refuse to admit a new maintenance run from
       the UI, API, and MCP surfaces identically.
+      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb`, `spec/mcp/tools/start_maintenance_run_spec.rb`
+      *Code:* `app/services/maintenance_runs/start.rb` (shared admission gate), `app/controllers/projects/maintenance_runs_controller.rb` (#4328)
+
 - [ ] **MAINT-003**: Where `maintenance_runs` is disabled for a project's
       tenant, the system shall not dispatch any scheduled maintenance
-      occurrence for that project.
-- [ ] **MAINT-004**: While a `maintenance_runs` rollback is in effect, the
+      occurrence for that project. *(Scheduled dispatch ships with #4332; the
+      flag registration from M01 already gates it.)*
+
+- [x] **MAINT-004**: While a `maintenance_runs` rollback is in effect, the
       system shall keep existing maintenance reports readable and existing
       active runs cancellable.
+      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb`
+      *Code:* `app/views/projects/agent_runs/show.html.erb`, `app/views/agent_runs/_maintenance_context.html.erb` (inspection never consults the guard) (#4328)
 
 ## Manual Investigation
 
-- [ ] **MAINT-010**: The system shall allow an authorized user to start a
+- [x] **MAINT-010**: The system shall allow an authorized user to start a
       maintenance run from a project without an associated issue, through the
       UI, the authenticated API, and the MCP surface, applying the same
       project-scoped start authorization on every surface.
-- [ ] **MAINT-011**: The system shall accept an optional recipe objective, an
+      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb`, `spec/requests/api/v1/projects/maintenance_runs_spec.rb`, `spec/mcp/tools/start_maintenance_run_spec.rb`
+      *Code:* `app/services/maintenance_runs/start.rb`, `app/controllers/projects/maintenance_runs_controller.rb`, `app/controllers/api/v1/projects/maintenance_runs_controller.rb`, `app/mcp/tools/start_maintenance_run.rb` (#4328)
+
+- [x] **MAINT-011**: The system shall accept an optional recipe objective, an
       optional scope (paths, symbols, or a free-form natural-language target),
       and optional free-text guidance when starting a maintenance run, and
       shall require at least one recipe objective or nonblank free-text
       guidance; scope alone shall not admit a run.
-- [ ] **MAINT-012**: When a user supplies named scope targets, the system
+      *Tests:* `spec/services/maintenance_runs/start_spec.rb`, `spec/models/agent_run_maintenance_spec.rb`
+      *Code:* `app/services/maintenance_runs/start.rb`, `app/services/maintenance_runs/recipes.rb`, `app/models/agent_run.rb` (#4328)
+
+- [x] **MAINT-012**: When a user supplies named scope targets, the system
       shall resolve them before any check claims coverage of that scope.
-- [ ] **MAINT-013**: If a named scope target is ambiguous or missing, then the
+      *Tests:* `spec/services/maintenance_runs/build_prompt_spec.rb`
+      *Code:* `app/services/maintenance_runs/build_prompt.rb` (investigation contract embedded in every maintenance prompt) (#4328)
+
+- [x] **MAINT-013**: If a named scope target is ambiguous or missing, then the
       system shall produce an actionable clarification outcome rather than
       silently broadening the run to a repository-wide scan.
-- [ ] **MAINT-014**: Where no scope is supplied, the system shall record the
+      *Tests:* `spec/services/maintenance_runs/build_prompt_spec.rb`
+      *Code:* `app/services/maintenance_runs/build_prompt.rb` (#4328; report-outcome durability lands with #4329)
+
+- [x] **MAINT-014**: Where no scope is supplied, the system shall record the
       run as an explicit broad-scope investigation rather than leaving scope
       ambiguous in the report.
-- [ ] **MAINT-015**: The system shall persist the project, pinned repository
-      revision, objective, scope, guidance, recipe version, and resolved
+      *Tests:* `spec/services/maintenance_runs/start_spec.rb`, `spec/services/maintenance_runs/build_prompt_spec.rb`
+      *Code:* `app/services/maintenance_runs/start.rb` (`maintenance_scope_kind`), `app/services/maintenance_runs/build_prompt.rb` (#4328)
+
+- [x] **MAINT-015**: The system shall resolve and persist the project default
+      branch's commit SHA at admission as the pinned repository revision,
+      objective, scope, guidance, recipe version, and resolved
       tool versions/configuration on every maintenance run at start, and
       shall not mutate those fields after the run starts.
+      *Tests:* `spec/models/agent_run_maintenance_spec.rb`, `spec/services/maintenance_runs/start_spec.rb`, `spec/services/agent_runs/manual_run_retry_policy_spec.rb`
+      *Code:* `app/models/agent_run.rb`, `app/services/maintenance_runs/start.rb`, `app/services/agent_runs/manual_run_retry_policy.rb` (#4328; resolved analyzer-version provenance lands with #4330)
+
 - [ ] **MAINT-016**: The system shall allow an authorized user to inspect a
       maintenance run, its terminal report, and its findings through the UI,
       authenticated API, and MCP surface, applying the same project-scoped
-      inspection authorization on every surface.
-- [ ] **MAINT-017**: The system shall allow an authorized user to cancel an
+      inspection authorization on every surface. *(M01 shipped run/context
+      inspection on UI, authenticated API, and MCP —
+      `spec/requests/projects/maintenance_runs_spec.rb`,
+      `spec/requests/api/v1/projects/maintenance_runs_spec.rb`,
+      `app/controllers/api/v1/projects/maintenance_runs_controller.rb`,
+      `app/mcp/tools/get_agent_run.rb`; terminal-report and findings
+      inspection lands with the #4329 report model.)*
+
+- [x] **MAINT-017**: The system shall allow an authorized user to cancel an
       in-flight maintenance run through the UI, authenticated API, and MCP
       surface, applying the same project-scoped cancellation authorization on
       every surface and preserving evidence already collected.
+      *Tests:* `spec/requests/projects/maintenance_runs_spec.rb` (UI cancel, incl. during rollback), `spec/requests/api/v1/projects/maintenance_runs_spec.rb` (authenticated API cancel), `spec/temporal/activities/complete_maintenance_run_activity_spec.rb` (evidence preservation)
+      *Code:* shared cancel paths (`AgentRunCancellable`, `Tools::CancelAgentRun`) over `AgentRunPolicy#cancel?`; `app/controllers/api/v1/projects/maintenance_runs_controller.rb`; `app/temporal/activities/complete_maintenance_run_activity.rb` (#4328)
 - [ ] **MAINT-018**: The system shall allow an authorized user to select
       findings for bounded repair work through the UI, authenticated API, and
       MCP surface, applying the same project-scoped selection authorization
