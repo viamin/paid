@@ -75,8 +75,8 @@ merely because a user has a removal.
 
 ## Personal removal
 
-`inbox_removals` stores `(user, request_key, occurrence, phase, entry_kind,
-project_id, removed_at, cleared_at)`. A request is suppressed for that user
+`inbox_removals` stores one durable `(user, request_key, occurrence, phase,
+entry_kind, project_id, removed_at, cleared_at)` record. A request is suppressed for that user
 while a removal row exists whose occurrence is not older than the request's
 current occurrence. Removal is presentation-only: the underlying work,
 questions, comments, and authorization are untouched, other users are
