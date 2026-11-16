@@ -63,9 +63,7 @@ module ChatSessions
         stdin_data: serialized_request(request), output_observer: method(:receive_output))
       process_lines
       response = @result || raise(AgentHarness::ProviderError, "Isolated chat execution returned no result")
-      response.deep_symbolize_keys.tap do |normalized|
-        normalized[:status] = normalized[:status].to_sym if normalized[:status].respond_to?(:to_sym)
-      end
+      normalize_response(response)
     ensure
       @executor&.close
       @executor = nil
@@ -134,6 +132,16 @@ module ChatSessions
         end
       rescue JSON::ParserError
         raise AgentHarness::ProviderError, "Isolated chat execution emitted malformed protocol output"
+      end
+    end
+
+    def normalize_response(response)
+      response.deep_symbolize_keys.tap do |normalized|
+        normalized[:status] = normalized[:status].to_sym if normalized[:status].respond_to?(:to_sym)
+        normalized[:error]&.tap do |error|
+          error[:category] = error[:category].to_sym if error[:category].respond_to?(:to_sym)
+          error[:code] = error[:code].to_sym if error[:code].respond_to?(:to_sym)
+        end
       end
     end
   end

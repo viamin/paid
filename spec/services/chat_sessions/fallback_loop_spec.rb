@@ -90,15 +90,20 @@ RSpec.describe ChatSessions::FallbackLoop, type: :service do
       config: { "opencode" => { "api_provider" => "minimax", "model" => "minimax-m3" } })
     chat_session.update!(runner: runner, model: "minimax-m3")
 
-    chat_transport = instance_double(AgentHarness::Api::ChatTransport)
-    allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(chat_transport)
-    allow(chat_transport).to receive(:call).and_return(
-      status: :failed,
-      error: {
-        category: :transient, code: :rate_limited, retryable: true,
-        message: "Token Plan usage limit reached, please check and recharge in time (2056)"
-      }
-    )
+    executor = instance_double(Containers::StandaloneTextExecutor, close: nil)
+    allow(Containers::StandaloneTextExecutor).to receive(:new).and_return(executor)
+    allow(executor).to receive(:execute) do |_command, **options|
+      options[:output_observer].call(:stdout, {
+        type: "result",
+        payload: {
+          status: "failed",
+          error: {
+            category: "transient", code: "rate_limited", retryable: true,
+            message: "Token Plan usage limit reached, please check and recharge in time (2056)"
+          }
+        }
+      }.to_json + "\n")
+    end
   end
 
   def capture_send_message_error(chat_session)
