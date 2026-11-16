@@ -115,7 +115,7 @@ action begins after a failed recheck. Narrowing, an explicit hold, policy
 rollback, expiry, or RDR-078's exclusive stop blocks the next action and
 records why.
 
-If accepted and implemented, RDR-078 is the only per-lineage exclusive stop.
+Once implemented and enabled, RDR-078 is the only per-lineage exclusive stop.
 RDR-077 phase settings and continuation grants retain their additive meanings.
 This posture never refreshes a stale review, waives a required review, adds
 merge authority, or authorizes

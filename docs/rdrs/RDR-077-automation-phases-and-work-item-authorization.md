@@ -455,15 +455,16 @@ occurrence/event handling are represented by the accepted LLDs and EARS cited
 above. Runtime rollout stays outside this planning closeout and requires its
 own release authorization.
 
-## Later proposed amendment
+## Later accepted amendment
 
-[RDR-078](RDR-078-bounded-delivery-phase-authorization.md) proposes a new,
-explicit bounded authorization whose exclusive stop can suppress otherwise
+[RDR-078](RDR-078-bounded-delivery-phase-authorization.md) defines a new,
+accepted bounded authorization whose exclusive stop can suppress otherwise
 enabled downstream project automation for one identified lineage. Until that
-proposal is accepted and implemented, this RDR's current rule remains in force:
+authorization is implemented and enabled, this RDR's runtime rule remains in
+force:
 continuation endpoints do not prohibit independently enabled project automation.
-The proposal does not alter continuation grants: their endpoints remain
+The amendment does not alter continuation grants: their endpoints remain
 additive, and revoking one restores ordinary project-default eligibility. If
-accepted, RDR-078 alone owns the separate explicit authorization and its
-exclusive stop; a continuation grant, GitHub approval, review, or run cannot
-create that stop.
+implemented and enabled, RDR-078 alone owns the separate explicit authorization
+and its exclusive stop; a continuation grant, GitHub approval, review, or run
+cannot create that stop.

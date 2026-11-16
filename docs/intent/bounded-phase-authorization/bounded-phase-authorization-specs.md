@@ -5,11 +5,11 @@ prefix: BOUNDED-PHASE-AUTHORIZATION
 
 # EARS Specs: Bounded Delivery-Phase Authorization
 
-Status markers: `[ ]` proposed implementation gap.
+Status markers: `[ ]` accepted implementation gap.
 
 The initial bounded delegated action contract is shipped as the durable,
 action-specific authorization boundary below. The broader phase lifecycle
-claims remain proposed until their admission and reassessment paths land.
+claims remain unchecked until their admission and reassessment paths land.
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-010** — When an authorized actor delegates a
   bounded delivery action, the system SHALL require an identified issue in the
