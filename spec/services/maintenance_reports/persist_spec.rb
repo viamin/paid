@@ -34,6 +34,35 @@ RSpec.describe MaintenanceReports::Persist do
     expect(report).to have_attributes(outcome: "partial")
   end
 
+  # @spec MAINT-023
+  it "preserves a terminal interruption outcome when later evidence is persisted" do
+    described_class.call(run:, outcome: "cancelled", evidence: { "phase" => "fallback" })
+
+    report = described_class.call(run:, completed_checks: [ { "name" => "prompt" } ],
+      evidence: { "phase" => "agent_report" }, findings: [ finding ])
+
+    expect(report).to have_attributes(outcome: "cancelled", evidence: { "phase" => "agent_report" })
+    expect(report.finding_occurrences.sole.claim).to eq(finding[:claim])
+  end
+
+  # @spec MAINT-024
+  it "preserves a budget-exhausted outcome when a late complete report arrives" do
+    described_class.call(run:, outcome: "budget_exhausted")
+
+    report = described_class.call(run:, completed_checks: [ { "name" => "prompt" } ])
+
+    expect(report.outcome).to eq("budget_exhausted")
+  end
+
+  # @spec MAINT-022
+  it "preserves a partial fallback outcome when a late complete report arrives" do
+    described_class.call(run:, incomplete_checks: [ { "name" => "investigation", "reason" => "timeout" } ])
+
+    report = described_class.call(run:, completed_checks: [ { "name" => "prompt" } ])
+
+    expect(report.outcome).to eq("partial")
+  end
+
   # @spec MAINT-026 MAINT-027 MAINT-029
   it "keeps canonical identity through category and line shifts and flags materially changed dismissed evidence" do
     first = described_class.call(run:, findings: [ finding ])

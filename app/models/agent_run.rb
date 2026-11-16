@@ -4740,6 +4740,13 @@ class AgentRun < ApplicationRecord
     end
     incomplete_checks = outcome == "partial" ? [ { "name" => "investigation", "reason" => status } ] : []
     MaintenanceReports::Persist.call(run: self, outcome:, incomplete_checks:)
+  rescue => e
+    Rails.logger.error(
+      message: "agent_execution.terminal_maintenance_report_persist_failed",
+      agent_run_id: id,
+      error_class: e.class.name,
+      error: e.message
+    )
   end
 
   def terminal_maintenance_report_needed?

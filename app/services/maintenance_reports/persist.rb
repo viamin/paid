@@ -6,7 +6,7 @@ module MaintenanceReports
   # One transactional persistence boundary for maintenance evidence. Tool and
   # agent adapters supply structured facts; this service does no semantic
   # classification and therefore keeps that judgment in agent_harness.
-  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025 MAINT-026 MAINT-027 MAINT-029
+  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-023 MAINT-024 MAINT-025 MAINT-026 MAINT-027 MAINT-029
   class Persist
     def self.call(...) = new(...).call
 
@@ -40,8 +40,12 @@ module MaintenanceReports
 
     def find_or_create_report
       MaintenanceReport.find_or_initialize_by(agent_run: run).tap do |report|
-        report.assign_attributes(account: run.project.account, project: run.project, outcome: outcome,
-          resolved_scope: resolved_scope || run.maintenance_scope, exclusions:, completed_checks:, incomplete_checks:, evidence:)
+        attributes = { account: run.project.account, project: run.project,
+                       resolved_scope: resolved_scope || run.maintenance_scope, exclusions:,
+                       completed_checks:, incomplete_checks:, evidence: }
+        attributes[:outcome] = outcome unless incomplete_terminal_outcome?(report)
+        attributes[:incomplete_checks] = report.incomplete_checks if report.outcome == "partial" && incomplete_checks.empty?
+        report.assign_attributes(attributes)
         report.save!
       end
     end
@@ -82,7 +86,13 @@ module MaintenanceReports
     end
 
     def validate_outcome!(report)
+      return if incomplete_terminal_outcome?(report)
+
       report.update!(outcome: outcome) unless report.outcome == outcome
+    end
+
+    def incomplete_terminal_outcome?(report)
+      report.persisted? && report.outcome.in?(%w[partial cancelled budget_exhausted])
     end
 
     def recipe_key
