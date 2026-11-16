@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.4.0"
+gem "avo", "4.4.4"
 
 # json 3.0.0 changed JSON.parse/dump options to keyword-only arguments.
 # Rails 8.1.4's ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25)
@@ -94,7 +94,7 @@ gem "agent-harness", "0.44.36"
 # (Polynomial-Time ReDoS in Bedrock video output prefix normalization), which
 # landed in 2.0.0.rc1 and carries forward through later releases. Upper bound
 # tracks the latest minor line reviewed for compatibility; bump deliberately.
-gem "ruby_llm", ">= 2.0.0.rc1", "< 2.2"
+gem "ruby_llm", ">= 2.0.0.rc1", "< 2.3"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.
