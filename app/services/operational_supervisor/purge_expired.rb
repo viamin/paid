@@ -8,13 +8,15 @@ module OperationalSupervisor
 
     # @spec OPERATIONAL-SUPERVISOR-003
     def call
-      SupervisorIncident.transaction do
-        expired_incidents = SupervisorIncident.expired
-        expired_snapshots = SupervisorSnapshot.expired
-        enable_audit_purge!
-        SupervisorIncidentAudit.where(supervisor_incident_id: expired_incidents.select(:id)).delete_all
-        nullify_expired_snapshot_references!(expired_snapshots)
-        Result.new(expired_snapshots.delete_all, expired_incidents.delete_all)
+      TenantContext.with_system_access do
+        SupervisorIncident.transaction do
+          expired_incidents = SupervisorIncident.expired
+          expired_snapshots = SupervisorSnapshot.expired
+          enable_audit_purge!
+          SupervisorIncidentAudit.where(supervisor_incident_id: expired_incidents.select(:id)).delete_all
+          nullify_expired_snapshot_references!(expired_snapshots)
+          Result.new(expired_snapshots.delete_all, expired_incidents.delete_all)
+        end
       end
     end
 

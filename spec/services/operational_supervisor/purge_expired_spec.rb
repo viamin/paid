@@ -28,4 +28,20 @@ RSpec.describe OperationalSupervisor::PurgeExpired do
     expect(SupervisorSnapshot.exists?(expired_snapshot.id)).to be(false)
     expect(retained_incident.reload.supervisor_snapshot).to be_nil
   end
+
+  it "purges expired records across accounts when no tenant context is present" do # @spec OPERATIONAL-SUPERVISOR-003
+    expired_incident = create(:supervisor_incident, retention_expires_at: 1.second.ago)
+    expired_audit = create(:supervisor_incident_audit, supervisor_incident: expired_incident)
+    TenantContext.clear!
+
+    result = described_class.call
+
+    expect(result).to eq(described_class::Result.new(0, 1))
+    TenantContext.with_system_access do
+      expect(SupervisorIncident.exists?(expired_incident.id)).to be(false)
+      expect(SupervisorIncidentAudit.exists?(expired_audit.id)).to be(false)
+    end
+  ensure
+    TenantContext.apply_system_access!
+  end
 end
