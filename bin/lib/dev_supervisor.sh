@@ -366,12 +366,22 @@ dev_supervisor_workspace_tmux_identities() {
   printf '%s\n' "${DEV_SUPERVISOR_WORKSPACE_TMUX_IDENTITIES:-${1:-}}"
 }
 
+# @spec RAILS-CONTROL-PLANE-019
 dev_supervisor_workspace_tmux_sessions() {
   local socket panes session_name pane_path
 
   while IFS= read -r socket; do
     [ -n "$socket" ] || continue
-    if ! panes="$(tmux -S "$socket" list-panes -a -F '#{session_name}|#{pane_current_path}' 2>> "$(dev_supervisor_tmux_log)")"; then
+    if ! panes="$(LC_ALL=C tmux -S "$socket" list-panes -a -F '#{session_name}|#{pane_current_path}' 2>&1)"; then
+      printf '%s\n' "$panes" >> "$(dev_supervisor_tmux_log)"
+      # A server can exit between enumeration and inspection, leaving its
+      # socket behind or removing it. Do not mistake permission/protocol
+      # errors for proof that the server is gone.
+      case "$panes" in
+        "no server running on $socket"|"error connecting to $socket (No such file or directory)")
+          continue
+          ;;
+      esac
       printf '%s|<uninspectable>\n' "$socket"
       return 1
     fi
