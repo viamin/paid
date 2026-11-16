@@ -721,12 +721,12 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
-    def stub_maintenance_activities(has_changes: false, success: true)
+    def stub_maintenance_activities(has_changes: false, success: true, completion_success: true)
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
         when "Activities::RunAgentActivity" then { success: success, has_changes: has_changes, output_present: true }
-        when "Activities::CompleteMaintenanceRunActivity" then { agent_run_id: 42, success: true }
+        when "Activities::CompleteMaintenanceRunActivity" then { agent_run_id: 42, success: completion_success }
         else {}
         end
       end
@@ -763,6 +763,13 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CompleteMaintenanceRunActivity, { agent_run_id: 42, has_changes: true },
               timeout: 30, retry_policy: described_class::NO_RETRY)
+    end
+
+    # @spec MAINT-020
+    it "returns failure when report-only completion detects a write-boundary violation" do
+      stub_maintenance_activities(has_changes: true, completion_success: false)
+
+      expect(workflow.execute(input)).to include(success: false, agent_run_id: 42)
     end
   end
 

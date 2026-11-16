@@ -66,8 +66,9 @@
       *Tests:* `spec/services/maintenance_runs/start_spec.rb`, `spec/services/maintenance_runs/build_prompt_spec.rb`
       *Code:* `app/services/maintenance_runs/start.rb` (`maintenance_scope_kind`), `app/services/maintenance_runs/build_prompt.rb` (#4328)
 
-- [x] **MAINT-015**: The system shall persist the project, pinned repository
-      revision, objective, scope, guidance, recipe version, and resolved
+- [x] **MAINT-015**: The system shall resolve and persist the project default
+      branch's commit SHA at admission as the pinned repository revision,
+      objective, scope, guidance, recipe version, and resolved
       tool versions/configuration on every maintenance run at start, and
       shall not mutate those fields after the run starts.
       *Tests:* `spec/models/agent_run_maintenance_spec.rb`, `spec/services/maintenance_runs/start_spec.rb`, `spec/services/agent_runs/manual_run_retry_policy_spec.rb`

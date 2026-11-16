@@ -12,6 +12,7 @@ module MaintenanceRuns
     class UnknownObjectiveError < StandardError; end
     class BudgetExceededError < StandardError; end
     class NoRunnableRunnerError < StandardError; end
+    class RevisionUnavailableError < StandardError; end
 
     def self.call(...)
       new(...).call
@@ -93,10 +94,15 @@ module MaintenanceRuns
       @resolved_recipe = objective.present? ? Recipes.fetch(objective) : nil
     end
 
-    # The requested revision reference pinned at start; the cloned SHA lands in
-    # base_commit_sha through the normal run lifecycle (MAINT-015).
+    # Resolve the mutable default branch once at admission. The resulting SHA
+    # is immutable context for this run and any retry of it.
+    # @spec MAINT-015
     def pinned_revision
-      project.default_branch.presence || "main"
+      ref = project.client.ref(project.full_name, "heads/#{project.default_branch.presence || "main"}")
+      revision = ref&.object&.sha.to_s
+      return revision if revision.match?(/\A[0-9a-f]{40,64}\z/i)
+
+      raise RevisionUnavailableError, "Could not resolve the project's default branch commit SHA."
     end
 
     # Effective execution-limit snapshot consistent with the existing run

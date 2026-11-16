@@ -37,4 +37,12 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
 
     expect(run.reload.agent_run_logs.stdout.count).to eq(1)
   end
+
+  # @spec MAINT-020
+  it "fails when the agent modified source files" do
+    result = described_class.new.execute(agent_run_id: run.id, has_changes: true)
+
+    expect(result).to include(agent_run_id: run.id, success: false)
+    expect(run.reload).to have_attributes(status: "failed", error_message: a_string_including("report-only"))
+  end
 end

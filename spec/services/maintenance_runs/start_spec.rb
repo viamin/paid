@@ -6,6 +6,7 @@ RSpec.describe MaintenanceRuns::Start do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
   let(:project) { create(:project, account:, created_by: owner) }
+  let(:pinned_revision) { "a" * 40 }
 
   before do
     allow(FeatureFlags).to receive(:enabled?).and_call_original
@@ -13,6 +14,9 @@ RSpec.describe MaintenanceRuns::Start do
     allow(AgentRuns::RunnerResolver).to receive(:call)
       .with(project: project, goal: "maintenance")
       .and_return([ nil, "claude_code" ])
+    allow(project.client).to receive(:ref)
+      .with(project.full_name, "heads/#{project.default_branch}")
+      .and_return(Struct.new(:object).new(Struct.new(:sha).new(pinned_revision)))
     allow(ProcessRunQueueJob).to receive(:perform_later)
   end
 
@@ -77,10 +81,20 @@ RSpec.describe MaintenanceRuns::Start do
       maintenance_scope: "app/workflows/a.rb, app/workflows/b.rb",
       maintenance_scope_kind: "named",
       maintenance_recipe_version: "1",
-      maintenance_pinned_revision: "main"
+      maintenance_pinned_revision: pinned_revision
     )
     expect(run.maintenance_limits).to include("max_execution_seconds" => project.max_execution_seconds)
     expect(run.agent_type).to eq("claude_code")
+  end
+
+  # @spec MAINT-015
+  it "refuses admission when the default branch does not resolve to a commit SHA" do
+    allow(project.client).to receive(:ref)
+      .with(project.full_name, "heads/#{project.default_branch}")
+      .and_return(Struct.new(:object).new(Struct.new(:sha).new("main")))
+
+    expect { start(guidance: "Audit the repository") }
+      .to raise_error(MaintenanceRuns::Start::RevisionUnavailableError, /commit SHA/)
   end
 
   # @spec MAINT-014
