@@ -24,8 +24,9 @@ RSpec.describe Committee::Drivers do
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}",
       "/projects/{project_id}/design_artifact_findings",
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links",
-      # @spec MAINT-010
+      # @spec MAINT-010 MAINT-OPT-004
       "/projects/{project_id}/maintenance_runs",
+      "/projects/{project_id}/maintenance_runs/types",
       "/projects/{project_id}/maintenance_runs/{id}",
       "/projects/{project_id}/maintenance_runs/{id}/cancel",
       "/chat/sessions",
@@ -191,6 +192,7 @@ RSpec.describe Committee::Drivers do
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}" => { "delete" => [ "inbox" ] },
       "/projects/{project_id}/design_artifact_findings" => { "get" => [ "inbox" ] },
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links" => { "post" => [ "inbox" ] },
+      "/projects/{project_id}/maintenance_runs/types" => { "get" => [ "inbox" ] },
       "/chat/sessions" => { "get" => [ "chat" ], "post" => [ "chat" ] },
       "/chat/sessions/{id}" => { "get" => [ "chat" ], "patch" => [ "chat" ], "delete" => [ "chat" ] },
       "/chat/sessions/{id}/{transition}" => { "patch" => [ "chat" ] },
