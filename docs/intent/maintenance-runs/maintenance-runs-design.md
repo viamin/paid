@@ -21,7 +21,12 @@ Paid needs a maintenance investigation that a project owner can start without
 first writing an issue or attaching a PR, with a durable, evidence-backed
 report as its outcome. A maintenance run has an explicit objective, optional
 scope, optional free-text guidance, and a report-only outcome — it never
-mutates source code itself. The first delivery's objective is unnecessary-code
+mutates source code itself. The container-authenticated GitHub proxy permits
+maintenance runs to read allowlisted project evidence but rejects mutating
+requests before credentials are resolved or any request is forwarded. Creating
+issues, editing issues, posting comments or labels, and submitting reviews
+require separately authorized work rather than a report-only run.
+The first delivery's objective is unnecessary-code
 investigation (unused code, dependencies, duplication, complexity, obsolete
 behavior); the shape generalizes to future objectives (dependency hygiene,
 stale feature flags, documentation drift, test quality) without a new run

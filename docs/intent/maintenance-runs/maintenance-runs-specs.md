@@ -34,6 +34,14 @@
 
 ## Manual Investigation
 
+- [x] **MAINT-005**: While a report-only maintenance run uses the
+      container-authenticated GitHub proxy, the system shall permit only
+      allowlisted read requests for its authorized project and shall reject
+      every mutating request before resolving GitHub credentials or forwarding
+      a remote request. Other run goals shall retain their existing policies.
+      *Tests:* `spec/requests/api/github_proxy_spec.rb`
+      *Code:* `app/controllers/api/github_proxy_controller.rb` (#4328)
+
 - [x] **MAINT-010**: The system shall allow an authorized user to start a
       maintenance run from a project without an associated issue, through the
       UI, the authenticated API, and the MCP surface, applying the same
@@ -223,7 +231,7 @@
 
 | Task | Assigned claims |
 | --- | --- |
-| [#4328](https://github.com/viamin/paid/issues/4328) (M01) | MAINT-001–002, MAINT-004, MAINT-010–017 |
+| [#4328](https://github.com/viamin/paid/issues/4328) (M01) | MAINT-001–002, MAINT-004–005, MAINT-010–017 |
 | [#4329](https://github.com/viamin/paid/issues/4329) (M02) | MAINT-020–029 |
 | [#4330](https://github.com/viamin/paid/issues/4330) (M03) | MAINT-040–045 |
 | [#4331](https://github.com/viamin/paid/issues/4331) (M04) | MAINT-018, MAINT-070–073 |

@@ -30,6 +30,46 @@ RSpec.describe "Api::GithubProxy" do
     [ { id: 1, number: 1, title: "Existing issue" } ].to_json
   end
 
+  context "with a report-only maintenance run" do
+    let(:agent_run) do
+      create(:agent_run, :running, project:, issue: nil, goal: "maintenance",
+        custom_prompt: "Inspect project evidence", maintenance_guidance: "Inspect project evidence",
+        maintenance_scope_kind: "broad")
+    end
+
+    [
+      [ :post, "issues" ],
+      [ :patch, "issues/42" ],
+      [ :post, "issues/42/comments" ],
+      [ :post, "issues/42/labels" ],
+      [ :post, "pulls/42/reviews" ]
+    ].each do |method, endpoint|
+      # @spec MAINT-005
+      it "refuses #{method.upcase} #{endpoint} without contacting GitHub" do
+        remote = stub_request(method, "https://api.github.com/repos/testowner/testrepo/#{endpoint}")
+          .to_return(status: 200, body: issue_response_body, headers: { "Content-Type" => "application/json" })
+
+        public_send(method, "/api/proxy/github/repos/testowner/testrepo/#{endpoint}",
+          params: { title: "Finding", body: "Finding", labels: [ "P2" ], event: "COMMENT" }.to_json, headers: valid_headers)
+
+        expect(response).to have_http_status(:forbidden)
+        expect(response.parsed_body).to eq("error" => "Maintenance runs have read-only GitHub access")
+        expect(remote).not_to have_been_requested
+      end
+    end
+
+    # @spec MAINT-005
+    it "retains allowlisted project reads" do
+      remote = stub_request(:get, "https://api.github.com/repos/testowner/testrepo/issues")
+        .to_return(status: 200, body: issues_list_body, headers: { "Content-Type" => "application/json" })
+
+      get "/api/proxy/github/repos/testowner/testrepo/issues", headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(remote).to have_been_requested.once
+    end
+  end
+
   describe "POST /api/proxy/github/repos/:owner/:repo/issues" do
     let(:target_url) { "https://api.github.com/repos/testowner/testrepo/issues" }
 

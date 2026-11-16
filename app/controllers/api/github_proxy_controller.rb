@@ -40,6 +40,12 @@ module Api
         return
       end
 
+      # @spec MAINT-005
+      if @agent_run&.maintenance_goal? && !request.get?
+        render json: { error: "Maintenance runs have read-only GitHub access" }, status: :forbidden
+        return
+      end
+
       # @spec ISSUE-ENHANCEMENT-006
       if enhancement_mutation?
         render json: { error: "Enhancement runs have read-only GitHub access" }, status: :forbidden
