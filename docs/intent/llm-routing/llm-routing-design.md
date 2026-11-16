@@ -87,6 +87,21 @@ budget as application text, including credential-specific circuit state.
 Readiness reports subscriptions requiring isolation explicitly rather than
 claiming standalone text is ready.
 
+## Non-chat caller inventory
+
+`spec/services/llm/request_caller_inventory_spec.rb` is the checked inventory
+of all direct and wrapped application text callers. It prevents a new
+background assessment from bypassing `Llm::Request`; the shared request service
+therefore supplies ownership, runner permissions, model/privacy policy,
+credential mode, provenance, retries, and disposable-container cleanup.
+
+| Execution context | Callers |
+| --- | --- |
+| Account-only background work | `AgentRunPatterns::Diagnose` |
+| Project-only review, knowledge, design, evidence, and evolution work | `AgentRuns::DiagnoseError`, `DesignAmendments::ImpactReview`, `FeatureIntents::{AssessDesignArtifactCandidates,AssessFacet,CriteriaClarityReview}`, `IntentConformance::ReviewerLlm`, `Issues::PartialCompletionAssessment`, `Knowledge::{ContextIntake::GenerateQuestions,Decisions::Draft}`, `PartialCloseouts::{AssessEvidence,ValidateSubmittedEvidence}`, `PromptEvolution::Mutate`, `Reviews::Verification::LlmSession`, `StrategyEvolution::Mutate`, `StyleGuideEvolution::Mutate`, `StyleGuides::{Compress,Extract}`, and the analyze-issue, analyze-knowledge-gaps, and decompose-feature activities. |
+| Live-run optional work | `ConflictRepairs::AssessScope`, `Features::ClarifyingQuestions::Analyze`, `Models::MetaAgentSelector`, and `Screenshots::DeriveHints`. A live run never authorizes host execution. |
+| Post-run / cleanup-race work | `Llm::{AnalyzePartialCloseout,GenerateAgentUpdateSummary,GenerateIssueTitle,GeneratePrDescription,GenerateSessionSummary}`, `AgentRuns::DiagnoseError`, `PartialCloseouts::ReconcileLegacy`, and the assess-source-closure, reconcile-partial-closeout, and run-acceptance-audit activities. They continue through the disposable text container after a run’s container has been removed. |
+
 ## Decisions
 
 | Decision | Rationale | Alternative |
