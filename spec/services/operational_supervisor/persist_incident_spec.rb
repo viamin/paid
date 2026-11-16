@@ -14,6 +14,13 @@ RSpec.describe OperationalSupervisor::PersistIncident do
     }
   end
 
+  around do |example|
+    FeatureFlags.enable!(:operational_supervisor, project:)
+    example.run
+  ensure
+    FeatureFlags.disable!(:operational_supervisor, project:)
+  end
+
   it "is idempotent, deduplicated, and appends an audit occurrence" do # @spec OPERATIONAL-SUPERVISOR-007
     first = described_class.call(account:, snapshot:, **attributes)
     second = described_class.call(account:, snapshot:, **attributes)
@@ -25,6 +32,7 @@ RSpec.describe OperationalSupervisor::PersistIncident do
 
   it "deduplicates target sets regardless of order or repeated IDs" do # @spec OPERATIONAL-SUPERVISOR-007
     second_project = create(:project, account:)
+    FeatureFlags.enable!(:operational_supervisor, project: second_project)
     snapshot.update!(included_project_ids: [ project.id, second_project.id ])
     targets = { "project_ids" => [ project.id, second_project.id ] }
 
@@ -62,6 +70,38 @@ RSpec.describe OperationalSupervisor::PersistIncident do
     other_project = create(:project, account:)
 
     result = described_class.call(account:, snapshot:, **attributes.merge(affected_project_ids: [], target_ids: { "project_ids" => [ other_project.id ] }))
+
+    expect(result).to be_failure
+    expect(SupervisorIncident.count).to eq(0)
+  end
+
+  it "does not update an incident or append an audit after its project is disabled" do # @spec OPERATIONAL-SUPERVISOR-008
+    first = described_class.call(account:, snapshot:, **attributes)
+    FeatureFlags.disable!(:operational_supervisor, project:)
+
+    result = described_class.call(account:, snapshot:, **attributes)
+
+    expect(result).to be_failure
+    expect(first.incident.reload.occurrence_count).to eq(1)
+    expect(first.incident.supervisor_incident_audits.pluck(:action)).to eq([ "opened" ])
+  end
+
+  it "fails closed when any incident project is disabled" do # @spec OPERATIONAL-SUPERVISOR-008
+    second_project = create(:project, account:)
+    snapshot.update!(included_project_ids: [ project.id, second_project.id ])
+
+    result = described_class.call(
+      account:, snapshot:, **attributes.merge(target_ids: { "project_ids" => [ second_project.id ] })
+    )
+
+    expect(result).to be_failure
+    expect(SupervisorIncident.count).to eq(0)
+  end
+
+  it "fails closed when an incident has no projects to authorize" do # @spec OPERATIONAL-SUPERVISOR-008
+    result = described_class.call(
+      account:, snapshot:, **attributes.merge(affected_project_ids: [], target_ids: { "project_ids" => [] })
+    )
 
     expect(result).to be_failure
     expect(SupervisorIncident.count).to eq(0)

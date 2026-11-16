@@ -19,6 +19,7 @@ module OperationalSupervisor
     def call
       return failure("snapshot does not belong to account") unless snapshot.account_id == account.id
       return failure("targets are not snapshot members") unless target_ids_are_snapshot_members?
+      return failure("operational supervisor is disabled for incident projects") unless incident_projects_enabled?
 
       SupervisorIncident.transaction { persist! }
     rescue ActiveRecord::RecordInvalid => error
@@ -96,6 +97,19 @@ module OperationalSupervisor
 
     def snapshot_project_ids
       @snapshot_project_ids ||= snapshot.included_project_ids.index_with(true)
+    end
+
+    def incident_projects_enabled?
+      return false if incident_project_ids.empty?
+
+      projects = account.projects.where(id: incident_project_ids).to_a
+      projects.size == incident_project_ids.size && projects.all? { FeatureFlags.enabled?(:operational_supervisor, project: _1) }
+    end
+
+    def incident_project_ids
+      @incident_project_ids ||= (
+        attributes.fetch(:affected_project_ids) + attributes.fetch(:target_ids).fetch("project_ids")
+      ).uniq
     end
 
     def retry_after_deduplication_race
