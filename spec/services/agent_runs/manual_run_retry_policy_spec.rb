@@ -11,7 +11,8 @@ RSpec.describe AgentRuns::ManualRunRetryPolicy do
         maintenance_objective: "unnecessary_code", maintenance_recipe_version: "1",
         maintenance_guidance: "Audit workflow A", maintenance_scope: "app/workflows/a.rb",
         maintenance_scope_kind: "named", maintenance_pinned_revision: "main",
-        maintenance_limits: { "max_execution_seconds" => 7200 })
+        maintenance_limits: { "max_execution_seconds" => 7200 },
+        base_commit_sha: "a" * 40)
 
       successor = described_class.new.build_successor!(original, 1)
 
@@ -22,7 +23,8 @@ RSpec.describe AgentRuns::ManualRunRetryPolicy do
         maintenance_guidance: "Audit workflow A",
         maintenance_scope: "app/workflows/a.rb",
         maintenance_scope_kind: "named",
-        maintenance_pinned_revision: "main"
+        maintenance_pinned_revision: "main",
+        base_commit_sha: "a" * 40
       )
       expect(successor.maintenance_limits).to eq("max_execution_seconds" => 7200)
       expect(successor.custom_prompt).to eq(original.custom_prompt)

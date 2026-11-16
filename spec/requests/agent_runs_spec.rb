@@ -3583,6 +3583,18 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
 
+      # @spec MAINT-015
+      it "preserves a maintenance run's resolved revision on retry" do
+        agent_run = create(:agent_run, :failed, project:, goal: "maintenance", issue: nil,
+          custom_prompt: "Audit workflow A", maintenance_objective: "unnecessary_code",
+          maintenance_guidance: "Audit workflow A", maintenance_pinned_revision: "main",
+          base_commit_sha: "a" * 40)
+
+        post retry_project_agent_run_path(project, agent_run)
+
+        expect(AgentRun.last.base_commit_sha).to eq("a" * 40)
+      end
+
       # @spec ISSUE-ANALYSIS-011
       it "allows manual retry of a failed analyze_issue run even when automatic backoff is active" do
         issue = create(:issue, project: project,
@@ -3932,6 +3944,19 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
         expect(OrchestrationDecision.last.actor).to eq("refresh_auth_retry")
         without_partial_double_verification { expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token") }
+      end
+
+      # @spec MAINT-015
+      it "preserves a maintenance run's resolved revision on refresh-auth retry" do
+        agent_run = create(:agent_run, :auth_expired, project:, goal: "maintenance", issue: nil,
+          custom_prompt: "Audit workflow A", maintenance_objective: "unnecessary_code",
+          maintenance_guidance: "Audit workflow A", maintenance_pinned_revision: "main",
+          base_commit_sha: "a" * 40)
+        without_partial_double_verification { allow(AgentHarness).to receive(:refresh_auth) }
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token" }
+
+        expect(AgentRun.last.base_commit_sha).to eq("a" * 40)
       end
 
       it "resets tdd_returned_to_test_review on refresh-auth retries" do

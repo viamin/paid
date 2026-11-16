@@ -48,7 +48,8 @@ RSpec.describe AgentRun do
         maintenance_objective: "unnecessary_code", maintenance_recipe_version: "1",
         maintenance_guidance: "Audit A", maintenance_scope: "app/workflows/a.rb",
         maintenance_scope_kind: "named", maintenance_pinned_revision: "main",
-        maintenance_limits: { "max_execution_seconds" => 7200 })
+        maintenance_limits: { "max_execution_seconds" => 7200 },
+        base_commit_sha: "a" * 40)
 
       expect(run.maintenance_context_attributes).to include(
         maintenance_objective: "unnecessary_code",
@@ -57,7 +58,8 @@ RSpec.describe AgentRun do
         maintenance_scope: "app/workflows/a.rb",
         maintenance_scope_kind: "named",
         maintenance_pinned_revision: "main",
-        maintenance_limits: { "max_execution_seconds" => 7200 }
+        maintenance_limits: { "max_execution_seconds" => 7200 },
+        base_commit_sha: "a" * 40
       )
     end
   end

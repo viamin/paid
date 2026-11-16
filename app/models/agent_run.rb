@@ -1937,6 +1937,7 @@ class AgentRun < ApplicationRecord
       maintenance_scope_kind: maintenance_scope_kind,
       maintenance_guidance: maintenance_guidance,
       maintenance_pinned_revision: maintenance_pinned_revision,
+      base_commit_sha: base_commit_sha,
       maintenance_limits: maintenance_limits
     }
   end
