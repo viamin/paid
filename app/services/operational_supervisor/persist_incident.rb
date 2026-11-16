@@ -40,9 +40,14 @@ module OperationalSupervisor
     end
 
     def create!
+      enable_status_transition!
       incident = account.supervisor_incidents.create!(incident_attributes)
       audit!(incident, "opened")
       Result.new(incident, true, nil)
+    end
+
+    def enable_status_transition!
+      SupervisorIncident.connection.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
     end
 
     def observe!(incident)

@@ -10,9 +10,9 @@ class EnforceSupervisorIncidentStatusAudit < ActiveRecord::Migration[8.1]
              current_setting('paid.supervisor_incident_status_transition', true) IS DISTINCT FROM 'true' THEN
             RAISE EXCEPTION 'supervisor incident status changes must append a status_changed audit';
           END IF;
-          IF TG_OP = 'INSERT' AND NEW.status IS DISTINCT FROM 'open' AND
+          IF TG_OP = 'INSERT' AND
              current_setting('paid.supervisor_incident_status_transition', true) IS DISTINCT FROM 'true' THEN
-            RAISE EXCEPTION 'supervisor incident status changes must append a status_changed audit';
+            RAISE EXCEPTION 'supervisor incident creation must append an opened audit';
           END IF;
           RETURN NEW;
         END;

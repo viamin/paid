@@ -48,6 +48,7 @@ RSpec.describe SupervisorIncident do
 
     expect do
       within_savepoint do
+        authorize_incident_creation!
         described_class.insert_all!([ attributes_for(:supervisor_incident).merge(account_id: account.id, supervisor_snapshot_id: other_snapshot.id) ])
       end
     end.to raise_error(ActiveRecord::StatementInvalid, /must belong to the incident account/)
@@ -72,11 +73,23 @@ RSpec.describe SupervisorIncident do
       within_savepoint do
         described_class.insert_all!([ attributes_for(:supervisor_incident).merge(account_id: incident.account_id, status: "resolved") ])
       end
-    end.to raise_error(ActiveRecord::StatementInvalid, /status_changed audit/)
+    end.to raise_error(ActiveRecord::StatementInvalid, /creation must append an opened audit/)
     expect(incident.reload.status).to eq("open")
+  end
+
+  it "blocks unaudited initial incidents even when application validations are bypassed" do # @spec OPERATIONAL-SUPERVISOR-007
+    account = create(:account)
+
+    expect do
+      within_savepoint { described_class.insert_all!([ attributes_for(:supervisor_incident).merge(account_id: account.id) ]) }
+    end.to raise_error(ActiveRecord::StatementInvalid, /creation must append an opened audit/)
   end
 
   def within_savepoint(&)
     ActiveRecord::Base.transaction(requires_new: true, &)
+  end
+
+  def authorize_incident_creation!
+    SupervisorIncident.connection.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
   end
 end

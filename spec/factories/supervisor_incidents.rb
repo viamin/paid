@@ -17,6 +17,14 @@ FactoryBot.define do
     last_seen_at { Time.current }
     occurrence_count { 1 }
     retention_expires_at { 365.days.from_now }
+
+    before(:create) do
+      SupervisorIncident.connection.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
+    end
+
+    after(:create) do
+      SupervisorIncident.connection.execute("SET LOCAL paid.supervisor_incident_status_transition = 'false'")
+    end
   end
 end
 
