@@ -53,6 +53,29 @@ RSpec.describe SupervisorIncident do
     end.to raise_error(ActiveRecord::StatementInvalid, /must belong to the incident account/)
   end
 
+  it "rejects a bare status write that would skip the audit trail" do # @spec OPERATIONAL-SUPERVISOR-007
+    incident = create(:supervisor_incident, status: "open")
+
+    expect { incident.update!(status: "resolved") }.to raise_error(ActiveRecord::RecordInvalid)
+    expect(incident.errors[:status]).to include("transitions must be recorded by OperationalSupervisor::TransitionIncidentStatus")
+    expect(incident.reload.status).to eq("open")
+    expect(incident.supervisor_incident_audits.count).to eq(0)
+  end
+
+  it "blocks unaudited status transitions even when application validations are bypassed" do # @spec OPERATIONAL-SUPERVISOR-007
+    incident = create(:supervisor_incident, status: "open")
+
+    expect do
+      within_savepoint { described_class.where(id: incident.id).update_all(status: "resolved") }
+    end.to raise_error(ActiveRecord::StatementInvalid, /status_changed audit/)
+    expect do
+      within_savepoint do
+        described_class.insert_all!([ attributes_for(:supervisor_incident).merge(account_id: incident.account_id, status: "resolved") ])
+      end
+    end.to raise_error(ActiveRecord::StatementInvalid, /status_changed audit/)
+    expect(incident.reload.status).to eq("open")
+  end
+
   def within_savepoint(&)
     ActiveRecord::Base.transaction(requires_new: true, &)
   end

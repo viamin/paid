@@ -5,6 +5,7 @@ module OperationalSupervisor
     METRIC_NAMES = %w[conversion cost guardrail queue_starvation rework stage_age].freeze
     METRIC_STATUSES = %w[available unavailable].freeze
     INCLUSION_RULES = %w[enabled_projects_only].freeze
+    INCIDENT_STATUSES = %w[open waiting_for_human mitigated resolved dismissed].freeze
     MAX_METRICS = METRIC_NAMES.length
 
     # @spec OPERATIONAL-SUPERVISOR-001
@@ -45,7 +46,16 @@ module OperationalSupervisor
     end
 
     def audit_evidence?(value)
+      snapshot_evidence?(value) || status_transition_evidence?(value)
+    end
+
+    def snapshot_evidence?(value)
       exact_hash?(value, "snapshot_id") && positive_integer?(value["snapshot_id"])
+    end
+
+    def status_transition_evidence?(value)
+      exact_hash?(value, "previous_status", "next_status") &&
+        INCIDENT_STATUSES.include?(value["previous_status"]) && INCIDENT_STATUSES.include?(value["next_status"])
     end
 
     def exact_hash?(value, *keys)

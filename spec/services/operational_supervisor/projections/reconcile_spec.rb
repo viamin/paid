@@ -36,4 +36,34 @@ RSpec.describe OperationalSupervisor::Projections::Reconcile do
     expect(result.upsert).to be_empty
     expect(result.remove).to eq([ existing_projection ])
   end
+
+  it "authorizes a split-target incident on the union of affected and target projects" do # @spec OPERATIONAL-SUPERVISOR-008
+    affected_only_project = create(:project, account:)
+    FeatureFlags.enable!(:operational_supervisor, project: affected_only_project)
+    split_incident = create(:supervisor_incident, account:, status: "open",
+      affected_project_ids: [ affected_only_project.id ], target_ids: { "project_ids" => [ project.id ] })
+
+    result = described_class.call(incidents: [ split_incident ], existing: [])
+
+    expect(result.upsert).to contain_exactly(include("incident_id" => split_incident.id))
+    expect(result.remove).to be_empty
+  ensure
+    FeatureFlags.disable!(:operational_supervisor, project: affected_only_project)
+  end
+
+  it "removes a projection when a project only in the affected set is disabled" do # @spec OPERATIONAL-SUPERVISOR-008
+    affected_only_project = create(:project, account:)
+    FeatureFlags.enable!(:operational_supervisor, project: affected_only_project)
+    split_incident = create(:supervisor_incident, account:, status: "open",
+      affected_project_ids: [ affected_only_project.id ], target_ids: { "project_ids" => [ project.id ] })
+    existing_projection = { "incident_id" => split_incident.id, "fingerprint" => split_incident.fingerprint }
+    FeatureFlags.disable!(:operational_supervisor, project: affected_only_project)
+
+    result = described_class.call(incidents: [ split_incident ], existing: [ existing_projection ])
+
+    expect(result.upsert).to be_empty
+    expect(result.remove).to eq([ existing_projection ])
+  ensure
+    FeatureFlags.disable!(:operational_supervisor, project: affected_only_project)
+  end
 end

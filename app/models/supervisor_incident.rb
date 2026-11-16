@@ -18,14 +18,33 @@ class SupervisorIncident < ApplicationRecord
   validates :severity, inclusion: { in: SEVERITIES }
   validates :status, inclusion: { in: STATUSES }
   validates :first_seen_at, :last_seen_at, :retention_expires_at, presence: true
+  # @spec OPERATIONAL-SUPERVISOR-007
+  validate :status_transition_is_audited, on: :update
   validate :payloads_are_sanitized
   validate :affected_projects_belong_to_account
   validate :snapshot_belongs_to_account
+  after_save :consume_status_transition_authorization
 
   scope :open_incidents, -> { where(status: OPEN_STATUSES) }
   scope :expired, -> { where("retention_expires_at <= ?", Time.current) }
 
+  def authorize_status_transition!
+    @status_transition_authorized = true
+  end
+
   private
+
+  def status_transition_authorized? = @status_transition_authorized == true
+
+  def status_transition_is_audited
+    return if !status_changed? || status_transition_authorized?
+
+    errors.add(:status, "transitions must be recorded by OperationalSupervisor::TransitionIncidentStatus")
+  end
+
+  def consume_status_transition_authorization
+    @status_transition_authorized = nil
+  end
 
   def payloads_are_sanitized
     errors.add(:target_ids, "contains unsupported or unsafe fields") unless sanitized_payload?(target_ids, type: :incident_targets)

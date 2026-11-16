@@ -28,18 +28,22 @@ module OperationalSupervisor
       end
 
       def incident_projects_enabled?(incident)
-        project_ids = incident.target_ids.fetch("project_ids")
+        project_ids = incident_project_ids(incident)
         project_ids.present? && project_ids.all? { |id| enabled_projects.key?([ incident.account_id, id ]) }
       end
 
       def enabled_projects
-        @enabled_projects ||= Project.where(id: incident_project_ids).each_with_object({}) do |project, enabled|
+        @enabled_projects ||= Project.where(id: authorization_project_ids).each_with_object({}) do |project, enabled|
           enabled[[ project.account_id, project.id ]] = true if FeatureFlags.enabled?(:operational_supervisor, project:)
         end
       end
 
-      def incident_project_ids
-        @incident_project_ids ||= incidents.flat_map { |incident| incident.target_ids.fetch("project_ids") }.uniq
+      def incident_project_ids(incident)
+        (incident.affected_project_ids + incident.target_ids.fetch("project_ids")).uniq
+      end
+
+      def authorization_project_ids
+        @authorization_project_ids ||= incidents.flat_map { |incident| incident_project_ids(incident) }.uniq
       end
 
       def desired_fingerprints = desired.pluck("fingerprint")

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_110002) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -6396,6 +6396,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_110002) do
       $function$
   SQL
 
+  create_function :enforce_supervisor_incident_status_audit, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_supervisor_incident_status_audit()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status AND
+           current_setting('paid.supervisor_incident_status_transition', true) IS DISTINCT FROM 'true' THEN
+          RAISE EXCEPTION 'supervisor incident status changes must append a status_changed audit';
+        END IF;
+        IF TG_OP = 'INSERT' AND NEW.status IS DISTINCT FROM 'open' AND
+           current_setting('paid.supervisor_incident_status_transition', true) IS DISTINCT FROM 'true' THEN
+          RAISE EXCEPTION 'supervisor incident status changes must append a status_changed audit';
+        END IF;
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
   create_trigger :protect_project_delegation_audit_event_update, sql_definition: <<-SQL
       CREATE TRIGGER protect_project_delegation_audit_event_update BEFORE UPDATE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
   SQL
@@ -6554,6 +6573,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_110002) do
 
   create_trigger :prevent_supervisor_incident_audit_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
   SQL
 
   create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
