@@ -12,6 +12,14 @@ RSpec.describe FeatureFlags do
   end
 
   # @spec MAINT-001
+  it "uses operator-facing maintenance copy without internal design references" do
+    definition = described_class.definition(:maintenance_runs)
+
+    expect([ definition.intent, definition.rollout_plan, definition.cleanup_criteria ].join(" "))
+      .not_to match(/RDR-\d+/)
+  end
+
+  # @spec MAINT-001
   it "allows tenant opt-in through tenant_settings.features" do
     account = create(:account)
     account.create_tenant_setting!(features: { "maintenance_runs" => true })

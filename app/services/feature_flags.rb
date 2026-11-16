@@ -138,9 +138,9 @@ class FeatureFlags
     maintenance_runs: Definition.new(
       name: :maintenance_runs,
       owner: "maintenance-runs",
-      intent: "Gate RDR-075 manual maintenance-run admission (UI, API, and MCP) and future scheduled maintenance dispatch behind per-tenant opt-in.",
-      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features. Disabling admission preserves existing maintenance reports and active-run cancellation; remove only after the RDR-075 closeout verifies manual focused audits, report outcomes, tool isolation, recurrence/deduplication, and UI/API parity.",
-      cleanup_criteria: "Remove only after the RDR-075 closeout decision approves the default posture; recurring schedules stay explicitly opt-in."
+      intent: "Gate manual maintenance-run admission (UI, API, and MCP) and future scheduled maintenance dispatch behind per-tenant opt-in.",
+      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features. Disabling admission preserves existing maintenance reports and active-run cancellation; remove only after focused audits, report outcomes, tool isolation, recurrence and deduplication, and UI/API parity are verified.",
+      cleanup_criteria: "Remove only after the default posture is approved; recurring schedules stay explicitly opt-in."
     )
   }.freeze
 
