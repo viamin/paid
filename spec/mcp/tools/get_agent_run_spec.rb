@@ -36,6 +36,34 @@ RSpec.describe Tools::GetAgentRun do
         .to raise_error(ActiveRecord::RecordNotFound)
     end
 
+    # @spec MAINT-016 — maintenance context is inspectable through the same
+    # authorized surface regardless of the rollout guard.
+    it "includes the maintenance context for maintenance runs" do
+      run = create(:agent_run, project: create(:project, account: account), goal: "maintenance",
+        issue: nil, custom_prompt: "Audit workflow A", maintenance_guidance: "Audit workflow A",
+        maintenance_objective: "unnecessary_code", maintenance_recipe_version: "1",
+        maintenance_scope: "app/workflows/a.rb", maintenance_scope_kind: "named",
+        maintenance_pinned_revision: "main", maintenance_limits: { "max_execution_seconds" => 7200 })
+
+      result = tool.call(agent_run_id: run.id)
+
+      expect(result[:maintenance]).to include(
+        objective: "unnecessary_code",
+        recipe_version: "1",
+        scope: "app/workflows/a.rb",
+        scope_kind: "named",
+        guidance: "Audit workflow A",
+        pinned_revision: "main",
+        report_only: true
+      )
+    end
+
+    it "omits maintenance fields for non-maintenance runs" do
+      run = create(:agent_run, project: create(:project, account: account))
+
+      expect(tool.call(agent_run_id: run.id)).not_to include(:maintenance)
+    end
+
     it "reuses the authorized run lookup during perform" do
       run = create(:agent_run, project: create(:project, account: account))
       scope = instance_double(ActiveRecord::Relation)

@@ -19,6 +19,12 @@
         </svg>
         Trigger Run
       <% end %>
+      <%# @spec MAINT-010 — maintenance entry point is admitted only while the guard is enabled. %>
+      <% if FeatureFlags.enabled?(:maintenance_runs, project: @project) %>
+        <%= link_to new_project_maintenance_run_path(@project), class: "mt-4 ml-3 inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0" do %>
+          Maintenance Run
+        <% end %>
+      <% end %>
     <% end %>
   </div>
 

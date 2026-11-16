@@ -431,6 +431,15 @@ module Workflows
           # by the agent via the GitHub API proxy during execution.
           run_activity(Activities::CompleteReviewGoalActivity,
             { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+        elsif goal == "maintenance"
+          # Maintenance goal (RDR-075): report-only. Never push a branch or
+          # create a pull request; a completed investigation with no findings
+          # is a success, and a write-boundary violation fails loudly with
+          # the collected evidence preserved.
+          # @spec MAINT-020
+          run_activity(Activities::CompleteMaintenanceRunActivity,
+            { agent_run_id: agent_run_id, has_changes: agent_result[:has_changes] == true },
+            timeout: 30, retry_policy: NO_RETRY)
         elsif agent_result[:has_changes] || branch_changed_before_agent
           # Step 5: Push branch (inside container)
           # Re-check proxy health before push — the agent may have run for

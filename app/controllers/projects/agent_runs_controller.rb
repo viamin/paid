@@ -855,6 +855,8 @@ module Projects
         review_depth_snapshot: @agent_run.review_depth_snapshot,
         tdd_phase: @agent_run.tdd_phase,
         reconciliation: Issues::NoProgressCreatePrHold.release_fact_for(@agent_run.issue),
+        # @spec MAINT-015 — retries preserve the maintenance context snapshot.
+        **@agent_run.maintenance_context_attributes,
         **resolved_container_host_attributes(runner: retry_runner),
         trigger_type: "manual",
         status: "queued"
@@ -957,6 +959,8 @@ module Projects
         # original run was queued.
         review_depth_snapshot: @agent_run.review_depth_snapshot,
         tdd_phase: @agent_run.tdd_phase,
+        # @spec MAINT-015 — retries preserve the maintenance context snapshot.
+        **@agent_run.maintenance_context_attributes,
         **resolved_container_host_attributes(runner: @agent_run.runner),
         trigger_type: "manual",
         status: "queued"

@@ -150,6 +150,18 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "start_maintenance_run",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id, guidance: "Audit workflow A", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "trigger_readiness_bootstrap",
         denied_user: -> {
           project

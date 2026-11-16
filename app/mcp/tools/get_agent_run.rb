@@ -43,10 +43,29 @@ module Tools
         started_at: run.started_at,
         completed_at: run.completed_at,
         created_at: run.created_at
-      }
+      }.merge(maintenance_fields(run))
     end
 
     private
+
+    # @spec MAINT-016 — maintenance context is inspectable through the same
+    # authorized surface regardless of the rollout guard.
+    def maintenance_fields(run)
+      return {} unless run.maintenance_goal?
+
+      {
+        maintenance: {
+          objective: run.maintenance_objective,
+          recipe_version: run.maintenance_recipe_version,
+          scope: run.maintenance_scope,
+          scope_kind: run.maintenance_scope_kind,
+          guidance: run.maintenance_guidance,
+          pinned_revision: run.maintenance_pinned_revision,
+          limits: run.maintenance_limits,
+          report_only: true
+        }
+      }
+    end
 
     def run_for(agent_run_id)
       @runs_by_id ||= {}

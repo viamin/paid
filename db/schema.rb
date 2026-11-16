@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_15_173923) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_001148) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -355,6 +355,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_173923) do
     t.bigint "initiating_user_id", comment: "User who explicitly initiated the run; null for system-triggered runs."
     t.bigint "issue_id"
     t.integer "iterations", default: 0
+    t.text "maintenance_guidance", comment: "Free-text user guidance captured verbatim when the maintenance run started."
+    t.jsonb "maintenance_limits", comment: "Effective cost/time limits snapshotted when the maintenance run started."
+    t.string "maintenance_objective", limit: 100, comment: "Recipe key for maintenance runs; nil for a free-text user question."
+    t.string "maintenance_pinned_revision", limit: 255, comment: "Requested repository revision reference pinned at maintenance run start; the cloned SHA lands in base_commit_sha."
+    t.string "maintenance_recipe_version", limit: 50, comment: "Effective recipe version snapshotted when the maintenance run started."
+    t.text "maintenance_scope", comment: "Verbatim user-named scope (paths/symbols or free-form target) for maintenance runs; nil means broad scope."
+    t.string "maintenance_scope_kind", limit: 10, comment: "Explicit scope classification recorded at maintenance run start: named or broad."
     t.jsonb "mcp_provisioned_servers", default: {}, null: false, comment: "Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning"
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.jsonb "mcp_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of MCP sidecar containers provisioned for this run"
@@ -426,6 +433,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_173923) do
     t.index ["project_id", "created_at"], name: "idx_agent_runs_project_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "external_source_key", "external_run_key"], name: "idx_agent_runs_external_dedup", unique: true, where: "(external_run_key IS NOT NULL)"
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
+    t.index ["project_id", "goal"], name: "index_agent_runs_on_project_and_maintenance_goal", where: "((goal)::text = 'maintenance'::text)"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
     t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
     t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"

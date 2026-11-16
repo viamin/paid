@@ -49,6 +49,9 @@ module AgentRuns
         plan_doc_source: original.plan_doc_source,
         goal: original.goal,
         priority_tier: original.priority_tier,
+        # @spec MAINT-015 — blind retries preserve the maintenance context
+        # snapshot verbatim; a new investigation is a new run.
+        **original.maintenance_context_attributes,
         trigger_type: "manual",
         status: "queued",
         external_metadata: original.external_metadata.merge(

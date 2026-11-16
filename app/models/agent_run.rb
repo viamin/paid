@@ -3,6 +3,9 @@
 class AgentRun < ApplicationRecord
   has_many :agent_planning_holds, dependent: :nullify
   attr_readonly :confidence_delivery_snapshot
+  # @spec MAINT-015 — maintenance context is a start-time snapshot.
+  attr_readonly :maintenance_objective, :maintenance_recipe_version, :maintenance_scope,
+    :maintenance_scope_kind, :maintenance_guidance, :maintenance_pinned_revision, :maintenance_limits
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"
   attribute :external_metadata, :json, default: {}
@@ -34,8 +37,14 @@ class AgentRun < ApplicationRecord
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   # @spec LAYERED-VERIFY-013
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation cycle_analysis].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation cycle_analysis maintenance].freeze
   LAYERED_VERIFICATION_GOALS = %w[layered_verification_audit layered_verification_repair].freeze
+  # RDR-075 M01: report-only maintenance investigation goal. Admission is
+  # manual-only through the dedicated, `maintenance_runs`-gated entry points;
+  # generic triggers and tenant defaults must not select it.
+  # @spec MAINT-010 @spec MAINT-002
+  MAINTENANCE_GOAL = "maintenance"
+  MAINTENANCE_SCOPE_KINDS = %w[named broad].freeze
   # Report-only goal for a bounded technical-prerequisite validation. It never
   # implements work, so it does not inherit the create_pr feature-intent
   # admission gate; only an authorized Inbox action starts it.
@@ -45,7 +54,7 @@ class AgentRun < ApplicationRecord
   # triggers and tenant defaults may select; layered verification requires
   # its dedicated, feature-gated entry points.
   CYCLE_ANALYSIS_GOAL = "cycle_analysis"
-  NON_TRIGGERABLE_GOALS = (LAYERED_VERIFICATION_GOALS + [ TECHNICAL_PREREQUISITE_VALIDATION_GOAL, CYCLE_ANALYSIS_GOAL ]).freeze
+  NON_TRIGGERABLE_GOALS = (LAYERED_VERIFICATION_GOALS + [ TECHNICAL_PREREQUISITE_VALIDATION_GOAL, CYCLE_ANALYSIS_GOAL, MAINTENANCE_GOAL ]).freeze
   TRIGGERABLE_GOALS = (GOALS - NON_TRIGGERABLE_GOALS).freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
@@ -339,6 +348,11 @@ class AgentRun < ApplicationRecord
   validates :goal, presence: true, inclusion: { in: GOALS }
   validates :originating_audit_run, presence: true, if: :layered_verification_repair?
   validate :originating_audit_run_is_audit, if: :layered_verification_repair?
+  # @spec MAINT-011 — scope alone is not an investigation objective.
+  validate :maintenance_objective_or_guidance, if: :maintenance_goal?
+  # @spec MAINT-015 — the maintenance context snapshot is immutable once the
+  # run exists; retries carry it verbatim onto a new run instead.
+  validates :maintenance_scope_kind, inclusion: { in: MAINTENANCE_SCOPE_KINDS }, allow_nil: true, if: :maintenance_goal?
   validate :originating_audit_run_belongs_to_same_project, if: -> { originating_audit_run.present? }
   validates :focus, presence: true, inclusion: { in: FOCUSES }
   # @spec REVIEW-DEPTH-005 — the column is null: false with a DB-level
@@ -1903,6 +1917,28 @@ class AgentRun < ApplicationRecord
   # @spec AUTO-PICK-QUEUE-016
   def cycle_analysis_goal?
     goal == CYCLE_ANALYSIS_GOAL
+  end
+
+  # True for RDR-075 maintenance runs: report-only investigations that never
+  # require an issue or pull request and never create repair work themselves.
+  # @spec MAINT-010
+  def maintenance_goal?
+    goal == MAINTENANCE_GOAL
+  end
+
+  # Maintenance context is snapshotted at start and carried verbatim onto
+  # retries; a new investigation against another revision is a new run.
+  # @spec MAINT-015
+  def maintenance_context_attributes
+    {
+      maintenance_objective: maintenance_objective,
+      maintenance_recipe_version: maintenance_recipe_version,
+      maintenance_scope: maintenance_scope,
+      maintenance_scope_kind: maintenance_scope_kind,
+      maintenance_guidance: maintenance_guidance,
+      maintenance_pinned_revision: maintenance_pinned_revision,
+      maintenance_limits: maintenance_limits
+    }
   end
 
   # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
@@ -4281,9 +4317,21 @@ class AgentRun < ApplicationRecord
     # Layered-verification audits derive an assessment-only prompt from their
     # persisted obligation scope, plan, revision, and budget.
     return if layered_verification_audit_goal?
+    # Maintenance runs carry their prompt from the snapshotted objective,
+    # scope, and guidance, so they need no issue or source PR.
+    # @spec MAINT-010
+    return if maintenance_goal?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
+  end
+
+  # @spec MAINT-011 — a recipe objective or nonblank free-text guidance is
+  # required; scope alone shall not admit a maintenance run.
+  def maintenance_objective_or_guidance
+    return if maintenance_objective.present? || maintenance_guidance.present?
+
+    errors.add(:base, "maintenance runs require a recipe objective or nonblank guidance")
   end
 
   def generate_proxy_token
