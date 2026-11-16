@@ -36,9 +36,13 @@ class InboxRemoval < ApplicationRecord
   end
 
   def clear!
-    return false unless active?
+    observed_event = [ request_occurrence, removed_at ]
 
-    update!(cleared_at: Time.current)
+    with_lock do
+      next false unless active? && [ request_occurrence, removed_at ] == observed_event
+
+      update!(cleared_at: Time.current)
+    end
   end
 
   private

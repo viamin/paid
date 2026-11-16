@@ -84,6 +84,9 @@ an older suppression cannot override a newer return event. Removal writes
 re-check this boundary under the row lock before assigning attributes, so a
 replayed, delayed, or racing removal call carrying an occurrence an active row
 already suppresses is a no-op and the newest persisted occurrence always wins.
+Restore events also compare the observed occurrence and removal timestamp under
+the row lock. A delayed restore cannot clear a newer personal removal, including
+one made for the same request occurrence, or record a second return event.
 The concurrent unique-index build retries this deduplication and rebuild cycle a
 bounded number of times, reporting every retry and the terminal failure before
 leaving the migration unapplied for operator recovery.
