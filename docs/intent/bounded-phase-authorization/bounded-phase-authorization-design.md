@@ -46,6 +46,16 @@ supersedes it with newly consented scope, or resumes only unchanged scope.
 `Automation::EffectivePolicy` remains the sole execution-policy result. Its
 proposed bounded-authorization input has three outcomes:
 
+No bounded authorization is the normal case: the existing project phase and
+auto-merge policy decides whether a qualifying PR proceeds, including under
+the fully automatic profile. It creates no per-PR consent or stop decision.
+The consent plan presents **inherit project policy** as its default and writes
+no authorization until the user explicitly confirms a bounded phase and stop.
+An existing `paid-hold-review` or repository-required human review still blocks
+merge independently of either policy. The bounded authorization adds a new
+human decision only after a failed scope or authority recheck; repository-
+required human review remains a separate gate.
+
 | Outcome | Effective policy result |
 | --- | --- |
 | The action is in the selected phase and the authorization is current | Permit as `:bounded_phase_authorization`, then apply existing controls. |

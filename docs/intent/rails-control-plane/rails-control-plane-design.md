@@ -74,7 +74,11 @@ refuses to launch duplicate services and directs the developer to inspect the
 old session. A full `bin/dev-update` identifies same-workspace panes through
 the app-scoped Overmind tmux socket and pane path, then stops only those
 sessions before setup and replacement startup. It leaves other worktrees and
-unrelated tmux servers alone. If the session cannot be inspected or stopped,
+unrelated tmux servers alone. A socket for which tmux explicitly reports that
+no server is running, or whose path disappears before inspection, is not a live
+session and does not prevent setup or
+replacement startup. Unknown inspection errors remain blocking. If a live
+session cannot be inspected or stopped,
 the updater stops before setup and reports the socket/session identity with a
 diagnostic snapshot.
 

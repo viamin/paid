@@ -130,7 +130,7 @@ GEM
       adamantium (~> 0.2)
       equalizer (~> 0.0.11)
     ast (2.4.3)
-    avo (4.4.0)
+    avo (4.4.4)
       actionview (>= 6.1)
       active_link_to
       activerecord (>= 6.1)
@@ -162,8 +162,8 @@ GEM
     aws-sdk-kms (1.143.0)
       aws-sdk-core (~> 3, >= 3.268.0)
       aws-sigv4 (~> 1.5)
-    aws-sdk-s3 (1.240.0)
-      aws-sdk-core (~> 3, >= 3.266.0)
+    aws-sdk-s3 (1.242.0)
+      aws-sdk-core (~> 3, >= 3.268.0)
       aws-sdk-kms (~> 1)
       aws-sigv4 (~> 1.5)
     aws-sigv4 (1.12.1)
@@ -223,7 +223,7 @@ GEM
       railties (>= 7.0)
       responders
       warden (~> 1.2.3)
-    dial (0.6.0)
+    dial (0.6.1)
       actionpack (>= 7.1)
       activerecord (>= 7.1)
       pg_query
@@ -286,7 +286,7 @@ GEM
     fugit (1.14.0)
       et-orbi (~> 1.4)
       raabro (~> 1.4)
-    fx (0.12.0)
+    fx (0.13.0)
       activerecord (>= 8.1)
       railties (>= 8.1)
     globalid (1.4.0)
@@ -707,13 +707,14 @@ GEM
       rexml (~> 3.2)
       rover-df (>= 0.3, < 2.0)
     ruby-progressbar (1.13.0)
-    ruby_llm (2.1.1)
+    ruby_llm (2.2.0)
       base64
       faraday (>= 1.10.0, != 2.0.0)
       faraday-multipart (>= 1)
       faraday-net_http (>= 1)
       faraday-retry (>= 1)
       json (< 4)
+      logger
       marcel (>= 1.0, < 3)
       schematist (~> 1.1)
       zeitwerk (~> 2)
@@ -837,7 +838,7 @@ PLATFORMS
 
 DEPENDENCIES
   agent-harness (= 0.44.36)
-  avo (= 4.4.0)
+  avo (= 4.4.4)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -896,7 +897,7 @@ DEPENDENCIES
   rubocop-rails-omakase
   rubocop-rspec
   ruby-maat
-  ruby_llm (>= 2.0.0.rc1, < 2.2)
+  ruby_llm (>= 2.0.0.rc1, < 2.3)
   shoulda-matchers
   simplecov
   solid_cable (= 4.1.0)
@@ -934,13 +935,13 @@ CHECKSUMS
   amazing_print (2.0.0) sha256=2e36aba46ac78d37ed27ca0e2056afe3583183bb5c64f157c246b267355e5d6a
   anima (0.3.2) sha256=467f775e5c7721f1ac19c0efcef2ca56489b9673809371b12514a77e11cbfc00
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
-  avo (4.4.0) sha256=03ab53fffa4a8ace9bc3a80a5c8c8cb1e6e1f8096124b10d88a8da0f705fc226
+  avo (4.4.4) sha256=6af26d091c7a772107129bdf4e15c3be575a3f93b1560b5169b3b9c202df2c3b
   avo-icons (1.0.0) sha256=719d82dc3d8f94834ddb2a53d14ad9194def48b88307c0d2dd7fe8b3ef1b7f4a
   aws-eventstream (1.4.1) sha256=ceb6a99c61df4bb00344e54aed0351574beca24f87a0d1487d1d2ed80929ce96
   aws-partitions (1.1305.0) sha256=dbcf06fd557d111f8bba82180b8f32317f756516c40f3df72bdf94851ffbfa96
   aws-sdk-core (3.268.0) sha256=471950504724daa017711705647245ed2dcb44afc658dda88ca38176fe0f4612
   aws-sdk-kms (1.143.0) sha256=0f1286c8abf2b91817acffc0cd58580f7de703706c2b55e5be1cfc5cc7740dac
-  aws-sdk-s3 (1.240.0) sha256=3fd872761fa068a0dd1454e6477fe6ef2f21a0e45c9972b4f47e03293cd140a5
+  aws-sdk-s3 (1.242.0) sha256=f0fd5ca4a41e26b84026021d19ff0c7a3ecae66536f5b38cc71b4562b75a5bba
   aws-sigv4 (1.12.1) sha256=6973ff95cb0fd0dc58ba26e90e9510a2219525d07620c8babeb70ef831826c00
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   bcrypt (3.1.22) sha256=1f0072e88c2d705d94aff7f2c5cb02eb3f1ec4b8368671e19112527489f29032
@@ -969,7 +970,7 @@ CHECKSUMS
   date (3.6.0) sha256=18ac945c4e24ebd93534f8eab8c2fd8c5604b3e977105b3798d62a1e8d27b580
   debug (1.11.1) sha256=2e0b0ac6119f2207a6f8ac7d4a73ca8eb4e440f64da0a3136c30343146e952b6
   devise (5.0.4) sha256=d605f2b85854e74e56ee789e2d398702bc2d06e6bcd894717a670a3199c74cc1
-  dial (0.6.0) sha256=ff48a651577046ed736be6421079aaa404d80435248c753f2b9995fe06849ff5
+  dial (0.6.1) sha256=9ba24996fb0f4656ded0b07c6def4408855763b513b1c5c55124159baf124193
   diff-lcs (1.6.2) sha256=9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962
   discard (2.0.0) sha256=0fc520786b4d7b9b1ea8b2b3dadbb13c3e41d2ce7d297d04869baf1c9e30d2c0
   docile (1.4.1) sha256=96159be799bfa73cdb721b840e9802126e4e03dfc26863db73647204c727f21e
@@ -999,7 +1000,7 @@ CHECKSUMS
   flipper (1.4.2) sha256=dca7d65b5ec660b525b6c599e727219ac4994073c855b41b6656b2d91a9cb304
   flipper-active_record (1.4.2) sha256=ab70aeb78a44d59c690b5538fc269b08d1c2918abb720fe82832ac77fb1dfcd1
   fugit (1.14.0) sha256=e311a9cc85a54bb67649df45060e721282a1e2c8ebad40e41874a3a7d576f37e
-  fx (0.12.0) sha256=103c5ae78b2dd9c1a6fbfdf988777eadaa8448ad3e115b692900fa9a73260b27
+  fx (0.13.0) sha256=c3cb44e7e8bd6e6c8d616b4fe6c646287a6a0463b9e5335d31839d1a6953a220
   globalid (1.4.0) sha256=037f12fbf1d9d7a014d501c2d5c77356fd4ddd96d7a7991d6700bba96706f427
   good_job (4.24.1) sha256=2305acbc788fb01bba270c50bb066fa18f78d790c6f4488929c6f12edf7a384a
   google-protobuf (4.36.2) sha256=2f8daff50ae14aad36ab0ccdcf284065fa71d726c444efe114e6db82ffe62494
@@ -1154,7 +1155,7 @@ CHECKSUMS
   rubocop-rspec (3.10.2) sha256=0b3e2ecc592cd10ecbf0095bb58d1e357905276e069643523cc19eb7495f65e2
   ruby-maat (1.3.4) sha256=eb4935bda288b475a7872e5ce299f1ecd2d41fa02d45c0f0eaf0862dfd18d2d6
   ruby-progressbar (1.13.0) sha256=80fc9c47a9b640d6834e0dc7b3c94c9df37f08cb072b7761e4a71e22cff29b33
-  ruby_llm (2.1.1) sha256=2a59a6c100d1f7a5c5df7f3c392392c4430220ed936a34fdd34dd15954cc3573
+  ruby_llm (2.2.0) sha256=ed5163c3aba02c514687e1e2c6b1dfe4e8f4402201ce6d53487cf29c2f3e1a05
   ruby_parser (3.22.0) sha256=1eb4937cd9eb220aa2d194e352a24dba90aef00751e24c8dfffdb14000f15d23
   sawyer (0.9.3) sha256=0d0f19298408047037638639fe62f4794483fb04320269169bd41af2bdcf5e41
   schematist (1.1.0) sha256=905d8f0286830926e77e0d631bee325ee741c4b99640bc99735593b40ba73e7b

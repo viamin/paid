@@ -1,11 +1,12 @@
 # RDR-063: Operational Supervisor for Delivery Health
 
-> Draft for normal design review. This record does not authorize runtime implementation, mitigation, or enablement.
+> Accepted shadow-only design. Runtime admission and any later mitigation remain separately gated.
 
 ## Metadata
 
 - **Date**: 2026-10-29
-- **Status**: Draft
+- **Status**: Final
+- **Owner decision**: [#4341, 2026-11-16](https://github.com/viamin/paid/issues/4341#issuecomment-6908868779), accepting the exact HLD/RDR/LLD/EARS blobs at `20b5558c7034450b1c26814ea6f1faeed51e8d50`.
 - **Type**: Operations + AI Safety + Automation
 - **Priority**: P3
 - **Related RDRs**: [RDR-011](RDR-011-observability.md), [RDR-047](RDR-047-work-category-queue-priority.md), [RDR-049](RDR-049-configuration-health-checks.md), [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md)
@@ -72,12 +73,22 @@ Rollback disables the flag and stops future snapshot construction, LLM analysis,
 
 ## Implementation tree and holds
 
-The canonical tree is [#4708](https://github.com/viamin/paid/issues/4708), which Tracks this planning issue without closing it: #4709 incident/audit contract and #4710 snapshot depend on #4341; #4711 analysis depends on both; #4712 shadow scheduling/surface depends on #4709 and #4711; #4713 is the held, non-authorizing post-shadow mitigation decision; #4714 is the terminal evidence audit. All are P3 with a `planning` hold. Earlier duplicate trees were superseded and closed as not planned.
+The canonical tree is [#4708](https://github.com/viamin/paid/issues/4708), which Tracks this planning issue without closing it: #4709 incident/audit contract and #4710 snapshot depend on #4341; #4711 analysis depends on both; #4712 shadow scheduling/surface depends on #4709 and #4711; #4713 is the held, non-authorizing post-shadow mitigation decision; #4714 is the terminal evidence audit. All were filed at P3 with a `planning` hold. Earlier duplicate trees were superseded and closed as not planned.
 
-The tree remains held until this RDR and its HLD → LLD → EARS arrow are merged and accepted. #4714 Tracks the epic without closing it and may recommend closure only after it verifies shipped code, tests, documentation, rollout/cleanup, and approved acceptance; closed children alone are not evidence.
+The [owner decision](https://github.com/viamin/paid/issues/4341#issuecomment-6908868779) accepts this RDR and its HLD → LLD → EARS arrow. The #4341 planning prerequisite is satisfied only after this finalization merges and #4341 closes; downstream tasks then follow their own dependencies and the default-off rollout guard. #4713 retains its separate post-shadow decision hold. #4714 Tracks the epic without closing it and may recommend closure only after it verifies shipped code, tests, documentation, rollout/cleanup, and approved acceptance; closed children alone are not evidence.
 
 ## Unresolved decisions
 
 - Select precise snapshot retention limits after schema and operational volume evidence exist.
 - Select the authorized operator roles and exact dashboard/Inbox projection behavior with the incident contract.
 - Decide, after shadow evidence, whether either mitigation candidate warrants a separate accepted amendment; neither is presumed approved.
+
+## Finalization record
+
+- **Contradictions:** Notifications and Inbox remain access-controlled projections; dedicated snapshot and incident records own provenance, deduplication, lifecycle, retention, and audit. The project flag is checked before collection, so account rollups never include disabled projects. No autonomous action follows from a shadow finding.
+- **Assumptions:** Existing delivery telemetry, guardrails, and notification primitives provide typed operational facts. The implementation must prove that only the documented allowlist reaches `agent_harness`, incident evidence, and projections; a failed boundary test blocks the pilot. Exact retention periods and operator projection roles are implementation decisions owned by #4709 and #4712, not permission to widen the data boundary.
+- **Decisive proof:** #4710 and #4711 must use fixtures containing forbidden authored content, raw errors, and secrets to prove those values never cross the snapshot, LLM, or persistence boundary. #4712 must prove default-off/no-enabled-project no-op behavior and authorized visibility before any pilot. No runtime supervisor or live pilot is claimed by this design decision.
+- **Cross-component effects:** The [HLD](../high-level-design.md) owns the advisory operational boundary; the [LLD](../intent/operational-supervisor/operational-supervisor-design.md) owns snapshot, incident, and projection contracts; [EARS](../intent/operational-supervisor/operational-supervisor-specs.md) maps observable claims to #4709–#4714. RDR-011 observability and RDR-077 phase policy remain independent; a future mitigation would need a separate accepted amendment and explicit authority.
+- **Proportionality:** The review covers the data/LLM boundary, tenant and project gating, default-off rollout, incident lifecycle, and the absence of autonomous actions. Retention numbers and operator layouts are deferred to the named slices; no external notification or mitigation implementation is included.
+
+The [owner decision](https://github.com/viamin/paid/issues/4341#issuecomment-6908868779) names the exact accepted artifacts. #4714 owns criterion-level closeout. After a shadow pilot has enough observations to measure false positives, incident usefulness, and operating cost, review those outcomes before any mitigation amendment or broader enablement.
