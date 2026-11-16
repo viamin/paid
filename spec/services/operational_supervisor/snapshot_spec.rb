@@ -14,7 +14,9 @@ RSpec.describe OperationalSupervisor::Snapshot do
   describe ".call" do
     let(:account) { create(:account) }
     let(:now) { Time.zone.parse("2026-11-16 12:00:00") }
-    let!(:enabled_project) { create(:project, account:) }
+    let!(:enabled_project) do
+      create(:project, account:, owner: "customer-owner-name", repo: "customer-repository-name")
+    end
     let(:disabled_project) { create(:project, account:) }
 
     before do
@@ -33,8 +35,28 @@ RSpec.describe OperationalSupervisor::Snapshot do
       expect(snapshot.fetch(:project_ids)).to eq([ enabled_project.id ])
       expect(snapshot.to_json).not_to include(*forbidden.values)
       expect(snapshot.to_json).not_to include("disabled repository title")
-      expect(snapshot.fetch(:projects)).to all(include(:project_id, :repository_slug))
+      expect(snapshot.fetch(:projects)).to all(include(:project_id, :queue_depth))
+      expect(snapshot.fetch(:projects).flat_map(&:keys)).not_to include(:repository_slug)
       expect(snapshot.dig(:rollups, :run_statuses)).to include("failed" => 1)
+    end
+
+    # @spec OPERATIONAL-SUPERVISOR-002
+    it "counts distinct project and pull-request pairs for PR-only rework runs" do
+      another_project = create(:project, account:)
+      allow(FeatureFlags).to receive(:enabled?) do |flag, project:|
+        flag == :operational_supervisor && project.in?([ enabled_project, another_project ])
+      end
+      2.times do
+        create(:agent_run, :completed, project: enabled_project, issue: nil, source_pull_request_number: 42,
+          created_at: now - 1.hour)
+      end
+      create(:agent_run, :completed, project: another_project, issue: nil, source_pull_request_number: 42,
+        created_at: now - 1.hour)
+
+      metric = described_class.call(account:, now:).fetch(:metrics)
+        .find { |candidate| candidate[:key] == "rework_runs_per_pr" }
+
+      expect(metric).to include(numerator: 3, denominator: 2, availability: "available", value: 1.5)
     end
 
     # @spec OPERATIONAL-SUPERVISOR-002
@@ -85,8 +107,9 @@ RSpec.describe OperationalSupervisor::Snapshot do
     end
 
     def create_forbidden_fixture(project:, now:)
-      forbidden = { title: "customer issue title", body: "repository-authored body", prompt: "agent prompt",
-                    log: "raw execution log", error: "raw exception text", secret: "sk-super-secret-token" }
+      forbidden = { owner: project.owner, repo: project.repo, title: "customer issue title",
+                    body: "repository-authored body", prompt: "agent prompt", log: "raw execution log",
+                    error: "raw exception text", secret: "sk-super-secret-token" }
       issue = create(:issue, project:, title: forbidden[:title], body: forbidden[:body])
       run = create(:agent_run, :failed, :with_metrics, project:, issue:, custom_prompt: forbidden[:prompt],
         error_message: forbidden[:error], guardrail_context: { "credential" => forbidden[:secret] }, completed_at: now - 1.hour)

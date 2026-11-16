@@ -61,7 +61,6 @@ module OperationalSupervisor
       projects.map do |project|
         {
           project_id: project.id,
-          repository_slug: "#{project.owner}/#{project.repo}",
           queue_depth: queue_depths.fetch(project.id, 0)
         }
       end
@@ -84,8 +83,8 @@ module OperationalSupervisor
           "pull requests created in the window whose current lifecycle phase is merged"),
         ratio_metric("cost_per_merged_pr", window_cost_cents, merged_pull_requests.count,
           "billable agent-run token usage created in the window divided by merged pull requests from the source cohort"),
-        ratio_metric("rework_runs_per_pr", rework_runs.count, rework_runs.where.not(issue_id: nil).distinct.count(:issue_id),
-          "agent runs in the window linked to an existing pull request"),
+        ratio_metric("rework_runs_per_pr", rework_runs.count, rework_pull_request_count,
+          "agent runs in the window that recorded a source pull-request number"),
         unavailable_metric("paid_authored_pr_commit_count",
           "no typed Paid-authored commit-count primitive is currently available"),
         stage_age_metric,
@@ -190,6 +189,10 @@ module OperationalSupervisor
 
     def rework_runs
       @rework_runs ||= window_runs.where.not(source_pull_request_number: nil)
+    end
+
+    def rework_pull_request_count
+      rework_runs.distinct.count(Arel.sql("(project_id, source_pull_request_number)"))
     end
 
     def window_cost_cents
