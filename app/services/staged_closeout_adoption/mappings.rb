@@ -74,7 +74,7 @@ module StagedCloseoutAdoption
       return Result.new(mapping, "criterion_not_current") unless criteria.include?(mapping.criterion_key)
       return Result.new(mapping, "criterion_changed") unless criterion_digest(mapping.criterion_key) == mapping.criterion_digest
       return Result.new(mapping, "phase_policy_disabled") unless Automation::EffectivePolicy.call(
-        project:, phase: mapping.phase, work_item: issue, trigger: :automatic, delegated_action: "review"
+        project:, phase: mapping.phase, work_item: issue, trigger: :automatic
       ).permitted?
       return Result.new(mapping, "target_changed_or_unavailable") unless target_matches?(mapping)
 

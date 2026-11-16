@@ -32,6 +32,20 @@ RSpec.describe StagedCloseoutAdoption::Mappings do
     expect(described_class.eligible_for(mapping:, project:, issue:).reason).to eq("project_not_enrolled")
   end
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-004
+  it "admits an enabled phase under the conservative delegation posture" do
+    FeatureFlags.enable!(:automation_phases, project:)
+    project.update!(
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => true }
+      }
+    )
+    expect(ProjectDelegation::Posture.resolve(project).level).to eq("conservative")
+    mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+
+    expect(described_class.eligible_for(mapping:, project:, issue:)).to be_eligible
+  end
+
   # @spec STAGED-CLOSEOUT-ADOPTION-003 STAGED-CLOSEOUT-ADOPTION-004
   it "rejects a mapping when the latest current assessment removes its criterion" do
     mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)
