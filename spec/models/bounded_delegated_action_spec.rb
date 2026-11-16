@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec BOUNDED-PHASE-AUTHORIZATION-001
 # @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
 RSpec.describe BoundedDelegatedAction do
   let(:account) { create(:account) }
@@ -169,5 +170,107 @@ RSpec.describe BoundedDelegatedAction do
     account.destroy!
 
     expect(described_class.exists?(action.id)).to be(false)
+  end
+
+  describe "phase identity and pinned lineage" do
+    let(:pull_request) { create(:issue, :pull_request, project:, parent_issue_id: issue.id) }
+    let(:lineage_evidence) do
+      {
+        "intent_digest" => intent_digest,
+        "acceptance_refs" => [ "AC-1" ],
+        "phase" => Automation::Phases::CODING,
+        "stop_before_phase" => Automation::Phases::MERGE,
+        "lineage" => [ issue.id, pull_request.id ].sort
+      }
+    end
+
+    it "accepts a pinned same-work lineage that includes its identified work item" do
+      action = build(:bounded_delegated_action, project:, issue:, created_by: user,
+        action: "review", evidence: lineage_evidence)
+
+      expect(action).to be_valid
+    end
+
+    it "rejects a pinned lineage that omits its identified work item" do
+      action = build(:bounded_delegated_action, project:, issue:, created_by: user,
+        action: "review", evidence: lineage_evidence.merge("lineage" => [ pull_request.id ]))
+
+      expect(action).not_to be_valid
+      expect(action.errors[:evidence]).to include("lineage must include the identified work item")
+    end
+
+    it "rejects a pinned lineage that is not a list of work item ids" do
+      action = build(:bounded_delegated_action, project:, issue:, created_by: user,
+        action: "review", evidence: lineage_evidence.merge("lineage" => issue.id))
+
+      expect(action).not_to be_valid
+      expect(action.errors[:evidence]).to include("lineage must be a list of work item ids")
+    end
+
+    it "covers only its identified work item and pinned lineage" do
+      action = create(:bounded_delegated_action, project:, issue:, created_by: user,
+        action: "review", evidence: lineage_evidence)
+      unrelated = create(:issue, project:)
+      child = create(:issue, project:, parent_issue_id: issue.id)
+
+      expect(action.covers_issue_id?(issue.id)).to be(true)
+      expect(action.covers_issue_id?(pull_request.id)).to be(true)
+      expect(action.covers_issue_id?(unrelated.id)).to be(false)
+      expect(action.covers_issue_id?(child.id)).to be(false)
+    end
+
+    it "falls back to its identified work item when no lineage is pinned" do
+      action = create(:bounded_delegated_action, project:, issue:, created_by: user)
+
+      expect(action.covers_issue_id?(issue.id)).to be(true)
+      expect(action.covers_issue_id?(pull_request.id)).to be(false)
+    end
+  end
+
+  describe "exclusive stop boundary" do
+    let(:evidence) do
+      {
+        "intent_digest" => intent_digest,
+        "acceptance_refs" => [ "AC-1" ],
+        "phase" => Automation::Phases::CODING,
+        "stop_before_phase" => Automation::Phases::MERGE
+      }
+    end
+
+    it "stops its selected stop boundary and every later delivery phase" do
+      action = build(:bounded_delegated_action, project:, issue:, created_by: user,
+        action: "review", evidence:)
+
+      expect(action.stops_phase?(Automation::Phases::MERGE)).to be(true)
+      expect(action.stops_phase?(Automation::Phases::RELEASE_DEPLOYMENT)).to be(true)
+      expect(action.stops_phase?(Automation::Phases::CODING)).to be(false)
+      expect(action.stops_phase?(Automation::Phases::OPERATIONS)).to be(false)
+    end
+
+    it "selects only its pinned phase" do
+      action = build(:bounded_delegated_action, project:, issue:, created_by: user,
+        action: "review", evidence:)
+
+      expect(action.selects_phase?(Automation::Phases::CODING)).to be(true)
+      expect(action.selects_phase?(Automation::Phases::MERGE)).to be(false)
+    end
+
+    it "never stops a phase without a pinned stop boundary" do
+      action = build(:bounded_delegated_action, project:, issue:, created_by: user)
+
+      expect(action.stops_phase?(Automation::Phases::MERGE)).to be(false)
+    end
+  end
+
+  describe "auditable lifecycle" do
+    it "records a completion timestamp when it completes at its exclusive stop" do
+      action = create(:bounded_delegated_action, project:, issue:, created_by: user,
+        evidence: { "intent_digest" => intent_digest, "acceptance_refs" => [ "AC-1" ],
+          "stop_before_phase" => Automation::Phases::MERGE })
+
+      expect(action.complete!).to be(true)
+      expect(action.reload.completed_at).to be_present
+      expect(account.account_activity_events.by_action("bounded_action.completed").last.subject).to eq(action)
+    end
   end
 end

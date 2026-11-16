@@ -17,9 +17,10 @@ module Automation
   #
   # @spec AUTOMATION-PHASES-003 @spec AUTOMATION-PHASES-007
   # @spec AUTOMATION-PHASES-017 @spec PROJECT-DELEGATION-004
+  # @spec BOUNDED-PHASE-AUTHORIZATION-003
   class EffectivePolicy
     SOURCES = %i[legacy_policy manual_action continuation_grant project_defaults].freeze
-    REASONS = %i[phase_disabled phase_enabled posture_restricted].freeze
+    REASONS = %i[phase_disabled phase_enabled posture_restricted bounded_phase_stop].freeze
 
     Decision = Struct.new(:permitted, :source, :reason, :phase, :grant, :posture, :phase_policy_signature,
       keyword_init: true) do
@@ -75,6 +76,7 @@ module Automation
       return legacy_decision unless enabled?
       return block(:posture_restricted) if delegated_action && !posture.bounded_delivery?
       return permit(:manual_action, :phase_enabled) if manual_action?
+      return block(:bounded_phase_stop) if bounded_phase_stopped?
 
       grant = covering_grant
       return permit(:continuation_grant, :phase_enabled, grant:) if grant
@@ -121,9 +123,33 @@ module Automation
     end
 
     # An explicit operator request authorizes the selected action even in a
-    # phase whose project default is disabled.
+    # phase whose project default is disabled. It is not automatic
+    # advancement, so a bounded stop never suppresses it.
     def manual_action?
       trigger.to_sym == :manual
+    end
+
+    # RDR-078 exclusive stop: when a bounded authorization governing the work
+    # item's established same-work lineage selected a stop boundary at or
+    # before this phase, automatic advancement into that phase is stopped —
+    # even when project defaults or an ordinary continuation grant would
+    # permit it. The stop survives revocation, expiry, and completion; only
+    # an active authorization that explicitly selects the phase lifts it
+    # (authorizing the phase is the explicit crossing of an earlier stop).
+    # Where no bounded authorization governs the lineage, the project's
+    # existing policy decides unchanged.
+    # @spec BOUNDED-PHASE-AUTHORIZATION-003
+    def bounded_phase_stopped?
+      return false if work_item.blank? || phase.blank?
+      return false unless Automation::Phases.delivery?(phase)
+
+      issue = ContinuationGrantLookup.issue_for(work_item)
+      return false if issue.nil?
+
+      governing = BoundedDelegatedAction.for_lineage_of(work_item)
+        .select { |candidate| candidate.covers_issue_id?(issue.id) }
+      governing.any? { |candidate| candidate.stops_phase?(phase) } &&
+        governing.none? { |candidate| candidate.active? && candidate.selects_phase?(phase) }
     end
 
     def phase_enabled?

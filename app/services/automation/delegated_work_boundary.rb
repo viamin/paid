@@ -5,7 +5,7 @@ module Automation
   # has been admitted. Callers supply current, already-resolved policy facts;
   # this service compares them with the authorization and routes a mismatch.
   # @spec PROJECT-DELEGATION-004 @spec PROJECT-DELEGATION-006
-  # @spec BOUNDED-PHASE-AUTHORIZATION-004
+  # @spec BOUNDED-PHASE-AUTHORIZATION-002 @spec BOUNDED-PHASE-AUTHORIZATION-004
   class DelegatedWorkBoundary
     BOUNDARIES = %i[create queue dequeue retry follow_up repair closeout].freeze
     NOTIFICATION_SOURCE = "delegated_work_boundary_recheck"
@@ -64,6 +64,7 @@ module Automation
         phase_policy: policy_allows?(snapshot[:phase_policy]),
         bounded_stop: bounded_stop_allows?,
         tenant: tenant_matches?,
+        lineage: lineage_covers?,
         # Security is unavailable until a canonical assessment producer adds
         # it to the admission snapshot. Its absence fails closed so an
         # unverified boundary cannot preserve or broaden delegated authority.
@@ -101,8 +102,16 @@ module Automation
 
     def tenant_matches?
       snapshot[:account_id].to_s == authorization.account_id.to_s &&
-        snapshot[:project_id].to_s == authorization.project_id.to_s &&
-        snapshot[:issue_id].to_s == authorization.issue_id.to_s
+        snapshot[:project_id].to_s == authorization.project_id.to_s
+    end
+
+    # The admitted work item must be the authorization's identified work item
+    # or a member of its pinned same-work lineage. Another issue, a child,
+    # or an unrelated pull request fails closed here — it needs its own
+    # explicit authorization.
+    # @spec BOUNDED-PHASE-AUTHORIZATION-002
+    def lineage_covers?
+      authorization.covers_issue_id?(snapshot[:issue_id])
     end
 
     def allowed?(value)

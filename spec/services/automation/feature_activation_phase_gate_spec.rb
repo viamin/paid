@@ -131,4 +131,41 @@ RSpec.describe Automation::FeatureActivation do
       expect(described_class.issue_auto_pick_trigger(project:, issue:)).to be_present
     end
   end
+
+  describe "bounded phase stops" do
+    it "keeps auto-merge off for a lineage stopped before merge" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      configure({ "coding" => true, "merge" => true })
+      project.update!(auto_merge_mode: "all")
+      pull_request = create(:issue, :pull_request, project:, parent_issue: issue)
+      create(:bounded_delegated_action, project:, issue:,
+        action: "review",
+        evidence: Automation::DelegatedActionAdmission.admission_evidence(
+          work_item: issue, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+        ))
+
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_merge"))
+        .to be(false)
+      expect(described_class.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(false)
+    end
+
+    it "keeps auto-merge available once a newer merge authorization supersedes the stop" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      configure({ "coding" => true, "merge" => true })
+      project.update!(auto_merge_mode: "all")
+      pull_request = create(:issue, :pull_request, project:, parent_issue: issue)
+      create(:bounded_delegated_action, project:, issue:,
+        action: "review",
+        evidence: Automation::DelegatedActionAdmission.admission_evidence(
+          work_item: issue, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+        ))
+      create(:bounded_delegated_action, project:, issue: pull_request,
+        action: "merge",
+        evidence: Automation::DelegatedActionAdmission.admission_evidence(
+          work_item: pull_request, action: "merge", acceptance_refs: [ "AC-1" ],
+          stop_before_phase: "release_deployment"
+        ))
+
+      expect(described_class.pull_request_feature_enabled?(project:, pull_request:, feature: "auto_merge"))
+        .to be(true)
+    end
+  end
 end

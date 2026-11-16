@@ -3,8 +3,14 @@
 module Automation
   # Single write boundary for bounded delivery authorization. Every caller
   # supplies explicit evidence; reserved product/release actions fail closed.
-  # @spec BOUNDED-PHASE-AUTHORIZATION-004 @spec BOUNDED-PHASE-AUTHORIZATION-010
-  # @spec BOUNDED-PHASE-AUTHORIZATION-011 @spec PROJECT-DELEGATION-004
+  # The canonical evidence pins the identified work item's established
+  # same-work lineage, phase, exclusive stop boundary, intent/acceptance
+  # revisions, and policy signature, so no GitHub approval, mention,
+  # dependency, parent/child relation, or milestone membership can mint or
+  # extend the delegated authority.
+  # @spec BOUNDED-PHASE-AUTHORIZATION-001 @spec BOUNDED-PHASE-AUTHORIZATION-004
+  # @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
+  # @spec PROJECT-DELEGATION-004
   class AuthorizeBoundedAction
     class Error < StandardError; end
     class PermissionDenied < Error; end

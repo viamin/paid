@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec BOUNDED-PHASE-AUTHORIZATION-001 @spec BOUNDED-PHASE-AUTHORIZATION-002
 RSpec.describe Automation::DelegatedActionAdmission do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
@@ -275,5 +276,77 @@ RSpec.describe Automation::DelegatedActionAdmission do
     authorize(action: "merge", work_item: pull_request, stop_before_phase: "release_deployment")
 
     expect(recheck(action: "merge", boundary: :closeout, work_item: pull_request)).to be_permitted
+  end
+
+  describe "same-work lineage governance" do
+    it "admits delegated work on the linked pull request through the root issue's authorization" do # @spec BOUNDED-PHASE-AUTHORIZATION-002
+      authorize(action: "review", work_item: issue)
+
+      expect(recheck(goal: "review", work_item: pull_request)).to be_permitted
+    end
+
+    it "rechecks the pinned root's intent for lineage-governed pull request work" do # @spec BOUNDED-PHASE-AUTHORIZATION-002 BOUNDED-PHASE-AUTHORIZATION-004
+      authorize(action: "review", work_item: issue)
+      issue.update!(title: "A materially different request")
+
+      result = recheck(goal: "review", work_item: pull_request)
+
+      expect(result).to be_blocked
+      expect(result.reasons).to include(:intent_revision)
+    end
+
+    it "requires explicit authorization for another issue" do # @spec BOUNDED-PHASE-AUTHORIZATION-001 BOUNDED-PHASE-AUTHORIZATION-002
+      authorize(action: "review", work_item: issue)
+      other_issue = create(:issue, project: project)
+
+      expect(recheck(goal: "review", work_item: other_issue)).to be_nil
+    end
+
+    it "requires explicit authorization for a decomposed child issue" do # @spec BOUNDED-PHASE-AUTHORIZATION-001 BOUNDED-PHASE-AUTHORIZATION-002
+      authorize(action: "review", work_item: issue)
+      child_issue = create(:issue, project: project, parent_issue_id: issue.id)
+
+      expect(recheck(goal: "review", work_item: child_issue)).to be_nil
+    end
+
+    it "requires explicit authorization for an unrelated pull request" do # @spec BOUNDED-PHASE-AUTHORIZATION-002
+      authorize(action: "review", work_item: issue)
+      other_pr = create(:issue, :pull_request, project: project, github_number: 84)
+
+      expect(recheck(goal: "review", work_item: other_pr)).to be_nil
+    end
+
+    it "requires explicit authorization for a pull request linked after admission" do # @spec BOUNDED-PHASE-AUTHORIZATION-001 BOUNDED-PHASE-AUTHORIZATION-002
+      late_issue = create(:issue, project: project)
+      authorize(action: "review", work_item: late_issue)
+      late_pr = create(:issue, :pull_request, project: project, github_number: 85, parent_issue_id: late_issue.id)
+
+      expect(recheck(goal: "review", work_item: late_pr)).to be_nil
+    end
+
+    it "keeps lineage governance inside one tenant" do # @spec BOUNDED-PHASE-AUTHORIZATION-002
+      authorize(action: "review", work_item: issue)
+      other_account = create(:account)
+      other_user = create(:user, account: other_account)
+      other_project = create(:project, :with_github_installation, account: other_account, created_by: other_user)
+      other_issue = create(:issue, project: other_project)
+
+      expect(described_class.call(project: other_project, issue: other_issue, goal: "review",
+        boundary: :dequeue)).to be_nil
+      expect(other_project.bounded_delegated_actions.count).to eq(0)
+    end
+
+    it "rechecks lineage-governed work at the create, dequeue, and follow-up boundaries" do # @spec BOUNDED-PHASE-AUTHORIZATION-002 BOUNDED-PHASE-AUTHORIZATION-004
+      authorization = authorize(action: "repair", work_item: issue)
+
+      %i[create dequeue follow_up].each do |boundary|
+        expect(recheck(goal: "layered_verification_repair", boundary:, work_item: pull_request)).to be_permitted
+      end
+
+      authorization.update!(status: "revoked")
+      %i[create dequeue follow_up].each do |boundary|
+        expect(recheck(goal: "layered_verification_repair", boundary:, work_item: pull_request)).to be_blocked
+      end
+    end
   end
 end

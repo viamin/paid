@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec BOUNDED-PHASE-AUTHORIZATION-001
 # @spec BOUNDED-PHASE-AUTHORIZATION-010 @spec BOUNDED-PHASE-AUTHORIZATION-011
 RSpec.describe Automation::AuthorizeBoundedAction do
   let(:account) { create(:account) }
@@ -148,5 +149,48 @@ RSpec.describe Automation::AuthorizeBoundedAction do
       described_class.call(project:, issue:, user:, action: "repair",
         evidence: evidence.merge("stop_before_phase" => "release_deployment"))
     }.to raise_error(Automation::AuthorizeBoundedAction::InvalidEvidence, /must be merge for repair/)
+  end
+
+  describe "explicit phase identity and lineage" do
+    it "pins the established same-work lineage in the authorization evidence" do # @spec BOUNDED-PHASE-AUTHORIZATION-001
+      pull_request = create(:issue, :pull_request, project:, github_number: 7, parent_issue_id: issue.id)
+
+      authorization = described_class.call(project:, issue:, user:, action: "repair", evidence:)
+
+      expect(authorization.evidence["lineage"]).to contain_exactly(issue.id, pull_request.id)
+    end
+
+    it "pins the lineage of a pull request work item back to its root issue" do # @spec BOUNDED-PHASE-AUTHORIZATION-001
+      pull_request = create(:issue, :pull_request, project:, github_number: 8, parent_issue_id: issue.id)
+      pr_digest = "sha256:#{PartialCloseouts::Assessment.intent_revision_for(pull_request)}"
+
+      authorization = described_class.call(project:, issue: pull_request, user:, action: "review",
+        evidence: evidence.merge("intent_digest" => pr_digest))
+
+      expect(authorization.evidence["lineage"]).to contain_exactly(issue.id, pull_request.id)
+    end
+
+    it "records the pinned lineage in the authorization audit event" do # @spec BOUNDED-PHASE-AUTHORIZATION-001
+      authorization = described_class.call(project:, issue:, user:, action: "repair", evidence:)
+      event = account.account_activity_events.by_action("bounded_action.authorized").last
+
+      expect(event.actor).to eq(user)
+      expect(event.metadata["evidence"]["lineage"]).to eq([ issue.id ])
+    end
+
+    it "mints no authority from relations, mentions, dependencies, or milestone membership" do # @spec BOUNDED-PHASE-AUTHORIZATION-001
+      described_class.call(project:, issue:, user:, action: "repair", evidence:)
+      related = create(:issue, project:,
+        body: "Supports ##{issue.github_number} and mentions the same milestone",
+        labels: [ "Phase 2" ])
+      child = create(:issue, project:, parent_issue_id: issue.id)
+      create(:issue_dependency, issue: related, depends_on_issue: issue)
+
+      expect(project.bounded_delegated_actions.count).to eq(1)
+      expect(Automation::DelegatedActionAdmission.call(project:, issue: related, action: "repair",
+        boundary: :create)).to be_nil
+      expect(Automation::DelegatedActionAdmission.call(project:, issue: child, action: "repair",
+        boundary: :create)).to be_nil
+    end
   end
 end
