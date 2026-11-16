@@ -9,7 +9,7 @@ require "rails_helper"
 # results in DATABASE_URL reaching both agent_run.service_environment and the
 # ExecutionRunners::RunSpec that would be handed to the agent container.
 #
-# @spec CONTAINER-RUNTIME-032
+# @spec CONTAINER-RUNTIME-032 CONTAINER-RUNTIME-052 POSTGRESQL-PERSISTENCE-006
 RSpec.describe "Postgres service provisioning through the ExecutionRunners boundary", type: :model do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
@@ -47,7 +47,12 @@ RSpec.describe "Postgres service provisioning through the ExecutionRunners bound
     result = Activities::ProvisionServicesActivity.new.execute(agent_run_id: agent_run.id)
 
     expect(result[:service_environment]).to include("DATABASE_URL")
-    expect(agent_run.reload.service_environment["DATABASE_URL"]).to match(%r{\Apostgres://agent:agent@})
+    url = URI.parse(agent_run.reload.service_environment.fetch("DATABASE_URL"))
+
+    expect(url.user).to match(/\Apaid_app_[0-9a-f]{24}\z/)
+    expect(url.password).to match(/\A[0-9a-f]{64}\z/)
+    expect(url.password).not_to eq(service_container.env.fetch("POSTGRES_PASSWORD"))
+    expect(url.path).to eq("/agent_run_#{agent_run.id}_attempt_0")
   end
 
   it "propagates DATABASE_URL into the RunSpec built for the agent container" do
