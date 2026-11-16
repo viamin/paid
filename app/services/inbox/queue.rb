@@ -925,7 +925,7 @@ module Inbox
     # prerequisites, and the authorized recovery actions (#4120).
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
     def partial_closeout_entries
-      Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id).map do |pair|
+      Issues::StalledCloseoutProjection.read(scoped_projects, issue_id: @record_id).map do |pair|
         status = pair.status
         Entry.new(
           id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",

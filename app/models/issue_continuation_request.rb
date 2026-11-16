@@ -29,6 +29,7 @@ class IssueContinuationRequest < ApplicationRecord
   scope :closed, -> { where.not(status: OPEN_STATUSES) }
 
   after_commit :bump_inbox_cache_version, on: [ :create, :update ]
+  after_commit :enqueue_partial_closeout_projection
 
   def self.open_for_issue(issue)
     open.where(issue: issue).last
@@ -59,5 +60,9 @@ class IssueContinuationRequest < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(project)
   end
 end

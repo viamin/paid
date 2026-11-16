@@ -223,7 +223,7 @@ module Inbox
         .includes(account: :tenant_setting, created_by: :user_setting).to_a
       return 0 if projects.empty?
 
-      Issues::StalledCloseouts.call(projects).size
+      Issues::StalledCloseoutProjection.read(projects).size
     end
 
     # Authorized Inbox visibility: account isolation plus per-owner

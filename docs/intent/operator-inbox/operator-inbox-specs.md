@@ -428,12 +428,14 @@
   prerequisite guidance) as specified by the owning segment
   [`partial-closeout-recovery`](../partial-closeout-recovery/partial-closeout-recovery-specs.md)
   (`PARTIAL-CLOSEOUT-001`…`PARTIAL-CLOSEOUT-009`, #4120).
-  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
-  `app/services/issues/closeout_status.rb`,
-  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
-  `app/controllers/projects/agent_runs_controller.rb`.
-  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/requests/projects/issue_continuations_spec.rb`.
+*Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+`app/services/issues/closeout_status.rb`,
+`app/services/issues/stalled_closeout_projection.rb`,
+`app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
+`app/controllers/projects/agent_runs_controller.rb`.
+*Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+`spec/services/issues/stalled_closeout_projection_spec.rb`,
+`spec/requests/projects/issue_continuations_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002J** — When an open pull request carries the
   `paid-tests-ready-for-review` label (the TDD red-phase gate applied by

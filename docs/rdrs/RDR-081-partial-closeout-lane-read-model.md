@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-10-28
-- **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implementation pending
+- **Status**: Accepted — owner chose Option B on 2026-11-05 (#4558); implemented for rollout under #4912
 - **Type**: Architecture
 - **Related RDRs**: [RDR-074](RDR-074-project-readiness.md) (the persisted project-readiness snapshot this read model mirrors), [RDR-032](RDR-032-eager-queue-seeding.md) (auto-pick admission authority)
 - **Related Issues**: #4558 (this decision), #4912 (persisted projection implementation), #4120 (partial-closeout recovery umbrella), #4119 (gap ownership), #4556 (eligible-scope query optimization)
@@ -256,6 +256,6 @@ the same coverage Option C would need and the main implementation risk.
 
 The owner chose Option B on 2026-11-05. This accepts the display-only read
 model while keeping live admission authoritative at preflight, dequeue, and run
-start. The lane continues using live admission until the projection is
-implemented and the rollout guard is enabled; accepting this RDR does not
-create a projection table or change runtime behavior.
+start. Issue #4912 adds the projection tables, recomputation job, shared reader,
+and default-off rollout guard; projects with the flag enabled use the persisted
+checkpoint after it succeeds and retain the live fallback until then.
