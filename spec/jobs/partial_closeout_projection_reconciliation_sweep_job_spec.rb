@@ -41,6 +41,37 @@ RSpec.describe PartialCloseoutProjectionReconciliationSweepJob do # @spec PARTIA
       .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
   end
 
+  it "enqueues recomputation when a design-amendment hold callback is missed" do
+    project = create(:project)
+    feature_intent = create(:feature_intent, project:)
+    amendment = create(:design_amendment, feature_intent:, project:)
+    issue = create(:issue, project:)
+    FeatureFlags.enable!(:partial_closeout_lane_read_model, project:)
+    Issues::StalledCloseoutProjection.call(project:)
+
+    create(:design_amendment_pause, design_amendment: amendment, issue:)
+    clear_enqueued_jobs
+
+    expect { described_class.perform_now }
+      .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
+  end
+
+  it "enqueues recomputation when a design-amendment release callback is missed" do
+    project = create(:project)
+    feature_intent = create(:feature_intent, project:)
+    amendment = create(:design_amendment, feature_intent:, project:)
+    issue = create(:issue, project:)
+    pause = create(:design_amendment_pause, design_amendment: amendment, issue:)
+    FeatureFlags.enable!(:partial_closeout_lane_read_model, project:)
+    Issues::StalledCloseoutProjection.call(project:)
+
+    pause.update_columns(status: "released", released_at: Time.current, updated_at: Time.current)
+    clear_enqueued_jobs
+
+    expect { described_class.perform_now }
+      .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
+  end
+
   it "enqueues recomputation for an enabled project without a successful checkpoint" do
     project = create(:project)
     FeatureFlags.enable!(:partial_closeout_lane_read_model, project:)

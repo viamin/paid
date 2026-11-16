@@ -17,6 +17,8 @@ class DesignAmendmentPause < ApplicationRecord
   validates :design_amendment_id, uniqueness: { scope: :issue_id }
   validate :issue_belongs_to_amendment_project
 
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
+
   scope :held, -> { where(status: "held") }
   scope :released, -> { where(status: "released") }
 
@@ -30,6 +32,10 @@ class DesignAmendmentPause < ApplicationRecord
   def released? = status == "released"
 
   private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(design_amendment.project)
+  end
 
   def issue_belongs_to_amendment_project
     return if issue.blank? || design_amendment.blank?

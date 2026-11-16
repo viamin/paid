@@ -85,6 +85,22 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
       .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
   end
 
+  it "enqueues recomputation when a design-amendment hold is created or released" do
+    feature_intent = create(:feature_intent, project:)
+    amendment = create(:design_amendment, feature_intent:, project:)
+    issue = create(:issue, project:)
+    pause = nil
+
+    expect {
+      pause = create(:design_amendment_pause, design_amendment: amendment, issue:)
+    }.to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
+
+    clear_enqueued_jobs
+
+    expect { pause.update!(status: "released", released_at: Time.current) }
+      .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
+  end
+
   it "enqueues recomputation when a prerequisite notification changes" do
     notification = create(:notification, account:, subject: create(:issue, project:),
       source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)

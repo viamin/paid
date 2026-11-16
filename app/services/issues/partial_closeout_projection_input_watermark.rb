@@ -61,6 +61,8 @@ module Issues
         [ "prerequisite_mappings", FeatureIntentIssuePrerequisiteMapping.joins(feature_intent_issue: :issue).where(issues: { project_id: project_ids }), Issue.arel_table[:project_id] ],
         [ "prerequisites", FeatureIntentIssuePrerequisite.joins(feature_intent_issue_prerequisite_mapping: { feature_intent_issue: :issue })
           .where(issues: { project_id: project_ids }), Issue.arel_table[:project_id] ],
+        [ "design_amendment_pauses", DesignAmendmentPause.joins(:design_amendment)
+          .where(design_amendments: { project_id: project_ids }), DesignAmendment.arel_table[:project_id] ],
         [ "notifications", Notification.joins("INNER JOIN issues ON issues.id = notifications.subject_id")
           .where(subject_type: "Issue", issues: { project_id: project_ids }), Issue.arel_table[:project_id] ]
       ]
