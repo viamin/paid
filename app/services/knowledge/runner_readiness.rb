@@ -35,7 +35,7 @@ module Knowledge
       return unsupported unless selected&.enabled_for_chat? && !selected.discarded?
 
       if selected.subscription?
-        managed = owner.account.runner_credentials.for_runner(selected.runner_key).where(revoked_at: nil).exists?
+        managed = owner.account.runner_credentials.active.for_runner(selected.runner_key).exists?
         return missing_credential("subscription") unless managed
 
         return Result.new(status: "isolation_required", credential_source: "subscription", credential_service: "subscription",
