@@ -70,7 +70,8 @@
   occurrence, and returning an item SHALL clear suppression only for the new
   occurrence.
   *Tests:* `spec/services/inbox/removals_spec.rb`,
-  `spec/models/inbox_removal_spec.rb`
+  `spec/models/inbox_removal_spec.rb`,
+  `spec/migrations/enforce_unique_inbox_removal_request_spec.rb`
   *Code:* `InboxRemoval`, `Inbox::RequestIdentity`
 
 - [x] **INBOX-PHASE-RELEVANCE-009** — Personally removed items SHALL be

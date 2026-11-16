@@ -76,9 +76,12 @@ merely because a user has a removal.
 ## Personal removal
 
 `inbox_removals` stores one durable `(user, request_key, occurrence, phase,
-entry_kind, project_id, removed_at, cleared_at)` record. A request is suppressed for that user
-while a removal row exists whose occurrence is not older than the request's
-current occurrence. Removal is presentation-only: the underlying work,
+entry_kind, project_id, removed_at, cleared_at)` record. A request is suppressed
+for that user while a removal row exists whose occurrence is not older than the
+request's current occurrence. When the uniqueness constraint is first enforced,
+legacy duplicates collapse to the row with the latest persisted state change so
+an older suppression cannot override a newer return event. Removal is
+presentation-only: the underlying work,
 questions, comments, and authorization are untouched, other users are
 unaffected, and the item stays inspectable via the **Removed** filter, direct
 link, and related-item history.
