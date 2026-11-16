@@ -15,6 +15,8 @@ RSpec.describe Tools::StartMaintenanceRun do
     allow(AgentRuns::RunnerResolver).to receive(:call)
       .with(project: project, goal: "maintenance")
       .and_return([ nil, "claude_code" ])
+    stub_request(:get, "https://api.github.com/repos/#{project.full_name}/git/refs/heads/#{project.default_branch.presence || "main"}")
+      .to_return(status: :ok, body: { object: { sha: "a" * 40 } }.to_json, headers: { "Content-Type" => "application/json" })
     allow(ProcessRunQueueJob).to receive(:perform_later)
   end
 
@@ -22,6 +24,15 @@ RSpec.describe Tools::StartMaintenanceRun do
     it "returns true" do
       expect(described_class.write_operation?).to be(true)
     end
+  end
+
+  # @spec MAINT-010
+  it "publishes the explicitly confirmed write tool on the MCP surface" do
+    definitions = Tools::Registry.mcp_definitions_for(user: user, session: session)
+    definition = definitions.find { |candidate| candidate[:name] == "start_maintenance_run" }
+
+    expect(definition).to include(name: "start_maintenance_run")
+    expect(definition.dig(:inputSchema, :properties, :confirmed)).to include(type: "boolean")
   end
 
   # @spec MAINT-002

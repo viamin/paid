@@ -13,6 +13,8 @@ RSpec.describe "Project maintenance runs" do
     allow(AgentRuns::RunnerResolver).to receive(:call)
       .with(project: project, goal: "maintenance")
       .and_return([ nil, "claude_code" ])
+    stub_request(:get, "https://api.github.com/repos/#{project.full_name}/git/refs/heads/#{project.default_branch.presence || "main"}")
+      .to_return(status: :ok, body: { object: { sha: "a" * 40 } }.to_json, headers: { "Content-Type" => "application/json" })
     allow(ProcessRunQueueJob).to receive(:perform_later)
     sign_in owner
   end

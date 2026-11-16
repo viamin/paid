@@ -6,6 +6,7 @@ module Tools
 
     def self.tool_name = "start_maintenance_run"
     def self.write_operation? = true
+    def self.mcp_available? = true
 
     def self.description
       "Start a report-only maintenance run on a project without an issue or pull request. " \
