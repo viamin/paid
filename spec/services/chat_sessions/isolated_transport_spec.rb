@@ -68,6 +68,23 @@ RSpec.describe ChatSessions::IsolatedTransport, type: :service do
     expect(described_class::RUNNER).to include("request[:cancellation] = DeadlineCancellation.new(deadline: deadline)")
   end
 
+  # @spec CHAT-ISOLATION-001
+  it "does not reuse a prior result when a consecutive execution emits no result" do
+    transport = described_class.new(chat_session:, runner:, api_key: "secret-api-key", executor: executor)
+    allow(Containers::StandaloneTextExecutor).to receive(:new).and_return(executor)
+    allow(executor).to receive(:execute).and_invoke(
+      lambda do |_command, **options|
+        options[:output_observer].call(:stdout,
+          '{"type":"result","payload":{"status":"succeeded","content":"First","model":"gpt-test"}}' + "\n")
+      end,
+      ->(_command, **) { }
+    )
+
+    expect(transport.call(request)).to include(status: :succeeded, content: "First")
+    expect { transport.call(request) }
+      .to raise_error(AgentHarness::ProviderError, "Isolated chat execution returned no result")
+  end
+
   def capture_executor_options
     options = nil
     allow(Containers::StandaloneTextExecutor).to receive(:new) { |**new_options| options = new_options; executor }

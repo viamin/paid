@@ -53,6 +53,8 @@ module ChatSessions
     end
 
     def call(request, &observer)
+      @result = nil
+      @stdout = +""
       @observer = observer
       timeout = timeout_for(request)
       raise AgentHarness::TimeoutError, "Isolated chat request deadline expired" unless timeout.positive?
