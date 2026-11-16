@@ -175,6 +175,14 @@ RSpec.describe Knowledge::ProviderSelector do
   describe ".available_standalone_chat_runners" do
     before { user.runners.delete_all }
 
+    # @spec ISSUE-ANALYSIS-019 LLM-ROUTING-010
+    it "excludes a subscription runner without a managed credential" do
+      runner = create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
+
+      expect(described_class.available_standalone_chat_runners(user_setting: setting)).to eq([])
+      expect(described_class.standalone_chat_runners(user_setting: setting)).not_to include(runner)
+    end
+
     # @spec LLM-ROUTING-008
     it "includes a subscription runner with an active managed credential" do
       runner = create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)

@@ -6,7 +6,7 @@ prefix: ISSUE-ANALYSIS
 # Low-Level Design: Issue Analysis
 
 > Companion to the high-level design (`docs/high-level-design.md`). This is the
-> LLD for the `analyze_issue` goal — the lightweight, container-free LLM
+> LLD for the `analyze_issue` goal — the lightweight isolated-text LLM
 > readiness assessment Paid runs when auto-pick selects an issue on a project
 > with auto-enhance enabled.
 
@@ -14,8 +14,13 @@ prefix: ISSUE-ANALYSIS
 
 Before committing to a full `create_pr` agent run (clone, container, agent),
 Paid asks an LLM whether the issue plus the knowledge base give an autonomous
-agent enough to start. This is a single direct LLM call — no Docker, no repo
-clone — implemented by `Activities::AnalyzeIssueActivity`.
+agent enough to start. `Activities::AnalyzeIssueActivity` calls `Llm::Request`,
+which executes each attempt in `Containers::StandaloneTextExecutor`: a
+disposable, restricted text container. The workflow does not provision an
+agent coding container, clone a repository, or expose coding-agent tools for
+this assessment. The activity boundary preserves Temporal replay determinism;
+container lifecycle belongs to the request attempt and closes on success,
+failure, cancellation, and retry.
 
 ## Provider selection
 
@@ -38,8 +43,8 @@ provider independently, through the knowledge/chat provider layer:
    availability filter. The widened route retains each Runner's `routing_key`;
    it never collapses an API-key record to a provider key that could resolve to
    a subscription record. API-key candidates require a present selected secret;
-   subscription candidates require host tool-control support and no managed
-   subscription credential requiring isolation. This is what lets an analysis succeed on `codex`
+   subscription candidates require an active managed credential that the
+   isolated text executor can materialize. This is what lets an analysis succeed on `codex`
    when `claude` is rate-limited, and what serves the default case where no
    explicit issue-analysis runner is set. The widened list is then reordered via
    `RunnerSupport.lean_first` so economical runners are tried before

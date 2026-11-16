@@ -22,7 +22,7 @@ RSpec.describe Knowledge::DashboardStats do
       before { project } # ensure project exists
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "reports partial readiness when the default chat subscription is available" do
+      it "reports unavailable readiness when the default chat subscription has no managed credential" do
         expect(stats).to include(
           projects_indexed: 0,
           projects_total: 1,
@@ -32,9 +32,9 @@ RSpec.describe Knowledge::DashboardStats do
           artifacts_by_type: [],
           last_collection_at: nil
         )
-        expect(stats[:operational_status]).to eq("degraded")
+        expect(stats[:operational_status]).to eq("unavailable")
         expect(stats[:provider_health][:embedding_available]).to be false
-        expect(stats[:provider_health][:chat_available]).to be true
+        expect(stats[:provider_health][:chat_available]).to be false
         expect(stats[:provider_health][:embedding].first).to include(
           configuration_status: "missing_credential",
           operational_status: "healthy",
@@ -105,7 +105,7 @@ RSpec.describe Knowledge::DashboardStats do
 
       # @spec KNOWLEDGE-DASHBOARD-002
       it "reports that managed credentials require isolated execution" do
-        expect(stats[:provider_health][:chat].first[:configuration_status]).to eq("ready")
+        expect(stats[:provider_health][:chat].first[:configuration_status]).to eq("missing_credential")
 
         create(:runner_credential, account: account, created_by: owner, runner_key: owner.settings.kb_chat_runner)
 
@@ -131,10 +131,10 @@ RSpec.describe Knowledge::DashboardStats do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
-          configuration_status: "ready",
-          credential_source: "subscription",
+          configuration_status: "missing_credential",
+          credential_source: nil,
           credential_service: "subscription",
-          available: true
+          available: false
         )
       end
     end
@@ -315,8 +315,8 @@ RSpec.describe Knowledge::DashboardStats do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
-          configuration_status: "ready",
-          credential_source: "subscription",
+          configuration_status: "missing_credential",
+          credential_source: nil,
           credential_service: "subscription"
         )
         expect(chat.values).not_to include("platform-key")
@@ -340,8 +340,8 @@ RSpec.describe Knowledge::DashboardStats do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
-          configuration_status: "ready",
-          credential_source: "subscription",
+          configuration_status: "missing_credential",
+          credential_source: nil,
           credential_service: "subscription"
         )
         expect(chat.values).not_to include("platform-key")

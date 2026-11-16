@@ -23,7 +23,7 @@ module Knowledge
       new(user_setting:).available_chat_runner_keys
     end
 
-    # Container-free text work must retain the selected credential rather than
+    # Isolated text work must retain the selected credential rather than
     # resolving a provider key back to a different owned runner.
     def self.available_standalone_chat_runners(user_setting:)
       new(user_setting:).available_standalone_chat_runners
@@ -63,7 +63,7 @@ module Knowledge
       filtered.select { |runner| runner_available?(runner, runner_states) }
     end
 
-    # @spec ISSUE-ANALYSIS-014 LLM-ROUTING-005
+    # @spec ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-010
     def available_standalone_chat_runners
       runners = standalone_chat_runners
       states = user_setting.user.runner_states.where(runner_name: runners.map(&:state_key)).index_by(&:runner_name)
@@ -73,10 +73,10 @@ module Knowledge
       end
     end
 
-    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 LLM-ROUTING-005 LLM-ROUTING-008
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-008 LLM-ROUTING-010
     def standalone_chat_runners
       user_setting.user.runners.kept_only.for_chat.ordered.select do |runner|
-        standalone_text_capable?(runner)
+        isolated_text_capable?(runner)
       end
     end
 
@@ -132,7 +132,10 @@ module Knowledge
       !state.unavailable?
     end
 
-    def standalone_text_capable?(runner)
+    # A subscription is selected only when the isolated text executor can
+    # materialize its managed credential. API-key runners retain their own
+    # selected secret; neither route may fall back to a host credential.
+    def isolated_text_capable?(runner)
       return runner.effective_api_secret.present? if runner.api_key?
 
       managed_credential_available?(runner)

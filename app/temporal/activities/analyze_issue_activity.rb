@@ -6,7 +6,8 @@ module Activities
   # auto_enhance_enabled — evaluates whether the issue + knowledge base provide
   # enough context to start a create_pr run.
   #
-  # This is a direct LLM call — no container provisioning or repo cloning.
+  # Llm::Request provisions a disposable text-only container for each selected
+  # runner. This activity never provisions a coding container or clones a repo.
   class AnalyzeIssueActivity < BaseActivity
     include Llm::OutputNormalizer
 
@@ -237,7 +238,7 @@ module Activities
     end
 
     # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-013
-    def call_llm(agent_run, prompt)
+    def call_llm(agent_run, prompt) # @spec ISSUE-ANALYSIS-019 LLM-ROUTING-010
       user_setting = owner_user_setting(agent_run.project)
       providers = chat_providers(agent_run.project)
       rate_limited_count = 0

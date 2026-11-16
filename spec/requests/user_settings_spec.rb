@@ -81,6 +81,18 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include('name="user_setting[kb_chat_runner]"', 'name="user_setting[kb_chat_fallback_runners_csv]"')
       end
 
+      # @spec ISSUE-ANALYSIS-019
+      it "links missing subscription credentials to their runner credential form" do
+        runner = user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+        user.settings.update!(kb_chat_runner: runner.routing_key, kb_chat_fallback_runners: [])
+
+        get edit_user_settings_path
+
+        expect(response.body).to include("Missing subscription credential")
+        expect(response.body).to include(new_runner_runner_credential_path(runner))
+        expect(response.body).not_to include("Missing Subscription API key")
+      end
+
       it "does not render the deprecated auto-pick PR limit setting" do
         get edit_user_settings_path
 

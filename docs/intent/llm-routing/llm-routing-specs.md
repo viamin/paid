@@ -47,3 +47,10 @@
   inventory SHALL classify project-only, account-only, live-run, and post-run
   work and require all of them to use the isolated text route, including when
   a persisted run container handle is stale or absent.
+
+- [x] **LLM-ROUTING-010** — Runner readiness and issue-analysis selection
+  SHALL report and admit a subscription only when an active managed credential
+  permits the isolated text executor to materialize that subscription inside
+  its disposable container. An uncredentialed subscription SHALL report
+  `missing_credential`, be excluded from isolated-text candidates, and never
+  trigger host CLI execution or API-key billing substitution.

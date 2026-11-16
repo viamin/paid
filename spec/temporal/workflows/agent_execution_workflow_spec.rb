@@ -366,6 +366,31 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::RunAgentActivity, anything, any_args)
     end
 
+    # @spec ISSUE-ANALYSIS-019 LLM-ROUTING-005 PARTIAL-CLOSEOUT-049
+    it "routes an acceptance audit through its isolated-text activity without a coding container or clone" do
+      audit_input = input.merge(continuation_mode: "acceptance_audit")
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::RunAcceptanceAuditActivity" then { agent_run_id: 42, assessment_recorded: true }
+        else {}
+        end
+      end
+
+      result = workflow.execute(audit_input)
+
+      expect(result).to eq(success: true, agent_run_id: 42, acceptance_audit: true)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RunAcceptanceAuditActivity, { agent_run_id: 42 },
+          start_to_close_timeout: anything, retry_policy: described_class::NO_RETRY)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ProvisionContainerActivity, anything, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CloneRepoActivity, anything, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RunAgentActivity, anything, any_args)
+    end
+
     it "queues an enhance_issue follow-up when context is insufficient" do
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name

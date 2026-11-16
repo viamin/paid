@@ -84,8 +84,10 @@ within its 120-second activity budget including authentication and cleanup.
 Background session summaries and error diagnosis use project-owner text routing because run cleanup can precede
 those jobs. Decision drafting shares the same fallback permissions and timeout
 budget as application text, including credential-specific circuit state.
-Readiness reports subscriptions requiring isolation explicitly rather than
-claiming standalone text is ready.
+Readiness reports a credentialed subscription as requiring isolation and an
+uncredentialed subscription as missing configuration; it never claims that an
+isolated route can execute a subscription until its managed credential is
+active.
 
 ## Non-chat caller inventory
 

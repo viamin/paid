@@ -36,7 +36,13 @@
               <% if readiness.status == "ready" %>
                 <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> — <%= readiness.credential_name %> (<%= readiness.credential_source.humanize %>)
               <% elsif readiness.status == "missing_credential" %>
-                Missing <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> API key — <%= link_to "add one", new_provider_api_key_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <% if readiness.credential_service == "subscription" %>
+                  <%# @spec ISSUE-ANALYSIS-019 %>
+                  <% subscription_runner = Runner.for_identifier(user_setting.user, entry.runner) %>
+                  Missing subscription credential — <%= link_to "reconnect it", subscription_runner ? new_runner_runner_credential_path(subscription_runner) : runners_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <% else %>
+                  Missing <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> API key — <%= link_to "add one", new_provider_api_key_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <% end %>
               <% elsif readiness.status == "invalid_credential" %>
                 The selected API key is incompatible with this runner. Choose a matching API key or Automatic credential selection.
               <% elsif readiness.status == "isolation_required" %>
