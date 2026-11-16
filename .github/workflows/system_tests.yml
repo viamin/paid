@@ -330,7 +330,7 @@ jobs:
             # retrying the whole suite; a missing or ambiguous service must
             # fail closed.
             postgres_container="$(docker ps --format '{{.ID}} {{.Names}}' | awk '$2 ~ /_postgres([[:digit:]]+)?_/ { print $1 }')"
-            if [ "$(printf '%s\\n' "$postgres_container" | sed '/^$/d' | wc -l)" -ne 1 ]; then
+            if [ "$(printf '%s\n' "$postgres_container" | sed '/^$/d' | wc -l)" -ne 1 ]; then
               echo "::error::Expected exactly one PostgreSQL service container for system-spec recovery"
               exit 1
             fi

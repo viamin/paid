@@ -55,7 +55,10 @@ claims remain proposed until their admission and reassessment paths land.
   continuation grant would otherwise permit that phase; ordinary RDR-077 grants
   SHALL retain their current non-stopping behavior. This extends the shipped
   `-004` fail-closed boundary result with a `bounded_phase_stop`; it SHALL NOT
-  change continuation-grant endpoint semantics.
+  change continuation-grant endpoint semantics. Where no bounded authorization
+  governs the lineage, the system SHALL preserve the project's existing phase
+  and auto-merge policy, including fully automatic merging of qualifying PRs
+  without a new per-PR human decision.
   *Planned delivery:* #4997. *Planned tests:* effective-policy and queue specs.
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-004** — Before creating, dequeuing,
@@ -102,7 +105,11 @@ claims remain proposed until their admission and reassessment paths land.
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-008** — Inbox, work detail, chat, API, and
   tool operations SHALL use the same authorization policy and SHALL display the
   scope, current state, remaining checks, invalidators, expiry/revocation, and
-  next stop before consent and during execution.
+  next stop before consent and during execution. The consent surface SHALL
+  default to inheriting project policy and SHALL create no bounded stop until
+  an authorized user explicitly confirms one; it SHALL show how a selected
+  stop overrides fully automatic merge and how an independent human-only hold
+  remains effective.
   *Planned delivery:* #4999. *Planned tests:* request, Inbox, chat, API, and MCP specs.
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-009** — Authorization completion,

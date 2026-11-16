@@ -50,6 +50,26 @@ or a current-head review attestation.
 
 ## Proposed decision
 
+### Project policy is the default
+
+Without a bounded authorization for the identified lineage, Paid follows the
+project's existing phase and merge policy. A project configured for fully
+automatic delivery may merge a qualifying PR after its configured CI, review,
+security, branch-protection, dependency, and mergeability checks; this proposal
+adds no per-PR human checkpoint to that path. The authorization action is an
+explicit per-work choice to delegate a narrower phase and enforce a stop.
+The consent surface defaults to **inherit project policy** and creates no
+bounded authorization until an authorized user selects and confirms that
+exception. An independent human-only review hold remains authoritative.
+
+Once a stop is selected, even a fully automatic project cannot silently cross
+it. The user can explicitly return the lineage to ordinary project policy or
+authorize a new scope; expiry or revocation alone never converts a stopped
+lineage into an automatic merge. Paid continues ordinary in-scope review and
+repair without asking at every step. The bounded authorization asks for new
+consent when the original consent cannot be shown to cover the next action;
+repository-required human review remains a separate gate.
+
 ### Identity and scope
 
 An authorization names an **automation phase**, never a delivery milestone.
