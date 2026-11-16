@@ -17,6 +17,7 @@ class Account < ApplicationRecord
   enum :status, { active: 0, suspended: 1, deactivated: 2 }
 
   around_destroy :with_activity_event_teardown, prepend: true
+  around_destroy :with_supervisor_audit_teardown, prepend: true
   before_destroy :destroy_apple_verification_records
   before_destroy :destroy_chat_records
 
@@ -71,6 +72,9 @@ class Account < ApplicationRecord
   has_many :api_usage_attempts, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :exception_incidents, dependent: :destroy
+  has_many :supervisor_snapshots, dependent: :destroy
+  has_many :supervisor_incidents, dependent: :destroy
+  has_many :supervisor_incident_audits, dependent: :delete_all
   has_many :configuration_bundles, dependent: :destroy
   has_many :orchestration_strategies, dependent: :destroy
   has_many :strategy_experiments, dependent: :destroy
@@ -224,6 +228,15 @@ class Account < ApplicationRecord
     yield
   ensure
     database&.execute("SELECT set_config('paid.account_teardown_account_id', '', true)") unless transaction_failed?(database)
+  end
+
+  # @spec OPERATIONAL-SUPERVISOR-007
+  def with_supervisor_audit_teardown
+    database = self.class.connection
+    database.execute("SET LOCAL paid.supervisor_incident_audit_purge = 'true'")
+    yield
+  ensure
+    database&.execute("SET LOCAL paid.supervisor_incident_audit_purge = 'false'") unless transaction_failed?(database)
   end
 
   def transaction_failed?(database)

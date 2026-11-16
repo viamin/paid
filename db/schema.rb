@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4599,6 +4599,58 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
     t.check_constraint "project_id IS NULL OR account_id IS NOT NULL", name: "chk_style_guides_scope_consistency"
   end
 
+  create_table "supervisor_incident_audits", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "action", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "supervisor_incident_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_supervisor_incident_audits_on_account_id"
+    t.index ["supervisor_incident_id", "occurred_at"], name: "idx_on_supervisor_incident_id_occurred_at_1a4244e05f"
+    t.index ["supervisor_incident_id"], name: "index_supervisor_incident_audits_on_supervisor_incident_id"
+  end
+
+  create_table "supervisor_incidents", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "affected_project_ids", default: [], null: false, array: true
+    t.string "category", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.string "fingerprint", null: false
+    t.datetime "first_seen_at", null: false
+    t.datetime "last_seen_at", null: false
+    t.string "model_identifier", null: false
+    t.integer "occurrence_count", default: 1, null: false
+    t.string "policy_identifier", null: false
+    t.string "prompt_identifier", null: false
+    t.datetime "retention_expires_at", null: false
+    t.string "severity", null: false
+    t.string "status", default: "open", null: false
+    t.bigint "supervisor_snapshot_id"
+    t.jsonb "target_ids", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "fingerprint"], name: "index_supervisor_incidents_on_account_and_fingerprint", unique: true
+    t.index ["account_id", "retention_expires_at"], name: "idx_on_account_id_retention_expires_at_06514e2ffe"
+    t.index ["account_id", "status"], name: "index_supervisor_incidents_on_account_id_and_status"
+    t.index ["account_id"], name: "index_supervisor_incidents_on_account_id"
+    t.index ["supervisor_snapshot_id"], name: "index_supervisor_incidents_on_supervisor_snapshot_id"
+  end
+
+  create_table "supervisor_snapshots", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "captured_at", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "digest", default: {}, null: false
+    t.bigint "included_project_ids", default: [], null: false, array: true
+    t.jsonb "metric_provenance", default: {}, null: false
+    t.datetime "retention_expires_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "retention_expires_at"], name: "idx_on_account_id_retention_expires_at_c5e39567b6"
+    t.index ["account_id"], name: "index_supervisor_snapshots_on_account_id"
+  end
+
   create_table "tenant_settings", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.jsonb "agent_settings", default: {}, null: false
@@ -5475,6 +5527,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "style_guides", "style_guide_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "supervisor_incident_audits", "accounts"
+  add_foreign_key "supervisor_incident_audits", "supervisor_incidents"
+  add_foreign_key "supervisor_incidents", "accounts"
+  add_foreign_key "supervisor_incidents", "supervisor_snapshots"
+  add_foreign_key "supervisor_snapshots", "accounts"
   add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "chat_sessions", on_delete: :cascade
@@ -6353,6 +6410,71 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
       $function$
   SQL
 
+  create_function :prevent_supervisor_incident_audit_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_supervisor_incident_audit_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF TG_OP = 'DELETE' AND current_setting('paid.supervisor_incident_audit_purge', true) = 'true' THEN
+          RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'supervisor incident audits are append-only';
+      END;
+      $function$
+  SQL
+
+  create_function :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_supervisor_incident_snapshot_tenant()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF NEW.supervisor_snapshot_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM supervisor_snapshots WHERE id = NEW.supervisor_snapshot_id AND account_id = NEW.account_id
+        ) THEN
+          RAISE EXCEPTION 'supervisor_snapshot_id must belong to the incident account';
+        END IF;
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
+  create_function :enforce_supervisor_audit_incident_tenant, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_supervisor_audit_incident_tenant()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM supervisor_incidents WHERE id = NEW.supervisor_incident_id AND account_id = NEW.account_id
+        ) THEN
+          RAISE EXCEPTION 'supervisor_incident_id must belong to the audit account';
+        END IF;
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
+  create_function :enforce_supervisor_incident_status_audit, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_supervisor_incident_status_audit()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status AND
+           current_setting('paid.supervisor_incident_status_transition', true) IS DISTINCT FROM 'true' THEN
+          RAISE EXCEPTION 'supervisor incident status changes must append a status_changed audit';
+        END IF;
+        IF TG_OP = 'INSERT' AND
+           current_setting('paid.supervisor_incident_status_transition', true) IS DISTINCT FROM 'true' THEN
+          RAISE EXCEPTION 'supervisor incident creation must append an opened audit';
+        END IF;
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
   create_trigger :protect_project_delegation_audit_event_update, sql_definition: <<-SQL
       CREATE TRIGGER protect_project_delegation_audit_event_update BEFORE UPDATE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
   SQL
@@ -6405,12 +6527,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
@@ -6503,6 +6625,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
 
   create_trigger :logidze_on_style_guides, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_style_guides BEFORE INSERT OR UPDATE ON public.style_guides FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :enforce_supervisor_audit_incident_tenant, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_audit_incident_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_audit_incident_tenant()
+  SQL
+
+  create_trigger :prevent_supervisor_incident_audit_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL

@@ -1,0 +1,3 @@
+CREATE TRIGGER enforce_supervisor_audit_incident_tenant
+BEFORE INSERT OR UPDATE ON public.supervisor_incident_audits
+FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_audit_incident_tenant();

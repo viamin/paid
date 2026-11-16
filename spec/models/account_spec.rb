@@ -243,4 +243,17 @@ RSpec.describe Account do
       expect(AccountActivityEvent.exists?(event.id)).to be(false)
     end
   end
+
+  describe "supervisor persistence teardown" do
+    it "removes append-only supervisor audits with their account" do # @spec OPERATIONAL-SUPERVISOR-007
+      account = create(:account)
+      incident = create(:supervisor_incident, account:)
+      audit = create(:supervisor_incident_audit, account:, supervisor_incident: incident)
+
+      expect { account.destroy! }
+        .to change(SupervisorIncident, :count).by(-1)
+        .and change(SupervisorIncidentAudit, :count).by(-1)
+      expect(SupervisorIncidentAudit.exists?(audit.id)).to be(false)
+    end
+  end
 end
