@@ -15,10 +15,13 @@
 - **Related intent**: `docs/intent/bounded-phase-authorization/`, `docs/intent/automation-phases/`, `docs/intent/auto-merge-strategy/`, and `docs/intent/inbox-phase-relevance/`
 - **Implementation status**: The narrower bounded-action foundation and
   deterministic boundary rechecks (`BOUNDED-PHASE-AUTHORIZATION-010`, `-011`,
-  and `-004`) are checked in the linked EARS. The eight phase-lifecycle claims
-  are accepted implementation gaps tracked under #4995. No exclusive stop is
-  implemented or enabled; approval freshness and project settings, including
-  Forager's `auto_merge_mode`, remain unchanged.
+  and `-004`) plus the phase identity, same-work lineage, and exclusive-stop
+  composition claims (`-001`, `-002`, `-003`, delivered in #4997) are checked
+  in the linked EARS. The remaining phase-lifecycle claims are accepted
+  implementation gaps tracked under #4995. `automation_phases` remains
+  default-off; no enablement or merge authority follows from the shipped
+  claims, and approval freshness and project settings, including Forager's
+  `auto_merge_mode`, remain unchanged.
 
 ## Acceptance boundary
 

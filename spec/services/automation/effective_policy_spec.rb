@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec AUTOMATION-PHASES-003 @spec AUTOMATION-PHASES-007 @spec AUTOMATION-PHASES-017
+# @spec BOUNDED-PHASE-AUTHORIZATION-003
 RSpec.describe Automation::EffectivePolicy do
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
@@ -146,6 +147,120 @@ RSpec.describe Automation::EffectivePolicy do
       incident_issue = create(:issue, project:, labels: [ project.feature_activation_label_for("auto_pick") ])
 
       expect(decide(phase: "coding", work_item: incident_issue)).to be_blocked
+    end
+  end
+
+  describe "bounded phase stops" do
+    let(:pull_request) { create(:issue, :pull_request, project:, github_number: 21, parent_issue_id: issue.id) }
+
+    def authorize_bounded(action:, work_item: issue)
+      create(:bounded_delegated_action, account: account, project: project, issue: work_item,
+        action: action,
+        evidence: Automation::DelegatedActionAdmission.admission_evidence(
+          work_item: work_item, action: action, acceptance_refs: [ "AC-1" ],
+          stop_before_phase: Automation::DelegatedActionAdmission::STOP_BEFORE_PHASES.fetch(action)
+        ))
+    end
+
+    before { configure({ "coding" => true, "merge" => true, "release_deployment" => true }) }
+
+    it "returns a visible stop at the selected boundary even when defaults would continue" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      authorize_bounded(action: "review")
+
+      decision = decide(phase: "merge")
+
+      expect(decision).to be_blocked
+      expect(decision.reason).to eq(:bounded_phase_stop)
+    end
+
+    it "stops the boundary even when an ordinary continuation grant covers the phase" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      authorize_bounded(action: "review")
+      create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+
+      decision = decide(phase: "merge")
+
+      expect(decision).to be_blocked
+      expect(decision.reason).to eq(:bounded_phase_stop)
+    end
+
+    it "keeps ordinary continuation grants non-stopping without a bounded stop" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      configure({ "coding" => false, "merge" => false })
+      create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+
+      decision = decide(phase: "merge")
+
+      expect(decision).to be_permitted
+      expect(decision.source).to eq(:continuation_grant)
+    end
+
+    it "preserves fully automatic merging where no bounded authorization governs the lineage" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      decision = decide(phase: "merge", work_item: pull_request)
+
+      expect(decision).to be_permitted
+      expect(decision.source).to eq(:project_defaults)
+    end
+
+    it "applies the stop through the same-work lineage" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      pull_request # establish the linked PR before the lineage is pinned
+      authorize_bounded(action: "review")
+
+      decision = decide(phase: "merge", work_item: pull_request)
+
+      expect(decision).to be_blocked
+      expect(decision.reason).to eq(:bounded_phase_stop)
+    end
+
+    it "does not extend the stop to another lineage" do # @spec BOUNDED-PHASE-AUTHORIZATION-002 BOUNDED-PHASE-AUTHORIZATION-003
+      authorize_bounded(action: "review")
+      other_issue = create(:issue, project:)
+      other_project = create(:project, account: account)
+      other_project_issue = create(:issue, project: other_project)
+
+      expect(decide(phase: "merge", work_item: other_issue)).to be_permitted
+      expect(decide(phase: "merge", work_item: other_project_issue)).to be_permitted
+    end
+
+    it "keeps the stop after revocation, expiry, and completion" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      revoked = authorize_bounded(action: "review")
+      revoked.update!(status: "revoked")
+      expect(decide(phase: "merge")).to be_blocked
+
+      expired = authorize_bounded(action: "review")
+      expired.update!(expires_at: 1.hour.ago)
+      expect(decide(phase: "merge")).to be_blocked
+
+      completed = authorize_bounded(action: "review")
+      completed.update!(status: "completed")
+      expect(decide(phase: "merge").reason).to eq(:bounded_phase_stop)
+    end
+
+    it "lets a newer explicit authorization supersede the stop for its phase" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      pull_request # establish the linked PR before the lineage is pinned
+      authorize_bounded(action: "review")
+      authorize_bounded(action: "merge", work_item: pull_request)
+
+      expect(decide(phase: "merge", work_item: pull_request)).to be_permitted
+      expect(decide(phase: "release_deployment", work_item: pull_request)).to be_blocked
+      expect(decide(phase: "release_deployment", work_item: pull_request).reason).to eq(:bounded_phase_stop)
+    end
+
+    it "does not stop an operator's explicit manual action" do # @spec BOUNDED-PHASE-AUTHORIZATION-003
+      authorize_bounded(action: "review")
+
+      decision = decide(phase: "merge", trigger: :manual)
+
+      expect(decision).to be_permitted
+      expect(decision.source).to eq(:manual_action)
+    end
+
+    it "keeps the stop off while the rollout guard is disabled" do # @spec BOUNDED-PHASE-AUTHORIZATION-003 AUTOMATION-PHASES-014
+      FeatureFlags.disable!(:automation_phases, project:)
+      authorize_bounded(action: "review")
+
+      decision = decide(phase: "merge")
+
+      expect(decision).to be_permitted
+      expect(decision.source).to eq(:legacy_policy)
     end
   end
 end

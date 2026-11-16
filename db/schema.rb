@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_073909) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -753,6 +753,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_073909) do
   create_table "bounded_delegated_actions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "action", null: false
+    t.datetime "completed_at"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.jsonb "evidence", default: {}, null: false

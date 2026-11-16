@@ -9,14 +9,14 @@ module Automation
   # current boundary facts, then rechecks them through DelegatedWorkBoundary,
   # which fails closed and routes a mismatch to one focused Inbox decision.
   #
-  # A work item whose action class has no bounded authorization is not
-  # delegated work under this contract: +call+ returns nil and the caller
+  # A work item whose action class has no bounded authorization covering it is
+  # not delegated work under this contract: +call+ returns nil and the caller
   # applies its ordinary policy. Manual and automatic actions on a delegated
   # work item both recheck at their boundary, so a retry cannot outlive a
   # revoked or stale authorization.
   #
   # @spec PROJECT-DELEGATION-004 @spec PROJECT-DELEGATION-006
-  # @spec BOUNDED-PHASE-AUTHORIZATION-004
+  # @spec BOUNDED-PHASE-AUTHORIZATION-001 @spec BOUNDED-PHASE-AUTHORIZATION-004
   class DelegatedActionAdmission
     # Run goals whose delegated action class is bounded by a
     # BoundedDelegatedAction. Goals absent here (create_pr, enhance_issue,
@@ -67,6 +67,15 @@ module Automation
       }
     end
 
+    # The established same-work lineage of a work item — the root work item
+    # and the pull requests linked to it, resolved through the existing
+    # continuation lookup. Admissions pin this list so a later-linked or
+    # unrelated work item cannot inherit the authorization.
+    # @spec BOUNDED-PHASE-AUTHORIZATION-001
+    def self.lineage_issue_ids(work_item)
+      ContinuationGrantLookup.chain_issue_ids(work_item).sort
+    end
+
     def self.acceptance_revision_for(assessment)
       "criteria:#{Digest::SHA256.hexdigest(assessment.criteria.to_json)}"
     end
@@ -87,7 +96,9 @@ module Automation
     # The canonical bounded evidence an authorization for this work item and
     # action must pin so every later boundary recheck can re-derive and match
     # it. Admission surfaces build their evidence through this helper so the
-    # admission and recheck sides of the contract cannot drift.
+    # admission and recheck sides of the contract cannot drift. The pinned
+    # lineage records the same-work chain the authorization governs.
+    # @spec BOUNDED-PHASE-AUTHORIZATION-001
     def self.admission_evidence(work_item:, action:, acceptance_refs:, stop_before_phase:)
       {
         "intent_digest" => "sha256:#{PartialCloseouts::Assessment.intent_revision_for(work_item)}",
@@ -95,7 +106,8 @@ module Automation
         **revision_tokens(issue: work_item),
         "posture_signature" => posture_signature_for(project: work_item.project, action: action),
         "phase" => ACTION_PHASES.fetch(action),
-        "stop_before_phase" => stop_before_phase
+        "stop_before_phase" => stop_before_phase,
+        BoundedDelegatedAction::LINEAGE_KEY => lineage_issue_ids(work_item)
       }
     end
 
@@ -152,22 +164,25 @@ module Automation
       work_item.project
     end
 
-    # The latest authorization for this action governs the lineage — a newer
-    # explicit authorization supersedes older ones, and a revoked, expired,
-    # or completed terminal authorization blocks new actions until a new
-    # explicit authorization exists (it never falls through to project
-    # defaults for that lineage).
+    # The latest authorization for this action that covers the admitted work
+    # item through the established same-work lineage governs it — a newer
+    # explicit authorization supersedes older ones, a work item outside the
+    # pinned lineage is not delegated work under this contract (nil for that
+    # lineage), and a revoked, expired, or completed terminal authorization
+    # blocks new actions until a new explicit authorization exists (it never
+    # falls through to project defaults for that lineage).
+    # @spec BOUNDED-PHASE-AUTHORIZATION-002
     def authorization
-      @authorization ||= work_item.bounded_delegated_actions
+      @authorization ||= BoundedDelegatedAction
+        .for_lineage_of(work_item)
         .where(action: action)
-        .order(id: :desc)
-        .first
+        .find { |candidate| candidate.covers_issue_id?(work_item.id) }
     end
 
     def authorization_at_expected_stop?
       return false if authorization.nil?
 
-      authorization.evidence.to_h["stop_before_phase"].to_s == STOP_BEFORE_PHASES.fetch(action)
+      authorization.stop_before_phase.to_s == STOP_BEFORE_PHASES.fetch(action)
     end
 
     def snapshot
@@ -176,7 +191,8 @@ module Automation
         account_id: project.account_id,
         project_id: project.id,
         issue_id: work_item.id,
-        **self.class.revision_tokens(issue: work_item, assessment: current_assessment).transform_keys(&:to_sym),
+        **self.class.revision_tokens(issue: pinned_work_item, assessment: current_assessment)
+          .transform_keys(&:to_sym),
         posture_signature: self.class.posture_signature_for(project:, action:),
         phase: ACTION_PHASES.fetch(action),
         phase_policy: EffectivePolicy.call(project:, phase: ACTION_PHASES.fetch(action),
@@ -190,8 +206,18 @@ module Automation
       }
     end
 
+    # The work item whose pinned revisions the boundary recheck compares
+    # against: the authorization's identified root. Lineage-governed work
+    # (for example a linked pull request admitted under the root issue's
+    # authorization) rechecks the pinned root's intent and acceptance, not
+    # its own.
+    # @spec BOUNDED-PHASE-AUTHORIZATION-002
+    def pinned_work_item
+      authorization.issue
+    end
+
     def assessment
-      @assessment ||= PartialCloseouts::Assessment.call(work_item)
+      @assessment ||= PartialCloseouts::Assessment.call(pinned_work_item)
     end
 
     # Pilot admissions retain their existing security controls. Expansion
