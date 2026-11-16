@@ -84,9 +84,11 @@ module Issues
 
     def replace_projection
       generation = SecureRandom.uuid
+      input_snapshot = PartialCloseoutProjectionInputWatermark.for(project)
       pairs = stalled_closeouts.call([ project ])
       checkpoint = PartialCloseoutProjection.find_or_initialize_by(project: project)
-      checkpoint.update!(computed_at: Time.current, generation:, input_watermark: Time.current,
+      checkpoint.update!(computed_at: Time.current, generation:,
+        input_watermark: input_snapshot.watermark, input_fingerprint: input_snapshot.fingerprint,
         last_failure_at: nil, last_failure: {})
       checkpoint.entries.delete_all
       checkpoint.entries.insert_all(pairs.map { |pair| entry_attributes(pair, generation) }) if pairs.present?

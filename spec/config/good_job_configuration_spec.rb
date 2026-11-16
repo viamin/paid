@@ -129,6 +129,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         chat_idle_reaper: "4-59/5 * * * *",
         execution_resource_reconciliation: "5-59/5 * * * *",
         apple_verification_bundle_retention_sweep: "1-59/5 * * * *",
+        partial_closeout_projection_reconciliation_sweep: "6-59/15 * * * *",
         auto_pick_eligibility_sweep: "7-59/15 * * * *",
         runner_quota_balance: "9-59/15 * * * *",
         agent_run_pattern_detector: "11-59/15 * * * *",
@@ -146,6 +147,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         apple_verification_recovery apple_verification_bundle_retention_sweep
         knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
         runner_quota_balance account_health_check_sweep legacy_partial_closeout_reconciliation_sweep
+        partial_closeout_projection_reconciliation_sweep
         claude_auth_health_check style_guide_evolution
         agent_run_pattern_detector billing_period_management
       ]

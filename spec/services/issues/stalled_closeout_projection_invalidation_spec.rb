@@ -13,6 +13,22 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
     clear_enqueued_jobs
   end
 
+  it "enqueues initial recomputation when an existing project is enabled" do
+    FeatureFlags.disable!(:partial_closeout_lane_read_model, project:)
+    issue = create(:issue, project:, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, parent_issue_id: issue.id,
+      github_state: "closed", pr_review_phase: "merged")
+    clear_enqueued_jobs
+
+    perform_enqueued_jobs do
+      FeatureFlags.enable!(:partial_closeout_lane_read_model, project:)
+    end
+
+    checkpoint = project.reload.partial_closeout_projection
+    expect(checkpoint.computed_at).to be_present
+    expect(checkpoint.entries).to contain_exactly(have_attributes(issue_id: issue.id))
+  end
+
   it "enqueues recomputation when an issue dependency changes" do
     issue = create(:issue, project:)
     dependency = create(:issue, project:)

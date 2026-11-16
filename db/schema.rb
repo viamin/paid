@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_183631) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3437,6 +3437,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_170000) do
     t.datetime "computed_at", comment: "When the last successful stall projection was committed."
     t.datetime "created_at", null: false
     t.string "generation", comment: "Identity of the last atomically replaced projection."
+    t.string "input_fingerprint", limit: 64, comment: "Fingerprint of admission-input counts and latest updates."
     t.datetime "input_watermark", comment: "Newest admission input included in the projection."
     t.jsonb "last_failure", default: {}, null: false, comment: "Bounded metadata for the latest projection failure."
     t.datetime "last_failure_at", comment: "When the latest projection attempt failed."

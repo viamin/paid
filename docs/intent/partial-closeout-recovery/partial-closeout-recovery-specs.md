@@ -493,7 +493,11 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   previous projection when a recomputation fails; SHALL atomically persist a
   project checkpoint for every successful recomputation, including an empty
   result, so an evaluated project with no stalls is distinguishable from an
-  unevaluated project; and SHALL keep
+  unevaluated project; SHALL schedule an initial recomputation when a project
+  is enrolled in the projection rollout; SHALL periodically compare each
+  enabled project's admission-input fingerprint with its successful checkpoint
+  and recompute missing or stale checkpoints so missed triggers self-heal; and
+  SHALL keep
   `DefaultCandidateSource.eligible_scope` as the final admission authority at
   continuation preflight, at the dequeue recheck, and at run start. The
   projection SHALL be tenant-isolated and SHALL never grant a continuation or
@@ -501,10 +505,14 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   *Issue:* #4558.
   *RDR:* `docs/rdrs/RDR-081-partial-closeout-lane-read-model.md`.
   *Code:* `Issues::StalledCloseoutProjection`,
-  `RecomputePartialCloseoutProjectionJob`, `Inbox::Queue`, `Inbox::Count`,
-  `Inbox::Availability`.
-  *Test:* `spec/services/issues/stalled_closeout_projection_spec.rb` plus the
-  existing Inbox queue/count/availability coverage.
+  `Issues::PartialCloseoutProjectionInputWatermark`,
+  `RecomputePartialCloseoutProjectionJob`,
+  `PartialCloseoutProjectionReconciliationSweepJob`, `Inbox::Queue`,
+  `Inbox::Count`, `Inbox::Availability`.
+  *Test:* `spec/services/issues/stalled_closeout_projection_spec.rb`,
+  `spec/services/issues/stalled_closeout_projection_invalidation_spec.rb`,
+  `spec/jobs/partial_closeout_projection_reconciliation_sweep_job_spec.rb`,
+  plus the existing Inbox queue/count/availability coverage.
 
 - [x] **PARTIAL-CLOSEOUT-043** — The partial-closeout lane's list, nav-badge
   count, and filter matrix SHALL

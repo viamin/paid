@@ -97,6 +97,7 @@ an empty result:
 | `computed_at` | when the last successful projection was committed; null until one succeeds |
 | `generation` | identity of the last successful atomic replacement |
 | `input_watermark` | the newest admission-relevant input included in that computation |
+| `input_fingerprint` | a bounded fingerprint of admission-relevant input counts and latest updates included in that computation |
 | `last_failure_at` | when the latest failed attempt occurred, if any |
 | `last_failure` | bounded failure metadata for operator diagnosis, if any |
 

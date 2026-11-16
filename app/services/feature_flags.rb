@@ -190,7 +190,9 @@ class FeatureFlags
       resolved_actor = resolve_actor(project:, actor:)
       return feature(flag_name).enable unless resolved_actor
 
-      feature(flag_name).enable(resolved_actor)
+      feature(flag_name).enable(resolved_actor).tap do
+        enqueue_partial_closeout_projection(flag_name, project)
+      end
     end
 
     def disable!(flag_name, project: nil, actor: nil)
@@ -245,6 +247,12 @@ class FeatureFlags
     end
 
     private
+
+    def enqueue_partial_closeout_projection(flag_name, project)
+      return unless flag_name.to_sym == :partial_closeout_lane_read_model && project
+
+      Issues::StalledCloseoutProjection.enqueue(project)
+    end
 
     def feature(flag_name)
       flipper[definition(flag_name).name]
