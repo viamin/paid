@@ -12,6 +12,19 @@ RSpec.describe ChatSessions::IsolatedTransport, type: :service do
   end
   let(:chat_session) { create(:chat_session, account: account, created_by: user, runner: runner) }
   let(:executor) { instance_double(Containers::StandaloneTextExecutor, close: nil) }
+  let(:credentialless_candidate) do
+    { "provider" => "openai", "model" => "gpt-test", "protocol" => "responses",
+      "authentication_mode" => "api_key", "endpoint" => "https://api.openai.com/v1" }
+  end
+  # Production shape from BuildLlmClient::HttpClient#candidate: the request
+  # arrives carrying the provider API key in each candidate's credentials.
+  let(:request) do
+    { operation: :chat, candidates: [ {
+      provider: :openai, model: "gpt-test", protocol: :responses,
+      authentication_mode: :api_key, credentials: { api_key: "secret-api-key" },
+      endpoint: "https://api.openai.com/v1"
+    } ], stream: true }
+  end
 
   # @spec CHAT-ISOLATION-001
   it "runs the normalized chat request in the disposable executor without serializing its API key" do
@@ -23,12 +36,15 @@ RSpec.describe ChatSessions::IsolatedTransport, type: :service do
     received = []
     allow(executor).to receive(:execute) do |_command, **options|
       expect(options[:stdin_data]).not_to include("secret-api-key")
+      payload = JSON.parse(options[:stdin_data])
+      expect(payload["candidates"]).to eq([ credentialless_candidate ])
+      expect(payload["credential_env"]).to eq("OPENAI_API_KEY")
       expect(options[:env]).to include("OPENAI_API_KEY" => "secret-api-key")
       options[:output_observer].call(:stdout, output)
       AgentHarness::CommandExecutor::Result.new(stdout: "", stderr: "", exit_code: 0, duration: 0)
     end
 
-    response = transport.call({ operation: :chat, candidates: [ { provider: :openai } ], stream: true }, &received.method(:<<))
+    response = transport.call(request, &received.method(:<<))
 
     expect(response).to include(status: :succeeded, content: "Hello", model: "gpt-test")
     expect(received).to eq([ { type: "text_delta", content: "Hello" } ])

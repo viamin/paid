@@ -79,6 +79,7 @@ module ChatSessions
     def serialized_request(request)
       sanitized = request.deep_dup
       sanitized.delete(:cancellation)
+      sanitized[:candidates].each { |candidate| candidate.delete(:credentials) }
       sanitized[:credential_env] = credential_env_name
       sanitized.to_json
     end
