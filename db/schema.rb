@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_183631) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3008,6 +3008,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_183631) do
     t.index ["superseded_by_id"], name: "index_layered_verification_obligations_on_superseded_by_id"
   end
 
+  create_table "layered_verification_review_approvals", force: :cascade do |t|
+    t.datetime "approved_at", null: false
+    t.bigint "approved_by_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "package_id", null: false
+    t.jsonb "provenance", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["approved_by_id"], name: "index_layered_verification_review_approvals_on_approved_by_id"
+    t.index ["package_id"], name: "index_layered_verification_review_approvals_on_package_id"
+  end
+
+  create_table "layered_verification_review_packages", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.jsonb "bound_inputs", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "package_digest", null: false
+    t.bigint "project_id", null: false
+    t.integer "revision_number", default: 1, null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "revision_number"], name: "index_layered_verification_review_packages_revision", unique: true
+    t.index ["agent_run_id"], name: "index_layered_verification_review_packages_on_agent_run_id"
+    t.index ["project_id", "package_digest"], name: "index_layered_verification_review_packages_identity", unique: true
+    t.index ["project_id"], name: "index_layered_verification_review_packages_on_project_id"
+  end
+
   create_table "linear_tokens", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -5397,6 +5422,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_183631) do
   add_foreign_key "layered_verification_obligations", "change_intents", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "layered_verification_obligations", column: "superseded_by_id", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "projects", on_delete: :cascade
+  add_foreign_key "layered_verification_review_approvals", "layered_verification_review_packages", column: "package_id", on_delete: :cascade
+  add_foreign_key "layered_verification_review_approvals", "users", column: "approved_by_id", on_delete: :restrict
+  add_foreign_key "layered_verification_review_packages", "agent_runs", on_delete: :cascade
+  add_foreign_key "layered_verification_review_packages", "projects", on_delete: :cascade
   add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
   add_foreign_key "llm_models", "llm_models", column: "free_variant_of_id"

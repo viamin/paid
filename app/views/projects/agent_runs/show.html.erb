@@ -81,7 +81,10 @@
       </section>
     <% end %>
 
+    <%# @spec LAYERED-VERIFY-023 — business-intent validation and verification
+        coverage are separate views of the same recorded audit evidence. %>
     <% if @agent_run.layered_verification_audit_goal? && @agent_run.external_metadata.dig("layered_verification", "coverage").present? %>
+      <%= render "agent_runs/layered_verification_intent_validation", agent_run: @agent_run %>
       <%= render "agent_runs/layered_verification_coverage", agent_run: @agent_run %>
     <% end %>
 

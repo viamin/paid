@@ -275,6 +275,9 @@ class AgentRun < ApplicationRecord
     dependent: :destroy, inverse_of: :originating_audit_run
 
   has_many :agent_run_logs, dependent: :destroy
+  # @spec LAYERED-VERIFY-023
+  has_many :review_packages, class_name: "LayeredVerificationReviewPackage",
+    dependent: :delete_all, inverse_of: :agent_run
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
   has_many :container_pool_entries, dependent: :nullify
   has_many :token_usages, dependent: :destroy

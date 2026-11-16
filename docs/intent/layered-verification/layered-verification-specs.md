@@ -345,7 +345,7 @@
 
 ## Business-review package
 
-- [ ] **LAYERED-VERIFY-023** — A `LayeredVerificationReviewPackage` SHALL bind,
+- [x] **LAYERED-VERIFY-023** — A `LayeredVerificationReviewPackage` SHALL bind,
   at creation, the obligation set's `external_revision`s, declared scope,
   verification-plan revision, contributing `LayeredVerificationCheckResult`
   references, recorded approvals, and Inbox decisions made while open, to one
@@ -353,8 +353,14 @@
   create a new package revision and SHALL retain the prior record unchanged.
   Approving a review package SHALL NOT, by itself, authorize a repair or a
   release.
-  *Tests:* `spec/models/layered_verification_review_package_spec.rb`
-  *Code:* `app/models/layered_verification_review_package.rb` (#4433)
+  *Tests:* `spec/models/layered_verification_review_package_spec.rb`,
+  `spec/services/layered_verification/review_packages/approve_spec.rb`,
+  `spec/services/inbox/decide_layered_verification_finding_spec.rb`,
+  `spec/requests/projects/layered_verification_review_packages_spec.rb`,
+  `spec/migrations/create_layered_verification_review_packages_spec.rb`
+  *Code:* `app/models/layered_verification_review_package.rb`,
+  `LayeredVerification::ReviewPackages::Capture`/`::Approve`,
+  `app/controllers/projects/layered_verification_review_packages_controller.rb` (#4433, #5127)
 
 ## Optional automation: PR-triggered and scheduled audits
 

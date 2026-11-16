@@ -20,6 +20,10 @@ RSpec.describe Activities::CompleteLayeredVerificationAuditActivity do
       obligation_coverage: "supported", check_result_ids: [ result.id ]
     )
     expect(audit.reload.status).to eq("completed")
+    expect(audit.review_packages.sole).to have_attributes(
+      project: audit.project, revision_number: 1,
+      package_digest: LayeredVerificationReviewPackage.digest_for(audit.review_packages.sole.bound_inputs)
+    )
   end
 
   # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-024

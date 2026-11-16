@@ -396,6 +396,11 @@ Rails.application.routes.draw do
     end
     resources :intent_conformance_decisions, only: [ :create ],
       controller: "projects/intent_conformance_decisions"
+    # @spec LAYERED-VERIFY-023
+    resources :layered_verification_review_packages, only: [ :index, :show ],
+      controller: "projects/layered_verification_review_packages" do
+      post :approve, on: :member
+    end
     # Solo-maintainer RDR-067 shadow evaluation (#4594): blinded labeling
     # screen, freeze, reviewer execution, revisions, and report.
     resources :shadow_evaluations, only: [ :new, :show, :create ],
