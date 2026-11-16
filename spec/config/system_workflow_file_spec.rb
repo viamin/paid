@@ -29,7 +29,7 @@ RSpec.describe SystemWorkflowFile, :no_db do
 
   # @spec TEST-SUITE-022
   it "allows the hosted browser suite to complete within a bounded job window" do
-    expect(system_job.fetch("timeout-minutes")).to eq(180)
+    expect(system_job.fetch("timeout-minutes")).to eq(240)
   end
 
   it "passes test credentials to the system job" do

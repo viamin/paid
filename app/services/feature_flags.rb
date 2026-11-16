@@ -9,6 +9,13 @@ class FeatureFlags
 
   # @spec SETTINGS-COPY-001
   DEFINITIONS = {
+    operational_supervisor: Definition.new(
+      name: :operational_supervisor,
+      owner: "operational-supervisor",
+      intent: "Gate default-off, shadow-only delivery-health observation for an individual project.",
+      rollout_plan: "Default-off; enable only selected projects after snapshot, incident, authorization, dashboard projection, and supervisor-health checks are verified.",
+      cleanup_criteria: "Remove only after the final supervisor audit accepts a default posture and any separately approved mitigation path."
+    ),
     question_exploration: Definition.new(
       name: :question_exploration,
       owner: "question-exploration",
