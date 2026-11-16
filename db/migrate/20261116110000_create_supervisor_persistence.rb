@@ -52,12 +52,8 @@ class CreateSupervisorPersistence < ActiveRecord::Migration[8.1]
   end
 
   def down
-    safety_assured do
-      execute <<~SQL
-        DROP TRIGGER IF EXISTS prevent_supervisor_incident_audit_update ON supervisor_incident_audits;
-        DROP FUNCTION IF EXISTS prevent_supervisor_incident_audit_mutation();
-      SQL
-    end
+    drop_trigger :prevent_supervisor_incident_audit_update, on: :supervisor_incident_audits
+    drop_function :prevent_supervisor_incident_audit_mutation
     drop_table :supervisor_incident_audits
     drop_table :supervisor_incidents
     drop_table :supervisor_snapshots
@@ -66,6 +62,9 @@ class CreateSupervisorPersistence < ActiveRecord::Migration[8.1]
   private
 
   def enable_tenant_rls
+    # PostgreSQL RLS policies have no Fx equivalent. Keep this minimal policy
+    # DDL here; the functions and triggers that schema.rb can represent use
+    # versioned Fx definitions below.
     %w[supervisor_snapshots supervisor_incidents supervisor_incident_audits].each do |table|
       safety_assured do
         execute <<~SQL
@@ -80,20 +79,7 @@ class CreateSupervisorPersistence < ActiveRecord::Migration[8.1]
   end
 
   def create_append_only_audit_trigger
-    safety_assured do
-      execute <<~SQL
-        CREATE FUNCTION prevent_supervisor_incident_audit_mutation() RETURNS trigger AS $$
-        BEGIN
-          IF TG_OP = 'DELETE' AND current_setting('paid.supervisor_incident_audit_purge', true) = 'true' THEN
-            RETURN OLD;
-          END IF;
-          RAISE EXCEPTION 'supervisor incident audits are append-only';
-        END;
-        $$ LANGUAGE plpgsql;
-        CREATE TRIGGER prevent_supervisor_incident_audit_update
-          BEFORE UPDATE OR DELETE ON supervisor_incident_audits
-          FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation();
-      SQL
-    end
+    create_function :prevent_supervisor_incident_audit_mutation, version: 1
+    create_trigger :prevent_supervisor_incident_audit_update, version: 1, on: :supervisor_incident_audits
   end
 end

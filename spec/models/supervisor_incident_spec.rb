@@ -42,6 +42,19 @@ RSpec.describe SupervisorIncident do
     expect { within_savepoint { SupervisorIncidentAudit.where(id: audit.id).delete_all } }.to raise_error(ActiveRecord::StatementInvalid, /append-only/)
   end
 
+  it "keeps database guards in versioned Fx definitions" do # @spec POSTGRESQL-PERSISTENCE-007 OPERATIONAL-SUPERVISOR-007
+    aggregate_failures do
+      guard_definitions.each do |definition|
+        name = definition.fetch(:name)
+        declaration = definition.fetch(:declaration)
+
+        expect(Rails.root.join(definition.fetch(:path))).to exist
+        expect(Rails.root.join(definition.fetch(:migration)).read).to include("#{declaration} :#{name}, version: 1")
+        expect(schema_source).to include("#{declaration} :#{name}")
+      end
+    end
+  end
+
   it "rejects cross-tenant references even when application validations are bypassed" do # @spec OPERATIONAL-SUPERVISOR-004
     account = create(:account)
     other_snapshot = create(:supervisor_snapshot)
@@ -91,5 +104,31 @@ RSpec.describe SupervisorIncident do
 
   def authorize_incident_creation!
     SupervisorIncident.connection.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
+  end
+
+  def schema_source
+    @schema_source ||= Rails.root.join("db/schema.rb").read
+  end
+
+  def guard_definitions
+    [
+      definition("prevent_supervisor_incident_audit_mutation", "functions", "create_function", "20261116110000_create_supervisor_persistence.rb"),
+      definition("enforce_supervisor_incident_snapshot_tenant", "functions", "create_function", "20261116110002_enforce_supervisor_tenant_references.rb"),
+      definition("enforce_supervisor_audit_incident_tenant", "functions", "create_function", "20261116110002_enforce_supervisor_tenant_references.rb"),
+      definition("enforce_supervisor_incident_status_audit", "functions", "create_function", "20261116132123_enforce_supervisor_incident_status_audit.rb"),
+      definition("prevent_supervisor_incident_audit_update", "triggers", "create_trigger", "20261116110000_create_supervisor_persistence.rb"),
+      definition("enforce_supervisor_incident_snapshot_tenant", "triggers", "create_trigger", "20261116110002_enforce_supervisor_tenant_references.rb"),
+      definition("enforce_supervisor_audit_incident_tenant", "triggers", "create_trigger", "20261116110002_enforce_supervisor_tenant_references.rb"),
+      definition("enforce_supervisor_incident_status_audit", "triggers", "create_trigger", "20261116132123_enforce_supervisor_incident_status_audit.rb")
+    ]
+  end
+
+  def definition(name, directory, declaration, migration)
+    {
+      name:,
+      declaration:,
+      migration: "db/migrate/#{migration}",
+      path: "db/#{directory}/#{name}_v01.sql"
+    }
   end
 end
