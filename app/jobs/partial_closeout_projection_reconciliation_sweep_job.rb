@@ -17,7 +17,7 @@ class PartialCloseoutProjectionReconciliationSweepJob < ApplicationJob
     @projects_checked = 0
     @projects_enqueued = 0
     TenantContext.with_system_access do
-      Project.includes(:account).find_in_batches do |projects|
+      Project.includes(account: :tenant_setting).find_in_batches do |projects|
         reconcile(projects.select { |project| projection_enabled?(project) })
       end
     end

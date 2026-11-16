@@ -12,6 +12,10 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
     FeatureFlags.enable!(:partial_closeout_lane_read_model, project:)
     issue = create_stalled_issue(project)
     race = start_first_projection(project)
+    race[:project_writer] = update_project(project)
+
+    expect(Timeout.timeout(5) { race[:project_writer].join }).to eq(race[:project_writer])
+
     issue.update!(github_state: "closed")
     race[:second] = start_second_projection(project, race[:second_entered])
 
@@ -35,6 +39,14 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
         TenantContext.with(project.account) do
           described_class.call(project: Project.find(project.id), stalled_closeouts: snapshot)
         end
+      end
+    end
+  end
+
+  def update_project(project)
+    Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        TenantContext.with(project.account) { Project.find(project.id).touch }
       end
     end
   end

@@ -18,6 +18,15 @@ RSpec.describe PartialCloseoutProjectionReconciliationSweepJob do # @spec PARTIA
       .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
   end
 
+  it "preloads tenant feature settings for the sweep" do
+    create_list(:project, 2)
+
+    queries = capture_queries { described_class.perform_now }
+    tenant_setting_queries = queries.grep(/FROM "tenant_settings"/)
+
+    expect(tenant_setting_queries.size).to eq(1)
+  end
+
   it "enqueues recomputation when a lost delete callback leaves the latest timestamp unchanged" do
     project = create(:project)
     older_issue = create(:issue, project:, updated_at: 2.minutes.ago)

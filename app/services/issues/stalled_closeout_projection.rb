@@ -3,6 +3,9 @@
 module Issues
   # @spec PARTIAL-CLOSEOUT-042 @spec PARTIAL-CLOSEOUT-043
   class StalledCloseoutProjection
+    ADVISORY_LOCK_SQL = "SELECT 1 FROM pg_advisory_xact_lock(hashtextextended($1, 0))".freeze
+    ADVISORY_LOCK_NAMESPACE = "partial_closeout_projection".freeze
+
     Result = Data.define(:pairs, :checkpoint, :used_projection)
 
     def self.call(project:, stalled_closeouts: StalledCloseouts)
@@ -64,7 +67,7 @@ module Issues
       return unless FeatureFlags.enabled?(:partial_closeout_lane_read_model, project: project)
 
       failure = nil
-      result = project.with_lock do
+      result = with_projection_advisory_lock do
         begin
           PartialCloseoutProjection.transaction(requires_new: true) { replace_projection }
         rescue StandardError => error
@@ -81,6 +84,18 @@ module Issues
     private
 
     attr_reader :project, :stalled_closeouts
+
+    def with_projection_advisory_lock
+      PartialCloseoutProjection.transaction do
+        acquire_projection_advisory_lock
+        yield
+      end
+    end
+
+    def acquire_projection_advisory_lock
+      lock_name = "#{ADVISORY_LOCK_NAMESPACE}:#{project.id}"
+      PartialCloseoutProjection.connection.raw_connection.exec_params(ADVISORY_LOCK_SQL, [ lock_name ])
+    end
 
     def replace_projection
       generation = SecureRandom.uuid
