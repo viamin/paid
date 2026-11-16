@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class IssueDependency < ApplicationRecord
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
   attr_accessor :cycle_provenance
   belongs_to :issue
   belongs_to :depends_on_issue, class_name: "Issue", optional: true
@@ -134,6 +135,10 @@ class IssueDependency < ApplicationRecord
   end
 
   private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(issue.project)
+  end
 
   def not_self_referential
     return unless issue_id && depends_on_issue_id

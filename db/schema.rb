@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3419,6 +3419,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
     t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
+  create_table "partial_closeout_projection_entries", force: :cascade do |t|
+    t.jsonb "blockers", default: [], null: false, comment: "Structured live-admission diagnostics."
+    t.datetime "created_at", null: false
+    t.string "evidence_digest", null: false, comment: "Closeout evidence generation used for this stall."
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.string "projection_generation", null: false, comment: "Checkpoint generation that produced this row."
+    t.jsonb "status", default: {}, null: false, comment: "Persisted closeout outcome and prerequisites."
+    t.datetime "updated_at", null: false
+    t.index ["issue_id"], name: "index_partial_closeout_projection_entries_on_issue_id", unique: true
+    t.index ["project_id", "projection_generation"], name: "idx_partial_closeout_projection_entries_generation"
+    t.index ["project_id"], name: "index_partial_closeout_projection_entries_on_project_id"
+  end
+
+  create_table "partial_closeout_projections", force: :cascade do |t|
+    t.datetime "computed_at", comment: "When the last successful stall projection was committed."
+    t.datetime "created_at", null: false
+    t.string "generation", comment: "Identity of the last atomically replaced projection."
+    t.datetime "input_watermark", comment: "Newest admission input included in the projection."
+    t.jsonb "last_failure", default: {}, null: false, comment: "Bounded metadata for the latest projection failure."
+    t.datetime "last_failure_at", comment: "When the latest projection attempt failed."
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["project_id"], name: "index_partial_closeout_projections_on_project_id", unique: true
+  end
+
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -5403,6 +5429,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
   add_foreign_key "page_load_regression_findings", "accounts", on_delete: :cascade
   add_foreign_key "page_load_regression_findings", "agent_runs", on_delete: :nullify
   add_foreign_key "page_load_regression_findings", "projects", on_delete: :cascade
+  add_foreign_key "partial_closeout_projection_entries", "issues"
+  add_foreign_key "partial_closeout_projection_entries", "projects"
+  add_foreign_key "partial_closeout_projections", "projects"
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"

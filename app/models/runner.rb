@@ -130,6 +130,8 @@ class Runner < ApplicationRecord
   before_discard :clear_provider_api_key_reference
   after_commit :invalidate_agent_run_runner_option_caches, if: :agent_run_runner_option_cache_invalidation_needed?
   after_commit :enqueue_parked_run_recovery, if: :became_available_for_agent_runs?
+  after_commit :enqueue_partial_closeout_projections, on: [ :create, :update, :destroy ],
+    if: :partial_closeout_projection_input_changed?
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :monthly_token_budget,
@@ -1088,6 +1090,19 @@ class Runner < ApplicationRecord
     return unless Runners::RecoverParkedRunsJob.parked_runs_for(user).exists?
 
     Runners::RecoverParkedRunsJob.perform_later(user_id)
+  end
+
+  def enqueue_partial_closeout_projections
+    user.account.projects.find_each { |project| Issues::StalledCloseoutProjection.enqueue(project) }
+  end
+
+  def partial_closeout_projection_input_changed?
+    return true if previously_new_record? || destroyed?
+
+    (previous_changes.keys & %w[
+      enabled_for_agent_runs discarded_at runner_key auth_type config tier_models tier_model_ids
+      provider_api_key_id integration_credential_id
+    ]).present?
   end
 
   def display_name_config_changed?

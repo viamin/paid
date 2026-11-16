@@ -9,10 +9,15 @@ class FeatureIntentIssueDependency < ApplicationRecord
   belongs_to :depends_on_feature_intent_issue, class_name: "FeatureIntentIssue"
 
   validates :depends_on_feature_intent_issue_id, uniqueness: { scope: :feature_intent_issue_id }
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
   validate :endpoints_share_feature_intent
   validate :not_self_referential
 
   private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(feature_intent_issue.issue.project)
+  end
 
   def endpoints_share_feature_intent
     return if feature_intent_issue.blank? || depends_on_feature_intent_issue.blank?

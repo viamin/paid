@@ -48,4 +48,24 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
     expect(checkpoint.entries).to contain_exactly(have_attributes(issue_id: issue.id))
     expect(checkpoint.last_failure).to include("class" => "RuntimeError")
   end
+
+  it "falls back live only for projection-enabled projects without a successful checkpoint" do
+    evaluated = project
+    unevaluated = create(:project, account:, auto_pick_enabled: true, owner: "acme", repo: "beta")
+    FeatureFlags.enable!(:partial_closeout_lane_read_model, project: unevaluated)
+    evaluated_issue = create_stalled_issue(evaluated)
+    unevaluated_issue = create_stalled_issue(unevaluated)
+    described_class.call(project: evaluated)
+
+    pairs = described_class.read([ evaluated, unevaluated ])
+
+    expect(pairs.map { |pair| pair.issue.id }).to contain_exactly(evaluated_issue.id, unevaluated_issue.id)
+  end
+
+  def create_stalled_issue(target_project)
+    issue = create(:issue, project: target_project, github_state: "open", paid_state: "in_progress")
+    create(:issue, :pull_request, project: target_project, parent_issue_id: issue.id, github_state: "closed",
+      pr_review_phase: "merged", github_number: issue.github_number + 100)
+    issue
+  end
 end

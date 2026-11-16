@@ -13,6 +13,7 @@ class FeatureIntentIssuePrerequisiteMapping < ApplicationRecord
 
   validates :coverage_assessment, inclusion: { in: COVERAGE_ASSESSMENTS }
   validates :feature_intent_issue_id, uniqueness: true
+  after_commit :enqueue_partial_closeout_projection, on: [ :create, :update, :destroy ]
   validate :issue_link_belongs_to_account
   validate :complete_mapping_has_material_prerequisite
 
@@ -30,6 +31,10 @@ class FeatureIntentIssuePrerequisiteMapping < ApplicationRecord
   end
 
   private
+
+  def enqueue_partial_closeout_projection
+    Issues::StalledCloseoutProjection.enqueue(feature_intent_issue.issue.project)
+  end
 
   def issue_link_belongs_to_account
     return if feature_intent_issue.blank? || feature_intent_issue.feature_intent.project.account_id == account_id

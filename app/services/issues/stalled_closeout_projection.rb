@@ -5,8 +5,8 @@ module Issues
   class StalledCloseoutProjection
     Result = Data.define(:pairs, :checkpoint, :used_projection)
 
-    def self.call(project:)
-      new(project:).call
+    def self.call(project:, stalled_closeouts: StalledCloseouts)
+      new(project:, stalled_closeouts:).call
     end
 
     def self.enqueue(project)
@@ -19,9 +19,10 @@ module Issues
       return [] if projects.empty?
 
       projected, fallback = projects.partition { |project| FeatureFlags.enabled?(:partial_closeout_lane_read_model, project:) }
-      pairs = projected_pairs(projected, issue_id:)
+      evaluated, unevaluated = projected.partition { |project| checkpointed?(project) }
+      pairs = projected_pairs(evaluated, issue_id:)
       pairs.concat(Issues::StalledCloseouts.call(fallback, issue_id:)) if fallback.present?
-      pairs.concat(Issues::StalledCloseouts.call(projected, issue_id:)) if projected.any? { |project| !checkpointed?(project) }
+      pairs.concat(Issues::StalledCloseouts.call(unevaluated, issue_id:)) if unevaluated.present?
       pairs
     end
 
@@ -49,31 +50,43 @@ module Issues
     end
     private_class_method :checkpointed?
 
-    def initialize(project:)
+    def initialize(project:, stalled_closeouts:)
       @project = project
+      @stalled_closeouts = stalled_closeouts
     end
 
     def call
       return unless FeatureFlags.enabled?(:partial_closeout_lane_read_model, project: project)
 
-      generation = SecureRandom.uuid
-      pairs = StalledCloseouts.call([ project ])
-      PartialCloseoutProjection.transaction do
-        checkpoint = PartialCloseoutProjection.lock.find_or_initialize_by(project: project)
-        checkpoint.update!(computed_at: Time.current, generation:, input_watermark: Time.current,
-          last_failure_at: nil, last_failure: {})
-        checkpoint.entries.delete_all
-        checkpoint.entries.insert_all(pairs.map { |pair| entry_attributes(pair, generation) }) if pairs.present?
+      failure = nil
+      result = project.with_lock do
+        begin
+          PartialCloseoutProjection.transaction(requires_new: true) { replace_projection }
+        rescue StandardError => error
+          record_failure(error)
+          failure = error
+          nil
+        end
       end
-      Result.new(pairs:, checkpoint: project.reload.partial_closeout_projection, used_projection: true)
-    rescue StandardError => error
-      record_failure(error)
-      raise
+      raise failure if failure
+
+      result
     end
 
     private
 
-    attr_reader :project
+    attr_reader :project, :stalled_closeouts
+
+    def replace_projection
+      generation = SecureRandom.uuid
+      pairs = stalled_closeouts.call([ project ])
+      checkpoint = PartialCloseoutProjection.find_or_initialize_by(project: project)
+      checkpoint.update!(computed_at: Time.current, generation:, input_watermark: Time.current,
+        last_failure_at: nil, last_failure: {})
+      checkpoint.entries.delete_all
+      checkpoint.entries.insert_all(pairs.map { |pair| entry_attributes(pair, generation) }) if pairs.present?
+      Result.new(pairs:, checkpoint:, used_projection: true)
+    end
 
     def entry_attributes(pair, generation)
       status = pair.status
