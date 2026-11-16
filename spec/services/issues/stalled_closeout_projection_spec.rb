@@ -33,6 +33,31 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
     expect(project.reload.partial_closeout_projection.entries.count).to eq(1)
   end
 
+  it "restores closeout and technical evidence in batches for projected entries" do # @spec PARTIAL-CLOSEOUT-042
+    issues = 2.times.map { create_stalled_issue(project) }
+    issues.each do |issue|
+      create(:agent_run, :completed, project:, issue:, reconciliation: {
+        TechnicalPrerequisites::Evidence::RECONCILIATION_KEY => { "revision" => issue.id }
+      })
+    end
+    described_class.call(project:)
+
+    projected_pairs = nil
+    queries = capture_sql { projected_pairs = described_class.read([ project ]) }
+
+    expect(projected_pairs.map { |pair| pair.status.technical_evidence })
+      .to match_array(issues.map { |issue| [ { "revision" => issue.id } ] })
+    expect(queries.count { |sql| sql.include?("merged_prs") }).to be <= 2
+    expect(queries.count { |sql| sql.include?(TechnicalPrerequisites::Evidence::RECONCILIATION_KEY) }).to eq(1)
+  end
+
+  it "allows a project with projected entries to be deleted" do # @spec PARTIAL-CLOSEOUT-042
+    create_stalled_issue(project)
+    described_class.call(project:)
+
+    expect { project.destroy! }.to change(PartialCloseoutProjectionEntry, :count).by(-1)
+  end
+
   it "retains the last successful rows when recomputation fails" do
     issue = create(:issue, project:, github_state: "open", paid_state: "in_progress")
     create(:issue, :pull_request, project:, parent_issue_id: issue.id, github_state: "closed",
@@ -62,10 +87,32 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
     expect(pairs.map { |pair| pair.issue.id }).to contain_exactly(evaluated_issue.id, unevaluated_issue.id)
   end
 
+  it "loads projection checkpoints in one query across projects" do # @spec PARTIAL-CLOSEOUT-043
+    other_project = create(:project, account:, auto_pick_enabled: true, owner: "acme", repo: "beta")
+    FeatureFlags.enable!(:partial_closeout_lane_read_model, project: other_project)
+    [ project, other_project ].each { |target| described_class.call(project: target) }
+
+    queries = capture_sql { described_class.read([ project, other_project ]) }
+
+    checkpoint_queries = queries.select do |sql|
+      sql.include?('FROM "partial_closeout_projections"') && sql.include?('"computed_at" IS NOT NULL')
+    end
+    expect(checkpoint_queries.one?).to be(true)
+  end
+
   def create_stalled_issue(target_project)
     issue = create(:issue, project: target_project, github_state: "open", paid_state: "in_progress")
     create(:issue, :pull_request, project: target_project, parent_issue_id: issue.id, github_state: "closed",
       pr_review_phase: "merged", github_number: issue.github_number + 100)
     issue
+  end
+
+  def capture_sql
+    statements = []
+    subscriber = lambda do |_name, _started, _finished, _id, payload|
+      statements << payload[:sql] unless payload[:cached] || payload[:name].in?(%w[SCHEMA TRANSACTION])
+    end
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
+    statements
   end
 end

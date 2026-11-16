@@ -5429,8 +5429,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_170000) do
   add_foreign_key "page_load_regression_findings", "accounts", on_delete: :cascade
   add_foreign_key "page_load_regression_findings", "agent_runs", on_delete: :nullify
   add_foreign_key "page_load_regression_findings", "projects", on_delete: :cascade
-  add_foreign_key "partial_closeout_projection_entries", "issues"
-  add_foreign_key "partial_closeout_projection_entries", "projects"
+  add_foreign_key "partial_closeout_projection_entries", "issues", on_delete: :cascade
+  add_foreign_key "partial_closeout_projection_entries", "projects", on_delete: :cascade
   add_foreign_key "partial_closeout_projections", "projects"
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"

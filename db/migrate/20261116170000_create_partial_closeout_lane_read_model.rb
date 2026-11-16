@@ -13,8 +13,8 @@ class CreatePartialCloseoutLaneReadModel < ActiveRecord::Migration[8.1]
     end
 
     create_table :partial_closeout_projection_entries do |t|
-      t.references :project, null: false, foreign_key: true
-      t.references :issue, null: false, foreign_key: true, index: { unique: true }
+      t.references :project, null: false, foreign_key: { on_delete: :cascade }
+      t.references :issue, null: false, foreign_key: { on_delete: :cascade }, index: { unique: true }
       t.string :evidence_digest, null: false, comment: "Closeout evidence generation used for this stall."
       t.jsonb :status, null: false, default: {}, comment: "Persisted closeout outcome and prerequisites."
       t.jsonb :blockers, null: false, default: [], comment: "Structured live-admission diagnostics."

@@ -19,7 +19,8 @@ module Issues
       return [] if projects.empty?
 
       projected, fallback = projects.partition { |project| FeatureFlags.enabled?(:partial_closeout_lane_read_model, project:) }
-      evaluated, unevaluated = projected.partition { |project| checkpointed?(project) }
+      evaluated_ids = checkpointed_project_ids(projected)
+      evaluated, unevaluated = projected.partition { |project| evaluated_ids.include?(project.id) }
       pairs = projected_pairs(evaluated, issue_id:)
       pairs.concat(Issues::StalledCloseouts.call(fallback, issue_id:)) if fallback.present?
       pairs.concat(Issues::StalledCloseouts.call(unevaluated, issue_id:)) if unevaluated.present?
@@ -29,26 +30,30 @@ module Issues
     def self.projected_pairs(projects, issue_id:)
       return [] if projects.empty?
 
-      scope = PartialCloseoutProjectionEntry.where(project_id: projects.map(&:id)).includes(:issue, :project)
+      scope = PartialCloseoutProjectionEntry.where(project_id: projects.map(&:id)).includes(issue: :project)
       scope = scope.where(issue_id:) if issue_id
-      scope.map do |entry|
+      entries = scope.to_a
+      issues = entries.map(&:issue)
+      evidence_by_issue_id = CloseoutEvidence.results_for(issues)
+      technical_evidence_by_issue_id = TechnicalPrerequisites::Evidence.records_for_issues(issues)
+      entries.map do |entry|
         attributes = entry.status.symbolize_keys.merge(
-          evidence: CloseoutEvidence.call(entry.issue),
+          evidence: evidence_by_issue_id.fetch(entry.issue_id),
           blockers: entry.blockers.map { |blocker| CloseoutStatus::Blocker.new(**blocker.symbolize_keys) },
           admissible: false,
           open_request: nil,
           resolved_current_generation: false,
-          technical_evidence: []
+          technical_evidence: technical_evidence_by_issue_id.fetch(entry.issue_id, [])
         )
         StalledCloseouts::Pair.new(issue: entry.issue, status: CloseoutStatus::Result.new(**attributes))
       end
     end
     private_class_method :projected_pairs
 
-    def self.checkpointed?(project)
-      project.partial_closeout_projection&.computed_at.present?
+    def self.checkpointed_project_ids(projects)
+      PartialCloseoutProjection.where(project_id: projects.map(&:id)).where.not(computed_at: nil).pluck(:project_id).to_set
     end
-    private_class_method :checkpointed?
+    private_class_method :checkpointed_project_ids
 
     def initialize(project:, stalled_closeouts:)
       @project = project

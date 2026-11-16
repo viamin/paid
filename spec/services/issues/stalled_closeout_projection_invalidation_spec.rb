@@ -35,6 +35,32 @@ RSpec.describe Issues::StalledCloseoutProjection do # @spec PARTIAL-CLOSEOUT-042
       .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
   end
 
+  it "enqueues recomputation only for admission-relevant AgentRun changes" do
+    issue = create(:issue, project:)
+    run = create(:agent_run, project:, issue:)
+    clear_enqueued_jobs
+
+    expect { run.touch }
+      .not_to have_enqueued_job(RecomputePartialCloseoutProjectionJob)
+    expect { run.update!(status: "running") }
+      .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
+  end
+
+  it "enqueues recomputation when project admission inputs change" do
+    changes = [
+      { paused: true },
+      { quality_paused_at: Time.current },
+      { allowed_github_usernames: [ "trusted-operator" ] },
+      { auto_pick_skip_labels: [ "held" ] }
+    ]
+
+    changes.each do |attributes|
+      clear_enqueued_jobs
+      expect { project.update!(attributes) }
+        .to have_enqueued_job(RecomputePartialCloseoutProjectionJob).with(project.id)
+    end
+  end
+
   it "enqueues recomputation when feature-intent release state changes" do
     feature_intent = create(:feature_intent, project:)
     clear_enqueued_jobs
