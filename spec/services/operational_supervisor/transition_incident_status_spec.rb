@@ -78,4 +78,16 @@ RSpec.describe OperationalSupervisor::TransitionIncidentStatus do
     expect(result.incident.reload.status).to eq("open")
     expect(result.incident.supervisor_incident_audits.count).to eq(0)
   end
+
+  it "restores database transition authorization before returning inside an outer transaction" do # @spec OPERATIONAL-SUPERVISOR-007
+    SupervisorIncident.transaction do
+      described_class.call(incident:, status: "resolved", now:)
+
+      expect do
+        SupervisorIncident.transaction(requires_new: true) do
+          SupervisorIncident.where(id: incident.id).update_all(status: "dismissed")
+        end
+      end.to raise_error(ActiveRecord::StatementInvalid, /status_changed audit/)
+    end
+  end
 end

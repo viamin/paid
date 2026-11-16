@@ -40,20 +40,35 @@ module OperationalSupervisor
     end
 
     def create!
-      enable_status_transition!
-      incident = account.supervisor_incidents.create!(incident_attributes)
-      audit!(incident, "opened")
+      incident = with_status_transition_authorized do
+        account.supervisor_incidents.create!(incident_attributes).tap { audit!(_1, "opened") }
+      end
       Result.new(incident, true, nil)
     end
 
-    def enable_status_transition!
-      SupervisorIncident.connection.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
-    end
-
     def observe!(incident)
-      incident.update!(last_seen_at: now, occurrence_count: incident.occurrence_count + 1, supervisor_snapshot: snapshot)
+      previous_status = incident.status
+      with_status_transition_authorized do
+        incident.authorize_status_transition! unless previous_status.in?(SupervisorIncident::OPEN_STATUSES)
+        incident.update!(observation_attributes(incident, previous_status))
+        audit_status_change!(incident, previous_status) if incident.status != previous_status
+      end
       audit!(incident, "observed")
       Result.new(incident, false, nil)
+    end
+
+    def observation_attributes(incident, previous_status)
+      attributes.merge(last_seen_at: now, occurrence_count: incident.occurrence_count + 1,
+        supervisor_snapshot: snapshot, status: recurring_status(previous_status))
+    end
+
+    def recurring_status(status)
+      status.in?(SupervisorIncident::OPEN_STATUSES) ? status : "open"
+    end
+
+    def audit_status_change!(incident, previous_status)
+      incident.supervisor_incident_audits.create!(account:, action: "status_changed", occurred_at: now,
+        evidence: { "previous_status" => previous_status, "next_status" => incident.status })
     end
 
     def audit!(incident, action)
@@ -122,6 +137,18 @@ module OperationalSupervisor
         incident = account.supervisor_incidents.lock.find_by!(fingerprint:)
         observe!(incident)
       end
+    end
+
+    def with_status_transition_authorized
+      database = SupervisorIncident.connection
+      database.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
+      yield
+    ensure
+      database&.execute("SET LOCAL paid.supervisor_incident_status_transition = 'false'") unless transaction_failed?(database)
+    end
+
+    def transaction_failed?(database)
+      database.nil? || database.raw_connection.transaction_status == PG::PQTRANS_INERROR
     end
 
     def failure(error) = Result.new(nil, false, error)

@@ -30,6 +30,36 @@ RSpec.describe OperationalSupervisor::PersistIncident do
     expect(second.incident.supervisor_incident_audits.pluck(:action)).to eq(%w[opened observed])
   end
 
+  it "reopens a closed incident when the finding recurs" do # @spec OPERATIONAL-SUPERVISOR-007
+    incident = described_class.call(account:, snapshot:, **attributes).incident
+    OperationalSupervisor::TransitionIncidentStatus.call(incident:, status: "resolved")
+
+    result = described_class.call(account:, snapshot:, **attributes)
+
+    expect(result.incident.reload).to have_attributes(status: "open", occurrence_count: 2)
+    expect(result.incident.supervisor_incident_audits.pluck(:action)).to eq(%w[opened status_changed status_changed observed])
+  end
+
+  it "refreshes the current classification when an incident recurs" do # @spec OPERATIONAL-SUPERVISOR-007
+    incident = described_class.call(account:, snapshot:, **attributes.merge(severity: "warning")).incident
+
+    result = described_class.call(account:, snapshot:, **attributes.merge(severity: "urgent"))
+
+    expect(result.incident.reload).to have_attributes(severity: "urgent", occurrence_count: 2)
+  end
+
+  it "restores database creation authorization before returning inside an outer transaction" do # @spec OPERATIONAL-SUPERVISOR-007
+    SupervisorIncident.transaction do
+      described_class.call(account:, snapshot:, **attributes)
+
+      expect do
+        SupervisorIncident.transaction(requires_new: true) do
+          SupervisorIncident.insert_all!([ attributes_for(:supervisor_incident).merge(account_id: account.id) ])
+        end
+      end.to raise_error(ActiveRecord::StatementInvalid, /creation must append an opened audit/)
+    end
+  end
+
   it "deduplicates target sets regardless of order or repeated IDs" do # @spec OPERATIONAL-SUPERVISOR-007
     second_project = create(:project, account:)
     FeatureFlags.enable!(:operational_supervisor, project: second_project)

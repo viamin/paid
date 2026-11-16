@@ -44,4 +44,18 @@ RSpec.describe OperationalSupervisor::PurgeExpired do
   ensure
     TenantContext.apply_system_access!
   end
+
+  it "restores audit purge authorization before returning inside an outer transaction" do # @spec OPERATIONAL-SUPERVISOR-003, OPERATIONAL-SUPERVISOR-007
+    retained_audit = create(:supervisor_incident_audit)
+
+    SupervisorIncident.transaction do
+      described_class.call
+
+      expect do
+        SupervisorIncidentAudit.transaction(requires_new: true) do
+          SupervisorIncidentAudit.where(id: retained_audit.id).delete_all
+        end
+      end.to raise_error(ActiveRecord::StatementInvalid, /append-only/)
+    end
+  end
 end

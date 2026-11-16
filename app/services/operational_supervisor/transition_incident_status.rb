@@ -34,15 +34,24 @@ module OperationalSupervisor
 
     def persist_transition
       previous_status = incident.status
-      enable_status_transition!
-      incident.authorize_status_transition!
-      incident.update!(status:)
-      incident.supervisor_incident_audits.create!(account: incident.account, action: "status_changed", occurred_at: now,
-        evidence: { "previous_status" => previous_status, "next_status" => status })
+      with_status_transition_authorized do
+        incident.authorize_status_transition!
+        incident.update!(status:)
+        incident.supervisor_incident_audits.create!(account: incident.account, action: "status_changed", occurred_at: now,
+          evidence: { "previous_status" => previous_status, "next_status" => status })
+      end
     end
 
-    def enable_status_transition!
-      SupervisorIncident.connection.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
+    def with_status_transition_authorized
+      database = SupervisorIncident.connection
+      database.execute("SET LOCAL paid.supervisor_incident_status_transition = 'true'")
+      yield
+    ensure
+      database&.execute("SET LOCAL paid.supervisor_incident_status_transition = 'false'") unless transaction_failed?(database)
+    end
+
+    def transaction_failed?(database)
+      database.nil? || database.raw_connection.transaction_status == PG::PQTRANS_INERROR
     end
 
     def incident_projects_enabled?
