@@ -31,7 +31,7 @@ module Activities
 
     private
 
-    def assess(agent_run, fallbacks)
+    def assess(agent_run, fallbacks) # @spec LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-009
       Llm::AnalyzePartialCloseout.call(agent_run: agent_run,
         fallback_runner_identifiers: fallbacks,
         timeout: [ Llm::AnalyzePartialCloseout::TIMEOUT * (fallbacks.size + 1), MAX_ASSESSMENT_TIMEOUT ].min)

@@ -42,3 +42,10 @@
   different runner or billing mode. A subscription runner without an active
   managed credential SHALL be skipped before provisioning a text container; if
   no usable runner remains, routing SHALL report a configuration failure.
+
+- [x] **LLM-ROUTING-009** — Runner readiness and issue-analysis selection
+  SHALL report and admit a subscription only when an active managed credential
+  permits the isolated text executor to materialize that subscription inside
+  its disposable container. An uncredentialed subscription SHALL report
+  `missing_credential`, be excluded from isolated-text candidates, and never
+  trigger host CLI execution or API-key billing substitution.

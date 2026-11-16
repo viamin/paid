@@ -172,6 +172,10 @@ module Workflows
         end
 
         if goal == "analyze_issue" && continuation_mode == "acceptance_audit"
+          # This remains an activity boundary rather than a coding-container
+          # workflow step. The assessment's Llm::Request owns its disposable
+          # isolated text container and cleanup, preserving replay history
+          # while avoiding checkout and coding-agent capabilities.
           run_activity(Activities::RunAcceptanceAuditActivity,
             { agent_run_id: agent_run_id }, start_to_close_timeout: [ issue_goal_timeout_seconds, 330 ].max,
             retry_policy: NO_RETRY)
@@ -180,6 +184,9 @@ module Workflows
         end
 
         if goal == "analyze_issue"
+          # AnalyzeIssueActivity owns the isolated text request. Keep this
+          # branch ahead of coding-container provisioning: it needs neither a
+          # checkout nor agent tools, and the activity boundary is replay-safe.
           result = run_activity(Activities::AnalyzeIssueActivity,
             { agent_run_id: agent_run_id },
             start_to_close_timeout: issue_goal_timeout_seconds,

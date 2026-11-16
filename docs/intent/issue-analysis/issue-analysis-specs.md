@@ -40,9 +40,9 @@
 - [x] **ISSUE-ANALYSIS-014** — When issue-analysis widening encounters owned
   runners for the same provider with different authentication modes, it SHALL
   retain a standalone-capable runner's credential-specific routing identity.
-  An API-key runner requires its selected credential; a subscription requiring
-  isolation or lacking CLI tool control SHALL not be selected for the
-  container-free request. Project policy remains enforced by `Llm::Request`,
+  An API-key runner requires its selected credential; a subscription without
+  an active managed credential SHALL not be selected for the isolated text
+  request. Project policy remains enforced by `Llm::Request`,
   and a subscription SHALL NOT silently change to API billing.
   *Tests:* `spec/services/knowledge/provider_selector_spec.rb`
   ("preserves an API-key Codex routing identity"),
@@ -182,6 +182,23 @@
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#record_provider_attempt_failure!`,
   `#failure_category_for`, `#issue_analysis_provider_exhaustion_message`,
   `app/models/agent_run_log.rb`, `app/services/agent_run_patterns/detect.rb`.
+
+- [x] **ISSUE-ANALYSIS-019** — Issue analysis SHALL execute every selected
+  API-key or managed-subscription attempt through the disposable isolated text
+  executor. It SHALL not clone a repository, provision a coding-agent
+  container, start host agent-harness tooling, or change a subscription attempt
+  to API billing. A subscription without an active managed credential SHALL be
+  excluded from readiness and candidate selection with an actionable
+  configuration outcome; failures of the isolated container preserve the
+  existing per-provider failure, rate-limit, and follow-up behavior.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb`,
+  `spec/services/knowledge/provider_selector_spec.rb`,
+  `spec/services/knowledge/runner_readiness_spec.rb`,
+  `spec/services/llm/request_spec.rb`.
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#call_llm`,
+  `app/services/knowledge/runner_selector.rb#available_standalone_chat_runners`,
+  `app/services/knowledge/runner_readiness.rb#text_runner_readiness`,
+  `app/services/llm/request.rb#perform_request`.
 
 ## Trust and response contract
 
