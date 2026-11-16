@@ -79,6 +79,24 @@ RSpec.describe Inbox::Removals do
       expect(removal.reload.removed_at).to eq(removed_at)
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-008 @spec OPERATOR-INBOX-023
+    it "keeps the newest persisted occurrence when a delayed removal re-enters the race retry" do
+      stale_entry = entry
+      issue.update!(needs_input_since: Time.current + 5.minutes)
+      remove!
+      removal = InboxRemoval.active.find_by!(user:, request_key: "clarifying_questions:#{issue.id}")
+      newest_occurrence = removal.request_occurrence
+
+      # A delayed call for the older occurrence — the same state the
+      # uniqueness-race retry re-enters — must not weaken the newer removal.
+      expect { remove!(target: stale_entry) }.not_to change(InboxHistoryEvent, :count)
+
+      expect(removal.reload.request_occurrence).to eq(newest_occurrence)
+      expect(removal.reload).to be_active
+      expect(InboxRemoval.where(user:, request_key: removal.request_key).count).to eq(1)
+      expect(entry).to be_nil
+    end
+
     # @spec OPERATOR-INBOX-023
     it "records remove, restore, and a fresh-occurrence return against the stable issue" do
       remove!

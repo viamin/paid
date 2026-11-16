@@ -67,8 +67,10 @@
   against a stable request identity and occurrence with the user and the
   removal event, so rebuilding the derived queue cannot resurrect it, a
   removal made after an occurrence SHALL survive delayed events from that
-  occurrence, and returning an item SHALL clear suppression only for the new
-  occurrence.
+  occurrence, returning an item SHALL clear suppression only for the new
+  occurrence, and a delayed or racing removal carrying an occurrence an
+  active row already suppresses SHALL NOT overwrite a newer persisted
+  removal.
   *Tests:* `spec/services/inbox/removals_spec.rb`,
   `spec/models/inbox_removal_spec.rb`,
   `spec/migrations/enforce_unique_inbox_removal_request_spec.rb`

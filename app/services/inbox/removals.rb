@@ -18,25 +18,9 @@ module Inbox
       end
 
       def call
-        InboxRemoval.find_or_initialize_by(
-          user: user,
-          request_key: Inbox::RequestIdentity.key_for(entry)
-        ).tap do |removal|
-          next if replay?(removal)
-
-          removal.assign_attributes(
-            project: entry.project,
-            entry_kind: entry.kind,
-            request_occurrence: request_occurrence,
-            responsible_phase: Inbox::PhaseOwnership.for_entry(entry).responsible_phase,
-            removed_at: Time.current,
-            cleared_at: nil
-          )
-          removal.save!
-          HistoryRecorder.call(entry:, event_key: "inbox-removed:#{removal.id}:#{removal.removed_at.to_f}",
-            action: "Removed from Inbox", actor: user, result: "completed", occurred_at: removal.removed_at)
-          Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
-        end
+        removal = find_removal
+        persist(removal) unless covered?(removal)
+        removal
       rescue ActiveRecord::RecordNotUnique
         retry
       rescue ActiveRecord::RecordInvalid => error
@@ -49,8 +33,45 @@ module Inbox
 
       attr_reader :entry, :user
 
-      def replay?(removal)
-        removal.active? && removal.request_occurrence == request_occurrence
+      def find_removal
+        InboxRemoval.find_or_initialize_by(user: user, request_key: Inbox::RequestIdentity.key_for(entry))
+      end
+
+      # Concurrent writers serialize on the persisted row; the in-lock re-check
+      # keeps a delayed occurrence from overwriting a newer persisted one.
+      def persist(removal)
+        return unless removal.with_lock { write(removal) }
+
+        Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+      end
+
+      # True when an active persisted removal already suppresses this call's
+      # occurrence: an idempotent replay, or a stale call that lost the race to
+      # a persisted newer occurrence. Overwriting that row would un-suppress
+      # the request's current occurrence and resurface it, so the row wins.
+      def covered?(removal)
+        removal.persisted? && removal.suppresses?(request_occurrence)
+      end
+
+      def write(removal)
+        return if covered?(removal)
+
+        removal.assign_attributes(
+          project: entry.project,
+          entry_kind: entry.kind,
+          request_occurrence: request_occurrence,
+          responsible_phase: Inbox::PhaseOwnership.for_entry(entry).responsible_phase,
+          removed_at: Time.current,
+          cleared_at: nil
+        )
+        removal.save!
+        record_history(removal)
+        true
+      end
+
+      def record_history(removal)
+        HistoryRecorder.call(entry:, event_key: "inbox-removed:#{removal.id}:#{removal.removed_at.to_f}",
+          action: "Removed from Inbox", actor: user, result: "completed", occurred_at: removal.removed_at)
       end
 
       def request_occurrence

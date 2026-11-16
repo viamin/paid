@@ -80,8 +80,11 @@ entry_kind, project_id, removed_at, cleared_at)` record. A request is suppressed
 for that user while a removal row exists whose occurrence is not older than the
 request's current occurrence. When the uniqueness constraint is first enforced,
 legacy duplicates collapse to the row with the latest persisted state change so
-an older suppression cannot override a newer return event. Removal is
-presentation-only: the underlying work,
+an older suppression cannot override a newer return event. Removal writes
+re-check this boundary under the row lock before assigning attributes, so a
+replayed, delayed, or racing removal call carrying an occurrence an active row
+already suppresses is a no-op and the newest persisted occurrence always wins.
+Removal is presentation-only: the underlying work,
 questions, comments, and authorization are untouched, other users are
 unaffected, and the item stays inspectable via the **Removed** filter, direct
 link, and related-item history.
