@@ -16,7 +16,7 @@ class InboxRemoval < ApplicationRecord
   validates :entry_kind, presence: true
   validates :request_occurrence, presence: true
   validates :removed_at, presence: true
-  validates :request_occurrence, uniqueness: { scope: %i[user_id request_key] }
+  validates :request_key, uniqueness: { scope: :user_id }
 
   scope :active, -> { where(cleared_at: nil) }
   scope :cleared, -> { where.not(cleared_at: nil) }
