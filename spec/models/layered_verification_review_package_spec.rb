@@ -90,6 +90,15 @@ RSpec.describe LayeredVerificationReviewPackage do
   end
 
   # @spec LAYERED-VERIFY-023
+  it "rejects any mutation of a persisted approval" do
+    approval = create(:layered_verification_review_approval)
+
+    expect { approval.update!(provenance: { "tampered" => true }) }
+      .to raise_error(LayeredVerificationReviewPackage::ImmutablePackageError)
+    expect(approval.reload.provenance).to eq("surface" => "spec")
+  end
+
+  # @spec LAYERED-VERIFY-023
   it "rejects packages whose audit run belongs to another project" do
     other_project = create(:project, account: create(:account))
     audit = create(:agent_run, project: other_project, goal: "layered_verification_audit")

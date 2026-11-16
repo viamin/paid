@@ -8,6 +8,7 @@ class LayeredVerificationReviewApproval < ApplicationRecord
   validates :approved_at, presence: true
   validates :provenance, presence: true
 
+  before_update :prevent_mutation!
   before_destroy :prevent_mutation!
 
   private
