@@ -13,6 +13,7 @@ class StagedCloseoutMapping < ApplicationRecord
   belongs_to :issue
   belongs_to :staged_closeout_enrollment
   belongs_to :reviewed_by, class_name: "User"
+  belongs_to :invalidated_by, class_name: "User", optional: true
 
   validates :criterion_key, :criterion_digest, :target_shape, :target_key, :target_version, :target_digest, presence: true
   validates :stage, inclusion: { in: STAGES }
@@ -36,5 +37,6 @@ class StagedCloseoutMapping < ApplicationRecord
       errors.add(:staged_closeout_enrollment, "must belong to the project")
     end
     errors.add(:reviewed_by, "must belong to the account") if reviewed_by && account && reviewed_by.account_id != account_id
+    errors.add(:invalidated_by, "must belong to the account") if invalidated_by && account && invalidated_by.account_id != account_id
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_080000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_080003) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4341,6 +4341,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_080000) do
     t.string "execution_path", null: false
     t.integer "freshness_seconds", null: false
     t.datetime "invalidated_at"
+    t.bigint "invalidated_by_id"
     t.string "invalidation_reason"
     t.bigint "issue_id", null: false
     t.string "phase", null: false
@@ -4358,6 +4359,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_080000) do
     t.string "target_version", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_staged_closeout_mappings_on_account_id"
+    t.index ["invalidated_by_id"], name: "index_staged_closeout_mappings_on_invalidated_by_id"
     t.index ["issue_id", "criterion_key", "revision"], name: "index_staged_closeout_mapping_revisions", unique: true
     t.index ["issue_id"], name: "index_staged_closeout_mappings_on_issue_id"
     t.index ["project_id", "status"], name: "index_staged_closeout_mappings_on_project_id_and_status"
@@ -5437,6 +5439,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_080000) do
   add_foreign_key "staged_closeout_mappings", "issues"
   add_foreign_key "staged_closeout_mappings", "projects"
   add_foreign_key "staged_closeout_mappings", "staged_closeout_enrollments"
+  add_foreign_key "staged_closeout_mappings", "users", column: "invalidated_by_id"
   add_foreign_key "staged_closeout_mappings", "users", column: "reviewed_by_id"
   add_foreign_key "strategies", "accounts", on_delete: :cascade
   add_foreign_key "strategies", "projects", on_delete: :cascade

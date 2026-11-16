@@ -18,6 +18,7 @@ module StagedCloseoutAdoption
       "merged_revision" => "source_pr_merged_revision",
       "live_environment" => "live_signal"
     }.freeze
+    REQUIRED_ATTRIBUTES = %w[criterion_key stage phase target_shape execution_path target_key freshness_seconds].freeze
 
     def self.approve(...) = new(...).approve
     def self.revoke(mapping:, project:, actor:, issue:, attributes:)
@@ -40,6 +41,7 @@ module StagedCloseoutAdoption
       raise Error, "issue does not belong to this project" unless issue.project_id == project.id
       raise Error, "staged closeout adoption is disabled" unless enrollment.enabled?
 
+      validate_required_attributes!
       validate_criterion!
       validate_stage!
       target = resolve_target!
@@ -55,7 +57,7 @@ module StagedCloseoutAdoption
       authorize!
       raise Error, "mapping does not belong to this project" unless mapping.project_id == project.id
 
-      mapping.update!(status: "revoked", invalidated_at: Time.current, invalidation_reason: "revoked_by_reviewer")
+      mapping.update!(status: "revoked", invalidated_by: actor, invalidated_at: Time.current, invalidation_reason: "revoked_by_reviewer")
       mapping
     end
 
@@ -92,6 +94,11 @@ module StagedCloseoutAdoption
       raise Error, "criterion is not current for this issue" unless criteria.include?(criterion_key)
     end
 
+    def validate_required_attributes!
+      missing = REQUIRED_ATTRIBUTES.reject { |key| attributes.key?(key) }
+      raise Error, "missing required mapping attributes: #{missing.join(", ")}" if missing.any?
+    end
+
     def criteria
       PartialCloseouts::Assessment.call(issue).criteria.map { |criterion| criterion.fetch("criterion") }
     end
@@ -119,7 +126,7 @@ module StagedCloseoutAdoption
       case attributes.fetch("execution_path")
       when "technical_prerequisite"
         requirement = PreCommitRequirement.resolve(project:, user: actor).find { |candidate| candidate.id == attributes.fetch("target_key").to_i }
-        raise Error, "recipe is unavailable or unauthorized" unless requirement
+        raise Error, "recipe is unavailable or unauthorized" unless requirement && !requirement.user_level?
         { key: requirement.id.to_s, version: requirement.updated_at.utc.iso8601, digest: Digest::SHA256.hexdigest([ requirement.id, requirement.command, requirement.check_type ].join("\0")) }
       when "trusted_measurement"
         key = attributes.fetch("target_key")
@@ -144,7 +151,9 @@ module StagedCloseoutAdoption
     end
 
     def supersede_current!
-      current_mappings.update_all(status: "superseded", invalidated_at: Time.current, invalidation_reason: "replaced_by_review")
+      current_mappings.update_all(
+        status: "superseded", invalidated_by_id: actor.id, invalidated_at: Time.current, invalidation_reason: "replaced_by_review"
+      )
     end
 
     def current_mappings
@@ -152,7 +161,7 @@ module StagedCloseoutAdoption
     end
 
     def next_revision
-      current_mappings.maximum(:revision).to_i + 1
+      project.staged_closeout_mappings.where(issue:, criterion_key:).maximum(:revision).to_i + 1
     end
 
     def target_matches?(mapping)
