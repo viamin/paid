@@ -6,7 +6,7 @@ module Inbox
     # one user only and never resolves it, cancels work, changes automation
     # authorization, or deletes questions and history.
     #
-    # @spec INBOX-PHASE-RELEVANCE-006 @spec OPERATOR-INBOX-023
+    # @spec INBOX-PHASE-RELEVANCE-006 @spec INBOX-PHASE-RELEVANCE-008 @spec OPERATOR-INBOX-023
     class Remove
       def self.call(...)
         new(...).call
@@ -37,6 +37,12 @@ module Inbox
             action: "Removed from Inbox", actor: user, result: "completed", occurred_at: removal.removed_at)
           Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
         end
+      rescue ActiveRecord::RecordNotUnique
+        retry
+      rescue ActiveRecord::RecordInvalid => error
+        raise unless error.record.errors.added?(:request_key, :taken)
+
+        retry
       end
 
       private
