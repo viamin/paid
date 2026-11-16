@@ -418,6 +418,33 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe "#make_workspace_read_only!" do
+    let(:backend) { instance_double(Containers::Backends::Base) }
+
+    before do
+      service.instance_variable_set(:@container, mock_container)
+      allow(service).to receive(:backend).and_return(backend)
+    end
+
+    # @spec MAINT-020
+    it "removes agent write access to the prepared checkout" do
+      expect(backend).to receive(:exec_in_container).with(
+        mock_container,
+        [ "sh", "-lc", "chown -R root:root /workspace && chmod -R a-w /workspace" ],
+        user: "root"
+      ).and_return([ [], [], 0 ])
+
+      expect(service.make_workspace_read_only!).to be_nil
+    end
+
+    it "fails closed when the checkout cannot be sealed" do
+      allow(backend).to receive(:exec_in_container).and_return([ [], [ "permission denied" ], 1 ])
+
+      expect { service.make_workspace_read_only! }
+        .to raise_error(Containers::Provision::ProvisionError, /Could not seal report-only workspace: permission denied/)
+    end
+  end
+
   # @spec EGRESS-POLICY-007
   describe "#egress_no_proxy_hosts" do
     let(:egress_service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path, egress_gateway_url: "egress-gateway:3128") }

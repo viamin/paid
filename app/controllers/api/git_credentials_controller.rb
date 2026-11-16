@@ -21,6 +21,11 @@ module Api
         return
       end
 
+      if report_only_checkout?
+        render json: { error: "Git credentials are unavailable after a report-only checkout is prepared" }, status: :forbidden
+        return
+      end
+
       # The App installation token is the default for every operation. The
       # fallback PAT is served only while the run is flagged for a permission
       # retry (set transiently by Containers::GitOperations around a push the
@@ -53,6 +58,15 @@ module Api
     end
 
     private
+
+    # A maintenance checkout needs repository read credentials only while Paid
+    # clones and prepares it. CloneRepoActivity persists worktree_path before
+    # the agent starts, making this a durable execution boundary: subsequent
+    # credential-helper calls (including git push) cannot obtain a token.
+    # @spec MAINT-020
+    def report_only_checkout?
+      @authenticated_run&.maintenance_goal? && @authenticated_run.worktree_path.present?
+    end
 
     # Returns the project's fallback PAT credential when the authenticated
     # agent run is currently flagged for a permission-rejected push retry and
