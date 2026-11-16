@@ -7,15 +7,17 @@ module MaintenanceRuns
   # before claiming coverage, keep the scan report-only, and treat a fully
   # covered investigation with no findings as a success.
   class BuildPrompt
-    def self.call(objective:, guidance:, scope:)
-      new(objective:, guidance:, scope:).call
+    def self.call(objective:, guidance:, scope:, type: nil, type_value: nil)
+      new(objective:, guidance:, scope:, type:, type_value:).call
     end
 
-    def initialize(objective:, guidance:, scope:)
+    def initialize(objective:, guidance:, scope:, type: nil, type_value: nil)
       @objective = objective.presence
       @guidance = guidance.to_s.strip
       @scope = scope.to_s.strip.presence
-      raise ArgumentError, "an objective or nonblank guidance is required" if @objective.blank? && @guidance.blank?
+      @type = type
+      @type_value = type_value.to_s.presence
+      raise ArgumentError, "an objective, optimization type, or nonblank guidance is required" if @objective.blank? && @guidance.blank? && @type_value.blank?
     end
 
     def call
@@ -43,13 +45,30 @@ module MaintenanceRuns
 
     private
 
-    attr_reader :objective, :guidance, :scope
+    attr_reader :objective, :guidance, :scope, :type, :type_value
 
     def objective_section
-      recipe = Recipes.fetch(objective) if objective
-      return recipe.objective_instructions if recipe
+      instructions = [ recipe_instructions, type_instructions, custom_type_instructions ].compact
+      instructions.any? ? instructions.join("\n\n") : guidance
+    end
 
-      guidance
+    def recipe_instructions
+      Recipes.fetch(objective)&.objective_instructions if objective
+    end
+
+    def type_instructions
+      "#{type.name}: #{type.investigation_description}\nDefault metric hints: #{type.metric_hints.join(", ")}" if type
+    end
+
+    def custom_type_instructions
+      return if type || type_value.blank?
+
+      direction = if guidance.present?
+        "use the guidance below to determine what to investigate"
+      else
+        "infer the investigation goal from this value and record that interpretation in the report"
+      end
+      "Custom optimization objective selected: #{type_value}. Treat this as a requester-defined objective; #{direction}."
     end
 
     def scope_section

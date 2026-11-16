@@ -4,7 +4,7 @@ class AgentRun < ApplicationRecord
   has_many :agent_planning_holds, dependent: :nullify
   attr_readonly :confidence_delivery_snapshot
   # @spec MAINT-015 — maintenance context is a start-time snapshot.
-  attr_readonly :maintenance_objective, :maintenance_recipe_version, :maintenance_scope,
+  attr_readonly :maintenance_type, :maintenance_objective, :maintenance_recipe_version, :maintenance_scope,
     :maintenance_scope_kind, :maintenance_guidance, :maintenance_pinned_revision, :maintenance_limits
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"
@@ -369,6 +369,7 @@ class AgentRun < ApplicationRecord
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
+  validates :maintenance_type, length: { maximum: 100 }, allow_nil: true
   validates :base_commit_sha, length: { maximum: 40 }
   validates :approved_design_revision, length: { maximum: 40 }
   validates :result_commit_sha, length: { maximum: 40 }
@@ -1932,6 +1933,7 @@ class AgentRun < ApplicationRecord
   def maintenance_context_attributes
     {
       maintenance_objective: maintenance_objective,
+      maintenance_type: maintenance_type,
       maintenance_recipe_version: maintenance_recipe_version,
       maintenance_scope: maintenance_scope,
       maintenance_scope_kind: maintenance_scope_kind,
@@ -4330,9 +4332,9 @@ class AgentRun < ApplicationRecord
   # @spec MAINT-011 — a recipe objective or nonblank free-text guidance is
   # required; scope alone shall not admit a maintenance run.
   def maintenance_objective_or_guidance
-    return if maintenance_objective.present? || maintenance_guidance.present?
+    return if maintenance_type.present? || maintenance_objective.present? || maintenance_guidance.present?
 
-    errors.add(:base, "maintenance runs require a recipe objective or nonblank guidance")
+    errors.add(:base, "maintenance runs require an optimization type, recipe objective, or nonblank guidance")
   end
 
   def generate_proxy_token

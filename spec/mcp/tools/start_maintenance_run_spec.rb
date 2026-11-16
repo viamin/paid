@@ -26,13 +26,31 @@ RSpec.describe Tools::StartMaintenanceRun do
     end
   end
 
-  # @spec MAINT-010
+  # @spec MAINT-OPT-004
   it "publishes the explicitly confirmed write tool on the MCP surface" do
     definitions = Tools::Registry.mcp_definitions_for(user: user, session: session)
     definition = definitions.find { |candidate| candidate[:name] == "start_maintenance_run" }
 
     expect(definition).to include(name: "start_maintenance_run")
     expect(definition.dig(:inputSchema, :properties, :confirmed)).to include(type: "boolean")
+    expect(definition.dig(:inputSchema, :properties, :type, :examples)).to eq(MaintenanceRuns::OptimizationTypes.keys)
+  end
+
+  # @spec MAINT-OPT-004 MAINT-OPT-005
+  it "starts the selected type from chat with the same project authorization" do
+    tool.call(project_id: project.id, type: "performance", scope: "the dashboard", confirmed: true)
+
+    expect(project.agent_runs.sole.maintenance_type).to eq("performance")
+  end
+
+  # @spec MAINT-OPT-006
+  it "retains an unmapped chat type as a custom objective" do
+    tool.call(project_id: project.id, type: "future_type", confirmed: true)
+
+    expect(project.agent_runs.sole).to have_attributes(
+      maintenance_type: "future_type",
+      maintenance_objective: nil
+    )
   end
 
   # @spec MAINT-002

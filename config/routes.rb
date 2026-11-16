@@ -501,6 +501,7 @@ Rails.application.routes.draw do
       post "projects/:project_id/design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck"
       resources :projects, only: [] do
         resources :maintenance_runs, controller: "projects/maintenance_runs", only: %i[create show] do
+          get :types, on: :collection
           post :cancel, on: :member
         end
       end

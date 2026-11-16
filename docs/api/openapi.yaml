@@ -570,6 +570,7 @@ paths:
               type: object
               properties:
                 objective: {type: string}
+                type: {type: string, description: Optional curated optimization type key. Values longer than 100 characters receive the standard maintenance-run validation error.}
                 guidance: {type: string}
                 scope: {type: string}
       responses:
@@ -578,6 +579,42 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/MaintenanceRun'}
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{project_id}/maintenance_runs/types:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: listMaintenanceRunTypes
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Curated optimization types available for a maintenance run.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [types]
+                properties:
+                  types:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, name, description, metric_hints, recipe_key, repair_standing]
+                      properties:
+                        key: {type: string}
+                        name: {type: string}
+                        description: {type: string}
+                        metric_hints:
+                          type: array
+                          items: {type: string}
+                        recipe_key: {type: string, nullable: true}
+                        repair_standing: {type: string}
         default:
           $ref: '#/components/responses/Error'
   /projects/{project_id}/maintenance_runs/{id}:
@@ -876,8 +913,9 @@ components:
         message: {type: string}
         maintenance:
           type: object
-          required: [objective, recipe_version, scope, scope_kind, guidance, pinned_revision, limits, report_only]
+          required: [type, objective, recipe_version, scope, scope_kind, guidance, pinned_revision, limits, report_only]
           properties:
+            type: {type: string, maxLength: 100, nullable: true}
             objective: {type: string, nullable: true}
             recipe_version: {type: string, nullable: true}
             scope: {type: string, nullable: true}

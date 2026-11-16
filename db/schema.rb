@@ -362,6 +362,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_132123) do
     t.string "maintenance_recipe_version", limit: 50, comment: "Effective recipe version snapshotted when the maintenance run started."
     t.text "maintenance_scope", comment: "Verbatim user-named scope (paths/symbols or free-form target) for maintenance runs; nil means broad scope."
     t.string "maintenance_scope_kind", limit: 10, comment: "Explicit scope classification recorded at maintenance run start: named or broad."
+    t.string "maintenance_type", limit: 100, comment: "Raw optimization catalog type selected at maintenance-run start; unmapped values are retained."
     t.jsonb "mcp_provisioned_servers", default: {}, null: false, comment: "Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning"
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.jsonb "mcp_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of MCP sidecar containers provisioned for this run"

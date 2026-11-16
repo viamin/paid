@@ -24,7 +24,8 @@ module Tools
         properties: {
           project_id: { type: "integer", description: "The project ID" },
           objective: { type: "string", description: "Optional recipe objective key", enum: MaintenanceRuns::Recipes.keys },
-          guidance: { type: "string", description: "Free-text maintenance question or instructions. Required unless a recipe objective is selected; captured verbatim." },
+          type: { type: "string", description: "Optional curated optimization type. Unmapped values become a retained custom objective.", examples: MaintenanceRuns::OptimizationTypes.keys },
+          guidance: { type: "string", description: "Free-text maintenance question or instructions. Required unless an optimization type or recipe objective is selected; captured verbatim." },
           scope: { type: "string", description: "Optional scope: paths, symbols, or a free-form target. Ambiguous or missing named targets produce a clarification outcome instead of a whole-repository scan." },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
         },
@@ -34,8 +35,8 @@ module Tools
 
     # @spec MAINT-002 — the MCP surface refuses admission identically while
     # the guard is off; MaintenanceRuns::Start owns the shared gate.
-    # @spec MAINT-010 @spec MAINT-011
-    def perform(project_id:, confirmed: false, objective: nil, guidance: nil, scope: nil)
+    # @spec MAINT-010 @spec MAINT-011 MAINT-OPT-004 MAINT-OPT-005 MAINT-OPT-006
+    def perform(project_id:, confirmed: false, objective: nil, type: nil, guidance: nil, scope: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to start a maintenance run" unless confirmed
 
       project = project_for(project_id)
@@ -43,6 +44,7 @@ module Tools
         project: project,
         actor: current_user,
         objective: objective,
+        type: type,
         guidance: guidance,
         scope: scope
       )
@@ -53,6 +55,7 @@ module Tools
         goal: run.goal,
         project_id: run.project_id,
         issue_id: nil,
+        type: run.maintenance_type,
         scope_kind: run.maintenance_scope_kind,
         created_at: run.created_at
       }
