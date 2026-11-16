@@ -300,6 +300,8 @@ The operating principles that tie the approaches above to day-to-day work:
 - **Bounded operational observation.** System-level delivery-health observation
   may analyze only sanitized operational facts and must remain advisory unless
   an independently reviewed, authorized, reversible action boundary exists.
+  [RDR-063](rdrs/RDR-063-operational-supervisor-delivery-health.md) selects a
+  default-off, project-gated shadow path; it authorizes no mitigation.
 - **One LLM interface.** All application-level LLM calls flow through
   `agent_harness`; fail loudly rather than papering over provider differences
   in the control plane.

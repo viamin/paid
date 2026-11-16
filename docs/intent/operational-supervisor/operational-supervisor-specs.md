@@ -1,6 +1,6 @@
 # EARS Specs: Operational Supervisor
 
-> Proposed claims for RDR-063. `[ ]` denotes active, held implementation work.
+> Accepted intent under the [RDR-063 owner decision](https://github.com/viamin/paid/issues/4341#issuecomment-6908868779). `[ ]` denotes implementation gaps that remain subject to their issue dependencies and default-off rollout guard.
 
 - [ ] **OPERATIONAL-SUPERVISOR-001** — When building a supervisor snapshot, the system SHALL include only the RDR-063 typed allowlist and SHALL exclude authored content, repository content, logs, prompts, raw errors, credentials, secrets, and raw provider responses.
 - [ ] **OPERATIONAL-SUPERVISOR-002** — When a snapshot contains a metric, the system SHALL retain its window, denominator, inclusion rule, and unavailable state, and SHALL bound deterministic top-N selection without encoding a semantic quality judgment.

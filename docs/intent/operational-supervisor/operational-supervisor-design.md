@@ -5,7 +5,7 @@ prefix: OPERATIONAL-SUPERVISOR
 
 # Low-Level Design: Operational Supervisor
 
-> Companion to `docs/high-level-design.md` and RDR-063. This is proposed intent: no runtime supervisor behavior is shipped or enabled by this document.
+> Accepted intent under the [RDR-063 owner decision](https://github.com/viamin/paid/issues/4341#issuecomment-6908868779). No runtime supervisor behavior is shipped or enabled by this document; implementation remains behind the default-off project guard and its issue dependencies.
 
 ## Purpose
 
@@ -68,4 +68,4 @@ the incident lifecycle.
 
 ## Delivery order
 
-The held issue tree is #4708: #4709 incident contract and #4710 snapshot; #4711 analysis after both; #4712 shadow schedule/surface after #4709/#4711; #4713 separately decides any mitigation; #4714 verifies evidence without closing the epic. The implementation must follow this LLD and its EARS claims.
+The issue tree is #4708: #4709 incident contract and #4710 snapshot; #4711 analysis after both; #4712 shadow schedule/surface after #4709/#4711; #4713 separately decides any mitigation; #4714 verifies evidence without closing the epic. Each task retains its own dependencies and the implementation must follow this LLD and its EARS claims.
