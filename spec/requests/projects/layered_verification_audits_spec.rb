@@ -93,6 +93,86 @@ RSpec.describe "Layered verification audits" do
     expect(github_client).to have_received(:commit).with(project.full_name, "a" * 40)
   end
 
+  # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-010 LAYERED-VERIFY-015 LAYERED-VERIFY-024
+  it "carries clean and contradictory scoped results through completion into report and Inbox" do
+    clean, conflict, claim = seeded_obligations
+    preview, audit = request_seeded_audit(clean:, conflict:)
+    expect(preview).to include(clean.canonical_source_path, conflict.canonical_source_path,
+      "Checkout behavior", "A retry captures one charge.", "15", "Semantic audit")
+    seed_agent_report(audit:, clean:, conflict:, claim:)
+    result = Activities::CompleteLayeredVerificationAuditActivity.new.execute(agent_run_id: audit.id)
+    expect(result[:coverage].transform_values { |coverage| coverage[:obligation_coverage] }).to eq(
+      clean.id.to_s => "supported", conflict.id.to_s => "contradicted"
+    )
+    expect(audit.reload.status).to eq("completed")
+    expect(clean.check_results.sole).to have_attributes(obligation_coverage: "supported")
+    finding = conflict.findings.sole
+    expect(finding).to have_attributes(correspondence_claim_type: "business_to_model",
+      cause_signature: "duplicate-charge-on-retry", status: "open")
+    expect(finding.observations.sole.fetch("check_result_ids")).to eq([ conflict.check_results.sole.id ])
+
+    expect_inbox_finding(finding:, audit:)
+  end
+
+  def seeded_obligations
+    clean = obligation
+    conflict = create(:layered_verification_obligation, project:,
+      external_identity: "PAYMENTS-017", scope_description: "A retry captures one charge.")
+    [ clean, conflict ].each do |item|
+      item.record_approval!(revision: item.external_revision, approval_reference: "pr#1", persisted: true)
+    end
+    claim = create(:layered_verification_correspondence_claim, obligation: conflict, claim_type: "business_to_model")
+    [ clean, conflict, claim ]
+  end
+
+  def request_seeded_audit(clean:, conflict:)
+    parameters = seeded_request_parameters(clean:, conflict:)
+    post request_layered_verification_audit_project_agent_runs_path(project), params: parameters
+    expect(response).to have_http_status(:ok)
+    preview = response.body
+    post request_layered_verification_audit_project_agent_runs_path(project),
+      params: parameters.merge(confirmed: true)
+    [ preview, project.agent_runs.where(goal: "layered_verification_audit").sole ]
+  end
+
+  def expect_inbox_finding(finding:, audit:)
+    entries = Inbox::Queue.call(user:, kind: Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND)
+    expect(entries.map(&:record)).to eq([ finding ])
+    get inbox_entry_path(entries.sole.id), headers: { "Turbo-Frame" => "inbox-detail" }
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("A retry captures one charge.", "Two charges were captured on retry.",
+      "Only the retry path was examined.", project_agent_run_path(project, audit))
+  end
+
+  def seeded_request_parameters(clean:, conflict:)
+    request_parameters.deep_merge(
+      obligation_ids: [ clean.id, conflict.id ],
+      selections: { conflict.id => { selected_checks: [ "semantic_audit" ],
+        fit: "Compare the accepted retry claim with implementation evidence",
+        exclusions: [ "No formal model is declared" ] } }
+    )
+  end
+
+  def seed_agent_report(audit:, clean:, conflict:, claim:)
+    results = [
+      { obligation_id: clean.id, selected_check: "semantic_audit", producer: "semantic_audit",
+        execution_state: "completed", obligation_coverage: "supported",
+        input_revision: { code: "a" * 40, external_revision: clean.external_revision },
+        evidence_summary: { source_passages: [ "Checkout behavior is supported." ] },
+        limitations: "Only the selected checkout behavior was examined." },
+      { obligation_id: conflict.id, correspondence_claim_id: claim.id, selected_check: "semantic_audit",
+        producer: "semantic_audit", execution_state: "completed", obligation_coverage: "contradicted",
+        cause_signature: "duplicate-charge-on-retry",
+        input_revision: { code: "a" * 40, external_revision: conflict.external_revision },
+        evidence_summary: { source_passages: [ "A retry captures one charge." ],
+          observed_behavior: "Two charges were captured on retry." },
+        limitations: "Only the retry path was examined." }
+    ]
+    audit.update!(status: "running")
+    audit.log!("stdout", "paid-layered-verification-output\n#{JSON.generate(check_results: results)}\n" \
+      "paid-layered-verification-output\n")
+  end
+
   it "rejects an invalid budget before rendering the preview" do
     post request_layered_verification_audit_project_agent_runs_path(project),
       params: request_parameters.deep_merge(budget: { max_minutes: 0 })
