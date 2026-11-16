@@ -5,6 +5,11 @@ require "rails_helper"
 RSpec.describe Containers::ServiceProvisioner do
   let(:provisioner) { described_class.new }
 
+  def application_database_url(service_container, host, database)
+    credentials = Containers::PostgresApplicationRole.credentials_for(service_container, database)
+    "postgres://#{credentials[:user]}:#{credentials[:password]}@#{host}:5432/#{database}"
+  end
+
   def running_container_info(networks:)
     {
       "State" => { "Running" => true },
@@ -162,7 +167,7 @@ RSpec.describe Containers::ServiceProvisioner do
           "name" => "test-postgres",
           "image" => "postgres:16",
           "port" => 5432,
-          "env" => { "DATABASE_URL" => "postgres://agent:agent@#{service_host}:5432/#{expected_db}" },
+          "env" => { "DATABASE_URL" => application_database_url(service_container, service_host, expected_db) },
           "type" => "database"
         }
       ]
@@ -230,7 +235,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
         expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result).to include("DATABASE_URL")
-        expect(result["DATABASE_URL"]).to eq("postgres://agent:agent@#{service_host}:5432/#{expected_db}")
+        expect(result["DATABASE_URL"]).to eq(application_database_url(service_container, service_host, expected_db))
         reloaded_run = agent_run.reload
         expect(reloaded_run.service_container_ids).to eq([ service_container.id ])
         expect_postgres_service_snapshot!(
@@ -498,7 +503,7 @@ RSpec.describe Containers::ServiceProvisioner do
           .and_return([ [], [ "psql: connection refused" ], 2 ])
 
         expect { provisioner.provision(agent_run) }
-          .to raise_error(Containers::ServiceProvisioner::DatabaseError, /Failed to check/)
+          .to raise_error(Containers::ServiceProvisioner::DatabaseError, /Failed to provision PostgreSQL application role/)
 
         expect(service_container.reload.status).to eq("running")
         expect(service_container.docker_container_id).to eq("shared123")
@@ -704,6 +709,39 @@ RSpec.describe Containers::ServiceProvisioner do
         allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
       end
 
+      # @spec CONTAINER-RUNTIME-052 POSTGRESQL-PERSISTENCE-006
+      it "injects a separate application role and makes it own the run database" do
+        sc = create(:service_container, image: "postgres:16", name: "pg-runtime", port: 5432,
+          env: { "POSTGRES_USER" => "bootstrap", "POSTGRES_PASSWORD" => "bootstrap-password" })
+        create(:project_service_container, project:, service_container: sc)
+
+        url = URI.parse(provisioner.provision(agent_run).fetch("DATABASE_URL"))
+        database = provisioner.send(:per_run_db_name, agent_run)
+
+        expect(url.user).to match(/\Apaid_app_[0-9a-f]{24}\z/)
+        expect(url.password).to match(/\A[0-9a-f]{64}\z/)
+        expect(url.password).not_to eq("bootstrap-password")
+        expect(docker_container).to have_received(:exec).with(include(
+          a_string_including("NOSUPERUSER NOBYPASSRLS CREATEDB CREATEROLE")
+        ))
+        expect(docker_container).to have_received(:exec).with(include(
+          "CREATE DATABASE \"#{database}\" OWNER \"#{url.user}\""
+        ))
+      end
+
+      # @spec CONTAINER-RUNTIME-052
+      it "fails closed without persisting a bootstrap URL when role setup fails" do
+        sc = create(:service_container, image: "postgres:16", name: "pg-runtime", port: 5432)
+        create(:project_service_container, project:, service_container: sc)
+        allow(docker_container).to receive(:exec).with(include(a_string_including("ALTER ROLE")))
+          .and_return([ [], [ "SQL containing a secret" ], 1 ])
+
+        expect { provisioner.provision(agent_run) }.to raise_error(
+          described_class::DatabaseError, "Failed to provision PostgreSQL application role (exit 1)"
+        )
+        expect(agent_run.reload.service_environment).to be_blank
+      end
+
       it "generates per-run DATABASE_URL for postgres images" do
         sc = create(:service_container, image: "postgres:16", name: "pg", port: 5432,
           env: { "POSTGRES_USER" => "u", "POSTGRES_PASSWORD" => "p", "POSTGRES_DB" => "d" })
@@ -712,7 +750,7 @@ RSpec.describe Containers::ServiceProvisioner do
         result = provisioner.provision(agent_run)
         expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result["DATABASE_URL"]).to eq(
-          "postgres://u:p@#{provisioner.send(:runtime_name, sc)}:5432/#{expected_db}"
+          application_database_url(sc, provisioner.send(:runtime_name, sc), expected_db)
         )
       end
 
@@ -754,7 +792,7 @@ RSpec.describe Containers::ServiceProvisioner do
         )
         expected_db = provisioner.send(:per_run_db_name, agent_run)
         expect(result["DATABASE_URL"]).to eq(
-          "postgres://agent:agent@#{provisioner.send(:runtime_name, sc)}:5432/#{expected_db}"
+          application_database_url(sc, provisioner.send(:runtime_name, sc), expected_db)
         )
       end
 
@@ -824,7 +862,7 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(declaration.type).to eq(:database)
       expected_db = provisioner.send(:per_run_db_name, agent_run)
       expect(declaration.env["DATABASE_URL"]).to eq(
-        "postgres://u:p@#{provisioner.send(:runtime_name, sc)}:5432/#{expected_db}"
+        application_database_url(sc, provisioner.send(:runtime_name, sc), expected_db)
       )
     end
 
@@ -1423,7 +1461,7 @@ RSpec.describe Containers::ServiceProvisioner do
         service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{db_name}" }
       )
 
-      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{db_name}\"")
+      expect(commands.map(&:last)).to include("DROP DATABASE IF EXISTS \"#{db_name}\"")
       expect(docker_container).to have_received(:delete).with(force: true, v: true)
       expect(service_container.reload.status).to eq("stopped")
     end
@@ -1467,7 +1505,7 @@ RSpec.describe Containers::ServiceProvisioner do
         service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{captured_db}" }
       )
 
-      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{captured_db}\"")
+      expect(commands.map(&:last)).to include("DROP DATABASE IF EXISTS \"#{captured_db}\"")
     end
 
     it "skips dropping the per-run database while an overlapping preview state remains active" do
@@ -1551,7 +1589,10 @@ RSpec.describe Containers::ServiceProvisioner do
 
       db_name = provisioner.send(:per_run_db_name, agent_run)
       expect { provisioner.send(:create_per_run_database, sc, db_name) }.not_to raise_error
-      expect(docker_container).to have_received(:exec).twice
+      role = Containers::PostgresApplicationRole.credentials_for(sc, db_name).fetch(:user)
+      expect(docker_container).to have_received(:exec).with(include(
+        "CREATE DATABASE \"#{db_name}\" OWNER \"#{role}\""
+      ))
     end
 
     it "quotes database and owner identifiers in create statements" do
@@ -1574,9 +1615,9 @@ RSpec.describe Containers::ServiceProvisioner do
       provisioner.send(:create_per_run_database, sc, db_name)
 
       expect(commands.last).to include("-d", "agent_test")
-      expect(commands.last.last).to eq(
-        "CREATE DATABASE \"#{db_name}\" OWNER \"agent\"\" WITH SUPERUSER --\""
-      )
+      role = Containers::PostgresApplicationRole.credentials_for(sc, db_name).fetch(:user)
+      expect(commands.map(&:last)).to include("CREATE DATABASE \"#{db_name}\" OWNER \"#{role}\"")
+      expect(commands).to all(include("-U", "agent\" WITH SUPERUSER --"))
     end
 
     it "quotes database identifiers in drop statements" do
@@ -1595,7 +1636,7 @@ RSpec.describe Containers::ServiceProvisioner do
       provisioner.send(:drop_per_run_database, sc, db_name)
 
       expect(commands).to all(include("-d", "agent_test"))
-      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{db_name}\"")
+      expect(commands.map(&:last)).to include("DROP DATABASE IF EXISTS \"#{db_name}\"")
     end
 
     it "drops the database from the stored DATABASE_URL instead of mutable run state" do
@@ -1620,7 +1661,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
       provisioner.cleanup(agent_run.tap { |run| run.service_container_ids = [ sc.id ] })
 
-      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
+      expect(commands.map(&:last)).to include("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
     end
 
     it "uses the captured stale requeue count when DATABASE_URL is unavailable" do
@@ -1644,7 +1685,7 @@ RSpec.describe Containers::ServiceProvisioner do
         stale_requeue_count: 0
       )
 
-      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
+      expect(commands.map(&:last)).to include("DROP DATABASE IF EXISTS \"#{original_db_name}\"")
     end
 
     it "skips legacy shared database URLs during cleanup" do
@@ -1763,7 +1804,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
       db_name = provisioner.send(:per_run_db_name, agent_run)
       provisioner.send(:create_per_run_database, sc, db_name)
-      expect(docker_container).to have_received(:exec).once
+      expect(docker_container).not_to have_received(:exec).with(include(a_string_starting_with("CREATE DATABASE")))
     end
   end
 end

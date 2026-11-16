@@ -72,6 +72,22 @@ charging blank rows to the local backend.
 
 ### Service-container orchestration
 
+PostgreSQL service bootstrap credentials remain with provisioning. Agent
+application connections use a separate role for each isolated run database,
+with `NOSUPERUSER NOBYPASSRLS CREATEDB CREATEROLE`. The application role owns
+the per-run database; test setup can create databases and restricted test roles
+without bypassing tenant isolation. Its role name and password use separate,
+versioned HMAC domains over the service identity and run database name using
+the control plane's secret key. Role names are not predictable from public run
+IDs, and public role names do not reveal password material. Credentials remain
+stable across retries and distinct across run databases. The bootstrap password is
+never injected into the agent application URL. Role setup must succeed before
+the URL is returned. Existing database objects retain their ownership when a
+previously provisioned database is reused; a fresh run provides a fresh schema.
+Credential-bearing SQL and server errors are not logged. Cleanup drops the
+per-run role after its database when PostgreSQL permits that drop, without
+dropping any other database owned by the role.
+
 `Containers::ServiceProvisioner` manages project service containers on the same
 backend/network as the agent run. It records `service_container_ids` on the run
 before startup so concurrent cleanup can count the run, reuses healthy running

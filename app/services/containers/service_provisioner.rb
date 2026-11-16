@@ -214,7 +214,7 @@ module Containers
 
             if sc.image.include?("postgres")
               db_name = per_run_db_name(agent_run)
-              create_per_run_database(sc, db_name)
+              sc.with_lock { create_per_run_database(sc, db_name) }
               env = generate_env_vars(sc, db_override: db_name)
             else
               env = generate_env_vars(sc)
@@ -1052,6 +1052,11 @@ module Containers
     def generate_env_vars(service_container, db_override: nil)
       host = runtime_name(service_container)
 
+      if service_container.image.include?("postgres") && db_override
+        credentials = PostgresApplicationRole.credentials_for(service_container, db_override)
+        return { "DATABASE_URL" => "postgres://#{credentials[:user]}:#{credentials[:password]}@#{host}:#{service_container.port}/#{db_override}" }
+      end
+
       ENV_MAPPINGS.each do |pattern, generator|
         if service_container.image.include?(pattern)
           return generator.call(service_container, host: host, db_override: db_override)
@@ -1083,6 +1088,8 @@ module Containers
       admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
       container = backend.get_container(service_container.docker_container_id)
+      credentials = PostgresApplicationRole.provision!(service_container:, database_name: db_name,
+        backend:, container:, admin_user: user, admin_database: admin_db)
       stdout, stderr, status = backend.exec_in_container(container, [
         "psql", "-U", user, "-d", admin_db, "-c",
         "SELECT 1 FROM pg_database WHERE datname = #{postgres_string_literal(db_name)}"
@@ -1096,7 +1103,7 @@ module Containers
       if stdout.join.exclude?("1 row")
         stdout, stderr, status = backend.exec_in_container(container, [
           "psql", "-U", user, "-d", admin_db, "-c",
-          "CREATE DATABASE #{postgres_identifier(db_name)} OWNER #{postgres_identifier(user)}"
+          "CREATE DATABASE #{postgres_identifier(db_name)} OWNER #{postgres_identifier(credentials.fetch(:user))}"
         ])
 
         if status != 0
@@ -1107,6 +1114,12 @@ module Containers
           db_name: db_name,
           service_container: service_container.name)
       end
+
+      _stdout, _stderr, status = backend.exec_in_container(container, [
+        "psql", "-v", "ON_ERROR_STOP=1", "-U", user, "-d", admin_db, "-c",
+        "ALTER DATABASE #{postgres_identifier(db_name)} OWNER TO #{postgres_identifier(credentials.fetch(:user))}"
+      ])
+      raise DatabaseError, "Failed to assign per-run PostgreSQL database ownership (exit #{status})" unless status == 0
     rescue Docker::Error::DockerError, Excon::Error => e
       raise DatabaseError, "Failed to create per-run database #{db_name}: #{e.message}"
     end
@@ -1202,6 +1215,8 @@ module Containers
           service_container: service_container.name,
           error: stderr.join)
       else
+        role = PostgresApplicationRole.credentials_for(service_container, db_name).fetch(:user)
+        drop_postgres_application_role(container, role, user: user, admin_db: admin_db)
         log_info("service_provisioner.database_dropped",
           db_name: db_name,
           service_container: service_container.name)
@@ -1211,6 +1226,14 @@ module Containers
         db_name: db_name,
         service_container: service_container.name,
         error: e.message)
+    end
+
+    def drop_postgres_application_role(container, role, user:, admin_db:)
+      _stdout, _stderr, status = backend.exec_in_container(container, [
+        "psql", "-v", "ON_ERROR_STOP=1", "-U", user, "-d", admin_db, "-c",
+        "DROP ROLE IF EXISTS #{postgres_identifier(role)}"
+      ])
+      log_warn("service_provisioner.database_role_drop_failed", role: role, exit_code: status) unless status == 0
     end
 
     def postgres_identifier(value)

@@ -886,3 +886,15 @@
   when the planned command already uses an authentication shell wrapper.
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision#close_stdin_for_codex_exec`.
+
+- [x] **CONTAINER-RUNTIME-052** — When a PostgreSQL service is provisioned
+  for an agent run, Paid SHALL create a distinct application role with
+  `NOSUPERUSER NOBYPASSRLS CREATEDB CREATEROLE`, make it own the isolated run
+  database, and inject only its connection URL. The credential SHALL be stable
+  for retries of the same run database, distinct across run databases, and
+  independent of the bootstrap password. Role setup failure SHALL prevent
+  application URL publication without logging credentials. Cleanup SHALL try
+  to remove the run role after its database without deleting other databases.
+  *Tests:* `spec/services/containers/service_provisioner_spec.rb`,
+  `spec/services/containers/postgres_application_role_spec.rb`.
+  *Code:* `Containers::ServiceProvisioner`, `Containers::PostgresApplicationRole`.
