@@ -104,8 +104,13 @@ The Auto-Pick failed-implementation adapter is not a source-closure recovery
 path: it rejects any run with a pushed revision or observable implementation
 work, leaving this record and its original run as the sole owner of
 post-push recovery rather than minting a second implementation attempt.
-The new unsuccessful-response recovery path uses a Temporal patch marker so
+The unsuccessful-response recovery path uses a Temporal patch marker so
 existing workflow histories retain their original replay behavior.
+Source-closure recovery executions also classify a timeout from its typed
+activity cause when the retry budget ends as `MAXIMUM_ATTEMPTS_REACHED`.
+Both that outcome and the aggregate `TIMEOUT` outcome retain pushed work for
+recovery. A separate Temporal patch marker preserves previously recorded
+failure/publication command histories for existing executions.
 That record carries only the failed step, branch, pinned pushed commit, attempt
 count, sanitized category, and next retry time. It is a work-slot hold, not an
 execution failure, and cleanup releases the prior container.

@@ -164,12 +164,16 @@
   branch and commit, attempt count, sanitized category, and next retry time;
   it SHALL retain the issue/PR work slot, release its idle execution environment,
   and SHALL NOT mark the coding result terminally failed solely for that
-  transport outage.
+  transport outage. A typed activity timeout SHALL remain recoverable when
+  its retry state is either `TIMEOUT` or `MAXIMUM_ATTEMPTS_REACHED`; replay of
+  executions predating the timeout-cause patch SHALL retain their recorded path.
   *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
   `app/temporal/activities/assess_source_closure_activity.rb`,
-  `app/temporal/workflows/agent_execution_workflow.rb`.
+  `app/temporal/workflows/agent_execution_workflow.rb`,
+  `app/temporal/workflows/source_closure_recovery_workflow.rb`.
   *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
-  `spec/temporal/activities/assess_source_closure_activity_spec.rb`.
+  `spec/temporal/activities/assess_source_closure_activity_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-045** — When a waiting source-closure recovery is due
   or authorized by an operator, Paid SHALL claim it once, restore only the

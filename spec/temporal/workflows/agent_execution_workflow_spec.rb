@@ -86,6 +86,39 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
 
     # @spec PARTIAL-CLOSEOUT-044
+    it "parks start-to-close timeouts after maximum attempts on the current history path" do
+      timeout = Temporalio::Error::TimeoutError.new(
+        "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED)
+      allow(Temporalio::Workflow).to receive(:patched).with("source-closure-timeout-cause-v1").and_return(true)
+      allow(workflow).to receive(:run_activity).and_raise(error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30).and_return({})
+
+      expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::ParkSourceClosureRecoveryActivity,
+        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+      )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044
+    it "retains the unpatched primary timeout command path for old histories" do
+      timeout = Temporalio::Error::TimeoutError.new(
+        "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED)
+      allow(Temporalio::Workflow).to receive(:patched).with("source-closure-timeout-cause-v1").and_return(false)
+      allow(workflow).to receive(:run_activity).and_raise(error)
+
+      expect { workflow.send(:assess_source_closure_or_park, 42) }.to raise_error(Temporalio::Error::ActivityError)
+      expect(workflow).not_to have_received(:run_activity).with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044
     it "parks a pushed branch when unsuccessful assessment responses exhaust retries" do
       allow(Temporalio::Workflow).to receive(:patched)
         .with("source-closure-unsuccessful-response-recovery-v1").and_return(true)
