@@ -8,8 +8,10 @@ prefix: BOUNDED-PHASE-AUTHORIZATION
 Status markers: `[ ]` accepted implementation gap.
 
 The initial bounded delegated action contract is shipped as the durable,
-action-specific authorization boundary below. The broader phase lifecycle
-claims remain unchecked until their admission and reassessment paths land.
+action-specific authorization boundary below. The phase identity, lineage,
+and exclusive-stop claims (`-001`–`-003`) shipped with #4997; the reassessment,
+consent-surface, and concurrency claims remain unchecked until their
+admission paths land.
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-010** — When an authorized actor delegates a
   bounded delivery action, the system SHALL require an identified issue in the
@@ -31,7 +33,7 @@ claims remain unchecked until their admission and reassessment paths land.
   `spec/services/automation/authorize_bounded_action_spec.rb` and
   `spec/services/automation/revoke_bounded_action_spec.rb`.
 
-- [ ] **BOUNDED-PHASE-AUTHORIZATION-001** — When an authorized actor explicitly
+- [x] **BOUNDED-PHASE-AUTHORIZATION-001** — When an authorized actor explicitly
   confirms a bounded authorization, the system SHALL record the actor, tenant,
   identified issue or PR, established same-work lineage, pinned intent and
   acceptance evidence, selected phase/actions, exclusive stopping boundary,
@@ -39,17 +41,27 @@ claims remain unchecked until their admission and reassessment paths land.
   from a GitHub approval, mention, dependency, parent/child relation, or
   milestone membership. It SHALL extend the shipped `-010` evidence/audit
   record and SHALL NOT create another delegated-action authority.
-  *Planned delivery:* #4997. *Planned tests:* model and command specs.
+  *Verified by:* `spec/services/automation/authorize_bounded_action_spec.rb`
+  (explicit lineage pinning for issue and PR work items, lineage-bearing audit
+  event, and no authority minted from relations, mentions, dependencies, or
+  milestone membership) and `spec/models/bounded_delegated_action_spec.rb`
+  (pinned-lineage validation, coverage, phase/stop identity, and the
+  auditable `completed_at` lifecycle).
 
-- [ ] **BOUNDED-PHASE-AUTHORIZATION-002** — When a bounded authorization is
+- [x] **BOUNDED-PHASE-AUTHORIZATION-002** — When a bounded authorization is
   active, the system SHALL permit only its selected phase's in-scope review and
   repair actions on the identified lineage, and SHALL require explicit supported
   authorization for another issue, child, PR, milestone-wide scope, release,
   deployment, or setting enablement. It SHALL compose the shipped `-011`
   action permissions and `-004` admission boundary rather than duplicate them.
-  *Planned delivery:* #4997. *Planned tests:* effective-policy and lineage specs.
+  *Verified by:* `spec/services/automation/delegated_action_admission_spec.rb`
+  (same-work lineage admission for the linked PR through the root issue's
+  authorization, non-inheritance for another issue, decomposed child,
+  unrelated PR, and a PR linked after admission; tenant isolation; and
+  create/dequeue/follow-up boundary rechecks of lineage-governed work) and the
+  lineage isolation examples of `spec/services/automation/effective_policy_spec.rb`.
 
-- [ ] **BOUNDED-PHASE-AUTHORIZATION-003** — When the identified lineage would
+- [x] **BOUNDED-PHASE-AUTHORIZATION-003** — When the identified lineage would
   enter the selected next phase, the system SHALL stop it with a visible
   `bounded_phase_stop` result even if project defaults or an ordinary
   continuation grant would otherwise permit that phase; ordinary RDR-077 grants
@@ -59,7 +71,14 @@ claims remain unchecked until their admission and reassessment paths land.
   governs the lineage, the system SHALL preserve the project's existing phase
   and auto-merge policy, including fully automatic merging of qualifying PRs
   without a new per-PR human decision.
-  *Planned delivery:* #4997. *Planned tests:* effective-policy and queue specs.
+  *Verified by:* `spec/services/automation/effective_policy_spec.rb`
+  (exclusive stop over enabled defaults and covering grants, lineage-scoped
+  stop, stop survival across revocation/expiry/completion, supersession by an
+  active phase selection, unchanged grants and defaults, manual-action and
+  rollout-guard exclusions) and the bounded-stop examples of
+  `spec/services/automation/feature_activation_phase_gate_spec.rb` (the
+  auto-merge queue entry point keeps a stopped lineage off while a superseding
+  merge authorization restores it).
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-004** — Before creating, dequeuing,
   retrying, or scheduling a follow-up action, the system SHALL recheck tenant,

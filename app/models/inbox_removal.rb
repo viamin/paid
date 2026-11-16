@@ -16,7 +16,7 @@ class InboxRemoval < ApplicationRecord
   validates :entry_kind, presence: true
   validates :request_occurrence, presence: true
   validates :removed_at, presence: true
-  validates :request_occurrence, uniqueness: { scope: %i[user_id request_key] }
+  validates :request_key, uniqueness: { scope: :user_id }
 
   scope :active, -> { where(cleared_at: nil) }
   scope :cleared, -> { where.not(cleared_at: nil) }
@@ -36,9 +36,13 @@ class InboxRemoval < ApplicationRecord
   end
 
   def clear!
-    return false unless active?
+    observed_event = [ request_occurrence, removed_at ]
 
-    update!(cleared_at: Time.current)
+    with_lock do
+      next false unless active? && [ request_occurrence, removed_at ] == observed_event
+
+      update!(cleared_at: Time.current)
+    end
   end
 
   private

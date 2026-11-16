@@ -44,8 +44,10 @@ as context only; the live target is zero and can be established only by a
 post-deploy execution.
 
 `RunCheckJob` enters through the normal project-derived tenant context. The
-operator task may locate a project with system read access, then establishes
-that project's tenant context before invoking the same service. A missing
+operator task locates a project and loads its account with system read access,
+then establishes that project's tenant context before invoking the same service.
+This entry path works from a fresh process without an existing tenant context;
+system access is limited to resolving that project and its account. A missing
 deployment revision or synchronized source issue produces an inspectable
 unknown attempt without querying the check. Database errors remain failed
 attempts and are retried by the job under normal role restrictions.

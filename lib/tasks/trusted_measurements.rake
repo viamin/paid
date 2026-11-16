@@ -5,10 +5,10 @@ namespace :trusted_measurements do
     "Required: PROJECT_ID=<id>, TARGET_REVISION=<revision>. Optional: CHECK_KEY (default " \
     "agent_planning_hold_reconciliation_closed_count), EXTERNAL_ISSUE_NUMBER (default 4812), " \
     "CRITERION_KEY (default closed_planning_hold_notifications_cleared). Runs only when " \
-    "PAID_DEPLOYED_REVISION exactly matches TARGET_REVISION. Idempotent — repeat " \
+    "the trusted deployment/checkout identity matches TARGET_REVISION. Idempotent — repeat " \
     "invocations against the same deployed revision update the same attempt row."
   task run_check: :environment do
-    project = TenantContext.with_system_access { Project.find(Integer(ENV.fetch("PROJECT_ID"))) }
+    project = TenantContext.with_system_access { Project.includes(:account).find(Integer(ENV.fetch("PROJECT_ID"))) }
     check_key = ENV.fetch("CHECK_KEY", "agent_planning_hold_reconciliation_closed_count")
     external_issue_number = Integer(ENV.fetch("EXTERNAL_ISSUE_NUMBER", "4812"))
     criterion_key = ENV.fetch("CRITERION_KEY", "closed_planning_hold_notifications_cleared")

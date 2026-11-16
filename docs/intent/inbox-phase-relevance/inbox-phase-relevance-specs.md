@@ -65,11 +65,23 @@
 
 - [x] **INBOX-PHASE-RELEVANCE-008** — Personal removal SHALL be persisted
   against a stable request identity and occurrence with the user and the
-  removal event, so rebuilding the derived queue cannot resurrect it, a
-  removal made after an occurrence SHALL survive delayed events from that
-  occurrence, and returning an item SHALL clear suppression only for the new
-  occurrence.
-  *Tests:* `spec/services/inbox/removals_spec.rb`
+  removal event, and the database SHALL admit at most one removal for each
+  `(user_id, request_key)` pair. When the constraint is deployed, concurrent
+  duplicate writes that race the unique-index build SHALL be deduplicated and
+  retried a bounded number of times before surfacing the deployment failure, so
+  removal writes that repeatedly conflict with that constraint SHALL surface the
+  database failure after their bounded retries. Rebuilding the derived queue
+  SHALL NOT resurrect the request, a removal made after an
+  occurrence SHALL survive delayed events from that occurrence, returning an
+  item SHALL clear suppression only for the new occurrence, and a delayed or
+  racing removal carrying an occurrence an active row already suppresses SHALL
+  NOT overwrite a newer persisted removal. Restoring suppression SHALL compare
+  the observed occurrence and removal event under the row lock, SHALL NOT clear
+  a newer removal even for the same occurrence, and SHALL clear each removal
+  event at most once.
+  *Tests:* `spec/services/inbox/removals_spec.rb`,
+  `spec/models/inbox_removal_spec.rb`,
+  `spec/migrations/enforce_unique_inbox_removal_request_spec.rb`
   *Code:* `InboxRemoval`, `Inbox::RequestIdentity`
 
 - [x] **INBOX-PHASE-RELEVANCE-009** — Personally removed items SHALL be

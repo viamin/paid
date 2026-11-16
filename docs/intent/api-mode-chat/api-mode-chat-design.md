@@ -63,6 +63,8 @@ The implemented behavior builds on:
 - account-scoped chat persistence (`ChatSession`, `ChatMessage`)
 - account/project authorization via Pundit policies
 - `agent_harness` chat clients constructed through `ChatSessions::BuildLlmClient`
+  and executed through `ChatSessions::IsolatedTransport` in a disposable text
+  container; Rails retains only the protocol relay and application authority.
 - Paid MCP tool definitions in `Tools::Registry`
 - per-request token accounting in `TokenUsageTracker`
 
