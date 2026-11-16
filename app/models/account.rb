@@ -68,6 +68,9 @@ class Account < ApplicationRecord
   has_many :api_usage_attempts, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :exception_incidents, dependent: :destroy
+  has_many :supervisor_snapshots, dependent: :destroy
+  has_many :supervisor_incidents, dependent: :destroy
+  has_many :supervisor_incident_audits, dependent: :destroy
   has_many :configuration_bundles, dependent: :destroy
   has_many :orchestration_strategies, dependent: :destroy
   has_many :strategy_experiments, dependent: :destroy
