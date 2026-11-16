@@ -15,6 +15,7 @@ module OperationalSupervisor
       @now = now
     end
 
+    # @spec OPERATIONAL-SUPERVISOR-004, OPERATIONAL-SUPERVISOR-006, OPERATIONAL-SUPERVISOR-007
     def call
       return failure("snapshot does not belong to account") unless snapshot.account_id == account.id
       return failure("targets are not snapshot members") unless target_ids_are_snapshot_members?
@@ -63,8 +64,26 @@ module OperationalSupervisor
     end
 
     def target_ids_are_snapshot_members?
-      target_projects = Array(attributes.fetch(:affected_project_ids)).map(&:to_i)
-      target_projects.all? { |id| snapshot.included_project_ids.include?(id) }
+      affected_project_ids_are_snapshot_members? && target_project_ids_are_snapshot_members?
+    end
+
+    def affected_project_ids_are_snapshot_members?
+      snapshot_member_project_ids?(attributes.fetch(:affected_project_ids))
+    end
+
+    def target_project_ids_are_snapshot_members?
+      target_ids = attributes.fetch(:target_ids)
+      return false unless target_ids.is_a?(Hash) && target_ids.keys == [ "project_ids" ]
+
+      snapshot_member_project_ids?(target_ids["project_ids"])
+    end
+
+    def snapshot_member_project_ids?(project_ids)
+      project_ids.is_a?(Array) && project_ids.all? { |id| id.is_a?(Integer) && snapshot_project_ids.key?(id) }
+    end
+
+    def snapshot_project_ids
+      @snapshot_project_ids ||= snapshot.included_project_ids.index_with(true)
     end
 
     def retry_after_deduplication_race

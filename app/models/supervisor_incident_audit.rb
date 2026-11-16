@@ -21,7 +21,7 @@ class SupervisorIncidentAudit < ApplicationRecord
   private
 
   def evidence_is_sanitized
-    errors.add(:evidence, "contains unsupported or unsafe fields") unless sanitized_payload?(evidence)
+    errors.add(:evidence, "contains unsupported or unsafe fields") unless sanitized_payload?(evidence, type: :audit_evidence)
   end
 
   def incident_belongs_to_account

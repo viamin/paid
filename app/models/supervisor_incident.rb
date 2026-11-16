@@ -10,7 +10,7 @@ class SupervisorIncident < ApplicationRecord
 
   belongs_to :account
   belongs_to :supervisor_snapshot, optional: true
-  has_many :supervisor_incident_audits, dependent: :destroy
+  has_many :supervisor_incident_audits, dependent: :delete_all
 
   validates :fingerprint, presence: true, length: { is: 64 }, uniqueness: { scope: :account_id }
   validates :category, inclusion: { in: CATEGORIES }
@@ -27,9 +27,8 @@ class SupervisorIncident < ApplicationRecord
   private
 
   def payloads_are_sanitized
-    [ :target_ids, :evidence ].each do |attribute|
-      errors.add(attribute, "contains unsupported or unsafe fields") unless sanitized_payload?(public_send(attribute))
-    end
+    errors.add(:target_ids, "contains unsupported or unsafe fields") unless sanitized_payload?(target_ids, type: :incident_targets)
+    errors.add(:evidence, "contains unsupported or unsafe fields") unless sanitized_payload?(evidence, type: :incident_evidence)
   end
 
   def affected_projects_belong_to_account

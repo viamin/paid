@@ -16,6 +16,13 @@ RSpec.describe SupervisorSnapshot do
       expect(snapshot).to be_invalid
       expect(snapshot.errors[:digest]).to include("contains unsupported or unsafe fields")
     end
+
+    it "rejects unrecognized fields from durable payloads" do # @spec OPERATIONAL-SUPERVISOR-001
+      snapshot = build(:supervisor_snapshot, digest: { "issue_title" => "customer-authored text" })
+
+      expect(snapshot).to be_invalid
+      expect(snapshot.errors[:digest]).to include("contains unsupported or unsafe fields")
+    end
   end
 
   describe ".expired" do

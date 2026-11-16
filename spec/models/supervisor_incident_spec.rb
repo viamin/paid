@@ -21,6 +21,20 @@ RSpec.describe SupervisorIncident do
     expect(incident.errors[:affected_project_ids]).to include("must belong to the incident account")
   end
 
+  it "rejects unrecognized incident evidence" do # @spec OPERATIONAL-SUPERVISOR-001
+    incident = build(:supervisor_incident, evidence: { "issue_title" => "customer-authored text" })
+
+    expect(incident).to be_invalid
+    expect(incident.errors[:evidence]).to include("contains unsupported or unsafe fields")
+  end
+
+  it "rejects unrecognized audit evidence" do # @spec OPERATIONAL-SUPERVISOR-001
+    audit = build(:supervisor_incident_audit, evidence: { "issue_title" => "customer-authored text" })
+
+    expect(audit).to be_invalid
+    expect(audit.errors[:evidence]).to include("contains unsupported or unsafe fields")
+  end
+
   it "keeps its audit trail append-only in the database" do # @spec OPERATIONAL-SUPERVISOR-007
     audit = create(:supervisor_incident_audit)
 

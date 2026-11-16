@@ -18,9 +18,8 @@ class SupervisorSnapshot < ApplicationRecord
   private
 
   def payloads_are_sanitized
-    [ :digest, :metric_provenance ].each do |attribute|
-      errors.add(attribute, "contains unsupported or unsafe fields") unless sanitized_payload?(public_send(attribute))
-    end
+    errors.add(:digest, "contains unsupported or unsafe fields") unless sanitized_payload?(digest, type: :snapshot_digest)
+    errors.add(:metric_provenance, "contains unsupported or unsafe fields") unless sanitized_payload?(metric_provenance, type: :metric_provenance)
   end
 
   def included_projects_belong_to_account

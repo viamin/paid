@@ -31,4 +31,13 @@ RSpec.describe OperationalSupervisor::PersistIncident do
     expect(result).to be_failure
     expect(SupervisorIncident.count).to eq(0)
   end
+
+  it "fails closed when stored target IDs are not snapshot members" do # @spec OPERATIONAL-SUPERVISOR-004, OPERATIONAL-SUPERVISOR-006
+    other_project = create(:project, account:)
+
+    result = described_class.call(account:, snapshot:, **attributes.merge(affected_project_ids: [], target_ids: { "project_ids" => [ other_project.id ] }))
+
+    expect(result).to be_failure
+    expect(SupervisorIncident.count).to eq(0)
+  end
 end
