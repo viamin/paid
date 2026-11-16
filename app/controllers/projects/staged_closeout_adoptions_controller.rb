@@ -46,13 +46,11 @@ module Projects
     end
 
     def payload
-      { enrollment: @project.staged_closeout_enrollment&.slice(:enabled, :reviewed_at, :revision) || { enabled: false },
-        mappings: @project.staged_closeout_mappings.order(:issue_id, :criterion_key, :revision).map { |mapping| mapping.slice(*mapping_fields) },
-        automatic_run_reason: @project.staged_closeout_enrollment&.enabled? ? "no_approved_mapping_or_scheduler" : "project_not_enrolled" }
+      StagedCloseoutAdoption::Projection.for_project(@project)
     end
 
     def mapping_fields
-      %w[id issue_id criterion_key stage phase target_shape execution_path target_key target_version target_digest environment_class freshness_seconds retry_policy status revision reviewed_at invalidated_at invalidation_reason]
+      StagedCloseoutAdoption::Projection::MAPPING_FIELDS
     end
 
     def mapping_params

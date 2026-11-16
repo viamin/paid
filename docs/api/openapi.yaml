@@ -392,6 +392,94 @@ paths:
                   signature: {type: string}
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/staged_closeout_adoption:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: getStagedCloseoutAdoption
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Staged closeout enrollment, reviewed mappings, and current eligibility reasons.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateStagedCloseoutAdoption
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: Updated staged closeout enrollment and eligibility projection.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{project_id}/staged_closeout_adoption/mappings:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    post:
+      operationId: createStagedCloseoutMapping
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        '201':
+          description: Approved reviewed mapping.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{project_id}/staged_closeout_adoption/mappings/{id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    delete:
+      operationId: revokeStagedCloseoutMapping
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Revoked reviewed mapping.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        default:
+          $ref: '#/components/responses/Error'
   /projects/{project_id}/design_artifact_findings:
     parameters:
       - name: project_id
