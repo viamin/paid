@@ -394,9 +394,15 @@ decision, its evidence, and its alternatives:
 | B — persisted stall read model | Recompute the stalled-closeout projection outside Inbox rendering, on every input that changes admission or lane membership; a durable project checkpoint represents both populated and empty results; the Inbox reads the projection after that checkpoint exists; live `eligible_scope` remains the admission authority at continuation preflight, dequeue, and run start. | Removes admission from the hot path and mirrors the persisted project-readiness snapshot, but adds a durable derived record, invalidation coverage, freshness semantics, and a rollout guard. |
 | C — per-project cache | Cache the `StalledCloseouts` result per project behind the account's `inbox` `Dashboard::CacheVersion`, shared by Queue, Count, and Availability. | Lowest implementation cost, but the cache boundary is the badge boundary, not the admission-input boundary, so it serves badge-grade staleness to the lane list and returns to live admission on every cold cache. |
 
-**Recorded decision: the owner chose Option B on 2026-11-05; it is accepted but
-not yet implemented.** The lane keeps live admission until RDR-081's read model
-is implemented and enabled. The decision rests on three findings: the request-path
+**Recorded decision: the owner chose Option B on 2026-11-05; it is implemented
+behind the `partial_closeout_lane_read_model` rollout guard (#4912).** The
+projection recomputes outside Inbox rendering — a five-minute watermark sweep
+plus the per-project recompute job — under the owning account's tenant
+context, and `Inbox::Queue`, `Inbox::Count`, and `Inbox::Availability` read
+one shared reader (`Issues::StalledCloseoutProjection.pairs`). A project with
+a successful checkpoint issues no `eligible_scope` evaluation on the request
+path; a flag-disabled or not-yet-evaluated project stays on the live path.
+The decision rests on three findings: the request-path
 cost grows with the number of projects that have closeout candidates rather
 than with the number of stalls; Option C needs the same invalidation coverage
 as the projection to be correct, because the `inbox` cache version does not

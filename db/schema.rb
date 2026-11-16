@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_16_150744) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4370,6 +4370,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
     t.index ["staged_closeout_enrollment_id"], name: "index_staged_closeout_mappings_on_enrollment"
   end
 
+  create_table "stall_projection_checkpoints", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "computed_at", comment: "When the last successful projection committed; null until one succeeds."
+    t.datetime "created_at", null: false
+    t.bigint "generation", default: 0, null: false, comment: "Identity of the last successful atomic replacement."
+    t.string "input_watermark", comment: "Newest admission-relevant input digest included in that computation."
+    t.jsonb "last_failure", default: {}, null: false, comment: "Bounded failure metadata for operator diagnosis."
+    t.datetime "last_failure_at"
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_stall_projection_checkpoints_on_account_id"
+    t.index ["project_id"], name: "index_stall_projection_checkpoints_on_project_id", unique: true
+  end
+
+  create_table "stall_projection_stalls", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "blockers", default: [], null: false, comment: "Additive structured blockers CloseoutStatus produced."
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false, comment: "Display evidence snapshot: merged PRs, terminal and no-code timestamps, digests."
+    t.string "evidence_digest", null: false
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.bigint "projection_generation", null: false, comment: "Checkpoint generation that produced this row."
+    t.text "reason", null: false, comment: "Why automatic continuation cannot proceed."
+    t.string "status", null: false, comment: "Recorded outcome label the stall was computed against."
+    t.jsonb "technical_evidence", default: [], null: false
+    t.jsonb "unresolved_prerequisites", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_stall_projection_stalls_on_account_id"
+    t.index ["issue_id"], name: "index_stall_projection_stalls_on_issue_id"
+    t.index ["project_id", "issue_id"], name: "idx_stall_projection_stalls_project_issue", unique: true
+    t.index ["project_id", "projection_generation"], name: "idx_stall_projection_stalls_project_generation"
+    t.index ["project_id"], name: "index_stall_projection_stalls_on_project_id"
+  end
+
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false
@@ -5443,6 +5478,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_104904) do
   add_foreign_key "staged_closeout_mappings", "staged_closeout_enrollments"
   add_foreign_key "staged_closeout_mappings", "users", column: "invalidated_by_id"
   add_foreign_key "staged_closeout_mappings", "users", column: "reviewed_by_id"
+  add_foreign_key "stall_projection_checkpoints", "accounts"
+  add_foreign_key "stall_projection_checkpoints", "projects"
+  add_foreign_key "stall_projection_stalls", "accounts"
+  add_foreign_key "stall_projection_stalls", "issues"
+  add_foreign_key "stall_projection_stalls", "projects"
   add_foreign_key "strategies", "accounts", on_delete: :cascade
   add_foreign_key "strategies", "projects", on_delete: :cascade
   add_foreign_key "strategies", "strategy_versions", column: "current_version_id", on_delete: :nullify

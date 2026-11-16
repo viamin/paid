@@ -917,15 +917,19 @@ module Inbox
 
     # Derived lane like retry_limited: open issues carrying terminal closeout
     # evidence (merged partial PR / no-code outcome) that auto-pick excludes
-    # with no explicit operator hold and no work in flight. Admission
-    # authority stays with DefaultCandidateSource.eligible_scope (batched once
-    # per project inside Issues::StalledCloseouts), and each entry's summary
-    # carries the exact reason automatic continuation cannot proceed plus the
-    # recorded outcome; the detail pane adds evidence links, unresolved
-    # prerequisites, and the authorized recovery actions (#4120).
-    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
+    # with no explicit operator hold and no work in flight. Membership comes
+    # from the one shared projection reader: a project with a successful
+    # checkpoint reads its persisted stall rows (no live admission on the
+    # request path), while a flag-disabled or unevaluated project keeps the
+    # live evaluation inside Issues::StalledCloseouts. Admission authority
+    # stays with DefaultCandidateSource.eligible_scope at preflight,
+    # dequeue, and run start; each entry's summary carries the exact reason
+    # automatic continuation cannot proceed plus the recorded outcome; the
+    # detail pane adds evidence links, unresolved prerequisites, and the
+    # authorized recovery actions (#4120).
+    # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H @spec PARTIAL-CLOSEOUT-043
     def partial_closeout_entries
-      Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id).map do |pair|
+      Issues::StalledCloseoutProjection.pairs(scoped_projects, issue_id: @record_id).map do |pair|
         status = pair.status
         Entry.new(
           id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",
