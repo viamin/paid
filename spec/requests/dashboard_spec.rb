@@ -592,6 +592,7 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(synthetic_run, :dashboard_row)}"]))).to be_nil
       end
 
+      # @spec KNOWLEDGE-DASHBOARD-001 LLM-ROUTING-010
       it "shows knowledge runner health and pipeline metrics" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, user: user, runner_name: user.settings.kb_chat_runner, failure_count: 2)
@@ -601,7 +602,7 @@ RSpec.describe "Dashboard" do
         get dashboard_knowledge_stats_path
 
         expect(response.body).to include("Runner Health")
-        expect(response.body).to include("Degraded")
+        expect(response.body).to include("Unavailable")
         expect(response.body).to include("LLM Pipeline Metrics (Last 30 Days)")
         expect(response.body).to include("Decision Drafting")
         expect(response.body).to include("Embedding")
