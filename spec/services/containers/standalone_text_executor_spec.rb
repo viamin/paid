@@ -82,6 +82,17 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(input_header_of(captured_inputs.last)).to include("command" => [ "codex", "exec", "hello" ])
   end
 
+  # @spec LLM-ROUTING-006
+  it "does not start a command after provisioning consumes its deadline" do
+    clock_values = [ 100.0, 102.0 ]
+    executor = described_class.new(account: account, runner: runner, timeout: 30, deadline: 101.0,
+      clock: ->(_) { clock_values.shift || 102.0 })
+
+    expect { executor.execute([ "codex", "exec", "hello" ]) }.to raise_error(AgentHarness::TimeoutError)
+
+    expect(backend).not_to have_received(:exec_in_container_with_stdin)
+  end
+
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
   it "keeps API credentials out of the Docker exec environment" do
     captured_payload

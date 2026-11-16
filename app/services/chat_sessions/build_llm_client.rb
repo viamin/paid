@@ -205,7 +205,7 @@ module ChatSessions
       end
 
       def initialize(chat_session:, provider:, protocol:, endpoint:, api_key:, model:, max_tokens: nil, model_resolver: nil,
-        reasoning_effort: nil, chat_transport: AgentHarness::Api::ChatTransport.new, actor: nil, message: nil)
+        reasoning_effort: nil, chat_transport: nil, actor: nil, message: nil)
         @chat_session = chat_session
         @provider = provider
         @protocol = protocol
@@ -217,7 +217,9 @@ module ChatSessions
         @reasoning_effort = reasoning_effort
         @actor = actor
         @message = message
-        @harness_transport = HarnessTransport.new(chat_session: chat_session, transport: chat_transport)
+        transport = chat_transport || IsolatedTransport.new(chat_session: chat_session, runner: chat_session.runner,
+          api_key: api_key)
+        @harness_transport = HarnessTransport.new(chat_session: chat_session, transport: transport)
       end
 
       def call(conversation, tools: nil, on_chunk: nil)
