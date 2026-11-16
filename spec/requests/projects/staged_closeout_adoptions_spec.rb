@@ -65,7 +65,7 @@ RSpec.describe "Staged closeout adoption settings" do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-004
-  it "reports criterion and target changes precisely" do
+  it "reports stale assessments and target changes precisely" do
     StagedCloseoutAdoption::Enroll.call(project:, actor: owner, enabled: true)
     issue = create(:issue, project:)
     recipe = create(:pre_commit_requirement, project:, account:)
@@ -73,7 +73,7 @@ RSpec.describe "Staged closeout adoption settings" do
 
     issue.update!(body: "Changed acceptance intent")
     get project_staged_closeout_adoption_path(project), as: :json
-    expect(response.parsed_body).to include("automatic_run_reason" => "criterion_changed")
+    expect(response.parsed_body).to include("automatic_run_reason" => "closeout assessment is stale")
 
     target_project = create(:project, account:, created_by: owner)
     StagedCloseoutAdoption::Enroll.call(project: target_project, actor: owner, enabled: true)

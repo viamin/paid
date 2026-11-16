@@ -43,6 +43,24 @@ RSpec.describe StagedCloseoutAdoption::Mappings do
     expect(replacement).to have_attributes(status: "approved", revision: 2)
   end
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-002 STAGED-CLOSEOUT-ADOPTION-004
+  it "leaves revoked and superseded mapping history unchanged when revoked again" do
+    revoked = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+    described_class.revoke(mapping: revoked, project:, actor: maintainer, issue:, attributes: {})
+    revoked_history = revoked.reload.attributes.slice("status", "invalidated_by_id", "invalidated_at", "invalidation_reason")
+
+    superseded = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+    described_class.approve(project:, actor: maintainer, issue:, attributes: attributes.merge(freshness_seconds: 7200))
+    superseded_history = superseded.reload.attributes.slice("status", "invalidated_by_id", "invalidated_at", "invalidation_reason")
+    another_maintainer = create(:user, :owner, account: project.account)
+
+    described_class.revoke(mapping: revoked, project:, actor: another_maintainer, issue:, attributes: {})
+    described_class.revoke(mapping: superseded, project:, actor: another_maintainer, issue:, attributes: {})
+
+    expect(revoked.reload).to have_attributes(revoked_history)
+    expect(superseded.reload).to have_attributes(superseded_history)
+  end
+
   # @spec STAGED-CLOSEOUT-ADOPTION-003
   it "rejects unknown criteria, mismatched stages, unavailable recipes, and an untrusted actor" do
     expect { described_class.approve(project:, actor: maintainer, issue:, attributes: attributes.merge(criterion_key: "Invented")) }

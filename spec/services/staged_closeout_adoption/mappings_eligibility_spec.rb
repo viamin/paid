@@ -25,4 +25,19 @@ RSpec.describe StagedCloseoutAdoption::Mappings do
     StagedCloseoutAdoption::Enroll.call(project:, actor: maintainer, enabled: false)
     expect(described_class.eligible_for(mapping:, project:, issue:).reason).to eq("project_not_enrolled")
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-003 STAGED-CLOSEOUT-ADOPTION-004
+  it "rejects a mapping when the latest current assessment removes its criterion" do
+    mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+    create(:agent_run, :completed, project:, issue:, reconciliation: { "assessment" => {
+      "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+      "criteria" => [ { "criterion" => "A replacement criterion", "state" => "unmet" } ], "gaps" => []
+    } })
+
+    result = described_class.eligible_for(mapping:, project:, issue:)
+
+    expect(result).not_to be_eligible
+    expect(result.reason).to eq("criterion_not_current")
+  end
 end

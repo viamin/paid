@@ -57,7 +57,11 @@ module StagedCloseoutAdoption
       authorize!
       raise Error, "mapping does not belong to this project" unless mapping.project_id == project.id
 
-      mapping.update!(status: "revoked", invalidated_by: actor, invalidated_at: Time.current, invalidation_reason: "revoked_by_reviewer")
+      mapping.with_lock do
+        return mapping unless mapping.current?
+
+        mapping.update!(status: "revoked", invalidated_by: actor, invalidated_at: Time.current, invalidation_reason: "revoked_by_reviewer")
+      end
       mapping
     end
 
@@ -67,6 +71,7 @@ module StagedCloseoutAdoption
     def eligible_for(mapping)
       return Result.new(mapping, "project_not_enrolled") unless enrollment.enabled?
       return Result.new(mapping, "mapping_not_current") unless mapping.current?
+      return Result.new(mapping, "criterion_not_current") unless criteria.include?(mapping.criterion_key)
       return Result.new(mapping, "criterion_changed") unless criterion_digest(mapping.criterion_key) == mapping.criterion_digest
       return Result.new(mapping, "phase_policy_disabled") unless Automation::EffectivePolicy.call(
         project:, phase: mapping.phase, work_item: issue, trigger: :automatic, delegated_action: "review"
