@@ -98,17 +98,24 @@ module Containers
       sys.exit(86 if exceeded else process.returncode)
     PYTHON
 
-    def initialize(account:, runner:, timeout:)
+    def initialize(account:, runner:, timeout:, deadline: nil, clock: Process.method(:clock_gettime))
       @account = account
       @runner = runner
       @timeout = timeout.to_i
+      @deadline = deadline
+      @clock = clock
     end
 
     def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, output_observer: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
       validate_input_size!(command, env, preparation, stdin_data)
+      raise AgentHarness::TimeoutError, "Isolated text request timed out" if deadline_expired?
+
       provision! unless @container
+      timeout = bounded_timeout(timeout)
+      raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
+
       with_managed_credential_lease do
-        run(materialized_command, timeout: bounded_timeout(timeout), env: materialized_env(env),
+        run(materialized_command, timeout: timeout, env: materialized_env(env),
           input: input_payload(command, preparation, stdin_data), output_observer: output_observer)
       end
     rescue StandardError
@@ -326,7 +333,16 @@ module Containers
     end
 
     def bounded_timeout(value)
-      [ (value || @timeout).to_i, @timeout ].min
+      timeout = [ (value || @timeout).to_f, @timeout ].min
+      @deadline ? [ timeout, @deadline - monotonic_now ].min : timeout
+    end
+
+    def deadline_expired?
+      @deadline && @deadline <= monotonic_now
+    end
+
+    def monotonic_now
+      @clock.call(Process::CLOCK_MONOTONIC)
     end
 
     def container_config

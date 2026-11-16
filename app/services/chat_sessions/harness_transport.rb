@@ -63,6 +63,8 @@ module ChatSessions
     # AgentHarness accepts an object responding to +cancelled?+. A monotonic
     # deadline keeps the request bound independent of wall-clock changes.
     class DeadlineCancellation
+      attr_reader :deadline
+
       def initialize(deadline:, clock: Process.method(:clock_gettime))
         @deadline = deadline
         @clock = clock

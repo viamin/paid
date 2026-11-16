@@ -96,7 +96,9 @@
   short-lived credential material through the credential broker; it SHALL NOT
   mount a Rails workspace or receive broad provider secrets. A failed isolated
   execution SHALL surface its classified chat error and SHALL NOT fall back to
-  host inference.
+  host inference. The isolated execution and its container-side harness SHALL
+  retain the parent request's wall-clock deadline rather than allocating a new
+  full request budget after container provisioning.
   *Tests:* `spec/services/chat_sessions/isolated_transport_spec.rb`,
   `spec/services/chat_sessions/build_llm_client_spec.rb`,
   `spec/services/chat_sessions/harness_transport_spec.rb`.

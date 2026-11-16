@@ -12,6 +12,16 @@ module ChatSessions
       require "json"
       require "agent_harness"
 
+      class DeadlineCancellation
+        def initialize(deadline:)
+          @deadline = deadline
+        end
+
+        def cancelled?
+          Process.clock_gettime(Process::CLOCK_MONOTONIC) >= @deadline
+        end
+      end
+
       def symbolize(value)
         case value
         when Array then value.map { |item| symbolize(item) }
@@ -22,6 +32,8 @@ module ChatSessions
 
       request = symbolize(JSON.parse(STDIN.read))
       credential_env = request.delete(:credential_env)
+      deadline = request.delete(:deadline)
+      request[:cancellation] = DeadlineCancellation.new(deadline: deadline) if deadline
       request[:candidates].each do |candidate|
         candidate[:credentials] = { api_key: ENV.fetch(credential_env) }
       end
@@ -42,7 +54,10 @@ module ChatSessions
 
     def call(request, &observer)
       @observer = observer
-      executor.execute([ "ruby", "-e", RUNNER ], timeout: timeout_for(request), env: credential_env,
+      timeout = timeout_for(request)
+      raise AgentHarness::TimeoutError, "Isolated chat request deadline expired" unless timeout.positive?
+
+      executor(timeout, deadline_for(request)).execute([ "ruby", "-e", RUNNER ], timeout: timeout, env: credential_env,
         stdin_data: serialized_request(request), output_observer: method(:receive_output))
       process_lines
       response = @result || raise(AgentHarness::ProviderError, "Isolated chat execution returned no result")
@@ -50,20 +65,25 @@ module ChatSessions
         normalized[:status] = normalized[:status].to_sym if normalized[:status].respond_to?(:to_sym)
       end
     ensure
-      executor.close
+      @executor&.close
+      @executor = nil
     end
 
     private
 
-    def executor
-      @executor ||= Containers::StandaloneTextExecutor.new(account: @chat_session.account, runner: @runner, timeout: 10.minutes)
+    def executor(timeout, deadline)
+      @executor ||= Containers::StandaloneTextExecutor.new(account: @chat_session.account, runner: @runner,
+        timeout: timeout, deadline: deadline)
     end
 
-    def timeout_for(_request)
+    def timeout_for(request)
       # The harness running inside the container enforces the shorter read
       # deadline. The executor owns only the outer wall-clock bound so an
       # actively streaming response is not cut off after one read interval.
-      10.minutes.in_seconds
+      deadline = deadline_for(request)
+      return 10.minutes.in_seconds unless deadline
+
+      deadline - monotonic_now
     end
 
     def credential_env
@@ -78,10 +98,19 @@ module ChatSessions
 
     def serialized_request(request)
       sanitized = request.deep_dup
-      sanitized.delete(:cancellation)
+      cancellation = sanitized.delete(:cancellation)
       sanitized[:candidates].each { |candidate| candidate.delete(:credentials) }
       sanitized[:credential_env] = credential_env_name
+      sanitized[:deadline] = cancellation.deadline if cancellation.respond_to?(:deadline)
       sanitized.to_json
+    end
+
+    def deadline_for(request)
+      request[:cancellation]&.deadline
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def receive_output(stream, chunk)
