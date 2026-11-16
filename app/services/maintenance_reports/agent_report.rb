@@ -55,9 +55,20 @@ module MaintenanceReports
       raise InvalidReport, "finding category and claim must be present" if finding.values_at("category", "claim").any?(&:blank?)
       raise InvalidReport, "finding symbols and locations must be arrays" unless finding["symbols"].is_a?(Array) && finding["locations"].is_a?(Array)
       raise InvalidReport, "finding verification disposition is invalid" unless DISPOSITIONS.include?(finding["verification_disposition"])
+      validate_persistence_bounds!(finding)
       return if finding["agent_assessment"].nil? || ASSESSMENTS.include?(finding["agent_assessment"])
 
       raise InvalidReport, "finding agent assessment is invalid"
+    end
+
+    def validate_persistence_bounds!(finding)
+      confidence = finding["raw_tool_confidence"]
+      unless confidence.nil? || (confidence.is_a?(Numeric) && confidence.between?(0, 1))
+        raise InvalidReport, "finding raw_tool_confidence must be a number between 0 and 1"
+      end
+      unless finding["category"].is_a?(String) && finding["category"].length <= 100
+        raise InvalidReport, "finding category must be a string of at most 100 characters"
+      end
     end
 
     def require_type!(payload, field, type)

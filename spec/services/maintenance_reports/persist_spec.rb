@@ -4,7 +4,10 @@ require "rails_helper"
 
 RSpec.describe MaintenanceReports::Persist do
   let(:project) { create(:project) }
-  let(:run) { create(:agent_run, :manual, project:, issue: nil, goal: "maintenance", maintenance_objective: "unnecessary_code") }
+  let(:run) do
+    create(:agent_run, :manual, project:, issue: nil, goal: "maintenance", maintenance_objective: "unnecessary_code",
+      maintenance_scope: "app/services")
+  end
   let(:finding) do
     {
       category: "unused_code", claim: "LegacyWorker has no callers", symbols: [ "LegacyWorker" ],
@@ -32,6 +35,13 @@ RSpec.describe MaintenanceReports::Persist do
       incomplete_checks: [ { "name" => "debride", "reason" => "missing_tool" } ])
 
     expect(report).to have_attributes(outcome: "partial")
+  end
+
+  # @spec MAINT-020 MAINT-022
+  it "does not represent the requested scope as the scope actually investigated" do
+    report = described_class.call(run:, incomplete_checks: [ { "name" => "investigation", "reason" => "parse_failure" } ])
+
+    expect(report.resolved_scope).to be_nil
   end
 
   # @spec MAINT-023

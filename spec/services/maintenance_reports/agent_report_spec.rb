@@ -35,4 +35,23 @@ RSpec.describe MaintenanceReports::AgentReport do
 
     expect { described_class.parse(output) }.to raise_error(described_class::InvalidReport, /disposition/)
   end
+
+  # @spec MAINT-022 MAINT-025
+  it "rejects finding values that exceed persistence bounds" do
+    finding = { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
+      locations: [], raw_tool_confidence: 1.01, verification_disposition: "unverified" }
+
+    expect { parse(finding:) }.to raise_error(described_class::InvalidReport, /between 0 and 1/)
+    expect { parse(finding: finding.merge(raw_tool_confidence: -0.01)) }
+      .to raise_error(described_class::InvalidReport, /between 0 and 1/)
+    expect { parse(finding: finding.merge(raw_tool_confidence: "0.85")) }
+      .to raise_error(described_class::InvalidReport, /between 0 and 1/)
+    expect { parse(finding: finding.merge(category: "x" * 101, raw_tool_confidence: 0.85)) }
+      .to raise_error(described_class::InvalidReport, /at most 100 characters/)
+  end
+
+  def parse(finding:)
+    payload = { exclusions: [], completed_checks: [], incomplete_checks: [], evidence: {}, findings: [ finding ] }
+    described_class.parse("<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->")
+  end
 end

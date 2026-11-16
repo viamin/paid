@@ -93,5 +93,6 @@ RSpec.describe MaintenanceRuns::BuildPrompt do
 
     expect(prompt).to include("<!-- maintenance-report-start -->", "<!-- maintenance-report-end -->")
     expect(prompt).to include("completed_checks", "incomplete_checks", "findings", "evidence")
+    expect(prompt).to match(/raw_tool_confidence.*between 0 and 1/i)
   end
 end

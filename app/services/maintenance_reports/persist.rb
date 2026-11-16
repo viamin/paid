@@ -41,7 +41,7 @@ module MaintenanceReports
     def find_or_create_report
       MaintenanceReport.find_or_initialize_by(agent_run: run).tap do |report|
         attributes = { account: run.project.account, project: run.project,
-                       resolved_scope: resolved_scope || run.maintenance_scope, exclusions:,
+                       resolved_scope:, exclusions:,
                        completed_checks:, incomplete_checks:, evidence: }
         attributes[:outcome] = outcome unless incomplete_terminal_outcome?(report)
         attributes[:incomplete_checks] = report.incomplete_checks if report.outcome == "partial" && incomplete_checks.empty?

@@ -42,7 +42,7 @@ module MaintenanceRuns
         - If evidence is missing or an analysis could not be completed, say so explicitly as an unresolved candidate or coverage limitation. Never present an incomplete scan as a clean result.
 
         ## Required structured report
-        End your final response with exactly one JSON report between these markers. Use empty arrays or objects when a field has no entries. Each finding must include category, claim, symbols, locations, supporting_evidence, contrary_evidence, analyzer_provenance, raw_tool_confidence, agent_assessment, proposed_action, validation_plan, and verification_disposition.
+        End your final response with exactly one JSON report between these markers. Use empty arrays or objects when a field has no entries. Each finding must include category, claim, symbols, locations, supporting_evidence, contrary_evidence, analyzer_provenance, raw_tool_confidence, agent_assessment, proposed_action, validation_plan, and verification_disposition. raw_tool_confidence must be null or a number between 0 and 1.
 
         <!-- maintenance-report-start -->
         {"resolved_scope":"scope actually investigated","exclusions":[],"completed_checks":[],"incomplete_checks":[],"evidence":{},"findings":[]}
