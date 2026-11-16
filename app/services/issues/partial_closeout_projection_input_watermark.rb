@@ -26,6 +26,8 @@ module Issues
       watermarks = projects.to_h { |project| [ project.id, project.updated_at ] }
       project_scopes.each { |name, scope, project_column| merge_signatures(signatures, watermarks, name, scope, project_column) }
       merge_runner_signatures(signatures, watermarks)
+      merge_active_analysis_backoff_signatures(signatures)
+      merge_active_unsynced_pr_grace_signatures(signatures)
       signatures.to_h do |project_id, parts|
         snapshot = Snapshot.new(
           watermark: watermarks.fetch(project_id),
@@ -84,6 +86,27 @@ module Issues
         timestamp = maximums[project.account_id]
         result[project.id] << signature("runners", counts.fetch(project.account_id, 0), timestamp)
         watermarks[project.id] = [ watermarks[project.id], timestamp ].compact.max
+      end
+    end
+
+    def merge_active_analysis_backoff_signatures(result)
+      counts = Issue.where(project_id: project_ids)
+        .where("issue_analysis_next_attempt_at > ?", Time.current)
+        .group(:project_id).count
+      result.each_key do |project_id|
+        result[project_id] << signature("active_analysis_backoffs", counts.fetch(project_id, 0), nil)
+      end
+    end
+
+    def merge_active_unsynced_pr_grace_signatures(result)
+      counts = AgentRun.where(project_id: project_ids, goal: "create_pr")
+        .where.not(pull_request_number: nil).where.not(issue_id: nil)
+        .where("agent_runs.completed_at > ?",
+          Automation::Strategies::AutoPick::DefaultCandidateSource::PR_SYNC_GRACE_PERIOD.ago)
+        .where("NOT EXISTS (#{Issue::AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY})")
+        .group(:project_id).count
+      result.each_key do |project_id|
+        result[project_id] << signature("active_unsynced_pr_grace_periods", counts.fetch(project_id, 0), nil)
       end
     end
 

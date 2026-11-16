@@ -411,7 +411,12 @@ appears, when a skip label changes, or when runner configuration changes the
 tier feasibility set; and a display-only projection cannot authorize work,
 because the continuation preflight and the dequeue recheck still decide
 admission live. `PARTIAL-CLOSEOUT-042` and `PARTIAL-CLOSEOUT-043` state the
-accepted implementation contract.
+accepted implementation contract. Project-keyed GoodJob concurrency coalesces
+invalidation bursts into one queued recomputation while permitting one queued
+follow-up when inputs change during a running recomputation. The reconciliation
+fingerprint includes the current counts of active time-bound analysis backoffs
+and unsynced-PR grace periods, so expiry makes a checkpoint stale even when no
+row is updated.
 
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 

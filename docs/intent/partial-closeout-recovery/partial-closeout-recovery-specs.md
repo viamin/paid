@@ -496,8 +496,10 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   unevaluated project; SHALL schedule an initial recomputation when a project
   is enrolled in the projection rollout; SHALL periodically compare each
   enabled project's admission-input fingerprint with its successful checkpoint
-  and recompute missing or stale checkpoints so missed triggers self-heal; and
-  SHALL keep
+  and recompute missing or stale checkpoints so missed triggers self-heal,
+  including when a time-bound admission hold expires without a database write;
+  SHALL coalesce repeated invalidations so each project has at most one queued
+  recomputation in addition to any recomputation already running; and SHALL keep
   `DefaultCandidateSource.eligible_scope` as the final admission authority at
   continuation preflight, at the dequeue recheck, and at run start. The
   projection SHALL be tenant-isolated and SHALL never grant a continuation or
