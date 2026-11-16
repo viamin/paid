@@ -13,7 +13,7 @@ module Issues
     end
 
     def self.enqueue(project)
-      return unless FeatureFlags.enabled?(:partial_closeout_lane_read_model, project:)
+      return unless FeatureFlags.partial_closeout_lane_read_model_enabled?(project:)
 
       RecomputePartialCloseoutProjectionJob.perform_later(project.id)
     end

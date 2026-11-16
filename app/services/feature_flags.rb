@@ -177,6 +177,14 @@ class FeatureFlags
     end
 
     def enabled?(flag_name, project: nil, actor: nil)
+      enabled_value(flag_name, project:, actor:)
+    end
+
+    def partial_closeout_lane_read_model_enabled?(project:)
+      enabled_value(:partial_closeout_lane_read_model, project:)
+    end
+
+    def enabled_value(flag_name, project:, actor: nil)
       tenant_value = tenant_override(flag_name, project:)
       return tenant_value unless tenant_value.nil?
 
@@ -185,6 +193,7 @@ class FeatureFlags
 
       feature(flag_name).enabled?(resolved_actor)
     end
+    private :enabled_value
 
     def enable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
