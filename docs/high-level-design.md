@@ -113,6 +113,11 @@ approval current or waives repository review, CI, security, branch-protection,
 or tenant policy. Its selected stop-before phase is enforceable even where
 project defaults would otherwise proceed; merge is included only when separately
 selected and repository-required fresh reviews still apply to the current head.
+Without an explicitly selected bounded stop for that lineage, the project's
+existing auto-merge policy remains the default: a fully automatic project may
+merge a qualifying PR without another per-PR human decision. A bounded stop
+is a deliberate exception, not a default checkpoint or a way to override an
+independent human-only review hold.
 Authorization does not extend through mentions, dependencies, child work,
 milestones, releases, deployments, or settings changes. Scope expansion,
 changed intent or policy, a newly discovered risk, and unknown correspondence
