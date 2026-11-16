@@ -238,7 +238,7 @@ module Activities
     end
 
     # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007 ISSUE-ANALYSIS-013
-    def call_llm(agent_run, prompt) # @spec ISSUE-ANALYSIS-019 LLM-ROUTING-009
+    def call_llm(agent_run, prompt) # @spec ISSUE-ANALYSIS-019 LLM-ROUTING-010
       user_setting = owner_user_setting(agent_run.project)
       providers = chat_providers(agent_run.project)
       rate_limited_count = 0

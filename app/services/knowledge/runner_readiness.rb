@@ -30,7 +30,7 @@ module Knowledge
 
     attr_reader :account, :owner, :operation, :runner
 
-    def text_runner_readiness # @spec LLM-ROUTING-009
+    def text_runner_readiness # @spec LLM-ROUTING-010
       selected = Runner.for_identifier(owner, runner)
       return unsupported unless selected&.enabled_for_chat? && !selected.discarded?
 

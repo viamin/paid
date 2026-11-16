@@ -34,6 +34,21 @@ RSpec.describe Llm::AnalyzePartialCloseout do
   end
 
   describe ".call" do
+    # @spec LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-009
+    it "assesses a cleaned-up run through a disposable text container" do
+      agent_run.update!(container_id: "cleaned-up-run-container")
+      standalone_executor = instance_double(Containers::StandaloneTextExecutor)
+      allow(Containers::StandaloneTextExecutor).to receive(:new).and_return(standalone_executor)
+      allow(standalone_executor).to receive(:close)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+        account: project.account, runner: runner, timeout: described_class::TIMEOUT
+      )
+      expect(standalone_executor).to have_received(:close)
+    end
+
     # @spec LLM-ROUTING-003
     it "rejects structurally invalid gap fields before reconciliation" do
       allow(llm_response).to receive(:output).and_return({ gaps: [ { criterion: [ "dispatch" ], kind: "agent", title: { text: "Finish" } } ] }.to_json)

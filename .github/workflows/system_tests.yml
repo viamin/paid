@@ -293,6 +293,8 @@ jobs:
 
       - name: Run system specs
         # @spec TEST-SUITE-019
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           set -o pipefail
           failure_log="$(mktemp)"
@@ -322,16 +324,12 @@ jobs:
             fi
 
             # The result can remain empty for subsequent connections until the
-            # hosted service is reset. GitHub Actions prefixes its Postgres
-            # service name with a job-specific identifier (for example,
-            # <job>_postgres1615_<suffix>), while Docker's published-port
-            # filter does not reliably return that service. Restart the one
-            # matching named container and wait for the health check before
-            # retrying the whole suite; a missing or ambiguous service must
-            # fail closed.
-            postgres_container="$(docker ps --format '{{.ID}} {{.Names}}' | awk '$2 ~ /_postgres([[:digit:]]+)?_/ { print $1 }')"
-            if [ "$(printf '%s\n' "$postgres_container" | sed '/^$/d' | wc -l)" -ne 1 ]; then
-              echo "::error::Expected exactly one PostgreSQL service container for system-spec recovery"
+            # hosted service is reset. Use Actions' service-container ID
+            # instead of inferring it from the runner-generated name, then
+            # fail closed if it does not identify a current Docker container.
+            postgres_container="${POSTGRES_CONTAINER}"
+            if [ -z "$postgres_container" ] || ! docker inspect --format '{{.Id}}' "$postgres_container" >/dev/null 2>&1; then
+              echo "::error::PostgreSQL service container is unavailable for system-spec recovery"
               exit 1
             fi
             docker restart "$postgres_container"

@@ -159,6 +159,23 @@ RSpec.describe Llm::Request do
     Current.user = previous_user
   end
 
+  # @spec LLM-ROUTING-009
+  it "routes account-only background work through the account owner's text container" do
+    account_owner = project.account.fallback_owner
+    account_runner = create(:runner, user: account_owner, runner_key: "codex",
+      tier_models: { "mid" => { "model_id" => "runner-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: account_runner, account: project.account)
+    account_owner.settings.update!(kb_chat_runner: account_runner.routing_key)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(account: project.account, prompt: "Assess", timeout: 30)).to eq(response)
+
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: account_runner, timeout: 30
+    )
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   # @spec PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
   it "surfaces a later fallback's permanent failure over an earlier transient failure" do
     fallback = create(:runner, user: owner, runner_key: "gemini",

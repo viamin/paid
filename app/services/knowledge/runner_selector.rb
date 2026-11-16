@@ -63,7 +63,7 @@ module Knowledge
       filtered.select { |runner| runner_available?(runner, runner_states) }
     end
 
-    # @spec ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-009
+    # @spec ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-010
     def available_standalone_chat_runners
       runners = standalone_chat_runners
       states = user_setting.user.runner_states.where(runner_name: runners.map(&:state_key)).index_by(&:runner_name)
@@ -73,7 +73,7 @@ module Knowledge
       end
     end
 
-    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-008 LLM-ROUTING-009
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-008 LLM-ROUTING-010
     def standalone_chat_runners
       user_setting.user.runners.kept_only.for_chat.ordered.select do |runner|
         isolated_text_capable?(runner)
