@@ -75,7 +75,7 @@ RSpec.describe Activities::CloneRepoActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    context "for a maintenance run" do
+    context "when the run is for maintenance" do
       let(:agent_run) do
         create(:agent_run, :running, project: project, issue: nil, goal: "maintenance",
           container_id: "abc123", custom_prompt: "Audit the repository",

@@ -240,6 +240,15 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_cost_dashboard" ])
     end
 
+    # @spec MAINT-010
+    it "maps the maintenance-run controller and form to the maintenance form target" do
+      controller_targets = described_class.call(changed_files: [ "app/controllers/projects/maintenance_runs_controller.rb" ])
+      view_targets = described_class.call(changed_files: [ "app/views/projects/maintenance_runs/new.html.erb" ])
+
+      expect(controller_targets.map(&:slug)).to eq([ "project_maintenance_run_new" ])
+      expect(view_targets.map(&:slug)).to eq([ "project_maintenance_run_new" ])
+    end
+
     it "maps the clarifying-questions wizard controller to its screenshot target" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/clarifying_questions_controller.rb" ])
 

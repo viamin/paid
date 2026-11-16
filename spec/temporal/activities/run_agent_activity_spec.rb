@@ -3020,7 +3020,7 @@ expect(container_service).to receive(:execute).with(
         expect(git_ops).not_to have_received(:has_changes_since?)
       end
 
-      context "for a maintenance run" do
+    context "when the run is for maintenance" do
         let(:agent_run) do
           create(:agent_run, :with_git_context, project: project, issue: nil,
             goal: "maintenance", container_id: "abc123", custom_prompt: "Audit workflow A",
