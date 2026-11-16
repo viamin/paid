@@ -28,6 +28,7 @@ module Activities
     private
 
     def complete_report_only(agent_run)
+      MaintenanceReports::Persist.call(run: agent_run)
       completed = agent_run.complete!
       agent_run.log!("system", "Maintenance investigation completed report-only; no source files were changed.")
       ProcessRunQueueJob.perform_later if completed

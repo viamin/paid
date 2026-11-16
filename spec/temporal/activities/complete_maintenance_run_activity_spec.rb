@@ -19,6 +19,7 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
     expect(result).to include(agent_run_id: run.id, success: true)
     expect(run.reload.status).to eq("completed")
     expect(run.pull_request_url).to be_nil
+    expect(run.maintenance_report).to have_attributes(outcome: "clean")
   end
 
   it "is idempotent for an already-finished run" do
@@ -28,6 +29,7 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
 
     expect(result[:agent_run_id]).to eq(run.id)
     expect(run.reload.status).to eq("cancelled")
+    expect(run.maintenance_report).to have_attributes(outcome: "cancelled")
   end
 
   it "preserves the collected report evidence in the run logs" do

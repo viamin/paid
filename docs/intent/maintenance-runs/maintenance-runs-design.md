@@ -241,17 +241,13 @@ merging a draft is not substitute evidence for either audit.
 
 ### Deferred
 
-1. Exact `MaintenanceReport`/`MaintenanceFinding`/
-   `MaintenanceFindingOccurrence` column shapes and API response schemas
-   (JSON structure, pagination) — resolve during #4328/#4329 implementation,
-   not before design acceptance.
-2. Whether `ScheduledMutationSweepJob`/`MutationSweeps::Run` migrate into a
+1. Whether `ScheduledMutationSweepJob`/`MutationSweeps::Run` migrate into a
    maintenance recipe — RDR-075 leaves this open; keep current sweep
    behavior unchanged until an explicit migration is designed.
-3. Initial analyzer version pins and project-configuration defaults for the
+2. Initial analyzer version pins and project-configuration defaults for the
    unnecessary-code recipe — belongs to #4330 once tool-assisted recipes are
    implemented and measured against prompt-only baselines.
-4. A bind-mounted `tool_sidecar` variant for checkout-dependent network-service
+3. A bind-mounted `tool_sidecar` variant for checkout-dependent network-service
    analyzers — not needed by any analyzer named in the current design; file as
    upstream RDR-073 work only if a future recipe requires it.
 

@@ -80,8 +80,34 @@ module Api
               guidance: run.maintenance_guidance,
               pinned_revision: run.maintenance_pinned_revision,
               limits: run.maintenance_limits,
-              report_only: true
+              report_only: true,
+              report: report_payload(run.maintenance_report)
             }
+          }
+        end
+
+        # @spec MAINT-016 — report inspection shares the already-authorized
+        # run surface and therefore cannot widen tenant access.
+        def report_payload(report)
+          return nil unless report
+
+          {
+            outcome: report.outcome,
+            resolved_scope: report.resolved_scope,
+            exclusions: report.exclusions,
+            completed_checks: report.completed_checks,
+            incomplete_checks: report.incomplete_checks,
+            evidence: report.evidence,
+            findings: report.finding_occurrences.includes(:maintenance_finding).map do |occurrence|
+              {
+                id: occurrence.id, claim: occurrence.claim, category: occurrence.category, symbols: occurrence.symbols,
+                locations: occurrence.locations, supporting_evidence: occurrence.supporting_evidence,
+                contrary_evidence: occurrence.contrary_evidence, raw_tool_confidence: occurrence.raw_tool_confidence,
+                agent_assessment: occurrence.agent_assessment, proposed_action: occurrence.proposed_action,
+                validation_plan: occurrence.validation_plan, verification_disposition: occurrence.verification_disposition,
+                status: occurrence.maintenance_finding.status, reassessment_required: occurrence.maintenance_finding.reassessment_required
+              }
+            end
           }
         end
 

@@ -44,6 +44,7 @@ RSpec.describe Tools::GetAgentRun do
         maintenance_objective: "unnecessary_code", maintenance_recipe_version: "1",
         maintenance_scope: "app/workflows/a.rb", maintenance_scope_kind: "named",
         maintenance_pinned_revision: "main", maintenance_limits: { "max_execution_seconds" => 7200 })
+      MaintenanceReports::Persist.call(run:, completed_checks: [ { "name" => "prompt" } ])
 
       result = tool.call(agent_run_id: run.id)
 
@@ -54,7 +55,8 @@ RSpec.describe Tools::GetAgentRun do
         scope_kind: "named",
         guidance: "Audit workflow A",
         pinned_revision: "main",
-        report_only: true
+        report_only: true,
+        report: include(outcome: "clean", completed_checks: [ { "name" => "prompt" } ])
       )
     end
 
