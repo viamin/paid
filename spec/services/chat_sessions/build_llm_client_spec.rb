@@ -49,15 +49,12 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       enabled_for_agent_runs: false, enabled_for_fallback: false,
       config: { "opencode" => { "model_policy" => "free" } })
     session = create(:chat_session, account: account, created_by: user, runner: runner, model: "gpt-4o")
-    request = stub_request(:post, "https://openrouter.ai/api/v1/chat/completions")
-      .with { |req| JSON.parse(req.body)["model"] == model.model_id }
-      .to_return(status: 200, body: { choices: [ { message: { content: "OK" } } ], model: model.model_id }.to_json,
-        headers: { "Content-Type" => "application/json" })
-
     client = described_class.call(chat_session: session)
+    transport = stub_chat_transport(client, result: succeeded_result(content: "OK", model: model.model_id))
     expect(client.model).to eq(model.model_id)
     expect(client.call([ { role: "user", content: "Reply OK" } ])[:content]).to eq("OK")
-    expect(request).to have_been_requested.once
+    expect(transport).to have_received(:call).once
+    expect(WebMock).not_to have_requested(:post, "https://openrouter.ai/api/v1/chat/completions")
     ChatSessions::FallbackRunners.switch!(chat_session: session, runner: runner)
     expect(session.reload.model).to eq(model.model_id)
 

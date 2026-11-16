@@ -104,12 +104,12 @@ module Containers
       @timeout = timeout.to_i
     end
 
-    def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
+    def execute(command, timeout: nil, env: {}, preparation: nil, stdin_data: nil, output_observer: nil, **) # @spec LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006
       validate_input_size!(command, env, preparation, stdin_data)
       provision! unless @container
       with_managed_credential_lease do
         run(materialized_command, timeout: bounded_timeout(timeout), env: materialized_env(env),
-          input: input_payload(command, preparation, stdin_data))
+          input: input_payload(command, preparation, stdin_data), output_observer: output_observer)
       end
     rescue StandardError
       close
@@ -250,7 +250,7 @@ module Containers
       raise AgentHarness::ConfigurationError, "Unable to provision isolated text execution: #{e.message}"
     end
 
-    def run(command, timeout:, env:, input:)
+    def run(command, timeout:, env:, input:, output_observer:)
       timed_out = false
       finished = false
       mutex = Mutex.new
@@ -269,6 +269,7 @@ module Containers
       output_exceeded = false
       result = Containers.backend.exec_in_container_with_stdin(@container, command,
         wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
+        output_observer&.call(stream, chunk)
         next if output_exceeded
 
         target = stream == :stderr ? stderr : stdout

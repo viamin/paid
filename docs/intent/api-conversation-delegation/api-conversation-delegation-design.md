@@ -188,16 +188,18 @@ verified as the first release retaining the Codex subscription
 discovery/recovery fixes after reconciling the durable-pin removal. It also
 includes viamin/agent-harness#472, so `ChatTransport` preserves classified
 provider errors such as MiniMax 429 responses for Paid's rate-limit
-pause/recovery path. No agent image rebuild was required for this change: the
-chat path runs in the Rails host process, not inside agent containers.
+pause/recovery path. The agent image installs the locked `agent-harness`
+release because interactive chat inference runs its normalized transport in a
+disposable isolated text container. Rails does not execute provider text
+transport for this path.
 
 **Scope shipped — operation/provider matrix:**
 
 | Scope | Result | Notes |
 | --- | --- | --- |
-| API-mode chat, Anthropic API-key runners | `migrated` | `ChatSessions::BuildLlmClient::HttpClient` now builds a single-candidate `AgentHarness::Api::ChatTransport` request (`provider: :anthropic, protocol: :messages`) instead of calling `AgentHarness::TextTransport` directly. |
-| API-mode chat, OpenAI API-key reasoning runners | `migrated` | Single candidate with `provider: :openai, protocol: :responses` so function tools retain reasoning. The opaque harness continuation state is persisted with the assistant tool-call turn and replayed unchanged; Paid never inspects or logs it. |
-| API-mode chat, third-party OpenAI-compatible runners (OpenRouter, MiniMax, z.ai, z.ai-coding, DeepSeek, Mistral, xAI, Inception) | `migrated` | Single candidate with `provider: :openai, protocol: :chat_completions`; MiniMax's `chat_base_url` and z.ai/z.ai-coding's `chat_max_tokens` (16,384) pass through unchanged as `candidate[:endpoint]` / `request[:max_output_tokens]`. Unsupported combinations surface the harness's allowlisted actionable diagnostic; Paid does not disable reasoning or remove tools as a workaround. |
+| API-mode chat, Anthropic API-key runners | `isolated` | `ChatSessions::BuildLlmClient::HttpClient` builds a single-candidate normalized request (`provider: :anthropic, protocol: :messages`) and `ChatSessions::IsolatedTransport` executes the harness transport in a disposable text container. |
+| API-mode chat, OpenAI API-key reasoning runners | `isolated` | Single candidate with `provider: :openai, protocol: :responses` runs in the isolated transport so function tools retain reasoning. The opaque harness continuation state is persisted with the assistant tool-call turn and replayed unchanged; Paid never inspects or logs it. |
+| API-mode chat, third-party OpenAI-compatible runners (OpenRouter, MiniMax, z.ai, z.ai-coding, DeepSeek, Mistral, xAI, Inception) | `isolated` | A single `provider: :openai, protocol: :chat_completions` candidate runs in the isolated transport; MiniMax's `chat_base_url` and z.ai/z.ai-coding's `chat_max_tokens` (16,384) remain in the normalized request. Unsupported combinations surface the harness's allowlisted actionable diagnostic; Paid does not disable reasoning or remove tools as a workaround. |
 | Runner selection, credential resolution, free-model-policy re-resolution | `retained` | Unchanged in `ChatSessions::BuildLlmClient` outside `HttpClient`. |
 | Runner fallback eligibility, notices, rate-limit resumption (`ChatSessions::FallbackLoop`/`FallbackRunners`/`MarkRateLimited`) | `retained` | `HttpClient` raises the same `AgentHarness::*Error` subclasses as the old transports (translated from the harness's classified `result[:error]`), so this policy layer needed no changes. Multi-candidate/`fallback:` support in `ChatTransport` is intentionally unused — one call is one provider attempt, matching "transient model fallback alone cannot replace this policy." |
 | CLI/subscription chat runners | `retained` (unsupported path, unchanged) | Chat still requires an API-key runner (`BuildLlmClient.usable_runner?`); this was true before this migration and is not a new restriction. |

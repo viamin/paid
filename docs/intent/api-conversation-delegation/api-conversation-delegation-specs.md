@@ -8,7 +8,10 @@
   SHALL build a single-candidate `AgentHarness::Api::ChatTransport` request
   (provider, protocol, runner credentials, normalized messages/tools) and
   translate its normalized result/classified error back to Paid's existing
-  return and raise contract; it SHALL NOT call RubyLLM or a provider API
+  return and raise contract; `ChatSessions::IsolatedTransport` SHALL execute
+  that request in a disposable text container, and Rails SHALL NOT call a
+  provider API or `AgentHarness::Api::ChatTransport` for interactive inference
+  in its own process. It SHALL NOT call RubyLLM or a provider API
   directly, and a harness result SHALL NOT be granted authority to execute or
   approve an application tool. Each turn receives a Paid-owned durable request
   identity and one effective retry owner wired through by

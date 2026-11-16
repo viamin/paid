@@ -87,6 +87,23 @@
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
+- [x] **CHAT-ISOLATION-001** — When an interactive API-key chat turn performs
+  inference, Paid SHALL execute the normalized `AgentHarness::Api::ChatTransport`
+  request inside a disposable isolated text container. Rails SHALL retain the
+  conversation, request sequence, streaming relay, usage accounting, runner
+  fallback, and tool-confirmation loop, and SHALL treat every returned tool call
+  as untrusted. The inference container SHALL receive only the selected runner's
+  short-lived credential material through the credential broker; it SHALL NOT
+  mount a Rails workspace or receive broad provider secrets. A failed isolated
+  execution SHALL surface its classified chat error and SHALL NOT fall back to
+  host inference.
+  *Tests:* `spec/services/chat_sessions/isolated_transport_spec.rb`,
+  `spec/services/chat_sessions/build_llm_client_spec.rb`,
+  `spec/services/chat_sessions/harness_transport_spec.rb`.
+  *Code:* `ChatSessions::IsolatedTransport`,
+  `Containers::StandaloneTextExecutor`,
+  `ChatSessions::BuildLlmClient::HttpClient`.
+
 - [x] **CHAT-API-001** — When a user creates or opens an API-mode chat session,
   the system SHALL persist and expose an active inline chat session with a
   system prompt and session/message routes, defaulting to
