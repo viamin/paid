@@ -30,7 +30,7 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
     project.destroy!
   end
 
-  it "keeps concurrent first writers on one completion and routes the finding once" do
+  it "keeps concurrent first writers on one completion and routes the finding once" do # @spec PARTIAL-CLOSEOUT-042
     create(:agent_run, :rate_limited, project: project, issue: implementation_issue)
 
     concurrent_findings

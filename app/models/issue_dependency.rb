@@ -136,8 +136,9 @@ class IssueDependency < ApplicationRecord
 
   private
 
+  # @spec PARTIAL-CLOSEOUT-042
   def enqueue_partial_closeout_projection
-    Issues::StalledCloseoutProjection.enqueue(issue.project)
+    Issues::StalledCloseoutProjection.enqueue(issue&.project)
   end
 
   def not_self_referential
