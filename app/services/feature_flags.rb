@@ -9,6 +9,13 @@ class FeatureFlags
 
   # @spec SETTINGS-COPY-001
   DEFINITIONS = {
+    operational_supervisor: Definition.new(
+      name: :operational_supervisor,
+      owner: "operational-supervisor",
+      intent: "Gate default-off, shadow-only delivery-health observation for an individual project.",
+      rollout_plan: "Default-off; enable only selected projects after snapshot, incident, authorization, dashboard projection, and supervisor-health checks are verified.",
+      cleanup_criteria: "Remove only after the final supervisor audit accepts a default posture and any separately approved mitigation path."
+    ),
     question_exploration: Definition.new(
       name: :question_exploration,
       owner: "question-exploration",
@@ -141,6 +148,13 @@ class FeatureFlags
       intent: "Gate manual maintenance-run admission (UI, API, and MCP) and future scheduled maintenance dispatch behind per-tenant opt-in.",
       rollout_plan: "Default-off; opt in per tenant via tenant_settings.features. Disabling admission preserves existing maintenance reports and active-run cancellation; remove only after focused audits, report outcomes, tool isolation, recurrence and deduplication, and UI/API parity are verified.",
       cleanup_criteria: "Remove only after the default posture is approved; recurring schedules stay explicitly opt-in."
+    ),
+    operational_supervisor: Definition.new(
+      name: :operational_supervisor,
+      owner: "operational-supervisor",
+      intent: "Gate default-off, project-scoped shadow observation of sanitized delivery-health facts.",
+      rollout_plan: "Default-off; enable only for selected projects after snapshot boundaries, incident persistence, authorization, projections, and supervisor health checks are verified. Disabling stops future observation while retaining sanitized audit evidence.",
+      cleanup_criteria: "Remove only after final acceptance verifies the approved default posture, retention, reconciliation, and any separately authorized mitigation path."
     )
   }.freeze
 

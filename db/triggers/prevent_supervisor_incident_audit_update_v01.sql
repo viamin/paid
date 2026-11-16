@@ -1,0 +1,3 @@
+CREATE TRIGGER prevent_supervisor_incident_audit_update
+BEFORE UPDATE OR DELETE ON public.supervisor_incident_audits
+FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation();

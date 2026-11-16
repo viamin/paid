@@ -821,6 +821,10 @@ module Workflows
       raise unless retry_exhausted_activity_error?(e)
 
       category = activity_failure_category(e)
+      if category.nil? && e.cause.is_a?(Temporalio::Error::TimeoutError) &&
+          Temporalio::Workflow.patched("source-closure-timeout-cause-v1")
+        category = "timeout"
+      end
       raise unless Llm::AnalyzePartialCloseout::RECOVERABLE_CATEGORIES.include?(category)
       if category == "unsuccessful_response"
         raise unless Temporalio::Workflow.patched("source-closure-unsuccessful-response-recovery-v1")
