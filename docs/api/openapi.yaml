@@ -278,6 +278,84 @@ paths:
                 $ref: '#/components/schemas/FeatureIntentResponse'
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/layered_verification_review_packages:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listLayeredVerificationReviewPackages
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Immutable, bounded business-review package history for one authorized project.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [review_packages]
+                properties:
+                  review_packages:
+                    type: array
+                    items: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/layered_verification_review_packages/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: getLayeredVerificationReviewPackage
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: One immutable package with its retained revision lineage.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LayeredVerificationReviewPackageDetail'}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/layered_verification_review_packages/{id}/approve:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    post:
+      operationId: approveLayeredVerificationReviewPackage
+      description: Records only an explicitly confirmed, revision-bound business-review decision; it does not repair, release, clarify, or roll out work.
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirmed]
+              properties:
+                confirmed: {type: boolean, enum: [true]}
+                note: {type: string}
+      responses:
+        '201':
+          description: Business-review approval recorded at the package's bound revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [approval, package]
+                properties:
+                  approval: {$ref: '#/components/schemas/LayeredVerificationReviewApproval'}
+                  package: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
+        default: {$ref: '#/components/responses/Error'}
   /projects/{project_id}/delegation:
     parameters:
       - name: project_id
@@ -941,7 +1019,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, maintenance_run_unavailable, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
+              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, maintenance_run_unavailable, layered_verification_unavailable, stale_review_package, confirmation_required, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
             message: {type: string}
             details: {type: object, additionalProperties: true}
     ChatSessionListResponse:
@@ -1345,6 +1423,46 @@ components:
         number: {type: integer}
         url: {type: string, format: uri}
         title: {type: string}
+    LayeredVerificationReviewApproval:
+      type: object
+      additionalProperties: false
+      required: [id, approved_by_id, approved_at, provenance]
+      properties:
+        id: {type: integer}
+        approved_by_id: {type: integer}
+        approved_at: {type: string, format: date-time}
+        provenance: {type: object}
+    LayeredVerificationReviewPackage:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, agent_run_id, revision_number, package_digest, bound_inputs, approvals]
+      properties:
+        id: {type: integer}
+        project_id: {type: integer}
+        agent_run_id: {type: integer}
+        revision_number: {type: integer, minimum: 1}
+        package_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        bound_inputs: {type: object}
+        approvals:
+          type: array
+          items: {$ref: '#/components/schemas/LayeredVerificationReviewApproval'}
+    LayeredVerificationReviewPackageDetail:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, agent_run_id, revision_number, package_digest, bound_inputs, approvals, lineage]
+      properties:
+        id: {type: integer}
+        project_id: {type: integer}
+        agent_run_id: {type: integer}
+        revision_number: {type: integer, minimum: 1}
+        package_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        bound_inputs: {type: object}
+        approvals:
+          type: array
+          items: {$ref: '#/components/schemas/LayeredVerificationReviewApproval'}
+        lineage:
+          type: array
+          items: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
     DesignArtifactFinding:
       type: object
       required: [id, artifact_path, revision, state, evidence, covered_at, status]

@@ -357,6 +357,14 @@
   that approval attempt is rejected. PostgreSQL SHALL enforce project
   ownership of the run and JSON-bound references and the approval actor's
   account, with reference guards preserved through schema-based bootstrap.
+  Authorized project readers SHALL be able to inspect bounded package history
+  and detail through the authenticated API and MCP, and an authorized
+  `manage_issues?` reviewer SHALL be able to record an explicitly confirmed
+  API or MCP business-review approval with server-supplied actor, time, and
+  surface provenance. Every package-specific API or MCP entry point SHALL
+  apply `LAYERED-VERIFY-012`, scope package IDs through the selected project,
+  and return structured stale, disabled, and unauthorized errors without
+  starting repair, canonical clarification, release, or rollout work.
   Approving a review package SHALL NOT, by itself, authorize a repair or a
   release.
   *Tests:* `spec/models/layered_verification_review_package_spec.rb`,
@@ -365,6 +373,8 @@
   `spec/services/layered_verification/review_packages/approve_spec.rb`,
   `spec/services/inbox/decide_layered_verification_finding_spec.rb`,
   `spec/requests/projects/layered_verification_review_packages_spec.rb`,
+  `spec/requests/api/v1/projects/layered_verification_review_packages_spec.rb`,
+  `spec/mcp/tools/layered_verification_review_packages_spec.rb`,
   `spec/migrations/create_layered_verification_review_packages_spec.rb`
   *Code:* `app/models/layered_verification_review_package.rb`,
   `LayeredVerification::ReviewPackages::Capture`/`::Approve`,

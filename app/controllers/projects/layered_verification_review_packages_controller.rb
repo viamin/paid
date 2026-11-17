@@ -29,6 +29,11 @@ module Projects
       authorize @package.project, :show?
 
       @lineage = @package.lineage.includes(:approvals, approvals: :approved_by).order(:revision_number)
+
+      respond_to do |format|
+        format.html
+        format.json { render json: package_json(@package).merge(lineage: @lineage.map { |package| package_json(package) }) }
+      end
     end
 
     # The same authorization bar as the audit request surface; approval binds
@@ -40,12 +45,20 @@ module Projects
         package: @package, user: current_user, provenance: { "surface" => "ui", "note" => params[:note] }
       )
 
-      redirect_to project_layered_verification_review_package_path(@project, approval.package),
-        notice: "Business-review approval recorded at the bound revision."
+      respond_to do |format|
+        format.html do
+          redirect_to project_layered_verification_review_package_path(@project, approval.package),
+            notice: "Business-review approval recorded at the bound revision."
+        end
+        format.json { render json: { approval: approval_json(approval), package: package_json(approval.package) }, status: :created }
+      end
     rescue LayeredVerification::ReviewPackages::Approve::StalePackageError,
            LayeredVerification::AuditAccess::FeatureDisabledError,
            LayeredVerification::AuditAccess::UnauthorizedError => e
-      redirect_to project_layered_verification_review_package_path(@project, @package), alert: e.message
+      respond_to do |format|
+        format.html { redirect_to project_layered_verification_review_package_path(@project, @package), alert: e.message }
+        format.json { render json: { error: { code: "stale_review_package", message: e.message } }, status: :unprocessable_content }
+      end
     end
 
     private
@@ -66,16 +79,11 @@ module Projects
     end
 
     def package_json(package)
-      {
-        id: package.id, agent_run_id: package.agent_run_id, revision_number: package.revision_number,
-        package_digest: package.package_digest, bound_inputs: package.bound_inputs,
-        approvals: package.approvals.map { |approval| approval_json(approval) }
-      }
+      LayeredVerification::ReviewPackages::Representation.package(package)
     end
 
     def approval_json(approval)
-      { id: approval.id, approved_by_id: approval.approved_by_id,
-        approved_at: approval.approved_at.iso8601, provenance: approval.provenance }
+      LayeredVerification::ReviewPackages::Representation.approval(approval)
     end
   end
 end
