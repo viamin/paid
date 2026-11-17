@@ -2778,6 +2778,13 @@ class AgentRun < ApplicationRecord
     logs_text(log_type: "stderr", limit: limit)
   end
 
+  def agent_summary_tail_with_stderr_fallback(limit: 500)
+    summary = extract_text_from_stdout(tail_logs_text(log_type: "stdout", limit: limit), succeeded: successful?)
+    return summary if summary.present?
+
+    tail_logs_text(log_type: "stderr", limit: limit)
+  end
+
   def log_orchestration_decision(action:, decision_point:, status:, signals:, result:)
     OrchestrationDecision.record(
       project: project,
@@ -4004,6 +4011,17 @@ class AgentRun < ApplicationRecord
       .strip
   end
 
+  def tail_logs_text(log_type:, limit:)
+    agent_run_logs
+      .where(log_type: log_type)
+      .order(created_at: :desc, id: :desc)
+      .limit(limit)
+      .pluck(:content)
+      .reverse
+      .join("\n")
+      .strip
+  end
+
   def review_goal_requires_pull_request
     if goal == "review" && source_pull_request_number.blank?
       errors.add(:source_pull_request_number, "is required for review goals")
@@ -4733,7 +4751,7 @@ class AgentRun < ApplicationRecord
   def persist_terminal_maintenance_report
     outcome = if status == "cancelled"
       "cancelled"
-    elsif status == "token_budget_exceeded" || guardrail_violation_type.in?(%w[cost_limit time_limit token_budget])
+    elsif status == "token_budget_exceeded" || guardrail_violation_type.in?(%w[cost_limit time_limit token_limit token_budget])
       "budget_exhausted"
     else
       "partial"

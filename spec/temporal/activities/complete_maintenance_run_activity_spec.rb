@@ -30,6 +30,19 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
     expect(run.maintenance_report).to have_attributes(outcome: "clean")
   end
 
+  # @spec MAINT-020 MAINT-021
+  it "persists a report emitted after more than 500 stdout log entries" do
+    500.times { |index| run.log!("stdout", "Investigation progress #{index}") }
+    run.log!("stdout", report_output)
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(run.reload.maintenance_report).to have_attributes(
+      outcome: "clean",
+      completed_checks: [ { "name" => "prompt investigation" } ]
+    )
+  end
+
   # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025
   it "persists findings and incomplete coverage from the agent report" do
     finding = {
@@ -69,6 +82,30 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
     expect(result[:agent_run_id]).to eq(run.id)
     expect(run.reload.status).to eq("cancelled")
     expect(run.maintenance_report).to have_attributes(outcome: "cancelled")
+  end
+
+  # @spec MAINT-023
+  it "does not let concurrent cancellation overwrite a persisted report outcome" do
+    run.log!("stdout", report_output)
+    cancellation_finished = Queue.new
+    cancellation = nil
+    allow(MaintenanceReports::AgentReport).to receive(:parse).and_wrap_original do |method, *args|
+      cancellation = Thread.new do
+        TenantContext.with_system_access { run.class.find(run.id).cancel! }
+        cancellation_finished << true
+      end
+      cancellation_finished.pop(timeout: 0.5)
+      method.call(*args)
+    end
+
+    begin
+      described_class.new.execute(agent_run_id: run.id)
+    ensure
+      cancellation&.join
+    end
+
+    expect(run.reload).to have_attributes(status: "completed")
+    expect(run.maintenance_report).to have_attributes(outcome: "clean")
   end
 
   it "preserves the collected report evidence in the run logs" do

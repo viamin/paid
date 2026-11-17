@@ -1952,6 +1952,16 @@ RSpec.describe AgentRun do
         expect(agent_run.guardrail_context).to eq(context.deep_stringify_keys)
       end
 
+      # @spec MAINT-024
+      it "records token-limit termination as budget exhaustion" do
+        agent_run = create(:agent_run, :running, goal: "maintenance", issue: nil,
+          maintenance_guidance: "Audit workflow A")
+
+        agent_run.timeout!(guardrail_violation_type: "token_limit")
+
+        expect(agent_run.reload.maintenance_report).to have_attributes(outcome: "budget_exhausted")
+      end
+
       it "does not overwrite a finished run", :aggregate_failures do
         completed_at = 10.minutes.ago
         agent_run = create(:agent_run, :completed,

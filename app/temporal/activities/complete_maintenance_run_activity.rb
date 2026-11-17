@@ -28,10 +28,17 @@ module Activities
     private
 
     def complete_report_only(agent_run)
-      persist_agent_report(agent_run)
-      completed = agent_run.complete!
+      completed = agent_run.with_lock do
+        agent_run.reload
+        next false if agent_run.finished?
+
+        persist_agent_report(agent_run)
+        agent_run.complete!
+      end
+      return unless completed
+
       agent_run.log!("system", "Maintenance investigation completed report-only; no source files were changed.")
-      ProcessRunQueueJob.perform_later if completed
+      ProcessRunQueueJob.perform_later
       logger.info(
         message: "agent_execution.maintenance_run_completed",
         agent_run_id: agent_run.id,
@@ -40,7 +47,7 @@ module Activities
     end
 
     def persist_agent_report(agent_run)
-      attributes = MaintenanceReports::AgentReport.parse(agent_run.agent_summary_with_stderr_fallback)
+      attributes = MaintenanceReports::AgentReport.parse(agent_run.agent_summary_tail_with_stderr_fallback)
       MaintenanceReports::Persist.call(run: agent_run, **attributes)
     rescue MaintenanceReports::AgentReport::InvalidReport => e
       MaintenanceReports::Persist.call(run: agent_run,

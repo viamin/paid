@@ -60,6 +60,21 @@ RSpec.describe Tools::GetAgentRun do
       )
     end
 
+    # @spec MAINT-016 MAINT-025
+    it "includes analyzer provenance for maintenance findings" do
+      run = create(:agent_run, project: create(:project, account: account), goal: "maintenance",
+        issue: nil, custom_prompt: "Audit workflow A", maintenance_guidance: "Audit workflow A")
+      MaintenanceReports::Persist.call(run:, findings: [ {
+        category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ], locations: [],
+        analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
+      } ])
+
+      result = tool.call(agent_run_id: run.id)
+
+      expect(result.dig(:maintenance, :report, :findings, 0, :analyzer_provenance))
+        .to eq("name" => "debride", "version" => "1.14.0")
+    end
+
     it "omits maintenance fields for non-maintenance runs" do
       run = create(:agent_run, project: create(:project, account: account))
 

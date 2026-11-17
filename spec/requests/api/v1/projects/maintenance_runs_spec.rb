@@ -102,6 +102,21 @@ RSpec.describe "Maintenance runs API" do
     )
   end
 
+  # @spec MAINT-016 MAINT-025
+  it "exposes analyzer provenance for report findings" do
+    run = create(:agent_run, project:, goal: "maintenance", issue: nil, custom_prompt: "Audit workflow A",
+      maintenance_guidance: "Audit workflow A")
+    MaintenanceReports::Persist.call(run:, findings: [ {
+      category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ], locations: [],
+      analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
+    } ])
+
+    get "/api/v1/projects/#{project.id}/maintenance_runs/#{run.id}", headers: headers
+
+    expect(response.parsed_body.dig("maintenance", "report", "findings", 0, "analyzer_provenance"))
+      .to eq("name" => "debride", "version" => "1.14.0")
+  end
+
   # @spec MAINT-017
   it "cancels an in-flight maintenance run through the API" do
     run = create(:agent_run, :running, project:, goal: "maintenance", issue: nil, custom_prompt: "Audit workflow A",
