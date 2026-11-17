@@ -11,12 +11,15 @@ RSpec.describe Tools::BaseTool do
   before do
     stub_const("Tools::BaseToolAuthorizedSpecTool", Class.new(described_class) do
       authorize :show?, ->(args) { Project.find(args.fetch(:project_id)) }
+      attr_reader :perform_called
 
       def self.tool_name = "base_tool_authorized_spec"
       def self.description = "Authorized base tool spec"
 
-      def perform(project_id:)
+      def perform(project_id:, confirmed: false)
+        @perform_called = true
         {
+          confirmed:,
           current_account_id: Current.account&.id,
           bypass_enabled: TenantContext.bypass_enabled?,
           authorization_performed: instance_variable_get(:@preflight_authorization_performed),
@@ -63,6 +66,26 @@ RSpec.describe Tools::BaseTool do
   end
 
   describe "#dispatch" do
+    # @spec CHAT-TOOL-CONFIRMATION-004
+    it "rejects malformed confirmation without entering the tool body" do
+      tool = Tools::BaseToolAuthorizedSpecTool.new(user:, session:)
+
+      [ nil, "false", "true", 1, {}, [] ].each do |confirmation|
+        expect { tool.dispatch(project_id: project.id, confirmed: confirmation) }
+          .to raise_error(ArgumentError, "Confirmation required: confirmed must be a boolean")
+      end
+      expect(tool.perform_called).to be_nil
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-004
+    it "preserves literal boolean confirmation and omitted-argument defaults" do
+      tool = Tools::BaseToolAuthorizedSpecTool.new(user:, session:)
+
+      expect(tool.dispatch(project_id: project.id, confirmed: true)).to include(confirmed: true)
+      expect(tool.dispatch(project_id: project.id, confirmed: false)).to include(confirmed: false)
+      expect(tool.dispatch(project_id: project.id)).to include(confirmed: false)
+    end
+
     it "requires an authenticated user" do
       tool = Tools::BaseToolAuthorizedSpecTool.new(user: nil, session: nil)
 

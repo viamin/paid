@@ -9,6 +9,50 @@ RSpec.describe PaidMcpServer do
   let(:server) { described_class.new(session: chat_session, user: user) }
   let(:project) { create(:project, account: account) }
 
+  describe "write confirmation argument types" do
+    let(:user) { create(:user, :owner, account:) }
+    let(:grant) do
+      create(:work_item_continuation_grant, project:, issue: create(:issue, project:),
+        start_phase: "coding", endpoint: "coding")
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-004
+    it "rejects nonboolean confirmation before changing project settings" do
+      [ "false", "true", nil, 1, {}, [] ].each do |confirmation|
+        expect {
+          server.call_tool(name: "update_project_settings", arguments: {
+            "project_id" => project.id, "settings" => { "paused" => true }, "confirmed" => confirmation
+          })
+        }.to raise_error(ArgumentError, "Confirmation required: confirmed must be a boolean")
+      end
+      expect(project.reload).not_to be_paused
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-004
+    it "rejects nonboolean confirmation before revoking a continuation grant" do
+      [ "false", "true", nil, 1, {}, [] ].each do |confirmation|
+        expect {
+          server.call_tool(name: "revoke_continuation_grant", arguments: {
+            "project_id" => project.id, "grant_id" => grant.id, "confirmed" => confirmation
+          })
+        }.to raise_error(ArgumentError, "Confirmation required: confirmed must be a boolean")
+      end
+      expect(grant.reload.revoked_at).to be_nil
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-004
+    it "rejects nonboolean confirmation before extending a continuation grant" do
+      [ "false", "true", nil, 1, {}, [] ].each do |confirmation|
+        expect {
+          server.call_tool(name: "extend_continuation_grant", arguments: {
+            "project_id" => project.id, "grant_id" => grant.id, "endpoint" => "merge", "confirmed" => confirmation
+          })
+        }.to raise_error(ArgumentError, "Confirmation required: confirmed must be a boolean")
+      end
+      expect(grant.reload.endpoint).to eq("coding")
+    end
+  end
+
   describe "#handle_request" do
     it "handles initialize" do
       result = server.handle_request(method: "initialize", id: 1)

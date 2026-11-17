@@ -13,6 +13,14 @@ before side effects, while approved chat resolutions and explicit MCP clients
 that pass `confirmed: true` can proceed through normal Pundit authorization and
 tool execution.
 
+The shared `Tools::BaseTool` dispatch boundary validates a supplied `confirmed`
+argument as a JSON boolean after authentication and declared authorization,
+before entering the tool body. Strings, numbers, objects, arrays and explicit
+null are invalid arguments. Boolean false and omitted arguments retain each
+tool's existing refusal or preview behavior; only boolean true can satisfy a
+tool's confirmation guard. This contract applies to chat and MCP dispatch, so
+advertised schemas are not the only protection against malformed clients.
+
 ## Auto-approve eligibility
 
 The per-session "Auto-approve actions" toggle lets a session owner skip the
