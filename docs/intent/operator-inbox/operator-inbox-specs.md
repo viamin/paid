@@ -560,13 +560,20 @@
   activate the original control, and a projected navigational action SHALL
   remain an anchor retaining its original navigation attributes, so existing
   endpoint, authorization, confirmation, loading, Turbo, native link, and
-  success/error behavior remain unchanged. Detailed fields and explanatory
+  success/error behavior remain unchanged. The control a lane designates with
+  `data-inbox-primary-action` — the control that performs its decision brief's
+  primary action — SHALL be projected as exactly one affordance with distinct
+  filled primary styling while every other projected affordance keeps the
+  neutral secondary styling, so a lane with several eligible controls still
+  presents one visually clear primary action. Detailed fields and explanatory
   content SHALL remain in the detail body; an action that needs input SHALL
   retain the existing browser validation and focus behavior.
   *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
   `app/javascript/controllers/inbox_actions_controller.js`.
   *Test:* `spec/system/dashboard_inbox_spec.rb`,
-  `spec/lib/inbox_actions_controller_node_harness_spec.rb`.
+  `spec/lib/inbox_actions_controller_node_harness_spec.rb`,
+  `spec/system/inbox_navigation_spec.rb`,
+  `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`.
 
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning

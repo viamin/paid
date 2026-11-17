@@ -61,21 +61,25 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
       [ Inbox::Queue::PARTIAL_CLOSEOUT_KIND, closeout, project, {
         decision: "Choose how to finish the remaining acceptance criteria.",
         unknown: "Who will own the remaining acceptance work?", waiting: "Remaining acceptance work is waiting for an owner.",
-        action: "Resolve remaining work", next_state: "The issue can be reassessed after the remaining work is recorded."
+        action: "Resolve remaining work", next_state: "The issue can be reassessed after the remaining work is recorded.",
+        primary_control: "Link prerequisite"
       } ],
       [ Inbox::Queue::MANUAL_REVIEW_KIND, manual, project, {
         decision: "Choose whether and how Paid should resume.", unknown: "Which authorized recovery path should Paid follow?",
         waiting: "Automation is waiting for an authorized recovery decision.", action: "Review recovery",
-        next_state: "Paid will only resume through the selected recovery path."
+        next_state: "Paid will only resume through the selected recovery path.",
+        primary_control: "View Issue"
       } ],
       [ Inbox::Queue::ACTION_REQUIRED_KIND, action_issue, project, {
         decision: "Complete the required remediation.", recommendation: "Open project settings",
         reason: "This is the first recorded remediation step.", waiting: "Work is waiting for the required remediation.",
-        action: "Complete remediation", next_state: "Blocked work can resume after the remediation is recorded."
+        action: "Complete remediation", next_state: "Blocked work can resume after the remediation is recorded.",
+        primary_control: "Open linked action"
       } ],
       [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, question, other_project, {
         decision: "What behavior is expected?", unknown: "What behavior is expected?", waiting: "Work is waiting for your answer.",
-        action: "Answer the question", next_state: "Paid can continue with your answer."
+        action: "Answer the question", next_state: "Paid can continue with your answer.",
+        primary_control: "Submit Answers"
       } ]
     ]
   end
@@ -84,7 +88,25 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     visit inbox_entry_path("#{kind}:#{issue.id}", project_id: selected_project.id, kind:)
     expect_decision_brief(expected:, selected_project:)
     expect(page).to have_button("Copy link to this item")
-    expect(page).to have_css("[data-inbox-actions-target='bar']", visible: true)
+    expect_one_clear_primary_action(expected.fetch(:primary_control))
+  end
+
+  # The sticky action area must present exactly one visually clear primary
+  # action per lane: the designated control, filled with the primary palette,
+  # while every other projected control keeps the neutral outline styling.
+  def expect_one_clear_primary_action(label)
+    bar = find("[data-inbox-actions-target='bar']", visible: true)
+    primaries = bar.all("[data-inbox-primary-action]")
+    expect(primaries.size).to eq(1)
+    primary = primaries.first
+    expect(primary).to have_text(label)
+    expect(primary[:class]).to include("bg-indigo-600")
+    expect(primary[:class]).to include("text-white")
+
+    secondary_classes = bar.all("button:not([data-inbox-primary-action]), a:not([data-inbox-primary-action])")
+      .map { |control| control[:class] }
+    expect(secondary_classes).to all(include("bg-white"))
+    expect(secondary_classes.join(" ")).not_to include("bg-indigo-600")
   end
 
   def expect_decision_brief(expected:, selected_project:)
@@ -170,6 +192,7 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_css("#inbox-detail h2", text: other_issue.title)
     expect(page).to have_current_path(inbox_path(kinds: [ other_kind ], project_ids: [ other_project.id ], sort: Inbox::Queue::DEFAULT_SORT))
     expect_decision_brief(expected: other_expected, selected_project: other_project)
+    expect_one_clear_primary_action(other_expected.fetch(:primary_control))
 
     page.go_back
     expect(page).to have_current_path(member_path(first_issue))
