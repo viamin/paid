@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe CloseoutVerificationReconciliationSweepJob do
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "retries only persisted merged PR observations in a bounded sweep" do
     project = create(:project)
     merged = create(:issue, :pull_request, project:, pr_review_phase: "merged", merged_commit_sha: "a" * 40)
@@ -14,7 +14,7 @@ RSpec.describe CloseoutVerificationReconciliationSweepJob do
     described_class.new.perform
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "continues beyond the per-project pull request batch" do
     stub_const("#{described_class}::PULL_REQUEST_BATCH_SIZE", 1)
     project = create(:project)

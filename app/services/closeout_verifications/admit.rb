@@ -3,7 +3,7 @@
 module CloseoutVerifications
   # Admits immutable merge-bound verification work. It deliberately does not
   # enqueue ProcessRunQueueJob: execution has a dedicated successor contract.
-  # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
   class Admit
     Outcome = Data.define(:runs, :reason) do
       def admitted? = runs.any?

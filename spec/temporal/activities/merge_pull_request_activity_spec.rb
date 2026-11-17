@@ -440,7 +440,7 @@ RSpec.describe Activities::MergePullRequestActivity do
         )
       end
 
-      # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+      # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
       it "observes Paid's authoritative merge revision for closeout admission" do
         expect(CloseoutVerifications::ObserveMerge).to receive(:call).with(
           source_pr: issue, merge_commit_sha: "def456"
@@ -1082,7 +1082,7 @@ RSpec.describe Activities::MergePullRequestActivity do
           expect(issue.reload.pr_review_phase).to eq("merged")
         end
 
-        # @spec STAGED-CLOSEOUT-ADOPTION-009
+        # @spec STAGED-CLOSEOUT-ADOPTION-010
         it "persists the fallback merge revision for closeout reconciliation" do
           activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 

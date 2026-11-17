@@ -342,7 +342,7 @@ RSpec.describe "Api::GithubWebhooks" do
         expect(metric.scores["pr_merged"]).to eq(1.0)
       end
 
-      # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+      # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
       it "observes a human GitHub merge for closeout verification admission" do
         payload[:pull_request][:merge_commit_sha] = "a" * 40
         body, signature = sign_payload(payload, project.webhook_secret)

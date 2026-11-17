@@ -63,8 +63,15 @@ module ConfigurationProfiles
         Configuration::Profiles::Settings.read(project, key)
       end
 
-      def write(project, key, value)
-        Configuration::Profiles::Settings.write(project, key, value)
+      # Writes stage the change on the underlying record and return it so the
+      # caller can persist it. Routing through a Context lets settings whose
+      # record is context-resolved (the staged-closeout enrollment) carry
+      # reviewer identity through the same write path as the canonical
+      # profiles; project-backed fields resolve to the project unchanged.
+      def write(project, key, value, actor: nil)
+        Configuration::Profiles::Settings.write(
+          Configuration::Profiles::Context.build(project:, actor:), key, value
+        )
       end
 
       # Reads every field into a {String} => value hash. Used for snapshots,

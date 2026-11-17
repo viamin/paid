@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe ConfigurationProfiles::Rollback do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account, auto_pick_enabled: false, auto_merge_mode: "off") }
-  let(:actor) { create(:user, account: account) }
+  let(:actor) { create(:user, :owner, account: account) }
   let(:profile) { ConfigurationProfiles::Registry.find(:solo_automated) }
 
   before do

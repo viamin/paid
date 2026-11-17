@@ -293,7 +293,7 @@ module Api
       IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
     end
 
-    # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+    # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
     def observe_closeout_verification_merge(pr)
       source_pr = @project&.issues&.find_by(github_number: pr["number"], is_pull_request: true)
       return unless source_pr

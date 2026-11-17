@@ -60,6 +60,25 @@ accepts an executable command. Each mapping exposes its reviewer, review time,
 bound inputs and eligibility reason. Reviewed inputs cannot be edited in place,
 and admission rejects a mapping belonging to another issue or project.
 
+The curated Fully Automatic profile (`solo_automated`) carries the enrollment
+as an explicit operating-mode target through the shared
+`Configuration::Profiles::Settings` descriptor registry. Applying or
+reapplying the profile stages the enrollment change through the normal
+planner/applier authorization and audit trail; persistence keeps the
+enrollment's reviewer identity and revision history, and serializes first
+enrollment creation with the project row so concurrent applies converge on one
+enrollment. Every other curated
+profile explicitly pins the target off. The profile target controls
+eligibility only: it never approves arbitrary commands, invents criterion
+mappings, enables a deployment executor, or overrides phase policy — absent an
+approved mapping or available target the project keeps an inspectable waiting
+reason.
+
+The legacy `ConfigurationProfiles` compatibility facade preserves its
+actor-optional contract by authorizing this enrollment target before it stages
+the target. If the caller lacks `ProjectPolicy#update?`, the facade reports the
+enrollment change as skipped and applies every other profile target.
+
 ## Decisions & Alternatives
 
 | Decision | Rationale | Alternative rejected |
@@ -67,3 +86,4 @@ and admission rejects a mapping belonging to another issue or project.
 | Revision rows instead of in-place edits | Keeps the reviewed decision and invalidation history inspectable. | Editing the current mapping would erase the approval it superseded. |
 | Registry references only | Prevents this feature from becoming a command or deployment executor. | Accepting arbitrary commands or targets would bypass existing authorization. |
 | Merge identity stored on the source PR and run | Lets a bounded sweep recover missed delivery without treating merge as deployment, while preserving exact evidence provenance. | Re-fetching GitHub for every sweep would make recovery depend on a live provider read and obscure the observed target. |
+| Explicit profile target for Fully Automatic | Enrollment flows through the reviewed planner/applier with the same per-level authorization and rollback as every other posture lever. | Deriving enrollment silently from merge/release settings would hide the adoption decision. |

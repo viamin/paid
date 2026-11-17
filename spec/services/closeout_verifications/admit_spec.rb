@@ -31,7 +31,7 @@ RSpec.describe CloseoutVerifications::Admit do
     }.merge(overrides))
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
   it "admits exactly one non-triggerable synthetic run pinned to the observed merge" do
     mapping = approve_mapping
 
@@ -48,7 +48,7 @@ RSpec.describe CloseoutVerifications::Admit do
       .not_to change { AgentRun.where(goal: "closeout_verification").count }
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-008
+  # @spec STAGED-CLOSEOUT-ADOPTION-009
   it "admits one run for every eligible mapping for the same issue and pull request" do
     assessment_run = AgentRun.completed.where(project:, issue: source_issue).find_by!(source_pull_request_number: nil)
     assessment = assessment_run.reconciliation.fetch("assessment")
@@ -61,7 +61,7 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(outcome.runs.map(&:closeout_mapping_id)).to match_array(mappings.map(&:id))
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
   it "admits a follow-up merged pull request while an earlier verification remains queued" do
     mapping = approve_mapping
     described_class.call(source_pr:, merge_commit_sha: merge_sha)
@@ -76,7 +76,7 @@ RSpec.describe CloseoutVerifications::Admit do
     ))
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "converges concurrent admission and preserves a current completed result" do
     approve_mapping
     first = described_class.call(source_pr:, merge_commit_sha: merge_sha)
@@ -89,7 +89,7 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(described_class.call(source_pr:, merge_commit_sha: merge_sha).reason).to eq("already_current_result")
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "converges an insert race on the database identity" do
     mapping = approve_mapping
     allow(AgentRun).to receive(:create!).and_wrap_original do |original, attributes|
@@ -104,7 +104,7 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(AgentRun.where(closeout_mapping_id: mapping.id)).to contain_exactly(an_object_having_attributes(status: "queued"))
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "raises a uniqueness collision that does not match the admission identity" do
     approve_mapping
     allow(AgentRun).to receive(:create!).and_raise(ActiveRecord::RecordNotUnique)
@@ -113,7 +113,7 @@ RSpec.describe CloseoutVerifications::Admit do
       .to raise_error(ActiveRecord::RecordNotUnique)
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "returns inspectable no-run reasons for paused authority, changed intent, and live targets" do
     approve_mapping
     project.pause!
@@ -124,7 +124,7 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(described_class.call(source_pr:, merge_commit_sha: merge_sha).reason).to eq("closeout assessment is stale")
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "does not treat a merge as a live-environment confirmation" do
     enrollment = project.staged_closeout_enrollment
     StagedCloseoutMapping.create!(account: project.account, project:, issue: source_issue,
@@ -136,7 +136,7 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(described_class.call(source_pr:, merge_commit_sha: merge_sha).reason).to eq("live_target_unconfirmed")
   end
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "preserves a merged-revision eligibility failure when a live mapping also exists" do
     approve_mapping
     source_issue.update!(body: "Changed intent")

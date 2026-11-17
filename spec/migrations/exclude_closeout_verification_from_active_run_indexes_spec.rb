@@ -6,7 +6,7 @@ require Rails.root.join("db/migrate/20261117073554_exclude_closeout_verification
 RSpec.describe ExcludeCloseoutVerificationFromActiveRunIndexes do
   let(:migration) { described_class.new }
 
-  # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+  # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
   it "refuses rollback before removing indexes when admitted runs conflict with the legacy keys" do
     allow(migration).to receive(:legacy_index_conflicts?).and_return(true)
     allow(migration).to receive(:remove_index)

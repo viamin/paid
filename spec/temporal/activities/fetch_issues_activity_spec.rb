@@ -2971,7 +2971,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(stale_pr.reload.pr_review_phase).to eq("merged")
       end
 
-      # @spec STAGED-CLOSEOUT-ADOPTION-009
+      # @spec STAGED-CLOSEOUT-ADOPTION-010
       it "persists the merge revision when synchronization observes a merge without a webhook" do
         stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
                           github_number: 50, github_state: "open", pr_review_phase: "ready")

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+# @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
 class ExcludeCloseoutVerificationFromActiveRunIndexes < ActiveRecord::Migration[8.1]
   disable_ddl_transaction!
 
