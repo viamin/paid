@@ -1,0 +1,3 @@
+CREATE TRIGGER enforce_maintenance_finding_occurrences_references
+BEFORE INSERT OR UPDATE OF account_id, maintenance_report_id, maintenance_finding_id ON public.maintenance_finding_occurrences
+FOR EACH ROW EXECUTE FUNCTION public.enforce_maintenance_report_references();

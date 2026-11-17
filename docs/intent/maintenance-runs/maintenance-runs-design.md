@@ -74,6 +74,25 @@ report records:
   the scope the user requested (an ambiguous or missing named target is a
   clarification outcome, not a silent repository-wide scan).
 
+Completion requires at least one disclosed completed or incomplete check;
+an empty coverage declaration is a parse failure, not evidence of a clean
+investigation. Persistence retries retain previously recorded scope, checks,
+exclusions and evidence rather than replacing them with omitted defaults.
+Cancellation and budget termination ingest any valid structured report already
+collected, preserve its findings, and retain an explicit interruption outcome.
+When no valid structured report exists, run logs remain the evidence source
+and report coverage stays incomplete or interrupted.
+
+Report, canonical-finding and occurrence writes enforce their account and
+project relationships in PostgreSQL as well as model validation. An occurrence
+cannot link a report and finding from different projects, even within one
+account. Inspection exposes coverage, exclusions, evidence, counterevidence,
+actions, validation plans and retained dismissals on each authorized surface;
+an unresolved scope is explicitly unknown rather than inferred to be broad.
+Repository exceptions and their current/stale assessment are retained as
+agent-supplied evidence with intent references and rationale; the persistence
+layer does not decide semantic validity.
+
 Each `MaintenanceFinding` is a canonical, **project- and recipe-scoped**
 record, identified from its claim and affected symbols (not line numbers
 alone). It does not belong to one report: it owns the durable current finding

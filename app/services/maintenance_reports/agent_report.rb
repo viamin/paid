@@ -24,8 +24,8 @@ module MaintenanceReports
       payload = parse_payload
       validate_payload!(payload)
       attributes(payload)
-    rescue JSON::ParserError => e
-      raise InvalidReport, "maintenance report is not valid JSON: #{e.message}"
+    rescue JSON::ParserError
+      raise InvalidReport, "maintenance report is not valid JSON"
     end
 
     private
@@ -33,6 +33,11 @@ module MaintenanceReports
     attr_reader :output
 
     def parse_payload
+      last_start = output.rindex(/<!--\s*maintenance-report-start\s*-->/)
+      last_end = output.rindex(/<!--\s*maintenance-report-end\s*-->/)
+      if last_start && (last_end.nil? || last_start > last_end)
+        raise InvalidReport, "maintenance report is truncated"
+      end
       raw = output.scan(REPORT_PATTERN).last&.first
       raise InvalidReport, "maintenance report block is missing" if raw.blank?
 
@@ -44,7 +49,13 @@ module MaintenanceReports
 
       ARRAY_FIELDS.each { |field| require_type!(payload, field, Array) }
       require_type!(payload, "evidence", Hash)
+      unless payload["resolved_scope"].nil? || payload["resolved_scope"].is_a?(String)
+        raise InvalidReport, "maintenance report resolved_scope must be a string"
+      end
       payload.fetch("findings").each { |finding| validate_finding!(finding) }
+      if payload.fetch("completed_checks").empty? && payload.fetch("incomplete_checks").empty?
+        raise InvalidReport, "maintenance report must disclose at least one completed or incomplete check"
+      end
     end
 
     def validate_finding!(finding)
@@ -57,6 +68,12 @@ module MaintenanceReports
       raise InvalidReport, "finding symbols and locations must be arrays" unless finding["symbols"].is_a?(Array) && finding["locations"].is_a?(Array)
       raise InvalidReport, "finding verification disposition is invalid" unless DISPOSITIONS.include?(finding["verification_disposition"])
       validate_persistence_bounds!(finding)
+      %w[supporting_evidence contrary_evidence].each do |field|
+        next unless finding.key?(field)
+
+        require_type!(finding, field, Array)
+      end
+      require_type!(finding, "analyzer_provenance", Hash) if finding.key?("analyzer_provenance")
       return if finding["agent_assessment"].nil? || ASSESSMENTS.include?(finding["agent_assessment"])
 
       raise InvalidReport, "finding agent assessment is invalid"

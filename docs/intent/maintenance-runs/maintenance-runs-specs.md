@@ -111,6 +111,8 @@
       per maintenance run, with a terminal outcome of `clean`, `completed`,
       `partial`, `cancelled`, or `budget_exhausted`, and shall preserve that
       report's finding occurrences and evidence after later scans complete.
+      Persistence replays shall retain already recorded evidence, scope,
+      exclusions and coverage when the retry omits them.
       `clean` and `completed` are success outcomes: `completed` means every
       planned check completed with one or more findings, and `partial` is
       reserved for runs where at least one planned check did not complete.
@@ -122,9 +124,12 @@
       shall report `partial`, never `clean` or `completed`; where every
       planned check completed and one or more findings exist, the system
       shall report `completed`, never `partial`.
+      A structured report disclosing no completed or incomplete check shall
+      be rejected as incomplete coverage rather than accepted as `clean`.
 - [ ] **MAINT-023**: When a maintenance run is cancelled, the system shall
       preserve all evidence collected up to cancellation and report
-      `cancelled`.
+      `cancelled`, including findings from a valid structured report emitted
+      before cancellation.
 - [ ] **MAINT-024**: When a maintenance run exhausts its cost or time budget,
       the system shall preserve all evidence collected up to that point and
       report `budget_exhausted`.
