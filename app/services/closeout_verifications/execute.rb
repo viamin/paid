@@ -24,6 +24,7 @@ module CloseoutVerifications
     end
 
     def call
+      return if record_cancelled!
       return if terminal?
 
       claim = claim!
@@ -34,8 +35,6 @@ module CloseoutVerifications
     end
 
     def record_exception!(error)
-      return if terminal?
-
       finish_exception!(error)
     end
 
@@ -120,6 +119,7 @@ module CloseoutVerifications
 
     def finish!(result, command:)
       agent_run.with_lock do
+        return if persist_cancelled!(command:, technical_evidence: result.evidence)
         return if terminal?
 
         outcome = outcome_for(result)
@@ -129,11 +129,25 @@ module CloseoutVerifications
 
     def finish_exception!(error)
       agent_run.with_lock do
+        return if persist_cancelled!(error: error.message)
         return if terminal?
 
         outcome = error.is_a?(ApplicationJob::PerformTimeoutError) ? "timeout" : "setup_failed"
         record_terminal!(outcome, error: error.message)
       end
+    end
+
+    def record_cancelled!
+      agent_run.with_lock do
+        persist_cancelled!
+      end
+    end
+
+    def persist_cancelled!(**evidence)
+      return false unless agent_run.status == "cancelled"
+
+      record_terminal!("cancelled", **evidence) unless agent_run.verification_result.key?(EVIDENCE_KEY)
+      true
     end
 
     def outcome_for(result)

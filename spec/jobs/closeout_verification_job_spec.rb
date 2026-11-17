@@ -148,6 +148,31 @@ RSpec.describe CloseoutVerificationJob do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "records closeout evidence when a queued verification is cancelled before execution" do
+    agent_run.cancel!
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
+    expect(agent_run.reload).to have_attributes(status: "cancelled", completed_at: be_present)
+    expect(agent_run.verification_result.dig("closeout_verification", "outcome")).to eq("cancelled")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "records closeout evidence when cancellation occurs during execution" do
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      agent_run.cancel!
+      validation_result("cancelled", { "cleanup" => { "attempted" => true } })
+    end
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload).to have_attributes(status: "cancelled", completed_at: be_present)
+    expect(agent_run.verification_result.dig("closeout_verification", "outcome")).to eq("cancelled")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
   it "does not replay a terminal attempt" do
     agent_run.update!(status: "completed", completed_at: Time.current)
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
