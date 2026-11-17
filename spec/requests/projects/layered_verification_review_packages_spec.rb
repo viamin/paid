@@ -111,7 +111,18 @@ RSpec.describe "Layered verification review packages" do
       expect(AgentRun.where(goal: "layered_verification_repair", project:)).to be_empty
     end
 
-    it "keeps validation unknown when an older package approval is carried into a newer revision" do
+    it "shows validation recorded through the approval endpoint on its successor revision" do
+      post approve_project_layered_verification_review_package_path(project, package),
+        params: { note: "Validated the retry scenarios at the bound revision." }
+
+      get project_agent_run_path(project, audit)
+
+      intent_section = section(response.body, "layered-verification-intent-validation")
+      expect(intent_section).to include("Validated", user.name)
+      expect(intent_section).not_to include("Unknown")
+    end
+
+    it "keeps validation unknown when changed evidence succeeds a carried approval" do
       post approve_project_layered_verification_review_package_path(project, package),
         params: { note: "Validated the retry scenarios at the bound revision." }
 
@@ -174,8 +185,9 @@ RSpec.describe "Layered verification review packages" do
     end
 
     it "keeps an approved business validation explicit in the intent view" do
-      create(:layered_verification_review_approval, package:, approved_by: user,
-        provenance: { "surface" => "ui" })
+      LayeredVerification::ReviewPackages::Approve.call(
+        package:, user:, provenance: { "surface" => "ui" }
+      )
 
       get project_agent_run_path(project, audit)
 

@@ -2,7 +2,8 @@
 <% coverage = agent_run.external_metadata.dig("layered_verification", "coverage") %>
 <% obligations_by_id = agent_run.project.layered_verification_obligations.where(id: coverage.keys).index_by { |obligation| obligation.id.to_s } %>
 <% current_package = agent_run.review_packages.order(:revision_number).last %>
-<% approvals = current_package&.approvals&.includes(:approved_by)&.order(:id)&.to_a || [] %>
+<% approval_ids = Array(current_package&.bound_inputs&.fetch("approval_ids", [])) %>
+<% approvals = LayeredVerificationReviewApproval.where(id: approval_ids).includes(:approved_by, :package).order(:id).to_a %>
 
 <section id="layered-verification-intent-validation" class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800" aria-labelledby="intent-validation-heading">
   <div class="flex items-center justify-between gap-4">
@@ -19,7 +20,7 @@
       <% obligation = obligations_by_id[obligation_id] %>
       <% bound = Array(current_package&.bound_inputs&.fetch("obligations", [])).find { |inputs| inputs["id"].to_s == obligation_id.to_s } %>
       <% still_bound = bound.present? && bound["external_revision"].to_s == obligation&.external_revision.to_s %>
-      <% validating = still_bound ? approvals : [] %>
+      <% validating = still_bound ? approvals.select { |approval| approval.package.reviewed_evidence_matches?(current_package) } : [] %>
       <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
         <div class="flex items-center justify-between gap-4">
           <p class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= obligation&.external_identity || "Obligation ##{obligation_id}" %></p>

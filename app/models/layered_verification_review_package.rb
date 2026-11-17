@@ -53,6 +53,10 @@ class LayeredVerificationReviewPackage < ApplicationRecord
     lineage.where("revision_number > ?", revision_number).order(:revision_number).first
   end
 
+  def reviewed_evidence_matches?(other)
+    bound_inputs.except("approval_ids") == other.bound_inputs.except("approval_ids")
+  end
+
   private
 
   def agent_run_belongs_to_same_project

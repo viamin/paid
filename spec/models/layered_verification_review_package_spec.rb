@@ -71,6 +71,21 @@ RSpec.describe LayeredVerificationReviewPackage do
   end
 
   # @spec LAYERED-VERIFY-023
+  it "appends a new revision when changed inputs revert to an earlier digest" do
+    audit = completed_audit
+    obligation = audit.project.layered_verification_obligations.sole
+    first = LayeredVerification::ReviewPackages::Capture.call(agent_run: audit)
+
+    obligation.update!(external_revision: "changed")
+    second = LayeredVerification::ReviewPackages::Capture.call(agent_run: audit)
+    obligation.update!(external_revision: first.bound_inputs.fetch("obligations").sole.fetch("external_revision"))
+    replayed_inputs = LayeredVerification::ReviewPackages::Capture.call(agent_run: audit)
+
+    expect(replayed_inputs).to have_attributes(revision_number: 3, package_digest: first.package_digest)
+    expect(second.package_digest).not_to eq(first.package_digest)
+  end
+
+  # @spec LAYERED-VERIFY-023
   it "keeps capture concurrency-safe within one lineage" do
     audit = completed_audit
     threads = Array.new(3) { Thread.new { LayeredVerification::ReviewPackages::Capture.call(agent_run: audit) } }
