@@ -18,6 +18,26 @@ RSpec.describe "Project automation phases" do
     expect(response.body).to include("Automation phases")
   end
 
+  it "renders each trusted label-enabled work item in the migration preview" do # @spec AUTOMATION-PHASES-015
+    configure_trusted_auto_pick_label_preview
+
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    body = Nokogiri::HTML(response.body).text.squish
+    expect(body).to include("Trusted label-enabled work")
+    expect(body).to include("Trusted labeled issue")
+    expect(body).to include("Auto pick in Coding")
+    expect(body).not_to include("Untrusted provenance issue")
+  end
+
+  it "states when no trusted label-enabled work exists" do # @spec AUTOMATION-PHASES-015
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("No open work is currently admitted by a trusted activation label")
+  end
+
   it "updates the phase controls posted by the settings form" do
     patch project_automation_phases_path(project), params: {
       project: {
@@ -178,5 +198,27 @@ RSpec.describe "Project automation phases" do
     get project_automation_phases_path(project)
 
     expect(Nokogiri::HTML(response.body).text.squish).to include("not permitted because posture restricted")
+  end
+
+  # Derive the coding phase to disabled while a trusted auto-pick label admits
+  # exactly one labeled issue, so the preview has label-enabled work to show.
+  def configure_trusted_auto_pick_label_preview
+    allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+    project.update!(
+      feature_activation_labels: project.effective_feature_activation_labels.merge("auto_pick" => "paid:auto-pick"),
+      auto_pick_enabled: false, auto_scan_prs: false, auto_scan_security: false,
+      auto_fix_merge_conflicts: false,
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      }
+    )
+    trusted = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ], title: "Trusted labeled issue")
+    create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ], title: "Untrusted provenance issue")
+    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?) do |_project, candidate, _label|
+      candidate == trusted
+    end
+    trusted
   end
 end
