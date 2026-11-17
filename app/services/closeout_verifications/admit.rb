@@ -106,6 +106,7 @@ module CloseoutVerifications
       run = identity_scope(mapping).first
       return unless run
 
+      CloseoutVerificationJob.perform_later(run.id) if run.status == "queued"
       @existing_reason = run.status == "completed" ? "already_current_result" : "already_admitted"
       run
     end

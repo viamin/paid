@@ -52,7 +52,11 @@ source issue, recorded merged revision, reviewed recipe version and digest,
 automatic Release & Deployment policy, pause state, and budget. It resolves no
 command from issue or PR content: the existing `TechnicalPrerequisites::ValidateExecution`
 path receives only the currently matching reviewed recipe and performs the
-pinned checkout inside its isolated container. The terminal run retains a
+pinned checkout inside its isolated container. A pause, hard-stop budget, or
+stale assessment defers the queued identity for re-observation; an unexpected
+exception before isolated execution begins also leaves it queued so transient
+infrastructure failure cannot consume the identity. Pinned-target divergence, revoked policy, mapping or
+recipe mismatch remain terminal stale outcomes. The terminal run retains a
 bounded closeout evidence envelope with the source/criterion/PR/revision,
 recipe and environment identity, command result, artifacts, timing, and a
 distinct pass, fail, unavailable, cancelled, stale, timeout, setup, or cleanup

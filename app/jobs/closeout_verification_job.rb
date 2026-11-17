@@ -12,8 +12,11 @@ class CloseoutVerificationJob < ApplicationJob
     CloseoutVerifications::Execute.call(agent_run:)
   rescue ActiveRecord::RecordNotFound
     raise
+  rescue ApplicationJob::PerformTimeoutError => error
+    CloseoutVerifications::Execute.record_exception!(agent_run:, error:)
+    raise
   rescue StandardError => error
-    CloseoutVerifications::Execute.record_exception!(agent_run:, error:) if agent_run
+    CloseoutVerifications::Execute.record_exception!(agent_run:, error:) if agent_run&.status == "running"
     raise
   end
 end

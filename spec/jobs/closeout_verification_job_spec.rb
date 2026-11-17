@@ -93,6 +93,40 @@ RSpec.describe CloseoutVerificationJob do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "defers a paused project without consuming the admitted identity" do
+    project.pause!
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
+    expect(agent_run.reload).to have_attributes(status: "queued", started_at: nil, completed_at: nil)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "defers a hard-stop budget without consuming the admitted identity" do
+    allow(CostBudgets::Check).to receive(:call).and_return({ allowed: false, reason: "hard stop" })
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
+    expect(agent_run.reload).to have_attributes(status: "queued", started_at: nil, completed_at: nil)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "defers an assessment that became stale after admission" do
+    mapping
+    issue.update!(body: "Changed intent")
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
+    expect(agent_run.reload).to have_attributes(status: "queued", started_at: nil, completed_at: nil)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
   it "records a failed fixture test without turning its partial output into a pass" do
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_return(validation_result("failed", { "native" => { "exit_code" => 1 }, "cleanup" => { "completed" => true } }))
@@ -156,6 +190,17 @@ RSpec.describe CloseoutVerificationJob do
     described_class.perform_now(retry_run.id)
 
     expect(retry_run.reload.verification_result.dig("closeout_verification", "outcome")).to eq("cleanup_failed")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "leaves a transient pre-execution exception queued for a later delivery" do
+    allow(CostBudgets::Check).to receive(:call)
+      .and_raise(ActiveRecord::StatementInvalid, "temporary database failure")
+
+    expect { described_class.perform_now(agent_run.id) }.to raise_error(ActiveRecord::StatementInvalid)
+
+    expect(agent_run.reload).to have_attributes(status: "queued", completed_at: nil)
+    expect(agent_run.verification_result).not_to include("closeout_verification")
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-011

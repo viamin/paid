@@ -7,6 +7,10 @@ module CloseoutVerifications
   class Execute
     EVIDENCE_KEY = "closeout_verification".freeze
     TERMINAL_STATUSES = %w[completed failed cancelled].freeze
+    Claim = Data.define(:requirement, :reason, :terminal) do
+      def ready? = requirement.present?
+      def terminal? = terminal
+    end
 
     def self.call(...) = new(...).call
 
@@ -22,11 +26,11 @@ module CloseoutVerifications
     def call
       return if terminal?
 
-      requirement = claim!
-      return unless requirement
+      claim = claim!
+      return unless claim
 
-      result = validation_executor.call(agent_run:, native_command: requirement.command)
-      finish!(result, command: requirement.command)
+      result = validation_executor.call(agent_run:, native_command: claim.command)
+      finish!(result, command: claim.command)
     end
 
     def record_exception!(error)
@@ -47,34 +51,42 @@ module CloseoutVerifications
         # reviewed command or race the evidence write.
         return unless agent_run.status == "queued"
 
-        requirement, reason = admitted_requirement
-        unless requirement
-          record_terminal!("stale", error: reason)
+        claim = admitted_requirement
+        unless claim.ready?
+          record_terminal!("stale", error: claim.reason) if claim.terminal?
           return
         end
 
         agent_run.update!(status: "running", started_at: Time.current)
-        requirement
+        claim.requirement
       end
     end
 
     def admitted_requirement
-      return [ nil, "run is not an admitted closeout verification" ] unless agent_run.goal == AgentRun::CLOSEOUT_VERIFICATION_GOAL && agent_run.synthetic?
+      return stale("run is not an admitted closeout verification") unless agent_run.goal == AgentRun::CLOSEOUT_VERIFICATION_GOAL && agent_run.synthetic?
 
       mapping = StagedCloseoutMapping.find_by(id: agent_run.closeout_mapping_id)
-      return [ nil, "reviewed mapping is unavailable" ] unless mapping && pinned_mapping?(mapping)
-      return [ nil, "merged target changed or is unavailable" ] unless merged_target?(mapping)
-      return [ nil, "project authority is paused" ] if paused?
-      return [ nil, "automatic release policy is no longer permitted" ] unless policy_permitted?(mapping)
-      return [ nil, "budget is unavailable: #{budget[:reason]}" ] unless budget[:allowed]
-      return [ nil, "reviewed mapping is stale: #{eligibility.reason}" ] unless eligibility.eligible?
+      return stale("reviewed mapping is unavailable") unless mapping && pinned_mapping?(mapping)
+      return stale("merged target changed or is unavailable") unless merged_target?(mapping)
+      return deferred("project authority is paused") if paused?
+      return stale("automatic release policy is no longer permitted") unless policy_permitted?(mapping)
+      return deferred("budget is unavailable: #{budget[:reason]}") unless budget[:allowed]
+      return claim_for_eligibility unless eligibility.eligible?
 
       requirement = PreCommitRequirement.resolve(project: agent_run.project, user: nil)
         .find { |candidate| candidate.id.to_s == mapping.target_key }
-      return [ nil, "reviewed recipe is unavailable" ] unless requirement&.command.present?
+      return stale("reviewed recipe is unavailable") unless requirement&.command.present?
 
-      [ requirement, nil ]
+      Claim.new(requirement, nil, false)
     end
+
+    def claim_for_eligibility
+      reason = "reviewed mapping is stale: #{eligibility.reason}"
+      eligibility.reason == "closeout assessment is stale" ? deferred(reason) : stale(reason)
+    end
+
+    def stale(reason) = Claim.new(nil, reason, true)
+    def deferred(reason) = Claim.new(nil, reason, false)
 
     def pinned_mapping?(mapping)
       mapping.issue_id == agent_run.issue_id && mapping.stage == "merged_revision" &&

@@ -91,6 +91,19 @@ RSpec.describe CloseoutVerifications::Admit do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-010
+  it "re-enqueues a queued admission left behind by an earlier deployment" do
+    mapping = approve_mapping
+    run = described_class.call(source_pr:, merge_commit_sha: merge_sha).runs.fetch(0)
+    outcome = nil
+
+    expect { outcome = described_class.call(source_pr:, merge_commit_sha: merge_sha) }
+      .to have_enqueued_job(CloseoutVerificationJob).with(run.id)
+    expect(outcome).to have_attributes(runs: [], reason: "already_admitted")
+    expect(run.reload.status).to eq("queued")
+    expect(run.closeout_mapping_id).to eq(mapping.id)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
   it "converges an insert race on the admission identity" do
     approve_mapping
     allow(AgentRun).to receive(:create!).and_raise(ActiveRecord::RecordNotUnique,
