@@ -280,7 +280,10 @@ paths:
           $ref: '#/components/responses/Error'
   /projects/{project_id}/layered_verification_review_packages:
     parameters:
-      - $ref: '#/components/parameters/ProjectId'
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
     get:
       operationId: listLayeredVerificationReviewPackages
       parameters:
@@ -311,7 +314,10 @@ paths:
         default: {$ref: '#/components/responses/Error'}
   /projects/{project_id}/layered_verification_review_packages/{id}:
     parameters:
-      - $ref: '#/components/parameters/ProjectId'
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
       - name: id
         in: path
         required: true
@@ -338,7 +344,10 @@ paths:
         default: {$ref: '#/components/responses/Error'}
   /projects/{project_id}/layered_verification_review_packages/{id}/approve:
     parameters:
-      - $ref: '#/components/parameters/ProjectId'
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
       - name: id
         in: path
         required: true
