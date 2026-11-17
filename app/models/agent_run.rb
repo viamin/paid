@@ -4760,7 +4760,9 @@ class AgentRun < ApplicationRecord
       "partial"
     end
     incomplete_checks = outcome == "partial" ? [ { "name" => "investigation", "reason" => status } ] : []
-    MaintenanceReports::Persist.call(run: self, outcome:, incomplete_checks:)
+    attributes = terminal_maintenance_report_attributes
+    attributes[:incomplete_checks] = (attributes.fetch(:incomplete_checks, []) + incomplete_checks).uniq
+    MaintenanceReports::Persist.call(run: self, **attributes, outcome:)
   rescue => e
     Rails.logger.error(
       message: "agent_execution.terminal_maintenance_report_persist_failed",
@@ -4771,6 +4773,12 @@ class AgentRun < ApplicationRecord
   end
 
   def terminal_maintenance_report_needed?
-    maintenance_goal? && finished? && maintenance_report.nil?
+    maintenance_goal? && finished? && (maintenance_report.nil? || (saved_change_to_status? && !successful?))
+  end
+
+  def terminal_maintenance_report_attributes
+    MaintenanceReports::AgentReport.parse(agent_summary_tail_with_stderr_fallback)
+  rescue MaintenanceReports::AgentReport::InvalidReport
+    { evidence: { "agent_run_id" => id, "logs_retained" => true } }
   end
 end

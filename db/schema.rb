@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_011025) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_042425) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -6605,6 +6605,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_011025) do
       $function$
   SQL
 
+  create_function :enforce_maintenance_report_references, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_maintenance_report_references()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF TG_TABLE_NAME IN ('maintenance_reports', 'maintenance_findings') THEN
+          IF NOT EXISTS (SELECT 1 FROM projects WHERE id = NEW.project_id AND account_id = NEW.account_id) THEN
+            RAISE EXCEPTION 'maintenance project must belong to the record account' USING ERRCODE = '23503';
+          END IF;
+        END IF;
+
+        IF TG_TABLE_NAME = 'maintenance_reports' THEN
+          IF NOT EXISTS (SELECT 1 FROM agent_runs WHERE id = NEW.agent_run_id
+              AND project_id = NEW.project_id AND goal = 'maintenance') THEN
+            RAISE EXCEPTION 'maintenance run must belong to the report project' USING ERRCODE = '23503';
+          END IF;
+        ELSIF TG_TABLE_NAME = 'maintenance_finding_occurrences' THEN
+          IF NOT EXISTS (
+            SELECT 1 FROM maintenance_reports
+            INNER JOIN maintenance_findings ON maintenance_findings.project_id = maintenance_reports.project_id
+              AND maintenance_findings.account_id = maintenance_reports.account_id
+            WHERE maintenance_reports.id = NEW.maintenance_report_id
+              AND maintenance_findings.id = NEW.maintenance_finding_id
+              AND maintenance_reports.account_id = NEW.account_id
+          ) THEN
+            RAISE EXCEPTION 'maintenance report and finding must belong to the same project and account' USING ERRCODE = '23503';
+          END IF;
+        END IF;
+
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
   create_trigger :protect_project_delegation_audit_event_update, sql_definition: <<-SQL
       CREATE TRIGGER protect_project_delegation_audit_event_update BEFORE UPDATE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
   SQL
@@ -6695,6 +6730,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_011025) do
 
   create_trigger :logidze_on_llm_models, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_llm_models BEFORE INSERT OR UPDATE ON public.llm_models FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :enforce_maintenance_finding_occurrences_references, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_maintenance_finding_occurrences_references BEFORE INSERT OR UPDATE OF account_id, maintenance_report_id, maintenance_finding_id ON public.maintenance_finding_occurrences FOR EACH ROW EXECUTE FUNCTION enforce_maintenance_report_references()
+  SQL
+
+  create_trigger :enforce_maintenance_findings_references, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_maintenance_findings_references BEFORE INSERT OR UPDATE OF account_id, project_id ON public.maintenance_findings FOR EACH ROW EXECUTE FUNCTION enforce_maintenance_report_references()
+  SQL
+
+  create_trigger :enforce_maintenance_reports_references, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_maintenance_reports_references BEFORE INSERT OR UPDATE OF account_id, project_id, agent_run_id ON public.maintenance_reports FOR EACH ROW EXECUTE FUNCTION enforce_maintenance_report_references()
   SQL
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL

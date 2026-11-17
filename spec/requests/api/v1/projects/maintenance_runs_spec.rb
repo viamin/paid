@@ -111,10 +111,15 @@ RSpec.describe "Maintenance runs API" do
       analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
     } ])
 
+    run.maintenance_report.finding_occurrences.sole.maintenance_finding.dismiss!(reason: "Intentional compatibility callback")
+
     get "/api/v1/projects/#{project.id}/maintenance_runs/#{run.id}", headers: headers
 
     expect(response.parsed_body.dig("maintenance", "report", "findings", 0, "analyzer_provenance"))
       .to eq("name" => "debride", "version" => "1.14.0")
+    expect(response.parsed_body.dig("maintenance", "report", "findings", 0)).to include(
+      "observed_status" => "open", "status" => "dismissed", "dismissal_reason" => "Intentional compatibility callback"
+    )
   end
 
   # @spec MAINT-017

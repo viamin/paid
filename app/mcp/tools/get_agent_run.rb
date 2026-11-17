@@ -86,6 +86,7 @@ module Tools
             analyzer_provenance: occurrence.analyzer_provenance, raw_tool_confidence: occurrence.raw_tool_confidence,
             agent_assessment: occurrence.agent_assessment,
             proposed_action: occurrence.proposed_action, validation_plan: occurrence.validation_plan,
+            observed_status: occurrence.observed_status, dismissal_reason: occurrence.maintenance_finding.dismissal_reason,
             verification_disposition: occurrence.verification_disposition, status: occurrence.maintenance_finding.status,
             reassessment_required: occurrence.maintenance_finding.reassessment_required
           }
