@@ -23,6 +23,7 @@ module FeatureIntents
         raise StaleDecisionError, "This decision was already resolved. Reload to review its current state." unless decision.open?
 
         decision.resolve!(by: actor, answer:)
+        settle_checkpoint_if_complete
         ProjectDelegation::RecordPilotEvent.human_decision(decision)
       end
     end
@@ -30,5 +31,17 @@ module FeatureIntents
     private
 
     attr_reader :answer, :actor, :decision
+
+    def settle_checkpoint_if_complete
+      checkpoint = decision.intent_checkpoint
+      return unless checkpoint&.status == "open"
+      return unless checkpoint.questions.all? { |question| question.status == "resolved" }
+
+      ProjectDelegation::IntentCheckpoint::Settle.call(
+        checkpoint:, actor:, answers: checkpoint.questions.to_h { |question| [ question.id, question.answer ] },
+        design_revision: checkpoint.proposed_design_revision,
+        acceptance_revision: checkpoint.proposed_acceptance_revision
+      )
+    end
   end
 end

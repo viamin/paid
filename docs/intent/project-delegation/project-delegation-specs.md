@@ -26,11 +26,15 @@ Status markers: `[ ]` planned implementation gap.
   `spec/requests/api/v1/delegation_spec.rb`, and
   `spec/mcp/tools/get_project_delegation_spec.rb` (shared projection parity).
 
-- [ ] **PROJECT-DELEGATION-002** — When material product questions are known
+- [x] **PROJECT-DELEGATION-002** — When material product questions are known
   before downstream work, the system SHALL group related questions, show a
   recommendation and consequences, and bind a human's settled answers to the
   immutable design and acceptance revision; it SHALL NOT ask again downstream
   unless new evidence conflicts with, invalidates, or materially expands it.
+  *Verified by:* `spec/services/project_delegation/intent_checkpoint/plan_spec.rb`,
+  `spec/services/project_delegation/intent_checkpoint/settle_spec.rb`,
+  `spec/services/project_delegation/intent_checkpoint/redecision_spec.rb`,
+  and `spec/models/project_delegation/intent_settlement_spec.rb`.
 
 - [ ] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
   system SHALL delegate only bounded implementation choices, focused follow-up

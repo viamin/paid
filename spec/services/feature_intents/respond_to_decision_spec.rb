@@ -38,4 +38,25 @@ RSpec.describe FeatureIntents::RespondToDecision do
 
     expect(decision.reload).to have_attributes(status: "open", answer: nil)
   end
+
+  it "settles a grouped checkpoint after its final human answer" do # @spec PROJECT-DELEGATION-002
+    feature_intent = create(:feature_intent)
+    first = create(:feature_intent_decision, feature_intent:)
+    second = create(:feature_intent_decision, feature_intent:)
+    checkpoint = create(:project_delegation_intent_checkpoint, feature_intent:)
+    checkpoint.questions = [ first, second ]
+    actor = create(:user, account: feature_intent.project.account)
+
+    described_class.call(decision: first, actor:, answer: "Narrow rollout.")
+    expect(checkpoint.reload.status).to eq("open")
+
+    described_class.call(decision: second, actor:, answer: "Existing records only.")
+
+    expect(checkpoint.reload).to be_settled
+    expect(checkpoint.settlements).to have_attributes(size: 1)
+    expect(checkpoint.settlements.first).to have_attributes(
+      design_revision: checkpoint.proposed_design_revision,
+      acceptance_revision: checkpoint.proposed_acceptance_revision
+    )
+  end
 end
