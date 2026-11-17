@@ -165,7 +165,9 @@ RSpec.describe Inbox::ChatContext do
   end
 
   it "uses the Inbox workflow projection for pull-request context" do # @spec OPERATOR-INBOX-024
-    issue.update!(is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+    issue.update!(is_pull_request: true, github_state: "open", pr_review_phase: "ready", last_scanned_head_sha: "a" * 40,
+      auto_merge_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
     chat_session.update!(inbox_item_key: "merge_approval:#{issue.id}", inbox_item_metadata: { "kind" => "merge_approval", "issue_id" => issue.id })
 
     context = described_class.call(chat_session:, user:, sections: [ :record ])

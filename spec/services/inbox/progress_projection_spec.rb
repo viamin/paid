@@ -203,4 +203,25 @@ RSpec.describe Inbox::ProgressProjection do
       next_action: "Confirm why the pull request closed without merge evidence."
     )
   end
+
+  # @spec INBOX-PROGRESS-004
+  it "shares the responsible merge role with API and chat consumers" do
+    project = create(:project, auto_merge_mode: "off")
+    pull_request = create(:issue, :pull_request, project:)
+    expect(milestone(described_class.call(issue: pull_request), "merge")[:actor]).to eq("Repository maintainer")
+
+    project.update!(auto_merge_mode: "all")
+    expect(milestone(described_class.call(issue: pull_request), "merge")[:actor]).to eq("Paid")
+  end
+
+  # @spec INBOX-PROGRESS-004
+  it "retains an explicit approval-gated design outside human-led project mode" do
+    project = create(:project, operating_mode: "standard")
+    source = create(:issue, project:)
+    intent = create(:feature_intent, :ready_for_approval, project:, delivery_policy: "approval_gated")
+    create(:feature_intent_issue, feature_intent: intent, issue: source)
+    pull_request = create(:issue, :pull_request, project:, parent_issue: source)
+
+    expect(milestone(described_class.call(issue: pull_request), "design_approval")[:state]).to eq("waiting")
+  end
 end
