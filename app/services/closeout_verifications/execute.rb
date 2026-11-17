@@ -41,7 +41,11 @@ module CloseoutVerifications
 
     def claim!
       agent_run.with_lock do
-        return if terminal?
+        # Claim exactly once: with_lock reloads the row under a database lock,
+        # so only a delivery that observes `queued` may start execution. A
+        # duplicate delivery against a running attempt must not relaunch the
+        # reviewed command or race the evidence write.
+        return unless agent_run.status == "queued"
 
         requirement, reason = admitted_requirement
         unless requirement

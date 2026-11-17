@@ -124,6 +124,20 @@ RSpec.describe CloseoutVerificationJob do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "does not reclaim a run that a duplicate delivery is already executing" do
+    started_at = 2.minutes.ago
+    agent_run.update!(status: "running", started_at:)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+
+    described_class.perform_now(agent_run.id)
+
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
+    expect(agent_run.reload).to have_attributes(status: "running",
+      started_at: be_within(1.second).of(started_at), completed_at: nil)
+    expect(agent_run.verification_result).not_to include("closeout_verification")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
   it "records timeout and cleanup failures as actionable non-passes" do
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_raise(ApplicationJob::PerformTimeoutError, "fixture timed out")

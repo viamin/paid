@@ -39,7 +39,9 @@ The goal is non-triggerable and excluded from the ordinary agent queue;
 execution belongs to its dedicated successor work. Admission rechecks mapping
 eligibility and automatic phase authority, rejects paused or inactive project
 authority, and returns a stable, inspectable no-run reason. Completed evidence
-with the same identity is current and is not replaced. A bounded sweep retries
+with the same identity is current and is not replaced. The admission row and
+its execution job persist atomically, so an enqueue failure leaves no stranded
+queued identity against later observation. A bounded sweep retries
 persisted merged PR observations after a disabled enrollment is re-enabled or
 a webhook was missed. `live_environment` mappings do not qualify from a merge:
 they wait for a separately confirmed live target.

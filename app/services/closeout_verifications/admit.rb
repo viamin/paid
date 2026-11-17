@@ -5,6 +5,8 @@ module CloseoutVerifications
   # enqueue ProcessRunQueueJob: execution has a dedicated successor contract.
   # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
   class Admit
+    IDENTITY_INDEX = "index_agent_runs_closeout_verification_identity".freeze
+
     Outcome = Data.define(:runs, :reason) do
       def admitted? = runs.any?
     end
@@ -75,13 +77,29 @@ module CloseoutVerifications
       existing = existing_run(mapping)
       return nil if existing
 
-      run = AgentRun.create!(run_attributes(mapping))
-      CloseoutVerificationJob.perform_later(run.id)
-      run
+      persist_admission(mapping)
     rescue ActiveRecord::RecordNotUnique => error
-      raise error unless existing_run(mapping)
+      raise error unless identity_collision?(error) || existing_run(mapping)
 
+      @existing_reason ||= "already_admitted"
       nil
+    end
+
+    # The run row and its GoodJob row commit together: an enqueue failure
+    # rolls the admission back instead of stranding a queued identity that
+    # every later observation would refuse to re-enqueue.
+    def persist_admission(mapping)
+      AgentRun.transaction do
+        run = AgentRun.create!(run_attributes(mapping))
+        CloseoutVerificationJob.perform_later(run.id)
+        run
+      end
+    end
+
+    # Only the admission identity's unique index converges to the winning
+    # admission; a violation of any other constraint is a bug and surfaces.
+    def identity_collision?(error)
+      error.message.include?(IDENTITY_INDEX)
     end
 
     def existing_run(mapping)
