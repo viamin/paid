@@ -76,6 +76,15 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_css("[data-inbox-actions-target='bar']", visible: true)
   end
 
+  def switch_project_filter(from:, to:)
+    click_button "Filters"
+    within("dialog[aria-label='Inbox filters']") do
+      uncheck from.full_name
+      check to.full_name
+      click_button "Apply filters"
+    end
+  end
+
   it "keeps the first collection selection shareable and advances subsequent selection through browser history" do
     initial_issue, next_issue = ordered_issues
     page.current_window.resize_to(1440, 1000)
@@ -121,12 +130,32 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(action_area[:class]).to include("sticky")
   end
 
-  # @spec OPERATOR-INBOX-027
+  # @spec OPERATOR-INBOX-026 @spec OPERATOR-INBOX-027
   it "presents decision context and a visible next action across the four closeout lanes while switching projects" do
     page.current_window.resize_to(390, 844)
-    decision_brief_lane_cases.each do |kind, issue, selected_project, action|
+    lane_cases = decision_brief_lane_cases
+    lane_cases.first(3).each do |kind, issue, selected_project, action|
       expect_decision_brief_for(kind:, issue:, selected_project:, action:)
     end
+
+    other_kind, other_issue, other_project, other_action = lane_cases.last
+    visit member_path(first_issue)
+    switch_project_filter(from: project, to: other_project)
+
+    expect(page).to have_css("#inbox-detail h2", text: other_issue.title)
+    expect(page).to have_current_path(inbox_path(kinds: [ other_kind ], project_ids: [ other_project.id ], sort: Inbox::Queue::DEFAULT_SORT))
+    brief = find("[data-testid='inbox-decision-brief']")
+    expect(brief).to have_text("Repository: #{other_project.full_name}")
+    expect(brief).to have_text(other_action)
+
+    page.go_back
+    expect(page).to have_current_path(member_path(first_issue))
+    expect(page).to have_css("#inbox-detail h2", text: first_issue.title)
+    expect(page).to have_button("Filters", text: project.full_name)
+
+    page.go_forward
+    expect(page).to have_current_path(inbox_path(kinds: [ other_kind ], project_ids: [ other_project.id ], sort: Inbox::Queue::DEFAULT_SORT))
+    expect(page).to have_css("#inbox-detail h2", text: other_issue.title)
   end
 
   it "uses the member URL for a dependency cycle and retains it on mobile" do
