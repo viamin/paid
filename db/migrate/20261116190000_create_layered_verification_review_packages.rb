@@ -33,15 +33,91 @@ class CreateLayeredVerificationReviewPackages < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
+    enforce_project_references
     enable_rls
   end
 
   def down
+    remove_project_reference_enforcement
     drop_table :layered_verification_review_approvals
     drop_table :layered_verification_review_packages
   end
 
   private
+
+  # Package and approval RLS establishes tenant visibility, but the referenced
+  # rows must also be constrained to that package's project account. These
+  # triggers enforce the invariant for direct SQL writes as well as Rails.
+  def enforce_project_references
+    safety_assured do
+      execute <<~SQL
+        CREATE FUNCTION layered_verification_review_packages_validate_agent_run_project()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM agent_runs
+            WHERE id = NEW.agent_run_id
+              AND project_id = NEW.project_id
+          ) THEN
+            RAISE EXCEPTION 'agent run must belong to the package project';
+          END IF;
+
+          RETURN NEW;
+        END;
+        $$;
+      SQL
+
+      execute <<~SQL
+        CREATE TRIGGER layered_verification_review_packages_validate_agent_run_project
+        BEFORE INSERT OR UPDATE OF project_id, agent_run_id
+        ON layered_verification_review_packages
+        FOR EACH ROW
+        EXECUTE FUNCTION layered_verification_review_packages_validate_agent_run_project();
+      SQL
+
+      execute <<~SQL
+        CREATE FUNCTION layered_verification_review_approvals_validate_actor_account()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM layered_verification_review_packages
+            INNER JOIN projects ON projects.id = layered_verification_review_packages.project_id
+            INNER JOIN users ON users.account_id = projects.account_id
+            WHERE layered_verification_review_packages.id = NEW.package_id
+              AND users.id = NEW.approved_by_id
+          ) THEN
+            RAISE EXCEPTION 'approval actor must belong to the package project account';
+          END IF;
+
+          RETURN NEW;
+        END;
+        $$;
+      SQL
+
+      execute <<~SQL
+        CREATE TRIGGER layered_verification_review_approvals_validate_actor_account
+        BEFORE INSERT OR UPDATE OF package_id, approved_by_id
+        ON layered_verification_review_approvals
+        FOR EACH ROW
+        EXECUTE FUNCTION layered_verification_review_approvals_validate_actor_account();
+      SQL
+    end
+  end
+
+  def remove_project_reference_enforcement
+    safety_assured do
+      execute "DROP TRIGGER IF EXISTS layered_verification_review_approvals_validate_actor_account ON layered_verification_review_approvals"
+      execute "DROP TRIGGER IF EXISTS layered_verification_review_packages_validate_agent_run_project ON layered_verification_review_packages"
+      execute "DROP FUNCTION IF EXISTS layered_verification_review_approvals_validate_actor_account()"
+      execute "DROP FUNCTION IF EXISTS layered_verification_review_packages_validate_agent_run_project()"
+    end
+  end
 
   # RLS is the documented exception to the Rails-helper rule (AGENTS.md):
   # row-level security has no migration helper. Tenancy is keyed through the

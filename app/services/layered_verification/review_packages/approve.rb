@@ -23,9 +23,11 @@ module LayeredVerification
         package.agent_run.with_lock do
           validate_current_revision!
           validate_bound_revisions!
-          package.approvals.create!(
+          approval = package.approvals.create!(
             approved_by: user, approved_at: Time.current, provenance: approval_provenance
           )
+          Capture.call(agent_run: package.agent_run)
+          approval
         end
       end
 

@@ -10,7 +10,10 @@ RSpec.describe LayeredVerification::ReviewPackages::Approve do
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: audit.project)
       .and_return(true)
 
-    approval = described_class.call(package:, user:, provenance: { "surface" => "ui", "note" => "Walkthrough done" })
+    approval = nil
+    expect {
+      approval = described_class.call(package:, user:, provenance: { "surface" => "ui", "note" => "Walkthrough done" })
+    }.to change { audit.review_packages.count }.by(1)
 
     expect(approval).to have_attributes(package:, approved_by: user)
     expect(approval.approved_at).to be_within(1.minute).of(Time.current)
@@ -19,6 +22,11 @@ RSpec.describe LayeredVerification::ReviewPackages::Approve do
       "package_digest" => package.package_digest,
       "bound_revisions" => include(obligation.external_identity => obligation.external_revision)
     )
+    successor = audit.review_packages.order(:revision_number).last
+    expect(package.reload.bound_inputs.fetch("approval_ids")).to be_empty
+    expect(successor.revision_number).to eq(package.revision_number + 1)
+    expect(successor.bound_inputs.fetch("approval_ids")).to eq([ approval.id ])
+    expect(successor.package_digest).to eq(LayeredVerificationReviewPackage.digest_for(successor.bound_inputs))
   end
 
   # @spec LAYERED-VERIFY-023
@@ -61,10 +69,10 @@ RSpec.describe LayeredVerification::ReviewPackages::Approve do
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project: audit.project)
       .and_return(true)
 
+    run_count = AgentRun.count
     expect { described_class.call(package:, user:, provenance: { "surface" => "ui" }) }
-      .not_to change(AgentRun, :count)
-    expect { described_class.call(package:, user:, provenance: { "surface" => "ui (repeat)" }) }
       .not_to have_enqueued_job(ProcessRunQueueJob)
+    expect(AgentRun.count).to eq(run_count)
     expect(obligation.reload).to have_attributes(approval_state: "proposed")
     expect(finding.reload.decision).to eq(decision_before)
     expect(audit.reload.status).to eq("completed")
