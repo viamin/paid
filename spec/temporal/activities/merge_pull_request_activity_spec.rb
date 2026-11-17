@@ -1082,6 +1082,13 @@ RSpec.describe Activities::MergePullRequestActivity do
           expect(issue.reload.pr_review_phase).to eq("merged")
         end
 
+        # @spec STAGED-CLOSEOUT-ADOPTION-009
+        it "persists the fallback merge revision for closeout reconciliation" do
+          activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+          expect(issue.reload.merged_commit_sha).to eq("def456")
+        end
+
         it "does not record a merge-permission rejection on the issue" do
           activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 

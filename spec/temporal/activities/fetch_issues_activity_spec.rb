@@ -2971,6 +2971,26 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(stale_pr.reload.pr_review_phase).to eq("merged")
       end
 
+      # @spec STAGED-CLOSEOUT-ADOPTION-009
+      it "persists the merge revision when synchronization observes a merge without a webhook" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open", pr_review_phase: "ready")
+        merge_sha = "a" * 40
+
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true, merge_commit_sha: merge_sha))
+
+        activity.execute(project_id: project.id)
+
+        expect(stale_pr.reload).to have_attributes(
+          github_state: "closed",
+          pr_review_phase: "merged",
+          merged_commit_sha: merge_sha
+        )
+      end
+
       it "clears the paid-escalated label when an escalated PR is closed outside Paid" do
         stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
                           github_number: 50, github_state: "open", pr_review_phase: "escalated",

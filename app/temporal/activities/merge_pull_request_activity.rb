@@ -405,7 +405,10 @@ module Activities
         project_id: project.id,
         pr_number: pr_data.number
       )
-      @effective_credential_mode = AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK if result.merged
+      if result.merged
+        @effective_credential_mode = AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK
+        @merged_commit_sha = result.sha if result.respond_to?(:sha)
+      end
       result.merged ? :merged : :retryable_failure
     rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(

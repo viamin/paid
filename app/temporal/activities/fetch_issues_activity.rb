@@ -1532,17 +1532,17 @@ module Activities
       # path that must clear the now-stale paid-escalated label.
       escalated_stale = stale_prs.where(pr_review_phase: "escalated").to_a
 
-      merged_numbers, unmerged_numbers, unknown_numbers = partition_by_merge_status(
+      merged_observations, unmerged_numbers, unknown_numbers = partition_by_merge_status(
         client, repo_full_name, stale_prs.pluck(:github_number)
       )
+      merged_numbers = merged_observations.keys
 
       if merged_numbers.any?
         merged_pull_requests = project.issues
           .pull_requests_only
           .where(project_id: project.id, source: source, github_number: merged_numbers)
         merged_work_items = merged_pull_requests.to_a
-        merged_pull_requests
-          .update_all(github_state: "closed", pr_review_phase: "merged", updated_at: Time.current)
+        persist_merged_pull_requests(merged_work_items, merged_observations)
         Automation::CompleteContinuationGrants.call(work_items: merged_work_items, endpoint: "merge")
       end
 
@@ -1575,7 +1575,7 @@ module Activities
     end
 
     def partition_by_merge_status(client, repo_full_name, pr_numbers)
-      merged_numbers = []
+      merged_observations = {}
       unmerged_numbers = []
       unknown_numbers = []
 
@@ -1583,7 +1583,7 @@ module Activities
         heartbeat("fetch_issues.partition_pr_merge_status", repo: repo_full_name, pr_number: number, index: index, total: pr_numbers.size)
         github_pr = client.pull_request(repo_full_name, number)
         if github_pr.merged_at.present? || github_pr.merged == true
-          merged_numbers << number
+          merged_observations[number] = github_pr.respond_to?(:merge_commit_sha) ? github_pr.merge_commit_sha : nil
         else
           unmerged_numbers << number
         end
@@ -1600,7 +1600,25 @@ module Activities
         unknown_numbers << number
       end
 
-      [ merged_numbers, unmerged_numbers, unknown_numbers ]
+      [ merged_observations, unmerged_numbers, unknown_numbers ]
+    end
+
+    def persist_merged_pull_requests(pull_requests, observations)
+      now = Time.current
+      rows = pull_requests.map do |pull_request|
+        pull_request.attributes.merge(
+          "github_state" => "closed",
+          "pr_review_phase" => "merged",
+          "merged_commit_sha" => observations.fetch(pull_request.github_number) || pull_request.merged_commit_sha,
+          "updated_at" => now
+        )
+      end
+      Issue.upsert_all(
+        rows,
+        unique_by: :id,
+        update_only: %i[github_state pr_review_phase merged_commit_sha updated_at],
+        record_timestamps: false
+      )
     end
 
     # Clears the paid-escalated label from PRs that left the open set while
