@@ -59,8 +59,8 @@ RSpec.describe Automation::Phases::MigrationPreview do
     configure_disabled_auto_pick_preview
     issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
     untrusted_issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
-    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?) do |_project, candidate, _label|
-      candidate == issue
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust) do |_project, candidate, _label|
+      candidate == issue ? :trusted : :untrusted
     end
 
     preview = described_class.call(project:, user:)
@@ -86,7 +86,7 @@ RSpec.describe Automation::Phases::MigrationPreview do
   it "reports trusted-label provenance as unavailable when its history is rate limited" do
     configure_disabled_auto_pick_preview
     create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
-    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust)
       .and_raise(GithubClient::RateLimitError.new)
     expect(Rails.logger).to receive(:warn).with(
       hash_including(
@@ -100,6 +100,18 @@ RSpec.describe Automation::Phases::MigrationPreview do
 
     expect(preview.label_enabled_work_status).to eq("unavailable")
     expect(preview.to_h).to include(label_enabled_work_status: "unavailable")
+    expect(preview.label_enabled_work).to be_empty
+    expect(preview.label_enabled_capabilities).to be_empty
+  end
+
+  it "reports trusted-label provenance as unavailable when its history cannot be read" do
+    configure_disabled_auto_pick_preview
+    create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust).and_return(:unknown)
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work_status).to eq("unavailable")
     expect(preview.label_enabled_work).to be_empty
     expect(preview.label_enabled_capabilities).to be_empty
   end

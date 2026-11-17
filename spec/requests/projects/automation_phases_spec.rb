@@ -40,7 +40,7 @@ RSpec.describe "Project automation phases" do
 
   it "states when trusted-label provenance is unavailable" do # @spec AUTOMATION-PHASES-015
     configure_trusted_auto_pick_label_preview
-    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust)
       .and_raise(GithubClient::RateLimitError.new)
 
     get project_automation_phases_path(project)
@@ -228,8 +228,8 @@ RSpec.describe "Project automation phases" do
     )
     trusted = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ], title: "Trusted labeled issue")
     create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ], title: "Untrusted provenance issue")
-    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?) do |_project, candidate, _label|
-      candidate == trusted
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust) do |_project, candidate, _label|
+      candidate == trusted ? :trusted : :untrusted
     end
     trusted
   end

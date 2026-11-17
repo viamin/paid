@@ -107,17 +107,22 @@ module Automation
       # event provenance, so the preview uses that same decision before naming
       # work an activation would change.
       def label_enabled_work(derived_settings)
+        provenance_available = true
         work_items = LABEL_ACTIVATED_CAPABILITIES.flat_map do |capability|
           phase = Automation::Phases.for_capability(capability)
           next [] unless phase_disabled_by_derived_settings?(phase, derived_settings)
 
           labeled_work_items(capability).filter_map do |work_item|
-            next unless trusted_activation_label?(capability, work_item)
+            trust = activation_label_trust(capability, work_item)
+            provenance_available &&= trust != :unknown
+            next unless trust == :trusted
             next unless currently_label_enabled?(capability, work_item)
 
             { capability:, phase:, work_item_id: work_item.id }
           end
         end
+        return LabelEnabledWork.new(items: [], status: "unavailable") unless provenance_available
+
         LabelEnabledWork.new(items: work_items, status: "available")
       rescue GithubClient::RateLimitError => error
         Rails.logger.warn(
@@ -143,11 +148,14 @@ module Automation
       # A Paid-local activation is not evidence that a GitHub label was trusted.
       # Check the matching label separately because ignored-mode feature
       # evaluation intentionally short-circuits to the Paid-local state.
-      def trusted_activation_label?(capability, work_item)
-        activation_labels(capability).any? do |label|
-          work_item.has_label?(label) &&
-            Automation::LabelPolicy.trusted_user_added_label?(project, work_item, label)
+      def activation_label_trust(capability, work_item)
+        trusts = activation_labels(capability).filter_map do |label|
+          Automation::LabelPolicy.label_addition_trust(project, work_item, label) if work_item.has_label?(label)
         end
+        return :trusted if trusts.include?(:trusted)
+        return :unknown if trusts.include?(:unknown)
+
+        :untrusted
       end
 
       def activation_labels(capability)
