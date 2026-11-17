@@ -85,7 +85,7 @@ module MaintenanceReports
         completed_checks: payload.fetch("completed_checks"),
         incomplete_checks: payload.fetch("incomplete_checks"),
         evidence: payload.fetch("evidence"),
-        findings: payload.fetch("findings").map { |finding| finding.deep_symbolize_keys }
+        findings: payload.fetch("findings").map(&:deep_symbolize_keys)
       }
     end
   end
