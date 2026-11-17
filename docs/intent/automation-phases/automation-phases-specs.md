@@ -125,7 +125,8 @@
   enabling new automatic work, SHALL NOT grant continuation authorization
   retroactively to existing manual runs, and SHALL report which currently
   label-enabled work would change execution or Inbox relevance before
-  activation.
+  activation. When trusted-label provenance is unavailable, the system SHALL
+  report that unavailable state rather than reporting no affected work.
   *Tests:* `spec/services/automation/phases/migration_preview_spec.rb`
   *Code:* `Automation::Phases::MigrationPreview`
 

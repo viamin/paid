@@ -12,7 +12,7 @@ module Automation
     # @spec AUTOMATION-PHASES-015
     class MigrationPreview
       Preview = Struct.new(:project, :derived_settings, :configured_settings, :disabled_phase_entries,
-        :label_enabled_capabilities, :label_enabled_work, :active_grants, keyword_init: true) do
+        :label_enabled_capabilities, :label_enabled_work, :label_enabled_work_status, :active_grants, keyword_init: true) do
         def to_h
           {
             project_id: project.id,
@@ -21,6 +21,7 @@ module Automation
             inbox_entries_leaving_default: disabled_phase_entries,
             label_enabled_capabilities: label_enabled_capabilities,
             label_enabled_work: label_enabled_work,
+            label_enabled_work_status: label_enabled_work_status,
             active_grants: active_grants
           }
         end
@@ -34,6 +35,8 @@ module Automation
       # project setting.
       LABEL_ACTIVATED_CAPABILITIES = %w[auto_pick auto_enhance auto_merge].freeze
 
+      LabelEnabledWork = Struct.new(:items, :status, keyword_init: true)
+
       def self.call(...)
         new(...).call
       end
@@ -46,15 +49,16 @@ module Automation
       def call
         settings = Automation::PhaseSettings.call(project)
         derived_settings = settings.derive
-        label_enabled_work = label_enabled_work(derived_settings)
+        label_enabled_work_preview = label_enabled_work(derived_settings)
 
         Preview.new(
           project: project,
           derived_settings:,
           configured_settings: settings.to_settings,
           disabled_phase_entries: disabled_phase_entries(settings),
-          label_enabled_work:,
-          label_enabled_capabilities: label_enabled_capabilities(label_enabled_work),
+          label_enabled_work: label_enabled_work_preview.items,
+          label_enabled_work_status: label_enabled_work_preview.status,
+          label_enabled_capabilities: label_enabled_capabilities(label_enabled_work_preview.items),
           active_grants: active_grants
         )
       end
@@ -103,7 +107,7 @@ module Automation
       # event provenance, so the preview uses that same decision before naming
       # work an activation would change.
       def label_enabled_work(derived_settings)
-        LABEL_ACTIVATED_CAPABILITIES.flat_map do |capability|
+        work_items = LABEL_ACTIVATED_CAPABILITIES.flat_map do |capability|
           phase = Automation::Phases.for_capability(capability)
           next [] unless phase_disabled_by_derived_settings?(phase, derived_settings)
 
@@ -114,13 +118,14 @@ module Automation
             { capability:, phase:, work_item_id: work_item.id }
           end
         end
+        LabelEnabledWork.new(items: work_items, status: "available")
       rescue GithubClient::RateLimitError => error
         Rails.logger.warn(
           message: "automation.phases.migration_preview.label_trust_rate_limited",
           project_id: project.id,
           error_class: error.class.name
         )
-        []
+        LabelEnabledWork.new(items: [], status: "unavailable")
       end
 
       def phase_disabled_by_derived_settings?(phase, derived_settings)

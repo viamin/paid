@@ -83,7 +83,7 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.label_enabled_work).not_to include(include(work_item_id: issue.id))
   end
 
-  it "omits label-enabled work when its trust history is rate limited" do
+  it "reports trusted-label provenance as unavailable when its history is rate limited" do
     configure_disabled_auto_pick_preview
     create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
     allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
@@ -98,6 +98,8 @@ RSpec.describe Automation::Phases::MigrationPreview do
 
     preview = described_class.call(project:, user:)
 
+    expect(preview.label_enabled_work_status).to eq("unavailable")
+    expect(preview.to_h).to include(label_enabled_work_status: "unavailable")
     expect(preview.label_enabled_work).to be_empty
     expect(preview.label_enabled_capabilities).to be_empty
   end

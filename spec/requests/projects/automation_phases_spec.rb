@@ -38,6 +38,18 @@ RSpec.describe "Project automation phases" do
     expect(response.body).to include("No open work is currently admitted by a trusted activation label")
   end
 
+  it "states when trusted-label provenance is unavailable" do # @spec AUTOMATION-PHASES-015
+    configure_trusted_auto_pick_label_preview
+    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+      .and_raise(GithubClient::RateLimitError.new)
+
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Trusted-label provenance is currently unavailable")
+    expect(response.body).not_to include("No open work is currently admitted by a trusted activation label")
+  end
+
   it "updates the phase controls posted by the settings form" do
     patch project_automation_phases_path(project), params: {
       project: {

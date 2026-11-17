@@ -81,7 +81,11 @@
         labels authorize nothing and never appear. %>
     <div class="mt-3 rounded border border-gray-100 p-3">
       <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Trusted label-enabled work</h3>
-      <% if @migration_preview.label_enabled_work.any? %>
+      <% if @migration_preview.label_enabled_work_status == "unavailable" %>
+        <p class="mt-2 text-sm text-amber-700">
+          Trusted-label provenance is currently unavailable, so this preview cannot determine affected work.
+        </p>
+      <% elsif @migration_preview.label_enabled_work.any? %>
         <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
           <% @migration_preview.label_enabled_work.each do |work| %>
             <% item = @label_enabled_work_items[work[:work_item_id]] %>

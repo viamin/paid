@@ -155,7 +155,9 @@ from a grant, GitHub approval, review, or run.
 `Automation::Phases::MigrationPreview` reports, per project, the derived phase
 defaults, which currently visible Inbox entries would leave the default Inbox
 under those defaults, and which label-enabled work would lose automatic
-execution. It is read-only and never enables anything.
+execution. When label-event provenance cannot be checked, the preview reports
+that trusted-label impact is unavailable rather than representing it as no
+affected work. It is read-only and never enables anything.
 
 ## Surface parity
 
