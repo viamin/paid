@@ -19,4 +19,13 @@ RSpec.describe CapybaraTenantContextFile, :no_db do
     expect(TenantContext).to have_received(:with_system_access)
     expect(app).to have_received(:call).with(environment)
   end
+
+  # @spec POSTGRESQL-PERSISTENCE-012
+  it "initializes Rails executor connections before browser requests" do
+    allow(TenantContext).to receive(:apply_system_access!)
+
+    Rails.application.executor.wrap { }
+
+    expect(TenantContext).to have_received(:apply_system_access!)
+  end
 end
