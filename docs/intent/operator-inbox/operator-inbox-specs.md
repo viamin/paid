@@ -983,7 +983,11 @@
   item title as a project goal. When several current approved feature intents
   are linked to one work item, the projection SHALL preserve every linked
   approved intent with its source and approved revision and SHALL NOT select
-  an authoritative goal by approval recency. The projection SHALL derive only from current structured
+  an authoritative goal by approval recency. The HTML brief SHALL keep raw
+  approved revision identifiers behind a collapsed, keyboard-accessible
+  disclosure while keeping every agreed goal
+  and its source visible. API and chat SHALL retain the complete revision
+  data. The projection SHALL derive only from current structured
   state and evidence and SHALL not call an LLM while rendering. The HTML list
   SHALL calculate only its decision/change summary without resolving
   recommendations. API and MCP list serialization SHALL preserve the full

@@ -726,6 +726,12 @@ state after the primary action. A recommendation is present only where the
 structured source supports it. Otherwise the brief explicitly names the
 unknown and asks one focused question. Detailed evidence, examples, and
 history remain in the lane-specific detail and collapsed disclosures.
+The HTML brief keeps approved revision identifiers in a collapsed native
+"Approved intent details" disclosure. Agreed goals and their sources remain
+visible, including every concurrent approved intent. API and chat projections
+retain the complete revision data.
+The brief labels its next action as prose; filled primary styling belongs to
+the interactive action control in the sticky action area.
 
 - `spec/services/inbox/decision_brief_spec.rb` covers the deterministic
   contract across every queue lane, including evidence fallbacks, concise
