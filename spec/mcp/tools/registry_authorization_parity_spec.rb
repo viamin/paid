@@ -312,6 +312,33 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "list_layered_verification_review_packages",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "get_layered_verification_review_package",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, review_package_id: 1 } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "approve_layered_verification_review_package",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, review_package_id: 1, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "edit_issue",
         denied_user: -> {
           project
