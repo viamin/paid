@@ -68,6 +68,10 @@ class CreateProjectDelegationIntentCheckpoints < ActiveRecord::Migration[8.1]
             INNER JOIN projects ON projects.id = feature_intents.project_id
             WHERE project_delegation_intent_checkpoints.id = project_delegation_intent_settlements.intent_checkpoint_id
               AND projects.account_id = paid_current_account_id()
+          ) AND EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = project_delegation_intent_settlements.settled_by_id
+              AND users.account_id = paid_current_account_id()
           ))
           WITH CHECK (paid_tenant_bypass() OR EXISTS (
             SELECT 1 FROM project_delegation_intent_checkpoints
@@ -75,6 +79,10 @@ class CreateProjectDelegationIntentCheckpoints < ActiveRecord::Migration[8.1]
             INNER JOIN projects ON projects.id = feature_intents.project_id
             WHERE project_delegation_intent_checkpoints.id = project_delegation_intent_settlements.intent_checkpoint_id
               AND projects.account_id = paid_current_account_id()
+          ) AND EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = project_delegation_intent_settlements.settled_by_id
+              AND users.account_id = paid_current_account_id()
           ));
       SQL
     end
@@ -94,7 +102,9 @@ class CreateProjectDelegationIntentCheckpoints < ActiveRecord::Migration[8.1]
       execute "DROP POLICY IF EXISTS tenant_isolation ON project_delegation_intent_settlements"
       execute "DROP POLICY IF EXISTS tenant_isolation ON project_delegation_intent_checkpoints"
     end
-    remove_reference :feature_intent_decisions, :intent_checkpoint if column_exists?(:feature_intent_decisions, :intent_checkpoint_id)
+    safety_assured do
+      remove_reference :feature_intent_decisions, :intent_checkpoint
+    end if column_exists?(:feature_intent_decisions, :intent_checkpoint_id)
     drop_table :project_delegation_intent_settlements
     drop_table :project_delegation_intent_checkpoints
   end

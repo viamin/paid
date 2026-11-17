@@ -43,7 +43,13 @@ Status markers: `[ ]` planned implementation gap.
   per settled checkpoint), and
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`
   (a re-recorded acceptance assessment routes one focused re-decision per
-  checkpoint settled against the earlier acceptance revision).
+  checkpoint settled against the earlier acceptance revision), and
+  `spec/security/tenant_context_spec.rb`
+  (a settlement insert is rejected at the database policy unless its human
+  settler belongs to the checkpoint's account), verified alongside
+  `spec/migrations/create_project_delegation_intent_checkpoints_dbless_spec.rb`
+  (the settlement policy binds `settled_by` to the current account in both its
+  read and write clauses).
 
 - [ ] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
   system SHALL delegate only bounded implementation choices, focused follow-up
