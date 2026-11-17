@@ -41,7 +41,11 @@ materialization choke point) plans one checkpoint per run from the decisions
 it records, binding the design PR's reviewed head and the canonical
 acceptance-criteria token; `FeatureIntents::RespondToDecision` settles the
 checkpoint once its last question is answered, preserving each question's own
-responder. Both revision types route their drift behind one shared handler,
+responder and re-reading the current design and acceptance tuple before it
+writes the immutable settlement. It serializes that capture with each revision
+producer, so the settlement either includes an earlier completed change or the
+later change routes a focused re-decision. Both revision types route their
+drift behind one shared handler,
 `ProjectDelegation::IntentCheckpoint::RouteDrift`: `DesignAmendments::Complete`
 — the event that replaces an approved design revision with a new baseline —
 routes on the design delta, and `RunAcceptanceAuditActivity` — the event that

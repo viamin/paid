@@ -17,8 +17,7 @@ module Activities
         fallbacks = Llm::AnalyzePartialCloseout.fallback_runner_identifiers_for(agent_run)
         assessment = assess(agent_run, fallbacks)
         snapshot = PartialCloseouts::Assessment.snapshot(agent_run, assessment)
-        agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => snapshot))
-        route_acceptance_drift(agent_run)
+        record_assessment_and_route_drift(agent_run, snapshot)
         PartialCloseouts::SourceClosureDisposition.record!(agent_run, assessment: snapshot)
         PartialCloseouts::Reconcile.call(agent_run:, assessment: snapshot)
         agent_run.complete!
@@ -38,6 +37,17 @@ module Activities
     # the same drift handler a merged design amendment uses.
     def route_acceptance_drift(agent_run)
       ProjectDelegation::IntentCheckpoint::RouteDrift.on_acceptance_change(issue: agent_run.issue)
+    end
+
+    # Settlement captures the canonical acceptance token while holding this
+    # same issue lock. That makes the audit update and its drift routing one
+    # ordered operation: either settlement sees this assessment, or routing
+    # sees the committed settlement and opens the focused re-decision.
+    def record_assessment_and_route_drift(agent_run, snapshot)
+      agent_run.issue.with_lock do
+        agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => snapshot))
+        route_acceptance_drift(agent_run)
+      end
     end
 
     def assess(agent_run, fallbacks) # @spec LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-010

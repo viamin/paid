@@ -55,8 +55,30 @@ RSpec.describe FeatureIntents::RespondToDecision do
     expect(checkpoint.reload).to be_settled
     expect(checkpoint.settlements).to have_attributes(size: 1)
     expect(checkpoint.settlements.first).to have_attributes(
-      design_revision: checkpoint.proposed_design_revision,
+      design_revision: feature_intent.approved_design_revision,
       acceptance_revision: checkpoint.proposed_acceptance_revision
+    )
+  end
+
+  it "binds a final response to revisions that changed while its checkpoint was open" do # @spec PROJECT-DELEGATION-002
+    feature_intent = create(:feature_intent, approved_design_revision: "design-1")
+    issue = create(:issue, project: feature_intent.project)
+    run = create(:agent_run, project: feature_intent.project, issue:, goal: "create_feature")
+    decision = create(:feature_intent_decision, feature_intent:, source_agent_run: run)
+    checkpoint = create(:project_delegation_intent_checkpoint, feature_intent:,
+      proposed_design_revision: "design-1", proposed_acceptance_revision: "acceptance-1")
+    checkpoint.questions = [ decision ]
+    actor = create(:user, account: feature_intent.project.account)
+
+    feature_intent.update!(approved_design_revision: "design-2")
+    create(:agent_run, :completed, project: feature_intent.project, issue:, goal: "analyze_issue",
+      reconciliation: { "assessment" => { "criteria" => [ { "criterion" => "Expanded scope", "state" => "satisfied" } ] } })
+    current_acceptance_revision = Automation::DelegatedActionAdmission.revision_tokens(issue:)["acceptance_revision"]
+
+    described_class.call(decision:, actor:, answer: "Approve the expanded scope.")
+
+    expect(checkpoint.reload.settlements.sole).to have_attributes(
+      design_revision: "design-2", acceptance_revision: current_acceptance_revision
     )
   end
 

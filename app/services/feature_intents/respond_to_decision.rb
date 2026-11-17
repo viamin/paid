@@ -3,6 +3,7 @@
 module FeatureIntents
   # Records an explicit human response against the decision that raised it.
   # @spec FACET-CONFIDENCE-019
+  # @spec PROJECT-DELEGATION-002
   class RespondToDecision
     class InvalidResponseError < StandardError; end
     class StaleDecisionError < StandardError; end
@@ -48,9 +49,32 @@ module FeatureIntents
 
         ProjectDelegation::IntentCheckpoint::Settle.call(
           checkpoint:, actor:, answers: checkpoint.questions.to_h { |question| [ question.id, question.answer ] },
-          design_revision: checkpoint.proposed_design_revision,
-          acceptance_revision: checkpoint.proposed_acceptance_revision
+          **settlement_revisions(checkpoint)
         )
+      end
+    end
+
+    def settlement_revisions(checkpoint)
+      feature_intent = checkpoint.feature_intent
+      feature_intent.with_lock do
+        {
+          design_revision: current_design_revision(feature_intent, checkpoint),
+          acceptance_revision: current_acceptance_revision(checkpoint)
+        }
+      end
+    end
+
+    def current_design_revision(feature_intent, checkpoint)
+      feature_intent.approved_design_revision.presence || checkpoint.proposed_design_revision
+    end
+
+    def current_acceptance_revision(checkpoint)
+      issue_ids = checkpoint.binding_issue_ids
+      return checkpoint.proposed_acceptance_revision unless issue_ids.one?
+
+      issue = Issue.find(issue_ids.sole)
+      issue.with_lock do
+        Automation::DelegatedActionAdmission.revision_tokens(issue:)["acceptance_revision"]
       end
     end
   end
