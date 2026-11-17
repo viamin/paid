@@ -30,6 +30,9 @@ RSpec.describe Inbox::DecisionBrief do
       goal_revision: "a" * 40,
       repository_context: project.full_name
     )
+    expect(brief.linked_goal_intents).to eq([
+      { goal: "Exports complete without duplicate rows.", source: "Approved feature intent: Export reliability", revision: "a" * 40 }
+    ])
     expect(brief.goal).not_to eq(issue.title)
   end
 
@@ -104,6 +107,52 @@ RSpec.describe Inbox::DecisionBrief do
     )
   end
 
+  # An issue may intentionally serve several designs (the link's issue index is
+  # not unique), so no approval supersedes another by recency.
+  # @spec OPERATOR-INBOX-027
+  it "preserves every linked approved intent when one issue serves two released designs" do
+    issue = create(:issue, project:)
+    first_design = create(:feature_intent, project:, title: "Exports reliability", brief: "Exports complete without duplicate rows.",
+      approved_design_revision: "f" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Export performance", brief: "Exports finish in under a second.",
+      approved_design_revision: "g" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "This work item serves more than one approved feature intent.",
+      goal_source: "Several approved feature intents are linked to this work item",
+      repository_context: project.full_name
+    )
+    expect(brief.goal_revision).to be_nil
+    expect(brief.linked_goal_intents).to contain_exactly(
+      { goal: "Exports complete without duplicate rows.", source: "Approved feature intent: Exports reliability", revision: "f" * 40 },
+      { goal: "Exports finish in under a second.", source: "Approved feature intent: Export performance", revision: "g" * 40 }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "preserves every linked approved intent through the batched goal-context lookup" do
+    issue = create(:issue, project:)
+    first_design = create(:feature_intent, project:, title: "Exports reliability", brief: "Exports complete without duplicate rows.",
+      approved_design_revision: "h" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Export performance", brief: "Exports finish in under a second.",
+      approved_design_revision: "i" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+    brief = described_class.call(entry: inbox_entry)
+
+    expect(brief.linked_goal_intents).to contain_exactly(
+      { goal: "Exports complete without duplicate rows.", source: "Approved feature intent: Exports reliability", revision: "h" * 40 },
+      { goal: "Exports finish in under a second.", source: "Approved feature intent: Export performance", revision: "i" * 40 }
+    )
+  end
+
   # @spec OPERATOR-INBOX-027
   it "discloses unavailable agreed intent instead of relabeling the queue title as a goal" do
     brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND,
@@ -115,6 +164,7 @@ RSpec.describe Inbox::DecisionBrief do
       repository_context: project.full_name
     )
     expect(brief.to_h).not_to have_key(:goal_revision)
+    expect(brief.linked_goal_intents).to be_empty
   end
 
   # @spec OPERATOR-INBOX-027

@@ -2607,6 +2607,26 @@ RSpec.describe "Inbox" do
     end
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "renders every linked approved intent when one issue serves two released designs" do
+    issue = create(:issue, project:, paid_state: "manual_review", title: "Shared work item",
+      manual_review_reason: "Review the recorded recovery.")
+    first_design = create(:feature_intent, project:, title: "Design one", brief: "First agreed outcome.",
+      approved_design_revision: "a" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Design two", brief: "Second agreed outcome.",
+      approved_design_revision: "b" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, issue))
+
+    brief = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-decision-brief']")
+    expect(brief.text).to include("This work item serves more than one approved feature intent.",
+      "Several approved feature intents are linked to this work item")
+    expect(brief.text).to include("First agreed outcome. (Approved feature intent: Design one)", "a" * 40)
+    expect(brief.text).to include("Second agreed outcome. (Approved feature intent: Design two)", "b" * 40)
+  end
+
   # @spec OPERATOR-INBOX-011
   context "when GitHub credentials are missing" do
     it "hides the context panel and keeps the View Issue link" do

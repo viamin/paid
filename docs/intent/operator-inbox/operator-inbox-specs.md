@@ -973,7 +973,10 @@
   recommendation, the projection SHALL disclose that uncertainty and ask one
   focused question. When no linked approved feature intent exists, the
   projection SHALL disclose unavailable intent and SHALL NOT present the queue
-  item title as a project goal. The projection SHALL derive only from current structured
+  item title as a project goal. When several current approved feature intents
+  are linked to one work item, the projection SHALL preserve every linked
+  approved intent with its source and approved revision and SHALL NOT select
+  an authoritative goal by approval recency. The projection SHALL derive only from current structured
   state and evidence and SHALL not call an LLM while rendering. The HTML list
   SHALL calculate only its decision/change summary without resolving
   recommendations. API and MCP list serialization SHALL preserve the full

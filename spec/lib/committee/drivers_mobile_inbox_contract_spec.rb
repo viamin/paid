@@ -69,7 +69,7 @@ RSpec.describe Committee::Drivers do
       %w[goal changed decision waiting_work primary_action next_state]
     )
     expect(decision_brief.fetch("properties").keys).to match_array(
-      %w[goal changed decision recommendation recommendation_reason waiting_work primary_action next_state unknown]
+      %w[goal goal_source goal_revision repository_context linked_goal_intents changed decision recommendation recommendation_reason waiting_work primary_action next_state unknown]
     )
   end
 

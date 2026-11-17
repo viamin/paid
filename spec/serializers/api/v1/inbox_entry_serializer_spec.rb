@@ -338,7 +338,28 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payloads.map { |payload| payload.dig(:decision_brief, :goal) }).to eq([ "Approved outcome 0", "Approved outcome 1" ])
       expect(payloads.map { |payload| payload.dig(:decision_brief, :goal_source) })
         .to eq([ "Approved feature intent: Feature 0", "Approved feature intent: Feature 1" ])
-      expect(queries.size).to eq(2)
+      expect(queries.size).to eq(1)
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "preserves every linked approved intent when one issue serves two released designs" do
+      issue = create(:issue, project:, title: "Shared work item")
+      first_design = create(:feature_intent, project:, title: "Design one", brief: "First agreed outcome.",
+        approved_design_revision: "a" * 40, approved_revision_recorded_at: 3.days.ago)
+      second_design = create(:feature_intent, project:, title: "Design two", brief: "Second agreed outcome.",
+        approved_design_revision: "b" * 40, approved_revision_recorded_at: 1.day.ago)
+      create(:feature_intent_issue, feature_intent: first_design, issue:)
+      create(:feature_intent_issue, feature_intent: second_design, issue:)
+      entry = build_entry(Inbox::Queue::MANUAL_REVIEW_KIND, id: "manual_review:#{issue.id}", issue: issue.reload)
+
+      brief = described_class.render_list_page([ entry ]).sole.fetch(:decision_brief)
+
+      expect(brief.fetch(:goal)).to eq("This work item serves more than one approved feature intent.")
+      expect(brief).not_to have_key(:goal_revision)
+      expect(brief.fetch(:linked_goal_intents)).to contain_exactly(
+        { goal: "First agreed outcome.", source: "Approved feature intent: Design one", revision: "a" * 40 },
+        { goal: "Second agreed outcome.", source: "Approved feature intent: Design two", revision: "b" * 40 }
+      )
     end
 
     it "batches local prerequisite titles for the returned entries" do

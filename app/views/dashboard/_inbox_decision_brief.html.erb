@@ -7,6 +7,12 @@
   <% if brief.goal_revision %>
     <p class="mt-1 break-all text-sm text-indigo-900"><span class="font-semibold">Approved revision:</span> <%= brief.goal_revision %></p>
   <% end %>
+  <% if brief.linked_goal_intents.many? %>
+    <% brief.linked_goal_intents.each do |intent| %>
+      <p class="mt-1 text-sm text-indigo-900"><span class="font-semibold">Linked approved intent:</span> <%= intent[:goal] %> (<%= intent[:source] %>)</p>
+      <p class="mt-1 break-all text-sm text-indigo-900"><span class="font-semibold">Approved revision:</span> <%= intent[:revision] %></p>
+    <% end %>
+  <% end %>
   <p class="mt-1 text-sm text-indigo-900"><span class="font-semibold">Repository:</span> <%= brief.repository_context %></p>
   <p class="mt-1 text-sm text-indigo-900"><span class="font-semibold">What changed:</span> <%= brief.changed %></p>
   <p class="mt-1 text-sm text-indigo-900"><%= brief.decision %></p>

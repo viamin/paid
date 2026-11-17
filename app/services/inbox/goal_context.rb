@@ -2,14 +2,17 @@
 
 module Inbox
   # Resolves persisted feature approval context for a decision brief. Queue
-  # titles identify work, not agreed product intent.
+  # titles identify work, not agreed product intent. An issue may serve
+  # several designs, so every current approved intent is preserved; approval
+  # recency never selects an authoritative goal. The three presentation
+  # branches stay explicit in one place, so this projection is intentionally
+  # longer than a typical service object.
   # @spec OPERATOR-INBOX-027
   class GoalContext
-    Result = Data.define(:goal, :source, :revision, :repository)
-    APPROVED_FIRST_ORDER = Arel.sql(<<~SQL.squish).freeze
-      CASE WHEN feature_intents.status = 'released'
-        AND feature_intents.approved_design_revision IS NOT NULL THEN 0 ELSE 1 END
-    SQL
+    LinkedIntent = Data.define(:goal, :source, :revision)
+    Result = Data.define(:goal, :source, :revision, :repository, :linked_intents)
+    SEVERAL_INTENTS_GOAL = "This work item serves more than one approved feature intent."
+    SEVERAL_INTENTS_SOURCE = "Several approved feature intents are linked to this work item"
 
     def self.call(entry:)
       new(entry:).call
@@ -27,18 +30,15 @@ module Inbox
     def call
       return entry.goal_context if entry.goal_context
 
-      context_for(entry, feature_for(entry))
+      context_for(entry, features_for(entry))
     end
 
+    # One batched lookup covers every issue-backed entry; a record-backed
+    # entry resolves from its own feature record, matching `call`.
     def preload
-      entries_by_issue_id.each do |issue_id, candidates|
-        feature = features_by_issue_id[issue_id]
-        candidates.each do |candidate|
-          candidate.goal_context = context_for(candidate, feature)
-        end
-      end
-      entries.reject { |candidate| linked_issue_id(candidate) }.each do |candidate|
-        candidate.goal_context = context_for(candidate, feature_record(candidate))
+      lookup = features_by_issue_id
+      entries.each do |candidate|
+        candidate.goal_context = context_for(candidate, features_for(candidate, lookup))
       end
     end
 
@@ -46,34 +46,35 @@ module Inbox
 
     attr_reader :entries, :entry
 
-    def features_by_issue_id
-      issue_ids = entries_by_issue_id.keys
-      return {} if issue_ids.empty?
-
-      linked_features(issue_ids)
-        .each_with_object({}) do |feature, features|
-          feature.feature_intent_issues.each { |link| features[link.issue_id] ||= feature }
-        end
-    end
-
-    def entries_by_issue_id
-      @entries_by_issue_id ||= entries.filter_map { |candidate|
-        [ linked_issue_id(candidate), candidate ] if linked_issue_id(candidate)
-      }.group_by(&:first).transform_values { |pairs| pairs.map(&:last) }
-    end
-
-    def feature_for(candidate)
-      return feature_record(candidate) if feature_record(candidate)
+    def features_for(candidate, lookup = {})
+      record = feature_record(candidate)
+      return [ record ] if record
 
       issue_id = linked_issue_id(candidate)
-      return unless issue_id
+      return [] unless issue_id
 
-      linked_features([ issue_id ]).first
+      lookup[issue_id] || linked_features([ issue_id ]).to_a
     end
 
+    # Every queried issue id maps to a list (possibly empty), so a batched
+    # preload never falls back to a per-entry query.
+    def features_by_issue_id
+      issue_ids = linked_issue_ids
+      return {} if issue_ids.empty?
+
+      linked_features(issue_ids).each_with_object(issue_ids.index_with { [] }) do |feature, features|
+        feature.feature_intent_issues.each { |link| (features[link.issue_id] ||= []) << feature }
+      end
+    end
+
+    def linked_issue_ids
+      @linked_issue_ids ||= entries.filter_map { |candidate| linked_issue_id(candidate) }.uniq
+    end
+
+    # Creation order keeps the preserved list deterministic without ranking
+    # one approved design above another.
     def linked_features(issue_ids)
-      FeatureIntent.linked_to_issue_ids(issue_ids)
-        .order(APPROVED_FIRST_ORDER, approved_revision_recorded_at: :desc, id: :desc)
+      FeatureIntent.linked_to_issue_ids(issue_ids).order(:id)
     end
 
     def feature_record(candidate)
@@ -84,14 +85,38 @@ module Inbox
       candidate.issue && (candidate.issue.parent_issue_id || candidate.issue.id)
     end
 
-    def context_for(candidate, feature)
-      return unavailable(candidate, feature:) unless feature&.released? && feature.approved_design_revision.present?
+    def context_for(candidate, features)
+      approved = Array(features).select { |feature| feature.released? && feature.approved_design_revision.present? }
+      return unavailable(candidate, feature: Array(features).first) if approved.empty?
+      return single(candidate, approved.first) if approved.one?
 
+      several(candidate, approved)
+    end
+
+    def single(candidate, feature)
+      intent = linked_intent_for(feature)
+      Result.new(goal: intent.goal, source: intent.source, revision: intent.revision,
+        repository: candidate.project.full_name, linked_intents: [ intent ])
+    end
+
+    # No persisted ownership or supersession relationship ranks concurrent
+    # approved designs, so the brief discloses each one instead of electing a
+    # goal by approval recency.
+    def several(candidate, approved)
       Result.new(
+        goal: SEVERAL_INTENTS_GOAL,
+        source: SEVERAL_INTENTS_SOURCE,
+        revision: nil,
+        repository: candidate.project.full_name,
+        linked_intents: approved.map { |feature| linked_intent_for(feature) }
+      )
+    end
+
+    def linked_intent_for(feature)
+      LinkedIntent.new(
         goal: feature.brief.presence || feature.title,
         source: "Approved feature intent: #{feature.title}",
-        revision: feature.approved_design_revision,
-        repository: candidate.project.full_name
+        revision: feature.approved_design_revision
       )
     end
 
@@ -100,7 +125,8 @@ module Inbox
         goal: "No approved intent is available for this work item.",
         source: feature ? "Feature intent is not approved" : "Intent unavailable",
         revision: nil,
-        repository: candidate.project.full_name
+        repository: candidate.project.full_name,
+        linked_intents: []
       )
     end
   end
