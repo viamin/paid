@@ -57,6 +57,19 @@ RSpec.describe CloseoutVerificationJob do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "executes in the admitted run's tenant context" do
+    observed_account = nil
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      observed_account = Current.account
+      validation_result("completed", { "cleanup" => { "completed" => true } })
+    end
+
+    described_class.perform_now(agent_run.id)
+
+    expect(observed_account).to eq(project.account)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
   it "refuses a changed reviewed recipe before repository execution" do
     mapping.update_column(:target_digest, "changed")
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)

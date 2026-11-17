@@ -102,6 +102,7 @@ module CloseoutVerifications
       {
         project:, issue: source_issue, agent_type: "internal_agent", goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL,
         status: "queued", trigger_type: "automatic", synthetic: true,
+        branch_name: "closeout-verification-#{SecureRandom.hex(6)}",
         source_pull_request_number: source_pr.github_number, base_commit_sha: merge_commit_sha,
         closeout_mapping_id: mapping.id, closeout_criterion_key: mapping.criterion_key,
         closeout_recipe_version: mapping.target_version, closeout_recipe_digest: mapping.target_digest,

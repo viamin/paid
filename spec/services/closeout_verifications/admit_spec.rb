@@ -41,6 +41,7 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(outcome).to be_admitted
     expect(run).to have_attributes(goal: "closeout_verification", status: "queued", synthetic: true,
       issue: source_issue, source_pull_request_number: 42, base_commit_sha: merge_sha,
+      branch_name: a_string_matching(/\Acloseout-verification-[0-9a-f]{12}\z/),
       closeout_mapping_id: mapping.id, closeout_criterion_key: "Merged evidence",
       closeout_recipe_version: mapping.target_version, closeout_recipe_digest: mapping.target_digest)
     expect(AgentRun::TRIGGERABLE_GOALS).not_to include("closeout_verification")
