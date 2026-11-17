@@ -108,6 +108,7 @@ module Automation
           next [] unless phase_disabled_by_derived_settings?(phase, derived_settings)
 
           labeled_work_items(capability).filter_map do |work_item|
+            next unless trusted_activation_label?(capability, work_item)
             next unless currently_label_enabled?(capability, work_item)
 
             { capability:, phase:, work_item_id: work_item.id }
@@ -127,13 +128,27 @@ module Automation
       end
 
       def labeled_work_items(capability)
-        labels = [ project.feature_activation_label_for(capability) ]
-        labels << project.feature_activation_label_for("paid_in_full") unless capability == "auto_merge"
-        scope = labels.compact_blank.reduce(project.issues.none) do |matching_work, label|
+        scope = activation_labels(capability).reduce(project.issues.none) do |matching_work, label|
           matching_work.or(project.issues.where("labels @> ?", [ label ].to_json))
         end.where(github_state: "open")
 
         capability == "auto_merge" ? scope.pull_requests_only : scope.issues_only
+      end
+
+      # A Paid-local activation is not evidence that a GitHub label was trusted.
+      # Check the matching label separately because ignored-mode feature
+      # evaluation intentionally short-circuits to the Paid-local state.
+      def trusted_activation_label?(capability, work_item)
+        activation_labels(capability).any? do |label|
+          work_item.has_label?(label) &&
+            Automation::LabelPolicy.trusted_user_added_label?(project, work_item, label)
+        end
+      end
+
+      def activation_labels(capability)
+        labels = [ project.feature_activation_label_for(capability) ]
+        labels << project.feature_activation_label_for("paid_in_full") unless capability == "auto_merge"
+        labels.compact_blank
       end
 
       def currently_label_enabled?(capability, work_item)

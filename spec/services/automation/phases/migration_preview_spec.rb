@@ -71,6 +71,18 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.label_enabled_work).not_to include(include(work_item_id: untrusted_issue.id))
   end
 
+  it "excludes locally activated ignored-mode work with an untrusted label" do
+    configure_disabled_auto_pick_preview
+    project.update!(label_integration_mode: "ignored")
+    issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ],
+      paid_activation_state: "activated")
+    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?).and_return(false)
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work).not_to include(include(work_item_id: issue.id))
+  end
+
   it "omits label-enabled work when its trust history is rate limited" do
     configure_disabled_auto_pick_preview
     create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
