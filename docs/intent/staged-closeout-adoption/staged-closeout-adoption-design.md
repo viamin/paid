@@ -60,6 +60,11 @@ mappings, enables a deployment executor, or overrides phase policy — absent an
 approved mapping or available target the project keeps an inspectable waiting
 reason.
 
+The legacy `ConfigurationProfiles` compatibility facade preserves its
+actor-optional contract by authorizing this enrollment target before it stages
+the target. If the caller lacks `ProjectPolicy#update?`, the facade reports the
+enrollment change as skipped and applies every other profile target.
+
 ## Decisions & Alternatives
 
 | Decision | Rationale | Alternative rejected |

@@ -42,18 +42,27 @@ RSpec.describe ConfigurationProfiles::Applier do
     expect(enrollment.revision).to eq(1)
   end
 
-  it "does not persist the enrollment without an authorized reviewer" do
+  it "skips enrollment without an authorized reviewer while applying the remaining profile" do
     plan = ConfigurationProfiles::Planner.for_profile(project, ConfigurationProfiles::Registry.find(:solo_automated))
 
-    expect { described_class.call(project, plan) }
-      .to raise_error(StagedCloseoutAdoption::Error, /authorized/)
+    result = described_class.call(project, plan)
+
     expect(project.reload.staged_closeout_enrollment).to be_nil
+    expect(project).to be_auto_pick_enabled
+    expect(result.changes.map(&:field)).not_to include(:staged_closeout_enrollment_enabled)
+    expect(result.skipped_changes.map(&:field)).to contain_exactly(:staged_closeout_enrollment_enabled)
+    expect(result.activity.metadata["skipped_fields"]).to contain_exactly("staged_closeout_enrollment_enabled")
 
     unauthorized_actor = create(:user, account:)
+    enrolled_project = create(:project, account:)
+    StagedCloseoutAdoption::Enroll.call(project: enrolled_project, actor: actor, enabled: true)
+    disabled_plan = ConfigurationProfiles::Planner.for_profile(enrolled_project, ConfigurationProfiles::Registry.find(:observe_only))
 
-    expect { described_class.call(project, plan, actor: unauthorized_actor) }
-      .to raise_error(StagedCloseoutAdoption::Error, /authorized/)
-    expect(project.reload.staged_closeout_enrollment).to be_nil
+    result = described_class.call(enrolled_project, disabled_plan, actor: unauthorized_actor)
+
+    expect(enrolled_project.reload.staged_closeout_enrollment).to be_enabled
+    expect(result.changes.map(&:field)).not_to include(:staged_closeout_enrollment_enabled)
+    expect(result.skipped_changes.map(&:field)).to contain_exactly(:staged_closeout_enrollment_enabled)
   end
 
   it "restores the prior enrollment value through the legacy rollback" do
