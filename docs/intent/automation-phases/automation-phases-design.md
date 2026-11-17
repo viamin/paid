@@ -155,7 +155,15 @@ from a grant, GitHub approval, review, or run.
 `Automation::Phases::MigrationPreview` reports, per project, the derived phase
 defaults, which currently visible Inbox entries would leave the default Inbox
 under those defaults, and which label-enabled work would lose automatic
-execution. It is read-only and never enables anything.
+execution. When label-event provenance cannot be checked, the preview reports
+that trusted-label impact is unavailable rather than representing it as no
+affected work. Provenance replay is bounded per render
+(`PROVENANCE_REPLAY_LIMIT`, newest labeled items first): each replayed record
+costs one outbound GitHub issue-events request — the same hourly-rate-limit
+exposure the candidate-scan bound in `Automation::FeatureActivation` guards —
+so when labeled work extends past the bound the preview keeps the verified
+items and reports a truncated status instead of implying completeness. It is
+read-only and never enables anything.
 
 ## Surface parity
 

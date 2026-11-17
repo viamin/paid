@@ -75,6 +75,43 @@
       Inbox requests that would leave the default list: <strong><%= @migration_preview.inbox_changes_count %></strong>.
       Active continuation grants: <strong><%= @migration_preview.active_grants %></strong>.
     </p>
+
+    <%# Label-enabled work is surfaced individually so reviewers can audit
+        exactly which items a trusted activation label would affect; untrusted
+        labels authorize nothing and never appear. %>
+    <div class="mt-3 rounded border border-gray-100 p-3">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Trusted label-enabled work</h3>
+      <% if @migration_preview.label_enabled_work_status == "unavailable" %>
+        <p class="mt-2 text-sm text-amber-700">
+          Trusted-label provenance is currently unavailable, so this preview cannot determine affected work.
+        </p>
+      <% else %>
+        <% if @migration_preview.label_enabled_work.any? %>
+          <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
+            <% @migration_preview.label_enabled_work.each do |work| %>
+              <% item = @label_enabled_work_items[work[:work_item_id]] %>
+              <li>
+                <%= item&.title.presence || "Issue ##{work[:work_item_id]}" %>
+                <span class="text-xs text-gray-500">
+                  — <%= work[:capability].humanize %> in <%= Automation::Phases.label(work[:phase]) %>
+                  would lose automatic execution when this phase is activated
+                </span>
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p class="mt-2 text-sm text-gray-500">No open work is currently admitted by a trusted activation label.</p>
+        <% end %>
+        <%# Each provenance check is an outbound GitHub request, so one render
+            verifies only a bounded slice of labeled work. %>
+        <% if @migration_preview.label_enabled_work_status == "truncated" %>
+          <p class="mt-2 text-xs text-amber-700">
+            Bounded preview: only the newest <%= Automation::Phases::MigrationPreview::PROVENANCE_REPLAY_LIMIT %>
+            labeled work items were verified; more labeled work exists and is not listed.
+          </p>
+        <% end %>
+      <% end %>
+    </div>
   </section>
 
   <section class="mt-8">

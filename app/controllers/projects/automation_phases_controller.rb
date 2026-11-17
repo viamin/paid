@@ -109,6 +109,8 @@ module Projects
         @delegation_guards_enabled = ProjectDelegation::Posture.guards_enabled?(@project)
       end
       @migration_preview = Automation::Phases::MigrationPreview.call(project: @project, user: current_user)
+      @label_enabled_work_items = @project.issues
+        .where(id: @migration_preview.label_enabled_work.map { |work| work[:work_item_id] }).index_by(&:id)
     end
 
     def phase_settings_params
