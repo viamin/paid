@@ -94,7 +94,7 @@
                 <%= item&.title.presence || "Issue ##{work[:work_item_id]}" %>
                 <span class="text-xs text-gray-500">
                   — <%= work[:capability].humanize %> in <%= Automation::Phases.label(work[:phase]) %>
-                  would keep automatic execution through its trusted activation label
+                  would lose automatic execution when this phase is activated
                 </span>
               </li>
             <% end %>

@@ -28,6 +28,7 @@ RSpec.describe "Project automation phases" do
     expect(body).to include("Trusted label-enabled work")
     expect(body).to include("Trusted labeled issue")
     expect(body).to include("Auto pick in Coding")
+    expect(body).to include("would lose automatic execution when this phase is activated")
     expect(body).not_to include("Untrusted provenance issue")
   end
 
