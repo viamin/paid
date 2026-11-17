@@ -82,7 +82,7 @@ module MaintenanceReports
     def outcome
       return requested_outcome if requested_outcome.in?(%w[cancelled budget_exhausted])
       return "partial" if incomplete_checks.any?
-      findings.any? ? "completed" : "clean"
+      findings.any? || run.maintenance_report&.finding_occurrences&.exists? ? "completed" : "clean"
     end
 
     def validate_outcome!(report)

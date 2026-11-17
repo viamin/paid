@@ -48,6 +48,8 @@ RSpec.describe MaintenanceReports::AgentReport do
       .to raise_error(described_class::InvalidReport, /between 0 and 1/)
     expect { parse(finding: finding.merge(category: "x" * 101, raw_tool_confidence: 0.85)) }
       .to raise_error(described_class::InvalidReport, /at most 100 characters/)
+    expect { parse(finding: finding.merge(claim: { text: "Legacy has no callers" }, raw_tool_confidence: 0.85)) }
+      .to raise_error(described_class::InvalidReport, /claim must be a string/)
   end
 
   def parse(finding:)

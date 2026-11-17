@@ -52,6 +52,7 @@ module MaintenanceReports
 
       missing = REQUIRED_FINDING_FIELDS.reject { |field| finding.key?(field) }
       raise InvalidReport, "finding is missing: #{missing.join(', ')}" if missing.any?
+      raise InvalidReport, "finding claim must be a string" unless finding["claim"].is_a?(String)
       raise InvalidReport, "finding category and claim must be present" if finding.values_at("category", "claim").any?(&:blank?)
       raise InvalidReport, "finding symbols and locations must be arrays" unless finding["symbols"].is_a?(Array) && finding["locations"].is_a?(Array)
       raise InvalidReport, "finding verification disposition is invalid" unless DISPOSITIONS.include?(finding["verification_disposition"])

@@ -73,6 +73,16 @@ RSpec.describe MaintenanceReports::Persist do
     expect(report.outcome).to eq("partial")
   end
 
+  # @spec MAINT-020 MAINT-022
+  it "retains a completed outcome when a repeated call omits existing findings" do
+    described_class.call(run:, findings: [ finding ])
+
+    report = described_class.call(run:, completed_checks: [ { "name" => "prompt" } ])
+
+    expect(report).to have_attributes(outcome: "completed")
+    expect(report.finding_occurrences.sole.claim).to eq(finding[:claim])
+  end
+
   # @spec MAINT-026 MAINT-027 MAINT-029
   it "keeps canonical identity through category and line shifts and flags materially changed dismissed evidence" do
     first = described_class.call(run:, findings: [ finding ])
