@@ -6640,6 +6640,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_060031) do
       $function$
   SQL
 
+  create_function :enforce_partial_closeout_projection_issue_project, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_partial_closeout_projection_issue_project()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM issues WHERE id = NEW.issue_id AND project_id = NEW.project_id) THEN
+          RAISE EXCEPTION 'projection issue must belong to the projection project' USING ERRCODE = '23503';
+        END IF;
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
   create_function :enforce_layered_review_package_references, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.enforce_layered_review_package_references()
        RETURNS trigger
@@ -6769,12 +6783,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_060031) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
@@ -6839,6 +6853,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_060031) do
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :enforce_partial_closeout_projection_issue_project, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_partial_closeout_projection_issue_project BEFORE INSERT OR UPDATE OF project_id, issue_id ON public.partial_closeout_projection_entries FOR EACH ROW EXECUTE FUNCTION enforce_partial_closeout_projection_issue_project()
   SQL
 
   create_trigger :logidze_on_personal_access_tokens, sql_definition: <<-SQL

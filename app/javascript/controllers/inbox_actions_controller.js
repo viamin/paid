@@ -41,7 +41,7 @@ export default class extends Controller {
     const proxy = document.createElement("button")
     proxy.type = "button"
     proxy.textContent = this.labelFor(control)
-    proxy.className = "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    proxy.className = "min-w-0 max-w-full whitespace-normal rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 [overflow-wrap:anywhere]"
     proxy.addEventListener("click", () => this.activate(control))
     this.observeDisabled(control, proxy)
     return proxy
@@ -50,7 +50,7 @@ export default class extends Controller {
   linkProxyFor(control) {
     const proxy = control.cloneNode(false)
     proxy.textContent = this.labelFor(control)
-    proxy.className = "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    proxy.className = "min-w-0 max-w-full whitespace-normal rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 [overflow-wrap:anywhere]"
     return proxy
   }
 
