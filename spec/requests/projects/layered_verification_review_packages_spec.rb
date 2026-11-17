@@ -118,7 +118,7 @@ RSpec.describe "Layered verification review packages" do
       get project_agent_run_path(project, audit)
 
       intent_section = section(response.body, "layered-verification-intent-validation")
-      expect(intent_section).to include("Validated", user.name)
+      expect(Nokogiri::HTML(intent_section).text).to include("Validated", user.name)
       expect(intent_section).not_to include("Unknown")
     end
 
@@ -192,7 +192,7 @@ RSpec.describe "Layered verification review packages" do
       get project_agent_run_path(project, audit)
 
       intent_section = section(response.body, "layered-verification-intent-validation")
-      expect(intent_section).to include("Validated", user.name)
+      expect(Nokogiri::HTML(intent_section).text).to include("Validated", user.name)
       expect(intent_section).not_to include("Unknown")
     end
 
