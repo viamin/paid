@@ -29,26 +29,18 @@ module StagedCloseoutAdoption
     def save!
       return project.staged_closeout_enrollment if @staged.nil?
 
-      enrollment = persisted_enrollment || project.build_staged_closeout_enrollment(account: project.account)
-      enrollment.enabled = @staged
-      enrollment.reviewed_by = @actor if @actor
-      enrollment.reviewed_at = Time.current
-      enrollment.revision = enrollment.revision.to_i + (enrollment.persisted? ? 1 : 0)
-      enrollment.save!
-      enrollment
+      project.with_lock do
+        enrollment = project.staged_closeout_enrollment || project.build_staged_closeout_enrollment(account: project.account)
+        enrollment.enabled = @staged
+        enrollment.reviewed_by = @actor if @actor
+        enrollment.reviewed_at = Time.current
+        enrollment.revision = enrollment.revision.to_i + (enrollment.persisted? ? 1 : 0)
+        enrollment.save!
+        enrollment
+      end
     end
 
     private
-
-    # Locks the existing row (reloading its current revision) so concurrent
-    # applies cannot lose a revision increment. New enrollments rely on the
-    # unique project index instead.
-    def persisted_enrollment
-      enrollment = project.staged_closeout_enrollment
-      return nil unless enrollment&.persisted?
-
-      enrollment.lock!
-    end
 
     class << self
       # Reads the current enrollment value from a descriptor record: either an

@@ -51,7 +51,9 @@ as an explicit operating-mode target through the shared
 `Configuration::Profiles::Settings` descriptor registry. Applying or
 reapplying the profile stages the enrollment change through the normal
 planner/applier authorization and audit trail; persistence keeps the
-enrollment's reviewer identity and revision history. Every other curated
+enrollment's reviewer identity and revision history, and serializes first
+enrollment creation with the project row so concurrent applies converge on one
+enrollment. Every other curated
 profile explicitly pins the target off. The profile target controls
 eligibility only: it never approves arbitrary commands, invents criterion
 mappings, enables a deployment executor, or overrides phase policy — absent an
