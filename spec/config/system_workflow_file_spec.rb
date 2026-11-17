@@ -45,11 +45,12 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
   end
 
-  it "creates and uses a dedicated non-superuser application role" do
+  # @spec POSTGRESQL-PERSISTENCE-002
+  it "creates a dedicated RLS-test role without superuser or bypass privileges" do
     create_role_step = system_step("Create application database role")
 
     expect(create_role_step.fetch("run")).to include(
-      "ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;"
+      "ALTER ROLE paid CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS;"
     )
   end
 
