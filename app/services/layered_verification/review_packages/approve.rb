@@ -21,8 +21,8 @@ module LayeredVerification
         AuditAccess.authorize!(user:, project: package.project)
 
         package.agent_run.with_lock do
-          validate_current_revision!
           validate_bound_revisions!
+          validate_current_revision!
           approval = package.approvals.create!(
             approved_by: user, approved_at: Time.current, provenance: approval_provenance
           )

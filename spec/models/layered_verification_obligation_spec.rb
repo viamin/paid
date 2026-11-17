@@ -62,6 +62,28 @@ RSpec.describe LayeredVerificationObligation do
     )
   end
 
+  # @spec LAYERED-VERIFY-023
+  it "recaptures completed audits when a bound obligation input changes" do
+    audit = completed_audit_for_review_package
+    obligation = audit.project.layered_verification_obligations.sole
+    original = LayeredVerification::ReviewPackages::Capture.call(agent_run: audit)
+
+    obligation.record_approval!(revision: "def456", approval_reference: "pr#1", persisted: true)
+    revision_update = audit.review_packages.order(:revision_number).last
+    obligation.update!(scope_description: "Updated bounded scope.")
+    scope_update = audit.review_packages.order(:revision_number).last
+
+    expect(revision_update).to have_attributes(
+      revision_number: 2,
+      bound_inputs: include("obligations" => [ include("external_revision" => "def456") ])
+    )
+    expect(scope_update).to have_attributes(
+      revision_number: 3,
+      bound_inputs: include("obligations" => [ include("scope_description" => "Updated bounded scope.") ])
+    )
+    expect(original.reload).to have_attributes(revision_number: 1, bound_inputs: original.bound_inputs)
+  end
+
   # @spec LAYERED-VERIFY-004
   it "rejects direct approval even when a revision and reference are supplied" do
     obligation = create(:layered_verification_obligation, :offered_cir)
@@ -95,5 +117,22 @@ RSpec.describe LayeredVerificationObligation do
 
     expect(obligation).to be_invalid
     expect(obligation.errors[:superseded_by]).to include("cannot reference itself")
+  end
+
+  private
+
+  def completed_audit_for_review_package
+    project = create(:project)
+    audit = create(:agent_run, project:, goal: "layered_verification_audit", status: "completed")
+    obligation = create(:layered_verification_obligation, project:)
+    audit.update!(external_metadata: {
+      "layered_verification" => {
+        "obligation_ids" => [ obligation.id ], "target_revision" => "abc123",
+        "plan" => { obligation.id.to_s => { "selected_checks" => [ "semantic_audit" ] } }
+      }
+    })
+    create(:layered_verification_check_result, obligation:, agent_run: audit,
+      input_revision: { "target_revision" => "abc123" })
+    audit
   end
 end
