@@ -6872,6 +6872,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
+    ALTER TABLE "public"."chat_messages" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."chat_messages" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."chat_session_projects" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."chat_session_projects" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."chat_sessions" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."chat_sessions" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
     ALTER TABLE "public"."collector_runs" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."collector_runs" FORCE ROW LEVEL SECURITY;
   SQL
@@ -6922,6 +6937,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
+    ALTER TABLE "public"."execution_usages" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."execution_usages" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
     ALTER TABLE "public"."github_tokens" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."github_tokens" FORCE ROW LEVEL SECURITY;
   SQL
@@ -6967,6 +6987,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
+    ALTER TABLE "public"."layered_verification_check_results" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."layered_verification_check_results" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."layered_verification_correspondence_claims" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."layered_verification_correspondence_claims" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."layered_verification_obligations" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."layered_verification_obligations" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."layered_verification_review_approvals" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."layered_verification_review_approvals" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."layered_verification_review_packages" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."layered_verification_review_packages" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
     ALTER TABLE "public"."linear_tokens" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."linear_tokens" FORCE ROW LEVEL SECURITY;
   SQL
@@ -7004,6 +7049,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   execute <<~SQL
     ALTER TABLE "public"."onboarding_steps" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."onboarding_steps" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."personal_access_tokens" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."personal_access_tokens" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -7467,6 +7517,58 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."chat_messages"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM chat_sessions
+  WHERE ((chat_sessions.id = chat_messages.chat_session_id) AND (chat_sessions.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM chat_sessions
+  WHERE ((chat_sessions.id = chat_messages.chat_session_id) AND (chat_sessions.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."chat_session_projects"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM chat_sessions
+  WHERE ((chat_sessions.id = chat_session_projects.chat_session_id) AND (chat_sessions.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = chat_session_projects.project_id) AND (projects.account_id = paid_current_account_id())))))))
+      WITH CHECK ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM chat_sessions
+  WHERE ((chat_sessions.id = chat_session_projects.chat_session_id) AND (chat_sessions.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = chat_session_projects.project_id) AND (projects.account_id = paid_current_account_id())))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."chat_sessions"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = paid_current_account_id()))))) AND ((runner_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM runners
+  WHERE ((runners.id = chat_sessions.runner_id) AND (runners.user_id IN ( SELECT users.id
+           FROM users
+          WHERE (users.account_id = paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = paid_current_account_id()))))))))
+      WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = chat_sessions.project_id) AND (projects.account_id = paid_current_account_id()))))) AND ((runner_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM runners
+  WHERE ((runners.id = chat_sessions.runner_id) AND (runners.user_id IN ( SELECT users.id
+           FROM users
+          WHERE (users.account_id = paid_current_account_id()))))))) AND ((created_by_id IS NULL) OR (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = chat_sessions.created_by_id) AND (users.account_id = paid_current_account_id()))))))));
+  SQL
+
+  execute <<~SQL
     CREATE POLICY "tenant_isolation" ON "public"."collector_runs"
       AS PERMISSIVE
       FOR ALL
@@ -7622,6 +7724,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."execution_usages"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (agent_runs
+     JOIN projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = execution_usages.agent_run_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (agent_runs
+     JOIN projects ON ((projects.id = agent_runs.project_id)))
+  WHERE ((agent_runs.id = execution_usages.agent_run_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
     CREATE POLICY "tenant_isolation" ON "public"."github_tokens"
       AS PERMISSIVE
       FOR ALL
@@ -7746,6 +7862,72 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."layered_verification_check_results"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (layered_verification_obligations o
+     JOIN projects ON ((projects.id = o.project_id)))
+  WHERE ((o.id = layered_verification_check_results.obligation_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (layered_verification_obligations o
+     JOIN projects ON ((projects.id = o.project_id)))
+  WHERE ((o.id = layered_verification_check_results.obligation_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."layered_verification_correspondence_claims"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (layered_verification_obligations o
+     JOIN projects ON ((projects.id = o.project_id)))
+  WHERE ((o.id = layered_verification_correspondence_claims.obligation_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (layered_verification_obligations o
+     JOIN projects ON ((projects.id = o.project_id)))
+  WHERE ((o.id = layered_verification_correspondence_claims.obligation_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."layered_verification_obligations"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = layered_verification_obligations.project_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = layered_verification_obligations.project_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."layered_verification_review_approvals"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (layered_verification_review_packages p
+     JOIN projects ON ((projects.id = p.project_id)))
+  WHERE ((p.id = layered_verification_review_approvals.package_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (layered_verification_review_packages p
+     JOIN projects ON ((projects.id = p.project_id)))
+  WHERE ((p.id = layered_verification_review_approvals.package_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."layered_verification_review_packages"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = layered_verification_review_packages.project_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM projects
+  WHERE ((projects.id = layered_verification_review_packages.project_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
     CREATE POLICY "tenant_isolation" ON "public"."linear_tokens"
       AS PERMISSIVE
       FOR ALL
@@ -7817,6 +7999,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
 
   execute <<~SQL
     CREATE POLICY "tenant_isolation" ON "public"."onboarding_steps"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))
+      WITH CHECK ((paid_tenant_bypass() OR (account_id = paid_current_account_id())));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."personal_access_tokens"
       AS PERMISSIVE
       FOR ALL
       USING ((paid_tenant_bypass() OR (account_id = paid_current_account_id())))

@@ -71,6 +71,22 @@ RSpec.describe SchemaColumnOrder do
     end
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-012
+  it "includes the later tenant policy groups required by a fresh schema load" do
+    schema = dump_schema
+
+    %w[
+      chat_sessions
+      execution_usages
+      personal_access_tokens
+      layered_verification_obligations
+      layered_verification_review_packages
+    ].each do |table|
+      expect(schema).to include("ALTER TABLE \"public\".\"#{table}\" ENABLE ROW LEVEL SECURITY;")
+      expect(schema).to include("CREATE POLICY \"tenant_isolation\" ON \"public\".\"#{table}\"")
+    end
+  end
+
   def create_schema_rls_probe(connection)
     create_schema_rls_probe_table(connection, :schema_rls_probe_enabled)
     connection.execute "ALTER TABLE schema_rls_probe_enabled ENABLE ROW LEVEL SECURITY"
