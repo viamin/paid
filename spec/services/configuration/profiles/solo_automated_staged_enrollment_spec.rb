@@ -32,6 +32,33 @@ RSpec.describe Configuration::Profiles::SoloAutomated do
   end
 
   describe "applying through the authorized profile workflow" do
+    it "does not record a stale enrollment apply that becomes a lock-time no-op" do
+      change = Configuration::Profiles::Change.new(
+        key: "staged_closeout_enrollment_enabled", from: false, to: true, level: :project
+      )
+      first_plan = Configuration::Profiles::Plan.new(
+        profile_name: profile.name, changes: [ change ], unmet_prerequisites: [], applied_overrides: {}, authorization: []
+      )
+      second_plan = Configuration::Profiles::Plan.new(
+        profile_name: profile.name, changes: [ change ], unmet_prerequisites: [], applied_overrides: {}, authorization: []
+      )
+      stale_project = Project.find(project.id)
+      stale_project.staged_closeout_enrollment
+
+      Configuration::Profiles::Applier.call(plan: first_plan, project:, actor: owner)
+      event = account.account_activity_events.last
+
+      expect {
+        result = Configuration::Profiles::Applier.call(plan: second_plan, project: stale_project, actor: owner)
+
+        expect(result).to eq(applied_changes: [], skipped_levels: [])
+      }.not_to change(AccountActivityEvent, :count)
+
+      Configuration::Profiles::Rollback.call(event, actor: owner)
+
+      expect(project.reload.staged_closeout_enrollment).not_to be_enabled
+    end
+
     it "turns enrollment on with reviewer identity and revision history" do
       Configuration::Profiles::Applier.call(plan: plan_for, project:, actor: owner)
 

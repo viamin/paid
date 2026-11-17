@@ -41,12 +41,15 @@ module Configuration
         return { applied_changes: [], skipped_levels: [] } if plan.no_op?
 
         skipped_levels = authorization.reject { |entry| entry.fetch("allowed", false) }
-        applied = applyable_changes
-        return { applied_changes: [], skipped_levels: skipped_levels } if applied.empty?
+        changes = applyable_changes
+        return { applied_changes: [], skipped_levels: skipped_levels } if changes.empty?
 
-        context.project.class.transaction do
-          persist!(apply_changes!(applied))
-          record_activity!(applied, skipped_levels)
+        applied = context.project.class.transaction do
+          records_by_change = apply_changes!(changes)
+          persist!(records_by_change.values)
+          persisted = persisted_changes(records_by_change)
+          record_activity!(persisted, skipped_levels) if persisted.any?
+          persisted
         end
 
         {
@@ -81,15 +84,21 @@ module Configuration
         @skipped_levels ||= authorization.reject { |entry| entry.fetch("allowed", false) }
       end
 
-      def apply_changes!(applied)
-        applied.map { |change| Settings.write(context, change.key, change.to) }.uniq
+      def apply_changes!(changes)
+        changes.to_h { |change| [ change, Settings.write(context, change.key, change.to) ] }
       end
 
       def persist!(records)
-        records.each do |record|
+        records.uniq.each do |record|
           next unless record.changed?
 
           record.save!
+        end
+      end
+
+      def persisted_changes(records_by_change)
+        records_by_change.filter_map do |change, record|
+          change unless record.respond_to?(:applied?) && !record.applied?
         end
       end
 

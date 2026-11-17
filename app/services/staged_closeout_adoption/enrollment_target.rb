@@ -26,23 +26,30 @@ module StagedCloseoutAdoption
 
     def changed? = !@staged.nil? && @staged != @from
 
+    # Whether this target changed the enrollment when persisted. The profile
+    # applier uses this to avoid auditing a staged value that was already
+    # written by another caller while this target waited for the project lock.
+    def applied? = @applied != false
+
     def save!
       return project.staged_closeout_enrollment if @staged.nil?
 
       authorize!
 
-      enrollment = project.class.transaction do
+      enrollment, @applied = project.class.transaction do
         locked_project = project.class.lock.find(project.id)
         enrollment = locked_project.staged_closeout_enrollment || locked_project.build_staged_closeout_enrollment(account: locked_project.account)
-        unless enrollment.persisted? && enrollment.enabled? == @staged
+        applied = !enrollment.persisted? || enrollment.enabled? != @staged
+        if applied
           enrollment.enabled = @staged
           enrollment.reviewed_by = @actor if @actor
           enrollment.reviewed_at = Time.current
           enrollment.revision = enrollment.revision.to_i + (enrollment.persisted? ? 1 : 0)
           enrollment.save!
         end
-        enrollment
+        [ enrollment, applied ]
       end
+      @from = @staged
       project.association(:staged_closeout_enrollment).reset
       enrollment
     end

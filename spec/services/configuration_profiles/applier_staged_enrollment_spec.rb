@@ -65,6 +65,23 @@ RSpec.describe ConfigurationProfiles::Applier do
     expect(project.reload.staged_closeout_enrollment.enabled?).to be(false)
   end
 
+  it "does not audit a stale enrollment apply that becomes a lock-time no-op" do
+    change = ConfigurationProfiles::Change.new(field: :staged_closeout_enrollment_enabled, from: false, to: true)
+    first_plan = ConfigurationProfiles::Plan.new(label: "Enable enrollment", source: :configuration_profile, changes: [ change ])
+    second_plan = ConfigurationProfiles::Plan.new(label: "Enable enrollment", source: :configuration_profile, changes: [ change ])
+    stale_project = Project.find(project.id)
+    stale_project.staged_closeout_enrollment
+
+    first_result = described_class.call(project, first_plan, actor:)
+    second_result = described_class.call(stale_project, second_plan, actor:)
+
+    expect(second_result).to have_attributes(changes: [], activity: nil)
+
+    ConfigurationProfiles::Rollback.call(first_result.activity, actor:)
+
+    expect(project.reload.staged_closeout_enrollment).not_to be_enabled
+  end
+
   describe "posture matching" do
     it "counts the enrollment toward the Fully Automatic posture" do
       profile = ConfigurationProfiles::Registry.find(:solo_automated)

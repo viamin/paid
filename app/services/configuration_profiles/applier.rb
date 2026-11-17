@@ -30,38 +30,48 @@ module ConfigurationProfiles
       return Result.new(project:, changes: [], activity: nil) if plan.empty?
 
       activity = nil
-      project.transaction do
-        records = plan.changes.map { |change| field_set.write(project, change.field, change.to, actor: actor) }.uniq
-        records.each { |record| record.save! if record.changed? && !record.equal?(project) }
+      changes = project.transaction do
+        records_by_change = plan.changes.to_h do |change|
+          [ change, field_set.write(project, change.field, change.to, actor: actor) ]
+        end
+        records_by_change.values.uniq.each { |record| record.save! if record.changed? && !record.equal?(project) }
         project.save!
-        activity = record_activity
+        persisted = persisted_changes(records_by_change)
+        activity = record_activity(persisted) if persisted.any?
+        persisted
       end
-      Result.new(project:, changes: plan.changes, activity:)
+      Result.new(project:, changes:, activity:)
     end
 
     private
 
     attr_reader :project, :plan, :actor, :action, :extra_metadata, :field_set
 
-    def record_activity
+    def persisted_changes(records_by_change)
+      records_by_change.filter_map do |change, record|
+        change unless record.respond_to?(:applied?) && !record.applied?
+      end
+    end
+
+    def record_activity(changes)
       Accounts::RecordActivity.call(
         account: project.account,
         actor:,
         action:,
         subject: project,
-        metadata: activity_metadata
+        metadata: activity_metadata(changes)
       )
     end
 
-    def activity_metadata
+    def activity_metadata(changes)
       {
         label: plan.label,
         source: plan.source.to_s,
         profile_key: plan.reference&.to_s,
         project_name: project.name,
-        changed_fields: plan.applied_fields.map(&:to_s),
-        previous_values: plan.changes.to_h { |change| [ change.field.to_s, change.from ] },
-        applied_values: plan.changes.to_h { |change| [ change.field.to_s, change.to ] }
+        changed_fields: changes.map { |change| change.field.to_s },
+        previous_values: changes.to_h { |change| [ change.field.to_s, change.from ] },
+        applied_values: changes.to_h { |change| [ change.field.to_s, change.to ] }
       }.merge(extra_metadata)
     end
   end
