@@ -568,7 +568,9 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include('id="inbox-detail"', "Selected question")
     expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
-    expect(queries.grep(/FROM "(?:decomposition_decisions|feature_intents|change_intents|issue_continuation_requests)"/)).to be_empty
+    # The selected decision brief may resolve its linked approved feature
+    # intent. It must not construct any other lane's projection or queue.
+    expect(queries.grep(/FROM "(?:decomposition_decisions|change_intents|issue_continuation_requests)"/)).to be_empty
   end
 
   # @spec OPERATOR-INBOX-015
@@ -2592,7 +2594,7 @@ RSpec.describe "Inbox" do
 
       document = Nokogiri::HTML(response.body)
       brief = document.at_css("[data-testid='inbox-decision-brief']")
-      expect(brief.text).to include("Goal", "Structured question", "What changed",
+      expect(brief.text).to include("Goal", "No approved intent is available for this work item.", "What changed",
         "Product direction is needed before work can continue.", "Which cache should exports use?",
         "Paid recommends:", "Redis", "Answer the question")
       expect(document.at_css("[data-testid='inbox-question-recommendation']").text).to include("Redis")
