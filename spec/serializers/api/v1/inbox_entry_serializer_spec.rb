@@ -319,6 +319,28 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
   # @spec OPERATOR-INBOX-027
   describe ".render_list_page" do
+    # @spec OPERATOR-INBOX-027
+    it "batches approved goal context for the returned work items" do
+      entries = 2.times.map do |index|
+        issue = create(:issue, project:, title: "Queue item #{index}")
+        feature = create(:feature_intent, project:, title: "Feature #{index}", brief: "Approved outcome #{index}",
+          approved_design_revision: (index + 1).to_s * 40)
+        create(:feature_intent_issue, feature_intent: feature, issue:)
+        build_entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: issue.reload)
+      end
+      queries = []
+      callback = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] if payload[:sql].include?("feature_intents") }
+
+      payloads = ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        described_class.render_list_page(entries)
+      end
+
+      expect(payloads.map { |payload| payload.dig(:decision_brief, :goal) }).to eq([ "Approved outcome 0", "Approved outcome 1" ])
+      expect(payloads.map { |payload| payload.dig(:decision_brief, :goal_source) })
+        .to eq([ "Approved feature intent: Feature 0", "Approved feature intent: Feature 1" ])
+      expect(queries.size).to eq(1)
+    end
+
     it "batches local prerequisite titles for the returned entries" do
       entries = 2.times.map do |index|
         prerequisite = create(:issue, project:, github_number: 510 + index, title: "Verify result #{index}")

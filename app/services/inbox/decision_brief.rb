@@ -8,7 +8,7 @@ module Inbox
   # intentionally longer than a typical service object.
   # @spec OPERATOR-INBOX-027
   class DecisionBrief
-    Result = Data.define(:goal, :changed, :decision, :recommendation,
+    Result = Data.define(:goal, :goal_source, :goal_revision, :repository_context, :changed, :decision, :recommendation,
       :recommendation_reason, :waiting_work, :primary_action, :next_state, :unknown) do
       def to_h
         members.index_with { |member| public_send(member) }.compact
@@ -90,7 +90,7 @@ module Inbox
     end
 
     def call
-      Result.new(goal:, changed:, decision:, recommendation:, recommendation_reason:, waiting_work:,
+      Result.new(goal:, goal_source:, goal_revision:, repository_context:, changed:, decision:, recommendation:, recommendation_reason:, waiting_work:,
         primary_action: action.first, next_state: action.last, unknown:)
     end
 
@@ -103,7 +103,19 @@ module Inbox
     attr_reader :entry
 
     def goal
-      entry.title.presence || "Current project work"
+      goal_context.goal
+    end
+
+    def goal_source
+      goal_context.source
+    end
+
+    def goal_revision
+      goal_context.revision
+    end
+
+    def repository_context
+      goal_context.repository
     end
 
     def changed
@@ -158,6 +170,10 @@ module Inbox
 
     def question_payload
       @question_payload ||= ClarifyingQuestions::QuestionPayload.call(question: entry.questions.first)
+    end
+
+    def goal_context
+      @goal_context ||= GoalContext.call(entry:)
     end
 
     def question_recommendation_reason

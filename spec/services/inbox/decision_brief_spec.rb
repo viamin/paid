@@ -16,6 +16,37 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "grounds the goal in an approved feature intent rather than the work-item title" do
+    issue = create(:issue, project:, title: "Fix the unrelated queue item")
+    feature = create(:feature_intent, project:, title: "Export reliability", brief: "Exports complete without duplicate rows.",
+      approved_design_revision: "a" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "Exports complete without duplicate rows.",
+      goal_source: "Approved feature intent: Export reliability",
+      goal_revision: "a" * 40,
+      repository_context: project.full_name
+    )
+    expect(brief.goal).not_to eq(issue.title)
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "discloses unavailable agreed intent instead of relabeling the queue title as a goal" do
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND,
+      title_text: "Resolve an unrelated queue item"))
+
+    expect(brief.to_h).to include(
+      goal: "No approved intent is available for this work item.",
+      goal_source: "Intent unavailable",
+      repository_context: project.full_name
+    )
+    expect(brief.to_h).not_to have_key(:goal_revision)
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "keeps a grounded product question separate from its evidence-backed recommendation" do
     brief = described_class.call(entry: entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
       questions: [ { "question" => "Which cache should exports use?", "recommendation" => "Redis",

@@ -17,6 +17,7 @@ module Api
       end
 
       def self.render_list_page(entries)
+        Inbox::GoalContext.preload(entries:)
         issues = entries.filter_map do |entry|
           entry.issue if entry.partial_closeout? && entry.issue && entry.tasks.first.to_s.match?(/\A#\d+\z/)
         end

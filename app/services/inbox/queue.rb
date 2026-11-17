@@ -90,6 +90,7 @@ module Inbox
       :action_url,
       :guidance,
       :closeout_status,
+      :goal_context,
       keyword_init: true
     ) do
       def to_param

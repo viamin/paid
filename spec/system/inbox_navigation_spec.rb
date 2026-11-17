@@ -46,6 +46,36 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     Inbox::Queue.call(user:, project:, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND).map(&:issue)
   end
 
+  def decision_brief_lane_cases
+    other_project = create(:project, account:, created_by: user, owner: "acme", repo: "beta",
+      auto_pick_enabled: true, active: true)
+    question = create(:issue, :needs_input, project: other_project, title: "Beta question", body: questions_body)
+    manual = create(:issue, project:, github_number: 301, paid_state: "manual_review", manual_review_reason: "Review the recorded recovery.")
+    closeout = create(:issue, project:, github_number: 302, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, github_number: 303, github_state: "closed", pr_review_phase: "merged", parent_issue_id: closeout.id)
+    action_issue = create(:issue, project:, github_number: 304)
+    create(:notification, :error, account:, subject: action_issue, source: "quality_auto_resume_cooldown", blocking: true,
+      action_url: project_path(project), title: "Resolve quality pause",
+      metadata: { "recommended_action" => "Open project settings", "remediation_steps" => [ "Open project settings" ] })
+    [
+      [ Inbox::Queue::PARTIAL_CLOSEOUT_KIND, closeout, project, "Resolve remaining work" ],
+      [ Inbox::Queue::MANUAL_REVIEW_KIND, manual, project, "Review recovery" ],
+      [ Inbox::Queue::ACTION_REQUIRED_KIND, action_issue, project, "Complete remediation" ],
+      [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, question, other_project, "Answer the question" ]
+    ]
+  end
+
+  def expect_decision_brief_for(kind:, issue:, selected_project:, action:)
+    visit inbox_entry_path("#{kind}:#{issue.id}", project_id: selected_project.id, kind:)
+    brief = find("[data-testid='inbox-decision-brief']")
+    expect(brief).to have_text("Goal: No approved intent is available for this work item.")
+    expect(brief).to have_text("Intent source: Intent unavailable")
+    expect(brief).to have_text("Repository: #{selected_project.full_name}")
+    expect(brief).to have_text(action)
+    expect(page).to have_button("Copy link to this item")
+    expect(page).to have_css("[data-inbox-actions-target='bar']", visible: true)
+  end
+
   it "keeps the first collection selection shareable and advances subsequent selection through browser history" do
     initial_issue, next_issue = ordered_issues
     page.current_window.resize_to(1440, 1000)
@@ -89,6 +119,14 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(action_area).to have_button("Submit Answers")
     expect(action_area[:class]).to include("flex-wrap")
     expect(action_area[:class]).to include("sticky")
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "presents decision context and a visible next action across the four closeout lanes while switching projects" do
+    page.current_window.resize_to(390, 844)
+    decision_brief_lane_cases.each do |kind, issue, selected_project, action|
+      expect_decision_brief_for(kind:, issue:, selected_project:, action:)
+    end
   end
 
   it "uses the member URL for a dependency cycle and retains it on mobile" do
