@@ -6794,6 +6794,349 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   execute <<~SQL
     ALTER TABLE "public"."ab_test_assignments" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."ab_test_assignments" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."ab_test_variants" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."ab_test_variants" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."ab_tests" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."ab_tests" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."account_memberships" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."account_memberships" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."accounts" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."accounts" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."agent_coordination_signals" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."agent_coordination_signals" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."agent_run_anomalies" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."agent_run_anomalies" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."agent_run_logs" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."agent_run_logs" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."agent_run_phases" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."agent_run_phases" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."agent_runs" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."agent_runs" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."billing_invoices" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."billing_invoices" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."billing_line_items" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."billing_line_items" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."billing_periods" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."billing_periods" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."billing_plans" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."billing_plans" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."bundle_outcomes" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."bundle_outcomes" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."change_intents" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."change_intents" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."collector_runs" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."collector_runs" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."configuration_bundles" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."configuration_bundles" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."container_metrics" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."container_metrics" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."container_pool_entries" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."container_pool_entries" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."context_intake_responses" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."context_intake_responses" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."context_intake_sessions" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."context_intake_sessions" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."cost_budgets" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."cost_budgets" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."decision_record_links" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."decision_record_links" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."decision_records" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."decision_records" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."decomposition_decisions" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."decomposition_decisions" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."github_tokens" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."github_tokens" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."integration_credentials" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."integration_credentials" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."issue_dependencies" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."issue_dependencies" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."issues" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."issues" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."knowledge_artifacts" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."knowledge_artifacts" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."knowledge_audit_events" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."knowledge_audit_events" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."knowledge_chunks" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."knowledge_chunks" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."knowledge_links" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."knowledge_links" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."knowledge_runs" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."knowledge_runs" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."linear_tokens" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."linear_tokens" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."maintenance_finding_occurrences" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."maintenance_finding_occurrences" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."maintenance_findings" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."maintenance_findings" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."maintenance_reports" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."maintenance_reports" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."mcp_server_definitions" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."mcp_server_definitions" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."model_selections" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."model_selections" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."notifications" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."notifications" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."onboarding_steps" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."onboarding_steps" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."pr_templates" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."pr_templates" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."pre_commit_requirements" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."pre_commit_requirements" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."project_baselines" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."project_baselines" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."project_mcp_servers" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."project_mcp_servers" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."project_memberships" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."project_memberships" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."project_service_containers" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."project_service_containers" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."project_versions" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."project_versions" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."projects" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."projects" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."prompt_versions" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."prompt_versions" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."prompts" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."prompts" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."provider_api_keys" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."provider_api_keys" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."quality_gate_events" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."quality_gate_events" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."quality_metrics" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."quality_metrics" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."quality_pause_events" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."quality_pause_events" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."quality_recovery_actions" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."quality_recovery_actions" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."quality_thresholds" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."quality_thresholds" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."service_container_metrics" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."service_container_metrics" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."service_containers" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."service_containers" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."style_guides" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."style_guides" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."tenant_settings" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."tenant_settings" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."token_usages" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."token_usages" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."tracker_configurations" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."tracker_configurations" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."user_settings" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."user_settings" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."users" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."users" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."workflow_states" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."workflow_states" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."worktrees" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."worktrees" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
     CREATE POLICY "tenant_isolation_delete" ON "public"."ab_test_assignments"
       AS PERMISSIVE
       FOR DELETE
@@ -6809,8 +7152,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_test_assignments" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_test_assignments" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_insert" ON "public"."ab_test_assignments"
       AS PERMISSIVE
       FOR INSERT
@@ -6826,8 +7167,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_test_assignments" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_test_assignments" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_select" ON "public"."ab_test_assignments"
       AS PERMISSIVE
       FOR SELECT
@@ -6841,8 +7180,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_test_assignments" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_test_assignments" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_update" ON "public"."ab_test_assignments"
       AS PERMISSIVE
       FOR UPDATE
@@ -6867,8 +7204,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_test_variants" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_test_variants" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_delete" ON "public"."ab_test_variants"
       AS PERMISSIVE
       FOR DELETE
@@ -6881,8 +7216,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_test_variants" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_test_variants" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_insert" ON "public"."ab_test_variants"
       AS PERMISSIVE
       FOR INSERT
@@ -6895,8 +7228,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_test_variants" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_test_variants" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_select" ON "public"."ab_test_variants"
       AS PERMISSIVE
       FOR SELECT
@@ -6907,8 +7238,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_test_variants" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_test_variants" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_update" ON "public"."ab_test_variants"
       AS PERMISSIVE
       FOR UPDATE
@@ -6927,8 +7256,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_tests" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_tests" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_delete" ON "public"."ab_tests"
       AS PERMISSIVE
       FOR DELETE
@@ -6940,8 +7267,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_tests" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_tests" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_insert" ON "public"."ab_tests"
       AS PERMISSIVE
       FOR INSERT
@@ -6953,8 +7278,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_tests" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_tests" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_select" ON "public"."ab_tests"
       AS PERMISSIVE
       FOR SELECT
@@ -6964,8 +7287,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."ab_tests" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."ab_tests" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_update" ON "public"."ab_tests"
       AS PERMISSIVE
       FOR UPDATE
@@ -6982,8 +7303,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."account_memberships" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."account_memberships" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."account_memberships"
       AS PERMISSIVE
       FOR ALL
@@ -6996,8 +7315,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."accounts" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."accounts" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."accounts"
       AS PERMISSIVE
       FOR ALL
@@ -7006,8 +7323,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."agent_coordination_signals" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."agent_coordination_signals" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."agent_coordination_signals"
       AS PERMISSIVE
       FOR ALL
@@ -7028,8 +7343,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."agent_run_anomalies" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."agent_run_anomalies" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."agent_run_anomalies"
       AS PERMISSIVE
       FOR ALL
@@ -7042,8 +7355,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."agent_run_logs" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."agent_run_logs" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."agent_run_logs"
       AS PERMISSIVE
       FOR ALL
@@ -7058,8 +7369,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."agent_run_phases" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."agent_run_phases" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."agent_run_phases"
       AS PERMISSIVE
       FOR ALL
@@ -7074,8 +7383,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."agent_runs" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."agent_runs" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."agent_runs"
       AS PERMISSIVE
       FOR ALL
@@ -7088,8 +7395,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."billing_invoices" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."billing_invoices" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."billing_invoices"
       AS PERMISSIVE
       FOR ALL
@@ -7102,8 +7407,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."billing_line_items" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."billing_line_items" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."billing_line_items"
       AS PERMISSIVE
       FOR ALL
@@ -7116,8 +7419,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."billing_periods" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."billing_periods" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."billing_periods"
       AS PERMISSIVE
       FOR ALL
@@ -7130,8 +7431,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."billing_plans" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."billing_plans" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."billing_plans"
       AS PERMISSIVE
       FOR ALL
@@ -7140,8 +7439,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."bundle_outcomes" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."bundle_outcomes" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."bundle_outcomes"
       AS PERMISSIVE
       FOR ALL
@@ -7158,8 +7455,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."change_intents" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."change_intents" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."change_intents"
       AS PERMISSIVE
       FOR ALL
@@ -7172,8 +7467,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."collector_runs" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."collector_runs" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."collector_runs"
       AS PERMISSIVE
       FOR ALL
@@ -7188,8 +7481,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."configuration_bundles" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."configuration_bundles" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_delete" ON "public"."configuration_bundles"
       AS PERMISSIVE
       FOR DELETE
@@ -7199,8 +7490,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."configuration_bundles" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."configuration_bundles" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_insert" ON "public"."configuration_bundles"
       AS PERMISSIVE
       FOR INSERT
@@ -7210,8 +7499,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."configuration_bundles" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."configuration_bundles" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_select" ON "public"."configuration_bundles"
       AS PERMISSIVE
       FOR SELECT
@@ -7221,8 +7508,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."configuration_bundles" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."configuration_bundles" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_update" ON "public"."configuration_bundles"
       AS PERMISSIVE
       FOR UPDATE
@@ -7235,8 +7520,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."container_metrics" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."container_metrics" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."container_metrics"
       AS PERMISSIVE
       FOR ALL
@@ -7251,8 +7534,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."container_pool_entries" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."container_pool_entries" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."container_pool_entries"
       AS PERMISSIVE
       FOR ALL
@@ -7265,8 +7546,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."context_intake_responses" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."context_intake_responses" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."context_intake_responses"
       AS PERMISSIVE
       FOR ALL
@@ -7281,8 +7560,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."context_intake_sessions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."context_intake_sessions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."context_intake_sessions"
       AS PERMISSIVE
       FOR ALL
@@ -7295,8 +7572,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."cost_budgets" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."cost_budgets" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."cost_budgets"
       AS PERMISSIVE
       FOR ALL
@@ -7309,8 +7584,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."decision_record_links" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."decision_record_links" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."decision_record_links"
       AS PERMISSIVE
       FOR ALL
@@ -7325,8 +7598,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."decision_records" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."decision_records" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."decision_records"
       AS PERMISSIVE
       FOR ALL
@@ -7339,8 +7610,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."decomposition_decisions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."decomposition_decisions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."decomposition_decisions"
       AS PERMISSIVE
       FOR ALL
@@ -7353,8 +7622,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."github_tokens" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."github_tokens" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."github_tokens"
       AS PERMISSIVE
       FOR ALL
@@ -7367,8 +7634,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."integration_credentials" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."integration_credentials" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."integration_credentials"
       AS PERMISSIVE
       FOR ALL
@@ -7381,8 +7646,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."issue_dependencies" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."issue_dependencies" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."issue_dependencies"
       AS PERMISSIVE
       FOR ALL
@@ -7403,8 +7666,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."issues" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."issues" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."issues"
       AS PERMISSIVE
       FOR ALL
@@ -7417,8 +7678,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."knowledge_artifacts" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."knowledge_artifacts" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."knowledge_artifacts"
       AS PERMISSIVE
       FOR ALL
@@ -7431,8 +7690,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."knowledge_audit_events" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."knowledge_audit_events" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."knowledge_audit_events"
       AS PERMISSIVE
       FOR ALL
@@ -7445,8 +7702,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."knowledge_chunks" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."knowledge_chunks" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."knowledge_chunks"
       AS PERMISSIVE
       FOR ALL
@@ -7459,8 +7714,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."knowledge_links" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."knowledge_links" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."knowledge_links"
       AS PERMISSIVE
       FOR ALL
@@ -7481,8 +7734,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."knowledge_runs" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."knowledge_runs" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."knowledge_runs"
       AS PERMISSIVE
       FOR ALL
@@ -7495,8 +7746,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."linear_tokens" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."linear_tokens" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."linear_tokens"
       AS PERMISSIVE
       FOR ALL
@@ -7509,8 +7758,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."maintenance_finding_occurrences" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."maintenance_finding_occurrences" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."maintenance_finding_occurrences"
       AS PERMISSIVE
       FOR ALL
@@ -7519,8 +7766,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."maintenance_findings" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."maintenance_findings" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."maintenance_findings"
       AS PERMISSIVE
       FOR ALL
@@ -7529,8 +7774,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."maintenance_reports" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."maintenance_reports" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."maintenance_reports"
       AS PERMISSIVE
       FOR ALL
@@ -7539,8 +7782,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."mcp_server_definitions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."mcp_server_definitions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."mcp_server_definitions"
       AS PERMISSIVE
       FOR ALL
@@ -7549,8 +7790,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."model_selections" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."model_selections" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."model_selections"
       AS PERMISSIVE
       FOR ALL
@@ -7565,8 +7804,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."notifications" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."notifications" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."notifications"
       AS PERMISSIVE
       FOR ALL
@@ -7579,8 +7816,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."onboarding_steps" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."onboarding_steps" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."onboarding_steps"
       AS PERMISSIVE
       FOR ALL
@@ -7589,8 +7824,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."pr_templates" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."pr_templates" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."pr_templates"
       AS PERMISSIVE
       FOR ALL
@@ -7607,8 +7840,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."pre_commit_requirements" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."pre_commit_requirements" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."pre_commit_requirements"
       AS PERMISSIVE
       FOR ALL
@@ -7625,8 +7856,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."project_baselines" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."project_baselines" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."project_baselines"
       AS PERMISSIVE
       FOR ALL
@@ -7639,8 +7868,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."project_mcp_servers" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."project_mcp_servers" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."project_mcp_servers"
       AS PERMISSIVE
       FOR ALL
@@ -7657,8 +7884,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."project_memberships" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."project_memberships" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."project_memberships"
       AS PERMISSIVE
       FOR ALL
@@ -7675,8 +7900,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."project_service_containers" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."project_service_containers" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."project_service_containers"
       AS PERMISSIVE
       FOR ALL
@@ -7693,8 +7916,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."project_versions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."project_versions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."project_versions"
       AS PERMISSIVE
       FOR ALL
@@ -7707,8 +7928,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."projects" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."projects" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."projects"
       AS PERMISSIVE
       FOR ALL
@@ -7729,8 +7948,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompt_versions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompt_versions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_delete" ON "public"."prompt_versions"
       AS PERMISSIVE
       FOR DELETE
@@ -7742,8 +7959,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompt_versions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompt_versions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_insert" ON "public"."prompt_versions"
       AS PERMISSIVE
       FOR INSERT
@@ -7755,8 +7970,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompt_versions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompt_versions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_select" ON "public"."prompt_versions"
       AS PERMISSIVE
       FOR SELECT
@@ -7766,8 +7979,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompt_versions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompt_versions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_update" ON "public"."prompt_versions"
       AS PERMISSIVE
       FOR UPDATE
@@ -7784,8 +7995,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompts" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompts" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_delete" ON "public"."prompts"
       AS PERMISSIVE
       FOR DELETE
@@ -7795,8 +8004,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompts" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompts" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_insert" ON "public"."prompts"
       AS PERMISSIVE
       FOR INSERT
@@ -7806,8 +8013,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompts" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompts" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_select" ON "public"."prompts"
       AS PERMISSIVE
       FOR SELECT
@@ -7817,8 +8022,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."prompts" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."prompts" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_update" ON "public"."prompts"
       AS PERMISSIVE
       FOR UPDATE
@@ -7831,8 +8034,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."provider_api_keys" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."provider_api_keys" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."provider_api_keys"
       AS PERMISSIVE
       FOR ALL
@@ -7845,8 +8046,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."quality_gate_events" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."quality_gate_events" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."quality_gate_events"
       AS PERMISSIVE
       FOR ALL
@@ -7859,8 +8058,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."quality_metrics" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."quality_metrics" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."quality_metrics"
       AS PERMISSIVE
       FOR ALL
@@ -7875,8 +8072,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."quality_pause_events" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."quality_pause_events" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."quality_pause_events"
       AS PERMISSIVE
       FOR ALL
@@ -7889,8 +8084,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."quality_recovery_actions" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."quality_recovery_actions" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."quality_recovery_actions"
       AS PERMISSIVE
       FOR ALL
@@ -7903,8 +8096,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."quality_thresholds" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."quality_thresholds" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."quality_thresholds"
       AS PERMISSIVE
       FOR ALL
@@ -7917,8 +8108,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."service_container_metrics" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."service_container_metrics" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."service_container_metrics"
       AS PERMISSIVE
       FOR ALL
@@ -7931,8 +8120,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."service_containers" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."service_containers" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."service_containers"
       AS PERMISSIVE
       FOR ALL
@@ -7941,8 +8128,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."style_guides" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."style_guides" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_delete" ON "public"."style_guides"
       AS PERMISSIVE
       FOR DELETE
@@ -7952,8 +8137,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."style_guides" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."style_guides" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_insert" ON "public"."style_guides"
       AS PERMISSIVE
       FOR INSERT
@@ -7963,8 +8146,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."style_guides" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."style_guides" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_select" ON "public"."style_guides"
       AS PERMISSIVE
       FOR SELECT
@@ -7974,8 +8155,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."style_guides" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."style_guides" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation_update" ON "public"."style_guides"
       AS PERMISSIVE
       FOR UPDATE
@@ -7988,8 +8167,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."tenant_settings" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."tenant_settings" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."tenant_settings"
       AS PERMISSIVE
       FOR ALL
@@ -7998,8 +8175,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."token_usages" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."token_usages" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."token_usages"
       AS PERMISSIVE
       FOR ALL
@@ -8020,8 +8195,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."tracker_configurations" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."tracker_configurations" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."tracker_configurations"
       AS PERMISSIVE
       FOR ALL
@@ -8034,8 +8207,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."user_settings" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."user_settings" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."user_settings"
       AS PERMISSIVE
       FOR ALL
@@ -8048,8 +8219,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."users" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."users" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."users"
       AS PERMISSIVE
       FOR ALL
@@ -8058,8 +8227,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."workflow_states" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."workflow_states" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."workflow_states"
       AS PERMISSIVE
       FOR ALL
@@ -8072,8 +8239,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_044453) do
   SQL
 
   execute <<~SQL
-    ALTER TABLE "public"."worktrees" ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE "public"."worktrees" FORCE ROW LEVEL SECURITY;
     CREATE POLICY "tenant_isolation" ON "public"."worktrees"
       AS PERMISSIVE
       FOR ALL

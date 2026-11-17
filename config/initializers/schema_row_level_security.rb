@@ -13,25 +13,46 @@ module SchemaRowLevelSecurity
   private
 
   def dump_row_level_security(stream)
+    tables = row_level_security_tables
     policies = row_level_security_policies
-    return if policies.empty?
+    return if tables.empty? && policies.empty?
 
     stream.puts
     stream.puts "  # PostgreSQL row-level security policies."
+    tables.each { |table| dump_row_level_security_flags(stream, table) }
     policies.each do |policy|
       stream.puts
       stream.puts "  execute <<~SQL"
-      stream.puts "    ALTER TABLE #{qualified_table(policy)} ENABLE ROW LEVEL SECURITY;"
-      stream.puts "    ALTER TABLE #{qualified_table(policy)} FORCE ROW LEVEL SECURITY;" if policy.fetch("force")
       stream.puts "    #{policy_sql(policy)};"
       stream.puts "  SQL"
     end
   end
 
-  def row_level_security_policies
+  def dump_row_level_security_flags(stream, table)
+    return unless table.fetch("enabled") || table.fetch("force")
+
+    stream.puts
+    stream.puts "  execute <<~SQL"
+    stream.puts "    ALTER TABLE #{qualified_table(table)} ENABLE ROW LEVEL SECURITY;" if table.fetch("enabled")
+    stream.puts "    ALTER TABLE #{qualified_table(table)} FORCE ROW LEVEL SECURITY;" if table.fetch("force")
+    stream.puts "  SQL"
+  end
+
+  def row_level_security_tables
     @connection.select_all(<<~SQL.squish)
       SELECT n.nspname AS schema_name, c.relname AS table_name,
-        c.relforcerowsecurity AS force, p.polname AS policy_name,
+        c.relrowsecurity AS enabled, c.relforcerowsecurity AS force
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = ANY (current_schemas(false))
+        AND c.relkind IN ('r', 'p')
+      ORDER BY n.nspname, c.relname
+    SQL
+  end
+
+  def row_level_security_policies
+    @connection.select_all(<<~SQL.squish)
+      SELECT n.nspname AS schema_name, c.relname AS table_name, p.polname AS policy_name,
         p.polpermissive AS permissive, p.polcmd AS command,
         pg_get_expr(p.polqual, p.polrelid) AS qual,
         pg_get_expr(p.polwithcheck, p.polrelid) AS with_check,
