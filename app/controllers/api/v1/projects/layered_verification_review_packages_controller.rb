@@ -15,13 +15,22 @@ module Api
 
         def index
           authorize @project, :show?
-          packages = @project.layered_verification_review_packages.includes(:approvals).order(:agent_run_id, :revision_number)
-          render json: { review_packages: packages.map { |package| representation(package) } }
+          page = package_page(@project.layered_verification_review_packages, limit: params[:limit], cursor: params[:cursor])
+          response = { review_packages: page.records.map { |package| representation(package) } }
+          response[:next_cursor] = page.next_cursor if page.next_cursor
+          render json: response
+        rescue ArgumentError => error
+          render_error(:bad_request, :invalid_pagination, error.message)
         end
 
         def show
           authorize @project, :show?
-          render json: representation(@package).merge(lineage: @package.lineage.includes(:approvals).order(:revision_number).map { |package| representation(package) })
+          page = package_page(@package.lineage, limit: params[:lineage_limit], cursor: params[:lineage_cursor])
+          response = representation(@package).merge(lineage: page.records.map { |package| representation(package) })
+          response[:lineage_next_cursor] = page.next_cursor if page.next_cursor
+          render json: response
+        rescue ArgumentError => error
+          render_error(:bad_request, :invalid_pagination, error.message)
         end
 
         def approve
@@ -58,6 +67,20 @@ module Api
 
         def representation(package)
           LayeredVerification::ReviewPackages::Representation.package(package)
+        end
+
+        def package_page(relation, limit:, cursor:)
+          LayeredVerification::ReviewPackages::Page.call(
+            relation: relation.includes(:approvals),
+            limit: integer_parameter(limit, default: LayeredVerification::ReviewPackages::Page::DEFAULT_LIMIT),
+            cursor: integer_parameter(cursor)
+          )
+        end
+
+        def integer_parameter(value, default: nil)
+          return default if value.blank?
+
+          Integer(value.to_s, 10)
         end
       end
     end

@@ -41,6 +41,57 @@ RSpec.describe "Layered verification review packages API" do
   end
 
   # @spec LAYERED-VERIFY-023
+  it "paginates package history with a bounded discoverable cursor" do
+    lineage = Array.new(100) do |index|
+      create(:layered_verification_review_package, project:, agent_run: audit,
+        revision_number: index + 2)
+    end
+
+    get "/api/v1/projects/#{project.id}/layered_verification_review_packages", headers: headers
+    first_page = response.parsed_body
+    expect(first_page.fetch("review_packages").size).to eq(50)
+    expect(first_page.fetch("next_cursor")).to eq(first_page.fetch("review_packages").last.fetch("id"))
+
+    get "/api/v1/projects/#{project.id}/layered_verification_review_packages",
+      params: { limit: 100, cursor: first_page.fetch("next_cursor") }, headers: headers
+    expect(response.parsed_body.fetch("review_packages").map { |item| item.fetch("id") })
+      .to eq(lineage.drop(49).map(&:id))
+    expect(response.parsed_body).not_to have_key("next_cursor")
+  end
+
+  # @spec LAYERED-VERIFY-023
+  it "paginates package detail lineage with a bounded discoverable cursor" do
+    lineage = Array.new(100) do |index|
+      create(:layered_verification_review_package, project:, agent_run: audit,
+        revision_number: index + 2)
+    end
+
+    get "/api/v1/projects/#{project.id}/layered_verification_review_packages/#{package.id}", headers: headers
+    detail = response.parsed_body
+    expect(detail.fetch("lineage").size).to eq(50)
+    expect(detail.fetch("lineage_next_cursor")).to eq(lineage[48].id)
+
+    get "/api/v1/projects/#{project.id}/layered_verification_review_packages/#{package.id}",
+      params: { lineage_limit: 100, lineage_cursor: detail.fetch("lineage_next_cursor") }, headers: headers
+    expect(response.parsed_body.fetch("lineage").map { |item| item.fetch("id") })
+      .to eq(lineage.drop(49).map(&:id))
+    expect(response.parsed_body).not_to have_key("lineage_next_cursor")
+  end
+
+  # @spec LAYERED-VERIFY-023
+  it "rejects package and lineage limits outside the documented range" do
+    expect {
+      get "/api/v1/projects/#{project.id}/layered_verification_review_packages",
+        params: { limit: 101 }, headers: headers
+    }.to raise_error(Committee::InvalidRequest)
+
+    expect {
+      get "/api/v1/projects/#{project.id}/layered_verification_review_packages/#{package.id}",
+        params: { lineage_limit: 0 }, headers: headers
+    }.to raise_error(Committee::InvalidRequest)
+  end
+
+  # @spec LAYERED-VERIFY-023
   it "records a confirmed API approval with server-supplied provenance and no repair or release" do
     supplied_actor = create(:user, account:)
 

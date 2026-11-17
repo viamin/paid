@@ -358,9 +358,13 @@
   ownership of the run and JSON-bound references and the approval actor's
   account, with reference guards preserved through schema-based bootstrap.
   Authorized project readers SHALL be able to inspect bounded package history
-  and detail through the authenticated API and MCP, and an authorized
+  and detail through the authenticated API and MCP. Package history and detail
+  lineage SHALL use an exclusive immutable-package-ID cursor, default to 50
+  records, reject limits outside 1 through 100, and return a continuation
+  cursor only when another page exists. An authorized
   `manage_issues?` reviewer SHALL be able to record an explicitly confirmed
-  API or MCP business-review approval with server-supplied actor, time, and
+  API or MCP business-review approval, requiring the literal boolean `true`,
+  with server-supplied actor, time, and
   surface provenance. Every package-specific API or MCP entry point SHALL
   apply `LAYERED-VERIFY-012`, scope package IDs through the selected project,
   and return structured stale, disabled, and unauthorized errors without

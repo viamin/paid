@@ -26,8 +26,8 @@ module Tools
 
     # @spec LAYERED-VERIFY-012
     # @spec LAYERED-VERIFY-023
-    def perform(project_id:, review_package_id:, confirmed:, note: nil)
-      raise ArgumentError, "Confirmation required: set confirmed=true to record business-review approval" unless confirmed
+    def perform(project_id:, review_package_id:, confirmed: nil, note: nil)
+      raise ArgumentError, "Confirmation required: set confirmed=true to record business-review approval" unless confirmed == true
 
       package = project_for(project_id).layered_verification_review_packages.find(review_package_id)
       approval = LayeredVerification::ReviewPackages::Approve.call(

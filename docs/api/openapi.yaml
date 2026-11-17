@@ -283,6 +283,14 @@ paths:
       - $ref: '#/components/parameters/ProjectId'
     get:
       operationId: listLayeredVerificationReviewPackages
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - name: cursor
+          in: query
+          description: Exclusive package ID returned as next_cursor by a previous response.
+          schema: {type: integer, minimum: 1}
       security:
         - bearerAuth: []
       x-required-pat-scopes: [inbox]
@@ -299,6 +307,7 @@ paths:
                   review_packages:
                     type: array
                     items: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
+                  next_cursor: {type: integer, minimum: 1}
         default: {$ref: '#/components/responses/Error'}
   /projects/{project_id}/layered_verification_review_packages/{id}:
     parameters:
@@ -309,6 +318,14 @@ paths:
         schema: {type: integer}
     get:
       operationId: getLayeredVerificationReviewPackage
+      parameters:
+        - name: lineage_limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - name: lineage_cursor
+          in: query
+          description: Exclusive package ID returned as lineage_next_cursor by a previous response.
+          schema: {type: integer, minimum: 1}
       security:
         - bearerAuth: []
       x-required-pat-scopes: [inbox]
@@ -1463,6 +1480,7 @@ components:
         lineage:
           type: array
           items: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
+        lineage_next_cursor: {type: integer, minimum: 1}
     DesignArtifactFinding:
       type: object
       required: [id, artifact_path, revision, state, evidence, covered_at, status]

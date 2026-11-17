@@ -11,7 +11,16 @@ module Tools
     end
 
     def self.input_schema
-      { type: "object", properties: { project_id: { type: "integer" } }, required: [ "project_id" ] }
+      {
+        type: "object",
+        properties: {
+          project_id: { type: "integer" },
+          limit: { type: "integer", minimum: 1, maximum: LayeredVerification::ReviewPackages::Page::MAX_LIMIT,
+                   default: LayeredVerification::ReviewPackages::Page::DEFAULT_LIMIT },
+          cursor: { type: "integer", minimum: 1, description: "Package ID returned as next_cursor by a previous call" }
+        },
+        required: [ "project_id" ]
+      }
     end
 
     def self.available_for_project?(user:, project:)
@@ -24,12 +33,22 @@ module Tools
 
     # @spec LAYERED-VERIFY-012
     # @spec LAYERED-VERIFY-023
-    def perform(project_id:)
-      project_for(project_id).layered_verification_review_packages.includes(:approvals).order(:agent_run_id, :revision_number)
-        .map { |package| LayeredVerification::ReviewPackages::Representation.package(package) }
+    def perform(project_id:, limit: LayeredVerification::ReviewPackages::Page::DEFAULT_LIMIT, cursor: nil)
+      page = package_page(project_for(project_id).layered_verification_review_packages, limit:, cursor:)
+      response = { review_packages: page.records.map { |package| representation(package) } }
+      response[:next_cursor] = page.next_cursor if page.next_cursor
+      response
     end
 
     private
+
+    def package_page(relation, limit:, cursor:)
+      LayeredVerification::ReviewPackages::Page.call(relation: relation.includes(:approvals), limit:, cursor:)
+    end
+
+    def representation(package)
+      LayeredVerification::ReviewPackages::Representation.package(package)
+    end
 
     def project_for(id)
       @projects_by_id ||= {}
