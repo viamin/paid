@@ -69,8 +69,9 @@ module CloseoutVerifications
       return nil if existing
 
       AgentRun.create!(run_attributes(mapping))
-    rescue ActiveRecord::RecordNotUnique
-      existing_run(mapping)
+    rescue ActiveRecord::RecordNotUnique => error
+      raise error unless existing_run(mapping)
+
       nil
     end
 

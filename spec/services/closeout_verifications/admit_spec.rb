@@ -48,6 +48,34 @@ RSpec.describe CloseoutVerifications::Admit do
       .not_to change { AgentRun.where(goal: "closeout_verification").count }
   end
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-008
+  it "admits one run for every eligible mapping for the same issue and pull request" do
+    assessment_run = AgentRun.completed.where(project:, issue: source_issue).find_by!(source_pull_request_number: nil)
+    assessment = assessment_run.reconciliation.fetch("assessment")
+    assessment["criteria"] << { "criterion" => "Second merged check", "state" => "unmet" }
+    assessment_run.update!(reconciliation: { "assessment" => assessment })
+    mappings = [ approve_mapping, approve_mapping(criterion_key: "Second merged check") ]
+
+    outcome = described_class.call(source_pr:, merge_commit_sha: merge_sha)
+
+    expect(outcome.runs.map(&:closeout_mapping_id)).to match_array(mappings.map(&:id))
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+  it "admits a follow-up merged pull request while an earlier verification remains queued" do
+    mapping = approve_mapping
+    described_class.call(source_pr:, merge_commit_sha: merge_sha)
+    follow_up_pr = create(:issue, :pull_request, project:, github_number: 43, pr_review_phase: "merged")
+    create(:agent_run, :completed, project:, issue: source_issue,
+      pull_request_number: follow_up_pr.github_number, result_commit_sha: "c" * 40)
+
+    outcome = described_class.call(source_pr: follow_up_pr, merge_commit_sha: "d" * 40)
+
+    expect(outcome.runs).to contain_exactly(an_object_having_attributes(
+      closeout_mapping_id: mapping.id, source_pull_request_number: 43, base_commit_sha: "d" * 40
+    ))
+  end
+
   # @spec STAGED-CLOSEOUT-ADOPTION-009
   it "converges concurrent admission and preserves a current completed result" do
     approve_mapping
@@ -74,6 +102,15 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(outcome).not_to be_admitted
     expect(outcome.reason).to eq("already_admitted")
     expect(AgentRun.where(closeout_mapping_id: mapping.id)).to contain_exactly(an_object_having_attributes(status: "queued"))
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  it "raises a uniqueness collision that does not match the admission identity" do
+    approve_mapping
+    allow(AgentRun).to receive(:create!).and_raise(ActiveRecord::RecordNotUnique)
+
+    expect { described_class.call(source_pr:, merge_commit_sha: merge_sha) }
+      .to raise_error(ActiveRecord::RecordNotUnique)
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-009
