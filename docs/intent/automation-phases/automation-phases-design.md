@@ -157,6 +157,20 @@ defaults, which currently visible Inbox entries would leave the default Inbox
 under those defaults, and which label-enabled work would lose automatic
 execution. It is read-only and never enables anything.
 
+## Surface parity
+
+The authenticated API and MCP expose the same credential-free phase-settings
+projection as the settings surface: all six phases, separate Release and
+Deployment controls, rollout state, retained stored settings, derived defaults,
+and project-scoped continuation grants with their current effective-policy
+notice. API and MCP settings updates delegate only to
+`Automation::PhaseSettings::Update`, preserving its validation and
+disabled-to-enabled Inbox reconciliation. Grant revocation calls `revoke!` and
+is idempotent; endpoint extension first uses `Automation::ManualStart::Plan`
+so merge delegation is checked before `extend_to!`. A grant change never
+disables independent project defaults, and foreign project records are not
+discoverable through either authenticated surface.
+
 ## Operations boundary
 
 Project operations describe project-runtime work. Paid's own platform health,

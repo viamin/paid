@@ -43,6 +43,63 @@ RSpec.describe Tools::UpdateProjectSettings do
       expect(project.reload).to have_attributes(paused: true, auto_pick_enabled: true)
     end
 
+    it "updates phase settings through the validated transition service" do # @spec AUTOMATION-PHASES-002
+      project.update!(automation_phase_settings: { "phases" => { "coding" => false }, "release" => false, "deployment" => true })
+
+      result = call(settings: { "automation_phase_settings" => { "phases" => { "coding" => true }, "release" => true, "deployment" => false } })
+
+      expect(result).to include(automation_phase_settings: hash_including("release" => true, "deployment" => false), enabled_transitions: include("coding"))
+      expect(Automation::PhaseSettings.call(project.reload)).to have_attributes(release_enabled?: true, deployment_enabled?: false)
+    end
+
+    it "audits every field in a combined settings update" do # @spec AUTOMATION-PHASES-019
+      call(settings: {
+        "paused" => true,
+        "automation_phase_settings" => { "phases" => { "coding" => true } }
+      })
+
+      expect(account.account_activity_events.last.metadata.fetch("changed_fields"))
+        .to contain_exactly("paused", "automation_phase_settings")
+    end
+
+    it "rolls back phase settings when another setting is invalid" do # @spec AUTOMATION-PHASES-019
+      original_settings = project.automation_phase_settings
+      original_poll_interval = project.poll_interval_seconds
+
+      expect {
+        call(settings: {
+          "automation_phase_settings" => { "phases" => { "coding" => true } },
+          "poll_interval_seconds" => 59
+        })
+      }.to raise_error(ActiveRecord::RecordInvalid, /Poll interval seconds/)
+
+      expect(project.reload.automation_phase_settings).to eq(original_settings)
+      expect(project.poll_interval_seconds).to eq(original_poll_interval)
+      expect(account.account_activity_events).to be_empty
+    end
+
+    it "does not reconcile phase removals when another setting is invalid" do # @spec AUTOMATION-PHASES-019
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(created_by: owner, automation_phase_settings: {
+        "phases" => { "issue_preparation" => false }, "release" => false, "deployment" => false
+      })
+      issue = create(:issue, :needs_input, project:, github_state: "open", needs_input_questions: [ "Which behavior?" ])
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      entry = Inbox::Queue.call(user: owner, project:, scope: Inbox::Queue::DISABLED_PHASES_SCOPE)
+        .find { |candidate| candidate.issue&.id == issue.id }
+      removal = Inbox::Removals::Remove.call(entry:, user: owner)
+
+      expect {
+        call(settings: {
+          "automation_phase_settings" => { "phases" => { "issue_preparation" => true } },
+          "poll_interval_seconds" => 59
+        })
+      }.to raise_error(ActiveRecord::RecordInvalid, /Poll interval seconds/)
+
+      expect(removal.reload).to be_active
+      expect(InboxHistoryEvent.where(metadata: { "action" => "Restored to Inbox" })).not_to exist
+    end
+
     # @spec FACET-CONFIDENCE-010
     it "updates and returns independently configured confidence thresholds" do
       result = call(settings: { "intent_threshold" => 70, "technical_threshold" => 90 })

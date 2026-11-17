@@ -496,6 +496,70 @@ paths:
                   signature: {type: string}
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/automation_phases:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: getProjectAutomationPhases
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: The six phase settings, distinct release and deployment controls, rollout state, and project-scoped continuation grants. Stored settings remain inspectable while rollout is off.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AutomationPhasesResponse'}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateProjectAutomationPhases
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [automation_phase_settings]
+              properties:
+                automation_phase_settings: {$ref: '#/components/schemas/AutomationPhaseSettings'}
+      responses:
+        '200':
+          description: Updated settings and disabled-to-enabled transitions reconciled through the validated phase-settings service.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AutomationPhasesResponse'}}}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/automation_phases/continuation_grants/{id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    delete:
+      operationId: revokeContinuationGrant
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Revocation result. Revoking a grant does not disable independent project automation.
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: extendContinuationGrant
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [endpoint], properties: {endpoint: {type: string, enum: [issue_preparation, coding, merge]}}}}}
+      responses:
+        '200':
+          description: Extension result and current continuation notice. Merge extension requires merge delegation.
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Error'}
   /projects/{project_id}/staged_closeout_adoption:
     parameters:
       - name: project_id
@@ -1504,6 +1568,62 @@ components:
         resolution_state: {type: string, nullable: true}
         resolution_reason: {type: string, nullable: true}
         resolution_issue_id: {type: integer, nullable: true}
+    AutomationPhaseSettings:
+      type: object
+      properties:
+        phases:
+          type: object
+          additionalProperties: {type: boolean}
+        release: {type: boolean}
+        deployment: {type: boolean}
+    AutomationPhasesResponse:
+      type: object
+      required: [project_id, rollout_enabled, settings, phases, grants, continuation_notice]
+      properties:
+        project_id: {type: integer}
+        rollout_enabled: {type: boolean}
+        configured: {type: boolean}
+        settings: {$ref: '#/components/schemas/AutomationPhaseSettings'}
+        derived_settings: {$ref: '#/components/schemas/AutomationPhaseSettings'}
+        phases:
+          type: array
+          items:
+            type: object
+            required: [id, label, enabled, responsibility]
+            properties:
+              id: {type: string, enum: [discovery, issue_preparation, coding, merge, release_deployment, operations]}
+              label: {type: string}
+              enabled: {type: boolean}
+              responsibility: {type: string}
+              release: {type: boolean}
+              deployment: {type: boolean}
+        grants:
+          type: object
+          required: [active, inactive, inactive_truncated]
+          description: Every active grant is listed so current authority is always discoverable; inactive history is bounded to the 50 most recent grants and reports whether it was truncated.
+          properties:
+            active:
+              type: array
+              items: {$ref: '#/components/schemas/ContinuationGrant'}
+            inactive:
+              type: array
+              items: {$ref: '#/components/schemas/ContinuationGrant'}
+            inactive_truncated: {type: boolean}
+        continuation_notice: {type: string}
+        enabled_transitions: {type: array, items: {type: string}}
+    ContinuationGrant:
+      type: object
+      required: [id, issue_id, start_phase, endpoint, covered_phases, active]
+      properties:
+        id: {type: integer}
+        issue_id: {type: integer}
+        start_phase: {type: string}
+        endpoint: {type: string}
+        covered_phases: {type: array, items: {type: string}}
+        active: {type: boolean}
+        completed_at: {type: string, format: date-time, nullable: true}
+        revoked_at: {type: string, format: date-time, nullable: true}
+        notice: {type: string}
   headers:
     ETag:
       description: Strong validator for polling. Send this value as If-None-Match on the next poll.

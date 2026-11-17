@@ -494,6 +494,11 @@ Rails.application.routes.draw do
       # mobile API.
       # @spec PROJECT-DELEGATION-005
       get "projects/:project_id/delegation", to: "projects/delegation#show"
+      resource :automation_phases, only: %i[show update],
+        controller: "projects/automation_phases", path: "projects/:project_id/automation_phases" do
+        delete "continuation_grants/:id", action: :revoke_grant
+        patch "continuation_grants/:id", action: :extend_grant
+      end
       resource :staged_closeout_adoption, only: %i[show update],
         controller: "projects/staged_closeout_adoptions", path: "projects/:project_id/staged_closeout_adoption" do
         post :mappings, action: :create_mapping

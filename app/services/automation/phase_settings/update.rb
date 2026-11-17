@@ -81,6 +81,8 @@ module Automation
       end
 
       def requested_phase_enabled?(phase)
+        return current.phase_enabled?(phase) unless requested_phases.key?(phase.to_sym)
+
         ActiveModel::Type::Boolean.new.cast(requested_phase(phase))
       end
     end
