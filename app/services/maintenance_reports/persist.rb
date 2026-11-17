@@ -104,7 +104,14 @@ module MaintenanceReports
     end
 
     def digest(value)
-      Digest::SHA256.hexdigest(JSON.generate(JSON.parse(JSON.generate(value))))
+      Digest::SHA256.hexdigest(JSON.generate(canonical_json(value)))
+    end
+
+    def canonical_json(value)
+      return value.map { |item| canonical_json(item) } if value.is_a?(Array)
+      return value.to_h { |key, item| [ key.to_s, canonical_json(item) ] }.sort.to_h if value.is_a?(Hash)
+
+      value
     end
   end
 end

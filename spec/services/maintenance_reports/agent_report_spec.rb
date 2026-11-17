@@ -25,6 +25,20 @@ RSpec.describe MaintenanceReports::AgentReport do
     expect { described_class.parse(invalid) }.to raise_error(described_class::InvalidReport, /exclusions/)
   end
 
+  # @spec MAINT-020 MAINT-022
+  it "uses the final report block when earlier output contains marker-shaped content" do
+    template = { exclusions: [], completed_checks: [], incomplete_checks: [], evidence: {}, findings: [] }
+    final = template.merge(completed_checks: [ { "name" => "debride" } ],
+      findings: [ { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
+        locations: [], verification_disposition: "unverified" } ])
+    output = [ report_block(template), report_block(final) ].join("\n")
+
+    report = described_class.parse(output)
+
+    expect(report.fetch(:completed_checks)).to eq([ { "name" => "debride" } ])
+    expect(report.fetch(:findings).sole).to include(claim: "Legacy has no callers")
+  end
+
   it "rejects invalid finding classifications before persistence" do
     payload = {
       exclusions: [], completed_checks: [], incomplete_checks: [], evidence: {},
@@ -54,6 +68,10 @@ RSpec.describe MaintenanceReports::AgentReport do
 
   def parse(finding:)
     payload = { exclusions: [], completed_checks: [], incomplete_checks: [], evidence: {}, findings: [ finding ] }
-    described_class.parse("<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->")
+    described_class.parse(report_block(payload))
+  end
+
+  def report_block(payload)
+    "<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->"
   end
 end

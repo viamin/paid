@@ -33,7 +33,7 @@ module MaintenanceReports
     attr_reader :output
 
     def parse_payload
-      raw = output[REPORT_PATTERN, 1]
+      raw = output.scan(REPORT_PATTERN).last&.first
       raise InvalidReport, "maintenance report block is missing" if raw.blank?
 
       JSON.parse(raw.strip)

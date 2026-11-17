@@ -100,4 +100,17 @@ RSpec.describe MaintenanceReports::Persist do
     expect(canonical.reload).to have_attributes(status: "dismissed", reassessment_required: true)
     expect(first.finding_occurrences.sole.locations).to eq(finding[:locations])
   end
+
+  # @spec MAINT-027 MAINT-029
+  it "does not reassess a dismissed finding when evidence key order changes" do
+    first = described_class.call(run:, findings: [ finding ])
+    canonical = first.finding_occurrences.sole.maintenance_finding
+    canonical.dismiss!(reason: "Intentional framework hook")
+    later_run = create(:agent_run, :manual, project:, issue: nil, goal: "maintenance", maintenance_objective: "unnecessary_code")
+    reordered = finding.merge(supporting_evidence: [ { "detail" => "no static callers", "source" => "debride" } ])
+
+    described_class.call(run: later_run, findings: [ reordered ])
+
+    expect(canonical.reload).to have_attributes(status: "dismissed", reassessment_required: false)
+  end
 end
