@@ -8,17 +8,15 @@ end
 RSpec.describe CapybaraTenantContextFile, :no_db do
   # @spec POSTGRESQL-PERSISTENCE-012
   it "initializes browser-server connections before Warden deserializes the session user" do
-    source = Rails.root.join("spec/support/capybara.rb").read
+    app = instance_double(Proc)
+    environment = { "PATH_INFO" => "/" }
+    allow(app).to receive(:call).with(environment).and_return([ 200, {}, [] ])
+    allow(TenantContext).to receive(:with_system_access).and_yield
 
-    expect(source).to include("Rails.application.executor.to_run { TenantContext.apply_system_access! }")
-  end
+    response = CapybaraTenantContext.new(app).call(environment)
 
-  # @spec POSTGRESQL-PERSISTENCE-012
-  it "applies system access when the application executor begins a request" do
-    allow(TenantContext).to receive(:apply_system_access!)
-
-    Rails.application.executor.wrap { }
-
-    expect(TenantContext).to have_received(:apply_system_access!)
+    expect(response).to eq([ 200, {}, [] ])
+    expect(TenantContext).to have_received(:with_system_access)
+    expect(app).to have_received(:call).with(environment)
   end
 end

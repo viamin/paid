@@ -4,10 +4,12 @@ require "rails_helper"
 require Rails.root.join("db/migrate/20261117044453_restore_tenant_rls_policies_after_schema_bootstrap")
 
 RSpec.describe RestoreTenantRlsPoliciesAfterSchemaBootstrap do
+  self.use_transactional_tests = false
+
   # @spec POSTGRESQL-PERSISTENCE-012
   it "repairs a missing policy group when other tenant policies remain" do
     connection = ActiveRecord::Base.connection
-    connection.execute "DROP POLICY tenant_isolation ON execution_usages"
+    connection.execute "DROP POLICY IF EXISTS tenant_isolation ON execution_usages"
     connection.execute "ALTER TABLE execution_usages DISABLE ROW LEVEL SECURITY"
 
     described_class.new.up

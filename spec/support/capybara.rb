@@ -31,12 +31,20 @@ end
 SYSTEM_DRIVER = :rack_test
 
 # A Cuprite/Puma request checks out a different connection from the example.
-# Give Warden's session deserializer intentional system access before
+# Wrap the complete Rack stack so Warden can deserialize the session user before
 # ApplicationController resolves and applies the signed-in user's tenant.
-# Without this, forced RLS hides the session user before the controller can set
-# request context, and Turbo receives the sign-in page instead of its frame.
 # @spec POSTGRESQL-PERSISTENCE-012
-Rails.application.executor.to_run { TenantContext.apply_system_access! }
+class CapybaraTenantContext
+  def initialize(app)
+    @app = app
+  end
+
+  def call(environment)
+    TenantContext.with_system_access { @app.call(environment) }
+  end
+end
+
+Capybara.app = CapybaraTenantContext.new(Rails.application)
 
 # RackTest and the example share a database connection. ApplicationController
 # deliberately clears request tenant context, so restore the test harness's
