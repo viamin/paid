@@ -1,7 +1,8 @@
 <% coverage = agent_run.external_metadata.dig("layered_verification", "coverage") %>
 <% obligations_by_id = agent_run.project.layered_verification_obligations.where(id: coverage.keys).index_by { |obligation| obligation.id.to_s } %>
 <% current_package = agent_run.review_packages.order(:revision_number).last %>
-<% approvals = current_package ? current_package.approvals.includes(:approved_by).to_a : [] %>
+<% approval_ids = Array(current_package&.bound_inputs&.fetch("approval_ids", [])) %>
+<% approvals = LayeredVerificationReviewApproval.where(id: approval_ids).includes(:approved_by).order(:id).to_a %>
 
 <section id="layered-verification-intent-validation" class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800" aria-labelledby="intent-validation-heading">
   <div class="flex items-center justify-between gap-4">

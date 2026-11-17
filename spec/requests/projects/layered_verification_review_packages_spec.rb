@@ -111,6 +111,21 @@ RSpec.describe "Layered verification review packages" do
       expect(AgentRun.where(goal: "layered_verification_repair", project:)).to be_empty
     end
 
+    it "shows the approval carried by the successor package after the normal POST flow" do
+      post approve_project_layered_verification_review_package_path(project, package),
+        params: { note: "Validated the retry scenarios at the bound revision." }
+
+      successor = audit.review_packages.order(:revision_number).last
+      expect(successor).not_to eq(package)
+      expect(successor.bound_inputs.fetch("approval_ids")).to contain_exactly(package.approvals.sole.id)
+
+      get project_agent_run_path(project, audit)
+
+      intent_section = section(response.body, "layered-verification-intent-validation")
+      expect(intent_section).to include("Validated", user.name)
+      expect(intent_section).not_to include("Unknown")
+    end
+
     it "requires refreshed review when a newer revision supersedes the rendered package" do
       obligation.check_results.create!(
         producer: "semantic_audit", execution_state: "completed", obligation_coverage: "unresolved",
@@ -155,6 +170,7 @@ RSpec.describe "Layered verification review packages" do
     it "keeps an approved business validation explicit in the intent view" do
       create(:layered_verification_review_approval, package:, approved_by: user,
         provenance: { "surface" => "ui" })
+      LayeredVerification::ReviewPackages::Capture.call(agent_run: audit)
 
       get project_agent_run_path(project, audit)
 
