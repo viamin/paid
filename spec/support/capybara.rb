@@ -48,9 +48,11 @@ Capybara.app = CapybaraTenantContext.new(Rails.application)
 
 # The Puma server starts each request through the Rails executor. Establish the
 # same baseline on its checked-out connection before middleware deserializes the
-# Warden session; the Rack wrapper above also covers Capybara's direct app path.
+# Warden session, then restore it after controller cleanup. The Rack wrapper
+# above also covers Capybara's direct app path.
 # @spec POSTGRESQL-PERSISTENCE-012
 Rails.application.executor.to_run { TenantContext.apply_system_access! }
+Rails.application.executor.to_complete { TenantContext.apply_system_access! }
 
 # RackTest and the example share a database connection. ApplicationController
 # deliberately clears request tenant context, so restore the test harness's
