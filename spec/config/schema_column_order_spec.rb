@@ -72,7 +72,7 @@ RSpec.describe SchemaColumnOrder do
   end
 
   # @spec POSTGRESQL-PERSISTENCE-012
-  it "includes the later tenant policy groups required by a fresh schema load" do
+  it "includes every later tenant policy group required by a fresh schema load" do
     schema = dump_schema
 
     %w[
@@ -81,6 +81,9 @@ RSpec.describe SchemaColumnOrder do
       personal_access_tokens
       layered_verification_obligations
       layered_verification_review_packages
+      maintenance_reports
+      maintenance_findings
+      maintenance_finding_occurrences
     ].each do |table|
       expect(schema).to include("ALTER TABLE \"public\".\"#{table}\" ENABLE ROW LEVEL SECURITY;")
       expect(schema).to include("CREATE POLICY \"tenant_isolation\" ON \"public\".\"#{table}\"")
