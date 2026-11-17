@@ -342,6 +342,23 @@ RSpec.describe "Api::GithubWebhooks" do
         expect(metric.scores["pr_merged"]).to eq(1.0)
       end
 
+      # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+      it "observes a human GitHub merge for closeout verification admission" do
+        payload[:pull_request][:merge_commit_sha] = "a" * 40
+        body, signature = sign_payload(payload, project.webhook_secret)
+
+        expect(CloseoutVerifications::ObserveMerge).to receive(:call).with(
+          source_pr: subscribed_pull_request, merge_commit_sha: "a" * 40
+        )
+
+        post webhook_url, params: body, headers: {
+          "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request",
+          "X-Hub-Signature-256" => signature
+        }
+
+        expect(response).to have_http_status(:ok)
+      end
+
       it "creates a notification for subscribed users" do
         body, signature = sign_payload(payload, project.webhook_secret)
 

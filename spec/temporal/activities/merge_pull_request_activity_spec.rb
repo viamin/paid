@@ -440,6 +440,15 @@ RSpec.describe Activities::MergePullRequestActivity do
         )
       end
 
+      # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+      it "observes Paid's authoritative merge revision for closeout admission" do
+        expect(CloseoutVerifications::ObserveMerge).to receive(:call).with(
+          source_pr: issue, merge_commit_sha: "def456"
+        )
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+      end
+
       it "refreshes the source closure before auto-merging a Paid-generated PR" do # @spec PARTIAL-CLOSEOUT-050
         source_issue = create(:issue, project: project, github_number: 7)
         record_source_closeout_assessment(source_issue)

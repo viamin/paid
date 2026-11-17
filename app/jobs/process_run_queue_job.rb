@@ -1579,6 +1579,7 @@ class ProcessRunQueueJob < ApplicationJob
   def schedulable_queue_scope(skipped_ids:, blocked_project_ids:, blocked_user_ids:, blocked_account_ids:,
     blocked_account_create_pr_ids:, blocked_account_dispatch_ids:)
     scope = AgentRun.unclaimed_with_priority
+      .where.not(goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL)
       .joins(project: :account)
       .joins("LEFT JOIN tenant_settings ON tenant_settings.account_id = projects.account_id")
       .where(accounts: { scheduler_paused_at: nil })

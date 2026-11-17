@@ -37,7 +37,7 @@ class AgentRun < ApplicationRecord
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   # @spec LAYERED-VERIFY-013
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation cycle_analysis maintenance].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation closeout_verification cycle_analysis maintenance].freeze
   LAYERED_VERIFICATION_GOALS = %w[layered_verification_audit layered_verification_repair].freeze
   # RDR-075 M01: report-only maintenance investigation goal. Admission is
   # manual-only through the dedicated, `maintenance_runs`-gated entry points;
@@ -54,7 +54,9 @@ class AgentRun < ApplicationRecord
   # triggers and tenant defaults may select; layered verification requires
   # its dedicated, feature-gated entry points.
   CYCLE_ANALYSIS_GOAL = "cycle_analysis"
-  NON_TRIGGERABLE_GOALS = (LAYERED_VERIFICATION_GOALS + [ TECHNICAL_PREREQUISITE_VALIDATION_GOAL, CYCLE_ANALYSIS_GOAL, MAINTENANCE_GOAL ]).freeze
+  CLOSEOUT_VERIFICATION_GOAL = "closeout_verification"
+  NON_TRIGGERABLE_GOALS = (LAYERED_VERIFICATION_GOALS + [ TECHNICAL_PREREQUISITE_VALIDATION_GOAL,
+    CLOSEOUT_VERIFICATION_GOAL, CYCLE_ANALYSIS_GOAL, MAINTENANCE_GOAL ]).freeze
   TRIGGERABLE_GOALS = (GOALS - NON_TRIGGERABLE_GOALS).freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing

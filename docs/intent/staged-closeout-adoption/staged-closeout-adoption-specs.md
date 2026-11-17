@@ -20,3 +20,9 @@
 
 - [x] **STAGED-CLOSEOUT-ADOPTION-005** — When a project or account with reviewed staged-closeout mappings is deleted, Paid SHALL delete its mappings, source issues, enrollment, and owning tenant records without a dependency-order failure.
   *Test:* `spec/models/project_spec.rb`.
+
+- [x] **STAGED-CLOSEOUT-ADOPTION-008** — When Paid authoritatively observes a source PR merge for an enabled project, it SHALL admit one queued synthetic `closeout_verification` run for every eligible current `merged_revision` mapping, pinning project, source issue, criterion, source PR, observed merged SHA, recipe version, and recipe digest; it SHALL not dispatch that run through ordinary agent execution.
+  *Test:* `spec/services/closeout_verifications/admit_spec.rb`.
+
+- [x] **STAGED-CLOSEOUT-ADOPTION-009** — When the same merge is observed by Paid auto-merge, a GitHub webhook, concurrent delivery, or a bounded reconciliation sweep, Paid SHALL converge to the same run identity; an invalid mapping, unavailable authority, pause, absent lineage, current result, or unconfirmed live target SHALL produce an inspectable no-run reason.
+  *Test:* `spec/services/closeout_verifications/admit_spec.rb`, `spec/requests/api/github_webhooks_spec.rb`, `spec/jobs/closeout_verification_reconciliation_sweep_job_spec.rb`.

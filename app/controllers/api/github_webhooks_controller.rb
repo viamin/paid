@@ -99,6 +99,7 @@ module Api
       end
 
       notify_merge_subscribers(pr["number"])
+      observe_closeout_verification_merge(pr)
 
       agent_run = find_agent_run(pr["number"])
       unless agent_run
@@ -290,6 +291,14 @@ module Api
       return unless issue
 
       IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-008 STAGED-CLOSEOUT-ADOPTION-009
+    def observe_closeout_verification_merge(pr)
+      source_pr = @project&.issues&.find_by(github_number: pr["number"], is_pull_request: true)
+      return unless source_pr
+
+      CloseoutVerifications::ObserveMerge.call(source_pr:, merge_commit_sha: pr["merge_commit_sha"])
     end
 
     # @spec FEATURE-APPROVAL-017 — enqueue the reconciliation that
