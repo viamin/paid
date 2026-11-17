@@ -19,6 +19,8 @@ RSpec.describe Committee::Drivers do
       "/feature_intents/{id}/cancel",
       "/feature_intents/{id}/reopen",
       "/projects/{project_id}/delegation",
+      "/projects/{project_id}/automation_phases",
+      "/projects/{project_id}/automation_phases/continuation_grants/{id}",
       "/projects/{project_id}/staged_closeout_adoption",
       "/projects/{project_id}/staged_closeout_adoption/mappings",
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}",
@@ -187,6 +189,10 @@ RSpec.describe Committee::Drivers do
       "/feature_intents/{id}/cancel" => { "post" => [ "inbox" ] },
       "/feature_intents/{id}/reopen" => { "post" => [ "inbox" ] },
       "/projects/{project_id}/delegation" => { "get" => [ "inbox" ] },
+      "/projects/{project_id}/automation_phases" => { "get" => [ "inbox" ], "patch" => [ "inbox" ] },
+      "/projects/{project_id}/automation_phases/continuation_grants/{id}" => {
+        "delete" => [ "inbox" ], "patch" => [ "inbox" ]
+      },
       "/projects/{project_id}/staged_closeout_adoption" => { "get" => [ "inbox" ], "patch" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption/mappings" => { "post" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}" => { "delete" => [ "inbox" ] },

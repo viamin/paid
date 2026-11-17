@@ -79,6 +79,15 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "get_project_automation_phases",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "get_project_issues",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id } },
@@ -106,6 +115,24 @@ RSpec.describe Tools::Registry do
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
           project_record.update!(paused: true)
+        }
+      },
+      {
+        tool_name: "revoke_continuation_grant",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { { project_id: project.id, grant_id: 0, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "extend_continuation_grant",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { { project_id: project.id, grant_id: 0, endpoint: "merge", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
         }
       },
       {
