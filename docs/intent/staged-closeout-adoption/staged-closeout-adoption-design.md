@@ -27,8 +27,22 @@ criterion string. It pins its stage, target shape, existing execution-path
 key, version and digest, optional environment class, freshness, retry policy,
 reviewer, and review time. Replacing or revoking a mapping retires the old
 revision; future admission must select only the latest approved, current
-revision. This is an eligibility contract only: it creates no run and does not
-schedule a merge event.
+revision. Review never creates a run. After an authoritative source-PR merge
+observation, closeout verification admission selects each current
+`merged_revision` mapping and creates one synthetic, queued
+`closeout_verification` AgentRun. The run binds the project, source issue,
+mapping/criterion, source PR number, observed merge SHA, and pinned recipe
+version and digest. A database identity makes webhook replay, concurrent
+observers, and Paid auto-merge/webhook overlap converge.
+
+The goal is non-triggerable and excluded from the ordinary agent queue;
+execution belongs to its dedicated successor work. Admission rechecks mapping
+eligibility and automatic phase authority, rejects paused or inactive project
+authority, and returns a stable, inspectable no-run reason. Completed evidence
+with the same identity is current and is not replaced. A bounded sweep retries
+persisted merged PR observations after a disabled enrollment is re-enabled or
+a webhook was missed. `live_environment` mappings do not qualify from a merge:
+they wait for a separately confirmed live target.
 
 Mapping admission validates the criterion against the current persisted
 closeout assessment, project/account scope, stage-to-phase pairing, and the
@@ -71,4 +85,5 @@ enrollment change as skipped and applies every other profile target.
 | --- | --- | --- |
 | Revision rows instead of in-place edits | Keeps the reviewed decision and invalidation history inspectable. | Editing the current mapping would erase the approval it superseded. |
 | Registry references only | Prevents this feature from becoming a command or deployment executor. | Accepting arbitrary commands or targets would bypass existing authorization. |
+| Merge identity stored on the source PR and run | Lets a bounded sweep recover missed delivery without treating merge as deployment, while preserving exact evidence provenance. | Re-fetching GitHub for every sweep would make recovery depend on a live provider read and obscure the observed target. |
 | Explicit profile target for Fully Automatic | Enrollment flows through the reviewed planner/applier with the same per-level authorization and rollback as every other posture lever. | Deriving enrollment silently from merge/release settings would hide the adoption decision. |

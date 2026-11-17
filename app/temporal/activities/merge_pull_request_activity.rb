@@ -21,6 +21,7 @@ module Activities
 
     def execute(input)
       @effective_credential_mode = nil
+      @merged_commit_sha = nil
       project = Project.find(input[:project_id])
       pr_number = input[:pr_number]
       issue = Issue.find(input[:issue_id])
@@ -185,6 +186,7 @@ module Activities
           add_merge_comment(provider, project, repo, pr_number)
         end
         record_attempt(project, issue, status: "merged", credential_mode: effective_credential_mode(project)) unless pr_data.merged
+        CloseoutVerifications::ObserveMerge.call(source_pr: issue, merge_commit_sha: observed_merge_sha(pr_data))
       end
 
       { merged: merged, pr_number: pr_number }
@@ -276,6 +278,7 @@ module Activities
         pr_number: pr_data.number,
         merge_method: config.merge_method
       )
+      @merged_commit_sha = result.sha if result.merged && result.respond_to?(:sha)
       result.merged
     rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(
@@ -285,6 +288,12 @@ module Activities
         error: e.message
       )
       handle_merge_failure(project, issue, pr_data, config, e.message)
+    end
+
+    # The merge endpoint returns the authoritative SHA for Paid's own merge;
+    # an already-merged PR is observed from the fetched provider payload.
+    def observed_merge_sha(pr_data)
+      @merged_commit_sha.presence || (pr_data.merge_commit_sha if pr_data.respond_to?(:merge_commit_sha))
     end
 
     # @spec AUTO-MERGE-009
@@ -396,7 +405,10 @@ module Activities
         project_id: project.id,
         pr_number: pr_data.number
       )
-      @effective_credential_mode = AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK if result.merged
+      if result.merged
+        @effective_credential_mode = AutoMergeAttempt::CREDENTIAL_MODE_PAT_FALLBACK
+        @merged_commit_sha = result.sha if result.respond_to?(:sha)
+      end
       result.merged ? :merged : :retryable_failure
     rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(

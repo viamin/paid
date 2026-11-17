@@ -57,6 +57,7 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
         DockerOrphanCleanupJob
         ClaudeAuthHealthCheckJob
         ClaudeCredentialKeepWarmJob
+        CloseoutVerificationReconciliationSweepJob
         CoordinationExperimentResolutionJob
         CoordinationPolicyEvolutionJob
         ExecutionAuditEventRetentionJob
