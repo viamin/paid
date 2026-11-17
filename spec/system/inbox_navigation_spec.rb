@@ -255,4 +255,44 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(page).to have_current_path(inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND))
     expect(page).to have_no_css("#inbox-detail h2", text: "First question")
   end
+
+  # @spec OPERATOR-INBOX-027
+  it "keeps approved intent revisions behind a keyboard-accessible disclosure" do
+    feature = create(:feature_intent, project:, title: "Export reliability",
+      brief: "Exports complete without duplicate rows.", approved_design_revision: "a" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: first_issue)
+    page.current_window.resize_to(320, 1000)
+    visit member_path(first_issue)
+
+    brief = find("[data-testid='inbox-decision-brief']")
+    expect(brief).to have_text("Goal: Exports complete without duplicate rows.")
+    expect(brief).to have_text("Intent source: Approved feature intent: Export reliability")
+    expect(brief).to have_no_text(feature.approved_design_revision)
+
+    summary = brief.find("summary", text: "Approved intent details")
+    summary.native.node.focus
+    page.driver.browser.keyboard.type(:Enter)
+    expect(brief).to have_text("Approved revision: #{feature.approved_design_revision}")
+    expect(page.evaluate_script("document.documentElement.scrollWidth")).to be <= 320
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "keeps every approved goal visible while disclosing its revision on demand" do
+    feature = create(:feature_intent, project:, title: "Export reliability",
+      brief: "Exports complete without duplicate rows.", approved_design_revision: "a" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: first_issue)
+    other_feature = create(:feature_intent, project:, title: "Export speed",
+      brief: "Exports finish promptly.", approved_design_revision: "b" * 40)
+    create(:feature_intent_issue, feature_intent: other_feature, issue: first_issue)
+    visit member_path(first_issue)
+
+    brief = find("[data-testid='inbox-decision-brief']")
+    expect(brief).to have_text("Exports complete without duplicate rows.")
+    expect(brief).to have_text("Exports finish promptly.")
+    expect(brief).to have_no_text(feature.approved_design_revision)
+    expect(brief).to have_no_text(other_feature.approved_design_revision)
+    brief.find("summary", text: "Approved intent details").click
+    expect(brief).to have_text(feature.approved_design_revision)
+    expect(brief).to have_text(other_feature.approved_design_revision)
+  end
 end
