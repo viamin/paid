@@ -56,15 +56,7 @@ RSpec.describe Automation::Phases::MigrationPreview do
   end
 
   it "reports each trusted label-enabled work item that would lose automatic execution" do
-    project.update!(feature_activation_labels: project.effective_feature_activation_labels
-      .merge("auto_pick" => "paid:auto-pick"))
-    project.update!(auto_pick_enabled: false, auto_scan_prs: false, auto_scan_security: false,
-      auto_fix_merge_conflicts: false,
-      Automation::PhaseSettings::SETTINGS_KEY => {
-        Automation::PhaseSettings::PHASES_KEY => { "coding" => false },
-        Automation::PhaseSettings::RELEASE_KEY => false,
-        Automation::PhaseSettings::DEPLOYMENT_KEY => false
-      })
+    configure_disabled_auto_pick_preview
     issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
     untrusted_issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
     allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?) do |_project, candidate, _label|
@@ -79,10 +71,42 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.label_enabled_work).not_to include(include(work_item_id: untrusted_issue.id))
   end
 
+  it "omits label-enabled work when its trust history is rate limited" do
+    configure_disabled_auto_pick_preview
+    create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+      .and_raise(GithubClient::RateLimitError.new)
+    expect(Rails.logger).to receive(:warn).with(
+      hash_including(
+        message: "automation.phases.migration_preview.label_trust_rate_limited",
+        project_id: project.id,
+        error_class: "GithubClient::RateLimitError"
+      )
+    )
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work).to be_empty
+    expect(preview.label_enabled_capabilities).to be_empty
+  end
+
   it "counts active grants so a rollback knows what it would have to absorb" do
     issue = create(:issue, project:)
     create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
 
     expect(described_class.call(project:, user:).active_grants).to eq(1)
+  end
+
+  def configure_disabled_auto_pick_preview
+    project.update!(
+      feature_activation_labels: project.effective_feature_activation_labels.merge("auto_pick" => "paid:auto-pick"),
+      auto_pick_enabled: false, auto_scan_prs: false, auto_scan_security: false,
+      auto_fix_merge_conflicts: false,
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      }
+    )
   end
 end

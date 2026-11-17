@@ -113,6 +113,13 @@ module Automation
             { capability:, phase:, work_item_id: work_item.id }
           end
         end
+      rescue GithubClient::RateLimitError => error
+        Rails.logger.warn(
+          message: "automation.phases.migration_preview.label_trust_rate_limited",
+          project_id: project.id,
+          error_class: error.class.name
+        )
+        []
       end
 
       def phase_disabled_by_derived_settings?(phase, derived_settings)
