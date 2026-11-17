@@ -48,4 +48,38 @@ RSpec.describe SchemaColumnOrder do
     expect(schema).to include('create_trigger :logidze_on_projects, sql_definition:')
     expect(dump.call).to eq(schema)
   end
+
+  # @spec POSTGRESQL-PERSISTENCE-012
+  it "preserves row-level security flags and policies in repeatable full dumps" do
+    connection = ActiveRecord::Base.connection
+    create_schema_rls_probe(connection)
+    schema = dump_schema
+
+    expect(schema).to include("ALTER TABLE \"public\".\"schema_rls_probe\" ENABLE ROW LEVEL SECURITY;")
+    expect(schema).to include("ALTER TABLE \"public\".\"schema_rls_probe\" FORCE ROW LEVEL SECURITY;")
+    expect(schema).to include("CREATE POLICY \"tenant_isolation\" ON \"public\".\"schema_rls_probe\"")
+    expect(schema).to include("USING ((account_id = paid_current_account_id()))")
+    expect(schema.index("create_function :paid_current_account_id")).to be < schema.index("schema_rls_probe\" ENABLE")
+    expect(dump_schema).to eq(schema)
+  ensure
+    connection&.drop_table(:schema_rls_probe, if_exists: true)
+  end
+
+  def create_schema_rls_probe(connection)
+    connection.create_table(:schema_rls_probe) { |table| table.bigint :account_id, null: false }
+    connection.execute "ALTER TABLE schema_rls_probe ENABLE ROW LEVEL SECURITY"
+    connection.execute "ALTER TABLE schema_rls_probe FORCE ROW LEVEL SECURITY"
+    connection.execute <<~SQL
+      CREATE POLICY tenant_isolation ON schema_rls_probe
+        AS PERMISSIVE FOR ALL
+        USING (account_id = paid_current_account_id())
+        WITH CHECK (account_id = paid_current_account_id())
+    SQL
+  end
+
+  def dump_schema
+    stream = StringIO.new
+    ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection_pool, stream)
+    stream.string
+  end
 end

@@ -94,3 +94,12 @@
   automatic dumping, and explicit schema dumps SHALL remain available.
   *Tests:* `spec/config/active_record_automatic_schema_dump_spec.rb`, `spec/lib/dev_update_spec.rb`.
   *Code:* `config/initializers/automatic_schema_dump.rb`, `bin/dev-update`.
+
+- [x] **POSTGRESQL-PERSISTENCE-012** — When Rails writes or loads the canonical
+  `db/schema.rb`, it SHALL preserve PostgreSQL row-level-security enable/force
+  flags and policy definitions for every dumped table, including tenant-scoped
+  maintenance reports, findings, and occurrences. A schema-loaded database
+  SHALL therefore enforce the same tenant read and write boundary as its
+  migration-created counterpart.
+  *Tests:* `spec/config/schema_column_order_spec.rb`.
+  *Code:* `SchemaRowLevelSecurity`, `RestoreTenantRlsPoliciesAfterSchemaBootstrap`.
