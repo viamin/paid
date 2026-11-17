@@ -10,6 +10,7 @@ RSpec.describe CreateLayeredVerificationReviewPackages, :aggregate_failures do
 
   let(:migration) { described_class.new }
   let(:connection) { ActiveRecord::Base.connection }
+  let(:cross_tenant_account_ids) { [] }
 
   around do |example|
     tables_existed = review_package_tables.to_h { |table| [ table, connection.table_exists?(table) ] }
@@ -20,9 +21,9 @@ RSpec.describe CreateLayeredVerificationReviewPackages, :aggregate_failures do
 
     example.run
   ensure
+    cleanup_cross_tenant_records!
     teardown_review_package_tables!
     teardown_review_package_functions!
-
     restore_current_schema! if tables_existed.any? { |_table, existed| existed }
     clear_schema_metadata!
   end
@@ -98,6 +99,7 @@ RSpec.describe CreateLayeredVerificationReviewPackages, :aggregate_failures do
     TenantContext.with_system_access do
       account_a = create(:account)
       account_b = create(:account)
+      cross_tenant_account_ids.concat([ account_a.id, account_b.id ])
       user_a = create(:user, account: account_a)
       user_b = create(:user, account: account_b)
       project_a = create(:project, account: account_a, created_by: user_a)
@@ -105,6 +107,20 @@ RSpec.describe CreateLayeredVerificationReviewPackages, :aggregate_failures do
       run_b = create(:agent_run, project: project_b)
 
       [ project_a, project_b, user_a, user_b, run_b ]
+    end
+  end
+
+  # This spec runs DDL outside the example transaction. Remove the fixture
+  # accounts and their dependent records so later shard examples retain their
+  # transactional isolation.
+  def cleanup_cross_tenant_records!
+    return if cross_tenant_account_ids.blank?
+
+    TenantContext.with_system_access do
+      LayeredVerificationReviewApproval.where(
+        approved_by_id: User.where(account_id: cross_tenant_account_ids)
+      ).delete_all
+      Account.where(id: cross_tenant_account_ids).destroy_all
     end
   end
 
