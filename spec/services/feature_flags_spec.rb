@@ -85,6 +85,61 @@ RSpec.describe FeatureFlags do
     end
   end
 
+  describe ".disable! with a guarded flag definition" do
+    let(:guard) do
+      Class.new do
+        class << self
+          attr_reader :yielded, :last_scope
+
+          def protect_disable(project: nil, actor: nil, &block)
+            @last_scope = { project:, actor: }
+            @yielded = true
+            block.call
+          end
+        end
+      end
+    end
+
+    let(:guarded_definition) do
+      FeatureFlags::Definition.new(
+        name: :test_feature_flag,
+        owner: "test",
+        intent: "Test flag",
+        rollout_plan: "None",
+        cleanup_criteria: "None",
+        disable_guard: guard
+      )
+    end
+
+    before do
+      stub_const("#{described_class}::DEFINITIONS", {
+        test_feature_flag: guarded_definition
+      }.freeze)
+    end
+
+    it "routes the mutation through the definition's disable guard" do
+      described_class.enable!(:test_feature_flag, project:)
+
+      described_class.disable!(:test_feature_flag, project:)
+
+      expect(guard.yielded).to be(true)
+      expect(guard.last_scope).to eq(project: project, actor: nil)
+      expect(described_class.enabled?(:test_feature_flag, project:)).to be(false)
+    end
+
+    it "propagates guard refusals without changing flag state" do
+      described_class.enable!(:test_feature_flag, project:)
+      refusal = FeatureFlags::RollbackBlockedError.new("blocked by policy", details: { flag: :test_feature_flag })
+      guard.define_singleton_method(:protect_disable) { |**| raise refusal }
+
+      expect {
+        described_class.disable!(:test_feature_flag, project:)
+      }.to raise_error(FeatureFlags::RollbackBlockedError, /blocked by policy/)
+
+      expect(described_class.enabled?(:test_feature_flag, project:)).to be(true)
+    end
+  end
+
   describe ".enable_percentage_of_actors" do
     it "configures a percentage-of-actors rollout" do
       described_class.enable_percentage_of_actors(:test_feature_flag, 25)

@@ -35,6 +35,38 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+### Rollback protection
+
+Disabling the phase model is itself a policy mutation, so
+`Automation::Phases::RollbackProtection` guards every supported rollout
+mutation path that can disable it: the project-scoped and global
+`FeatureFlags.disable!(:automation_phases, ...)` mutations (rake
+`feature_flags:disable`) and the tenant-settings features override
+(`TenantConfigurationsController`). A project with an active continuation
+grant can never silently revert to legacy interpretation, because legacy
+policy cannot interpret scoped grants.
+
+- A refusal raises `FeatureFlags::RollbackBlockedError` with an actionable,
+  inspectable reason (project, active grants, remediation) and mutates
+  nothing: the effective flag value, stored phase settings, grants, and audit
+  history are preserved.
+- Once every grant is finished or revoked, the guard reconciles affected
+  queued work before permitting the rollback: queued automatic runs on
+  continuation-grant work chains are rechecked with
+  `AgentRuns::RecheckIssueEligibility` while the flag is still enabled, so
+  runs whose phase authorization disappeared are cancelled and independently
+  authorized work is preserved. If runs remain unreconciled, the rollback is
+  refused with the pending reason.
+- The check, reconciliation, and flag mutation share one database transaction
+  holding a per-project advisory lock
+  (`Automation::Phases::RollbackProtection.with_project_lock`), which
+  `Automation::ManualStart::Plan#build_grant` also takes, so concurrent grant
+  creation serializes with rollback instead of racing it.
+
+Percentage-of-actors and percentage-of-time gate mutations are owner-gated
+global rollouts, not the project pilot enablement surface, so they are not
+rollback paths for this flag.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:

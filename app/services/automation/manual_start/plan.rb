@@ -104,14 +104,20 @@ module Automation
 
         ensure_delegation_permitted!
 
-        WorkItemContinuationGrant.create!(
-          project: project,
-          issue: issue,
-          start_phase: start_phase,
-          endpoint: endpoint,
-          source: "manual_start",
-          created_by: user
-        )
+        # Grant creation serializes with a guarded rollout rollback through
+        # the shared per-project advisory lock, so a grant can never be
+        # created while the phase model is being rolled back for the project.
+        # @spec AUTOMATION-PHASES-014
+        Automation::Phases::RollbackProtection.with_project_lock(project) do
+          WorkItemContinuationGrant.create!(
+            project: project,
+            issue: issue,
+            start_phase: start_phase,
+            endpoint: endpoint,
+            source: "manual_start",
+            created_by: user
+          )
+        end
       end
 
       private
