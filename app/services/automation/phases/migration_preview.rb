@@ -83,7 +83,7 @@ module Automation
       def call
         settings = Automation::PhaseSettings.call(project)
         derived_settings = settings.derive
-        label_enabled_work_preview = label_enabled_work(derived_settings)
+        label_enabled_work_preview = label_enabled_work(settings.to_settings)
 
         Preview.new(
           project: project,
@@ -142,10 +142,13 @@ module Automation
       # work an activation would change. Provenance replays are bounded per
       # render (PROVENANCE_REPLAY_LIMIT); labeled work past the bound stays
       # unchecked and the preview reports truncation rather than completeness.
-      def label_enabled_work(derived_settings)
+      # Phase settings retain subordinate controls while a phase is disabled.
+      # Use their effective persisted map here because activation enforces that
+      # map, not the capability-derived defaults shown elsewhere in the preview.
+      def label_enabled_work(phase_settings)
         budget = ProvenanceBudget.new(PROVENANCE_REPLAY_LIMIT)
         provenance_available = true
-        capabilities = disabled_label_capabilities(derived_settings)
+        capabilities = disabled_label_capabilities(phase_settings)
         work_items = budget.bound(labeled_work_items(capabilities)).flat_map do |work_item|
           capabilities.filter_map do |capability|
             next unless label_activates_capability?(capability, work_item)
@@ -181,13 +184,13 @@ module Automation
         )
       end
 
-      def phase_disabled_by_derived_settings?(phase, derived_settings)
-        !derived_settings.fetch(Automation::PhaseSettings::PHASES_KEY).fetch(phase, false)
+      def phase_disabled_by_settings?(phase, phase_settings)
+        !phase_settings.fetch(Automation::PhaseSettings::PHASES_KEY).fetch(phase, false)
       end
 
-      def disabled_label_capabilities(derived_settings)
+      def disabled_label_capabilities(phase_settings)
         LABEL_ACTIVATED_CAPABILITIES.select do |capability|
-          phase_disabled_by_derived_settings?(Automation::Phases.for_capability(capability), derived_settings)
+          phase_disabled_by_settings?(Automation::Phases.for_capability(capability), phase_settings)
         end
       end
 

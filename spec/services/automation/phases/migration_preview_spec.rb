@@ -71,6 +71,26 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.label_enabled_work).not_to include(include(work_item_id: untrusted_issue.id))
   end
 
+  it "reports trusted label-enabled work for a stored-disabled phase despite enabled subordinate settings" do
+    project.update!(
+      feature_activation_labels: project.effective_feature_activation_labels.merge("auto_pick" => "paid:auto-pick"),
+      auto_pick_enabled: true,
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      }
+    )
+    issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust).and_return(:trusted)
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work).to contain_exactly(
+      include(capability: "auto_pick", phase: "coding", work_item_id: issue.id)
+    )
+  end
+
   it "excludes trusted auto-enhance-only work that cannot trigger a run" do
     configure_disabled_auto_pick_preview
     project.update!(
@@ -166,8 +186,11 @@ RSpec.describe Automation::Phases::MigrationPreview do
 
     expect(replayed.uniq).to match_array(issues.map(&:id))
     expect(preview.label_enabled_work_status).to eq("available")
-    expect(preview.label_enabled_work).to match_array(issues.map do |issue|
-      include(capability: "auto_enhance", phase: "issue_preparation", work_item_id: issue.id)
+    expect(preview.label_enabled_work).to match_array(issues.flat_map do |issue|
+      [
+        include(capability: "auto_enhance", phase: "issue_preparation", work_item_id: issue.id),
+        include(capability: "auto_pick", phase: "coding", work_item_id: issue.id)
+      ]
     end)
   end
 
