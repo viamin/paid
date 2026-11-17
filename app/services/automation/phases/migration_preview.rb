@@ -230,6 +230,9 @@ module Automation
 
       def activation_labels(capability)
         labels = [ project.feature_activation_label_for(capability) ]
+        # Auto-enhancement uses the auto-pick trigger when its project setting
+        # is enabled, so preview the same trusted labels that runtime accepts.
+        labels << project.feature_activation_label_for("auto_pick") if capability == "auto_enhance" && project.auto_enhance_enabled?
         labels << project.feature_activation_label_for("paid_in_full") unless capability == "auto_merge"
         labels.compact_blank
       end

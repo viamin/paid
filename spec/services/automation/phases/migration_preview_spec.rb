@@ -104,6 +104,27 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.label_enabled_work).not_to include(include(work_item_id: issue.id))
   end
 
+  # @spec AUTOMATION-PHASES-015
+  it "reports trusted auto-pick work that also enables project-configured auto-enhancement" do
+    project.update!(
+      auto_enhance_enabled: true,
+      feature_activation_labels: project.effective_feature_activation_labels.merge("auto_pick" => "paid:auto-pick"),
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "issue_preparation" => false, "coding" => true },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      }
+    )
+    issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust).and_return(:trusted)
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work).to contain_exactly(
+      include(capability: "auto_enhance", phase: "issue_preparation", work_item_id: issue.id)
+    )
+  end
+
   it "excludes locally activated ignored-mode work with an untrusted label" do
     configure_disabled_auto_pick_preview
     project.update!(label_integration_mode: "ignored")
