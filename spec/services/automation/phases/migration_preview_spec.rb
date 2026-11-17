@@ -55,16 +55,28 @@ RSpec.describe Automation::Phases::MigrationPreview do
     )
   end
 
-  it "reports label-enabled work that would lose automatic execution" do
+  it "reports each trusted label-enabled work item that would lose automatic execution" do
     project.update!(feature_activation_labels: project.effective_feature_activation_labels
       .merge("auto_pick" => "paid:auto-pick"))
-    create(:issue, project:, labels: [ "paid:auto-pick" ])
+    project.update!(auto_pick_enabled: false, auto_scan_prs: false, auto_scan_security: false,
+      auto_fix_merge_conflicts: false,
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+    issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    untrusted_issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?) do |_project, candidate, _label|
+      candidate == issue
+    end
 
     preview = described_class.call(project:, user:)
 
-    expect(preview.label_enabled_capabilities).to be_empty.or include(
-      include(capability: "auto_enhance", phase: "issue_preparation")
+    expect(preview.label_enabled_work).to contain_exactly(
+      include(capability: "auto_pick", phase: "coding", work_item_id: issue.id)
     )
+    expect(preview.label_enabled_work).not_to include(include(work_item_id: untrusted_issue.id))
   end
 
   it "counts active grants so a rollback knows what it would have to absorb" do

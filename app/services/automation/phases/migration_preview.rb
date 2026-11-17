@@ -12,7 +12,7 @@ module Automation
     # @spec AUTOMATION-PHASES-015
     class MigrationPreview
       Preview = Struct.new(:project, :derived_settings, :configured_settings, :disabled_phase_entries,
-        :label_enabled_capabilities, :active_grants, keyword_init: true) do
+        :label_enabled_capabilities, :label_enabled_work, :active_grants, keyword_init: true) do
         def to_h
           {
             project_id: project.id,
@@ -20,6 +20,7 @@ module Automation
             configured_settings: configured_settings,
             inbox_entries_leaving_default: disabled_phase_entries,
             label_enabled_capabilities: label_enabled_capabilities,
+            label_enabled_work: label_enabled_work,
             active_grants: active_grants
           }
         end
@@ -44,13 +45,16 @@ module Automation
 
       def call
         settings = Automation::PhaseSettings.call(project)
+        derived_settings = settings.derive
+        label_enabled_work = label_enabled_work(derived_settings)
 
         Preview.new(
           project: project,
-          derived_settings: settings.derive,
+          derived_settings:,
           configured_settings: settings.to_settings,
           disabled_phase_entries: disabled_phase_entries(settings),
-          label_enabled_capabilities: label_enabled_capabilities(settings),
+          label_enabled_work:,
+          label_enabled_capabilities: label_enabled_capabilities(label_enabled_work),
           active_grants: active_grants
         )
       end
@@ -89,28 +93,51 @@ module Automation
         }
       end
 
-      # Currently label-enabled work that would lose automatic execution when
-      # its phase is disabled by the derived defaults.
-      def label_enabled_capabilities(settings)
-        LABEL_ACTIVATED_CAPABILITIES.filter_map do |capability|
-          phase = Automation::Phases.for_capability(capability)
-          next if phase.nil?
-          next if settings.phase_enabled?(phase)
-          next unless label_enabled?(capability)
+      def label_enabled_capabilities(work_items)
+        work_items.map { |work| work.slice(:capability, :phase) }
+          .uniq
+      end
 
-          { capability: capability, phase: phase }
+      # Preview the individual work items that trusted labels currently admit.
+      # A label's presence alone is insufficient: execution checks its trusted
+      # event provenance, so the preview uses that same decision before naming
+      # work an activation would change.
+      def label_enabled_work(derived_settings)
+        LABEL_ACTIVATED_CAPABILITIES.flat_map do |capability|
+          phase = Automation::Phases.for_capability(capability)
+          next [] unless phase_disabled_by_derived_settings?(phase, derived_settings)
+
+          labeled_work_items(capability).filter_map do |work_item|
+            next unless currently_label_enabled?(capability, work_item)
+
+            { capability:, phase:, work_item_id: work_item.id }
+          end
         end
       end
 
-      # Label presence is the preview's proxy for "work a trusted label would
-      # currently activate": a label on an open item is exactly the signal
-      # Automation::FeatureActivation reads, without making a GitHub API call.
-      def label_enabled?(capability)
-        label = project.feature_activation_label_for(capability)
-        return false if label.blank?
+      def phase_disabled_by_derived_settings?(phase, derived_settings)
+        !derived_settings.fetch(Automation::PhaseSettings::PHASES_KEY).fetch(phase, false)
+      end
 
-        scope = project.issues.where(github_state: "open").where("labels @> ?", [ label ].to_json)
-        capability == "auto_merge" ? scope.pull_requests_only.exists? : scope.issues_only.exists?
+      def labeled_work_items(capability)
+        labels = [ project.feature_activation_label_for(capability) ]
+        labels << project.feature_activation_label_for("paid_in_full") unless capability == "auto_merge"
+        scope = labels.compact_blank.reduce(project.issues.none) do |matching_work, label|
+          matching_work.or(project.issues.where("labels @> ?", [ label ].to_json))
+        end.where(github_state: "open")
+
+        capability == "auto_merge" ? scope.pull_requests_only : scope.issues_only
+      end
+
+      def currently_label_enabled?(capability, work_item)
+        case capability
+        when "auto_pick"
+          Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue: work_item).present?
+        when "auto_enhance"
+          Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue: work_item)
+        when "auto_merge"
+          Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: work_item, feature: capability)
+        end
       end
 
       # Existing manual runs acquire no continuation grant retroactively; this
