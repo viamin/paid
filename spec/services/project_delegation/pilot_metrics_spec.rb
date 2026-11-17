@@ -44,6 +44,35 @@ RSpec.describe ProjectDelegation::PilotMetrics do
     record("decision_reversed", "reversal-1", material: true)
   end
 
+  it "counts one completed issue when that issue reopens and completes repeatedly" do # @spec PROJECT-DELEGATION-007
+    issue = create(:issue, project:)
+    [ false, true ].each do |baseline|
+      30.times do |index|
+        record("issue_started", "retry-started-#{baseline}-#{index}", issue:, baseline:)
+        record("issue_completed", "retry-completed-#{baseline}-#{index}", issue:, baseline:)
+      end
+      record("human_decision", "retry-decision-#{baseline}", issue:, baseline:, duration_seconds: 60)
+    end
+
+    result = described_class.call(project:, now:)
+
+    expect(result).not_to be_available
+    expect(result.sample_count).to eq(1)
+    expect(result.metrics).to include(completed_issues: 1, completion_rate: 1.0, decisions_per_completed_issue: 1.0)
+    expect(result.metrics[:baseline]).to include(completed_issues: 1, completion_rate: 1.0, decisions_per_completed_issue: 1.0)
+  end
+
+  it "does not count project-level records as completed issues in the pilot or baseline" do # @spec PROJECT-DELEGATION-007
+    [ false, true ].each do |baseline|
+      30.times { |index| record("issue_completed", "project-completed-#{baseline}-#{index}", baseline:) }
+    end
+
+    result = described_class.call(project:, now:)
+
+    expect(result.sample_count).to eq(0)
+    expect(result.metrics[:baseline][:completed_issues]).to eq(0)
+  end
+
   it "stores each metric with posture and evidence revisions" do
     record("human_decision", "decision-1", intent_revision: "intent-2", acceptance_revision: "accept-3",
       evidence_revision: "evidence-4", duration_seconds: 12)
@@ -85,9 +114,9 @@ RSpec.describe ProjectDelegation::PilotMetrics do
   end
 
   it "does not combine evidence from an earlier authority revision" do # @spec PROJECT-DELEGATION-007
-    30.times { |index| record("issue_completed", "old-completed-#{index}") }
+    record("issue_completed", "old-completed", issue: create(:issue, project:))
     posture.update!(revision: 2)
-    record("issue_completed", "current-completed")
+    record("issue_completed", "current-completed", issue: create(:issue, project:))
 
     result = described_class.call(project:, now:)
 

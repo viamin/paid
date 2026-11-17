@@ -63,8 +63,8 @@ module ProjectDelegation
     def call
       rows = InboxHistoryEvent.where(project:, source: "project_delegation_pilot")
       pilot = current_rows(rows, baseline: false)
-      completed = count(pilot, "issue_completed")
-      started = count(pilot, "issue_started")
+      completed = issue_count(pilot, "issue_completed")
+      started = issue_count(pilot, "issue_started")
       decisions = event_rows(pilot, "human_decision")
       reversals = event_rows(pilot, "decision_reversed")
       metrics = {
@@ -120,6 +120,12 @@ module ProjectDelegation
 
     def count(scope, type) = event_rows(scope, type).size
 
+    # Lifecycle retries remain in the ledger, but one issue contributes only
+    # once to each denominator. Project-level stop evidence is never a sample.
+    def issue_count(scope, type)
+      event_rows(scope, type).map(&:subject_key).select { |key| key.start_with?("issue:") }.uniq.size
+    end
+
     def rate(numerator, denominator)
       return nil if denominator.zero?
 
@@ -145,13 +151,13 @@ module ProjectDelegation
     end
 
     def baseline_metrics(baseline)
-      completed = count(baseline, "issue_completed")
+      completed = issue_count(baseline, "issue_completed")
       decisions = count(baseline, "human_decision")
       {
         completed_issues: completed,
         decisions_per_completed_issue: rate(decisions, completed),
         median_decision_time_seconds: median(event_rows(baseline, "human_decision").filter_map { |row| duration(row) }),
-        completion_rate: rate(completed, count(baseline, "issue_started"))
+        completion_rate: rate(completed, issue_count(baseline, "issue_started"))
       }
     end
 
