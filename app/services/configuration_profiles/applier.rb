@@ -31,7 +31,8 @@ module ConfigurationProfiles
 
       activity = nil
       project.transaction do
-        plan.changes.each { |change| field_set.write(project, change.field, change.to) }
+        records = plan.changes.map { |change| field_set.write(project, change.field, change.to, actor: actor) }.uniq
+        records.each { |record| record.save! if record.changed? && !record.equal?(project) }
         project.save!
         activity = record_activity
       end

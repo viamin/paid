@@ -2,10 +2,11 @@
 
 module Configuration
   module Profiles
-    class Context < Data.define(:project, :user_setting, :tenant_setting)
+    class Context < Data.define(:project, :actor, :user_setting, :tenant_setting)
       def self.build(project:, actor:)
         new(
           project: project,
+          actor: actor,
           user_setting: resolve_user_setting(actor),
           tenant_setting: resolve_tenant_setting(project.account)
         )

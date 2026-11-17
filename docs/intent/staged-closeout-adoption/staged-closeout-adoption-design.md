@@ -46,9 +46,22 @@ accepts an executable command. Each mapping exposes its reviewer, review time,
 bound inputs and eligibility reason. Reviewed inputs cannot be edited in place,
 and admission rejects a mapping belonging to another issue or project.
 
+The curated Fully Automatic profile (`solo_automated`) carries the enrollment
+as an explicit operating-mode target through the shared
+`Configuration::Profiles::Settings` descriptor registry. Applying or
+reapplying the profile stages the enrollment change through the normal
+planner/applier authorization and audit trail; persistence keeps the
+enrollment's reviewer identity and revision history. Every other curated
+profile explicitly pins the target off. The profile target controls
+eligibility only: it never approves arbitrary commands, invents criterion
+mappings, enables a deployment executor, or overrides phase policy — absent an
+approved mapping or available target the project keeps an inspectable waiting
+reason.
+
 ## Decisions & Alternatives
 
 | Decision | Rationale | Alternative rejected |
 | --- | --- | --- |
 | Revision rows instead of in-place edits | Keeps the reviewed decision and invalidation history inspectable. | Editing the current mapping would erase the approval it superseded. |
 | Registry references only | Prevents this feature from becoming a command or deployment executor. | Accepting arbitrary commands or targets would bypass existing authorization. |
+| Explicit profile target for Fully Automatic | Enrollment flows through the reviewed planner/applier with the same per-level authorization and rollback as every other posture lever. | Deriving enrollment silently from merge/release settings would hide the adoption decision. |
