@@ -1,5 +1,11 @@
 # EARS Specs: Staged Closeout Adoption
 
+- [x] **STAGED-CLOSEOUT-ADOPTION-006** — When an authorized maintainer opens project acceptance-check settings, Paid SHALL provide HTML controls to inspect and change enrollment, review or replace a mapping using current criteria and permitted registry targets, revoke a mapping, and inspect revision history with reviewer identity, time and eligibility reasons; equivalent JSON actions SHALL remain available.
+  *Test:* `spec/requests/projects/staged_closeout_adoptions_spec.rb`.
+
+- [x] **STAGED-CLOSEOUT-ADOPTION-007** — When a reviewed mapping is changed or admitted, Paid SHALL reject in-place changes to its reviewed inputs and reject admission for a different source issue, project, account or enrollment.
+  *Test:* `spec/services/staged_closeout_adoption/mappings_eligibility_spec.rb`.
+
 - [x] **STAGED-CLOSEOUT-ADOPTION-001** — When a project has no staged-closeout enrollment, it SHALL be disabled, regardless of auto-merge or auto-pick settings.
   *Test:* `spec/services/staged_closeout_adoption/enroll_spec.rb`.
 

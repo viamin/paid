@@ -69,10 +69,15 @@ RSpec.describe Tools::GetAgentRun do
         analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
       } ])
 
+      run.maintenance_report.finding_occurrences.sole.maintenance_finding.dismiss!(reason: "Intentional compatibility callback")
+
       result = tool.call(agent_run_id: run.id)
 
       expect(result.dig(:maintenance, :report, :findings, 0, :analyzer_provenance))
         .to eq("name" => "debride", "version" => "1.14.0")
+      expect(result.dig(:maintenance, :report, :findings, 0)).to include(
+        observed_status: "open", status: "dismissed", dismissal_reason: "Intentional compatibility callback"
+      )
     end
 
     it "omits maintenance fields for non-maintenance runs" do

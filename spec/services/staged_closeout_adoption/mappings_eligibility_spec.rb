@@ -23,6 +23,23 @@ RSpec.describe StagedCloseoutAdoption::Mappings do
     } })
   end
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-007
+  it "rejects a mapping supplied for a different project or source issue" do
+    mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+    other_issue = create(:issue, project:)
+
+    expect(described_class.eligible_for(mapping:, project:, issue: other_issue).reason).to eq("mapping_scope_mismatch")
+    expect(described_class.eligible_for(mapping:, project: create(:project), issue:).reason).to eq("mapping_scope_mismatch")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-007
+  it "refuses changes to a reviewed mapping's bound inputs" do
+    mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+
+    expect(mapping.update(freshness_seconds: 7200)).to be(false)
+    expect(mapping.reload.freshness_seconds).to eq(60)
+  end
+
   # @spec STAGED-CLOSEOUT-ADOPTION-004
   it "invalidates admission after disable, revocation, or a changed reviewed recipe" do
     mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)

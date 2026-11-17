@@ -71,6 +71,14 @@ RSpec.describe MaintenanceReports::AgentReport do
     described_class.parse(report_block(payload))
   end
 
+  # @spec MAINT-022
+  it "rejects a truncated final report instead of using an earlier clean block" do
+    payload = { exclusions: [], completed_checks: [ { name: "callers" } ], incomplete_checks: [], evidence: {}, findings: [] }
+    output = report_block(payload) + "\n<!-- maintenance-report-start -->\n{\"findings\":"
+
+    expect { described_class.parse(output) }.to raise_error(described_class::InvalidReport, /truncated/)
+  end
+
   def report_block(payload)
     "<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->"
   end

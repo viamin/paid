@@ -20,7 +20,8 @@ class MaintenanceFindingOccurrence < ApplicationRecord
 
   def tenant_matches_report_and_finding
     return if account_id.blank? || maintenance_report.blank? || maintenance_finding.blank?
-    return if account_id == maintenance_report.account_id && account_id == maintenance_finding.account_id
+    return if account_id == maintenance_report.account_id && account_id == maintenance_finding.account_id &&
+      maintenance_report.project_id == maintenance_finding.project_id
 
     errors.add(:account, "must match the report and canonical finding")
   end

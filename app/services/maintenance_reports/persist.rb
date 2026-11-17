@@ -41,9 +41,12 @@ module MaintenanceReports
     def find_or_create_report
       MaintenanceReport.find_or_initialize_by(agent_run: run).tap do |report|
         attributes = { account: run.project.account, project: run.project,
-                       resolved_scope:, exclusions:,
-                       completed_checks:, incomplete_checks:, evidence: }
-        attributes[:outcome] = outcome unless incomplete_terminal_outcome?(report)
+                       resolved_scope: report.resolved_scope.presence || resolved_scope,
+                       exclusions: (report.exclusions + exclusions).uniq,
+                       completed_checks: (report.completed_checks + completed_checks).uniq,
+                       incomplete_checks: (report.incomplete_checks + incomplete_checks).uniq,
+                       evidence: report.evidence.deep_merge(evidence) }
+        attributes[:outcome] = outcome(report) if !incomplete_terminal_outcome?(report) || requested_outcome.in?(%w[cancelled budget_exhausted])
         attributes[:incomplete_checks] = report.incomplete_checks if report.outcome == "partial" && incomplete_checks.empty?
         report.assign_attributes(attributes)
         report.save!
@@ -52,6 +55,9 @@ module MaintenanceReports
 
     def persist_occurrences(report)
       findings.each do |attributes|
+        next if report.finding_occurrences.joins(:maintenance_finding)
+          .exists?(maintenance_findings: { identity_digest: identity_digest(attributes) })
+
         canonical = find_or_update_canonical(attributes)
         report.finding_occurrences.find_or_create_by!(maintenance_finding: canonical) do |occurrence|
           occurrence.assign_attributes(occurrence_attributes(attributes, canonical))
@@ -79,16 +85,16 @@ module MaintenanceReports
         )
     end
 
-    def outcome
+    def outcome(report)
       return requested_outcome if requested_outcome.in?(%w[cancelled budget_exhausted])
       return "partial" if incomplete_checks.any?
-      findings.any? || run.maintenance_report&.finding_occurrences&.exists? ? "completed" : "clean"
+      findings.any? || report.finding_occurrences.exists? ? "completed" : "clean"
     end
 
     def validate_outcome!(report)
       return if incomplete_terminal_outcome?(report)
 
-      report.update!(outcome: outcome) unless report.outcome == outcome
+      report.update!(outcome: outcome(report)) unless report.outcome == outcome(report)
     end
 
     def incomplete_terminal_outcome?(report)
