@@ -99,7 +99,7 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     primaries = bar.all("[data-inbox-primary-action]")
     expect(primaries.size).to eq(1)
     primary = primaries.first
-    expect(primary).to have_text(label)
+    expect(primary.text.presence || primary[:value]).to eq(label)
     expect(primary[:class]).to include("bg-indigo-600")
     expect(primary[:class]).to include("text-white")
 
