@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_175320) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2043,6 +2043,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_100000) do
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "status"], name: "index_feature_intent_decisions_on_feature_intent_id_and_status"
     t.index ["feature_intent_id"], name: "index_feature_intent_decisions_on_feature_intent_id"
+    t.index ["intent_checkpoint_id"], name: "index_feature_intent_decisions_on_intent_checkpoint_id"
     t.index ["resolved_by_id"], name: "index_feature_intent_decisions_on_resolved_by_id"
     t.index ["source_agent_run_id"], name: "index_feature_intent_decisions_on_source_agent_run_id"
     t.index ["status"], name: "index_feature_intent_decisions_on_status"
