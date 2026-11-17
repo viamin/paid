@@ -64,4 +64,20 @@ RSpec.describe PartialCloseoutProjection, :tenant_isolation do
       end.to raise_error(ActiveRecord::InvalidForeignKey)
     end
   end
+
+  # @spec PARTIAL-CLOSEOUT-042
+  it "reports a cross-project issue reference through the model validation" do
+    TenantContext.with_system_access do
+      project = create(:project, account:)
+      entry = PartialCloseoutProjectionEntry.new(
+        project:,
+        issue: create(:issue, project: create(:project, account:)),
+        evidence_digest: "a" * 64,
+        projection_generation: SecureRandom.uuid
+      )
+
+      expect(entry).to be_invalid
+      expect(entry.errors[:issue]).to include("must belong to the projection project")
+    end
+  end
 end
