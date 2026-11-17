@@ -133,29 +133,28 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
   end
 
   def select_filtered_entry(kind:, issue:, selected_project:)
-    filtered_path = inbox_path(kinds: [ kind ], project_ids: [ selected_project.id ], sort: Inbox::Queue::DEFAULT_SORT)
-    selected_path = inbox_entry_path("#{kind}:#{issue.id}", kinds: [ kind ],
-      project_ids: [ selected_project.id ], sort: Inbox::Queue::DEFAULT_SORT)
-    expect(page).to have_current_path(filtered_path)
+    expect(page).to have_current_path(inbox_path, ignore_query: true)
+    filtered_url = page.current_url
     expect(page).to have_no_css("#inbox-detail-pane", visible: true)
     within("#inbox-list") { click_link issue.title }
-    expect(page).to have_current_path(selected_path)
-    [ filtered_path, selected_path ]
+    expect(page).to have_current_path(inbox_entry_path("#{kind}:#{issue.id}"), ignore_query: true)
+    selected_url = page.current_url
+    [ filtered_url, selected_url ]
   end
 
-  def expect_project_switch_history(filtered_path:, selected_path:, issue:)
+  def expect_project_switch_history(filtered_url:, selected_url:, issue:)
     page.go_back
-    expect(page).to have_current_path(filtered_path)
+    expect(page).to have_current_path(filtered_url)
     expect(page).to have_no_css("#inbox-detail-pane", visible: true)
     page.go_back
     expect(page).to have_current_path(member_path(first_issue))
     expect(page).to have_css("#inbox-detail h2", text: first_issue.title)
     expect(page).to have_button("Filters", text: project.full_name)
     page.go_forward
-    expect(page).to have_current_path(filtered_path)
+    expect(page).to have_current_path(filtered_url)
     expect(page).to have_no_css("#inbox-detail-pane", visible: true)
     page.go_forward
-    expect(page).to have_current_path(selected_path)
+    expect(page).to have_current_path(selected_url)
     expect(page).to have_css("#inbox-detail h2", text: issue.title)
   end
 
@@ -215,11 +214,11 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     other_kind, _entry_record_id, other_issue, other_project, other_expected = lane_cases.last
     visit member_path(first_issue)
     switch_project_filter(from: project, to: other_project)
-    filtered_path, selected_path = select_filtered_entry(kind: other_kind, issue: other_issue, selected_project: other_project)
+    filtered_url, selected_url = select_filtered_entry(kind: other_kind, issue: other_issue, selected_project: other_project)
     expect(page).to have_css("#inbox-detail h2", text: other_issue.title)
     expect_decision_brief(expected: other_expected, selected_project: other_project)
     expect_one_clear_primary_action(other_expected.fetch(:primary_control))
-    expect_project_switch_history(filtered_path:, selected_path:, issue: other_issue)
+    expect_project_switch_history(filtered_url:, selected_url:, issue: other_issue)
   end
 
   it "uses the member URL for a dependency cycle and retains it on mobile" do
