@@ -32,11 +32,13 @@ module StagedCloseoutAdoption
       enrollment = project.class.transaction do
         locked_project = project.class.lock.find(project.id)
         enrollment = locked_project.staged_closeout_enrollment || locked_project.build_staged_closeout_enrollment(account: locked_project.account)
-        enrollment.enabled = @staged
-        enrollment.reviewed_by = @actor if @actor
-        enrollment.reviewed_at = Time.current
-        enrollment.revision = enrollment.revision.to_i + (enrollment.persisted? ? 1 : 0)
-        enrollment.save!
+        unless enrollment.persisted? && enrollment.enabled? == @staged
+          enrollment.enabled = @staged
+          enrollment.reviewed_by = @actor if @actor
+          enrollment.reviewed_at = Time.current
+          enrollment.revision = enrollment.revision.to_i + (enrollment.persisted? ? 1 : 0)
+          enrollment.save!
+        end
         enrollment
       end
       project.association(:staged_closeout_enrollment).reset
