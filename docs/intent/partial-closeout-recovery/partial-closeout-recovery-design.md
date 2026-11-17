@@ -399,6 +399,13 @@ decision, its evidence, and its alternatives:
 | B — persisted stall read model | Recompute the stalled-closeout projection outside Inbox rendering, on every input that changes admission or lane membership; a durable project checkpoint represents both populated and empty results; the Inbox reads the projection after that checkpoint exists; live `eligible_scope` remains the admission authority at continuation preflight, dequeue, and run start. | Removes admission from the hot path and mirrors the persisted project-readiness snapshot, but adds a durable derived record, invalidation coverage, freshness semantics, and a rollout guard. |
 | C — per-project cache | Cache the `StalledCloseouts` result per project behind the account's `inbox` `Dashboard::CacheVersion`, shared by Queue, Count, and Availability. | Lowest implementation cost, but the cache boundary is the badge boundary, not the admission-input boundary, so it serves badge-grade staleness to the lane list and returns to live admission on every cold cache. |
 
+PostgreSQL enforces tenant visibility and writes for both projection checkpoints
+and display entries through the owning project. Intentional system access
+retains cross-tenant reconciliation authority; it does not permit an entry to
+reference an issue from another project. A schema-preserved fx guard enforces
+that reference invariant even for direct SQL and bulk writes. Ordinary model
+validation provides the same error before reaching the database.
+
 **Recorded decision: the owner chose Option B on 2026-11-05; issue #4912
 implements it behind a default-off rollout guard.** Enabled projects use the
 persisted checkpoint after a successful recomputation and retain live admission

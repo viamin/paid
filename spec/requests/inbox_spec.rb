@@ -275,7 +275,7 @@ RSpec.describe "Inbox" do
     repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
     from_ref = "#{project.full_name}##{issues[0].github_number}"
     to_ref = "#{project.full_name}##{issues[1].github_number}"
-    expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
+    expect(repair_form.at_css("[type='submit']")["value"]).to eq(
       "Remove the #{to_ref} declaration from #{from_ref}'s trusted comment at " \
       "https://github.com/acme/alpha/issues/1#issuecomment-42"
     )
@@ -389,7 +389,7 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("apply one reviewed removal")
     document = Nokogiri::HTML(response.body)
     repair_form = document.at_css("form[action='#{dashboard_cycle_analysis_repairs_path}']")
-    expect(repair_form.at_css("input[type='submit']")["value"]).to eq(
+    expect(repair_form.at_css("[type='submit']")["value"]).to eq(
       "Remove the #{project.full_name}##{issues[1].github_number} declaration from " \
       "#{project.full_name}##{issues[0].github_number}'s trusted comment at " \
       "https://github.com/acme/alpha/issues/1#issuecomment-42"

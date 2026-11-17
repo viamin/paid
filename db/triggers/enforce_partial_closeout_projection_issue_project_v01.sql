@@ -1,0 +1,3 @@
+CREATE TRIGGER enforce_partial_closeout_projection_issue_project
+BEFORE INSERT OR UPDATE OF project_id, issue_id ON public.partial_closeout_projection_entries
+FOR EACH ROW EXECUTE FUNCTION public.enforce_partial_closeout_projection_issue_project();
