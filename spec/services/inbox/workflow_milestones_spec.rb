@@ -4,7 +4,11 @@ require "rails_helper"
 
 RSpec.describe Inbox::WorkflowMilestones do
   let(:project) { create(:project, tdd_mode: "strict", auto_merge_mode: "off") }
-  let(:issue) { create(:issue, :pull_request, project:, github_number: 21, pr_review_phase: "ready", last_scanned_head_sha: "head-sha") }
+  let(:issue) do
+    create(:issue, :pull_request, project:, github_number: 21, pr_review_phase: "ready", last_scanned_head_sha: "head-sha",
+      labels: [ "paid-tests-approved" ], tdd_review_head_sha: "head-sha", auto_merge_head_sha: "head-sha",
+      auto_merge_evaluated_at: Time.current, auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+  end
 
   def entry(kind:, guidance: nil, record: nil)
     Inbox::Queue::Entry.new(id: "#{kind}:#{issue.id}", kind:, project:, issue:, guidance:, record:)
@@ -130,5 +134,14 @@ RSpec.describe Inbox::WorkflowMilestones do
     )
 
     expect(described_class.call(inbox_entry)).to eq(current_action: nil, milestones: [])
+  end
+
+  # @spec INBOX-PROGRESS-004
+  it "does not approve strict-TDD tests or owner review from missing or prior-head evidence" do
+    issue.update!(labels: [ "paid-tests-approved" ], tdd_review_head_sha: "old-head", auto_merge_evaluated_at: nil)
+    projection = described_class.call(entry(kind: Inbox::Queue::MERGE_APPROVAL_KIND, guidance: { blockers: [] }))
+    expect(projection[:milestones]).to include(a_hash_including(name: "Tests", state: "stale"))
+    expect(projection[:milestones]).to include(a_hash_including(name: "Owner approval", state: "unknown"))
+    expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "blocked"))
   end
 end

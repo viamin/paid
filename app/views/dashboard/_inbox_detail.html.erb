@@ -57,7 +57,7 @@
   <div data-inbox-actions-target="source">
   <%= render "dashboard/inbox_decision_brief", entry: entry %>
 
-  <% if entry.issue %>
+  <% if entry.issue && !entry.workflow_milestones? %>
     <%= render "dashboard/inbox_progress", projection: Inbox::ProgressProjection.call(issue: entry.issue) %>
   <% end %>
 

@@ -7,9 +7,13 @@ module Inbox
   # @spec INBOX-PROGRESS-001 INBOX-PROGRESS-002 INBOX-PROGRESS-003
   class ProgressProjection
     STATES = %w[complete current waiting blocked stale not_applicable unknown].freeze
-    Milestone = Data.define(:id, :label, :state, :evidence, :next_action) do
+    Milestone = Data.define(:id, :label, :state, :evidence, :next_action, :actor) do
+      def initialize(id:, label:, state:, evidence:, next_action: nil, actor: nil)
+        super
+      end
+
       def to_h
-        { id:, label:, state:, evidence:, next_action: }.compact
+        { id:, label:, state:, evidence:, next_action:, actor: }.compact
       end
     end
     Result = Data.define(:operating_mode, :tdd_mode, :current_head, :milestones) do
@@ -39,8 +43,12 @@ module Inbox
 
     def project = issue.project
 
+    def design_applicable?
+      project.human_led_feature_factory? || (issue.is_pull_request? && feature_intents.any?(&:approval_gated?))
+    end
+
     def design_approval
-      return milestone("design_approval", "Design approval", "not_applicable") unless project.human_led_feature_factory?
+      return milestone("design_approval", "Design approval", "not_applicable") unless design_applicable?
       return milestone("design_approval", "Design approval", "unknown", next_action: "Link the feature intent and its design evidence.") if feature_intents.empty?
       return milestone("design_approval", "Design approval", "stale", evidence: feature_evidence,
         next_action: "Review and approve the current design revision.") if stale_design?
@@ -51,7 +59,7 @@ module Inbox
     end
 
     def design_release
-      return milestone("design_release", "Design release", "not_applicable") unless project.human_led_feature_factory?
+      return milestone("design_release", "Design release", "not_applicable") unless design_applicable?
       return milestone("design_release", "Design release", "unknown", next_action: "Link the feature intent and its design evidence.") if feature_intents.empty?
       return milestone("design_release", "Design release", "complete", evidence: feature_evidence) if feature_intents.all?(&:released?)
       return milestone("design_release", "Design release", "blocked", evidence: feature_evidence,
@@ -220,7 +228,23 @@ module Inbox
     def milestone(id, label, state, evidence: [], next_action: nil)
       raise ArgumentError, "unknown progress state: #{state}" unless STATES.include?(state)
 
-      Milestone.new(id:, label:, state:, evidence: normalized_evidence(evidence), next_action:)
+      Milestone.new(id:, label:, state:, evidence: normalized_evidence(evidence), next_action:, actor: responsible_role(id))
+    end
+
+    # Describes the owning role, not a new authorization decision. Actual
+    # execution remains guarded in the linked system and existing actions.
+    # @spec INBOX-PROGRESS-004
+    def responsible_role(id)
+      return project.auto_merge_mode == "off" ? "Repository maintainer" : "Paid" if id == "merge"
+
+      {
+        "design_approval" => "Authorized project reviewer",
+        "design_release" => "Repository maintainer",
+        "test_review" => "Repository test reviewer",
+        "implementation" => "Implementation owner",
+        "code_review" => "Repository code reviewer",
+        "owner_approval" => "Configured repository owner reviewer"
+      }.fetch(id)
     end
 
     def normalized_evidence(evidence)
