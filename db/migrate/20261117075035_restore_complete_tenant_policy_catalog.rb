@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "20260511040425_fix_strategies_rls_infinite_recursion"
+
 # The earlier schema-bootstrap repair replayed only selected migration groups.
 # Restore the complete, current policy definitions (not their older baseline
 # versions), including tightened write predicates and projection policies.
@@ -2266,11 +2268,29 @@ class RestoreCompleteTenantPolicyCatalog < ActiveRecord::Migration[8.1]
         ALTER TABLE "public"."worktrees" ENABLE ROW LEVEL SECURITY;
         ALTER TABLE "public"."worktrees" FORCE ROW LEVEL SECURITY;
         SQL
+        # Out-of-order repair must retain the later nonrecursive policies when
+        # its ownership triggers have already been installed. Otherwise the
+        # subsequent migration installs the policy correction and guards together.
+        if strategy_reference_guards_installed?
+          FixStrategiesRlsInfiniteRecursion.new.up
+        end
       end
     end
   end
 
   def down
     # A corrective rollback must not restore missing or weaker boundaries.
+  end
+
+  private
+
+  def strategy_reference_guards_installed?
+    connection.select_value(<<~SQL).to_i == 2
+      SELECT COUNT(*) FROM pg_trigger
+      WHERE tgenabled IN ('O', 'A') AND (
+        (tgrelid = 'public.strategies'::regclass AND tgname = 'validate_strategy_current_version_reference') OR
+        (tgrelid = 'public.strategy_versions'::regclass AND tgname = 'validate_strategy_version_parent_reference')
+      )
+    SQL
   end
 end

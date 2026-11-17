@@ -52,6 +52,20 @@ rollback does not reinstate missing or weaker security boundaries. Future
 policy evolution remains in ordinary migrations and the canonical schema
 dump, not a runtime policy-reinstallation mechanism.
 
+Catalog parity does not override current migration intent. Strategy and
+strategy-version policies retain the nonrecursive visibility established by
+`FixStrategiesRlsInfiniteRecursion`: versions may read their strategy's scope,
+but strategy visibility does not query versions or itself. Version ownership
+is enforced separately by versioned `fx` triggers. A current version must
+belong to its strategy, a parent version must belong to the same strategy,
+and moving a version cannot invalidate existing current or parent references.
+These structural guards also apply during explicit system access. Normal-role
+zero-row reads cover every protected table, so a copied catalog cannot hide
+recursive-policy failures behind isolated-table sampling.
+Reference checks lock the referenced version against concurrent reassignment.
+The repair refuses existing invalid references rather than modifying
+application rows, and preserves the guards on rollback and schema bootstrap.
+
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
 guards against unsafe runtime roles that would bypass those policies. The

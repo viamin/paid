@@ -33,6 +33,20 @@ RSpec.describe RestoreCompleteTenantPolicyCatalog do
     expect(connection.select_value("SELECT 1 FROM pg_policies WHERE tablename = 'configuration_bundles' AND policyname = 'tenant_isolation_select'")).to be_nil
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-013
+  it "retains nonrecursive strategy policies when later reference guards are installed" do
+    original = connection.select_all("SELECT tablename, policyname, qual, with_check FROM pg_policies WHERE tablename IN ('strategies', 'strategy_versions') ORDER BY tablename, policyname").to_a
+
+    repair
+
+    restored = connection.select_all("SELECT tablename, policyname, qual, with_check FROM pg_policies WHERE tablename IN ('strategies', 'strategy_versions') ORDER BY tablename, policyname").to_a
+    expect(restored).to eq(original)
+    TenantContext.with(nil) do
+      expect { connection.select_all("SELECT 1 FROM strategies LIMIT 0") }.not_to raise_error
+      expect { connection.select_all("SELECT 1 FROM strategy_versions LIMIT 0") }.not_to raise_error
+    end
+  end
+
   [ false, true ].each do |enabled|
     it "preserves an unrelated table's RLS flags when enabled is #{enabled}" do
       connection.create_table(:bootstrap_policy_probe) { |table| table.bigint :account_id }

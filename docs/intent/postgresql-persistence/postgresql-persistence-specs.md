@@ -109,3 +109,19 @@
   `spec/security/tenant_context_schema_bootstrap_spec.rb`.
   *Code:* `SchemaRowLevelSecurity`, `RestoreTenantRlsPoliciesAfterSchemaBootstrap`,
   `RestoreCompleteTenantPolicyCatalog`.
+
+- [x] **POSTGRESQL-PERSISTENCE-013** — Normal non-superuser/NOBYPASSRLS
+  application connections SHALL be able to plan reads of every protected
+  table without recursive policy failures. Strategy policies SHALL preserve
+  tenant-scoped writes and own/global reads. Database guards SHALL reject
+  current-version and parent-version references to another strategy, including
+  reassignment of a version with bound dependents, without relying on recursive
+  policy subqueries or bypassable model validation. A repair SHALL reject
+  pre-existing invalid references without modifying application rows. Guards
+  SHALL apply during explicit system access and survive schema bootstrap.
+  *Tests:* `spec/security/strategy_tenant_policies_spec.rb`,
+  `spec/security/strategy_reference_concurrency_spec.rb`,
+  `spec/migrations/restore_nonrecursive_strategy_tenant_policies_spec.rb`,
+  `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
+  *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
+  functions and triggers.
