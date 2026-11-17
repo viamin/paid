@@ -43,3 +43,15 @@
   `spec/services/chat_sessions/agent_loop_spec.rb`.
   *Code:* `Tools::BaseTool#authorization_record_for`,
   `ChatSessions::ToolDispatch#normalize_tool_dispatch_result`.
+
+- [x] **CHAT-TOOL-CONFIRMATION-004** - After authentication and declared
+  authorization, shared tool dispatch SHALL reject any supplied `confirmed`
+  value other than a JSON boolean before entering the tool body. Strings,
+  numbers, objects, arrays and explicit null SHALL NOT confirm a mutation.
+  Boolean false and omitted arguments SHALL retain each tool's existing
+  refusal or preview behavior; boolean true SHALL retain ordinary policy and
+  confirmation checks. This boundary SHALL apply to both chat and MCP tools.
+
+  *Tests:* `spec/mcp/tools/base_tool_spec.rb`,
+  `spec/mcp/paid_mcp_server_spec.rb`.
+  *Code:* `Tools::BaseTool#dispatch`.

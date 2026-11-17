@@ -26,6 +26,7 @@ module Tools
         run_declared_authorizations!(args)
         raise UnauthorizedError, "#{self.class.tool_name} must authorize before execution" unless preflight_authorized?
 
+        validate_confirmation_argument!(args)
         perform(**args)
       end
     end
@@ -152,6 +153,14 @@ module Tools
     end
 
     private
+
+    # @spec CHAT-TOOL-CONFIRMATION-004
+    def validate_confirmation_argument!(args)
+      return unless args.key?(:confirmed)
+      return if [ true, false ].include?(args[:confirmed])
+
+      raise ArgumentError, "Confirmation required: confirmed must be a boolean"
+    end
 
     def authorize(record, query = nil, policy_class: nil)
       super
