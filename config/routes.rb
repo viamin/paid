@@ -510,6 +510,10 @@ Rails.application.routes.draw do
       post "projects/:project_id/design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links"
       post "projects/:project_id/design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck"
       resources :projects, only: [] do
+        resources :layered_verification_review_packages,
+          controller: "projects/layered_verification_review_packages", only: %i[index show] do
+          post :approve, on: :member
+        end
         resources :maintenance_runs, controller: "projects/maintenance_runs", only: %i[create show] do
           get :types, on: :collection
           post :cancel, on: :member

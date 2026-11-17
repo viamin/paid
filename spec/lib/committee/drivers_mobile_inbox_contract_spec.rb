@@ -21,6 +21,9 @@ RSpec.describe Committee::Drivers do
       "/projects/{project_id}/delegation",
       "/projects/{project_id}/automation_phases",
       "/projects/{project_id}/automation_phases/continuation_grants/{id}",
+      "/projects/{project_id}/layered_verification_review_packages",
+      "/projects/{project_id}/layered_verification_review_packages/{id}",
+      "/projects/{project_id}/layered_verification_review_packages/{id}/approve",
       "/projects/{project_id}/staged_closeout_adoption",
       "/projects/{project_id}/staged_closeout_adoption/mappings",
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}",
@@ -193,6 +196,9 @@ RSpec.describe Committee::Drivers do
       "/projects/{project_id}/automation_phases/continuation_grants/{id}" => {
         "delete" => [ "inbox" ], "patch" => [ "inbox" ]
       },
+      "/projects/{project_id}/layered_verification_review_packages" => { "get" => [ "inbox" ] },
+      "/projects/{project_id}/layered_verification_review_packages/{id}" => { "get" => [ "inbox" ] },
+      "/projects/{project_id}/layered_verification_review_packages/{id}/approve" => { "post" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption" => { "get" => [ "inbox" ], "patch" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption/mappings" => { "post" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}" => { "delete" => [ "inbox" ] },

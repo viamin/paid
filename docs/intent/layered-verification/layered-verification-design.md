@@ -684,6 +684,20 @@ package history is inspectable per project (HTML and JSON), gated by the one
 `layered_verification_add_on` flag and the project's Pundit boundaries, with
 the same PostgreSQL tenant RLS keyed through the project as the other
 layered-verification tables.
+The same bounded package list and detail representation is available through
+the authenticated API and MCP. Package history and per-run revision lineage
+use ascending immutable package IDs as exclusive cursors, default to 50
+records, cap requests at 100 records, and return `next_cursor` only when an
+additional page exists. Readers require the project's `show?`
+permission, and every package lookup remains scoped through that selected
+authorized project. MCP approval is a separately advertised, confirmation-
+required write operation that accepts only the literal boolean `true`. The
+server supplies its actor, timestamp, and
+`mcp`/`api` provenance; callers can supply only an optional review note. API
+failures are structured responses, including stale-review responses, rather
+than HTML redirects. These surfaces record only the revision-bound business
+decision and do not invoke repair, canonical clarification, release, or
+rollout operations.
 
 **Separate report views.** The audit report renders business-intent
 validation and verification coverage as two distinct sections over the same
