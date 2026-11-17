@@ -128,7 +128,7 @@ RSpec.describe LayeredVerificationReviewPackage do
 
     successor = LayeredVerification::ReviewPackages::Capture.call(agent_run: audit)
 
-    expect(successor.revision_number).to eq(2)
+    expect(successor.revision_number).to eq(3)
     expect(successor.bound_inputs["approval_ids"]).to eq(package.approvals.map(&:id))
     expect(successor.bound_inputs["inbox_decisions"]).to contain_exactly(
       include("finding_id" => finding.id, "selected_action" => "defer")

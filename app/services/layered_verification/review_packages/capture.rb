@@ -54,7 +54,7 @@ module LayeredVerification
           end,
           "plan_revision" => LayeredVerificationReviewPackage.digest_for(audit_metadata["plan"] || {}),
           "check_result_ids" => contributing_result_ids,
-          "approval_ids" => current_approvals.map(&:id),
+          "approval_ids" => recorded_approvals.map(&:id),
           "inbox_decisions" => inbox_decisions
         }
       end
@@ -67,9 +67,10 @@ module LayeredVerification
         LayeredVerificationCheckResult.where(agent_run:).order(:id).pluck(:id)
       end
 
-      def current_approvals
-        current = agent_run.review_packages.order(:revision_number).last
-        current ? current.approvals.order(:id).to_a : []
+      def recorded_approvals
+        LayeredVerificationReviewApproval.joins(:package)
+          .where(layered_verification_review_packages: { agent_run_id: agent_run.id })
+          .order(:id).to_a
       end
 
       def inbox_decisions
