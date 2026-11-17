@@ -58,22 +58,47 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
       action_url: project_path(project), title: "Resolve quality pause",
       metadata: { "recommended_action" => "Open project settings", "remediation_steps" => [ "Open project settings" ] })
     [
-      [ Inbox::Queue::PARTIAL_CLOSEOUT_KIND, closeout, project, "Resolve remaining work" ],
-      [ Inbox::Queue::MANUAL_REVIEW_KIND, manual, project, "Review recovery" ],
-      [ Inbox::Queue::ACTION_REQUIRED_KIND, action_issue, project, "Complete remediation" ],
-      [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, question, other_project, "Answer the question" ]
+      [ Inbox::Queue::PARTIAL_CLOSEOUT_KIND, closeout, project, {
+        decision: "Choose how to finish the remaining acceptance criteria.",
+        unknown: "Who will own the remaining acceptance work?", waiting: "Remaining acceptance work is waiting for an owner.",
+        action: "Resolve remaining work", next_state: "The issue can be reassessed after the remaining work is recorded."
+      } ],
+      [ Inbox::Queue::MANUAL_REVIEW_KIND, manual, project, {
+        decision: "Choose whether and how Paid should resume.", unknown: "Which authorized recovery path should Paid follow?",
+        waiting: "Automation is waiting for an authorized recovery decision.", action: "Review recovery",
+        next_state: "Paid will only resume through the selected recovery path."
+      } ],
+      [ Inbox::Queue::ACTION_REQUIRED_KIND, action_issue, project, {
+        decision: "Complete the required remediation.", recommendation: "Open project settings",
+        reason: "This is the first recorded remediation step.", waiting: "Work is waiting for the required remediation.",
+        action: "Complete remediation", next_state: "Blocked work can resume after the remediation is recorded."
+      } ],
+      [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, question, other_project, {
+        decision: "What behavior is expected?", unknown: "What behavior is expected?", waiting: "Work is waiting for your answer.",
+        action: "Answer the question", next_state: "Paid can continue with your answer."
+      } ]
     ]
   end
 
-  def expect_decision_brief_for(kind:, issue:, selected_project:, action:)
+  def expect_decision_brief_for(kind:, issue:, selected_project:, expected:)
     visit inbox_entry_path("#{kind}:#{issue.id}", project_id: selected_project.id, kind:)
+    expect_decision_brief(expected:, selected_project:)
+    expect(page).to have_button("Copy link to this item")
+    expect(page).to have_css("[data-inbox-actions-target='bar']", visible: true)
+  end
+
+  def expect_decision_brief(expected:, selected_project:)
     brief = find("[data-testid='inbox-decision-brief']")
     expect(brief).to have_text("Goal: No approved intent is available for this work item.")
     expect(brief).to have_text("Intent source: Intent unavailable")
     expect(brief).to have_text("Repository: #{selected_project.full_name}")
-    expect(brief).to have_text(action)
-    expect(page).to have_button("Copy link to this item")
-    expect(page).to have_css("[data-inbox-actions-target='bar']", visible: true)
+    expect(brief).to have_text(expected.fetch(:decision))
+    expect(brief).to have_text("Paid recommends: #{expected.fetch(:recommendation)}") if expected[:recommendation]
+    expect(brief).to have_text(expected.fetch(:reason)) if expected[:reason]
+    expect(brief).to have_text("Unknown: #{expected.fetch(:unknown)}") if expected[:unknown]
+    expect(brief).to have_text("Waiting: #{expected.fetch(:waiting)}")
+    expect(brief).to have_text(expected.fetch(:action))
+    expect(brief).to have_text("Afterward: #{expected.fetch(:next_state)}")
   end
 
   def switch_project_filter(from:, to:)
@@ -134,19 +159,17 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
   it "presents decision context and a visible next action across the four closeout lanes while switching projects" do
     page.current_window.resize_to(390, 844)
     lane_cases = decision_brief_lane_cases
-    lane_cases.first(3).each do |kind, issue, selected_project, action|
-      expect_decision_brief_for(kind:, issue:, selected_project:, action:)
+    lane_cases.first(3).each do |kind, issue, selected_project, expected|
+      expect_decision_brief_for(kind:, issue:, selected_project:, expected:)
     end
 
-    other_kind, other_issue, other_project, other_action = lane_cases.last
+    other_kind, other_issue, other_project, other_expected = lane_cases.last
     visit member_path(first_issue)
     switch_project_filter(from: project, to: other_project)
 
     expect(page).to have_css("#inbox-detail h2", text: other_issue.title)
     expect(page).to have_current_path(inbox_path(kinds: [ other_kind ], project_ids: [ other_project.id ], sort: Inbox::Queue::DEFAULT_SORT))
-    brief = find("[data-testid='inbox-decision-brief']")
-    expect(brief).to have_text("Repository: #{other_project.full_name}")
-    expect(brief).to have_text(other_action)
+    expect_decision_brief(expected: other_expected, selected_project: other_project)
 
     page.go_back
     expect(page).to have_current_path(member_path(first_issue))

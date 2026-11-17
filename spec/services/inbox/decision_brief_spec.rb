@@ -51,6 +51,46 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "prefers approved intent when direct lookup finds a newer unapproved linked design" do
+    issue = create(:issue, project:)
+    approved = create(:feature_intent, project:, title: "Approved exports", brief: "Exports remain complete.",
+      approved_design_revision: "d" * 40, approved_revision_recorded_at: 2.days.ago)
+    unapproved = create(:feature_intent, :approved_waiting_for_merge, project:, title: "Unreleased exports",
+      approved_design_revision: nil, approved_revision_recorded_at: nil)
+    create(:feature_intent_issue, feature_intent: approved, issue:)
+    create(:feature_intent_issue, feature_intent: unapproved, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "Exports remain complete.",
+      goal_source: "Approved feature intent: Approved exports",
+      goal_revision: "d" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "prefers approved intent when batch lookup finds a newer unapproved linked design" do
+    issue = create(:issue, project:)
+    approved = create(:feature_intent, project:, title: "Approved exports", brief: "Exports remain complete.",
+      approved_design_revision: "e" * 40, approved_revision_recorded_at: 2.days.ago)
+    unapproved = create(:feature_intent, :approved_waiting_for_merge, project:, title: "Unreleased exports",
+      approved_design_revision: nil, approved_revision_recorded_at: nil)
+    create(:feature_intent_issue, feature_intent: approved, issue:)
+    create(:feature_intent_issue, feature_intent: unapproved, issue:)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+    brief = described_class.call(entry: inbox_entry)
+
+    expect(brief.to_h).to include(
+      goal: "Exports remain complete.",
+      goal_source: "Approved feature intent: Approved exports",
+      goal_revision: "e" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "does not treat an unreleased feature record as agreed intent" do
     issue = create(:issue, project:)
     feature = create(:feature_intent, :approved_waiting_for_merge, project:, approved_design_revision: "c" * 40)

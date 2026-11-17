@@ -6,6 +6,10 @@ module Inbox
   # @spec OPERATOR-INBOX-027
   class GoalContext
     Result = Data.define(:goal, :source, :revision, :repository)
+    APPROVED_FIRST_ORDER = Arel.sql(<<~SQL.squish).freeze
+      CASE WHEN feature_intents.status = 'released'
+        AND feature_intents.approved_design_revision IS NOT NULL THEN 0 ELSE 1 END
+    SQL
 
     def self.call(entry:)
       new(entry:).call
@@ -46,7 +50,7 @@ module Inbox
       issue_ids = entries_by_issue_id.keys
       return {} if issue_ids.empty?
 
-      FeatureIntent.linked_to_issue_ids(issue_ids).order(approved_revision_recorded_at: :desc, id: :desc)
+      linked_features(issue_ids)
         .each_with_object({}) do |feature, features|
           feature.feature_intent_issues.each { |link| features[link.issue_id] ||= feature }
         end
@@ -64,7 +68,12 @@ module Inbox
       issue_id = linked_issue_id(candidate)
       return unless issue_id
 
-      FeatureIntent.linked_to_issue_ids([ issue_id ]).order(approved_revision_recorded_at: :desc, id: :desc).first
+      linked_features([ issue_id ]).first
+    end
+
+    def linked_features(issue_ids)
+      FeatureIntent.linked_to_issue_ids(issue_ids)
+        .order(APPROVED_FIRST_ORDER, approved_revision_recorded_at: :desc, id: :desc)
     end
 
     def feature_record(candidate)
