@@ -339,13 +339,15 @@ module Activities
 
       end
 
+      github_pull_request = fetch_pull_request_for_sync(client, project, github_issue)
       issue = Issues::UpsertFromGithub.call(
         project: project,
         github_issue: github_issue,
-        github_pull_request: fetch_design_pull_request(client, project, github_issue),
+        github_pull_request: github_pull_request,
         design_pull_request: design_pull_request_for(project, github_issue),
         body: trusted ? github_issue.body : nil
       )
+      observe_closeout_merge(issue, github_pull_request)
       upsert_changed = issue.previous_changes.present?
       # Detect the body edit by comparing across the upsert, not via the
       # instance's change tracking: Issues::UpsertFromGithub can perform a
@@ -366,10 +368,21 @@ module Activities
         added_labels: added_labels, changed: upsert_changed || rounds_reset }
     end
 
-    def fetch_design_pull_request(client, project, github_issue)
-      return unless client && (design_pull_request?(project, github_issue) || bootstrap_readiness_pull_request?(project, github_issue))
+    def fetch_pull_request_for_sync(client, project, github_issue)
+      closed_pr = github_issue.state == "closed" && github_issue.respond_to?(:pull_request) &&
+        github_issue.pull_request && project.staged_closeout_enrollment.present?
+      return unless client && (closed_pr || design_pull_request?(project, github_issue) || bootstrap_readiness_pull_request?(project, github_issue))
 
       client.pull_request(project.issue_target_repository, github_issue.number)
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-010
+    def observe_closeout_merge(issue, github_pull_request)
+      return unless github_pull_request && (github_pull_request.merged_at.present? || github_pull_request.merged == true)
+
+      issue.update!(pr_review_phase: "merged") unless issue.pr_review_phase == "merged"
+      merge_sha = github_pull_request.merge_commit_sha if github_pull_request.respond_to?(:merge_commit_sha)
+      CloseoutVerifications::ObserveMerge.call(source_pr: issue, merge_commit_sha: merge_sha)
     end
 
     # @spec FEATURE-APPROVAL-025

@@ -36,6 +36,11 @@ Issue and PR state is cached locally at multiple layers:
 - request-time API objects such as issues, pull requests, and repo metadata use
   cache invalidation keyed by GitHub webhook event type
 
+Incremental issue-list closure does not establish that a pull request merged.
+When staged-closeout adoption is configured, sync resolves the PR detail before recording the closure, retains an
+authoritatively observed merge revision for downstream reconciliation, and
+does not advance its watermark when that detail is unavailable.
+
 Code-scanning alerts are represented as synthetic issues, but their remediation
 context is not reduced to a rule title. Sync selects instances matching the
 project's target branch explicitly. It retains the alert identity, rule/tool,

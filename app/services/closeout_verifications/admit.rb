@@ -54,7 +54,7 @@ module CloseoutVerifications
     end
 
     def eligible(mapping)
-      StagedCloseoutAdoption::Mappings.eligible_for(mapping:, project:, issue: source_issue)
+      StagedCloseoutAdoption::Mappings.eligible_for(mapping:, project:, issue: source_issue, observed_merge: true)
     end
 
     def no_mapping_reason(results)
