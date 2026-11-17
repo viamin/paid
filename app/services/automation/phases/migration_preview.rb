@@ -45,10 +45,9 @@ module Automation
 
       LabelEnabledWork = Struct.new(:items, :status, keyword_init: true)
 
-      # Bounds the provenance replays of one preview render across every
-      # capability scan: hands out at most the remaining replays' worth of
-      # candidates (newest first, decided by the caller's scope order) and
-      # remembers whether the labeled scope extended past the bound.
+      # Bounds the provenance replays of one preview render: hands out at most
+      # the remaining replays' worth of globally newest, unique work-item
+      # candidates and remembers whether the labeled scope extended past it.
       class ProvenanceBudget
         def initialize(limit)
           @remaining = limit
@@ -146,17 +145,17 @@ module Automation
       def label_enabled_work(derived_settings)
         budget = ProvenanceBudget.new(PROVENANCE_REPLAY_LIMIT)
         provenance_available = true
-        work_items = LABEL_ACTIVATED_CAPABILITIES.flat_map do |capability|
-          phase = Automation::Phases.for_capability(capability)
-          next [] unless phase_disabled_by_derived_settings?(phase, derived_settings)
+        capabilities = disabled_label_capabilities(derived_settings)
+        work_items = budget.bound(labeled_work_items(capabilities)).flat_map do |work_item|
+          capabilities.filter_map do |capability|
+            next unless label_activates_capability?(capability, work_item)
 
-          budget.bound(labeled_work_items(capability)).filter_map do |work_item|
             trust = activation_label_trust(capability, work_item)
             provenance_available &&= trust != :unknown
             next unless trust == :trusted
             next unless currently_label_enabled?(capability, work_item)
 
-            { capability:, phase:, work_item_id: work_item.id }
+            { capability:, phase: Automation::Phases.for_capability(capability), work_item_id: work_item.id }
           end
         end
         return LabelEnabledWork.new(items: [], status: "unavailable") unless provenance_available
@@ -186,14 +185,31 @@ module Automation
         !derived_settings.fetch(Automation::PhaseSettings::PHASES_KEY).fetch(phase, false)
       end
 
-      # Newest labeled work first, so a truncated preview keeps the items an
-      # operator most recently labeled rather than an arbitrary slice.
-      def labeled_work_items(capability)
+      def disabled_label_capabilities(derived_settings)
+        LABEL_ACTIVATED_CAPABILITIES.select do |capability|
+          phase_disabled_by_derived_settings?(Automation::Phases.for_capability(capability), derived_settings)
+        end
+      end
+
+      # Newest labeled work first across every relevant capability, so a
+      # truncated preview keeps the most recent work regardless of its phase.
+      def labeled_work_items(capabilities)
+        capabilities.map { |capability| labeled_work_items_for(capability) }
+          .reduce(project.issues.none) { |work_items, scope| work_items.or(scope) }
+          .order(id: :desc)
+      end
+
+      def labeled_work_items_for(capability)
         scope = activation_labels(capability).reduce(project.issues.none) do |matching_work, label|
           matching_work.or(project.issues.where("labels @> ?", [ label ].to_json))
-        end.where(github_state: "open").order(id: :desc)
+        end.where(github_state: "open")
 
         capability == "auto_merge" ? scope.pull_requests_only : scope.issues_only
+      end
+
+      def label_activates_capability?(capability, work_item)
+        applicable_work_item = capability == "auto_merge" ? work_item.is_pull_request? : !work_item.is_pull_request?
+        applicable_work_item && activation_labels(capability).any? { |label| work_item.has_label?(label) }
       end
 
       # A Paid-local activation is not evidence that a GitHub label was trusted.

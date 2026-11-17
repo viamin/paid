@@ -117,6 +117,47 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.to_h).to include(label_enabled_work_status: "truncated")
   end
 
+  it "spends the provenance budget on the newest labeled work across capabilities" do
+    configure_disabled_auto_pick_preview
+    project.update!(
+      feature_activation_labels: project.effective_feature_activation_labels.merge("auto_merge" => "paid:auto-merge"),
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false, "merge" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      }
+    )
+    described_class::PROVENANCE_REPLAY_LIMIT.times do
+      create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    end
+    pull_request = create(:issue, :pull_request, project:, github_state: "open", labels: [ "paid:auto-merge" ])
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust).and_return(:trusted)
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work).to include(
+      include(capability: "auto_merge", phase: "merge", work_item_id: pull_request.id)
+    )
+    expect(preview.label_enabled_work_status).to eq("truncated")
+  end
+
+  it "replays shared-label work once before checking each disabled capability" do
+    issues = shared_label_issues
+    replayed = []
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust) do |_project, candidate, _label|
+      replayed << candidate.id
+      :trusted
+    end
+
+    preview = described_class.call(project:, user:)
+
+    expect(replayed.uniq).to match_array(issues.map(&:id))
+    expect(preview.label_enabled_work_status).to eq("available")
+    expect(preview.label_enabled_work).to match_array(issues.map do |issue|
+      include(capability: "auto_enhance", phase: "issue_preparation", work_item_id: issue.id)
+    end)
+  end
+
   it "reports trusted-label provenance as unavailable when its history is rate limited" do
     configure_disabled_auto_pick_preview
     create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
@@ -168,5 +209,17 @@ RSpec.describe Automation::Phases::MigrationPreview do
         Automation::PhaseSettings::DEPLOYMENT_KEY => false
       }
     )
+  end
+
+  def shared_label_issues
+    project.update!(
+      auto_pick_enabled: false,
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false, "issue_preparation" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      }
+    )
+    create_list(:issue, 13, project:, github_state: "open", labels: [ project.feature_activation_label_for("paid_in_full") ])
   end
 end
