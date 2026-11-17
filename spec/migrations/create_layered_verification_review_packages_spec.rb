@@ -3,6 +3,7 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20261116190000_create_layered_verification_review_packages")
 require Rails.root.join("db/migrate/20261117011025_remove_unique_layered_verification_review_package_digest_index")
+require Rails.root.join("db/migrate/20261117060031_preserve_layered_review_reference_guards")
 
 RSpec.describe CreateLayeredVerificationReviewPackages, :aggregate_failures do
   # @spec LAYERED-VERIFY-023
@@ -147,6 +148,7 @@ RSpec.describe CreateLayeredVerificationReviewPackages, :aggregate_failures do
   def restore_current_schema!
     migration.up
     RemoveUniqueLayeredVerificationReviewPackageDigestIndex.new.up
+    PreserveLayeredReviewReferenceGuards.new.up
   end
 
   def expect_schema

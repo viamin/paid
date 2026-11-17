@@ -351,9 +351,17 @@
   references, recorded approvals, and Inbox decisions made while open, to one
   reproducible package identity. A later change to any bound input SHALL
   create a new package revision and SHALL retain the prior record unchanged.
+  Before recording business-review approval, the system SHALL recapture the
+  complete current bound inputs and reject a stale rendered package; a newly
+  captured successor SHALL remain available for refreshed review even when
+  that approval attempt is rejected. PostgreSQL SHALL enforce project
+  ownership of the run and JSON-bound references and the approval actor's
+  account, with reference guards preserved through schema-based bootstrap.
   Approving a review package SHALL NOT, by itself, authorize a repair or a
   release.
   *Tests:* `spec/models/layered_verification_review_package_spec.rb`,
+  `spec/security/layered_verification_review_package_spec.rb`,
+  `spec/services/layered_verification/review_packages/approve_freshness_spec.rb`,
   `spec/services/layered_verification/review_packages/approve_spec.rb`,
   `spec/services/inbox/decide_layered_verification_finding_spec.rb`,
   `spec/requests/projects/layered_verification_review_packages_spec.rb`,

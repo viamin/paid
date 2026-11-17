@@ -671,7 +671,15 @@ identical. Business-review approval is an append-only
 (surface, note, bound digest, bound revisions). Approving revalidates
 immediately before acting, mirroring `LAYERED-VERIFY-018`: a superseding
 revision or a bound obligation source that moved past its bound revision
-rejects the approval with an explicit "refresh and review" reason. The
+rejects the approval with an explicit "refresh and review" reason. Approval
+recaptures the complete current inputs under the audit's lock before accepting
+the decision, including late check results or plan changes that have not yet
+produced a successor. A rejected stale attempt retains that successor so the
+reviewer can inspect the new revision; it creates no approval on the old one.
+PostgreSQL validates the package run, JSON-bound obligation/result/approval/
+finding references, and the approval actor against the package's project and
+account. These reference guards are versioned fx objects so schema bootstrap
+preserves them as well as migration replay. The
 package history is inspectable per project (HTML and JSON), gated by the one
 `layered_verification_add_on` flag and the project's Pundit boundaries, with
 the same PostgreSQL tenant RLS keyed through the project as the other
