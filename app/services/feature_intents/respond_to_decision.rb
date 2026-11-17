@@ -35,13 +35,23 @@ module FeatureIntents
     def settle_checkpoint_if_complete
       checkpoint = decision.intent_checkpoint
       return unless checkpoint&.status == "open"
-      return unless checkpoint.questions.all? { |question| question.status == "resolved" }
 
-      ProjectDelegation::IntentCheckpoint::Settle.call(
-        checkpoint:, actor:, answers: checkpoint.questions.to_h { |question| [ question.id, question.answer ] },
-        design_revision: checkpoint.proposed_design_revision,
-        acceptance_revision: checkpoint.proposed_acceptance_revision
-      )
+      # Serialize the completion check on the checkpoint: concurrent answers
+      # to the final questions each lock only their own decision, so an
+      # unlocked check could see the other answer as still open and skip
+      # settlement in both transactions. The row lock is held until the
+      # enclosing decision transaction commits, so the request that acquires
+      # it last observes every earlier answer committed and settles.
+      checkpoint.with_lock do
+        next unless checkpoint.status == "open"
+        next unless checkpoint.questions.reload.all? { |question| question.status == "resolved" }
+
+        ProjectDelegation::IntentCheckpoint::Settle.call(
+          checkpoint:, actor:, answers: checkpoint.questions.to_h { |question| [ question.id, question.answer ] },
+          design_revision: checkpoint.proposed_design_revision,
+          acceptance_revision: checkpoint.proposed_acceptance_revision
+        )
+      end
     end
   end
 end
