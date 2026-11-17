@@ -157,4 +157,25 @@ RSpec.describe CloseoutVerificationJob do
 
     expect(retry_run.reload.verification_result.dig("closeout_verification", "outcome")).to eq("cleanup_failed")
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "records a cleanup failure when only the persisted technical record carries the verdict" do
+    # The real executor builds its Result before cleanup runs, so the returned
+    # evidence only records that cleanup was attempted; the verdict is written
+    # to the run's persisted technical record by the cleanup path afterwards.
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      agent_run.update!(verification_result: agent_run.verification_result.merge(
+        TechnicalPrerequisites::EVIDENCE_KEY => {
+          "status" => "completed", "cleanup" => { "attempted" => true, "completed" => false,
+            "errors" => [ { "class" => "Containers::Provision::Error", "message" => "fixture cleanup failed" } ] }
+        }
+      ))
+      validation_result("completed", { "native" => { "exit_code" => 0 }, "cleanup" => { "attempted" => true } })
+    end
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload).to have_attributes(status: "failed")
+    expect(agent_run.verification_result.dig("closeout_verification", "outcome")).to eq("cleanup_failed")
+  end
 end

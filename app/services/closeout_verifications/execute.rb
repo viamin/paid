@@ -127,8 +127,17 @@ module CloseoutVerifications
     def outcome_for(result)
       return "cancelled" if result.status == "cancelled"
       return "unavailable" if result.status == "unavailable"
-      return "cleanup_failed" if result.evidence.dig("cleanup", "completed") == false
+      return "cleanup_failed" if cleanup_failed?(result)
       result.success? ? "passed" : "failed"
+    end
+
+    # ValidateExecution writes the authoritative cleanup verdict into the run's
+    # persisted technical record after building the returned Result, whose
+    # cleanup entry then only records that cleanup was attempted. finish! holds
+    # the run lock and has reloaded it, so the persisted record decides.
+    def cleanup_failed?(result)
+      result.evidence.dig("cleanup", "completed") == false ||
+        agent_run.verification_result.dig(TechnicalPrerequisites::EVIDENCE_KEY, "cleanup", "completed") == false
     end
 
     def record_terminal!(outcome, command: nil, technical_evidence: nil, error: nil)
