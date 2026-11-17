@@ -20,7 +20,13 @@ RSpec.describe "Project automation phases" do
 
   it "updates the phase controls posted by the settings form" do
     patch project_automation_phases_path(project), params: {
-      project: { phases: { "discovery" => "1", "coding" => "1" }, release: "1" }
+      project: {
+        phases: {
+          "discovery" => "1", "issue_preparation" => "0", "coding" => "1",
+          "merge" => "0", "release_deployment" => "0", "operations" => "0"
+        },
+        release: "1", deployment: "0"
+      }
     }
 
     expect(response).to redirect_to(project_automation_phases_path(project))
@@ -31,7 +37,26 @@ RSpec.describe "Project automation phases" do
     expect(settings.release_enabled?).to be(true)
   end
 
-  it "submits unchecked release and deployment controls as disabled" do
+  it "disables a previously enabled phase submitted by the settings form" do
+    project.update!(
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "discovery" => true, "coding" => true },
+        Automation::PhaseSettings::RELEASE_KEY => true,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => true
+      }
+    )
+
+    patch project_automation_phases_path(project), params: {
+      project: { phases: { "discovery" => "0", "coding" => "1" }, release: "0", deployment: "0" }
+    }
+
+    settings = Automation::PhaseSettings.call(project.reload)
+    expect(settings.phase_enabled?("discovery")).to be(false)
+    expect(settings.phase_enabled?("coding")).to be(true)
+    expect(settings.phase_enabled?("merge")).to be(false)
+  end
+
+  it "submits unchecked phase, release, and deployment controls as disabled" do
     project.update!(
       Automation::PhaseSettings::SETTINGS_KEY => {
         Automation::PhaseSettings::PHASES_KEY => { "release_deployment" => true },
@@ -45,6 +70,9 @@ RSpec.describe "Project automation phases" do
 
     expect(form.at_css('input[type="hidden"][name="project[release]"][value="0"]')).to be_present
     expect(form.at_css('input[type="hidden"][name="project[deployment]"][value="0"]')).to be_present
+    Automation::Phases::ALL.each do |phase|
+      expect(form.at_css(%(input[type="hidden"][name="project[phases][#{phase}]"][value="0"]))).to be_present
+    end
 
     patch project_automation_phases_path(project), params: {
       project: { phases: { "release_deployment" => "1" }, release: "0", deployment: "0" }

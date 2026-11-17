@@ -22,6 +22,9 @@
       <% @phases.each do |phase| %>
         <section class="rounded-lg border border-gray-200 bg-white p-4">
           <label class="flex items-start gap-3">
+            <%# Unchecked phases must still submit "0": partial-phase retention is
+                for JSON API/MCP payloads, not this form. %>
+            <%= hidden_field_tag "project[phases][#{phase}]", "0" %>
             <%= check_box_tag "project[phases][#{phase}]", "1", @phase_settings.phase_enabled?(phase),
                   class: "mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
             <span>
