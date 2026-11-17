@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -6654,6 +6654,65 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       $function$
   SQL
 
+  create_function :validate_strategy_current_version_reference, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.validate_strategy_current_version_reference()
+       RETURNS trigger
+       LANGUAGE plpgsql
+       SET search_path TO 'pg_catalog', 'public'
+      AS $function$
+      BEGIN
+        IF NEW.current_version_id IS NOT NULL THEN
+          PERFORM id FROM public.strategy_versions
+            WHERE id = NEW.current_version_id AND strategy_id = NEW.id
+            FOR SHARE;
+          IF NOT FOUND THEN
+            RAISE EXCEPTION 'current_version_id must belong to the same strategy'
+              USING ERRCODE = '23514';
+          END IF;
+        END IF;
+
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
+  create_function :validate_strategy_version_parent_reference, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.validate_strategy_version_parent_reference()
+       RETURNS trigger
+       LANGUAGE plpgsql
+       SET search_path TO 'pg_catalog', 'public'
+      AS $function$
+      BEGIN
+        IF NEW.parent_version_id IS NOT NULL THEN
+          PERFORM id FROM public.strategy_versions
+            WHERE id = NEW.parent_version_id AND strategy_id = NEW.strategy_id
+            FOR SHARE;
+          IF NOT FOUND THEN
+            RAISE EXCEPTION 'parent_version_id must belong to the same strategy'
+              USING ERRCODE = '23514';
+          END IF;
+        END IF;
+
+        IF TG_OP = 'UPDATE' THEN
+          IF NEW.strategy_id IS DISTINCT FROM OLD.strategy_id AND (
+            EXISTS (
+              SELECT 1 FROM public.strategies
+              WHERE current_version_id = OLD.id AND id <> NEW.strategy_id
+            ) OR EXISTS (
+              SELECT 1 FROM public.strategy_versions
+              WHERE parent_version_id = OLD.id AND strategy_id <> NEW.strategy_id
+            )
+          ) THEN
+            RAISE EXCEPTION 'strategy_id cannot change while another strategy retains version references'
+              USING ERRCODE = '23514';
+          END IF;
+        END IF;
+
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
   create_trigger :protect_project_delegation_audit_event_update, sql_definition: <<-SQL
       CREATE TRIGGER protect_project_delegation_audit_event_update BEFORE UPDATE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
   SQL
@@ -6706,12 +6765,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
@@ -6816,6 +6875,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
 
   create_trigger :logidze_on_service_containers, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_service_containers BEFORE INSERT OR UPDATE ON public.service_containers FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env,status,docker_container_id,peak_cpu_percent,peak_memory_bytes,avg_cpu_percent,avg_memory_bytes,container_metrics_count}')
+  SQL
+
+  create_trigger :validate_strategy_current_version_reference, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_current_version_reference BEFORE INSERT OR UPDATE OF current_version_id, id ON public.strategies FOR EACH ROW EXECUTE FUNCTION validate_strategy_current_version_reference()
+  SQL
+
+  create_trigger :validate_strategy_version_parent_reference, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_parent_reference BEFORE INSERT OR UPDATE OF strategy_id, parent_version_id ON public.strategy_versions FOR EACH ROW EXECUTE FUNCTION validate_strategy_version_parent_reference()
   SQL
 
   create_trigger :logidze_on_style_guides, sql_definition: <<-SQL
@@ -10208,9 +10275,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       FOR DELETE
       USING ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
-  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions
-  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))));
   SQL
 
   execute <<~SQL
@@ -10219,20 +10284,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       FOR INSERT
       WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
-  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions
-  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))));
   SQL
 
   execute <<~SQL
     CREATE POLICY "tenant_isolation_select" ON "public"."strategies"
       AS PERMISSIVE
       FOR SELECT
-      USING ((paid_tenant_bypass() OR (((account_id IS NULL) OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
+      USING ((paid_tenant_bypass() OR ((account_id IS NULL) OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
-  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions
-  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id())))))))));
   SQL
 
   execute <<~SQL
@@ -10241,14 +10302,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       FOR UPDATE
       USING ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
-  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions
-  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))))
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))))
       WITH CHECK ((paid_tenant_bypass() OR ((account_id = paid_current_account_id()) AND ((project_id IS NULL) OR (EXISTS ( SELECT 1
    FROM projects
-  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))) AND ((current_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions
-  WHERE ((strategy_versions.id = strategies.current_version_id) AND (strategy_versions.strategy_id = strategies.id))))))));
+  WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))));
   SQL
 
   execute <<~SQL
@@ -10289,11 +10346,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       FOR DELETE
       USING ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
    FROM strategies
-  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND (strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
            FROM projects
-          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions parent_versions
-  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id())))))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
   WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
@@ -10306,11 +10361,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       FOR INSERT
       WITH CHECK ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
    FROM strategies
-  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND (strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
            FROM projects
-          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions parent_versions
-  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id())))))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
   WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
@@ -10334,22 +10387,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_075035) do
       FOR UPDATE
       USING ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
    FROM strategies
-  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND (strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
            FROM projects
-          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions parent_versions
-  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id())))))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
   WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
   WHERE ((users.id = strategy_versions.promoted_by_user_id) AND (users.account_id = paid_current_account_id()))))))))
       WITH CHECK ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
    FROM strategies
-  WHERE ((strategies.id = strategy_versions.strategy_id) AND ((strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
+  WHERE ((strategies.id = strategy_versions.strategy_id) AND (strategies.account_id = paid_current_account_id()) AND ((strategies.project_id IS NULL) OR (EXISTS ( SELECT 1
            FROM projects
-          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id()))))))))) AND ((parent_version_id IS NULL) OR (EXISTS ( SELECT 1
-   FROM strategy_versions parent_versions
-  WHERE ((parent_versions.id = strategy_versions.parent_version_id) AND (parent_versions.strategy_id = strategy_versions.strategy_id))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
+          WHERE ((projects.id = strategies.project_id) AND (projects.account_id = paid_current_account_id())))))))) AND ((created_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
   WHERE ((users.id = strategy_versions.created_by_user_id) AND (users.account_id = paid_current_account_id()))))) AND ((promoted_by_user_id IS NULL) OR (EXISTS ( SELECT 1
    FROM users
