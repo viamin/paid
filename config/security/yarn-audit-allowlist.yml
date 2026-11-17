@@ -26,12 +26,6 @@
 #                   (for example "#1234"). The wrapper does not resolve
 #                   it; the field exists so reviewers can find context.
 exceptions:
-  - id: GHSA-fc5q-39xc-vjpf
-    module: picomatch
-    reason: "No upstream patch is available: picomatch 4.0.7 is required transitively by the dev-only @herb-tools/linter toolchain, and the registry publishes no newer picomatch release. Reassess when picomatch or Herb ships a patched release."
-    owner: "@viamin/paid-frontend-platform"
-    expires_on: 2026-12-31
-    tracking_issue: "#5156"
   - id: GHSA-vfj7-8cjw-p6xm
     module: braces
     reason: "No upstream patch available (patched_versions '<0.0.0'); reachable only as @tailwindcss/cli>@parcel/watcher>micromatch>braces, a dev-only build dependency. Reassess when @tailwindcss/cli ships a non-vulnerable transitive or when braces publishes a fix."
