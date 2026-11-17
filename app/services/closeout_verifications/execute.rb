@@ -154,7 +154,15 @@ module CloseoutVerifications
       return "cancelled" if result.status == "cancelled"
       return "unavailable" if result.status == "unavailable"
       return "cleanup_failed" if cleanup_failed?(result)
+      return "setup_failed" if setup_failed?(result)
       result.success? ? "passed" : "failed"
+    end
+
+    # ValidateExecution rescues isolated-environment setup failures into a
+    # failed Result. A recipe command failure instead supplies native command
+    # evidence, so preserve the setup failure as a distinct closeout outcome.
+    def setup_failed?(result)
+      result.status == "failed" && result.evidence["error"].present? && result.evidence["native"].blank?
     end
 
     # ValidateExecution writes the authoritative cleanup verdict into the run's

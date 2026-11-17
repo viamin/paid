@@ -138,6 +138,18 @@ RSpec.describe CloseoutVerificationJob do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "preserves a returned technical setup error as a setup failure" do
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+      .and_return(validation_result("failed", { "error" => "fixture provisioning failed", "checkout" => nil,
+        "cleanup" => { "attempted" => true } }))
+
+    described_class.perform_now(agent_run.id)
+
+    expect(agent_run.reload).to have_attributes(status: "failed", error_message: "fixture provisioning failed")
+    expect(agent_run.verification_result.dig("closeout_verification", "outcome")).to eq("setup_failed")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
   it "preserves unavailable tooling as an unavailable outcome" do
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_return(validation_result("unavailable", { "setup_action" => "Restore fixture tool", "cleanup" => { "attempted" => false } }))
