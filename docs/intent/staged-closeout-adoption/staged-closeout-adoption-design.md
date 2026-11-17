@@ -39,6 +39,12 @@ admission, so a changed recipe/check makes the mapping ineligible.
 
 The project closeout adoption surface and its JSON representation use the same
 service and `ProjectPolicy#update?` authorization as any API/agent caller.
+Project settings link to an HTML review page for enrollment, criterion/check
+selection, replacement, revocation, and history. The page selects only current
+assessed criteria and existing permitted recipes or trusted checks; it never
+accepts an executable command. Each mapping exposes its reviewer, review time,
+bound inputs and eligibility reason. Reviewed inputs cannot be edited in place,
+and admission rejects a mapping belonging to another issue or project.
 
 ## Decisions & Alternatives
 

@@ -14,6 +14,7 @@
   <div class="bg-white shadow sm:rounded-lg">
     <div class="px-4 py-5 sm:p-6">
       <h1 class="text-xl font-semibold text-gray-900">Edit Project</h1>
+      <%= link_to "Acceptance checks", project_staged_closeout_adoption_path(@project), class: "mt-2 inline-block text-sm text-indigo-600 underline" %>
       <p class="mt-1 text-sm text-gray-500">
         Update settings for <%= @project.full_name %>.
       </p>

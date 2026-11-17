@@ -1,0 +1,67 @@
+<%# @spec STAGED-CLOSEOUT-ADOPTION-006 %>
+<% content_for(:title) { "Acceptance checks - #{@project.name} - Paid" } %>
+<div class="mx-auto max-w-3xl space-y-6 px-4 py-8">
+  <%= link_to "Back to project settings", edit_project_path(@project), class: "text-indigo-600 underline" %>
+  <h1 class="text-2xl font-semibold">Acceptance checks</h1>
+  <p>Choose which existing checks may verify an issue's acceptance criteria. Enabling checks does not approve a mapping, start work, or authorize release.</p>
+  <% if @review_error %>
+    <p role="alert" class="rounded border border-red-300 bg-red-50 p-4"><%= @review_error %></p>
+  <% end %>
+  <section class="space-y-3 rounded border border-gray-200 p-4" aria-labelledby="enrollment-heading">
+    <h2 id="enrollment-heading" class="text-lg font-semibold">Project enrollment</h2>
+    <p><%= @adoption[:enrollment]["enabled"] ? "Enabled" : "Disabled" %></p>
+    <p>Current status: <%= @adoption[:automatic_run_reason].to_s.humanize %></p>
+    <%= form_with url: project_staged_closeout_adoption_path(@project), method: :patch do |form| %>
+      <%= form.hidden_field :enabled, value: !@adoption[:enrollment]["enabled"] %>
+      <%= form.submit @adoption[:enrollment]["enabled"] ? "Disable acceptance checks" : "Enable acceptance checks", class: "rounded bg-indigo-600 px-4 py-2 text-white" %>
+    <% end %>
+  </section>
+  <section class="space-y-3 rounded border border-gray-200 p-4" aria-labelledby="review-heading">
+    <h2 id="review-heading" class="text-lg font-semibold">Review a check</h2>
+    <%= form_with url: project_staged_closeout_adoption_path(@project), method: :get, class: "space-y-2" do |form| %>
+      <%= form.label :issue_id, "Source issue" %>
+      <%= form.select :issue_id, @review_issues.map { |issue| [ "##{issue.github_number} #{issue.title}", issue.id ] }, { include_blank: "Choose an issue", selected: @review_issue&.id }, class: "block w-full rounded border-gray-300" %>
+      <%= form.submit "Load current criteria", class: "rounded border px-3 py-2" %>
+    <% end %>
+    <% if @review_issue && @review_criteria.empty? %>
+      <p>A current acceptance assessment with criteria is required before reviewing a check.</p>
+    <% elsif @review_issue && @adoption[:enrollment]["enabled"] %>
+      <p>Saving a check records your review. Saving another check for the same criterion replaces its current revision and preserves history.</p>
+      <%= form_with url: mappings_project_staged_closeout_adoption_path(@project), class: "space-y-3" do |form| %>
+        <%= form.hidden_field :issue_id, value: @review_issue.id %>
+        <%= form.fields_for :mapping do |mapping| %>
+          <div><%= mapping.label :criterion_key, "Acceptance criterion" %><%= mapping.select :criterion_key, @review_criteria, {}, class: "block w-full rounded border-gray-300" %></div>
+          <div><%= mapping.label :target_reference, "Existing check" %><%= mapping.select :target_reference, @review_targets, {}, class: "block w-full rounded border-gray-300" %></div>
+          <div>
+            <%= mapping.label :review_stage, "When to verify" %>
+            <%= mapping.select :review_stage, [["Before merge — Coding", "pre_merge:coding"], ["Merged revision — Release & deployment", "merged_revision:release_deployment"], ["Live environment — Release & deployment", "live_environment:release_deployment"], ["Live environment — Operations", "live_environment:operations"]], {}, class: "block w-full rounded border-gray-300" %>
+          </div>
+          <p>Live checks require a confirmed environment signal. Every check remains subject to the selected phase's permissions.</p>
+          <div><%= mapping.label :environment_class, "Environment (required for live checks)" %><%= mapping.text_field :environment_class, class: "block w-full rounded border-gray-300" %></div>
+          <div><%= mapping.label :freshness_seconds, "Evidence validity in seconds" %><%= mapping.number_field :freshness_seconds, value: 3600, min: 1, required: true, class: "block w-full rounded border-gray-300" %></div>
+          <%= mapping.fields_for :retry_policy do |retry_fields| %>
+            <div><%= retry_fields.label :max_attempts, "Maximum attempts" %><%= retry_fields.number_field :max_attempts, value: 1, min: 1, required: true, class: "block w-full rounded border-gray-300" %></div>
+          <% end %>
+        <% end %>
+        <%= form.submit "Approve reviewed check", class: "rounded bg-indigo-600 px-4 py-2 text-white" %>
+      <% end %>
+    <% end %>
+  </section>
+  <section class="space-y-3" aria-labelledby="history-heading">
+    <h2 id="history-heading" class="text-lg font-semibold">Review history</h2>
+    <% if @adoption[:mappings].empty? %><p>No reviewed checks.</p><% end %>
+    <% @adoption[:mappings].each do |mapping| %>
+      <article class="space-y-2 rounded border border-gray-200 p-4">
+        <h3 class="font-semibold"><%= mapping["criterion_key"] %> — revision <%= mapping["revision"] %></h3>
+        <dl class="break-words text-sm">
+          <% mapping.except("criterion_key", "revision").each do |key, value| %>
+            <dt class="mt-2 font-medium"><%= key.humanize %></dt><dd><%= value.presence || "None" %></dd>
+          <% end %>
+        </dl>
+        <% if mapping["status"] == "approved" %>
+          <%= button_to "Revoke check", mapping_project_staged_closeout_adoption_path(@project, mapping["id"]), method: :delete, class: "rounded border px-3 py-2" %>
+        <% end %>
+      </article>
+    <% end %>
+  </section>
+</div>

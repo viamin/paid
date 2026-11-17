@@ -6,7 +6,8 @@ module StagedCloseoutAdoption
   class Projection
     MAPPING_FIELDS = %w[
       id issue_id criterion_key stage phase target_shape execution_path target_key target_version target_digest
-      environment_class freshness_seconds retry_policy status revision reviewed_at invalidated_at invalidation_reason
+      environment_class freshness_seconds retry_policy status revision reviewed_by_id reviewed_at
+      invalidated_by_id invalidated_at invalidation_reason
     ].freeze
 
     def self.for_project(project) = new(project).to_h
@@ -25,7 +26,7 @@ module StagedCloseoutAdoption
     attr_reader :project
 
     def enrollment
-      project.staged_closeout_enrollment&.slice(:enabled, :reviewed_at, :revision) || { enabled: false }
+      project.staged_closeout_enrollment&.slice(:enabled, :reviewed_by_id, :reviewed_at, :revision) || { enabled: false }
     end
 
     def mappings

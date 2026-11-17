@@ -67,8 +67,11 @@ module StagedCloseoutAdoption
 
     # Used by #5074 at its future queue/claim boundary; it never authorizes a
     # run itself. The reason is deliberately inspectable on operator surfaces.
-    # @spec STAGED-CLOSEOUT-ADOPTION-004
+    # @spec STAGED-CLOSEOUT-ADOPTION-004 STAGED-CLOSEOUT-ADOPTION-007
     def eligible_for(mapping)
+      return Result.new(mapping, "mapping_scope_mismatch") unless mapping.project_id == project.id &&
+        mapping.account_id == project.account_id && issue&.project_id == project.id && mapping.issue_id == issue.id &&
+        mapping.staged_closeout_enrollment_id == enrollment.id
       return Result.new(mapping, "project_not_enrolled") unless enrollment.enabled?
       return Result.new(mapping, "mapping_not_current") unless mapping.current?
       return Result.new(mapping, "criterion_not_current") unless criteria.include?(mapping.criterion_key)

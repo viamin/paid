@@ -38,10 +38,12 @@ RSpec.describe "Staged closeout adoption API" do
                  target_key: recipe.id, freshness_seconds: 60 }
     }, headers:, as: :json
     expect(response).to have_http_status(:created)
+    expect(response.parsed_body.fetch("mapping")).to include("reviewed_by_id" => owner.id)
     mapping_id = response.parsed_body.dig("mapping", "id")
 
     get "/api/v1/projects/#{project.id}/staged_closeout_adoption", headers: headers
     expect(response.parsed_body).to include("automatic_run_reason" => "scheduler_not_implemented")
+    expect(response.parsed_body.fetch("enrollment")).to include("reviewed_by_id" => owner.id)
 
     delete "/api/v1/projects/#{project.id}/staged_closeout_adoption/mappings/#{mapping_id}", headers: headers
     expect(response).to have_http_status(:ok)
