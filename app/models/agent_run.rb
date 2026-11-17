@@ -298,6 +298,7 @@ class AgentRun < ApplicationRecord
   has_one :model_selection, dependent: :destroy
   has_one :decision_record, dependent: :nullify
   has_one :agent_run_session_summary, dependent: :destroy
+  has_one :maintenance_report, dependent: :destroy
   has_many :agent_run_anomalies, dependent: :destroy
   has_many :knowledge_usage_stats, dependent: :destroy
   has_many :agent_run_marketplace_entries, -> { order(:position) }, dependent: :destroy
@@ -340,6 +341,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :container_metrics_seed_due?
+  after_commit :persist_terminal_maintenance_report, on: :update, if: :terminal_maintenance_report_needed?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
@@ -2779,6 +2781,13 @@ class AgentRun < ApplicationRecord
     logs_text(log_type: "stderr", limit: limit)
   end
 
+  def agent_summary_tail_with_stderr_fallback(limit: 500)
+    summary = extract_text_from_stdout(tail_logs_text(log_type: "stdout", limit: limit), succeeded: successful?)
+    return summary if summary.present?
+
+    tail_logs_text(log_type: "stderr", limit: limit)
+  end
+
   def log_orchestration_decision(action:, decision_point:, status:, signals:, result:)
     OrchestrationDecision.record(
       project: project,
@@ -4005,6 +4014,17 @@ class AgentRun < ApplicationRecord
       .strip
   end
 
+  def tail_logs_text(log_type:, limit:)
+    agent_run_logs
+      .where(log_type: log_type)
+      .order(created_at: :desc, id: :desc)
+      .limit(limit)
+      .pluck(:content)
+      .reverse
+      .join("\n")
+      .strip
+  end
+
   def review_goal_requires_pull_request
     if goal == "review" && source_pull_request_number.blank?
       errors.add(:source_pull_request_number, "is required for review goals")
@@ -4725,5 +4745,32 @@ class AgentRun < ApplicationRecord
 
     admission = FeatureIntents::RunAdmission.call(issue: issue)
     errors.add(:issue, admission.reason) unless admission.allowed?
+  end
+
+  # A cancellation or budget guard can end the workflow before its dedicated
+  # completion activity. Preserve collected evidence with a terminal report
+  # rather than leaving an apparently clean, report-less investigation.
+  # @spec MAINT-023 MAINT-024
+  def persist_terminal_maintenance_report
+    outcome = if status == "cancelled"
+      "cancelled"
+    elsif status == "token_budget_exceeded" || guardrail_violation_type.in?(%w[cost_limit time_limit token_limit token_budget])
+      "budget_exhausted"
+    else
+      "partial"
+    end
+    incomplete_checks = outcome == "partial" ? [ { "name" => "investigation", "reason" => status } ] : []
+    MaintenanceReports::Persist.call(run: self, outcome:, incomplete_checks:)
+  rescue => e
+    Rails.logger.error(
+      message: "agent_execution.terminal_maintenance_report_persist_failed",
+      agent_run_id: id,
+      error_class: e.class.name,
+      error: e.message
+    )
+  end
+
+  def terminal_maintenance_report_needed?
+    maintenance_goal? && finished? && maintenance_report.nil?
   end
 end

@@ -90,14 +90,31 @@ RSpec.describe "Maintenance runs API" do
   it "inspects a maintenance run through the API" do
     run = create(:agent_run, project:, goal: "maintenance", issue: nil, custom_prompt: "Audit workflow A",
       maintenance_guidance: "Audit workflow A", maintenance_scope: "app/workflows/a.rb", maintenance_scope_kind: "named")
+    MaintenanceReports::Persist.call(run:, completed_checks: [ { "name" => "prompt" } ])
 
     get "/api/v1/projects/#{project.id}/maintenance_runs/#{run.id}", headers: headers
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include("id" => run.id, "goal" => "maintenance", "scope" => "app/workflows/a.rb")
     expect(response.parsed_body.fetch("maintenance")).to include(
-      "guidance" => "Audit workflow A", "scope" => "app/workflows/a.rb", "report_only" => true
+      "guidance" => "Audit workflow A", "scope" => "app/workflows/a.rb", "report_only" => true,
+      "report" => include("outcome" => "clean", "completed_checks" => [ { "name" => "prompt" } ])
     )
+  end
+
+  # @spec MAINT-016 MAINT-025
+  it "exposes analyzer provenance for report findings" do
+    run = create(:agent_run, project:, goal: "maintenance", issue: nil, custom_prompt: "Audit workflow A",
+      maintenance_guidance: "Audit workflow A")
+    MaintenanceReports::Persist.call(run:, findings: [ {
+      category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ], locations: [],
+      analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
+    } ])
+
+    get "/api/v1/projects/#{project.id}/maintenance_runs/#{run.id}", headers: headers
+
+    expect(response.parsed_body.dig("maintenance", "report", "findings", 0, "analyzer_provenance"))
+      .to eq("name" => "debride", "version" => "1.14.0")
   end
 
   # @spec MAINT-017

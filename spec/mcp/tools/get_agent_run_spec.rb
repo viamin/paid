@@ -44,6 +44,7 @@ RSpec.describe Tools::GetAgentRun do
         maintenance_objective: "unnecessary_code", maintenance_recipe_version: "1",
         maintenance_scope: "app/workflows/a.rb", maintenance_scope_kind: "named",
         maintenance_pinned_revision: "main", maintenance_limits: { "max_execution_seconds" => 7200 })
+      MaintenanceReports::Persist.call(run:, completed_checks: [ { "name" => "prompt" } ])
 
       result = tool.call(agent_run_id: run.id)
 
@@ -54,8 +55,24 @@ RSpec.describe Tools::GetAgentRun do
         scope_kind: "named",
         guidance: "Audit workflow A",
         pinned_revision: "main",
-        report_only: true
+        report_only: true,
+        report: include(outcome: "clean", completed_checks: [ { "name" => "prompt" } ])
       )
+    end
+
+    # @spec MAINT-016 MAINT-025
+    it "includes analyzer provenance for maintenance findings" do
+      run = create(:agent_run, project: create(:project, account: account), goal: "maintenance",
+        issue: nil, custom_prompt: "Audit workflow A", maintenance_guidance: "Audit workflow A")
+      MaintenanceReports::Persist.call(run:, findings: [ {
+        category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ], locations: [],
+        analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
+      } ])
+
+      result = tool.call(agent_run_id: run.id)
+
+      expect(result.dig(:maintenance, :report, :findings, 0, :analyzer_provenance))
+        .to eq("name" => "debride", "version" => "1.14.0")
     end
 
     it "omits maintenance fields for non-maintenance runs" do
