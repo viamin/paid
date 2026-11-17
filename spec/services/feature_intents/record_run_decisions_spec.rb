@@ -130,4 +130,27 @@ RSpec.describe FeatureIntents::RecordRunDecisions do
 
     expect(feature_intent.reload.status).to eq("design_open")
   end
+
+  it "groups the run's recorded decisions into a revision-bound checkpoint" do # @spec PROJECT-DELEGATION-002
+    create(:feature_intent_design_pr, feature_intent: feature_intent, head_sha: "d" * 40, reviewed_head_sha: "d" * 40)
+    record_stdout(decisions_summary)
+
+    described_class.call(feature_intent: feature_intent, agent_run: agent_run)
+
+    checkpoint = feature_intent.project_delegation_intent_checkpoints.sole
+    expect(checkpoint).to have_attributes(status: "open", proposed_design_revision: "d" * 40)
+    expect(checkpoint.proposed_acceptance_revision).to be_present
+    expect(checkpoint.questions).to match_array(feature_intent.feature_intent_decisions)
+    expect(checkpoint.questions).to all(have_attributes(source_agent_run_id: agent_run.id))
+    expect(checkpoint.evidence).to include(include("source" => "agent_run", "reference" => agent_run.id.to_s))
+  end
+
+  it "records decisions without a checkpoint when no design revision is bound yet" do # @spec PROJECT-DELEGATION-002
+    record_stdout(decisions_summary)
+
+    described_class.call(feature_intent: feature_intent, agent_run: agent_run)
+
+    expect(feature_intent.feature_intent_decisions.count).to eq(2)
+    expect(feature_intent.project_delegation_intent_checkpoints).to be_empty
+  end
 end

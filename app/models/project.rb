@@ -10,6 +10,8 @@ class Project < ApplicationRecord
   has_many :work_item_project_mapping_targets, dependent: :destroy
   has_many :work_item_project_mappings, through: :work_item_project_mapping_targets
   has_one :partial_closeout_projection, dependent: :delete
+  has_many :feature_intents, dependent: :destroy
+  has_many :project_delegation_intent_checkpoints, through: :feature_intents
   has_many :trusted_provider_identities, dependent: :destroy
   has_many :work_item_lifecycle_mappings, dependent: :destroy
 

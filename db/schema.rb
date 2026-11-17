@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_175320) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2033,6 +2033,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
     t.datetime "created_at", null: false
     t.text "design_claim", null: false, comment: "The design claim this decision affects, so the Inbox can explain what it holds."
     t.bigint "feature_intent_id", null: false
+    t.bigint "intent_checkpoint_id"
     t.string "kind", null: false, comment: "question or inferred_decision."
     t.text "prompt", null: false, comment: "The question text, or the inferred decision's stated assumption."
     t.datetime "resolved_at"
@@ -2042,6 +2043,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "status"], name: "index_feature_intent_decisions_on_feature_intent_id_and_status"
     t.index ["feature_intent_id"], name: "index_feature_intent_decisions_on_feature_intent_id"
+    t.index ["intent_checkpoint_id"], name: "index_feature_intent_decisions_on_intent_checkpoint_id"
     t.index ["resolved_by_id"], name: "index_feature_intent_decisions_on_resolved_by_id"
     t.index ["source_agent_run_id"], name: "index_feature_intent_decisions_on_source_agent_run_id"
     t.index ["status"], name: "index_feature_intent_decisions_on_status"
@@ -3746,6 +3748,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
     t.index ["project_id", "convention_key", "action_type"], name: "index_convention_recs_on_project_key_action", unique: true, where: "((status)::text = 'pending'::text)"
     t.index ["project_id", "status"], name: "index_convention_recs_on_project_status"
     t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
+  end
+
+  create_table "project_delegation_intent_checkpoints", comment: "Grouped material intent questions and their immutable settlement binding.", force: :cascade do |t|
+    t.jsonb "affected_scope", default: {}, null: false
+    t.jsonb "alternatives", default: [], null: false
+    t.jsonb "consequences", default: [], null: false
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: [], null: false
+    t.bigint "feature_intent_id", null: false
+    t.string "proposed_acceptance_revision"
+    t.string "proposed_design_revision"
+    t.text "recommendation", null: false
+    t.string "status", default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index ["feature_intent_id", "status"], name: "index_project_delegation_checkpoints_on_intent_and_status"
+    t.index ["feature_intent_id"], name: "idx_on_feature_intent_id_529a7745bc"
+  end
+
+  create_table "project_delegation_intent_settlements", comment: "Append-only human settlement bound to exact design and acceptance revisions.", force: :cascade do |t|
+    t.string "acceptance_revision", null: false
+    t.jsonb "answers", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "design_revision", null: false
+    t.string "disposition", null: false
+    t.bigint "intent_checkpoint_id", null: false
+    t.datetime "settled_at", null: false
+    t.bigint "settled_by_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["intent_checkpoint_id", "created_at"], name: "idx_pd_intent_settlements_checkpoint_created"
+    t.index ["intent_checkpoint_id"], name: "idx_on_intent_checkpoint_id_afe16ad6d6"
+    t.index ["settled_by_id"], name: "index_project_delegation_intent_settlements_on_settled_by_id"
   end
 
   create_table "project_delegation_postures", force: :cascade do |t|
@@ -5559,6 +5592,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
   add_foreign_key "project_convention_recommendations", "projects"
   add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
   add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
+  add_foreign_key "project_delegation_intent_checkpoints", "feature_intents"
+  add_foreign_key "project_delegation_intent_settlements", "project_delegation_intent_checkpoints", column: "intent_checkpoint_id"
+  add_foreign_key "project_delegation_intent_settlements", "users", column: "settled_by_id"
   add_foreign_key "project_delegation_postures", "accounts"
   add_foreign_key "project_delegation_postures", "projects"
   add_foreign_key "project_delegation_postures", "users", column: "selected_by_id"
@@ -6737,6 +6773,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
       $function$
   SQL
 
+  create_function :prevent_project_delegation_intent_settlement_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_project_delegation_intent_settlement_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'project_delegation_intent_settlements is append-only; UPDATE and DELETE are rejected (PROJECT-DELEGATION-002)';
+      END;
+      $function$
+  SQL
+
   create_trigger :protect_project_delegation_audit_event_update, sql_definition: <<-SQL
       CREATE TRIGGER protect_project_delegation_audit_event_update BEFORE UPDATE ON public.account_activity_events FOR EACH ROW EXECUTE FUNCTION protect_project_delegation_audit_event()
   SQL
@@ -6789,12 +6836,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
@@ -6877,6 +6924,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_project_memberships BEFORE INSERT OR UPDATE ON public.project_memberships FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -6921,12 +6976,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_073554) do
       CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
   SQL
 
-  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
-      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
-  SQL
-
   create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
       CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL

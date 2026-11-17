@@ -46,6 +46,7 @@ class FeatureIntent < ApplicationRecord
   has_many :facets, class_name: "FeatureIntentFacet", dependent: :destroy
   has_many :feature_intent_design_prs, dependent: :destroy
   has_many :feature_intent_approval_revisions, dependent: :restrict_with_error
+  has_many :project_delegation_intent_checkpoints, class_name: "ProjectDelegation::IntentCheckpoint", dependent: :destroy
   has_many :design_amendments, dependent: :restrict_with_error
   has_one :feature_intent_completion, dependent: :destroy
 

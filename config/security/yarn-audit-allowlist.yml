@@ -38,3 +38,9 @@ exceptions:
     owner: "@viamin/paid-frontend-platform"
     expires_on: 2026-12-31
     tracking_issue: "#4148"
+  - id: GHSA-fc5q-39xc-vjpf
+    module: picomatch
+    reason: "No upstream patch is available; the latest published picomatch is 4.0.7 and is required transitively by @herb-tools/linter and @tailwindcss/cli. Reassess when picomatch or either parent publishes a non-vulnerable dependency."
+    owner: "@viamin/paid-frontend-platform"
+    expires_on: 2026-12-31
+    tracking_issue: "#5153"

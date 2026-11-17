@@ -27,6 +27,7 @@ require Rails.root.join("db/migrate/20261105195000_create_bounded_delegated_acti
 require Rails.root.join("db/migrate/20261107082941_create_trusted_measurement_attempts")
 require Rails.root.join("db/migrate/20261107200000_create_project_delegation_postures")
 require Rails.root.join("db/migrate/20261116080000_create_staged_closeout_adoption")
+require Rails.root.join("db/migrate/20261117100000_create_project_delegation_intent_checkpoints")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -122,6 +123,30 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       end
       described_class.clear!
       expect(ProjectDelegationPosture.all).to be_empty
+    end
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-001 PROJECT-DELEGATION-002
+  it "isolates intent checkpoints and rejects cross-tenant settlement references" do
+    checkpoint_a, settler_a = described_class.with_system_access do
+      intent = create(:feature_intent, project: create(:project, account: account_a))
+      [ create(:project_delegation_intent_checkpoint, feature_intent: intent), create(:user, account: account_a) ]
+    end
+    checkpoint_b, settler_b = described_class.with_system_access do
+      intent = create(:feature_intent, project: create(:project, account: account_b))
+      [ create(:project_delegation_intent_checkpoint, feature_intent: intent), create(:user, account: account_b) ]
+    end
+
+    as_restricted_role do
+      described_class.with(account_a) do
+        expect(ProjectDelegation::IntentCheckpoint.all).to contain_exactly(checkpoint_a)
+        insert_project_delegation_intent_settlement(checkpoint_a, settler_a)
+        expect(ProjectDelegation::IntentSettlement.where(intent_checkpoint_id: checkpoint_a.id).count).to eq(1)
+        expect_rls_rejection { insert_project_delegation_intent_settlement(checkpoint_a, settler_b) }
+        expect_rls_rejection { insert_project_delegation_intent_settlement(checkpoint_b, settler_a) }
+      end
+      described_class.clear!
+      expect(ProjectDelegation::IntentSettlement.all).to be_empty
     end
   end
 
@@ -417,6 +442,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
+      CreateProjectDelegationIntentCheckpoints.new.down if intent_checkpoint_tables_exist?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       CreateBoundedDelegatedActions.new.enable_tenant_rls
@@ -435,6 +461,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       restore_exception_incidents_logidze!
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.up unless inbox_history_events_table_exists?
+      CreateProjectDelegationIntentCheckpoints.new.up unless intent_checkpoint_tables_exist?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
@@ -474,6 +501,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
+      CreateProjectDelegationIntentCheckpoints.new.down if intent_checkpoint_tables_exist?
       CreateBoundedDelegatedActions.new.disable_tenant_rls
       CreateTrustedMeasurementAttempts.new.disable_tenant_rls
       CreateProjectDelegationPostures.new.disable_tenant_rls
@@ -496,6 +524,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       restore_exception_incidents_logidze!
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
       CreateInboxHistoryEvents.new.up unless inbox_history_events_table_exists?
+      CreateProjectDelegationIntentCheckpoints.new.up unless intent_checkpoint_tables_exist?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
@@ -567,6 +596,10 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
 
   def inbox_history_events_table_exists?
     ActiveRecord::Base.connection.table_exists?(:inbox_history_events)
+  end
+
+  def intent_checkpoint_tables_exist?
+    ActiveRecord::Base.connection.table_exists?(:project_delegation_intent_checkpoints)
   end
 
   def decomposition_decisions_have_rls?
@@ -711,6 +744,18 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       ) VALUES (
         #{account.id}, #{project.id}, #{sql_value(selected_by&.id)}, 'bounded_delivery', 1,
         '["technical_stop_recovery"]'::jsonb, 'sig', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    SQL
+  end
+
+  def insert_project_delegation_intent_settlement(checkpoint, settled_by)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO project_delegation_intent_settlements (
+        intent_checkpoint_id, settled_by_id, disposition, answers,
+        design_revision, acceptance_revision, settled_at, created_at, updated_at
+      ) VALUES (
+        #{checkpoint.id}, #{settled_by.id}, 'settled', '{}'::jsonb,
+        'design-1', 'acceptance-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
     SQL
   end

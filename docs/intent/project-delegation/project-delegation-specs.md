@@ -26,11 +26,30 @@ Status markers: `[ ]` planned implementation gap.
   `spec/requests/api/v1/delegation_spec.rb`, and
   `spec/mcp/tools/get_project_delegation_spec.rb` (shared projection parity).
 
-- [ ] **PROJECT-DELEGATION-002** — When material product questions are known
+- [x] **PROJECT-DELEGATION-002** — When material product questions are known
   before downstream work, the system SHALL group related questions, show a
   recommendation and consequences, and bind a human's settled answers to the
-  immutable design and acceptance revision; it SHALL NOT ask again downstream
+  current immutable design and acceptance revision at settlement; it SHALL NOT ask again downstream
   unless new evidence conflicts with, invalidates, or materially expands it.
+  *Verified by:* `spec/services/project_delegation/intent_checkpoint/plan_spec.rb`,
+  `spec/services/project_delegation/intent_checkpoint/settle_spec.rb`,
+  `spec/services/project_delegation/intent_checkpoint/redecision_spec.rb`,
+  `spec/services/project_delegation/intent_checkpoint/route_drift_spec.rb`,
+  `spec/models/project_delegation/intent_settlement_spec.rb`, and the
+  production wiring specs `spec/services/feature_intents/record_run_decisions_spec.rb`
+  (material questions recorded from a run are grouped into a revision-bound
+  checkpoint), `spec/services/design_amendments/complete_spec.rb`
+  (a merged design amendment's new baseline routes one focused re-decision
+  per settled checkpoint), and
+  `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`
+  (a re-recorded acceptance assessment routes one focused re-decision per
+  checkpoint settled against the earlier acceptance revision), and
+  `spec/security/tenant_context_spec.rb`
+  (a settlement insert is rejected at the database policy unless its human
+  settler belongs to the checkpoint's account), verified alongside
+  `spec/migrations/create_project_delegation_intent_checkpoints_dbless_spec.rb`
+  (the settlement policy binds `settled_by` to the current account in both its
+  read and write clauses).
 
 - [ ] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
   system SHALL delegate only bounded implementation choices, focused follow-up

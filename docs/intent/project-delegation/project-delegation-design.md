@@ -36,6 +36,29 @@ or a focused decision request. It allows only explicit technical choices,
 one deduplicated follow-up record, classified technical recovery,
 evidence-gated closeout, and bounded cycle repair.
 
+Production wiring: `FeatureIntents::RecordRunDecisions` (the run-decision
+materialization choke point) plans one checkpoint per run from the decisions
+it records, binding the design PR's reviewed head and the canonical
+acceptance-criteria token; `FeatureIntents::RespondToDecision` settles the
+checkpoint once its last question is answered, preserving each question's own
+responder and re-reading the current design and acceptance tuple before it
+writes the immutable settlement. It serializes that capture with each revision
+producer, so the settlement either includes an earlier completed change or the
+later change routes a focused re-decision. Both revision types route their
+drift behind one shared handler,
+`ProjectDelegation::IntentCheckpoint::RouteDrift`: `DesignAmendments::Complete`
+— the event that replaces an approved design revision with a new baseline —
+routes on the design delta, and `RunAcceptanceAuditActivity` — the event that
+re-records an issue's acceptance criteria — routes on the acceptance delta.
+Each event carries the unchanged revision through from the settlement so the
+drift comparison stays focused on the event's delta, and acceptance routing
+reaches only checkpoints that bind the re-recorded issue (the issues of the
+runs whose questions the checkpoint grouped), so an implementation issue's
+audit never reopens the brief issue's settled acceptance. Every drifted
+checkpoint gets one focused, deduplicated re-decision.
+`FeatureIntents::Release` records the first approved revision rather than
+changing one, so it is not a drift event.
+
 `ActionPlan` answers whether a decision class is delegated or needs a human; it
 never supplies execution authority. That stays with the RDR-077 phase policy
 and the RDR-078 bounded authorization for the admitted lineage.
