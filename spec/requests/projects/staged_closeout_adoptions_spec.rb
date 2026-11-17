@@ -10,6 +10,64 @@ RSpec.describe "Staged closeout adoption settings" do
 
   before { sign_in owner }
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-002
+  it "offers enrollment and mapping review through an HTML operator page" do
+    get project_staged_closeout_adoption_path(project)
+
+    expect(response.media_type).to eq("text/html")
+    expect(response.body).to include("Acceptance checks", "Enable acceptance checks")
+
+    patch project_staged_closeout_adoption_path(project), params: { enabled: true }
+
+    expect(response).to redirect_to(project_staged_closeout_adoption_path(project))
+    follow_redirect!
+    expect(response.body).to include("Disable acceptance checks", "Review a check")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-006
+  it "lets a maintainer inspect, replace and revoke a reviewed check without JSON requests" do
+    StagedCloseoutAdoption::Enroll.call(project:, actor: owner, enabled: true)
+    issue = create(:issue, project:)
+    recipe = create(:pre_commit_requirement, project:, account:)
+    original = approve_mapping(issue:, recipe:)
+
+    get project_staged_closeout_adoption_path(project), params: { issue_id: issue.id }
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("The report renders", "Approve reviewed check", recipe.name, "Reviewed by", "Reviewed at", "Review history")
+
+    post mappings_project_staged_closeout_adoption_path(project), params: {
+      issue_id: issue.id,
+      mapping: { criterion_key: "The report renders", review_stage: "pre_merge:coding",
+                 target_reference: "technical_prerequisite:#{recipe.id}",
+                 freshness_seconds: 7200, retry_policy: { max_attempts: 1 } }
+    }
+    expect(response).to redirect_to(project_staged_closeout_adoption_path(project))
+    expect(original.reload.status).to eq("superseded")
+    replacement = project.staged_closeout_mappings.order(:revision).last
+    expect(replacement).to have_attributes(revision: 2, reviewed_by: owner, freshness_seconds: 7200)
+
+    delete mapping_project_staged_closeout_adoption_path(project, replacement.id)
+    expect(response).to redirect_to(project_staged_closeout_adoption_path(project))
+    expect(replacement.reload.status).to eq("revoked")
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-006
+  it "renders an actionable HTML error for an invalid mapping without changing review history" do
+    StagedCloseoutAdoption::Enroll.call(project:, actor: owner, enabled: true)
+    issue = create(:issue, project:)
+    recipe = create(:pre_commit_requirement, project:, account:)
+    original = approve_mapping(issue:, recipe:)
+
+    post mappings_project_staged_closeout_adoption_path(project), params: {
+      issue_id: issue.id, mapping: { criterion_key: "Invented", target_reference: nil, review_stage: nil }
+    }
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.body).to include("missing required mapping attributes", 'role="alert"')
+    expect(original.reload.status).to eq("approved")
+    expect(project.staged_closeout_mappings.count).to eq(1)
+  end
+
   def approve_mapping(issue:, recipe:, mapping_project: project)
     create(:agent_run, :completed, project: mapping_project, issue:, reconciliation: { "assessment" => {
       "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),

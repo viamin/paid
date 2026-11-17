@@ -22,6 +22,7 @@ class StagedCloseoutMapping < ApplicationRecord
   validates :freshness_seconds, numericality: { only_integer: true, greater_than: 0 }
   validates :revision, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: [ :issue_id, :criterion_key ] }
   validate :account_matches_scope
+  validate :reviewed_inputs_are_immutable, on: :update
 
   scope :approved, -> { where(status: "approved") }
 
@@ -29,6 +30,12 @@ class StagedCloseoutMapping < ApplicationRecord
   def approved? = status == "approved"
 
   private
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-007
+  def reviewed_inputs_are_immutable
+    mutable = %w[status invalidated_by_id invalidated_at invalidation_reason updated_at]
+    (changes.keys - mutable).each { |field| errors.add(field, "is immutable; approve a replacement revision") }
+  end
 
   def account_matches_scope
     errors.add(:account, "must match the project") if account && project && account_id != project.account_id
