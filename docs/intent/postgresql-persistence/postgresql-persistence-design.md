@@ -40,6 +40,18 @@ development and explicit `db:schema:dump` retain Rails defaults. This prevents
 local catalog differences from becoming auto-stashed edits that conflict with
 later upstream migrations.
 
+The complete-policy bootstrap repair is a frozen, transactional metadata
+migration sourced from the migrated main policy catalog: 224 policies across
+200 tables at revision `2fb3a7103`. It restores their full current predicates
+and enable/force flags rather than replaying selected earlier migration
+groups or treating the accounts policy as a completeness sentinel. Four
+obsolete configuration-bundle policy variants are removed so they cannot
+remain as permissive alternatives. Unrelated tables and their intentional
+inactive or default-deny flags are untouched. No application rows are changed;
+rollback does not reinstate missing or weaker security boundaries. Future
+policy evolution remains in ordinary migrations and the canonical schema
+dump, not a runtime policy-reinstallation mechanism.
+
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
 guards against unsafe runtime roles that would bypass those policies. The

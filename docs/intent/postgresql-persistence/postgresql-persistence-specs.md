@@ -101,5 +101,11 @@
   maintenance reports, findings, and occurrences. A schema-loaded database
   SHALL therefore enforce the same tenant read and write boundary as its
   migration-created counterpart.
-  *Tests:* `spec/config/schema_column_order_spec.rb`.
-  *Code:* `SchemaRowLevelSecurity`, `RestoreTenantRlsPoliciesAfterSchemaBootstrap`.
+  Repairing a partial bootstrap SHALL restore the complete current policy
+  predicates and flags even when the accounts baseline already exists; older
+  permissive policy variants SHALL NOT remain alongside the current policy.
+  *Tests:* `spec/config/schema_column_order_spec.rb`,
+  `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`,
+  `spec/security/tenant_context_schema_bootstrap_spec.rb`.
+  *Code:* `SchemaRowLevelSecurity`, `RestoreTenantRlsPoliciesAfterSchemaBootstrap`,
+  `RestoreCompleteTenantPolicyCatalog`.
