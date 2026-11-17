@@ -30,6 +30,21 @@ end
 
 SYSTEM_DRIVER = :rack_test
 
+# RackTest and the example share a database connection. ApplicationController
+# deliberately clears request tenant context, so restore the test harness's
+# system-access baseline before assertions run on that shared connection.
+# Browser-driven specs use a separate server connection and do not need this.
+# @spec POSTGRESQL-PERSISTENCE-012
+module RackTestTenantContext
+  def process(...)
+    super
+  ensure
+    TenantContext.apply_system_access!
+  end
+end
+
+Capybara::RackTest::Browser.prepend(RackTestTenantContext)
+
 Capybara.server = :puma, { Silent: true }
 Capybara.server_host = "127.0.0.1"
 Capybara.default_max_wait_time = 5
