@@ -1,0 +1,109 @@
+<% content_for(:title) { "Review package ##{@package.revision_number} - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to back_link_path(project_layered_verification_review_packages_path(@project)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25a.75.75 0 0 1 .75.75Z" clip-rule="evenodd" />
+      </svg>
+      Back to review packages
+    <% end %>
+  </div>
+
+  <section class="rounded-lg bg-white p-4 shadow dark:bg-gray-800" aria-labelledby="package-detail-heading">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <h1 id="package-detail-heading" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        Review package · audit run #<%= @package.agent_run_id %> · revision <%= @package.revision_number %>
+      </h1>
+      <span class="text-sm text-gray-600 dark:text-gray-300"><%= @package.current? ? "current" : "superseded" %></span>
+    </div>
+    <p class="mt-2 font-mono text-xs text-gray-500 dark:text-gray-400"><%= @package.package_digest %></p>
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+      The digest identifies the bound inputs; it never establishes semantic completeness. Prior revisions are retained unchanged.
+    </p>
+
+    <% if @package.current? && policy(@project).manage_issues? %>
+      <div class="mt-4 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Business-intent validation</h2>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          Recording approval binds the reviewer's decision to this revision. It does not approve canonical clarification, start a repair, authorize a release, or waive host policies.
+        </p>
+        <%= form_with url: approve_project_layered_verification_review_package_path(@project, @package), method: :post, class: "mt-3 flex flex-wrap items-start gap-2" do %>
+          <%= text_field_tag :note, nil, placeholder: "What the walkthrough validated (optional note)", class: "grow rounded-md border-gray-300 text-sm dark:bg-gray-900 dark:border-gray-600 dark:text-gray-100" %>
+          <%= submit_tag "Record approval", class: "rounded-md bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900" %>
+        <% end %>
+      </div>
+    <% end %>
+
+    <div class="mt-4 space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Bound obligations</h2>
+        <ul class="mt-2 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+          <% Array(@package.bound_inputs["obligations"]).each do |obligation| %>
+            <li class="rounded border border-gray-100 p-2 dark:border-gray-700">
+              <p class="font-medium text-gray-900 dark:text-gray-100"><%= obligation["external_identity"] %></p>
+              <p><%= obligation["scope_description"] %></p>
+              <p class="text-xs text-gray-500">declared scope revision: <%= obligation["external_revision"].presence || "none" %></p>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+
+      <div class="grid gap-2 text-sm text-gray-600 dark:text-gray-300 sm:grid-cols-2">
+        <p>Target revision: <span class="font-mono text-xs"><%= @package.bound_inputs["target_revision"].presence || "none" %></span></p>
+        <p>Plan revision: <span class="font-mono text-xs"><%= @package.bound_inputs["plan_revision"] %></span></p>
+        <p>Contributing check results: <%= Array(@package.bound_inputs["check_result_ids"]).join(", ").presence || "none" %></p>
+        <p>Bound approvals: <%= Array(@package.bound_inputs["approval_ids"]).join(", ").presence || "none" %></p>
+      </div>
+
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Inbox decisions bound while open</h2>
+        <% decisions = Array(@package.bound_inputs["inbox_decisions"]) %>
+        <% if decisions.any? %>
+          <ul class="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+            <% decisions.each do |decision| %>
+              <li>Finding #<%= decision["finding_id"] %> · <%= decision["selected_action"].humanize %> · <%= decision["decided_at"] %></li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">No Inbox decisions were recorded against this revision's inputs.</p>
+        <% end %>
+      </div>
+
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Recorded approvals</h2>
+        <% if @package.approvals.any? %>
+          <ul class="mt-2 space-y-2 text-sm text-gray-600 dark:text-gray-300">
+            <% @package.approvals.each do |approval| %>
+              <li class="rounded border border-gray-100 p-2 dark:border-gray-700">
+                <p><%= approval.approved_by.name %> · <%= local_time(approval.approved_at, format: :short) %></p>
+                <% if approval.provenance["note"].present? %>
+                  <p><%= approval.provenance["note"] %></p>
+                <% end %>
+                <p class="text-xs text-gray-500">provenance: <%= approval.provenance.slice("surface", "package_digest").map { |key, value| "#{key}=#{value}" }.join(" · ") %></p>
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">No approvals recorded against this revision.</p>
+        <% end %>
+      </div>
+
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Revision history</h2>
+        <ul class="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+          <% @lineage.each do |package| %>
+            <li>
+              <% if package.id == @package.id %>
+                Revision <%= package.revision_number %> (this package)
+              <% else %>
+                <%= link_to "Revision #{package.revision_number}", project_layered_verification_review_package_path(@project, package), class: "underline" %>
+              <% end %>
+              <span class="font-mono text-xs text-gray-400"><%= package.package_digest.first(12) %></span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>

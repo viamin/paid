@@ -32,6 +32,8 @@ class LayeredVerificationObligation < ApplicationRecord
   validate :approved_state_has_repository_reference
   validate :approved_transition_is_persisted
 
+  after_update_commit :recapture_completed_audits, if: :review_package_input_changed?
+
   def record_approval!(revision:, approval_reference:, persisted:)
     raise ApprovalNotPersistedError, "approval is not persisted in the target repository" unless persisted
 
@@ -48,6 +50,20 @@ class LayeredVerificationObligation < ApplicationRecord
   end
 
   private
+
+  # @spec LAYERED-VERIFY-023
+  def recapture_completed_audits
+    project.agent_runs.where(goal: "layered_verification_audit", status: "completed").find_each do |audit|
+      obligation_ids = Array(audit.external_metadata.dig("layered_verification", "obligation_ids")).map(&:to_i)
+      next unless obligation_ids.include?(id)
+
+      LayeredVerification::ReviewPackages::Capture.call(agent_run: audit)
+    end
+  end
+
+  def review_package_input_changed?
+    saved_change_to_external_identity? || saved_change_to_external_revision? || saved_change_to_scope_description?
+  end
 
   # Phase 1 rows predate this column. Keep them saveable until synchronization
   # discovers the real repository path, while requiring and preserving paths

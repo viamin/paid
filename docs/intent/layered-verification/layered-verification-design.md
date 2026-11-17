@@ -660,6 +660,34 @@ revision; it never, by itself, authorizes a repair or a release — those
 remain the separately-performed operations defined above and under the
 project's existing host policy.
 
+**Capture, revisions, and approval.** Capture happens when an audit run
+completes and again whenever a bound input changes — an Inbox decision
+recorded on one of the audit's findings re-captures immediately so the
+decision is folded into a fresh revision. A replayed capture of unchanged
+inputs reuses the existing revision (idempotent, concurrency-safe); changed
+inputs append `revision_number + 1` while the prior row stays byte-for-byte
+identical. Business-review approval is an append-only
+`LayeredVerificationReviewApproval` row carrying actor, time, and provenance
+(surface, note, bound digest, bound revisions). Approving revalidates
+immediately before acting, mirroring `LAYERED-VERIFY-018`: a superseding
+revision or a bound obligation source that moved past its bound revision
+rejects the approval with an explicit "refresh and review" reason. The
+package history is inspectable per project (HTML and JSON), gated by the one
+`layered_verification_add_on` flag and the project's Pundit boundaries, with
+the same PostgreSQL tenant RLS keyed through the project as the other
+layered-verification tables.
+
+**Separate report views.** The audit report renders business-intent
+validation and verification coverage as two distinct sections over the same
+recorded evidence, per RDR-076 §5: the intent-validation view states, per
+obligation, the declared scope, the canonical approval state (a framework
+record, never conflated with business validation), and the business
+validation verdict — `unknown` stays explicit until a current-revision
+package approval covers that obligation at its bound revision; the coverage
+view remains the per-obligation check-outcome synthesis
+(`LAYERED-VERIFY-024`). Successful tool execution, canonical approval, and
+business validation are never reported as one state.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |

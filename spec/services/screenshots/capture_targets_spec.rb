@@ -81,6 +81,23 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_knowledge_search" ])
     end
 
+    it "maps layered-verification review package surfaces to the audit detail capture" do
+      # @spec LAYERED-VERIFY-023
+      controller_targets = described_class.call(
+        changed_files: [ "app/controllers/projects/layered_verification_review_packages_controller.rb" ]
+      )
+      index_targets = described_class.call(
+        changed_files: [ "app/views/projects/layered_verification_review_packages/index.html.erb" ]
+      )
+      show_targets = described_class.call(
+        changed_files: [ "app/views/projects/layered_verification_review_packages/show.html.erb" ]
+      )
+
+      expect(controller_targets.map(&:slug)).to eq([ "project_agent_run_show" ])
+      expect(index_targets.map(&:slug)).to eq([ "project_agent_run_show" ])
+      expect(show_targets.map(&:slug)).to eq([ "project_agent_run_show" ])
+    end
+
     it "maps knowledge quality screens instead of treating them as unmapped UI" do
       controller_targets = described_class.call(changed_files: [ "app/controllers/knowledge/quality_controller.rb" ])
       view_targets = described_class.call(changed_files: [ "app/views/knowledge/quality/show.html.erb" ])

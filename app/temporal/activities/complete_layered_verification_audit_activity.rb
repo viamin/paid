@@ -13,6 +13,7 @@ module Activities
         LayeredVerification::Audits::IngestResults.call(agent_run:)
         coverage = coverage_for(agent_run)
         store_coverage!(agent_run, coverage)
+        LayeredVerification::ReviewPackages::Capture.call(agent_run:)
         completed = agent_run.complete!
         ProcessRunQueueJob.perform_later if completed
         result(agent_run, coverage)

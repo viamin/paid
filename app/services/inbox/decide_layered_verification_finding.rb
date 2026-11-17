@@ -30,6 +30,7 @@ module Inbox
 
         finding.update!(status: action == "defer" ? "deferred" : "open", decision: recorded_decision)
       end
+      capture_review_package
       finding
     end
 
@@ -73,6 +74,15 @@ module Inbox
 
     def project
       finding.project
+    end
+
+    # The recorded decision is a bound input of the audit's review package:
+    # fold it into a fresh immutable revision so the prior package stays
+    # unchanged (@spec LAYERED-VERIFY-023).
+    def capture_review_package
+      return unless finding.agent_run.layered_verification_audit_goal?
+
+      LayeredVerification::ReviewPackages::Capture.call(agent_run: finding.agent_run)
     end
 
     def obligation_source_matches_evidence?

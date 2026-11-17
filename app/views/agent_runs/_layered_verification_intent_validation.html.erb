@@ -1,0 +1,46 @@
+<%# @spec LAYERED-VERIFY-023 %>
+<% coverage = agent_run.external_metadata.dig("layered_verification", "coverage") %>
+<% obligations_by_id = agent_run.project.layered_verification_obligations.where(id: coverage.keys).index_by { |obligation| obligation.id.to_s } %>
+<% current_package = agent_run.review_packages.order(:revision_number).last %>
+<% approval_ids = Array(current_package&.bound_inputs&.fetch("approval_ids", [])) %>
+<% approvals = LayeredVerificationReviewApproval.where(id: approval_ids).includes(:approved_by, :package).order(:id).to_a %>
+
+<section id="layered-verification-intent-validation" class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800" aria-labelledby="intent-validation-heading">
+  <div class="flex items-center justify-between gap-4">
+    <h2 id="intent-validation-heading" class="text-sm font-semibold text-gray-900 dark:text-gray-100">Business-intent validation</h2>
+    <% if current_package %>
+      <%= link_to "Review package history", project_layered_verification_review_packages_path(agent_run.project), class: "text-sm text-gray-600 underline dark:text-gray-300" %>
+    <% end %>
+  </div>
+  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+    The business reviewer's decision at the bound revision. It is separate from canonical approval and from verification coverage; an unknown state stays explicit.
+  </p>
+  <div class="mt-3 space-y-3">
+    <% coverage.each do |obligation_id, entry| %>
+      <% obligation = obligations_by_id[obligation_id] %>
+      <% bound = Array(current_package&.bound_inputs&.fetch("obligations", [])).find { |inputs| inputs["id"].to_s == obligation_id.to_s } %>
+      <% still_bound = bound.present? && bound["external_revision"].to_s == obligation&.external_revision.to_s %>
+      <% validating = still_bound ? approvals.select { |approval| approval.package.reviewed_evidence_matches?(current_package) } : [] %>
+      <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+          <p class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= obligation&.external_identity || "Obligation ##{obligation_id}" %></p>
+          <span class="text-sm <%= validating.any? ? "text-gray-600 dark:text-gray-300" : "text-amber-600 dark:text-amber-400" %>">
+            <%= validating.any? ? "Validated" : "Unknown" %>
+          </span>
+        </div>
+        <p class="mt-1 text-sm text-gray-600 dark:text-gray-300"><%= obligation&.scope_description || entry["scope_description"] %></p>
+        <ul class="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+          <li>Declared scope revision: <%= bound ? bound["external_revision"].presence || "none" : "no package captured" %></li>
+          <li>Canonical approval: <%= obligation&.approval_state&.humanize || "Unresolved" %> <span class="text-gray-400">(framework record, distinct from business validation)</span></li>
+          <% if validating.any? %>
+            <% validating.each do |approval| %>
+              <li>Validated by <%= approval.approved_by.name %> at <%= local_time(approval.approved_at, format: :short) %> (package revision <%= current_package.revision_number %>)</li>
+            <% end %>
+          <% else %>
+            <li>No business validation recorded for the current inputs; a review package approval is required to validate this intent.</li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+  </div>
+</section>
