@@ -53,6 +53,7 @@ module Tools
       new_feature_delivery_policy
       confidence_delivery_enrollment_enabled
       question_exploration_enabled
+      automation_phase_settings
     ].freeze
 
     def self.tool_name = "update_project_settings"
@@ -101,9 +102,12 @@ module Tools
           "Cannot enable #{violations.join(', ')} while the project targets PRs at the upstream repository"
       end
 
-      project.update!(attrs)
+      phase_settings = attrs.delete(:automation_phase_settings)
+      phase_result = Automation::PhaseSettings::Update.call(project:, params: phase_settings, user:) if phase_settings
+      project.update!(attrs) if attrs.any?
       record_activity!(project) if project.saved_changes.except("updated_at").any?
-      serialize(project)
+      serialize(project).merge(automation_phase_settings: phase_result&.settings&.to_h || Automation::PhaseSettings.call(project).to_h,
+        enabled_transitions: phase_result&.enabled_transitions || [])
     end
 
     private

@@ -35,6 +35,8 @@ RSpec.describe Tools::Registry do
       update_user_settings
       update_tenant_settings
       update_project_settings
+      revoke_continuation_grant
+      extend_continuation_grant
       update_issue_control_state
       apply_configuration_profile
       create_provider_api_key

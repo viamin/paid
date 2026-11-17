@@ -43,6 +43,15 @@ RSpec.describe Tools::UpdateProjectSettings do
       expect(project.reload).to have_attributes(paused: true, auto_pick_enabled: true)
     end
 
+    it "updates phase settings through the validated transition service" do # @spec AUTOMATION-PHASES-002
+      project.update!(automation_phase_settings: { "phases" => { "coding" => false }, "release" => false, "deployment" => true })
+
+      result = call(settings: { "automation_phase_settings" => { "phases" => { "coding" => true }, "release" => true, "deployment" => false } })
+
+      expect(result).to include(automation_phase_settings: hash_including("release" => true, "deployment" => false), enabled_transitions: include("coding"))
+      expect(Automation::PhaseSettings.call(project.reload)).to have_attributes(release_enabled?: true, deployment_enabled?: false)
+    end
+
     # @spec FACET-CONFIDENCE-010
     it "updates and returns independently configured confidence thresholds" do
       result = call(settings: { "intent_threshold" => 70, "technical_threshold" => 90 })

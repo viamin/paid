@@ -93,6 +93,15 @@ RSpec.describe "Project automation phases" do
     expect(grant.reload.endpoint).to eq("merge")
   end
 
+  it "returns the extension outcome and current notice as JSON" do # @spec AUTOMATION-PHASES-009
+    grant = create(:work_item_continuation_grant, project:, issue: create(:issue, project:), start_phase: "coding", endpoint: "coding")
+
+    patch extend_continuation_grant_project_automation_phases_path(project, grant), params: { endpoint: "merge" }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("extended" => true, "endpoint" => "merge", "continuation_notice" => include("You selected"))
+  end
+
   it "renders delegated delivery authority from the shared projection" do # @spec PROJECT-DELEGATION-005
     FeatureFlags.enable!(:project_delegation, project:)
     work_item = create(:issue, project:)
