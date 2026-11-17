@@ -103,9 +103,17 @@ module Tools
       end
 
       phase_settings = attrs.delete(:automation_phase_settings)
-      phase_result = Automation::PhaseSettings::Update.call(project:, params: phase_settings, user:) if phase_settings
-      project.update!(attrs) if attrs.any?
-      record_activity!(project) if project.saved_changes.except("updated_at").any?
+      phase_result = Project.transaction do
+        changed_fields = []
+        if attrs.any?
+          project.update!(attrs)
+          changed_fields.concat(project.saved_changes.except("updated_at").keys)
+        end
+        result = Automation::PhaseSettings::Update.call(project:, params: phase_settings, user:) if phase_settings
+        changed_fields.concat(project.saved_changes.except("updated_at").keys) if phase_settings
+        record_activity!(project, changed_fields:) if changed_fields.any?
+        result
+      end
       serialize(project).merge(automation_phase_settings: phase_result&.settings&.to_h || Automation::PhaseSettings.call(project).to_h,
         enabled_transitions: phase_result&.enabled_transitions || [])
     end
@@ -117,13 +125,13 @@ module Tools
       @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
     end
 
-    def record_activity!(project)
+    def record_activity!(project, changed_fields:)
       Accounts::RecordActivity.call(
         account:,
         actor: user,
         action: "project.settings_changed",
         subject: project,
-        metadata: { changed_fields: project.saved_changes.except("updated_at").keys }
+        metadata: { changed_fields: changed_fields.uniq }
       )
     end
 

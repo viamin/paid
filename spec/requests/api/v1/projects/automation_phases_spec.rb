@@ -32,7 +32,9 @@ RSpec.describe "Project automation phases API" do
   end
 
   it "updates settings through the validated transition service" do
-    project.update!(automation_phase_settings: { "phases" => { "coding" => false }, "release" => false, "deployment" => false })
+    project.update!(automation_phase_settings: {
+      "phases" => { "discovery" => true, "coding" => false }, "release" => false, "deployment" => false
+    })
 
     patch "/api/v1/projects/#{project.id}/automation_phases", params: {
       automation_phase_settings: { phases: { coding: true }, release: true, deployment: false }
@@ -40,7 +42,9 @@ RSpec.describe "Project automation phases API" do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch("enabled_transitions")).to include("coding")
-    expect(Automation::PhaseSettings.call(project.reload)).to have_attributes(release_enabled?: true, deployment_enabled?: false)
+    expect(Automation::PhaseSettings.call(project.reload)).to have_attributes(
+      release_enabled?: true, deployment_enabled?: false, phases: include("discovery" => true, "coding" => true)
+    )
   end
 
   it "revokes idempotently and extends only with merge delegation" do
