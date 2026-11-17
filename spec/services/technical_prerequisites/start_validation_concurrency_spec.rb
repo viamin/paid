@@ -16,7 +16,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     requirement = create(:pre_commit_requirement, project:, account: project.account,
       check_type: "performance_measurement", command: "bin/measure", measurement_recipe: measurement_recipe)
 
-    results = concurrently_start(source_run:, requirement:, actor: project.created_by)
+    results = concurrently_start(source_run:, requirement:, actor: project.created_by, account: project.account)
 
     expect(results.map { |result| result.agent_run.id }.uniq).to contain_exactly(results.first.agent_run.id)
     expect(project.agent_runs.where(goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL).count).to eq(1)
@@ -28,24 +28,28 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
 
   private
 
-  def concurrently_start(source_run:, requirement:, actor:)
+  def concurrently_start(source_run:, requirement:, actor:, account:)
     ready = Queue.new
     start = Queue.new
     threads = 2.times.map do
       Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          ready << true
-          start.pop
-          described_class.call(
-            source_run: AgentRun.find(source_run.id),
-            requirement: PreCommitRequirement.find(requirement.id),
-            actor: User.find(actor.id),
-            criterion: "Inbox allocations"
-          )
+          TenantContext.with(account) do
+            ready << true
+            start.pop
+            described_class.call(
+              source_run: AgentRun.find(source_run.id),
+              requirement: PreCommitRequirement.find(requirement.id),
+              actor: User.find(actor.id),
+              criterion: "Inbox allocations"
+            )
+          end
         end
       end
     end
-    2.times { ready.pop }
+    2.times do
+      raise "Concurrent performance workers did not become ready" unless ready.pop(timeout: 10)
+    end
     2.times { start << true }
     threads.map do |thread|
       raise "Concurrent performance admission timed out" unless thread.join(10)
