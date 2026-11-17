@@ -116,7 +116,9 @@ record counts from expanding the action area. Detailed form fields and
 explanatory content also stay in the detail body; when an action requires
 input, browser validation and focus continue to lead the operator to that
 existing form. The action area wraps at narrow widths and remains keyboard
-accessible while the selected detail pane scrolls.
+accessible while the selected detail pane scrolls. Long labels and unbroken
+declaration URLs wrap inside both the projected action and its original form
+control; clipping an oversized control inside a pane is not readable wrapping.
 
 ## Detail progress projection
 
