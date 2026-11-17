@@ -27,12 +27,15 @@ module Inbox
     end
 
     def preload
-      features_by_issue_id.each do |issue_id, feature|
-        entries.select { |candidate| linked_issue_id(candidate) == issue_id }.each do |candidate|
+      entries_by_issue_id.each do |issue_id, candidates|
+        feature = features_by_issue_id[issue_id]
+        candidates.each do |candidate|
           candidate.goal_context = context_for(candidate, feature)
         end
       end
-      entries.each { |candidate| candidate.goal_context ||= context_for(candidate, feature_record(candidate)) }
+      entries.reject { |candidate| linked_issue_id(candidate) }.each do |candidate|
+        candidate.goal_context = context_for(candidate, feature_record(candidate))
+      end
     end
 
     private
@@ -40,12 +43,19 @@ module Inbox
     attr_reader :entries, :entry
 
     def features_by_issue_id
-      issue_ids = entries.filter_map { |candidate| linked_issue_id(candidate) }.uniq
+      issue_ids = entries_by_issue_id.keys
       return {} if issue_ids.empty?
 
       FeatureIntent.linked_to_issue_ids(issue_ids).order(approved_revision_recorded_at: :desc, id: :desc)
-        .group_by { |feature| feature.feature_intent_issues.first.issue_id }
-        .transform_values(&:first)
+        .each_with_object({}) do |feature, features|
+          feature.feature_intent_issues.each { |link| features[link.issue_id] ||= feature }
+        end
+    end
+
+    def entries_by_issue_id
+      @entries_by_issue_id ||= entries.filter_map { |candidate|
+        [ linked_issue_id(candidate), candidate ] if linked_issue_id(candidate)
+      }.group_by(&:first).transform_values { |pairs| pairs.map(&:last) }
     end
 
     def feature_for(candidate)
@@ -66,7 +76,7 @@ module Inbox
     end
 
     def context_for(candidate, feature)
-      return unavailable(candidate) unless feature&.approved_design_revision.present?
+      return unavailable(candidate, feature:) unless feature&.released? && feature.approved_design_revision.present?
 
       Result.new(
         goal: feature.brief.presence || feature.title,
@@ -76,10 +86,10 @@ module Inbox
       )
     end
 
-    def unavailable(candidate)
+    def unavailable(candidate, feature: nil)
       Result.new(
         goal: "No approved intent is available for this work item.",
-        source: feature_record(candidate) ? "Feature intent is not approved" : "Intent unavailable",
+        source: feature ? "Feature intent is not approved" : "Intent unavailable",
         revision: nil,
         repository: candidate.project.full_name
       )

@@ -34,6 +34,37 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "uses the root work item's released intent for a linked pull request" do
+    root_issue = create(:issue, project:, title: "Root work")
+    pull_request = create(:issue, :pull_request, project:, parent_issue: root_issue, title: "Implementation pull request")
+    feature = create(:feature_intent, project:, brief: "Operators can export a complete report.",
+      approved_design_revision: "b" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: root_issue)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: pull_request))
+
+    expect(brief.to_h).to include(
+      goal: "Operators can export a complete report.",
+      goal_source: "Approved feature intent: #{feature.title}",
+      goal_revision: "b" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "does not treat an unreleased feature record as agreed intent" do
+    issue = create(:issue, project:)
+    feature = create(:feature_intent, :approved_waiting_for_merge, project:, approved_design_revision: "c" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "No approved intent is available for this work item.",
+      goal_source: "Feature intent is not approved"
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "discloses unavailable agreed intent instead of relabeling the queue title as a goal" do
     brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND,
       title_text: "Resolve an unrelated queue item"))

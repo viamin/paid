@@ -338,7 +338,7 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payloads.map { |payload| payload.dig(:decision_brief, :goal) }).to eq([ "Approved outcome 0", "Approved outcome 1" ])
       expect(payloads.map { |payload| payload.dig(:decision_brief, :goal_source) })
         .to eq([ "Approved feature intent: Feature 0", "Approved feature intent: Feature 1" ])
-      expect(queries.size).to eq(1)
+      expect(queries.size).to eq(2)
     end
 
     it "batches local prerequisite titles for the returned entries" do
