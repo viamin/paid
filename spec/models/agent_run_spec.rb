@@ -1903,6 +1903,23 @@ RSpec.describe AgentRun do
         expect(agent_run.completed_at).to be_within(1.second).of(completed_at)
         expect(agent_run.duration_seconds).to eq(25)
       end
+
+      # @spec MAINT-023
+      it "does not report a failed terminal maintenance callback as a failed cancellation" do
+        agent_run = create(:agent_run, :manual, status: "running", goal: "maintenance", issue: nil,
+          maintenance_objective: "unnecessary_code")
+        allow(MaintenanceReports::Persist).to receive(:call).and_raise(ActiveRecord::ConnectionTimeoutError)
+        allow(Rails.logger).to receive(:error)
+
+        expect { agent_run.cancel! }.not_to raise_error
+
+        expect(agent_run.reload.status).to eq("cancelled")
+        expect(Rails.logger).to have_received(:error).with(hash_including(
+          message: "agent_execution.terminal_maintenance_report_persist_failed",
+          agent_run_id: agent_run.id,
+          error_class: "ActiveRecord::ConnectionTimeoutError"
+        ))
+      end
     end
 
     describe "#timeout!" do
@@ -1933,6 +1950,16 @@ RSpec.describe AgentRun do
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.guardrail_violation_type).to eq("time_limit")
         expect(agent_run.guardrail_context).to eq(context.deep_stringify_keys)
+      end
+
+      # @spec MAINT-024
+      it "records token-limit termination as budget exhaustion" do
+        agent_run = create(:agent_run, :running, goal: "maintenance", issue: nil,
+          maintenance_guidance: "Audit workflow A")
+
+        agent_run.timeout!(guardrail_violation_type: "token_limit")
+
+        expect(agent_run.reload.maintenance_report).to have_attributes(outcome: "budget_exhausted")
       end
 
       it "does not overwrite a finished run", :aggregate_failures do

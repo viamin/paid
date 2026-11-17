@@ -40,6 +40,13 @@ module MaintenanceRuns
         - Record the resolved scope you actually investigated and any exclusions in the report.
         - For each finding, report its category, the affected locations or symbols, the claim, supporting evidence, known counterevidence, and a proposed action. Similarity alone does not establish that code should be shared; absence of static references does not establish that code can be deleted.
         - If evidence is missing or an analysis could not be completed, say so explicitly as an unresolved candidate or coverage limitation. Never present an incomplete scan as a clean result.
+
+        ## Required structured report
+        End your final response with exactly one JSON report between these markers. Use empty arrays or objects when a field has no entries. Each finding must include category, claim, symbols, locations, supporting_evidence, contrary_evidence, analyzer_provenance, raw_tool_confidence, agent_assessment, proposed_action, validation_plan, and verification_disposition. raw_tool_confidence must be null or a number between 0 and 1.
+
+        <!-- maintenance-report-start -->
+        {"resolved_scope":"scope actually investigated","exclusions":[],"completed_checks":[],"incomplete_checks":[],"evidence":{},"findings":[]}
+        <!-- maintenance-report-end -->
       PROMPT
     end
 

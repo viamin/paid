@@ -88,6 +88,7 @@
     <%# @spec MAINT-016 — context stays readable regardless of the rollout guard. %>
     <% if @agent_run.maintenance_goal? %>
       <%= render "agent_runs/maintenance_context", agent_run: @agent_run %>
+      <%= render "agent_runs/maintenance_report", report: @agent_run.maintenance_report if @agent_run.maintenance_report %>
     <% end %>
 
     <%# Action buttons are rendered outside the Turbo broadcast target so that
