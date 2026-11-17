@@ -185,6 +185,7 @@ class ApplicationJob < ActiveJob::Base
       AgentRunResourceJanitorJob,
       AnomalyDetectionJob,
       CaptureAgentRunSessionSummaryJob,
+      CloseoutVerificationJob,
       ContainerMetricsCollectionJob,
       CycleAnalysisJob,
       DiagnoseErrorJob,

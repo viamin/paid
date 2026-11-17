@@ -39,10 +39,28 @@ The goal is non-triggerable and excluded from the ordinary agent queue;
 execution belongs to its dedicated successor work. Admission rechecks mapping
 eligibility and automatic phase authority, rejects paused or inactive project
 authority, and returns a stable, inspectable no-run reason. Completed evidence
-with the same identity is current and is not replaced. A bounded sweep retries
+with the same identity is current and is not replaced. The admission row and
+its execution job persist atomically, so an enqueue failure leaves no stranded
+queued identity against later observation. A bounded sweep retries
 persisted merged PR observations after a disabled enrollment is re-enabled or
 a webhook was missed. `live_environment` mappings do not qualify from a merge:
 they wait for a separately confirmed live target.
+
+The dedicated closeout-verification worker claims only an admitted queued run.
+Immediately before execution it rechecks the persisted mapping against the
+source issue, recorded merged revision, reviewed recipe version and digest,
+automatic Release & Deployment policy, pause state, and budget. It resolves no
+command from issue or PR content: the existing `TechnicalPrerequisites::ValidateExecution`
+path receives only the currently matching reviewed recipe and performs the
+pinned checkout inside its isolated container. A pause, hard-stop budget, or
+stale assessment defers the queued identity for re-observation; an unexpected
+exception before isolated execution begins also leaves it queued so transient
+infrastructure failure cannot consume the identity. Pinned-target divergence, revoked policy, mapping or
+recipe mismatch remain terminal stale outcomes. The terminal run retains a
+bounded closeout evidence envelope with the source/criterion/PR/revision,
+recipe and environment identity, command result, artifacts, timing, and a
+distinct pass, fail, unavailable, cancelled, stale, timeout, setup, or cleanup
+outcome. A terminal identity is never executed again.
 
 For projects with an adoption record, an incremental issue payload reporting a closed PR resolves its authoritative
 PR detail before committing that closure. A confirmed merge records the merge

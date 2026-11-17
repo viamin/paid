@@ -41,6 +41,7 @@ RSpec.describe CloseoutVerifications::Admit do
     expect(outcome).to be_admitted
     expect(run).to have_attributes(goal: "closeout_verification", status: "queued", synthetic: true,
       issue: source_issue, source_pull_request_number: 42, base_commit_sha: merge_sha,
+      branch_name: a_string_matching(/\Acloseout-verification-[0-9a-f]{12}\z/),
       closeout_mapping_id: mapping.id, closeout_criterion_key: "Merged evidence",
       closeout_recipe_version: mapping.target_version, closeout_recipe_digest: mapping.target_digest)
     expect(AgentRun::TRIGGERABLE_GOALS).not_to include("closeout_verification")
@@ -90,18 +91,29 @@ RSpec.describe CloseoutVerifications::Admit do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-010
-  it "converges an insert race on the database identity" do
+  it "re-enqueues a queued admission left behind by an earlier deployment" do
     mapping = approve_mapping
-    allow(AgentRun).to receive(:create!).and_wrap_original do |original, attributes|
-      original.call(attributes)
-      raise ActiveRecord::RecordNotUnique
-    end
+    run = described_class.call(source_pr:, merge_commit_sha: merge_sha).runs.fetch(0)
+    outcome = nil
+
+    expect { outcome = described_class.call(source_pr:, merge_commit_sha: merge_sha) }
+      .to have_enqueued_job(CloseoutVerificationJob).with(run.id)
+    expect(outcome).to have_attributes(runs: [], reason: "already_admitted")
+    expect(run.reload.status).to eq("queued")
+    expect(run.closeout_mapping_id).to eq(mapping.id)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
+  it "converges an insert race on the admission identity" do
+    approve_mapping
+    allow(AgentRun).to receive(:create!).and_raise(ActiveRecord::RecordNotUnique,
+      'duplicate key value violates unique constraint "index_agent_runs_closeout_verification_identity"')
 
     outcome = described_class.call(source_pr:, merge_commit_sha: merge_sha)
 
     expect(outcome).not_to be_admitted
     expect(outcome.reason).to eq("already_admitted")
-    expect(AgentRun.where(closeout_mapping_id: mapping.id)).to contain_exactly(an_object_having_attributes(status: "queued"))
+    expect(AgentRun.where(goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL)).to be_empty
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-010
@@ -111,6 +123,25 @@ RSpec.describe CloseoutVerifications::Admit do
 
     expect { described_class.call(source_pr:, merge_commit_sha: merge_sha) }
       .to raise_error(ActiveRecord::RecordNotUnique)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
+  it "re-admits a verification whose job enqueue failed" do
+    approve_mapping
+    allow(CloseoutVerificationJob).to receive(:perform_later)
+      .and_raise(ActiveRecord::StatementInvalid.new("transient enqueue failure"))
+
+    expect { described_class.call(source_pr:, merge_commit_sha: merge_sha) }
+      .to raise_error(ActiveRecord::StatementInvalid)
+    expect(AgentRun.where(goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL)).to be_empty
+
+    allow(CloseoutVerificationJob).to receive(:perform_later).and_call_original
+
+    expect { described_class.call(source_pr:, merge_commit_sha: merge_sha) }
+      .to have_enqueued_job(CloseoutVerificationJob).exactly(:once)
+    expect(AgentRun.where(goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL)).to contain_exactly(
+      an_object_having_attributes(status: "queued", base_commit_sha: merge_sha)
+    )
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-010
