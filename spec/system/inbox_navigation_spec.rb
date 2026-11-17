@@ -54,29 +54,29 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     closeout = create(:issue, project:, github_number: 302, paid_state: "in_progress")
     create(:issue, :pull_request, project:, github_number: 303, github_state: "closed", pr_review_phase: "merged", parent_issue_id: closeout.id)
     action_issue = create(:issue, project:, github_number: 304)
-    create(:notification, :error, account:, subject: action_issue, source: "quality_auto_resume_cooldown", blocking: true,
+    notification = create(:notification, :error, account:, subject: action_issue, source: "quality_auto_resume_cooldown", blocking: true,
       action_url: project_path(project), title: "Resolve quality pause",
       metadata: { "recommended_action" => "Open project settings", "remediation_steps" => [ "Open project settings" ] })
     [
-      [ Inbox::Queue::PARTIAL_CLOSEOUT_KIND, closeout, project, {
+      [ Inbox::Queue::PARTIAL_CLOSEOUT_KIND, closeout.id, closeout, project, {
         decision: "Choose how to finish the remaining acceptance criteria.",
         unknown: "Who will own the remaining acceptance work?", waiting: "Remaining acceptance work is waiting for an owner.",
         action: "Resolve remaining work", next_state: "The issue can be reassessed after the remaining work is recorded.",
         primary_control: "Link prerequisite"
       } ],
-      [ Inbox::Queue::MANUAL_REVIEW_KIND, manual, project, {
+      [ Inbox::Queue::MANUAL_REVIEW_KIND, manual.id, manual, project, {
         decision: "Choose whether and how Paid should resume.", unknown: "Which authorized recovery path should Paid follow?",
         waiting: "Automation is waiting for an authorized recovery decision.", action: "Review recovery",
         next_state: "Paid will only resume through the selected recovery path.",
         primary_control: "View Issue"
       } ],
-      [ Inbox::Queue::ACTION_REQUIRED_KIND, action_issue, project, {
+      [ Inbox::Queue::ACTION_REQUIRED_KIND, notification.id, action_issue, project, {
         decision: "Complete the required remediation.", recommendation: "Open project settings",
         reason: "This is the first recorded remediation step.", waiting: "Work is waiting for the required remediation.",
         action: "Complete remediation", next_state: "Blocked work can resume after the remediation is recorded.",
         primary_control: "Open linked action"
       } ],
-      [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, question, other_project, {
+      [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, question.id, question, other_project, {
         decision: "What behavior is expected?", unknown: "What behavior is expected?", waiting: "Work is waiting for your answer.",
         action: "Answer the question", next_state: "Paid can continue with your answer.",
         primary_control: "Submit Answers"
@@ -84,8 +84,8 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     ]
   end
 
-  def expect_decision_brief_for(kind:, issue:, selected_project:, expected:)
-    visit inbox_entry_path("#{kind}:#{issue.id}", project_id: selected_project.id, kind:)
+  def expect_decision_brief_for(kind:, entry_record_id:, selected_project:, expected:)
+    visit inbox_entry_path("#{kind}:#{entry_record_id}", project_id: selected_project.id, kind:)
     expect_decision_brief(expected:, selected_project:)
     expect(page).to have_button("Copy link to this item")
     expect_one_clear_primary_action(expected.fetch(:primary_control))
@@ -181,11 +181,11 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
   it "presents decision context and a visible next action across the four closeout lanes while switching projects" do
     page.current_window.resize_to(390, 844)
     lane_cases = decision_brief_lane_cases
-    lane_cases.first(3).each do |kind, issue, selected_project, expected|
-      expect_decision_brief_for(kind:, issue:, selected_project:, expected:)
+    lane_cases.first(3).each do |kind, entry_record_id, _issue, selected_project, expected|
+      expect_decision_brief_for(kind:, entry_record_id:, selected_project:, expected:)
     end
 
-    other_kind, other_issue, other_project, other_expected = lane_cases.last
+    other_kind, _entry_record_id, other_issue, other_project, other_expected = lane_cases.last
     visit member_path(first_issue)
     switch_project_filter(from: project, to: other_project)
 
