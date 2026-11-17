@@ -29,7 +29,13 @@ admission.
 
 `ProjectDelegation::IntentCheckpoint::Plan` groups related material questions
 and returns the recommendation, alternatives, consequences, evidence,
-affected scope, and proposed revision. A human settlement produces immutable
+affected scope, and proposed revision. The existing feature-decision Inbox shows each persisted checkpoint once,
+with its recommendation, alternatives, consequences and question grouping
+before the response forms. The shared `Inbox::FeatureDecisionContext` projects
+the same fields to the detail API and on-demand chat context. Evidence, scope
+and proposed revision identifiers remain inspectable in a native disclosure;
+rendering performs no semantic inference or authority change.
+A human settlement produces immutable
 answers linked to the design/acceptance revision. `ActionPlan` then resolves a
 requested downstream action against those revisions and returns permit, block,
 or a focused decision request. It allows only explicit technical choices,
