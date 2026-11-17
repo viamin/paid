@@ -50,10 +50,12 @@ module Inbox
       record = feature_record(candidate)
       return [ record ] if record
 
-      issue_id = linked_issue_id(candidate)
-      return [] unless issue_id
+      issue_ids = linked_issue_ids_for(candidate)
+      return [] if issue_ids.empty?
 
-      lookup[issue_id] || linked_features([ issue_id ]).to_a
+      return linked_features(issue_ids).to_a if lookup.empty?
+
+      issue_ids.flat_map { |issue_id| lookup.fetch(issue_id) }.uniq(&:id)
     end
 
     # Every queried issue id maps to a list (possibly empty), so a batched
@@ -68,7 +70,7 @@ module Inbox
     end
 
     def linked_issue_ids
-      @linked_issue_ids ||= entries.filter_map { |candidate| linked_issue_id(candidate) }.uniq
+      @linked_issue_ids ||= entries.flat_map { |candidate| linked_issue_ids_for(candidate) }.uniq
     end
 
     # Creation order keeps the preserved list deterministic without ranking
@@ -81,8 +83,13 @@ module Inbox
       candidate.record if candidate.feature_decision? && candidate.record.is_a?(FeatureIntent)
     end
 
-    def linked_issue_id(candidate)
-      candidate.issue && (candidate.issue.parent_issue_id || candidate.issue.id)
+    # Feature intent links may name either the implementation issue or its
+    # pull request, so retain both IDs when presenting PR-backed entries.
+    def linked_issue_ids_for(candidate)
+      issue = candidate.issue
+      return [] unless issue
+
+      [ issue.id, issue.parent_issue_id ].compact.uniq
     end
 
     def context_for(candidate, features)

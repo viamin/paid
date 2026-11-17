@@ -54,6 +54,27 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "uses released intent linked directly to a pull request in a batch" do
+    root_issue = create(:issue, project:, title: "Root work")
+    pull_request = create(:issue, :pull_request, project:, parent_issue: root_issue, title: "Implementation pull request")
+    feature = create(:feature_intent, project:, brief: "Operators can export a complete report.",
+      approved_design_revision: "c" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: pull_request)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: pull_request)
+    expected_goal = {
+      goal: "Operators can export a complete report.",
+      goal_source: "Approved feature intent: #{feature.title}",
+      goal_revision: "c" * 40
+    }
+
+    expect(described_class.call(entry: inbox_entry).to_h).to include(expected_goal)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+
+    expect(described_class.call(entry: inbox_entry).to_h).to include(expected_goal)
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "prefers approved intent when direct lookup finds a newer unapproved linked design" do
     issue = create(:issue, project:)
     approved = create(:feature_intent, project:, title: "Approved exports", brief: "Exports remain complete.",
