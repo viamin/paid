@@ -113,7 +113,10 @@ admission boundary and falls back to `conservative` after a reversal or safety,
 trust, tenant, or evidence stop. Issue lifecycle transitions, resolved human
 decisions, and delegated-boundary stops write the metric ledger through their
 production choke points; aggregation admits only the current posture/policy
-authority and each subject's latest revision tuple.
+authority and each subject's latest revision tuple. Pilot and conservative-baseline
+lifecycle denominators count distinct issue subjects, retaining repeated start
+and completion events in history without allowing retries/reopens or
+project-level records to satisfy the 30-issue sample or dilute decision rates.
 
 The delegated boundary requires a canonical `security` assessment input before
 expansion. No such producer currently supplies the expansion admission

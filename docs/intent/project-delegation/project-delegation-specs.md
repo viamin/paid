@@ -100,7 +100,9 @@ Status markers: `[ ]` planned implementation gap.
   time, completion rate, and later-reversed decisions; it SHALL keep broadening
   disabled until the RDR-080 pilot threshold is met and SHALL pause expansion
   on a material reversal, security/tenant/trust breach, missing security
-  assessment, or missing evidence.
+  assessment, or missing evidence. Pilot and baseline lifecycle denominators
+  SHALL count distinct issues; reopening/retry events and project-level
+  evidence SHALL NOT inflate the completed-issue sample.
   *Verified by:* `spec/services/project_delegation/pilot_metrics_spec.rb`,
   `spec/services/project_delegation/expansion_guard_spec.rb`,
   `spec/services/project_delegation/posture_spec.rb`,
