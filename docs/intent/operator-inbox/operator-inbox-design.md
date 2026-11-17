@@ -156,6 +156,21 @@ implementation in either TDD mode; otherwise projects outside strict mode show
 the stage as not applicable. Linked approval-gated feature designs appear only
 when applicable.
 
+The workflow presentation delegates approval and review facts to the existing
+revision-aware `ProgressProjection`, retaining explicit approval-gated feature
+requirements even outside human-led project mode; entry-specific recovery/test-review
+context can add a blocking action but cannot manufacture completed evidence.
+Supported PR details render the workflow component once instead of also
+rendering the older flat progress panel. The `completed` workflow spelling is
+retained for API compatibility with the progress contract's `complete` state.
+All source evidence is retained in each disclosure, and responsible-role text
+is descriptive rather than a new grant. Multiple current actions are exposed
+in `current_actions`; the existing `current_action` remains its first entry for
+compatibility. Only a sole current disclosure receives `aria-current`.
+Native disclosures are keyboard operable, begin collapsed, and wrap revision
+identities and milestone cards within narrow panes. External links retain the
+existing GitHub URL allowlist and safe new-window attributes.
+
 ## Durable subject history
 
 Inbox entries remain derived views, but their detail panes expose a bounded

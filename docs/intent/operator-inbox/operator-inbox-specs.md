@@ -33,6 +33,20 @@
   *Test:* `spec/services/inbox/progress_projection_spec.rb`,
   `spec/requests/api/v1/inbox_spec.rb`, `spec/services/inbox/chat_context_spec.rb`.
 
+- [x] **INBOX-PROGRESS-004** — The selected detail SHALL present responsive,
+  keyboard-operable milestone disclosures with textual states and prominent
+  next actions for each independent outstanding gate. Evidence and revisions
+  SHALL be collapsed initially; the sole current milestone SHALL have
+  `aria-current`, and multiple current gates SHALL remain separate. The shared
+  projection SHALL name the responsible role without granting execution
+  authority.
+  *Code:* `app/services/inbox/progress_projection.rb`,
+  `app/services/inbox/workflow_milestones.rb`,
+  `app/views/dashboard/_inbox_workflow_milestones.html.erb`.
+  *Test:* `spec/services/inbox/workflow_milestones_spec.rb`,
+  `spec/views/dashboard/inbox_workflow_milestones_partial_spec.rb`,
+  `spec/system/inbox_workflow_milestones_spec.rb`.
+
 - [x] **OPERATOR-INBOX-001** — When a signed-in user opens the inbox, the
   system SHALL list actionable clarifying-question entries drawn from the
   existing needs-input queue, preserving the user's project visibility and any

@@ -278,6 +278,110 @@ paths:
                 $ref: '#/components/schemas/FeatureIntentResponse'
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/layered_verification_review_packages:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: listLayeredVerificationReviewPackages
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - name: cursor
+          in: query
+          description: Exclusive package ID returned as next_cursor by a previous response.
+          schema: {type: integer, minimum: 1}
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Immutable, bounded business-review package history for one authorized project.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [review_packages]
+                properties:
+                  review_packages:
+                    type: array
+                    items: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
+                  next_cursor: {type: integer, minimum: 1}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/layered_verification_review_packages/{id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: getLayeredVerificationReviewPackage
+      parameters:
+        - name: lineage_limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - name: lineage_cursor
+          in: query
+          description: Exclusive package ID returned as lineage_next_cursor by a previous response.
+          schema: {type: integer, minimum: 1}
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: One immutable package with its retained revision lineage.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LayeredVerificationReviewPackageDetail'}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/layered_verification_review_packages/{id}/approve:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    post:
+      operationId: approveLayeredVerificationReviewPackage
+      description: Records only an explicitly confirmed, revision-bound business-review decision; it does not repair, release, clarify, or roll out work.
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirmed]
+              properties:
+                confirmed: {type: boolean, enum: [true]}
+                note: {type: string}
+      responses:
+        '201':
+          description: Business-review approval recorded at the package's bound revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [approval, package]
+                properties:
+                  approval: {$ref: '#/components/schemas/LayeredVerificationReviewApproval'}
+                  package: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
+        default: {$ref: '#/components/responses/Error'}
   /projects/{project_id}/delegation:
     parameters:
       - name: project_id
@@ -392,6 +496,70 @@ paths:
                   signature: {type: string}
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/automation_phases:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: getProjectAutomationPhases
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: The six phase settings, distinct release and deployment controls, rollout state, and project-scoped continuation grants. Stored settings remain inspectable while rollout is off.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AutomationPhasesResponse'}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateProjectAutomationPhases
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [automation_phase_settings]
+              properties:
+                automation_phase_settings: {$ref: '#/components/schemas/AutomationPhaseSettings'}
+      responses:
+        '200':
+          description: Updated settings and disabled-to-enabled transitions reconciled through the validated phase-settings service.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AutomationPhasesResponse'}}}
+        default: {$ref: '#/components/responses/Error'}
+  /projects/{project_id}/automation_phases/continuation_grants/{id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    delete:
+      operationId: revokeContinuationGrant
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Revocation result. Revoking a grant does not disable independent project automation.
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: extendContinuationGrant
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [endpoint], properties: {endpoint: {type: string, enum: [issue_preparation, coding, merge]}}}}}
+      responses:
+        '200':
+          description: Extension result and current continuation notice. Merge extension requires merge delegation.
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Error'}
   /projects/{project_id}/staged_closeout_adoption:
     parameters:
       - name: project_id
@@ -941,7 +1109,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, maintenance_run_unavailable, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
+              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, maintenance_run_unavailable, layered_verification_unavailable, stale_review_package, confirmation_required, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
             message: {type: string}
             details: {type: object, additionalProperties: true}
     ChatSessionListResponse:
@@ -1345,6 +1513,47 @@ components:
         number: {type: integer}
         url: {type: string, format: uri}
         title: {type: string}
+    LayeredVerificationReviewApproval:
+      type: object
+      additionalProperties: false
+      required: [id, approved_by_id, approved_at, provenance]
+      properties:
+        id: {type: integer}
+        approved_by_id: {type: integer}
+        approved_at: {type: string, format: date-time}
+        provenance: {type: object}
+    LayeredVerificationReviewPackage:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, agent_run_id, revision_number, package_digest, bound_inputs, approvals]
+      properties:
+        id: {type: integer}
+        project_id: {type: integer}
+        agent_run_id: {type: integer}
+        revision_number: {type: integer, minimum: 1}
+        package_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        bound_inputs: {type: object}
+        approvals:
+          type: array
+          items: {$ref: '#/components/schemas/LayeredVerificationReviewApproval'}
+    LayeredVerificationReviewPackageDetail:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, agent_run_id, revision_number, package_digest, bound_inputs, approvals, lineage]
+      properties:
+        id: {type: integer}
+        project_id: {type: integer}
+        agent_run_id: {type: integer}
+        revision_number: {type: integer, minimum: 1}
+        package_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        bound_inputs: {type: object}
+        approvals:
+          type: array
+          items: {$ref: '#/components/schemas/LayeredVerificationReviewApproval'}
+        lineage:
+          type: array
+          items: {$ref: '#/components/schemas/LayeredVerificationReviewPackage'}
+        lineage_next_cursor: {type: integer, minimum: 1}
     DesignArtifactFinding:
       type: object
       required: [id, artifact_path, revision, state, evidence, covered_at, status]
@@ -1359,6 +1568,62 @@ components:
         resolution_state: {type: string, nullable: true}
         resolution_reason: {type: string, nullable: true}
         resolution_issue_id: {type: integer, nullable: true}
+    AutomationPhaseSettings:
+      type: object
+      properties:
+        phases:
+          type: object
+          additionalProperties: {type: boolean}
+        release: {type: boolean}
+        deployment: {type: boolean}
+    AutomationPhasesResponse:
+      type: object
+      required: [project_id, rollout_enabled, settings, phases, grants, continuation_notice]
+      properties:
+        project_id: {type: integer}
+        rollout_enabled: {type: boolean}
+        configured: {type: boolean}
+        settings: {$ref: '#/components/schemas/AutomationPhaseSettings'}
+        derived_settings: {$ref: '#/components/schemas/AutomationPhaseSettings'}
+        phases:
+          type: array
+          items:
+            type: object
+            required: [id, label, enabled, responsibility]
+            properties:
+              id: {type: string, enum: [discovery, issue_preparation, coding, merge, release_deployment, operations]}
+              label: {type: string}
+              enabled: {type: boolean}
+              responsibility: {type: string}
+              release: {type: boolean}
+              deployment: {type: boolean}
+        grants:
+          type: object
+          required: [active, inactive, inactive_truncated]
+          description: Every active grant is listed so current authority is always discoverable; inactive history is bounded to the 50 most recent grants and reports whether it was truncated.
+          properties:
+            active:
+              type: array
+              items: {$ref: '#/components/schemas/ContinuationGrant'}
+            inactive:
+              type: array
+              items: {$ref: '#/components/schemas/ContinuationGrant'}
+            inactive_truncated: {type: boolean}
+        continuation_notice: {type: string}
+        enabled_transitions: {type: array, items: {type: string}}
+    ContinuationGrant:
+      type: object
+      required: [id, issue_id, start_phase, endpoint, covered_phases, active]
+      properties:
+        id: {type: integer}
+        issue_id: {type: integer}
+        start_phase: {type: string}
+        endpoint: {type: string}
+        covered_phases: {type: array, items: {type: string}}
+        active: {type: boolean}
+        completed_at: {type: string, format: date-time, nullable: true}
+        revoked_at: {type: string, format: date-time, nullable: true}
+        notice: {type: string}
   headers:
     ETag:
       description: Strong validator for polling. Send this value as If-None-Match on the next poll.
