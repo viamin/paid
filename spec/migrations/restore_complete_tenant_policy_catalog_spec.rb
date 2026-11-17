@@ -17,18 +17,19 @@ RSpec.describe RestoreCompleteTenantPolicyCatalog do
   end
 
   it "repairs missing policies with the accounts baseline present and restores tightened write predicates" do
-    original = policy("maintenance_reports")
+    original = policy("projects")
+    expect(original.fetch("with_check")).to include("github_tokens")
     expect(policy("accounts")).to be_present
     connection.execute("DROP POLICY tenant_isolation ON users")
     connection.execute("DROP POLICY tenant_isolation ON layered_verification_findings")
-    connection.execute("ALTER POLICY tenant_isolation ON maintenance_reports WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id())")
+    connection.execute("ALTER POLICY tenant_isolation ON projects WITH CHECK (paid_tenant_bypass() OR account_id = paid_current_account_id())")
     connection.execute("CREATE POLICY tenant_isolation_select ON configuration_bundles FOR SELECT USING (true)")
 
     repair
 
     expect(policy("users")).to be_present
     expect(policy("layered_verification_findings")).to be_present
-    expect(policy("maintenance_reports")).to eq(original)
+    expect(policy("projects")).to eq(original)
     expect(connection.select_value("SELECT 1 FROM pg_policies WHERE tablename = 'configuration_bundles' AND policyname = 'tenant_isolation_select'")).to be_nil
   end
 
