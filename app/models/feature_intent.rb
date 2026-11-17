@@ -76,7 +76,7 @@ class FeatureIntent < ApplicationRecord
   }
   scope :linked_to_issue_ids, ->(issue_ids) {
     joins(:feature_intent_issues).where(feature_intent_issues: { issue_id: issue_ids })
-      .includes(:feature_intent_issues)
+      .distinct.includes(:feature_intent_issues)
   }
 
   def released? = status == "released"

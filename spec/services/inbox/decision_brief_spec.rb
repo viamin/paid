@@ -94,6 +94,33 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "keeps one approved intent singular when it is linked to two entries in a batch" do
+    first_issue = create(:issue, project:)
+    second_issue = create(:issue, project:)
+    feature = create(:feature_intent, project:, title: "Export reliability", brief: "Exports remain complete.",
+      approved_design_revision: "j" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: first_issue)
+    create(:feature_intent_issue, feature_intent: feature, issue: second_issue)
+    first_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: first_issue)
+    second_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: second_issue)
+
+    Inbox::GoalContext.preload(entries: [ first_entry, second_entry ])
+
+    [ first_entry, second_entry ].each do |inbox_entry|
+      brief = described_class.call(entry: inbox_entry)
+
+      expect(brief.to_h).to include(
+        goal: "Exports remain complete.",
+        goal_source: "Approved feature intent: Export reliability",
+        goal_revision: "j" * 40
+      )
+      expect(brief.linked_goal_intents).to eq([
+        { goal: "Exports remain complete.", source: "Approved feature intent: Export reliability", revision: "j" * 40 }
+      ])
+    end
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "does not treat an unreleased feature record as agreed intent" do
     issue = create(:issue, project:)
     feature = create(:feature_intent, :approved_waiting_for_merge, project:, approved_design_revision: "c" * 40)
