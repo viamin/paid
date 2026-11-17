@@ -711,7 +711,16 @@ solely for decision briefs. API and MCP lists batch that association after
 pagination for entries whose first prerequisite needs a local title; a
 selected partial-closeout detail resolves its own recommendation.
 
-The brief names the project goal, what changed, the exact decision or action,
+The brief names the agreed intent when an authoritative feature approval is
+linked to the work item, together with its source, current approved revision,
+and separate repository context. An unapproved feature record is disclosed as
+not yet agreed intent; an entry with no linked approved intent says so rather
+than promoting its queue title to a project goal. An issue may intentionally
+serve several designs, so when more than one current approved feature intent is
+linked, the brief preserves every linked intent (each with its own source and
+approved revision) and discloses that several exist, rather than treating the
+most recently approved design as the authoritative goal — approval time does
+not supersede a different design. What changed, the exact decision or action,
 the supported recommendation and its reason, the waiting work, and the next
 state after the primary action. A recommendation is present only where the
 structured source supports it. Otherwise the brief explicitly names the
@@ -720,7 +729,9 @@ history remain in the lane-specific detail and collapsed disclosures.
 
 - `spec/services/inbox/decision_brief_spec.rb` covers the deterministic
   contract across every queue lane, including evidence fallbacks, concise
-  product questions, and human-readable partial-closeout prerequisites.
+  product questions, human-readable partial-closeout prerequisites,
+  approved-intent source/revision disclosure, and preservation of every linked
+  approved intent in the single- and multi-design cases.
 
 ## Testing
 

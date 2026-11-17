@@ -70,6 +70,28 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
+  # @spec OPERATOR-INBOX-027
+  it "preserves every linked approved intent in the chat decision brief" do
+    issue.update!(paid_state: "needs_input", needs_input_questions: [ "Which design should exports follow?" ])
+    first_design = create(:feature_intent, project:, title: "Design one", brief: "First agreed outcome.",
+      approved_design_revision: "a" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Design two", brief: "Second agreed outcome.",
+      approved_design_revision: "b" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+
+    context = described_class.call(chat_session:, user:, sections: [ :decision_brief ])
+
+    expect(context.fetch("decision_brief")).to include(
+      goal: "This work item serves more than one approved feature intent.",
+      goal_source: "Several approved feature intents are linked to this work item"
+    )
+    expect(context.fetch("decision_brief").fetch(:linked_goal_intents)).to contain_exactly(
+      { goal: "First agreed outcome.", source: "Approved feature intent: Design one", revision: "a" * 40 },
+      { goal: "Second agreed outcome.", source: "Approved feature intent: Design two", revision: "b" * 40 }
+    )
+  end
+
   it "rejects context access after comment permission is removed" do
     # @spec QUESTION-EXPLORATION-014
     chat_session

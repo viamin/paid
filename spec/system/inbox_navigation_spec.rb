@@ -46,6 +46,118 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     Inbox::Queue.call(user:, project:, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND).map(&:issue)
   end
 
+  def decision_brief_lane_cases
+    other_project = create(:project, account:, created_by: user, owner: "acme", repo: "beta",
+      auto_pick_enabled: true, active: true)
+    question = create(:issue, :needs_input, project: other_project, title: "Beta question", body: questions_body)
+    manual = create(:issue, project:, github_number: 301, paid_state: "manual_review", manual_review_reason: "Review the recorded recovery.")
+    closeout = create(:issue, project:, github_number: 302, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, github_number: 303, github_state: "closed", pr_review_phase: "merged", parent_issue_id: closeout.id)
+    action_issue = create(:issue, project:, github_number: 304)
+    notification = create(:notification, :error, account:, subject: action_issue, source: "quality_auto_resume_cooldown", blocking: true,
+      action_url: project_path(project), title: "Resolve quality pause",
+      metadata: { "recommended_action" => "Open project settings", "remediation_steps" => [ "Open project settings" ] })
+    [
+      [ Inbox::Queue::PARTIAL_CLOSEOUT_KIND, closeout.id, closeout, project, {
+        decision: "Choose how to finish the remaining acceptance criteria.",
+        unknown: "Who will own the remaining acceptance work?", waiting: "Remaining acceptance work is waiting for an owner.",
+        action: "Resolve remaining work", next_state: "The issue can be reassessed after the remaining work is recorded.",
+        primary_control: "Link prerequisite"
+      } ],
+      [ Inbox::Queue::MANUAL_REVIEW_KIND, manual.id, manual, project, {
+        decision: "Choose whether and how Paid should resume.", unknown: "Which authorized recovery path should Paid follow?",
+        waiting: "Automation is waiting for an authorized recovery decision.", action: "Review recovery",
+        next_state: "Paid will only resume through the selected recovery path.",
+        primary_control: "View Issue"
+      } ],
+      [ Inbox::Queue::ACTION_REQUIRED_KIND, notification.id, action_issue, project, {
+        decision: "Complete the required remediation.", recommendation: "Open project settings",
+        reason: "This is the first recorded remediation step.", waiting: "Work is waiting for the required remediation.",
+        action: "Complete remediation", next_state: "Blocked work can resume after the remediation is recorded.",
+        primary_control: "Open linked action"
+      } ],
+      [ Inbox::Queue::CLARIFYING_QUESTIONS_KIND, question.id, question, other_project, {
+        decision: "What behavior is expected?", unknown: "What behavior is expected?", waiting: "Work is waiting for your answer.",
+        action: "Answer the question", next_state: "Paid can continue with your answer.",
+        primary_control: "Submit Answers"
+      } ]
+    ]
+  end
+
+  def expect_decision_brief_for(kind:, entry_record_id:, selected_project:, expected:)
+    visit inbox_entry_path("#{kind}:#{entry_record_id}", project_id: selected_project.id, kind:)
+    expect_decision_brief(expected:, selected_project:)
+    expect(page).to have_button("Copy link to this item")
+    expect_one_clear_primary_action(expected.fetch(:primary_control))
+  end
+
+  # The sticky action area must present exactly one visually clear primary
+  # action per lane: the designated control, filled with the primary palette,
+  # while every other projected control keeps the neutral outline styling.
+  def expect_one_clear_primary_action(label)
+    bar = find("[data-inbox-actions-target='bar']", visible: true)
+    primaries = bar.all("[data-inbox-primary-action]")
+    expect(primaries.size).to eq(1)
+    primary = primaries.first
+    expect(primary.text.presence || primary[:value]).to eq(label)
+    expect(primary[:class]).to include("bg-indigo-600")
+    expect(primary[:class]).to include("text-white")
+
+    secondary_classes = bar.all("button:not([data-inbox-primary-action]), a:not([data-inbox-primary-action])")
+      .map { |control| control[:class] }
+    expect(secondary_classes).to all(include("bg-white"))
+    expect(secondary_classes.join(" ")).not_to include("bg-indigo-600")
+  end
+
+  def expect_decision_brief(expected:, selected_project:)
+    brief = find("[data-testid='inbox-decision-brief']")
+    expect(brief).to have_text("Goal: No approved intent is available for this work item.")
+    expect(brief).to have_text("Intent source: Intent unavailable")
+    expect(brief).to have_text("Repository: #{selected_project.full_name}")
+    expect(brief).to have_text(expected.fetch(:decision))
+    expect(brief).to have_text("Paid recommends: #{expected.fetch(:recommendation)}") if expected[:recommendation]
+    expect(brief).to have_text(expected.fetch(:reason)) if expected[:reason]
+    expect(brief).to have_text("Unknown: #{expected.fetch(:unknown)}") if expected[:unknown]
+    expect(brief).to have_text("Waiting: #{expected.fetch(:waiting)}")
+    expect(brief).to have_text(expected.fetch(:action))
+    expect(brief).to have_text("Afterward: #{expected.fetch(:next_state)}")
+  end
+
+  def switch_project_filter(from:, to:)
+    click_button "Filters"
+    within("dialog[aria-label='Inbox filters']") do
+      uncheck from.full_name
+      check to.full_name
+      click_button "Apply filters"
+    end
+  end
+
+  def select_filtered_entry(kind:, issue:, selected_project:)
+    expect(page).to have_current_path(inbox_path, ignore_query: true)
+    filtered_url = page.current_url
+    expect(page).to have_no_css("#inbox-detail-pane", visible: true)
+    within("#inbox-list") { click_link issue.title }
+    expect(page).to have_current_path(inbox_entry_path("#{kind}:#{issue.id}"), ignore_query: true)
+    selected_url = page.current_url
+    [ filtered_url, selected_url ]
+  end
+
+  def expect_project_switch_history(filtered_url:, selected_url:, issue:)
+    page.go_back
+    expect(page).to have_current_path(filtered_url)
+    expect(page).to have_no_css("#inbox-detail-pane", visible: true)
+    page.go_back
+    expect(page).to have_current_path(member_path(first_issue))
+    expect(page).to have_css("#inbox-detail h2", text: first_issue.title)
+    expect(page).to have_button("Filters", text: project.full_name)
+    page.go_forward
+    expect(page).to have_current_path(filtered_url)
+    expect(page).to have_no_css("#inbox-detail-pane", visible: true)
+    page.go_forward
+    expect(page).to have_current_path(selected_url)
+    expect(page).to have_css("#inbox-detail h2", text: issue.title)
+  end
+
   it "keeps the first collection selection shareable and advances subsequent selection through browser history" do
     initial_issue, next_issue = ordered_issues
     page.current_window.resize_to(1440, 1000)
@@ -89,6 +201,24 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(action_area).to have_button("Submit Answers")
     expect(action_area[:class]).to include("flex-wrap")
     expect(action_area[:class]).to include("sticky")
+  end
+
+  # @spec OPERATOR-INBOX-026 @spec OPERATOR-INBOX-027
+  it "presents decision context and a visible next action across the four closeout lanes while switching projects" do
+    page.current_window.resize_to(390, 844)
+    lane_cases = decision_brief_lane_cases
+    lane_cases.first(3).each do |kind, entry_record_id, _issue, selected_project, expected|
+      expect_decision_brief_for(kind:, entry_record_id:, selected_project:, expected:)
+    end
+
+    other_kind, _entry_record_id, other_issue, other_project, other_expected = lane_cases.last
+    visit member_path(first_issue)
+    switch_project_filter(from: project, to: other_project)
+    filtered_url, selected_url = select_filtered_entry(kind: other_kind, issue: other_issue, selected_project: other_project)
+    expect(page).to have_css("#inbox-detail h2", text: other_issue.title)
+    expect_decision_brief(expected: other_expected, selected_project: other_project)
+    expect_one_clear_primary_action(other_expected.fetch(:primary_control))
+    expect_project_switch_history(filtered_url:, selected_url:, issue: other_issue)
   end
 
   it "uses the member URL for a dependency cycle and retains it on mobile" do

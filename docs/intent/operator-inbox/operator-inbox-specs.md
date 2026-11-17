@@ -560,13 +560,20 @@
   activate the original control, and a projected navigational action SHALL
   remain an anchor retaining its original navigation attributes, so existing
   endpoint, authorization, confirmation, loading, Turbo, native link, and
-  success/error behavior remain unchanged. Detailed fields and explanatory
+  success/error behavior remain unchanged. The control a lane designates with
+  `data-inbox-primary-action` — the control that performs its decision brief's
+  primary action — SHALL be projected as exactly one affordance with distinct
+  filled primary styling while every other projected affordance keeps the
+  neutral secondary styling, so a lane with several eligible controls still
+  presents one visually clear primary action. Detailed fields and explanatory
   content SHALL remain in the detail body; an action that needs input SHALL
   retain the existing browser validation and focus behavior.
   *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
   `app/javascript/controllers/inbox_actions_controller.js`.
   *Test:* `spec/system/dashboard_inbox_spec.rb`,
-  `spec/lib/inbox_actions_controller_node_harness_spec.rb`.
+  `spec/lib/inbox_actions_controller_node_harness_spec.rb`,
+  `spec/system/inbox_navigation_spec.rb`,
+  `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`.
 
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
@@ -964,12 +971,19 @@
 - [x] **OPERATOR-INBOX-027** — When an actionable Inbox entry is listed,
   selected, requested through the supported API, or opened in contextual chat,
   the system SHALL use one deterministic decision-brief projection that names
-  the project goal, change, exact decision/action, recommendation when its
+  agreed intent from its linked approved feature record when available, its
+  source and current approved revision, distinct repository context, change,
+  exact decision/action, recommendation when its
   structured evidence supports one, waiting work, primary action, and the
   next state. The default view SHALL keep questions separate from explanation
   and omit raw technical identifiers. If evidence cannot support a
   recommendation, the projection SHALL disclose that uncertainty and ask one
-  focused question. The projection SHALL derive only from current structured
+  focused question. When no linked approved feature intent exists, the
+  projection SHALL disclose unavailable intent and SHALL NOT present the queue
+  item title as a project goal. When several current approved feature intents
+  are linked to one work item, the projection SHALL preserve every linked
+  approved intent with its source and approved revision and SHALL NOT select
+  an authoritative goal by approval recency. The projection SHALL derive only from current structured
   state and evidence and SHALL not call an LLM while rendering. The HTML list
   SHALL calculate only its decision/change summary without resolving
   recommendations. API and MCP list serialization SHALL preserve the full

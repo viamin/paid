@@ -6,7 +6,15 @@ import { Controller } from "@hotwired/stimulus"
 // their native attributes. Contextual reference links (issue trees, evidence
 // records) stay in the body so the bar height does not grow with issue/evidence
 // count.
+// The one source control designated `data-inbox-primary-action` — the control
+// that performs the decision brief's primary action for its lane — is projected
+// with filled primary styling, so the bar always presents a single visually
+// clear primary action alongside the neutral secondary controls.
 // @spec OPERATOR-INBOX-027
+const PRIMARY_ATTRIBUTE = "data-inbox-primary-action"
+const SECONDARY_CLASSES = "min-w-0 max-w-full whitespace-normal rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 [overflow-wrap:anywhere]"
+const PRIMARY_CLASSES = "min-w-0 max-w-full whitespace-normal rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 [overflow-wrap:anywhere]"
+
 export default class extends Controller {
   static targets = ["bar", "source"]
 
@@ -25,7 +33,8 @@ export default class extends Controller {
     const controls = this.controls()
     if (controls.length === 0) return
 
-    this.barTarget.replaceChildren(...controls.map((control) => this.proxyFor(control)))
+    const primaryIndex = controls.findIndex((control) => this.isPrimary(control))
+    this.barTarget.replaceChildren(...controls.map((control, index) => this.proxyFor(control, index === primaryIndex)))
     this.barTarget.hidden = false
   }
 
@@ -35,23 +44,37 @@ export default class extends Controller {
       .filter((control) => this.labelFor(control).length > 0)
   }
 
-  proxyFor(control) {
-    if (control.tagName === "A") return this.linkProxyFor(control)
+  isPrimary(control) {
+    return control.hasAttribute(PRIMARY_ATTRIBUTE)
+  }
+
+  proxyFor(control, primary) {
+    if (control.tagName === "A") return this.linkProxyFor(control, primary)
 
     const proxy = document.createElement("button")
     proxy.type = "button"
     proxy.textContent = this.labelFor(control)
-    proxy.className = "min-w-0 max-w-full whitespace-normal rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 [overflow-wrap:anywhere]"
+    proxy.className = primary ? PRIMARY_CLASSES : SECONDARY_CLASSES
+    this.markPrimary(proxy, primary)
     proxy.addEventListener("click", () => this.activate(control))
     this.observeDisabled(control, proxy)
     return proxy
   }
 
-  linkProxyFor(control) {
+  linkProxyFor(control, primary) {
     const proxy = control.cloneNode(false)
     proxy.textContent = this.labelFor(control)
-    proxy.className = "min-w-0 max-w-full whitespace-normal rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 [overflow-wrap:anywhere]"
+    proxy.className = primary ? PRIMARY_CLASSES : SECONDARY_CLASSES
+    this.markPrimary(proxy, primary)
     return proxy
+  }
+
+  markPrimary(proxy, primary) {
+    if (primary) {
+      proxy.setAttribute(PRIMARY_ATTRIBUTE, "")
+    } else {
+      proxy.removeAttribute(PRIMARY_ATTRIBUTE)
+    }
   }
 
   activate(control) {

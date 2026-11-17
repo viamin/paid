@@ -364,8 +364,14 @@
               GitHub.
             </p>
           </div>
+          <%# The lane's primary action ("Resolve remaining work") is performed by
+              linking (or filing) the prerequisite that will own the remainder —
+              the brief's unknown is "Who will own the remaining acceptance
+              work?" and its next state lands "after the remaining work is
+              recorded". It carries the primary designation the action bar
+              projects with filled styling (@spec OPERATOR-INBOX-027). %>
           <%= form.submit "Link prerequisite",
-                data: { inbox_action: "" },
+                data: { inbox_action: "", inbox_primary_action: "" },
                 class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:self-auto" %>
         <% end %>
     <% end %>

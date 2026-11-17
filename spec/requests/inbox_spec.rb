@@ -568,7 +568,9 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include('id="inbox-detail"', "Selected question")
     expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
-    expect(queries.grep(/FROM "(?:decomposition_decisions|feature_intents|change_intents|issue_continuation_requests)"/)).to be_empty
+    # The selected decision brief may resolve its linked approved feature
+    # intent. It must not construct any other lane's projection or queue.
+    expect(queries.grep(/FROM "(?:decomposition_decisions|change_intents|issue_continuation_requests)"/)).to be_empty
   end
 
   # @spec OPERATOR-INBOX-015
@@ -2592,7 +2594,7 @@ RSpec.describe "Inbox" do
 
       document = Nokogiri::HTML(response.body)
       brief = document.at_css("[data-testid='inbox-decision-brief']")
-      expect(brief.text).to include("Goal", "Structured question", "What changed",
+      expect(brief.text).to include("Goal", "No approved intent is available for this work item.", "What changed",
         "Product direction is needed before work can continue.", "Which cache should exports use?",
         "Paid recommends:", "Redis", "Answer the question")
       expect(document.at_css("[data-testid='inbox-question-recommendation']").text).to include("Redis")
@@ -2603,6 +2605,26 @@ RSpec.describe "Inbox" do
       expect(details.text).to include("Existing workers already use it.", "Nightly exports", "app/jobs/export_job.rb:12")
       expect(document.at_css("textarea[name='freeform_note']")).to be_present
     end
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "renders every linked approved intent when one issue serves two released designs" do
+    issue = create(:issue, project:, paid_state: "manual_review", title: "Shared work item",
+      manual_review_reason: "Review the recorded recovery.")
+    first_design = create(:feature_intent, project:, title: "Design one", brief: "First agreed outcome.",
+      approved_design_revision: "a" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Design two", brief: "Second agreed outcome.",
+      approved_design_revision: "b" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, issue))
+
+    brief = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-decision-brief']")
+    expect(brief.text).to include("This work item serves more than one approved feature intent.",
+      "Several approved feature intents are linked to this work item")
+    expect(brief.text).to include("First agreed outcome. (Approved feature intent: Design one)", "a" * 40)
+    expect(brief.text).to include("Second agreed outcome. (Approved feature intent: Design two)", "b" * 40)
   end
 
   # @spec OPERATOR-INBOX-011

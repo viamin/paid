@@ -128,6 +128,20 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     Nokogiri::HTML.fragment(rendered)
   end
 
+  # Mirror of the Stimulus controller's label derivation (`labelFor`) so the
+  # guard asserts the same control text an operator sees projected in the bar.
+  def projected_label(control)
+    control.text.strip.presence || control["value"].to_s.strip
+  end
+
+  # Every lane designates the one control that performs its decision brief's
+  # primary action via `data-inbox-primary-action`; the action bar projects it
+  # with filled styling (@spec OPERATOR-INBOX-027).
+  def assert_single_primary_action!(fragment, label)
+    primaries = fragment.css("[data-inbox-primary-action]")
+    expect(primaries.map { |control| projected_label(control) }).to eq([ label ])
+  end
+
   # The guard. Walks every <a> and <form> in the detail pane and asserts that
   # each one satisfies exactly one of the three rules.
   def assert_navigation_intent!(fragment, kind:)
@@ -202,6 +216,12 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "clarifying_questions")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the answer submit as the single primary item action" do
+      fragment = render_detail_partial(entry)
+      assert_single_primary_action!(fragment, "Submit Answers")
     end
   end
 
@@ -293,6 +313,26 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (issue subject)" do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "action_required")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the linked remediation action as the single primary item action" do
+      entry_with_action_url = build_entry.call(Inbox::Queue::ACTION_REQUIRED_KIND,
+        record: Struct.new(:description, :subject, keyword_init: true)
+          .new(description: "Configure the project.", subject: nil),
+        action_url: "/projects/1/edit",
+        summary_text: "Configure the project.")
+      allow(view).to receive(:inbox_entry_path).and_return("/inbox/entry-elsewhere")
+
+      fragment = render_detail_partial(entry_with_action_url)
+
+      assert_single_primary_action!(fragment, "Open linked action")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the fallback issue review link as the single primary item action" do
+      fragment = render_detail_partial(entry)
+      assert_single_primary_action!(fragment, "View Issue")
     end
 
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (action_url present, internal)" do
@@ -394,6 +434,45 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "manual_review")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the recorded-issue review link as the single primary item action for an unclassified hold" do
+      fragment = render_detail_partial(entry)
+      assert_single_primary_action!(fragment, "View Issue")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the preserved-question answer submit as the single primary item action for an enhancement hold" do
+      enhancement_issue = TenantContext.with_system_access do
+        issue = create(:issue, project: project, github_number: 21)
+        issue.update!(paid_state: "manual_review", manual_review_reason: "Round limit reached.")
+        issue
+      end
+      enhancement_entry = build_entry.call(Inbox::Queue::MANUAL_REVIEW_KIND,
+        record: enhancement_issue, issue: enhancement_issue,
+        summary_text: "Round limit reached.",
+        questions: [ "Override the budget?" ])
+
+      fragment = render_detail_partial(enhancement_entry)
+
+      assert_single_primary_action!(fragment, "Submit Answers")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the intent-validation submit as the single primary item action for a reopened issue" do
+      reopened_issue = TenantContext.with_system_access do
+        issue = create(:issue, project: project, github_number: 22)
+        issue.update!(paid_state: "manual_review", manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+        issue
+      end
+      reopened_entry = build_entry.call(Inbox::Queue::MANUAL_REVIEW_KIND,
+        record: reopened_issue, issue: reopened_issue,
+        summary_text: "Reopened after closure.")
+
+      fragment = render_detail_partial(reopened_entry)
+
+      assert_single_primary_action!(fragment, "Record intent validation")
     end
   end
 
@@ -562,6 +641,12 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "partial_closeout")
+    end
+
+    # @spec OPERATOR-INBOX-027
+    it "designates the prerequisite link submit as the single primary item action" do
+      fragment = render_detail_partial(entry)
+      assert_single_primary_action!(fragment, "Link prerequisite")
     end
 
     # @spec PARTIAL-CLOSEOUT-056

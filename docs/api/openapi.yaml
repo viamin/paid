@@ -1292,9 +1292,22 @@ components:
         action_url: {type: string, nullable: true}
         decision_brief:
           type: object
-          required: [goal, changed, decision, waiting_work, primary_action, next_state]
+          required: [goal, goal_source, repository_context, linked_goal_intents, changed, decision, waiting_work, primary_action, next_state]
           properties:
             goal: {type: string}
+            goal_source: {type: string}
+            goal_revision: {type: string, nullable: true}
+            repository_context: {type: string}
+            linked_goal_intents:
+              type: array
+              description: Every current approved feature intent linked to the work item. An issue may serve several designs, so no single approved intent is authoritative and none is dropped.
+              items:
+                type: object
+                required: [goal, source, revision]
+                properties:
+                  goal: {type: string}
+                  source: {type: string}
+                  revision: {type: string}
             changed: {type: string}
             decision: {type: string}
             recommendation: {type: string, nullable: true}
