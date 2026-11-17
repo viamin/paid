@@ -34,7 +34,12 @@ Status markers: `[ ]` planned implementation gap.
   *Verified by:* `spec/services/project_delegation/intent_checkpoint/plan_spec.rb`,
   `spec/services/project_delegation/intent_checkpoint/settle_spec.rb`,
   `spec/services/project_delegation/intent_checkpoint/redecision_spec.rb`,
-  and `spec/models/project_delegation/intent_settlement_spec.rb`.
+  `spec/models/project_delegation/intent_settlement_spec.rb`, and the
+  production wiring specs `spec/services/feature_intents/record_run_decisions_spec.rb`
+  (material questions recorded from a run are grouped into a revision-bound
+  checkpoint) and `spec/services/design_amendments/complete_spec.rb`
+  (a merged design amendment's new baseline routes one focused re-decision
+  per settled checkpoint).
 
 - [ ] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
   system SHALL delegate only bounded implementation choices, focused follow-up

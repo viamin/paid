@@ -55,6 +55,27 @@ module DesignAmendments
         approved_revision_recorded_at: Time.current
       )
       feature.release!
+      route_checkpoint_redecision
+    end
+
+    # @spec PROJECT-DELEGATION-002 — the new baseline is a design-revision
+    # change, so every checkpoint settled against an earlier revision gets
+    # one focused, deduplicated re-decision request instead of silently
+    # carrying stale settled intent forward. The event changes only the
+    # design revision, so each settlement's acceptance revision is carried
+    # through unchanged and the drift comparison stays focused on the
+    # design delta. (FeatureIntents::Release records the FIRST approved
+    # revision, not a change of one, so it is not a drift event.)
+    def route_checkpoint_redecision
+      return if merged_revision.blank?
+
+      amendment.feature_intent.project_delegation_intent_checkpoints.joins(:settlements).distinct.each do |checkpoint|
+        ProjectDelegation::IntentCheckpoint::Redecision.call(
+          checkpoint:,
+          design_revision: merged_revision,
+          acceptance_revision: checkpoint.latest_settlement.acceptance_revision
+        )
+      end
     end
   end
 end

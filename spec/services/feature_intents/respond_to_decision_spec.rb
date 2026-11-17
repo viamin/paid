@@ -59,4 +59,24 @@ RSpec.describe FeatureIntents::RespondToDecision do
       acceptance_revision: checkpoint.proposed_acceptance_revision
     )
   end
+
+  it "keeps each question's own responder when different humans answer one checkpoint" do # @spec PROJECT-DELEGATION-002
+    feature_intent = create(:feature_intent)
+    first = create(:feature_intent_decision, feature_intent:)
+    second = create(:feature_intent_decision, feature_intent:)
+    checkpoint = create(:project_delegation_intent_checkpoint, feature_intent:)
+    checkpoint.questions = [ first, second ]
+    first_actor = create(:user, account: feature_intent.project.account)
+    second_actor = create(:user, account: feature_intent.project.account)
+    first_answered_at = 3.hours.ago.change(usec: 0)
+
+    travel_to(first_answered_at) { described_class.call(decision: first, actor: first_actor, answer: "CSV exports only.") }
+    described_class.call(decision: second, actor: second_actor, answer: "Narrow rollout.")
+
+    expect(checkpoint.reload).to be_settled
+    expect(first.reload).to have_attributes(resolved_by: first_actor, resolved_at: first_answered_at)
+    expect(second.reload).to have_attributes(resolved_by: second_actor)
+    expect(checkpoint.settlements.first.settled_by).to eq(second_actor)
+    expect(checkpoint.settlements.first.answers.values).to contain_exactly("CSV exports only.", "Narrow rollout.")
+  end
 end

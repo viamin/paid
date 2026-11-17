@@ -36,6 +36,17 @@ or a focused decision request. It allows only explicit technical choices,
 one deduplicated follow-up record, classified technical recovery,
 evidence-gated closeout, and bounded cycle repair.
 
+Production wiring: `FeatureIntents::RecordRunDecisions` (the run-decision
+materialization choke point) plans one checkpoint per run from the decisions
+it records, binding the design PR's reviewed head and the canonical
+acceptance-criteria token; `FeatureIntents::RespondToDecision` settles the
+checkpoint once its last question is answered, preserving each question's own
+responder. `DesignAmendments::Complete` — the event that replaces an approved
+design revision with a new baseline — routes one focused, deduplicated
+re-decision per checkpoint settled against an earlier revision.
+`FeatureIntents::Release` records the first approved revision rather than
+changing one, so it is not a drift event.
+
 `ActionPlan` answers whether a decision class is delegated or needs a human; it
 never supplies execution authority. That stays with the RDR-077 phase policy
 and the RDR-078 bounded authorization for the admitted lineage.

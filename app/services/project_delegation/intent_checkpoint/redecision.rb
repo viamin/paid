@@ -17,8 +17,13 @@ module ProjectDelegation
           account:, subject: checkpoint.feature_intent, source: "project_delegation.intent_checkpoint",
           title: "Reconsider settled intent checkpoint",
           description: "New design or acceptance evidence differs from the settled intent checkpoint.",
-          metadata: { authorization_id: checkpoint.id.to_s, boundary: "intent_checkpoint",
-            reasons: { design_revision:, acceptance_revision: } }
+          # String keys match FocusedDecision's persisted metadata identity;
+          # symbol keys would never compare equal, defeating its dedup.
+          metadata: {
+            "authorization_id" => checkpoint.id.to_s,
+            "boundary" => "intent_checkpoint",
+            "reasons" => { "design_revision" => design_revision, "acceptance_revision" => acceptance_revision }
+          }
         )
       end
 

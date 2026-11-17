@@ -21,6 +21,8 @@ module ProjectDelegation
 
       def call
         raise ArgumentError, "At least one material question is required" if questions.empty?
+        raise ArgumentError, "Checkpoint revisions must be present" if attributes[:proposed_design_revision].blank? ||
+          attributes[:proposed_acceptance_revision].blank?
 
         ActiveRecord::Base.transaction do
           checkpoint = feature_intent.project_delegation_intent_checkpoints.create!(attributes)

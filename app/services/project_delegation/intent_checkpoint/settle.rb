@@ -18,7 +18,7 @@ module ProjectDelegation
           settlement = checkpoint.settlements.create!(settled_by: actor, disposition:, answers:, design_revision:,
             acceptance_revision:, settled_at: Time.current)
           checkpoint.update!(status: disposition)
-          checkpoint.questions.each { |question| question.resolve!(by: actor, answer: answers.fetch(question.id.to_s)) }
+          resolve_open_questions
           settlement
         end
       end
@@ -31,6 +31,20 @@ module ProjectDelegation
         missing = checkpoint.questions.map { |question| question.id.to_s } - answers.keys
         raise ArgumentError, "Every checkpoint question needs an answer" if missing.any?
         raise ArgumentError, "Settlement revisions must be present" if design_revision.blank? || acceptance_revision.blank?
+      end
+
+      # Only questions still open are resolved here. The response path
+      # (FeatureIntents::RespondToDecision) resolves each question with its
+      # actual responder before the final answer settles the checkpoint, so
+      # re-resolving would overwrite that durable attribution — and re-enqueue
+      # the clarity job — with the settling actor. Already-resolved questions
+      # keep their original resolver, answer, and resolved_at.
+      def resolve_open_questions
+        checkpoint.questions.reload.each do |question|
+          next unless question.open?
+
+          question.resolve!(by: actor, answer: answers.fetch(question.id.to_s))
+        end
       end
     end
   end

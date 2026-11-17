@@ -13,12 +13,18 @@ module ProjectDelegation
 
     validates :status, inclusion: { in: STATUSES }
     validates :recommendation, presence: true
-    validates :proposed_design_revision, :proposed_acceptance_revision, presence: true, on: :settlement
+    validates :proposed_design_revision, :proposed_acceptance_revision, presence: true
 
     def settled? = status == "settled"
 
+    # Every settlement binds the checkpoint to exact design and acceptance
+    # revisions, so the latest settlement is the checkpoint's current binding.
+    def latest_settlement
+      settlements.order(created_at: :desc).first
+    end
+
     def current_binding?(design_revision:, acceptance_revision:)
-      settlement = settlements.order(created_at: :desc).first
+      settlement = latest_settlement
       settlement.present? && settlement.design_revision == design_revision && settlement.acceptance_revision == acceptance_revision
     end
   end

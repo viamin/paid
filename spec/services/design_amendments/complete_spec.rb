@@ -81,4 +81,34 @@ RSpec.describe DesignAmendments::Complete do
     expect(feature.approved_design_revision).to eq("oldrev")
     expect(amendment.reload).not_to be_merged
   end
+
+  it "routes one focused re-decision per settled checkpoint on the new design baseline" do # @spec PROJECT-DELEGATION-002
+    DesignAmendments::Approve.call(amendment: amendment, actor: actor, pr_head_sha: "designhead1")
+    checkpoint = create(:project_delegation_intent_checkpoint, feature_intent: feature,
+      proposed_design_revision: "oldrev", proposed_acceptance_revision: "acceptance-1")
+    ProjectDelegation::IntentCheckpoint::Settle.call(
+      checkpoint:, actor: actor, answers: {}, design_revision: "oldrev", acceptance_revision: "acceptance-1"
+    )
+
+    expect {
+      described_class.call(amendment: amendment, merged_revision: "newrev")
+    }.to change(Notification, :count).by(1)
+
+    notification = Notification.find_by(source: "project_delegation.intent_checkpoint")
+    expect(notification.metadata["reasons"]).to eq("design_revision" => "newrev", "acceptance_revision" => "acceptance-1")
+    expect(notification.metadata["authorization_id"]).to eq(checkpoint.id.to_s)
+  end
+
+  it "does not re-prompt a checkpoint already bound to the new design revision" do # @spec PROJECT-DELEGATION-002
+    DesignAmendments::Approve.call(amendment: amendment, actor: actor, pr_head_sha: "designhead1")
+    checkpoint = create(:project_delegation_intent_checkpoint, feature_intent: feature,
+      proposed_design_revision: "newrev", proposed_acceptance_revision: "acceptance-1")
+    ProjectDelegation::IntentCheckpoint::Settle.call(
+      checkpoint:, actor: actor, answers: {}, design_revision: "newrev", acceptance_revision: "acceptance-1"
+    )
+
+    expect {
+      described_class.call(amendment: amendment, merged_revision: "newrev")
+    }.not_to change(Notification, :count)
+  end
 end
