@@ -135,4 +135,18 @@ RSpec.describe CloseoutVerifications::Admit do
 
     expect(described_class.call(source_pr:, merge_commit_sha: merge_sha).reason).to eq("live_target_unconfirmed")
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-009
+  it "preserves a merged-revision eligibility failure when a live mapping also exists" do
+    approve_mapping
+    source_issue.update!(body: "Changed intent")
+    enrollment = project.staged_closeout_enrollment
+    StagedCloseoutMapping.create!(account: project.account, project:, issue: source_issue,
+      staged_closeout_enrollment: enrollment, reviewed_by: maintainer, criterion_key: "Live evidence",
+      criterion_digest: "criterion", stage: "live_environment", phase: "operations", target_shape: "live_signal",
+      execution_path: "trusted_measurement", target_key: "digest_fixture", target_version: "1", target_digest: "digest",
+      environment_class: "production", freshness_seconds: 60, revision: 1, reviewed_at: Time.current)
+
+    expect(described_class.call(source_pr:, merge_commit_sha: merge_sha).reason).to eq("closeout assessment is stale")
+  end
 end

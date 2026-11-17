@@ -58,10 +58,17 @@ module CloseoutVerifications
     end
 
     def no_mapping_reason(results)
-      return "live_target_unconfirmed" if project.staged_closeout_mappings.where(issue: source_issue).approved.where(stage: "live_environment").exists?
-      return "no_merged_revision_mapping" if results.empty?
+      if results.empty?
+        return "live_target_unconfirmed" if live_environment_mapping?
+
+        return "no_merged_revision_mapping"
+      end
 
       results.map(&:reason).compact.first || "no_eligible_mapping"
+    end
+
+    def live_environment_mapping?
+      project.staged_closeout_mappings.where(issue: source_issue).approved.where(stage: "live_environment").exists?
     end
 
     def admit(mapping)
