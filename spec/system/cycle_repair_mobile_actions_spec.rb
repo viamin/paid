@@ -21,13 +21,13 @@ RSpec.describe "Cycle repair mobile actions", system_driver: :paid_cuprite, type
   after { Warden.test_reset! }
 
   it "keeps the exact cross-project declaration label readable in the original and projected actions" do
-    visit inbox_entry_path(create_cycle_analysis.id)
-    expect(page).to have_text("One declaration needs owner review.")
-    expect(page).to have_css('[data-testid="manual-repair"] [type="submit"]')
-    expect(page).to have_css('[data-inbox-actions-target="bar"] button', text: /trusted comment/)
-
+    cycle = create_cycle_analysis
     [ 320, 390, 768, 1440 ].each do |width|
       page.current_window.resize_to(width, 844)
+      visit inbox_entry_path(cycle.id)
+      expect(page).to have_text("One declaration needs owner review.")
+      expect(page).to have_css('[data-testid="manual-repair"] [type="submit"]')
+      expect(page).to have_css('[data-inbox-actions-target="bar"] button', text: /trusted comment/)
       metrics = action_bounds
       expect(metrics).not_to be_empty
       expect(metrics.all? { |control| control.fetch("right") <= width + 1 && control.fetch("scroll") <= control.fetch("client") + 1 }).to be(true)
