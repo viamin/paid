@@ -50,6 +50,21 @@ RSpec.describe "Project automation phases" do
     expect(response.body).not_to include("No open work is currently admitted by a trusted activation label")
   end
 
+  it "states when the trusted-label preview is truncated by its provenance bound" do # @spec AUTOMATION-PHASES-015
+    configure_trusted_auto_pick_label_preview
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust).and_return(:trusted)
+    (Automation::Phases::MigrationPreview::PROVENANCE_REPLAY_LIMIT + 1).times do
+      create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ], title: "Bounded provenance issue")
+    end
+
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    body = Nokogiri::HTML(response.body).text.squish
+    expect(body).to include("Bounded provenance issue")
+    expect(body).to include("more labeled work exists and is not listed")
+  end
+
   it "updates the phase controls posted by the settings form" do
     patch project_automation_phases_path(project), params: {
       project: {

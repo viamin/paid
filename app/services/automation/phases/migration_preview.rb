@@ -35,7 +35,42 @@ module Automation
       # project setting.
       LABEL_ACTIVATED_CAPABILITIES = %w[auto_pick auto_enhance auto_merge].freeze
 
+      # Provenance replays (outbound GitHub issue-events requests) one preview
+      # render may perform. Each labeled record costs a request, so an
+      # unbounded scan over a project's label history could exhaust the hourly
+      # rate limit mid-render — the same exposure the candidate-scan bound in
+      # Automation::FeatureActivation guards. Past the bound the preview is
+      # reported as truncated rather than complete.
+      PROVENANCE_REPLAY_LIMIT = 25
+
       LabelEnabledWork = Struct.new(:items, :status, keyword_init: true)
+
+      # Bounds the provenance replays of one preview render across every
+      # capability scan: hands out at most the remaining replays' worth of
+      # candidates (newest first, decided by the caller's scope order) and
+      # remembers whether the labeled scope extended past the bound.
+      class ProvenanceBudget
+        def initialize(limit)
+          @remaining = limit
+          @truncated = false
+        end
+
+        def truncated?
+          @truncated
+        end
+
+        # Fetches one row past the remaining budget to detect truncation, then
+        # returns only the rows the budget still covers so each returned
+        # record costs exactly one replay.
+        def bound(scope)
+          candidates = scope.limit(@remaining + 1).to_a
+          @truncated ||= candidates.size > @remaining
+          checked = candidates.take(@remaining)
+          @remaining -= checked.size
+          checked
+        end
+      end
+      private_constant :ProvenanceBudget
 
       def self.call(...)
         new(...).call
@@ -105,14 +140,17 @@ module Automation
       # Preview the individual work items that trusted labels currently admit.
       # A label's presence alone is insufficient: execution checks its trusted
       # event provenance, so the preview uses that same decision before naming
-      # work an activation would change.
+      # work an activation would change. Provenance replays are bounded per
+      # render (PROVENANCE_REPLAY_LIMIT); labeled work past the bound stays
+      # unchecked and the preview reports truncation rather than completeness.
       def label_enabled_work(derived_settings)
+        budget = ProvenanceBudget.new(PROVENANCE_REPLAY_LIMIT)
         provenance_available = true
         work_items = LABEL_ACTIVATED_CAPABILITIES.flat_map do |capability|
           phase = Automation::Phases.for_capability(capability)
           next [] unless phase_disabled_by_derived_settings?(phase, derived_settings)
 
-          labeled_work_items(capability).filter_map do |work_item|
+          budget.bound(labeled_work_items(capability)).filter_map do |work_item|
             trust = activation_label_trust(capability, work_item)
             provenance_available &&= trust != :unknown
             next unless trust == :trusted
@@ -123,7 +161,8 @@ module Automation
         end
         return LabelEnabledWork.new(items: [], status: "unavailable") unless provenance_available
 
-        LabelEnabledWork.new(items: work_items, status: "available")
+        warn_truncated(budget)
+        LabelEnabledWork.new(items: work_items, status: budget.truncated? ? "truncated" : "available")
       rescue GithubClient::RateLimitError => error
         Rails.logger.warn(
           message: "automation.phases.migration_preview.label_trust_rate_limited",
@@ -133,14 +172,26 @@ module Automation
         LabelEnabledWork.new(items: [], status: "unavailable")
       end
 
+      def warn_truncated(budget)
+        return unless budget.truncated?
+
+        Rails.logger.warn(
+          message: "automation.phases.migration_preview.label_trust_truncated",
+          project_id: project.id,
+          provenance_replay_limit: PROVENANCE_REPLAY_LIMIT
+        )
+      end
+
       def phase_disabled_by_derived_settings?(phase, derived_settings)
         !derived_settings.fetch(Automation::PhaseSettings::PHASES_KEY).fetch(phase, false)
       end
 
+      # Newest labeled work first, so a truncated preview keeps the items an
+      # operator most recently labeled rather than an arbitrary slice.
       def labeled_work_items(capability)
         scope = activation_labels(capability).reduce(project.issues.none) do |matching_work, label|
           matching_work.or(project.issues.where("labels @> ?", [ label ].to_json))
-        end.where(github_state: "open")
+        end.where(github_state: "open").order(id: :desc)
 
         capability == "auto_merge" ? scope.pull_requests_only : scope.issues_only
       end

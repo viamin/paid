@@ -83,6 +83,40 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.label_enabled_work).not_to include(include(work_item_id: issue.id))
   end
 
+  it "reports an available preview when labeled work fits within the provenance bound" do
+    configure_disabled_auto_pick_preview
+    create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust).and_return(:trusted)
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work_status).to eq("available")
+    expect(preview.label_enabled_work).to contain_exactly(include(capability: "auto_pick", phase: "coding"))
+  end
+
+  it "bounds provenance replays per render and reports a truncated preview past the bound" do
+    configure_disabled_auto_pick_preview
+    limit = described_class::PROVENANCE_REPLAY_LIMIT
+    (limit + 5).times { create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ]) }
+    replayed = []
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust) do |_project, candidate, _label|
+      replayed << candidate.id
+      :trusted
+    end
+    expect(Rails.logger).to receive(:warn).with(hash_including(
+      message: "automation.phases.migration_preview.label_trust_truncated",
+      project_id: project.id,
+      provenance_replay_limit: limit
+    ))
+
+    preview = described_class.call(project:, user:)
+
+    expect(replayed.uniq.size).to eq(limit)
+    expect(preview.label_enabled_work.size).to eq(limit)
+    expect(preview.label_enabled_work_status).to eq("truncated")
+    expect(preview.to_h).to include(label_enabled_work_status: "truncated")
+  end
+
   it "reports trusted-label provenance as unavailable when its history is rate limited" do
     configure_disabled_auto_pick_preview
     create(:issue, project:, github_state: "open", labels: [ "paid:auto-pick" ])

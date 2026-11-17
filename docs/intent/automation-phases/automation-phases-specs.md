@@ -125,9 +125,17 @@
   enabling new automatic work, SHALL NOT grant continuation authorization
   retroactively to existing manual runs, and SHALL report which currently
   label-enabled work would change execution or Inbox relevance before
-  activation. When trusted-label provenance is unavailable, the system SHALL
-  report that unavailable state rather than reporting no affected work.
-  *Tests:* `spec/services/automation/phases/migration_preview_spec.rb`
+  activation. The per-render trusted-label provenance replay SHALL be
+  bounded, because each replayed record costs one outbound GitHub
+  issue-events request that an unbounded scan over label history could
+  exhaust the hourly rate limit with; when labeled work extends past the
+  bound, the system SHALL report the truncated state while still listing
+  the verified work, rather than implying the list is complete or showing
+  no affected work. When trusted-label provenance is unavailable, the
+  system SHALL report that unavailable state rather than reporting no
+  affected work.
+  *Tests:* `spec/services/automation/phases/migration_preview_spec.rb`,
+  `spec/requests/projects/automation_phases_spec.rb`
   *Code:* `Automation::Phases::MigrationPreview`
 
 - [x] **AUTOMATION-PHASES-016** — Merging SHALL NOT authorize release or
