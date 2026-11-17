@@ -18,6 +18,7 @@ module Activities
         assessment = assess(agent_run, fallbacks)
         snapshot = PartialCloseouts::Assessment.snapshot(agent_run, assessment)
         agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => snapshot))
+        route_acceptance_drift(agent_run)
         PartialCloseouts::SourceClosureDisposition.record!(agent_run, assessment: snapshot)
         PartialCloseouts::Reconcile.call(agent_run:, assessment: snapshot)
         agent_run.complete!
@@ -30,6 +31,14 @@ module Activities
     end
 
     private
+
+    # @spec PROJECT-DELEGATION-002 — the audit just re-recorded this issue's
+    # acceptance criteria, so checkpoints settled against an earlier
+    # acceptance revision get one focused, deduplicated re-decision through
+    # the same drift handler a merged design amendment uses.
+    def route_acceptance_drift(agent_run)
+      ProjectDelegation::IntentCheckpoint::RouteDrift.on_acceptance_change(issue: agent_run.issue)
+    end
 
     def assess(agent_run, fallbacks) # @spec LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-010
       Llm::AnalyzePartialCloseout.call(agent_run: agent_run,

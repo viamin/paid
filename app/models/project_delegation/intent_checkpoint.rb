@@ -27,5 +27,14 @@ module ProjectDelegation
       settlement = latest_settlement
       settlement.present? && settlement.design_revision == design_revision && settlement.acceptance_revision == acceptance_revision
     end
+
+    # The issues whose canonical acceptance revision this checkpoint's
+    # settlements bind: the issues of the runs that raised the grouped
+    # questions — the same issue RecordRunDecisions computed the proposed
+    # revisions for. Acceptance drift is only meaningful for these issues,
+    # never for the feature's other implementation issues.
+    def binding_issue_ids
+      questions.joins(:source_agent_run).distinct.pluck("agent_runs.issue_id")
+    end
   end
 end

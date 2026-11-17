@@ -62,20 +62,18 @@ module DesignAmendments
     # change, so every checkpoint settled against an earlier revision gets
     # one focused, deduplicated re-decision request instead of silently
     # carrying stale settled intent forward. The event changes only the
-    # design revision, so each settlement's acceptance revision is carried
-    # through unchanged and the drift comparison stays focused on the
-    # design delta. (FeatureIntents::Release records the FIRST approved
-    # revision, not a change of one, so it is not a drift event.)
+    # design revision: the shared drift handler carries each settlement's
+    # acceptance revision through unchanged (keeping the comparison focused
+    # on the design delta), and acceptance-only drift is routed by the same
+    # handler where acceptance criteria are re-recorded.
+    # (FeatureIntents::Release records the FIRST approved revision, not a
+    # change of one, so it is not a drift event.)
     def route_checkpoint_redecision
       return if merged_revision.blank?
 
-      amendment.feature_intent.project_delegation_intent_checkpoints.joins(:settlements).distinct.each do |checkpoint|
-        ProjectDelegation::IntentCheckpoint::Redecision.call(
-          checkpoint:,
-          design_revision: merged_revision,
-          acceptance_revision: checkpoint.latest_settlement.acceptance_revision
-        )
-      end
+      ProjectDelegation::IntentCheckpoint::RouteDrift.on_design_change(
+        feature_intent: amendment.feature_intent, design_revision: merged_revision
+      )
     end
   end
 end
