@@ -29,6 +29,8 @@ module StagedCloseoutAdoption
     def save!
       return project.staged_closeout_enrollment if @staged.nil?
 
+      authorize!
+
       enrollment = project.class.transaction do
         locked_project = project.class.lock.find(project.id)
         enrollment = locked_project.staged_closeout_enrollment || locked_project.build_staged_closeout_enrollment(account: locked_project.account)
@@ -47,6 +49,10 @@ module StagedCloseoutAdoption
 
     private
 
+    def authorize!
+      raise Error, "actor is not authorized to manage this project" unless @actor && ProjectPolicy.new(@actor, project).update?
+    end
+
     class << self
       # Reads the current enrollment value from a descriptor record: either an
       # EnrollmentTarget resolved from a profile Context or the raw project
@@ -58,7 +64,7 @@ module StagedCloseoutAdoption
       end
 
       # Stages a descriptor write, normalizing the raw project the legacy
-      # facade passes into an unreviewed (actor-less) target.
+      # facade passes into a target that authorizes before persistence.
       def stage(record, value)
         target = record.is_a?(self) ? record : new(project: record)
         target.enabled = value

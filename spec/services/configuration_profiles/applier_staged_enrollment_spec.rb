@@ -42,6 +42,20 @@ RSpec.describe ConfigurationProfiles::Applier do
     expect(enrollment.revision).to eq(1)
   end
 
+  it "does not persist the enrollment without an authorized reviewer" do
+    plan = ConfigurationProfiles::Planner.for_profile(project, ConfigurationProfiles::Registry.find(:solo_automated))
+
+    expect { described_class.call(project, plan) }
+      .to raise_error(StagedCloseoutAdoption::Error, /authorized/)
+    expect(project.reload.staged_closeout_enrollment).to be_nil
+
+    unauthorized_actor = create(:user, account:)
+
+    expect { described_class.call(project, plan, actor: unauthorized_actor) }
+      .to raise_error(StagedCloseoutAdoption::Error, /authorized/)
+    expect(project.reload.staged_closeout_enrollment).to be_nil
+  end
+
   it "restores the prior enrollment value through the legacy rollback" do
     result = apply_solo_automated
     expect(project.reload.staged_closeout_enrollment).to be_enabled
