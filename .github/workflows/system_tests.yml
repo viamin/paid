@@ -23,7 +23,7 @@ jobs:
     # timeout while allowing the browser suite its normal execution window
     # after dependency setup.
     # @spec TEST-SUITE-022
-    timeout-minutes: 240
+    timeout-minutes: 360
 
     services:
       postgres:
