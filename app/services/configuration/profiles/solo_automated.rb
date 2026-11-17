@@ -7,7 +7,8 @@ module Configuration
       include Base
 
       def self.description
-        "Maximum autonomy for a solo developer: auto-pick, auto-merge everything, paid-agent review, and full auto-release."
+        "Maximum autonomy for a solo developer: auto-pick, auto-merge everything, paid-agent review, full auto-release, " \
+          "and staged acceptance verification after merge."
       end
 
       def self.targets
@@ -26,6 +27,7 @@ module Configuration
           "auto_scan_security" => true,
           "knowledge_evolution_enabled" => true,
           "allow_bot_authored_pr_auto_merge" => true,
+          "staged_closeout_enrollment_enabled" => true,
           "adoption_mode" => "full_execution",
           "review_paid_agent" => true,
           "review_copilot" => false,

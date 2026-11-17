@@ -198,6 +198,22 @@ module Configuration
           write: ->(project, value) { project.allow_bot_authored_pr_auto_merge = value },
           coerce: BOOLEAN
         ),
+        # @spec STAGED-CLOSEOUT-ADOPTION-008
+        # The staged acceptance-verification enrollment is an explicit
+        # operating-mode lever: the Fully Automatic profile turns eligibility
+        # on through the authorized profile workflow; every other curated
+        # profile pins it off. Reads and writes flow through the adoption
+        # boundary adapter so reviewer identity and revision history survive.
+        "staged_closeout_enrollment_enabled" => Descriptor.new(
+          key: "staged_closeout_enrollment_enabled", attribute: "staged_closeout_enrollment",
+          label: "Staged acceptance verification", kind: :staged_closeout_enrollment,
+          record: ->(context) {
+            StagedCloseoutAdoption::EnrollmentTarget.new(project: context.project, actor: context.actor)
+          },
+          read: ->(record) { StagedCloseoutAdoption::EnrollmentTarget.value(record) },
+          write: ->(record, value) { StagedCloseoutAdoption::EnrollmentTarget.stage(record, value) },
+          coerce: BOOLEAN
+        ),
         "owner_reviewer_login" => Descriptor.new(
           key: "owner_reviewer_login", attribute: "owner_reviewer_login", label: "Owner reviewer login",
           kind: :string_attribute, column: "owner_reviewer_login",
