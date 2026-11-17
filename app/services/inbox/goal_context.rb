@@ -93,11 +93,15 @@ module Inbox
     end
 
     def context_for(candidate, features)
-      approved = Array(features).select { |feature| feature.released? && feature.approved_design_revision.present? }
+      approved = Array(features).select { |feature| approved_context?(feature) }
       return unavailable(candidate, feature: Array(features).first) if approved.empty?
       return single(candidate, approved.first) if approved.one?
 
       several(candidate, approved)
+    end
+
+    def approved_context?(feature)
+      (feature.released? || feature.revising?) && feature.approved_design_revision.present?
     end
 
     def single(candidate, feature)

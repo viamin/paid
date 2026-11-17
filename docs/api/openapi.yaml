@@ -1292,7 +1292,7 @@ components:
         action_url: {type: string, nullable: true}
         decision_brief:
           type: object
-          required: [goal, changed, decision, waiting_work, primary_action, next_state]
+          required: [goal, goal_source, repository_context, linked_goal_intents, changed, decision, waiting_work, primary_action, next_state]
           properties:
             goal: {type: string}
             goal_source: {type: string}

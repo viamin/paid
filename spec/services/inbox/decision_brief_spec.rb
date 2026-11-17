@@ -115,6 +115,42 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "uses the retained approved revision while a linked feature is revising" do
+    issue = create(:issue, project:)
+    feature = create(:feature_intent, project:, status: "revising", title: "Approved exports",
+      brief: "Exports remain complete during amendment review.", approved_design_revision: "k" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "Exports remain complete during amendment review.",
+      goal_source: "Approved feature intent: Approved exports",
+      goal_revision: "k" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "includes a revising feature with its retained approved revision in a batch" do
+    issue = create(:issue, project:)
+    revising = create(:feature_intent, project:, status: "revising", title: "Approved exports",
+      brief: "Exports remain complete during amendment review.", approved_design_revision: "l" * 40)
+    released = create(:feature_intent, project:, title: "Export performance",
+      brief: "Exports finish promptly.", approved_design_revision: "m" * 40)
+    create(:feature_intent_issue, feature_intent: revising, issue:)
+    create(:feature_intent_issue, feature_intent: released, issue:)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+    brief = described_class.call(entry: inbox_entry)
+
+    expect(brief.linked_goal_intents).to contain_exactly(
+      { goal: "Exports remain complete during amendment review.", source: "Approved feature intent: Approved exports", revision: "l" * 40 },
+      { goal: "Exports finish promptly.", source: "Approved feature intent: Export performance", revision: "m" * 40 }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "keeps one approved intent singular when it is linked to two entries in a batch" do
     first_issue = create(:issue, project:)
     second_issue = create(:issue, project:)
