@@ -32,14 +32,16 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(system_job.fetch("timeout-minutes")).to eq(240)
   end
 
-  it "passes test credentials to the system job" do
+  # @spec POSTGRESQL-PERSISTENCE-002
+  it "passes test credentials and the system-access RLS baseline to the system job" do
     expect(system_job.fetch("env")).to include(
       "SECRET_KEY_BASE" => "test-secret-key-base",
       "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
       "PAID_TEST_DATABASE" => "paid_test",
       "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test",
       "DB_USERNAME" => "paid",
-      "DB_PASSWORD" => "paid"
+      "DB_PASSWORD" => "paid",
+      "PGOPTIONS" => "-c paid.bypass_tenant_rls=true"
     )
   end
 
