@@ -44,6 +44,20 @@ persisted merged PR observations after a disabled enrollment is re-enabled or
 a webhook was missed. `live_environment` mappings do not qualify from a merge:
 they wait for a separately confirmed live target.
 
+For projects with an adoption record, an incremental issue payload reporting a closed PR resolves its authoritative
+PR detail before committing that closure. A confirmed merge records the merge
+revision and invokes the same admission path as a webhook or Paid merge.
+Unavailable PR detail leaves the sync watermark unchanged for retry; closure
+without a confirmed merge cannot create verification work.
+
+Review requires a current closeout assessment. Admission for an observed merge
+may reuse that reviewed criterion when the assessment's intent revision still
+matches the issue, even though the merge has made its delivery evidence stale.
+Changed intent, removed criteria, revoked mappings and changed checks remain
+blocking. Scheduling a check never refreshes the acceptance assessment or
+changes a criterion's verdict; fresh acceptance evidence is still required for
+closure.
+
 Mapping admission validates the criterion against the current persisted
 closeout assessment, project/account scope, stage-to-phase pairing, and the
 existing permitted registry. Checkout validations resolve an enabled effective
