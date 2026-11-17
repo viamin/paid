@@ -236,7 +236,8 @@ module Automation
         when "auto_pick"
           Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue: work_item).present?
         when "auto_enhance"
-          Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue: work_item)
+          Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue: work_item).present? &&
+            Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue: work_item)
         when "auto_merge"
           Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: work_item, feature: capability)
         end

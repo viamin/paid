@@ -71,6 +71,19 @@ RSpec.describe Automation::Phases::MigrationPreview do
     expect(preview.label_enabled_work).not_to include(include(work_item_id: untrusted_issue.id))
   end
 
+  it "excludes trusted auto-enhance-only work that cannot trigger a run" do
+    configure_disabled_auto_pick_preview
+    project.update!(
+      feature_activation_labels: project.effective_feature_activation_labels.merge("auto_enhance" => "paid:auto-enhance")
+    )
+    issue = create(:issue, project:, github_state: "open", labels: [ "paid:auto-enhance" ])
+    allow(Automation::LabelPolicy).to receive(:label_addition_trust).and_return(:trusted)
+
+    preview = described_class.call(project:, user:)
+
+    expect(preview.label_enabled_work).not_to include(include(work_item_id: issue.id))
+  end
+
   it "excludes locally activated ignored-mode work with an untrusted label" do
     configure_disabled_auto_pick_preview
     project.update!(label_integration_mode: "ignored")
