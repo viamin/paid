@@ -504,6 +504,9 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   continuation preflight, at the dequeue recheck, and at run start. The
   projection SHALL be tenant-isolated and SHALL never grant a continuation or
   mutate `paid_state`.
+  PostgreSQL SHALL isolate both checkpoint and entry reads and writes by the
+  owning project's account, and SHALL reject an entry referencing an issue in
+  another project, including during intentional system access.
   *Issue:* #4558.
   *RDR:* `docs/rdrs/RDR-081-partial-closeout-lane-read-model.md`.
   *Code:* `Issues::StalledCloseoutProjection`,
@@ -512,6 +515,7 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `PartialCloseoutProjectionReconciliationSweepJob`, `Inbox::Queue`,
   `Inbox::Count`, `Inbox::Availability`.
   *Test:* `spec/services/issues/stalled_closeout_projection_spec.rb`,
+  `spec/security/partial_closeout_projection_spec.rb`,
   `spec/services/issues/stalled_closeout_projection_invalidation_spec.rb`,
   `spec/jobs/partial_closeout_projection_reconciliation_sweep_job_spec.rb`,
   plus the existing Inbox queue/count/availability coverage.
