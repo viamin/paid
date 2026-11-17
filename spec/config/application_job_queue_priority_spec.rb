@@ -108,6 +108,7 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
         StyleGuideExtractionJob
       ],
       low_priority: %w[
+        CloseoutVerificationJob
         CycleAnalysisJob
         DashboardBroadcastJob
         DelayedHumanFeedbackCollectionJob
