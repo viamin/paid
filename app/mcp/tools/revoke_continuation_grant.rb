@@ -7,6 +7,7 @@ module Tools
 
     def self.tool_name = "revoke_continuation_grant"
     def self.write_operation? = true
+    def self.mcp_available? = true
     def self.description = "Revoke an active continuation grant. This does not disable independent project automation."
 
     def self.input_schema

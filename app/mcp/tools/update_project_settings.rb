@@ -58,6 +58,7 @@ module Tools
 
     def self.tool_name = "update_project_settings"
     def self.write_operation? = true
+    def self.mcp_available? = true
 
     def self.description
       "Update operational and automation settings for a project."

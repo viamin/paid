@@ -246,6 +246,8 @@ RSpec.describe Tools::Registry do
 
       # @spec AUTO-PICK-QUEUE-016
       expect(names).to include("list_projects", "get_project", "operator_console_inventory", "start_cycle_analysis")
+      # @spec AUTOMATION-PHASES-019
+      expect(names).to include("update_project_settings", "revoke_continuation_grant", "extend_continuation_grant")
       expect(names).not_to include("trigger_agent_run", "present_chat_diagram", "operator_suspend_account")
     end
   end

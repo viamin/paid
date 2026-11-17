@@ -7,6 +7,7 @@ module Tools
 
     def self.tool_name = "extend_continuation_grant"
     def self.write_operation? = true
+    def self.mcp_available? = true
     def self.description = "Extend an active continuation grant to an allowed endpoint; extending through merge requires merge-delegation permission."
 
     def self.input_schema
