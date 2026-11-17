@@ -6,7 +6,7 @@ module Tools
     authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }, policy_class: ProjectPolicy
 
     def self.tool_name = "get_project_automation_phases"
-    def self.description = "Inspect a project's six automation phases, separate release and deployment controls, rollout state, and continuation grants."
+    def self.description = "Inspect a project's six automation phases, separate release and deployment controls, rollout state, every active continuation grant, and bounded inactive grant history."
 
     def self.input_schema
       { type: "object", properties: { project_id: { type: "integer", description: "The project ID" } }, required: [ "project_id" ] }

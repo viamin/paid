@@ -28,7 +28,10 @@ RSpec.describe "Project automation phases API" do
       "settings" => hash_including("phases" => include("coding" => false), "release" => true, "deployment" => false),
       "continuation_notice" => include("does not disable independent project automation")
     )
-    expect(response.parsed_body.fetch("grants")).to include(hash_including("id" => grant.id, "endpoint" => "merge"))
+    grants = response.parsed_body.fetch("grants")
+    expect(grants.fetch("active")).to include(hash_including("id" => grant.id, "endpoint" => "merge"))
+    expect(grants.fetch("inactive")).to be_empty
+    expect(grants.fetch("inactive_truncated")).to be(false)
   end
 
   it "updates settings through the validated transition service" do

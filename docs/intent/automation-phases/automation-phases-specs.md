@@ -158,8 +158,12 @@
   service, and SHALL inspect, revoke, or validly extend only their project's
   continuation grants. The projection SHALL retain separate release and
   deployment controls, rollout and continuation explanations, and SHALL not
-  expose credentials or grant runtime authority while rollout is off.
+  expose credentials or grant runtime authority while rollout is off. The
+  projection SHALL list every active grant and SHALL bound only inactive
+  grant history, so inactive grants never displace active authority from
+  inspection.
   *Tests:* `spec/requests/api/v1/projects/automation_phases_spec.rb`,
+  `spec/services/automation/phase_settings/projection_spec.rb`,
   `spec/mcp/tools/get_project_automation_phases_spec.rb`,
   `spec/mcp/tools/revoke_continuation_grant_spec.rb`,
   `spec/mcp/tools/extend_continuation_grant_spec.rb`,

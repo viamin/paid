@@ -8,6 +8,7 @@ module Automation
     # @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-008 @spec AUTOMATION-PHASES-014
     class Projection
       REVOCATION_NOTICE = "Revoking or ending a continuation grant does not disable independent project automation."
+      INACTIVE_GRANT_LIMIT = 50
 
       def self.call(...) = new(...).call
 
@@ -24,7 +25,7 @@ module Automation
           derived_settings: settings.derive,
           phases: Automation::Phases::ALL.map { |phase| phase_payload(phase) },
           continuation_notice: REVOCATION_NOTICE,
-          grants: project.work_item_continuation_grants.order(created_at: :desc).limit(50).map { |grant| grant_payload(grant) }
+          grants: grants_payload
         }
       end
 
@@ -48,6 +49,25 @@ module Automation
 
       def settings
         @settings ||= PhaseSettings.call(project)
+      end
+
+      # Current authority must stay fully discoverable: every active grant is
+      # listed, and only the inactive history is bounded separately, so new
+      # revoked or completed grants can never push an older active grant out
+      # of the projection.
+      def grants_payload
+        history = inactive_history
+        {
+          active: project.work_item_continuation_grants.active.order(created_at: :desc).map { |grant| grant_payload(grant) },
+          inactive: history.first(INACTIVE_GRANT_LIMIT).map { |grant| grant_payload(grant) },
+          inactive_truncated: history.length > INACTIVE_GRANT_LIMIT
+        }
+      end
+
+      # Loads one grant past the bound so truncation is detectable without a
+      # separate count query.
+      def inactive_history
+        project.work_item_continuation_grants.inactive.order(created_at: :desc).limit(INACTIVE_GRANT_LIMIT + 1).to_a
       end
 
       def phase_payload(phase)

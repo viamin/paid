@@ -1453,22 +1453,32 @@ components:
               release: {type: boolean}
               deployment: {type: boolean}
         grants:
-          type: array
-          items:
-            type: object
-            required: [id, issue_id, start_phase, endpoint, covered_phases, active]
-            properties:
-              id: {type: integer}
-              issue_id: {type: integer}
-              start_phase: {type: string}
-              endpoint: {type: string}
-              covered_phases: {type: array, items: {type: string}}
-              active: {type: boolean}
-              completed_at: {type: string, format: date-time, nullable: true}
-              revoked_at: {type: string, format: date-time, nullable: true}
-              notice: {type: string}
+          type: object
+          required: [active, inactive, inactive_truncated]
+          description: Every active grant is listed so current authority is always discoverable; inactive history is bounded to the 50 most recent grants and reports whether it was truncated.
+          properties:
+            active:
+              type: array
+              items: {$ref: '#/components/schemas/ContinuationGrant'}
+            inactive:
+              type: array
+              items: {$ref: '#/components/schemas/ContinuationGrant'}
+            inactive_truncated: {type: boolean}
         continuation_notice: {type: string}
         enabled_transitions: {type: array, items: {type: string}}
+    ContinuationGrant:
+      type: object
+      required: [id, issue_id, start_phase, endpoint, covered_phases, active]
+      properties:
+        id: {type: integer}
+        issue_id: {type: integer}
+        start_phase: {type: string}
+        endpoint: {type: string}
+        covered_phases: {type: array, items: {type: string}}
+        active: {type: boolean}
+        completed_at: {type: string, format: date-time, nullable: true}
+        revoked_at: {type: string, format: date-time, nullable: true}
+        notice: {type: string}
   headers:
     ETag:
       description: Strong validator for polling. Send this value as If-None-Match on the next poll.
