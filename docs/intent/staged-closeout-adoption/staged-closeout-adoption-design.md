@@ -44,6 +44,18 @@ persisted merged PR observations after a disabled enrollment is re-enabled or
 a webhook was missed. `live_environment` mappings do not qualify from a merge:
 they wait for a separately confirmed live target.
 
+The dedicated closeout-verification worker claims only an admitted queued run.
+Immediately before execution it rechecks the persisted mapping against the
+source issue, recorded merged revision, reviewed recipe version and digest,
+automatic Release & Deployment policy, pause state, and budget. It resolves no
+command from issue or PR content: the existing `TechnicalPrerequisites::ValidateExecution`
+path receives only the currently matching reviewed recipe and performs the
+pinned checkout inside its isolated container. The terminal run retains a
+bounded closeout evidence envelope with the source/criterion/PR/revision,
+recipe and environment identity, command result, artifacts, timing, and a
+distinct pass, fail, unavailable, cancelled, stale, timeout, setup, or cleanup
+outcome. A terminal identity is never executed again.
+
 For projects with an adoption record, an incremental issue payload reporting a closed PR resolves its authoritative
 PR detail before committing that closure. A confirmed merge records the merge
 revision and invokes the same admission path as a webhook or Paid merge.

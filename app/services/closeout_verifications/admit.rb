@@ -75,7 +75,9 @@ module CloseoutVerifications
       existing = existing_run(mapping)
       return nil if existing
 
-      AgentRun.create!(run_attributes(mapping))
+      run = AgentRun.create!(run_attributes(mapping))
+      CloseoutVerificationJob.perform_later(run.id)
+      run
     rescue ActiveRecord::RecordNotUnique => error
       raise error unless existing_run(mapping)
 

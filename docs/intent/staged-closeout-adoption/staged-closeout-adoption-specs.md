@@ -29,3 +29,6 @@
 
 - [x] **STAGED-CLOSEOUT-ADOPTION-010** — When the same merge is observed by Paid auto-merge, a GitHub webhook, concurrent delivery, or a bounded reconciliation sweep, Paid SHALL converge to the same run identity; an invalid mapping, unavailable authority, pause, absent lineage, current result, or unconfirmed live target SHALL produce an inspectable no-run reason.
   *Test:* `spec/services/closeout_verifications/admit_spec.rb`, `spec/requests/api/github_webhooks_spec.rb`, `spec/jobs/closeout_verification_reconciliation_sweep_job_spec.rb`, `spec/temporal/activities/fetch_issues_activity_spec.rb`.
+
+- [x] **STAGED-CLOSEOUT-ADOPTION-011** — When an admitted merged-revision `closeout_verification` run is claimed, Paid SHALL recheck its reviewed mapping, pinned merged target, automatic release policy, pause state, and budget before executing only the reviewed recipe through `TechnicalPrerequisites::ValidateExecution` in its isolated environment. It SHALL persist bounded evidence identifying the source issue, criterion, source PR, merged SHA, recipe version, environment, command result, artifacts, and terminal outcome; a replay SHALL not execute a terminal attempt, and unavailable, cancelled, stale, timeout, setup, and cleanup outcomes SHALL remain distinguishable from a pass.
+  *Test:* `spec/jobs/closeout_verification_job_spec.rb`.
