@@ -1,11 +1,31 @@
 # frozen_string_literal: true
 
 class FeatureFlags
-  Definition = Data.define(:name, :owner, :intent, :rollout_plan, :cleanup_criteria)
+  Definition = Data.define(:name, :owner, :intent, :rollout_plan, :cleanup_criteria, :disable_guard) do
+    # A flag whose disable mutation can strand guarded state declares a
+    # disable guard: an object answering protect_disable(project:, actor:)
+    # and protect_tenant_features(account:, features:), both yielding the
+    # mutation inside their protection and raising RollbackBlockedError on
+    # refusal. Defaults to nil so ordinary flags mutate unchanged.
+    def initialize(name:, owner:, intent:, rollout_plan:, cleanup_criteria:, disable_guard: nil)
+      super
+    end
+  end
 
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
+
+  # Raised when a flag's disable guard refuses a rollback. The message is
+  # actionable and #details carries an inspectable reason payload.
+  class RollbackBlockedError < StandardError
+    attr_reader :details
+
+    def initialize(message = nil, details: {})
+      super(message)
+      @details = details
+    end
+  end
 
   # @spec SETTINGS-COPY-001
   DEFINITIONS = {
@@ -112,7 +132,8 @@ class FeatureFlags
       owner: "automation-phases",
       intent: "Gate phase project defaults, explicit continuation grants, execution enforcement, and Inbox phase relevance plus personal removal.",
       rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
-      cleanup_criteria: "Remove after closeout verifies migration and complete execution-path coverage."
+      cleanup_criteria: "Remove after closeout verifies migration and complete execution-path coverage.",
+      disable_guard: Automation::Phases::RollbackProtection
     ),
     partial_closeout_lane_read_model: Definition.new(
       name: :partial_closeout_lane_read_model,
@@ -206,26 +227,11 @@ class FeatureFlags
 
     def disable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
+      disable_guard = definition(flag_name).disable_guard
+      # @spec AUTOMATION-PHASES-014
+      return perform_disable(flag_name, resolved_actor) unless disable_guard
 
-      if flag_name.to_sym == :automation_phases && (resolved_actor.nil? || resolved_actor.is_a?(Project))
-        return disable_phase_rollout!(project: resolved_actor)
-      end
-
-      unless resolved_actor
-        # Flipper's boolean-gate disable already calls clear(feature), which
-        # removes all gates (actor, group, percentage, etc.), so a global
-        # disable is a complete rollback — no stale actor gates survive.
-        return feature(flag_name).disable
-      end
-
-      feature(flag_name).disable(resolved_actor)
-    end
-
-    def with_tenant_rollback_protection(tenant_setting:, features:)
-      projects = tenant_phase_rollback_projects(tenant_setting:, features:)
-      return yield if projects.empty?
-
-      Automation::PhaseRolloutRollback.call(projects:) { yield }
+      disable_guard.protect_disable(project:, actor:) { perform_disable(flag_name, resolved_actor) }
     end
 
     def enable_percentage_of_actors(flag_name, percentage)
@@ -268,38 +274,15 @@ class FeatureFlags
 
     private
 
-    # @spec AUTOMATION-PHASES-014
-    def disable_phase_rollout!(project:)
-      candidates = project ? [ project ] : Project.includes(account: :tenant_setting)
-      projects = candidates.select { |candidate| phase_disable_affects?(candidate) }
-      Automation::PhaseRolloutRollback.call(projects:) do
-        project ? feature(:automation_phases).disable(project) : feature(:automation_phases).disable
+    def perform_disable(flag_name, resolved_actor)
+      unless resolved_actor
+        # Flipper's boolean-gate disable already calls clear(feature), which
+        # removes all gates (actor, group, percentage, etc.), so a global
+        # disable is a complete rollback — no stale actor gates survive.
+        return feature(flag_name).disable
       end
-    end
 
-    # A rollback can only reinterpret a grant under legacy policy when it
-    # flips the project's effective flag state; a tenant-level `true`
-    # override keeps the project enabled after its Flipper gate is removed,
-    # so that actor-gate cleanup is harmless and stays unguarded.
-    def phase_disable_affects?(project)
-      project.account.tenant_setting&.features&.fetch("automation_phases", nil) != true &&
-        enabled?(:automation_phases, project: project)
-    end
-
-    def tenant_phase_rollback_projects(tenant_setting:, features:)
-      return [] if features.nil?
-
-      tenant_setting.account.projects.select do |project|
-        phase_rollout_enabled_with?(project, tenant_setting.features) &&
-          !phase_rollout_enabled_with?(project, features)
-      end
-    end
-
-    def phase_rollout_enabled_with?(project, features)
-      override = features.to_h.stringify_keys["automation_phases"]
-      return override if [ true, false ].include?(override)
-
-      feature(:automation_phases).enabled?(project)
+      feature(flag_name).disable(resolved_actor)
     end
 
     def enqueue_partial_closeout_projection(flag_name, project)

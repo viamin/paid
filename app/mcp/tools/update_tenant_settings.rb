@@ -53,7 +53,7 @@ module Tools
 
       tenant_setting = account.tenant_setting!
       attributes = settings.symbolize_keys.slice(*PERMITTED_ATTRIBUTES)
-      FeatureFlags.with_tenant_rollback_protection(tenant_setting:, features: attributes[:features]) do
+      Automation::Phases::RollbackProtection.protect_tenant_features(account:, features: attributes[:features]) do
         tenant_setting.update!(attributes)
       end
       record_activity!(tenant_setting) if tenant_setting.saved_changes.except("updated_at").any?

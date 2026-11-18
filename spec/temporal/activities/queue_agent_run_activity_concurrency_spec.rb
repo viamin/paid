@@ -138,7 +138,7 @@ RSpec.describe Activities::QueueAgentRunActivity do
   def rollback_barrier(rollback_locked, release_rollback)
     lambda do |event|
       sql = event.payload[:sql]
-      next unless Thread.current[:rollback_barrier] && project_lock?(sql)
+      next unless Thread.current[:rollback_barrier] && rollback_lock?(sql)
 
       Thread.current[:rollback_barrier] = nil
       rollback_locked << true
@@ -149,6 +149,10 @@ RSpec.describe Activities::QueueAgentRunActivity do
   def project_lock?(sql)
     sql.include?(%q("projects")) && sql.include?("FOR UPDATE")
   end
+
+    def rollback_lock?(sql)
+      sql.include?("pg_advisory_xact_lock")
+    end
 
   def wait_for_project_lock(backend_pid)
     Timeout.timeout(10) do

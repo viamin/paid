@@ -3,7 +3,7 @@
 require "rails_helper"
 
 # @spec AUTOMATION-PHASES-004 @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
-# @spec AUTOMATION-PHASES-012
+# @spec AUTOMATION-PHASES-012 @spec AUTOMATION-PHASES-014
 RSpec.describe Automation::ManualStart::Plan do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
@@ -84,6 +84,13 @@ RSpec.describe Automation::ManualStart::Plan do
         project:, issue:, start_phase: "coding", endpoint: "merge",
         source: "manual_start", created_by: owner
       )
+    end
+
+    it "does not create a grant after the rollout is disabled" do
+      FeatureFlags.disable!(:automation_phases, project:)
+
+      expect(plan(continuation: true, endpoint: "merge").build_grant(issue:)).to be_nil
+      expect(WorkItemContinuationGrant.count).to eq(0)
     end
 
     it "rejects requested continuation without a work item" do

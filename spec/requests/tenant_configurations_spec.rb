@@ -392,6 +392,44 @@ RSpec.describe "TenantConfigurations" do
       expect(FeatureFlags.rollout_status(:test_feature_flag)[:percentage_of_actors]).to eq(25)
     end
 
+    context "when the tenant features override would disable the automation-phases rollout" do
+      # @spec AUTOMATION-PHASES-014
+      it "refuses the save while a project with an active continuation grant is enabled" do
+        project = create(:project, account: account)
+        FeatureFlags.enable!(:automation_phases, project:)
+        issue = create(:issue, project: project, github_state: "open")
+        grant = create(:work_item_continuation_grant, project: project, issue: issue,
+          start_phase: "coding", endpoint: "merge")
+
+        patch tenant_configuration_path, params: {
+          tenant_setting: { features: { automation_phases: "0", test_feature_flag: "1" } }
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("active continuation grant")
+        expect(account.tenant_setting.reload.features["automation_phases"]).to be_nil
+        expect(grant.reload).to be_active
+        expect(FeatureFlags.enabled?(:automation_phases, project: project)).to be(true)
+      end
+
+      it "applies the override once the grants are inactive" do
+        project = create(:project, account: account)
+        FeatureFlags.enable!(:automation_phases, project:)
+        issue = create(:issue, project: project, github_state: "open")
+        grant = create(:work_item_continuation_grant, project: project, issue: issue,
+          start_phase: "coding", endpoint: "merge")
+        grant.revoke!
+
+        patch tenant_configuration_path, params: {
+          tenant_setting: { features: { automation_phases: "0", test_feature_flag: "1" } }
+        }
+
+        expect(response).to redirect_to(edit_tenant_configuration_path)
+        expect(account.tenant_setting.reload.features["automation_phases"]).to be(false)
+        expect(FeatureFlags.enabled?(:automation_phases, project: project)).to be(false)
+      end
+    end
+
     it "rejects viewers" do
       viewer = create(:user, :viewer, account: account)
       sign_out user

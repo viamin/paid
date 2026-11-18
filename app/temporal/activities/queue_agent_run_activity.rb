@@ -95,7 +95,8 @@ module Activities
       # for races between concurrent activity executions.
       # @spec TEMPORAL-ORCHESTRATION-012 AUTOMATION-PHASES-014
       agent_run, duplicate, enhancement_limit_reached, enhancement_held, phase_block_reason = begin
-        AgentRun.transaction(requires_new: true) do
+        with_phase_rollout_lock(project, phase_rollout_observed) do
+          AgentRun.transaction(requires_new: true) do
           project.lock! if automatic_authorization
           issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
           if automatic_enhancement_held?(project, issue, goal, trigger_type)
@@ -144,6 +145,7 @@ module Activities
               snapshot_tdd_review_feedback!(run, input[:tdd_review_feedback])
               [ run, false, false, false, nil ]
             end
+          end
           end
         end
       rescue ActiveRecord::RecordNotUnique
@@ -229,6 +231,12 @@ module Activities
     end
 
     private
+
+    def with_phase_rollout_lock(project, phase_rollout_observed)
+      return yield unless phase_rollout_observed
+
+      Automation::Phases::RollbackProtection.with_project_lock(project) { yield }
+    end
 
     def automatic_phase_block_reason(run, phase_rollout_observed)
       if phase_rollout_observed && !Automation::RolloutGuard.enabled?(run.project)

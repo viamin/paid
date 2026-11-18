@@ -115,11 +115,11 @@ RSpec.describe Tools::GetUserSettings do
       session = create(:chat_session, account:, created_by: user)
       project = create(:project, account:)
       account.tenant_setting!.update!(features: { "automation_phases" => true })
-      grant = create(:work_item_continuation_grant, project:)
+      create(:work_item_continuation_grant, project:)
 
       expect {
         described_class.new(user:, session:).call(settings: { features: {} }, confirmed: true)
-      }.to raise_error(Automation::PhaseRolloutRollback::ActiveGrantsError, /#{project.id}.*#{grant.id}/)
+      }.to raise_error(FeatureFlags::RollbackBlockedError, /active continuation grant/)
 
       expect(account.tenant_setting!.reload.features).to eq("automation_phases" => true)
       expect(FeatureFlags.enabled?(:automation_phases, project:)).to be(true)

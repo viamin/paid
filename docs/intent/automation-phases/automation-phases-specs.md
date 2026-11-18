@@ -116,24 +116,25 @@
 - [x] **AUTOMATION-PHASES-014** — The phase model SHALL be gated by the
   default-off `automation_phases` feature flag read through
   `FeatureFlags.enabled?(:automation_phases, project:)`, and while the flag is
-  off the pre-existing execution and Inbox policies SHALL remain in force. A
-  supported project, tenant, or global rollback SHALL refuse while any
-  effectively affected project has an active continuation grant, preserving
-  its rollout state and durable records with an inspectable reason. After a
-  grant finishes or is revoked, rollback SHALL reconcile its affected queued
-  work under the current phase policy before disabling the model, without
-  cancelling independently authorized work or bypassing tenant boundaries. If
-  a phase-unauthorized queued run cannot be cancelled because it is already
-  claimed for workflow execution, rollback SHALL refuse with the affected
-  project and run identifiers until reconciliation completes. Automatic queue
-  admission SHALL serialize its policy recheck and insertion with rollback on
-  the affected project, and SHALL refuse a stale admission when rollback
-  completes after that admission observed phase-rollout policy.
+  off the pre-existing execution and Inbox policies SHALL remain in force.
+  Disabling the flag through a supported project, global, or tenant rollout
+  mutation SHALL be refused with an inspectable, actionable reason while any
+  affected project has an active continuation grant; a refused rollback SHALL
+  change no effective flag value, stored settings, grant, or audit history;
+  and once those grants finish or are revoked the system SHALL reconcile
+  affected queued work (cancelling runs whose phase authorization disappeared
+  while preserving independently authorized work) before the rollback takes
+  effect. An automatic queue admission that observed the phase rollout SHALL
+  serialize its phase-policy recheck and insertion with rollback, and SHALL
+  refuse a stale admission after rollback completes.
   *Tests:* `spec/services/automation/rollout_guard_spec.rb`,
-  `spec/services/automation/phase_rollout_rollback_spec.rb`,
+  `spec/services/automation/phases/rollback_protection_spec.rb`,
+  `spec/services/feature_flags_spec.rb`,
+  `spec/requests/tenant_configurations_spec.rb`,
   `spec/temporal/activities/queue_agent_run_activity_concurrency_spec.rb`
   *Code:* `FeatureFlags`, `Automation::RolloutGuard`,
-  `Automation::PhaseRolloutRollback`, `Activities::QueueAgentRunActivity`
+  `Automation::Phases::RollbackProtection`, `TenantConfigurationsController`,
+  `Activities::QueueAgentRunActivity`
 
 - [x] **AUTOMATION-PHASES-015** — The system SHALL derive preview phase
   defaults from each project's currently effective capabilities without
