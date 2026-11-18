@@ -563,16 +563,11 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   it "a row disappearing during execution cannot skip resource cleanup" do
     stub_compatible_host
     stub_provisioning
-    missing = false
-    allow(agent_run).to receive(:reload).and_wrap_original do |original|
-      raise ActiveRecord::RecordNotFound, "run removed during execution" if missing
-      original.call
-    end
     allow(agent_run).to receive(:execute_in_execution_environment) do
-      missing = true
+      agent_run.destroy!
       raise RuntimeError, "interrupted"
     end
     expect { described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:) }.to raise_error(RuntimeError, "interrupted")
-    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: false)
   end
 end
