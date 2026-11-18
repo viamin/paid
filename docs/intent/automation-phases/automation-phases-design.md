@@ -61,7 +61,10 @@ policy cannot interpret scoped grants.
   holding a per-project advisory lock
   (`Automation::Phases::RollbackProtection.with_project_lock`), which
   `Automation::ManualStart::Plan#build_grant` also takes, so concurrent grant
-  creation serializes with rollback instead of racing it.
+  creation serializes with rollback instead of racing it. Automatic queue
+  admission that observed the rollout takes the same lock and rechecks phase
+  authority before inserting work, so a rollback completed while admission
+  waited cannot be reinterpreted under legacy policy.
 
 Percentage-of-actors and percentage-of-time gate mutations are owner-gated
 global rollouts, not the project pilot enablement surface, so they are not

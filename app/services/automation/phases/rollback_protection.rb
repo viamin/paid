@@ -45,9 +45,9 @@ module Automation
         # Guards a tenant-settings features mutation. Yields inside the
         # protective transaction; raises RollbackBlockedError on refusal.
         def protect_tenant_features(account:, features:)
-          return yield unless disabling_tenant_override?(features)
-
-          affected = account.projects.includes(account: :tenant_setting).select { |project| rollout_enabled?(project) }
+          affected = account.projects.includes(account: :tenant_setting).select do |project|
+            rollout_enabled?(project) && !rollout_enabled_with?(project, features)
+          end
           return yield if affected.empty?
 
           with_protection(affected) { yield }
@@ -73,14 +73,16 @@ module Automation
           end
         end
 
-        def disabling_tenant_override?(features)
-          return false unless features.is_a?(Hash)
-
-          ActiveModel::Type::Boolean.new.cast(features[FLAG.to_s]) == false
-        end
-
         def rollout_enabled?(project)
           FeatureFlags.enabled?(FLAG, project:)
+        end
+
+        def rollout_enabled_with?(project, features)
+          override = features.to_h.stringify_keys[FLAG.to_s]
+          override = ActiveModel::Type::Boolean.new.cast(override) unless override.nil?
+          return override if [ true, false ].include?(override)
+
+          FeatureFlags.flipper[FLAG].enabled?(project)
         end
 
         def tenant_override_keeps_enabled?(project)

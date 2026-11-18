@@ -124,13 +124,17 @@
   and once those grants finish or are revoked the system SHALL reconcile
   affected queued work (cancelling runs whose phase authorization disappeared
   while preserving independently authorized work) before the rollback takes
-  effect.
+  effect. An automatic queue admission that observed the phase rollout SHALL
+  serialize its phase-policy recheck and insertion with rollback, and SHALL
+  refuse a stale admission after rollback completes.
   *Tests:* `spec/services/automation/rollout_guard_spec.rb`,
   `spec/services/automation/phases/rollback_protection_spec.rb`,
   `spec/services/feature_flags_spec.rb`,
-  `spec/requests/tenant_configurations_spec.rb`
+  `spec/requests/tenant_configurations_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_concurrency_spec.rb`
   *Code:* `FeatureFlags`, `Automation::RolloutGuard`,
-  `Automation::Phases::RollbackProtection`, `TenantConfigurationsController`
+  `Automation::Phases::RollbackProtection`, `TenantConfigurationsController`,
+  `Activities::QueueAgentRunActivity`
 
 - [x] **AUTOMATION-PHASES-015** — The system SHALL derive preview phase
   defaults from each project's currently effective capabilities without

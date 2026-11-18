@@ -52,7 +52,10 @@ module Tools
       raise ArgumentError, "settings must be an object" unless settings.is_a?(Hash)
 
       tenant_setting = account.tenant_setting!
-      tenant_setting.update!(settings.symbolize_keys.slice(*PERMITTED_ATTRIBUTES))
+      attributes = settings.symbolize_keys.slice(*PERMITTED_ATTRIBUTES)
+      Automation::Phases::RollbackProtection.protect_tenant_features(account:, features: attributes[:features]) do
+        tenant_setting.update!(attributes)
+      end
       record_activity!(tenant_setting) if tenant_setting.saved_changes.except("updated_at").any?
       tenant_setting.reload.attributes.except("id", "account_id", "created_at", "updated_at", "log_data")
     end
