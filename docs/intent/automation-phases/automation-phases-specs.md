@@ -117,8 +117,20 @@
   default-off `automation_phases` feature flag read through
   `FeatureFlags.enabled?(:automation_phases, project:)`, and while the flag is
   off the pre-existing execution and Inbox policies SHALL remain in force.
-  *Tests:* `spec/services/automation/rollout_guard_spec.rb`
-  *Code:* `FeatureFlags`, `Automation::RolloutGuard`
+  Disabling the flag through a supported project, global, or tenant rollout
+  mutation SHALL be refused with an inspectable, actionable reason while any
+  affected project has an active continuation grant; a refused rollback SHALL
+  change no effective flag value, stored settings, grant, or audit history;
+  and once those grants finish or are revoked the system SHALL reconcile
+  affected queued work (cancelling runs whose phase authorization disappeared
+  while preserving independently authorized work) before the rollback takes
+  effect.
+  *Tests:* `spec/services/automation/rollout_guard_spec.rb`,
+  `spec/services/automation/phases/rollback_protection_spec.rb`,
+  `spec/services/feature_flags_spec.rb`,
+  `spec/requests/tenant_configurations_spec.rb`
+  *Code:* `FeatureFlags`, `Automation::RolloutGuard`,
+  `Automation::Phases::RollbackProtection`, `TenantConfigurationsController`
 
 - [x] **AUTOMATION-PHASES-015** — The system SHALL derive preview phase
   defaults from each project's currently effective capabilities without
