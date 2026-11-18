@@ -24,6 +24,59 @@ RSpec.describe Activities::FetchIssuesActivity do
     allow(github_client).to receive(:remove_labels_from_issue).and_return({ removed: [], failed: [] })
   end
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
+  it "retains the merge target when incremental issue sync observes closure before PR reconciliation" do
+    configure_merge_observation
+    project.update!(last_issue_sync_at: 1.hour.ago)
+    payload = github_pr_issue(50)
+    payload.state = "closed"
+    source_pr = create(:issue, :pull_request, project:, github_issue_id: payload.id,
+      github_number: 50, github_state: "open", pr_review_phase: "ready")
+    stub_issues_by_label(nil => [ payload ])
+    allow(github_client).to receive(:pull_request).with(project.full_name, 50)
+      .and_return(OpenStruct.new(merged: true, merged_at: Time.current, merge_commit_sha: "a" * 40))
+
+    activity.execute(project_id: project.id)
+
+    expect(source_pr.reload).to have_attributes(github_state: "closed", pr_review_phase: "merged", merged_commit_sha: "a" * 40)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
+  it "does not advance the sync cursor when a newly closed PR merge observation is unavailable" do
+    configure_merge_observation
+    project.update!(last_issue_sync_at: 1.hour.ago)
+    original_cursor = project.last_issue_sync_at
+    payload = github_pr_issue(50)
+    payload.state = "closed"
+    stub_issues_by_label(nil => [ payload ])
+    allow(github_client).to receive(:pull_request).with(project.full_name, 50)
+      .and_raise(GithubClient::Error, "temporarily unavailable")
+
+    expect { activity.execute(project_id: project.id) }.to raise_error(GithubClient::Error)
+    expect(project.reload.last_issue_sync_at).to eq(original_cursor)
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-010
+  it "does not interpret incremental closure of an unmerged PR as a merge target" do
+    configure_merge_observation
+    project.update!(last_issue_sync_at: 1.hour.ago)
+    payload = github_pr_issue(50)
+    payload.state = "closed"
+    source_pr = create(:issue, :pull_request, project:, github_issue_id: payload.id,
+      github_number: 50, github_state: "open", pr_review_phase: "ready")
+    stub_issues_by_label(nil => [ payload ])
+
+    activity.execute(project_id: project.id)
+
+    expect(source_pr.reload).to have_attributes(github_state: "closed", pr_review_phase: "ready", merged_commit_sha: nil)
+    expect(AgentRun.where(goal: "closeout_verification")).to be_empty
+  end
+
+  def configure_merge_observation
+    owner = create(:user, :owner, account: project.account)
+    StagedCloseoutAdoption::Enroll.call(project:, actor: owner, enabled: false)
+  end
+
   # Helper: route github_client.issues calls by label (or nil for unlabeled fetches)
   def stub_issues_by_label(mapping)
     allow(github_client).to receive(:issues) do |_repo, **opts|
@@ -2969,6 +3022,26 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(stale_pr.reload.github_state).to eq("closed")
         expect(stale_pr.reload.pr_review_phase).to eq("merged")
+      end
+
+      # @spec STAGED-CLOSEOUT-ADOPTION-010
+      it "persists the merge revision when synchronization observes a merge without a webhook" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open", pr_review_phase: "ready")
+        merge_sha = "a" * 40
+
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true, merge_commit_sha: merge_sha))
+
+        activity.execute(project_id: project.id)
+
+        expect(stale_pr.reload).to have_attributes(
+          github_state: "closed",
+          pr_review_phase: "merged",
+          merged_commit_sha: merge_sha
+        )
       end
 
       it "clears the paid-escalated label when an escalated PR is closed outside Paid" do

@@ -16,9 +16,9 @@ RSpec.describe InboxActionsControllerNodeHarness do
         .replace("export default class extends Controller {", "return class InboxActionsController extends Controller {")
       const InboxActionsController = new Function(transformed)()
 
-      const result = { actionLinkClicks: 0, contextualLinkClicks: 0, decisions: [], labels: [] }
+      const result = { actionLinkClicks: 0, contextualLinkClicks: 0, decisions: [], labels: [], styles: [], primaryMarks: [] }
       const submitters = [
-        { tagName: "BUTTON", textContent: "Repair", name: "decision", value: "repair", disabled: false },
+        { tagName: "BUTTON", textContent: "Repair", name: "decision", value: "repair", disabled: false, primary: true },
         { tagName: "BUTTON", textContent: "Clarify", name: "decision", value: "clarify", disabled: false },
         { tagName: "BUTTON", textContent: "Defer", name: "decision", value: "defer", disabled: true },
         { tagName: "INPUT", type: "submit", textContent: "", value: "File issue and link finding", disabled: false }
@@ -26,6 +26,9 @@ RSpec.describe InboxActionsControllerNodeHarness do
       submitters.forEach((submitter) => {
         submitter.click = function() {
           if (!this.disabled) result.decisions.push([ this.name, this.value ])
+        }
+        submitter.hasAttribute = function(name) {
+          return Boolean(this.primary) && name === "data-inbox-primary-action"
         }
       })
       const actionLink = {
@@ -35,12 +38,20 @@ RSpec.describe InboxActionsControllerNodeHarness do
         href: "/projects/7/edit",
         target: "_blank",
         rel: "noopener noreferrer",
+        hasAttribute(name) { return false },
         cloneNode() {
-          return { tagName: this.tagName, href: this.href, target: this.target, rel: this.rel }
+          return {
+            tagName: this.tagName,
+            href: this.href,
+            target: this.target,
+            rel: this.rel,
+            setAttribute(name) { this.attributes = { ...(this.attributes || {}), [name]: "" } },
+            removeAttribute(name) { if (this.attributes) delete this.attributes[name] }
+          }
         },
         click() { result.actionLinkClicks += 1 }
       }
-      const contextualLink = { tagName: "A", textContent: "Evidence #123", click() { result.contextualLinkClicks += 1 } }
+      const contextualLink = { tagName: "A", textContent: "Evidence #123", hasAttribute() { return false }, click() { result.contextualLinkClicks += 1 } }
       const allControls = [ actionLink, contextualLink, ...submitters ]
       const actionSource = {
         querySelectorAll(selector) {
@@ -58,6 +69,8 @@ RSpec.describe InboxActionsControllerNodeHarness do
         createElement() {
           return {
             addEventListener(_event, listener) { this.listener = listener },
+            setAttribute(name) { this.attributes = { ...(this.attributes || {}), [name]: "" } },
+            removeAttribute(name) { if (this.attributes) delete this.attributes[name] },
             className: "",
             textContent: ""
           }
@@ -79,6 +92,8 @@ RSpec.describe InboxActionsControllerNodeHarness do
       controller.connect()
       bar.children.forEach((proxy) => {
         result.labels.push(proxy.textContent)
+        result.styles.push(proxy.className)
+        result.primaryMarks.push(Boolean(proxy.attributes) && "data-inbox-primary-action" in proxy.attributes)
         if (proxy.listener) proxy.listener()
       })
       result.actionLink = {
@@ -103,6 +118,17 @@ RSpec.describe InboxActionsControllerNodeHarness do
     JSON.parse(stdout)
   end
 
+  let(:secondary_classes) do
+    "min-w-0 max-w-full whitespace-normal rounded-md bg-white px-3 py-2 text-sm " \
+      "font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none " \
+      "focus:ring-2 focus:ring-indigo-500 [overflow-wrap:anywhere]"
+  end
+  let(:primary_classes) do
+    "min-w-0 max-w-full whitespace-normal rounded-md bg-indigo-600 px-3 py-2 text-sm " \
+      "font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 " \
+      "focus:ring-indigo-500 [overflow-wrap:anywhere]"
+  end
+
   def expected_result
     {
       "actionLinkClicks" => 0,
@@ -119,6 +145,8 @@ RSpec.describe InboxActionsControllerNodeHarness do
         [ nil, "File issue and link finding" ]
       ],
       "labels" => [ "Open settings", "Repair", "Clarify", "Defer", "File issue and link finding" ],
+      "styles" => [ secondary_classes, primary_classes, secondary_classes, secondary_classes, secondary_classes ],
+      "primaryMarks" => [ false, true, false, false, false ],
       "selector" => "button, input[type='submit'], input[type='image'], [data-inbox-action]",
       "firstProxyDisabled" => true,
       "thirdProxyDisabled" => true,

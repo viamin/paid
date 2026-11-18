@@ -20,39 +20,45 @@ module LayeredVerification
       def call
         AuditAccess.authorize!(user:, project: package.project)
 
-        package.agent_run.with_lock do
-          validate_bound_revisions!
-          validate_current_revision!
+        stale_reason = nil
+        approval = package.agent_run.with_lock do
+          current = Capture.call(agent_run: package.agent_run)
+          stale_reason = stale_review_reason(current)
+          next if stale_reason
+
           approval = package.approvals.create!(
             approved_by: user, approved_at: Time.current, provenance: approval_provenance
           )
           Capture.call(agent_run: package.agent_run)
           approval
         end
+        # Keep a newly captured successor available for refreshed review even
+        # though this attempted approval must be rejected.
+        raise StalePackageError, stale_reason if stale_reason
+
+        approval
       end
 
       private
 
       attr_reader :package, :provenance, :user
 
-      def validate_current_revision!
-        return if package.current_revision.id == package.id
+      def stale_review_reason(current)
+        if bound_revisions_changed?
+          return "The obligation source changed since this package was captured; refresh and review the updated inputs."
+        end
+        return "The audit inputs are unavailable; refresh and review the audit before approving." unless current
+        return if current.id == package.id
 
-        raise StalePackageError,
-              "A newer review package revision exists; refresh and review the updated inputs before approving."
+        "A newer review package revision exists; refresh and review the updated inputs before approving."
       end
 
-      def validate_bound_revisions!
+      def bound_revisions_changed?
         bound = bound_revisions_by_id
         live = package.project.layered_verification_obligations.where(id: bound.keys)
           .to_h { |obligation| [ obligation.id, obligation.external_revision.to_s ] }
 
-        bound.each do |obligation_id, revision|
-          next if live[obligation_id] == revision
-
-          raise StalePackageError,
-                "The obligation source changed since this package was captured; refresh and review the updated inputs."
-        end
+        bound.any? { |obligation_id, revision| live[obligation_id] != revision }
       end
 
       def bound_revisions_by_id

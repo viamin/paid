@@ -494,6 +494,11 @@ Rails.application.routes.draw do
       # mobile API.
       # @spec PROJECT-DELEGATION-005
       get "projects/:project_id/delegation", to: "projects/delegation#show"
+      resource :automation_phases, only: %i[show update],
+        controller: "projects/automation_phases", path: "projects/:project_id/automation_phases" do
+        delete "continuation_grants/:id", action: :revoke_grant
+        patch "continuation_grants/:id", action: :extend_grant
+      end
       resource :staged_closeout_adoption, only: %i[show update],
         controller: "projects/staged_closeout_adoptions", path: "projects/:project_id/staged_closeout_adoption" do
         post :mappings, action: :create_mapping
@@ -505,6 +510,10 @@ Rails.application.routes.draw do
       post "projects/:project_id/design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links"
       post "projects/:project_id/design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck"
       resources :projects, only: [] do
+        resources :layered_verification_review_packages,
+          controller: "projects/layered_verification_review_packages", only: %i[index show] do
+          post :approve, on: :member
+        end
         resources :maintenance_runs, controller: "projects/maintenance_runs", only: %i[create show] do
           get :types, on: :collection
           post :cancel, on: :member

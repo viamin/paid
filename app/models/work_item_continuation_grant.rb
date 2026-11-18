@@ -20,6 +20,7 @@ class WorkItemContinuationGrant < ApplicationRecord
   validate :endpoint_follows_start_phase
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
+  scope :inactive, -> { where.not(revoked_at: nil).or(where.not(completed_at: nil)) }
   scope :revoked, -> { where.not(revoked_at: nil) }
   scope :completed, -> { where.not(completed_at: nil) }
 

@@ -3,14 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Issues::ResolveReopenReview do
-  self.use_transactional_tests = false
-
   # @spec ISSUE-REOPEN-REVIEW-005
   it "records only one decision when operators resolve the same review concurrently" do
-    project = create(:project)
-    issue = create(:issue, project:, paid_state: "manual_review",
-      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
-      github_updated_at: Time.current.change(usec: 0))
+    project, issue = persisted_records
     threads = concurrent_resolutions(issue, project.created_by)
 
     results = threads.map do |thread|
@@ -23,7 +18,32 @@ RSpec.describe Issues::ResolveReopenReview do
     expect(AccountActivityEvent.where(subject: issue, action: "issue.updated").count).to eq(1)
   ensure
     threads&.each { |thread| thread.kill.join if thread.alive? }
-    project&.account&.destroy!
+    destroy_account(project.account_id) if project
+  end
+
+  def persisted_records
+    with_committed_connection do
+      project = create(:project)
+      issue = create(:issue, project:, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+        github_updated_at: Time.current.change(usec: 0))
+      [ project, issue ]
+    rescue
+      project&.account&.destroy!
+      raise
+    end
+  end
+
+  def destroy_account(account_id)
+    with_committed_connection { Account.find(account_id).destroy! }
+  end
+
+  def with_committed_connection(&block)
+    Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        TenantContext.with_system_access(&block)
+      end
+    end.value
   end
 
   def concurrent_resolutions(issue, actor)

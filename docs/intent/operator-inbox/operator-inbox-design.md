@@ -156,6 +156,21 @@ implementation in either TDD mode; otherwise projects outside strict mode show
 the stage as not applicable. Linked approval-gated feature designs appear only
 when applicable.
 
+The workflow presentation delegates approval and review facts to the existing
+revision-aware `ProgressProjection`, retaining explicit approval-gated feature
+requirements even outside human-led project mode; entry-specific recovery/test-review
+context can add a blocking action but cannot manufacture completed evidence.
+Supported PR details render the workflow component once instead of also
+rendering the older flat progress panel. The `completed` workflow spelling is
+retained for API compatibility with the progress contract's `complete` state.
+All source evidence is retained in each disclosure, and responsible-role text
+is descriptive rather than a new grant. Multiple current actions are exposed
+in `current_actions`; the existing `current_action` remains its first entry for
+compatibility. Only a sole current disclosure receives `aria-current`.
+Native disclosures are keyboard operable, begin collapsed, and wrap revision
+identities and milestone cards within narrow panes. External links retain the
+existing GitHub URL allowlist and safe new-window attributes.
+
 ## Durable subject history
 
 Inbox entries remain derived views, but their detail panes expose a bounded
@@ -331,9 +346,14 @@ the lane stays constant in database queries as its entry count grows.
 
 ### `escalated_pr`
 
-Backed by `Inbox::EscalatedPullRequests`, which `Inbox::Queue` filters to the
-operator's authorized Inbox projects rather than reimplementing the
-escalated-PR query. Like every other Inbox kind, it is account+owner scoped
+Backed by `Inbox::EscalatedPullRequests`, which accepts `Inbox::Queue`'s
+authorized project IDs and applies them to its existing escalated-PR query
+rather than materializing other authorized projects' blocked PRs for an
+in-memory filter. Selected-entry requests — the detail frame and full-page
+shows alike — also pass their parsed record ID to the same loader, so a stale
+escalation link performs one bounded authorized lookup before its redirect
+instead of materializing every matching blocked PR. Like every other Inbox
+kind, it is account+owner scoped
 and independent of auto-pick eligibility (`INBOX-FOUNDATION-006`).
 
 The entry payload carries the `Inbox::EscalatedPullRequests::Entry` as its
@@ -696,16 +716,33 @@ solely for decision briefs. API and MCP lists batch that association after
 pagination for entries whose first prerequisite needs a local title; a
 selected partial-closeout detail resolves its own recommendation.
 
-The brief names the project goal, what changed, the exact decision or action,
+The brief names the agreed intent when an authoritative feature approval is
+linked to the work item, together with its source, current approved revision,
+and separate repository context. An unapproved feature record is disclosed as
+not yet agreed intent; an entry with no linked approved intent says so rather
+than promoting its queue title to a project goal. An issue may intentionally
+serve several designs, so when more than one current approved feature intent is
+linked, the brief preserves every linked intent (each with its own source and
+approved revision) and discloses that several exist, rather than treating the
+most recently approved design as the authoritative goal — approval time does
+not supersede a different design. What changed, the exact decision or action,
 the supported recommendation and its reason, the waiting work, and the next
 state after the primary action. A recommendation is present only where the
 structured source supports it. Otherwise the brief explicitly names the
 unknown and asks one focused question. Detailed evidence, examples, and
 history remain in the lane-specific detail and collapsed disclosures.
+The HTML brief keeps approved revision identifiers in a collapsed native
+"Approved intent details" disclosure. Agreed goals and their sources remain
+visible, including every concurrent approved intent. API and chat projections
+retain the complete revision data.
+The brief labels its next action as prose; filled primary styling belongs to
+the interactive action control in the sticky action area.
 
 - `spec/services/inbox/decision_brief_spec.rb` covers the deterministic
   contract across every queue lane, including evidence fallbacks, concise
-  product questions, and human-readable partial-closeout prerequisites.
+  product questions, human-readable partial-closeout prerequisites,
+  approved-intent source/revision disclosure, and preservation of every linked
+  approved intent in the single- and multi-design cases.
 
 ## Testing
 

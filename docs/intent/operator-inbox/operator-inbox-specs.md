@@ -33,6 +33,20 @@
   *Test:* `spec/services/inbox/progress_projection_spec.rb`,
   `spec/requests/api/v1/inbox_spec.rb`, `spec/services/inbox/chat_context_spec.rb`.
 
+- [x] **INBOX-PROGRESS-004** — The selected detail SHALL present responsive,
+  keyboard-operable milestone disclosures with textual states and prominent
+  next actions for each independent outstanding gate. Evidence and revisions
+  SHALL be collapsed initially; the sole current milestone SHALL have
+  `aria-current`, and multiple current gates SHALL remain separate. The shared
+  projection SHALL name the responsible role without granting execution
+  authority.
+  *Code:* `app/services/inbox/progress_projection.rb`,
+  `app/services/inbox/workflow_milestones.rb`,
+  `app/views/dashboard/_inbox_workflow_milestones.html.erb`.
+  *Test:* `spec/services/inbox/workflow_milestones_spec.rb`,
+  `spec/views/dashboard/inbox_workflow_milestones_partial_spec.rb`,
+  `spec/system/inbox_workflow_milestones_spec.rb`.
+
 - [x] **OPERATOR-INBOX-001** — When a signed-in user opens the inbox, the
   system SHALL list actionable clarifying-question entries drawn from the
   existing needs-input queue, preserving the user's project visibility and any
@@ -205,11 +219,18 @@
   inbox, and operational auto-dismissal), and an escalation with reason
   `awaiting_approval` SHALL remain a visible inbox entry across the `ready` →
   `escalated` transition rather than disappearing from the queue and the nav
-  badge.
-  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
-  `app/controllers/projects/agent_runs_controller.rb`,
+  badge. The queue SHALL pass its authorized project IDs to the existing
+  escalated-PR projection so its query excludes unrelated authorized projects
+  before project and account preloads. A selected-entry request — the detail
+  frame or a full-page show — SHALL pass its parsed record ID to that same
+  projection; a missing or resolved direct link therefore performs a bounded
+  authorized lookup before its existing filtered-Inbox redirect.
+  *Code:* `app/services/inbox/escalated_pull_requests.rb`,
+  `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/controllers/inbox_controller.rb`, `app/controllers/projects/agent_runs_controller.rb`,
   `app/views/dashboard/_inbox_detail_escalated_pr.html.erb`.
-  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  *Test:* `spec/performance/inbox/escalated_pull_requests_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002D** — When an open issue's `paid_state` is
@@ -546,13 +567,20 @@
   activate the original control, and a projected navigational action SHALL
   remain an anchor retaining its original navigation attributes, so existing
   endpoint, authorization, confirmation, loading, Turbo, native link, and
-  success/error behavior remain unchanged. Detailed fields and explanatory
+  success/error behavior remain unchanged. The control a lane designates with
+  `data-inbox-primary-action` — the control that performs its decision brief's
+  primary action — SHALL be projected as exactly one affordance with distinct
+  filled primary styling while every other projected affordance keeps the
+  neutral secondary styling, so a lane with several eligible controls still
+  presents one visually clear primary action. Detailed fields and explanatory
   content SHALL remain in the detail body; an action that needs input SHALL
   retain the existing browser validation and focus behavior.
   *Code:* `app/views/dashboard/_inbox_detail.html.erb`,
   `app/javascript/controllers/inbox_actions_controller.js`.
   *Test:* `spec/system/dashboard_inbox_spec.rb`,
-  `spec/lib/inbox_actions_controller_node_harness_spec.rb`.
+  `spec/lib/inbox_actions_controller_node_harness_spec.rb`,
+  `spec/system/inbox_navigation_spec.rb`,
+  `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`.
 
 - [x] **OPERATOR-INBOX-004** — When a user approves, rejects, or revises a
   pending plan review from the inbox, the system SHALL signal the planning
@@ -950,12 +978,23 @@
 - [x] **OPERATOR-INBOX-027** — When an actionable Inbox entry is listed,
   selected, requested through the supported API, or opened in contextual chat,
   the system SHALL use one deterministic decision-brief projection that names
-  the project goal, change, exact decision/action, recommendation when its
+  agreed intent from its linked approved feature record when available, its
+  source and current approved revision, distinct repository context, change,
+  exact decision/action, recommendation when its
   structured evidence supports one, waiting work, primary action, and the
   next state. The default view SHALL keep questions separate from explanation
   and omit raw technical identifiers. If evidence cannot support a
   recommendation, the projection SHALL disclose that uncertainty and ask one
-  focused question. The projection SHALL derive only from current structured
+  focused question. When no linked approved feature intent exists, the
+  projection SHALL disclose unavailable intent and SHALL NOT present the queue
+  item title as a project goal. When several current approved feature intents
+  are linked to one work item, the projection SHALL preserve every linked
+  approved intent with its source and approved revision and SHALL NOT select
+  an authoritative goal by approval recency. The HTML brief SHALL keep raw
+  approved revision identifiers behind a collapsed, keyboard-accessible
+  disclosure while keeping every agreed goal
+  and its source visible. API and chat SHALL retain the complete revision
+  data. The projection SHALL derive only from current structured
   state and evidence and SHALL not call an LLM while rendering. The HTML list
   SHALL calculate only its decision/change summary without resolving
   recommendations. API and MCP list serialization SHALL preserve the full

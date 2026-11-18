@@ -671,11 +671,33 @@ identical. Business-review approval is an append-only
 (surface, note, bound digest, bound revisions). Approving revalidates
 immediately before acting, mirroring `LAYERED-VERIFY-018`: a superseding
 revision or a bound obligation source that moved past its bound revision
-rejects the approval with an explicit "refresh and review" reason. The
+rejects the approval with an explicit "refresh and review" reason. Approval
+recaptures the complete current inputs under the audit's lock before accepting
+the decision, including late check results or plan changes that have not yet
+produced a successor. A rejected stale attempt retains that successor so the
+reviewer can inspect the new revision; it creates no approval on the old one.
+PostgreSQL validates the package run, JSON-bound obligation/result/approval/
+finding references, and the approval actor against the package's project and
+account. These reference guards are versioned fx objects so schema bootstrap
+preserves them as well as migration replay. The
 package history is inspectable per project (HTML and JSON), gated by the one
 `layered_verification_add_on` flag and the project's Pundit boundaries, with
 the same PostgreSQL tenant RLS keyed through the project as the other
 layered-verification tables.
+The same bounded package list and detail representation is available through
+the authenticated API and MCP. Package history and per-run revision lineage
+use ascending immutable package IDs as exclusive cursors, default to 50
+records, cap requests at 100 records, and return `next_cursor` only when an
+additional page exists. Readers require the project's `show?`
+permission, and every package lookup remains scoped through that selected
+authorized project. MCP approval is a separately advertised, confirmation-
+required write operation that accepts only the literal boolean `true`. The
+server supplies its actor, timestamp, and
+`mcp`/`api` provenance; callers can supply only an optional review note. API
+failures are structured responses, including stale-review responses, rather
+than HTML redirects. These surfaces record only the revision-bound business
+decision and do not invoke repair, canonical clarification, release, or
+rollout operations.
 
 **Separate report views.** The audit report renders business-intent
 validation and verification coverage as two distinct sections over the same

@@ -46,6 +46,7 @@ class FeatureIntent < ApplicationRecord
   has_many :facets, class_name: "FeatureIntentFacet", dependent: :destroy
   has_many :feature_intent_design_prs, dependent: :destroy
   has_many :feature_intent_approval_revisions, dependent: :restrict_with_error
+  has_many :project_delegation_intent_checkpoints, class_name: "ProjectDelegation::IntentCheckpoint", dependent: :destroy
   has_many :design_amendments, dependent: :restrict_with_error
   has_one :feature_intent_completion, dependent: :destroy
 
@@ -73,6 +74,10 @@ class FeatureIntent < ApplicationRecord
     where(project_id: issue.project_id)
       .joins(:feature_intent_issues)
       .where(feature_intent_issues: { issue_id: issue.id })
+  }
+  scope :linked_to_issue_ids, ->(issue_ids) {
+    joins(:feature_intent_issues).where(feature_intent_issues: { issue_id: issue_ids })
+      .distinct.includes(:feature_intent_issues)
   }
 
   def released? = status == "released"

@@ -568,7 +568,67 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include('id="inbox-detail"', "Selected question")
     expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
-    expect(queries.grep(/FROM "(?:decomposition_decisions|feature_intents|change_intents|issue_continuation_requests)"/)).to be_empty
+    # The selected decision brief may resolve its linked approved feature
+    # intent. It must not construct any other lane's projection or queue.
+    expect(queries.grep(/FROM "(?:decomposition_decisions|change_intents|issue_continuation_requests)"/)).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-015 OPERATOR-INBOX-002C
+  it "uses the selected escalation ID when a stale detail link is resolved" do
+    create(:issue, :pull_request,
+      project: project,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    queries = capture_queries do
+      get inbox_entry_path("#{Inbox::Queue::ESCALATED_PR_KIND}:999999"),
+        headers: { "Turbo-Frame" => "inbox-detail" }
+    end
+
+    expect(response).to redirect_to(inbox_path)
+    blocked_pr_query = queries.find { |sql| sql.include?("FROM \"issues\" INNER JOIN \"projects\"") }
+    expect(blocked_pr_query).to include("\"issues\".\"id\"")
+  end
+
+  # @spec OPERATOR-INBOX-015 OPERATOR-INBOX-002C
+  it "uses the selected escalation ID when a stale full-page link redirects" do
+    create(:issue, :pull_request,
+      project: project,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    queries = capture_queries do
+      get inbox_entry_path("#{Inbox::Queue::ESCALATED_PR_KIND}:999999")
+    end
+
+    expect(response).to redirect_to(inbox_path)
+    # The no-header request resolves the link through one ID-bounded
+    # authorized lookup; the redirect never materializes the lane.
+    blocked_pr_queries = queries.select { |sql| sql.include?("FROM \"issues\" INNER JOIN \"projects\"") }
+    expect(blocked_pr_queries).to contain_exactly(a_string_including("\"issues\".\"id\""))
+  end
+
+  # @spec OPERATOR-INBOX-015 OPERATOR-INBOX-002C
+  it "redirects a link without a record id without querying the lane" do
+    create(:issue, :pull_request,
+      project: project,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    queries = capture_queries do
+      get inbox_entry_path("#{Inbox::Queue::ESCALATED_PR_KIND}:")
+    end
+
+    expect(response).to redirect_to(inbox_path)
+    expect(queries).not_to include(a_string_including("pr_review_phase"))
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "renders the full filtered list beside a valid full-page selection" do
+    selected = create(:issue, :needs_input, project: project, title: "Selected question", body: questions_body)
+    create(:issue, :needs_input, project: project, title: "Other question", body: questions_body)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, selected))
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include('id="inbox-list"', "Selected question", "Other question")
   end
 
   # @spec OPERATOR-INBOX-015
@@ -2592,7 +2652,7 @@ RSpec.describe "Inbox" do
 
       document = Nokogiri::HTML(response.body)
       brief = document.at_css("[data-testid='inbox-decision-brief']")
-      expect(brief.text).to include("Goal", "Structured question", "What changed",
+      expect(brief.text).to include("Goal", "No approved intent is available for this work item.", "What changed",
         "Product direction is needed before work can continue.", "Which cache should exports use?",
         "Paid recommends:", "Redis", "Answer the question")
       expect(document.at_css("[data-testid='inbox-question-recommendation']").text).to include("Redis")
@@ -2603,6 +2663,26 @@ RSpec.describe "Inbox" do
       expect(details.text).to include("Existing workers already use it.", "Nightly exports", "app/jobs/export_job.rb:12")
       expect(document.at_css("textarea[name='freeform_note']")).to be_present
     end
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "renders every linked approved intent when one issue serves two released designs" do
+    issue = create(:issue, project:, paid_state: "manual_review", title: "Shared work item",
+      manual_review_reason: "Review the recorded recovery.")
+    first_design = create(:feature_intent, project:, title: "Design one", brief: "First agreed outcome.",
+      approved_design_revision: "a" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Design two", brief: "Second agreed outcome.",
+      approved_design_revision: "b" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, issue))
+
+    brief = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-decision-brief']")
+    expect(brief.text).to include("This work item serves more than one approved feature intent.",
+      "Several approved feature intents are linked to this work item")
+    expect(brief.text).to include("First agreed outcome. (Approved feature intent: Design one)", "a" * 40)
+    expect(brief.text).to include("Second agreed outcome. (Approved feature intent: Design two)", "b" * 40)
   end
 
   # @spec OPERATOR-INBOX-011

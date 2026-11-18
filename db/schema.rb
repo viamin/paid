@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_175320) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -319,6 +319,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
     t.integer "billed_duration_seconds", default: 0, null: false, comment: "Cloud-billed lifetime of the run's resource (provisioned_at → terminated_at). Mirrors ExecutionUsage#billed_duration_seconds."
     t.bigint "blocked_by_issue_ids", default: [], comment: "IDs of issues/PRs that block the created issue from being picked up for work.", array: true
     t.string "branch_name", limit: 255
+    t.string "closeout_criterion_key", comment: "Reviewed criterion bound to this synthetic closeout verification run."
+    t.bigint "closeout_mapping_id", comment: "Reviewed staged-closeout mapping revision admitted for this synthetic verification run."
+    t.string "closeout_recipe_digest", comment: "Reviewed recipe digest bound to this synthetic closeout verification run."
+    t.string "closeout_recipe_version", comment: "Reviewed recipe version bound to this synthetic closeout verification run."
     t.datetime "completed_at"
     t.jsonb "confidence_delivery_snapshot", default: {}, null: false, comment: "Immutable confidence-delivery scope, evidence, thresholds, and merged-design baseline admitted for this run."
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
@@ -436,8 +440,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_and_maintenance_goal", where: "((goal)::text = 'maintenance'::text)"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
-    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])))"
+    t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])) AND ((goal)::text <> 'closeout_verification'::text))"
+    t.index ["project_id", "issue_id", "source_pull_request_number", "base_commit_sha", "closeout_mapping_id"], name: "index_agent_runs_closeout_verification_identity", unique: true, where: "((goal)::text = 'closeout_verification'::text)"
+    t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])) AND ((goal)::text <> 'closeout_verification'::text))"
     t.index ["project_id", "source_pull_request_number", "status"], name: "idx_agent_runs_review_feedback_lookup"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
@@ -2028,6 +2033,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
     t.datetime "created_at", null: false
     t.text "design_claim", null: false, comment: "The design claim this decision affects, so the Inbox can explain what it holds."
     t.bigint "feature_intent_id", null: false
+    t.bigint "intent_checkpoint_id"
     t.string "kind", null: false, comment: "question or inferred_decision."
     t.text "prompt", null: false, comment: "The question text, or the inferred decision's stated assumption."
     t.datetime "resolved_at"
@@ -2037,6 +2043,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "status"], name: "index_feature_intent_decisions_on_feature_intent_id_and_status"
     t.index ["feature_intent_id"], name: "index_feature_intent_decisions_on_feature_intent_id"
+    t.index ["intent_checkpoint_id"], name: "index_feature_intent_decisions_on_intent_checkpoint_id"
     t.index ["resolved_by_id"], name: "index_feature_intent_decisions_on_resolved_by_id"
     t.index ["source_agent_run_id"], name: "index_feature_intent_decisions_on_source_agent_run_id"
     t.index ["status"], name: "index_feature_intent_decisions_on_status"
@@ -2733,6 +2740,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
     t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
     t.text "merge_permission_rejection_reason", comment: "Raw error message from the most recent merge-time GitHub App permission rejection, for operator visibility."
+    t.string "merged_commit_sha", limit: 40, comment: "Authoritatively observed source PR merge revision for closeout verification admission."
     t.jsonb "needs_input_questions", comment: "Parsed clarifying questions persisted when a needs-input comment is posted, so the dashboard queue can render without a per-issue GitHub API round-trip"
     t.datetime "needs_input_since", comment: "When this issue entered paid_state \"needs_input\". Cleared when it leaves. Used by Inbox::Queue to order oldest-waiting-first and to render \"waiting Xh\" labels."
     t.datetime "no_code_required_at", comment: "When non-null, an agent explicitly declared this issue's work complete without a code change (no_code_required outcome). Permanently excludes the issue from auto-pick's completed-issue recovery path even though paid_state is 'completed', so it does not loop back into the queue on its own; only a manually triggered run can pick it up again."
@@ -3740,6 +3748,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
     t.index ["project_id", "convention_key", "action_type"], name: "index_convention_recs_on_project_key_action", unique: true, where: "((status)::text = 'pending'::text)"
     t.index ["project_id", "status"], name: "index_convention_recs_on_project_status"
     t.index ["project_id"], name: "index_project_convention_recommendations_on_project_id"
+  end
+
+  create_table "project_delegation_intent_checkpoints", comment: "Grouped material intent questions and their immutable settlement binding.", force: :cascade do |t|
+    t.jsonb "affected_scope", default: {}, null: false
+    t.jsonb "alternatives", default: [], null: false
+    t.jsonb "consequences", default: [], null: false
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: [], null: false
+    t.bigint "feature_intent_id", null: false
+    t.string "proposed_acceptance_revision"
+    t.string "proposed_design_revision"
+    t.text "recommendation", null: false
+    t.string "status", default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index ["feature_intent_id", "status"], name: "index_project_delegation_checkpoints_on_intent_and_status"
+    t.index ["feature_intent_id"], name: "idx_on_feature_intent_id_529a7745bc"
+  end
+
+  create_table "project_delegation_intent_settlements", comment: "Append-only human settlement bound to exact design and acceptance revisions.", force: :cascade do |t|
+    t.string "acceptance_revision", null: false
+    t.jsonb "answers", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "design_revision", null: false
+    t.string "disposition", null: false
+    t.bigint "intent_checkpoint_id", null: false
+    t.datetime "settled_at", null: false
+    t.bigint "settled_by_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["intent_checkpoint_id", "created_at"], name: "idx_pd_intent_settlements_checkpoint_created"
+    t.index ["intent_checkpoint_id"], name: "idx_on_intent_checkpoint_id_afe16ad6d6"
+    t.index ["settled_by_id"], name: "index_project_delegation_intent_settlements_on_settled_by_id"
   end
 
   create_table "project_delegation_postures", force: :cascade do |t|
@@ -5553,6 +5592,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
   add_foreign_key "project_convention_recommendations", "projects"
   add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
   add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
+  add_foreign_key "project_delegation_intent_checkpoints", "feature_intents"
+  add_foreign_key "project_delegation_intent_settlements", "project_delegation_intent_checkpoints", column: "intent_checkpoint_id"
+  add_foreign_key "project_delegation_intent_settlements", "users", column: "settled_by_id"
   add_foreign_key "project_delegation_postures", "accounts"
   add_foreign_key "project_delegation_postures", "projects"
   add_foreign_key "project_delegation_postures", "users", column: "selected_by_id"
@@ -6654,6 +6696,94 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
       $function$
   SQL
 
+  create_function :enforce_layered_review_package_references, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_layered_review_package_references()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM agent_runs WHERE id = NEW.agent_run_id AND project_id = NEW.project_id) THEN
+          RAISE EXCEPTION 'agent run must belong to the package project' USING ERRCODE = '23503';
+        END IF;
+        IF NEW.bound_inputs ? 'agent_run_id' AND
+            (NEW.bound_inputs ->> 'agent_run_id') IS DISTINCT FROM NEW.agent_run_id::text THEN
+          RAISE EXCEPTION 'bound agent run must match the package run' USING ERRCODE = '23503';
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(NEW.bound_inputs -> 'obligations', '[]'::jsonb)) input(obligation)
+          WHERE NOT EXISTS (SELECT 1 FROM layered_verification_obligations
+            WHERE id = (input.obligation ->> 'id')::bigint AND project_id = NEW.project_id)
+        ) THEN
+          RAISE EXCEPTION 'bound obligations must belong to the package project' USING ERRCODE = '23503';
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(COALESCE(NEW.bound_inputs -> 'check_result_ids', '[]'::jsonb)) input(id)
+          WHERE NOT EXISTS (
+            SELECT 1 FROM layered_verification_check_results result
+            INNER JOIN layered_verification_obligations obligation ON obligation.id = result.obligation_id
+            LEFT JOIN agent_runs result_run ON result_run.id = result.agent_run_id
+            WHERE result.id = input.id::bigint AND obligation.project_id = NEW.project_id
+              AND (result.agent_run_id IS NULL OR result_run.project_id = NEW.project_id)
+          )
+        ) THEN
+          RAISE EXCEPTION 'bound check results must belong to the package project' USING ERRCODE = '23503';
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(COALESCE(NEW.bound_inputs -> 'approval_ids', '[]'::jsonb)) input(id)
+          WHERE NOT EXISTS (
+            SELECT 1 FROM layered_verification_review_approvals approval
+            INNER JOIN layered_verification_review_packages package ON package.id = approval.package_id
+            WHERE approval.id = input.id::bigint AND package.project_id = NEW.project_id
+          )
+        ) THEN
+          RAISE EXCEPTION 'bound approvals must belong to the package project' USING ERRCODE = '23503';
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(NEW.bound_inputs -> 'inbox_decisions', '[]'::jsonb)) input(decision)
+          WHERE NOT EXISTS (SELECT 1 FROM layered_verification_findings
+            WHERE id = (input.decision ->> 'finding_id')::bigint AND project_id = NEW.project_id)
+        ) THEN
+          RAISE EXCEPTION 'bound Inbox findings must belong to the package project' USING ERRCODE = '23503';
+        END IF;
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
+  create_function :enforce_layered_review_approval_actor, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.enforce_layered_review_approval_actor()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM layered_verification_review_packages package
+          INNER JOIN projects ON projects.id = package.project_id
+          INNER JOIN users ON users.account_id = projects.account_id
+          WHERE package.id = NEW.package_id AND users.id = NEW.approved_by_id
+        ) THEN
+          RAISE EXCEPTION 'approval actor must belong to the package project account' USING ERRCODE = '23503';
+        END IF;
+        RETURN NEW;
+      END;
+      $function$
+  SQL
+
+  create_function :prevent_project_delegation_intent_settlement_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_project_delegation_intent_settlement_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'project_delegation_intent_settlements is append-only; UPDATE and DELETE are rejected (PROJECT-DELEGATION-002)';
+      END;
+      $function$
+  SQL
+
   create_function :validate_strategy_current_version_reference, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_strategy_current_version_reference()
        RETURNS trigger
@@ -6801,6 +6931,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
       CREATE TRIGGER knowledge_chunks_tsvector_update BEFORE INSERT OR UPDATE OF content ON public.knowledge_chunks FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger('content_tsvector', 'pg_catalog.english', 'content')
   SQL
 
+  create_trigger :enforce_layered_review_approval_actor, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_layered_review_approval_actor BEFORE INSERT OR UPDATE OF package_id, approved_by_id ON public.layered_verification_review_approvals FOR EACH ROW EXECUTE FUNCTION enforce_layered_review_approval_actor()
+  SQL
+
+  create_trigger :enforce_layered_review_package_references, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_layered_review_package_references BEFORE INSERT OR UPDATE OF project_id, agent_run_id, bound_inputs ON public.layered_verification_review_packages FOR EACH ROW EXECUTE FUNCTION enforce_layered_review_package_references()
+  SQL
+
   create_trigger :logidze_on_llm_models, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_llm_models BEFORE INSERT OR UPDATE ON public.llm_models FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -6843,6 +6981,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
 
   create_trigger :logidze_on_pre_commit_requirements, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
@@ -6897,12 +7043,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
       CREATE TRIGGER prevent_supervisor_incident_audit_update BEFORE DELETE OR UPDATE ON public.supervisor_incident_audits FOR EACH ROW EXECUTE FUNCTION prevent_supervisor_incident_audit_mutation()
   SQL
 
-  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
-      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
-  SQL
-
   create_trigger :enforce_supervisor_incident_snapshot_tenant, sql_definition: <<-SQL
       CREATE TRIGGER enforce_supervisor_incident_snapshot_tenant BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_snapshot_tenant()
+  SQL
+
+  create_trigger :enforce_supervisor_incident_status_audit, sql_definition: <<-SQL
+      CREATE TRIGGER enforce_supervisor_incident_status_audit BEFORE INSERT OR UPDATE ON public.supervisor_incidents FOR EACH ROW EXECUTE FUNCTION enforce_supervisor_incident_status_audit()
   SQL
 
   create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL
@@ -7646,6 +7792,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
   execute <<~SQL
     ALTER TABLE "public"."project_convention_recommendations" ENABLE ROW LEVEL SECURITY;
     ALTER TABLE "public"."project_convention_recommendations" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."project_delegation_intent_checkpoints" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."project_delegation_intent_checkpoints" FORCE ROW LEVEL SECURITY;
+  SQL
+
+  execute <<~SQL
+    ALTER TABLE "public"."project_delegation_intent_settlements" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "public"."project_delegation_intent_settlements" FORCE ROW LEVEL SECURITY;
   SQL
 
   execute <<~SQL
@@ -9819,6 +9975,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_161325) do
       WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM projects
   WHERE ((projects.id = project_convention_recommendations.project_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."project_delegation_intent_checkpoints"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (feature_intents
+     JOIN projects ON ((projects.id = feature_intents.project_id)))
+  WHERE ((feature_intents.id = project_delegation_intent_checkpoints.feature_intent_id) AND (projects.account_id = paid_current_account_id()))))))
+      WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
+   FROM (feature_intents
+     JOIN projects ON ((projects.id = feature_intents.project_id)))
+  WHERE ((feature_intents.id = project_delegation_intent_checkpoints.feature_intent_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation" ON "public"."project_delegation_intent_settlements"
+      AS PERMISSIVE
+      FOR ALL
+      USING ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM ((project_delegation_intent_checkpoints
+     JOIN feature_intents ON ((feature_intents.id = project_delegation_intent_checkpoints.feature_intent_id)))
+     JOIN projects ON ((projects.id = feature_intents.project_id)))
+  WHERE ((project_delegation_intent_checkpoints.id = project_delegation_intent_settlements.intent_checkpoint_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = project_delegation_intent_settlements.settled_by_id) AND (users.account_id = paid_current_account_id())))))))
+      WITH CHECK ((paid_tenant_bypass() OR ((EXISTS ( SELECT 1
+   FROM ((project_delegation_intent_checkpoints
+     JOIN feature_intents ON ((feature_intents.id = project_delegation_intent_checkpoints.feature_intent_id)))
+     JOIN projects ON ((projects.id = feature_intents.project_id)))
+  WHERE ((project_delegation_intent_checkpoints.id = project_delegation_intent_settlements.intent_checkpoint_id) AND (projects.account_id = paid_current_account_id())))) AND (EXISTS ( SELECT 1
+   FROM users
+  WHERE ((users.id = project_delegation_intent_settlements.settled_by_id) AND (users.account_id = paid_current_account_id())))))));
   SQL
 
   execute <<~SQL

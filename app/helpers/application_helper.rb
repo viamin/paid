@@ -564,6 +564,8 @@ module ApplicationHelper
     "maintenance" => "Maintenance",
     # @spec PARTIAL-CLOSEOUT-032
     "technical_prerequisite_validation" => "Prerequisite Validation",
+    # @spec STAGED-CLOSEOUT-ADOPTION-009
+    "closeout_verification" => "Closeout Verification",
     # @spec LAYERED-VERIFY-013
     "layered_verification_audit" => "Layered Verification Audit",
     "layered_verification_repair" => "Layered Verification Repair",

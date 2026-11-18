@@ -134,4 +134,65 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     expect(run.reload.reconciliation.dig("acceptance_audit_failure", "category")).to eq("transport_error")
     expect(run.reconciliation).not_to have_key("assessment")
   end
+
+  # @spec PROJECT-DELEGATION-002
+  it "routes one focused re-decision when refreshed criteria drift from a settled checkpoint" do
+    feature_intent = create(:feature_intent, project:)
+    create(:feature_intent_issue, feature_intent:, issue:)
+    checkpoint = settled_checkpoint_on!(feature_intent:, design_revision: "design-1", acceptance_revision: "criteria:stale")
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(
+      "gaps" => [], "criteria" => [ { "criterion" => "works", "state" => "satisfied" } ]
+    )
+
+    expect {
+      described_class.new.execute(agent_run_id: run.id)
+    }.to change(Notification, :count).by(1)
+
+    notification = Notification.find_by(source: "project_delegation.intent_checkpoint")
+    expect(notification.metadata["authorization_id"]).to eq(checkpoint.id.to_s)
+    expect(notification.metadata["reasons"]).to eq(
+      "design_revision" => "design-1",
+      "acceptance_revision" => Automation::DelegatedActionAdmission.revision_tokens(issue:)["acceptance_revision"]
+    )
+  end
+
+  # @spec PROJECT-DELEGATION-002
+  it "does not re-prompt a settled checkpoint whose acceptance binding still matches" do
+    feature_intent = create(:feature_intent, project:)
+    create(:feature_intent_issue, feature_intent:, issue:)
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(
+      "gaps" => [], "criteria" => [ { "criterion" => "works", "state" => "satisfied" } ]
+    )
+    described_class.new.execute(agent_run_id: run.id)
+    current_token = Automation::DelegatedActionAdmission.revision_tokens(issue:)["acceptance_revision"]
+    settled_checkpoint_on!(feature_intent:, design_revision: "design-1", acceptance_revision: current_token)
+    Notification.find_by(source: "project_delegation.intent_checkpoint")&.destroy
+    repeat_run = create(:agent_run, :queued, project:, issue:, goal: "analyze_issue")
+
+    expect {
+      described_class.new.execute(agent_run_id: repeat_run.id)
+    }.not_to change(Notification, :count)
+  end
+
+  private
+
+  # Production shape: the checkpoint's questions come from a design run on
+  # the audited issue, so the audit's re-recorded criteria are compared
+  # against that checkpoint's acceptance binding.
+  def settled_checkpoint_on!(feature_intent:, design_revision:, acceptance_revision:)
+    binding_run = create(:agent_run, project:, issue:, goal: "create_feature")
+    question = create(:feature_intent_decision, feature_intent:, source_agent_run: binding_run)
+    checkpoint = ProjectDelegation::IntentCheckpoint::Plan.call(
+      feature_intent:, questions: [ question ],
+      recommendation: "Settle the material questions before approving the design.",
+      alternatives: [], consequences: [ "Approval stays blocked until settled." ],
+      affected_scope: {}, evidence: [],
+      design_revision:, acceptance_revision:
+    ).checkpoint
+    ProjectDelegation::IntentCheckpoint::Settle.call(
+      checkpoint:, actor: user, answers: { question.id.to_s => "Proceed." },
+      design_revision:, acceptance_revision:
+    )
+    checkpoint
+  end
 end

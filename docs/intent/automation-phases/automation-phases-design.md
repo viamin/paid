@@ -35,6 +35,41 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+### Rollback protection
+
+Disabling the phase model is itself a policy mutation, so
+`Automation::Phases::RollbackProtection` guards every supported rollout
+mutation path that can disable it: the project-scoped and global
+`FeatureFlags.disable!(:automation_phases, ...)` mutations (rake
+`feature_flags:disable`) and the tenant-settings features override
+(`TenantConfigurationsController`). A project with an active continuation
+grant can never silently revert to legacy interpretation, because legacy
+policy cannot interpret scoped grants.
+
+- A refusal raises `FeatureFlags::RollbackBlockedError` with an actionable,
+  inspectable reason (project, active grants, remediation) and mutates
+  nothing: the effective flag value, stored phase settings, grants, and audit
+  history are preserved.
+- Once every grant is finished or revoked, the guard reconciles affected
+  queued work before permitting the rollback: queued automatic runs on
+  continuation-grant work chains are rechecked with
+  `AgentRuns::RecheckIssueEligibility` while the flag is still enabled, so
+  runs whose phase authorization disappeared are cancelled and independently
+  authorized work is preserved. If runs remain unreconciled, the rollback is
+  refused with the pending reason.
+- The check, reconciliation, and flag mutation share one database transaction
+  holding a per-project advisory lock
+  (`Automation::Phases::RollbackProtection.with_project_lock`), which
+  `Automation::ManualStart::Plan#build_grant` also takes, so concurrent grant
+  creation serializes with rollback instead of racing it. Automatic queue
+  admission that observed the rollout takes the same lock and rechecks phase
+  authority before inserting work, so a rollback completed while admission
+  waited cannot be reinterpreted under legacy policy.
+
+Percentage-of-actors and percentage-of-time gate mutations are owner-gated
+global rollouts, not the project pilot enablement surface, so they are not
+rollback paths for this flag.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:
@@ -155,7 +190,29 @@ from a grant, GitHub approval, review, or run.
 `Automation::Phases::MigrationPreview` reports, per project, the derived phase
 defaults, which currently visible Inbox entries would leave the default Inbox
 under those defaults, and which label-enabled work would lose automatic
-execution. It is read-only and never enables anything.
+execution. When label-event provenance cannot be checked, the preview reports
+that trusted-label impact is unavailable rather than representing it as no
+affected work. Provenance replay is bounded per render
+(`PROVENANCE_REPLAY_LIMIT`, newest labeled items first): each replayed record
+costs one outbound GitHub issue-events request — the same hourly-rate-limit
+exposure the candidate-scan bound in `Automation::FeatureActivation` guards —
+so when labeled work extends past the bound the preview keeps the verified
+items and reports a truncated status instead of implying completeness. It is
+read-only and never enables anything.
+
+## Surface parity
+
+The authenticated API and MCP expose the same credential-free phase-settings
+projection as the settings surface: all six phases, separate Release and
+Deployment controls, rollout state, retained stored settings, derived defaults,
+and project-scoped continuation grants with their current effective-policy
+notice. API and MCP settings updates delegate only to
+`Automation::PhaseSettings::Update`, preserving its validation and
+disabled-to-enabled Inbox reconciliation. Grant revocation calls `revoke!` and
+is idempotent; endpoint extension first uses `Automation::ManualStart::Plan`
+so merge delegation is checked before `extend_to!`. A grant change never
+disables independent project defaults, and foreign project records are not
+discoverable through either authenticated surface.
 
 ## Operations boundary
 

@@ -37,7 +37,7 @@ class AgentRun < ApplicationRecord
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   # @spec LAYERED-VERIFY-013
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation cycle_analysis maintenance].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation closeout_verification cycle_analysis maintenance].freeze
   LAYERED_VERIFICATION_GOALS = %w[layered_verification_audit layered_verification_repair].freeze
   # RDR-075 M01: report-only maintenance investigation goal. Admission is
   # manual-only through the dedicated, `maintenance_runs`-gated entry points;
@@ -54,7 +54,9 @@ class AgentRun < ApplicationRecord
   # triggers and tenant defaults may select; layered verification requires
   # its dedicated, feature-gated entry points.
   CYCLE_ANALYSIS_GOAL = "cycle_analysis"
-  NON_TRIGGERABLE_GOALS = (LAYERED_VERIFICATION_GOALS + [ TECHNICAL_PREREQUISITE_VALIDATION_GOAL, CYCLE_ANALYSIS_GOAL, MAINTENANCE_GOAL ]).freeze
+  CLOSEOUT_VERIFICATION_GOAL = "closeout_verification"
+  NON_TRIGGERABLE_GOALS = (LAYERED_VERIFICATION_GOALS + [ TECHNICAL_PREREQUISITE_VALIDATION_GOAL,
+    CLOSEOUT_VERIFICATION_GOAL, CYCLE_ANALYSIS_GOAL, MAINTENANCE_GOAL ]).freeze
   TRIGGERABLE_GOALS = (GOALS - NON_TRIGGERABLE_GOALS).freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
@@ -3280,8 +3282,11 @@ class AgentRun < ApplicationRecord
   # @param preserve_workspace_volume [Boolean] Skip removing the shared
   #   workspace volume — see Containers::Provision#cleanup for why a caller
   #   tearing down a stale container reference needs this.
+  # @param persist [Boolean] Record cleanup lifecycle state when the run row
+  #   remains available; false permits an in-memory resource handle to clean up
+  #   after the row was deleted.
   # @return [void]
-  def cleanup_execution_environment(force: false, preserve_workspace_volume: false)
+  def cleanup_execution_environment(force: false, preserve_workspace_volume: false, persist: true)
     # Snapshot up front: a caller operating on a stale id (e.g.
     # ExecutionControlParkCleanupJob, which assigns a park-time snapshot
     # before calling this method) must tear down *that* container without
@@ -3299,14 +3304,14 @@ class AgentRun < ApplicationRecord
 
     return if target_container_id.blank? && @container_service.nil? && @current_handle.nil?
 
-    ExecutionResource.schedule_cleanup_for!(agent_run: self)
+    ExecutionResource.schedule_cleanup_for!(agent_run: self) if persist
 
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
       @container_service = nil
       @current_handle = nil
-      clear_execution_environment_reference_if_unchanged!(target_container_id)
-      ExecutionResource.mark_cleaned_for!(agent_run: self)
-      record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host)
+      clear_execution_environment_reference_if_unchanged!(target_container_id) if persist
+      ExecutionResource.mark_cleaned_for!(agent_run: self) if persist
+      record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host) if persist
       return
     end
 
@@ -3314,22 +3319,23 @@ class AgentRun < ApplicationRecord
       cleanup_via_runner(
         force: force,
         expected_container_id: target_container_id,
-        expected_runner_handle: target_runner_handle
+        expected_runner_handle: target_runner_handle,
+        persist:
       )
     else
       ensure_container_service!
       @container_service.cleanup(force: force, preserve_workspace_volume: preserve_workspace_volume)
       @container_service = nil
-      clear_execution_environment_reference_if_unchanged!(target_container_id)
+      clear_execution_environment_reference_if_unchanged!(target_container_id) if persist
     end
-    ExecutionResource.mark_cleaned_for!(agent_run: self)
-    record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host)
+    ExecutionResource.mark_cleaned_for!(agent_run: self) if persist
+    record_execution_usage_after_cleanup!(container_id: target_container_id, container_host: target_container_host) if persist
   rescue Containers::Provision::Error, ExecutionRunners::Error => e
-    ExecutionResource.record_cleanup_failure_for!(agent_run: self, error: e)
+    ExecutionResource.record_cleanup_failure_for!(agent_run: self, error: e) if persist
     # Container may already be gone; clear the reference anyway
     @container_service = nil
     @current_handle = nil
-    clear_execution_environment_reference_if_unchanged!(target_container_id, also_clear: { runner_handle: nil })
+    clear_execution_environment_reference_if_unchanged!(target_container_id, also_clear: { runner_handle: nil }) if persist
     # The container is gone but the workspace volume may still exist.
     # Provision#cleanup would normally handle this in its ensure block,
     # but we never reached it, so clean up the volume directly. Skip it
@@ -3796,17 +3802,14 @@ class AgentRun < ApplicationRecord
   # tearing down a parked run's old environment) must not wipe out
   # container_id/runner_handle if the row has since been re-dispatched to a
   # different environment out from under it.
-  def cleanup_via_runner(force: false, expected_container_id: nil, expected_runner_handle: nil)
+  def cleanup_via_runner(force: false, expected_container_id: nil, expected_runner_handle: nil, persist: true)
     runner = ExecutionRunners.resolve_for(self)
     runner.cleanup(handle: @current_handle, force: force)
   rescue ExecutionRunners::ProvisionError
     nil
   ensure
     @current_handle = nil
-    clear_execution_environment_reference_for_runner_if_unchanged!(
-      expected_container_id,
-      expected_runner_handle
-    )
+    clear_execution_environment_reference_for_runner_if_unchanged!(expected_container_id, expected_runner_handle) if persist
   end
 
   # Clears persisted container reference columns after a stale runner handle is

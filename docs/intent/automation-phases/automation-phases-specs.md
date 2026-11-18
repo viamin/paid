@@ -117,16 +117,41 @@
   default-off `automation_phases` feature flag read through
   `FeatureFlags.enabled?(:automation_phases, project:)`, and while the flag is
   off the pre-existing execution and Inbox policies SHALL remain in force.
-  *Tests:* `spec/services/automation/rollout_guard_spec.rb`
-  *Code:* `FeatureFlags`, `Automation::RolloutGuard`
+  Disabling the flag through a supported project, global, or tenant rollout
+  mutation SHALL be refused with an inspectable, actionable reason while any
+  affected project has an active continuation grant; a refused rollback SHALL
+  change no effective flag value, stored settings, grant, or audit history;
+  and once those grants finish or are revoked the system SHALL reconcile
+  affected queued work (cancelling runs whose phase authorization disappeared
+  while preserving independently authorized work) before the rollback takes
+  effect. An automatic queue admission that observed the phase rollout SHALL
+  serialize its phase-policy recheck and insertion with rollback, and SHALL
+  refuse a stale admission after rollback completes.
+  *Tests:* `spec/services/automation/rollout_guard_spec.rb`,
+  `spec/services/automation/phases/rollback_protection_spec.rb`,
+  `spec/services/feature_flags_spec.rb`,
+  `spec/requests/tenant_configurations_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_concurrency_spec.rb`
+  *Code:* `FeatureFlags`, `Automation::RolloutGuard`,
+  `Automation::Phases::RollbackProtection`, `TenantConfigurationsController`,
+  `Activities::QueueAgentRunActivity`
 
 - [x] **AUTOMATION-PHASES-015** — The system SHALL derive preview phase
   defaults from each project's currently effective capabilities without
   enabling new automatic work, SHALL NOT grant continuation authorization
   retroactively to existing manual runs, and SHALL report which currently
   label-enabled work would change execution or Inbox relevance before
-  activation.
-  *Tests:* `spec/services/automation/phases/migration_preview_spec.rb`
+  activation. The per-render trusted-label provenance replay SHALL be
+  bounded, because each replayed record costs one outbound GitHub
+  issue-events request that an unbounded scan over label history could
+  exhaust the hourly rate limit with; when labeled work extends past the
+  bound, the system SHALL report the truncated state while still listing
+  the verified work, rather than implying the list is complete or showing
+  no affected work. When trusted-label provenance is unavailable, the
+  system SHALL report that unavailable state rather than reporting no
+  affected work.
+  *Tests:* `spec/services/automation/phases/migration_preview_spec.rb`,
+  `spec/requests/projects/automation_phases_spec.rb`
   *Code:* `Automation::Phases::MigrationPreview`
 
 - [x] **AUTOMATION-PHASES-016** — Merging SHALL NOT authorize release or
@@ -152,3 +177,21 @@
   *Tests:* `spec/services/automation/operations/contract_catalog_spec.rb`
   *Code:* `Automation::Operations::ContractCatalog`,
   `docs/intent/automation-phases/operations-ownership.md`
+
+- [x] **AUTOMATION-PHASES-019** — Authorized API and MCP clients SHALL inspect
+  and update the six project phase settings through the validated settings
+  service, and SHALL inspect, revoke, or validly extend only their project's
+  continuation grants. The projection SHALL retain separate release and
+  deployment controls, rollout and continuation explanations, and SHALL not
+  expose credentials or grant runtime authority while rollout is off. The
+  projection SHALL list every active grant and SHALL bound only inactive
+  grant history, so inactive grants never displace active authority from
+  inspection.
+  *Tests:* `spec/requests/api/v1/projects/automation_phases_spec.rb`,
+  `spec/services/automation/phase_settings/projection_spec.rb`,
+  `spec/mcp/tools/get_project_automation_phases_spec.rb`,
+  `spec/mcp/tools/revoke_continuation_grant_spec.rb`,
+  `spec/mcp/tools/extend_continuation_grant_spec.rb`,
+  `spec/mcp/tools/update_project_settings_spec.rb`
+  *Code:* `Automation::PhaseSettings::Projection`,
+  `Api::V1::Projects::AutomationPhasesController`, MCP phase/grant tools

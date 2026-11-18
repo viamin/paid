@@ -53,10 +53,12 @@ module Tools
       new_feature_delivery_policy
       confidence_delivery_enrollment_enabled
       question_exploration_enabled
+      automation_phase_settings
     ].freeze
 
     def self.tool_name = "update_project_settings"
     def self.write_operation? = true
+    def self.mcp_available? = true
 
     def self.description
       "Update operational and automation settings for a project."
@@ -101,9 +103,20 @@ module Tools
           "Cannot enable #{violations.join(', ')} while the project targets PRs at the upstream repository"
       end
 
-      project.update!(attrs)
-      record_activity!(project) if project.saved_changes.except("updated_at").any?
-      serialize(project)
+      phase_settings = attrs.delete(:automation_phase_settings)
+      phase_result = Project.transaction do
+        changed_fields = []
+        if attrs.any?
+          project.update!(attrs)
+          changed_fields.concat(project.saved_changes.except("updated_at").keys)
+        end
+        result = Automation::PhaseSettings::Update.call(project:, params: phase_settings, user:) if phase_settings
+        changed_fields.concat(project.saved_changes.except("updated_at").keys) if phase_settings
+        record_activity!(project, changed_fields:) if changed_fields.any?
+        result
+      end
+      serialize(project).merge(automation_phase_settings: phase_result&.settings&.to_h || Automation::PhaseSettings.call(project).to_h,
+        enabled_transitions: phase_result&.enabled_transitions || [])
     end
 
     private
@@ -113,13 +126,13 @@ module Tools
       @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
     end
 
-    def record_activity!(project)
+    def record_activity!(project, changed_fields:)
       Accounts::RecordActivity.call(
         account:,
         actor: user,
         action: "project.settings_changed",
         subject: project,
-        metadata: { changed_fields: project.saved_changes.except("updated_at").keys }
+        metadata: { changed_fields: changed_fields.uniq }
       )
     end
 

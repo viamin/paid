@@ -26,6 +26,7 @@ module Configuration
           "auto_scan_security" => false,
           "knowledge_evolution_enabled" => false,
           "allow_bot_authored_pr_auto_merge" => false,
+          "staged_closeout_enrollment_enabled" => false,
           "adoption_mode" => "full_execution",
           "review_paid_agent" => false,
           "review_copilot" => false,

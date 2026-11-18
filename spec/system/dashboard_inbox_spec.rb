@@ -76,6 +76,18 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     )
   end
 
+  # @spec OPERATOR-INBOX-002C OPERATOR-INBOX-015
+  it "returns a stale blocked-PR direct link to the filtered Inbox" do
+    sign_in_as(user)
+    visit inbox_entry_path("#{Inbox::Queue::ESCALATED_PR_KIND}:999999",
+      project_id: project.id,
+      kind: Inbox::Queue::ESCALATED_PR_KIND)
+
+    expect(page).to have_current_path(inbox_path(project_id: project.id,
+      kind: Inbox::Queue::ESCALATED_PR_KIND))
+    expect(page).to have_content("Inbox")
+  end
+
   # @spec OPERATOR-INBOX-027
   it "renders a responsive sticky action area before the detail body" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)

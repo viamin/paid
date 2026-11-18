@@ -56,4 +56,27 @@ RSpec.describe TenantContext, :tenant_isolation do
       end.to raise_error(ActiveRecord::StatementInvalid, /row-level security/)
     end
   end
+
+  # @spec PROJECT-DELEGATION-002 POSTGRESQL-PERSISTENCE-012
+  it "isolates newer intent checkpoints and settlements after unmodified bootstrap" do
+    checkpoints, settlements = described_class.with_system_access do
+      checkpoints = create_list(:project_delegation_intent_checkpoint, 2)
+      settlements = checkpoints.map { |checkpoint| create(:project_delegation_intent_settlement, intent_checkpoint: checkpoint) }
+      [ checkpoints, settlements ]
+    end
+
+    described_class.with(checkpoints.first.feature_intent.project.account) do
+      expect(ProjectDelegation::IntentCheckpoint.where(id: checkpoints.map(&:id))).to contain_exactly(checkpoints.first)
+      expect(ProjectDelegation::IntentSettlement.where(id: settlements.map(&:id))).to contain_exactly(settlements.first)
+      expect do
+        ProjectDelegation::IntentSettlement.transaction(requires_new: true) do
+          create(:project_delegation_intent_settlement, intent_checkpoint: checkpoints.first, settled_by: settlements.last.settled_by)
+        end
+      end.to raise_error(ActiveRecord::StatementInvalid, /row-level security/)
+    end
+    described_class.with(nil) do
+      expect(ProjectDelegation::IntentCheckpoint.where(id: checkpoints.map(&:id))).to be_empty
+      expect(ProjectDelegation::IntentSettlement.where(id: settlements.map(&:id))).to be_empty
+    end
+  end
 end

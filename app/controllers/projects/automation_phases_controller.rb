@@ -66,10 +66,23 @@ module Projects
         endpoint: params[:endpoint], continuation_selected: true
       )
       extended = grant.extend_to!(endpoint: plan.endpoint)
-
-      redirect_to project_automation_phases_path(@project), notice: extension_notice(extended)
+      respond_to do |format|
+        format.html { redirect_to project_automation_phases_path(@project), notice: extension_notice(extended) }
+        format.json do
+          render json: {
+            extended:,
+            grant_id: grant.id,
+            endpoint: grant.endpoint,
+            continuation_notice: plan.notice.selection_summary,
+            revocation_notice: Automation::PhaseSettings::Projection::REVOCATION_NOTICE
+          }
+        end
+      end
     rescue Automation::ManualStart::Plan::Error => error
-      redirect_to project_automation_phases_path(@project), alert: error.message
+      respond_to do |format|
+        format.html { redirect_to project_automation_phases_path(@project), alert: error.message }
+        format.json { render json: { error: error.message }, status: :unprocessable_content }
+      end
     end
 
     private
@@ -96,6 +109,8 @@ module Projects
         @delegation_guards_enabled = ProjectDelegation::Posture.guards_enabled?(@project)
       end
       @migration_preview = Automation::Phases::MigrationPreview.call(project: @project, user: current_user)
+      @label_enabled_work_items = @project.issues
+        .where(id: @migration_preview.label_enabled_work.map { |work| work[:work_item_id] }).index_by(&:id)
     end
 
     def phase_settings_params

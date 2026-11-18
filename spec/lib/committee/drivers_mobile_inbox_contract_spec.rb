@@ -19,6 +19,11 @@ RSpec.describe Committee::Drivers do
       "/feature_intents/{id}/cancel",
       "/feature_intents/{id}/reopen",
       "/projects/{project_id}/delegation",
+      "/projects/{project_id}/automation_phases",
+      "/projects/{project_id}/automation_phases/continuation_grants/{id}",
+      "/projects/{project_id}/layered_verification_review_packages",
+      "/projects/{project_id}/layered_verification_review_packages/{id}",
+      "/projects/{project_id}/layered_verification_review_packages/{id}/approve",
       "/projects/{project_id}/staged_closeout_adoption",
       "/projects/{project_id}/staged_closeout_adoption/mappings",
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}",
@@ -61,10 +66,10 @@ RSpec.describe Committee::Drivers do
     decision_brief = schema.dig("components", "schemas", "InboxEntryBase", "properties", "decision_brief")
 
     expect(decision_brief.fetch("required")).to match_array(
-      %w[goal changed decision waiting_work primary_action next_state]
+      %w[goal goal_source repository_context linked_goal_intents changed decision waiting_work primary_action next_state]
     )
     expect(decision_brief.fetch("properties").keys).to match_array(
-      %w[goal changed decision recommendation recommendation_reason waiting_work primary_action next_state unknown]
+      %w[goal goal_source goal_revision repository_context linked_goal_intents changed decision recommendation recommendation_reason waiting_work primary_action next_state unknown]
     )
   end
 
@@ -187,6 +192,13 @@ RSpec.describe Committee::Drivers do
       "/feature_intents/{id}/cancel" => { "post" => [ "inbox" ] },
       "/feature_intents/{id}/reopen" => { "post" => [ "inbox" ] },
       "/projects/{project_id}/delegation" => { "get" => [ "inbox" ] },
+      "/projects/{project_id}/automation_phases" => { "get" => [ "inbox" ], "patch" => [ "inbox" ] },
+      "/projects/{project_id}/automation_phases/continuation_grants/{id}" => {
+        "delete" => [ "inbox" ], "patch" => [ "inbox" ]
+      },
+      "/projects/{project_id}/layered_verification_review_packages" => { "get" => [ "inbox" ] },
+      "/projects/{project_id}/layered_verification_review_packages/{id}" => { "get" => [ "inbox" ] },
+      "/projects/{project_id}/layered_verification_review_packages/{id}/approve" => { "post" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption" => { "get" => [ "inbox" ], "patch" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption/mappings" => { "post" => [ "inbox" ] },
       "/projects/{project_id}/staged_closeout_adoption/mappings/{id}" => { "delete" => [ "inbox" ] },

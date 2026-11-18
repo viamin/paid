@@ -339,13 +339,15 @@ module Activities
 
       end
 
+      github_pull_request = fetch_pull_request_for_sync(client, project, github_issue)
       issue = Issues::UpsertFromGithub.call(
         project: project,
         github_issue: github_issue,
-        github_pull_request: fetch_design_pull_request(client, project, github_issue),
+        github_pull_request: github_pull_request,
         design_pull_request: design_pull_request_for(project, github_issue),
         body: trusted ? github_issue.body : nil
       )
+      observe_closeout_merge(issue, github_pull_request)
       upsert_changed = issue.previous_changes.present?
       # Detect the body edit by comparing across the upsert, not via the
       # instance's change tracking: Issues::UpsertFromGithub can perform a
@@ -366,10 +368,21 @@ module Activities
         added_labels: added_labels, changed: upsert_changed || rounds_reset }
     end
 
-    def fetch_design_pull_request(client, project, github_issue)
-      return unless client && (design_pull_request?(project, github_issue) || bootstrap_readiness_pull_request?(project, github_issue))
+    def fetch_pull_request_for_sync(client, project, github_issue)
+      closed_pr = github_issue.state == "closed" && github_issue.respond_to?(:pull_request) &&
+        github_issue.pull_request && project.staged_closeout_enrollment.present?
+      return unless client && (closed_pr || design_pull_request?(project, github_issue) || bootstrap_readiness_pull_request?(project, github_issue))
 
       client.pull_request(project.issue_target_repository, github_issue.number)
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-010
+    def observe_closeout_merge(issue, github_pull_request)
+      return unless github_pull_request && (github_pull_request.merged_at.present? || github_pull_request.merged == true)
+
+      issue.update!(pr_review_phase: "merged") unless issue.pr_review_phase == "merged"
+      merge_sha = github_pull_request.merge_commit_sha if github_pull_request.respond_to?(:merge_commit_sha)
+      CloseoutVerifications::ObserveMerge.call(source_pr: issue, merge_commit_sha: merge_sha)
     end
 
     # @spec FEATURE-APPROVAL-025
@@ -1532,17 +1545,17 @@ module Activities
       # path that must clear the now-stale paid-escalated label.
       escalated_stale = stale_prs.where(pr_review_phase: "escalated").to_a
 
-      merged_numbers, unmerged_numbers, unknown_numbers = partition_by_merge_status(
+      merged_observations, unmerged_numbers, unknown_numbers = partition_by_merge_status(
         client, repo_full_name, stale_prs.pluck(:github_number)
       )
+      merged_numbers = merged_observations.keys
 
       if merged_numbers.any?
         merged_pull_requests = project.issues
           .pull_requests_only
           .where(project_id: project.id, source: source, github_number: merged_numbers)
         merged_work_items = merged_pull_requests.to_a
-        merged_pull_requests
-          .update_all(github_state: "closed", pr_review_phase: "merged", updated_at: Time.current)
+        persist_merged_pull_requests(merged_work_items, merged_observations)
         Automation::CompleteContinuationGrants.call(work_items: merged_work_items, endpoint: "merge")
       end
 
@@ -1575,7 +1588,7 @@ module Activities
     end
 
     def partition_by_merge_status(client, repo_full_name, pr_numbers)
-      merged_numbers = []
+      merged_observations = {}
       unmerged_numbers = []
       unknown_numbers = []
 
@@ -1583,7 +1596,7 @@ module Activities
         heartbeat("fetch_issues.partition_pr_merge_status", repo: repo_full_name, pr_number: number, index: index, total: pr_numbers.size)
         github_pr = client.pull_request(repo_full_name, number)
         if github_pr.merged_at.present? || github_pr.merged == true
-          merged_numbers << number
+          merged_observations[number] = github_pr.respond_to?(:merge_commit_sha) ? github_pr.merge_commit_sha : nil
         else
           unmerged_numbers << number
         end
@@ -1600,7 +1613,25 @@ module Activities
         unknown_numbers << number
       end
 
-      [ merged_numbers, unmerged_numbers, unknown_numbers ]
+      [ merged_observations, unmerged_numbers, unknown_numbers ]
+    end
+
+    def persist_merged_pull_requests(pull_requests, observations)
+      now = Time.current
+      rows = pull_requests.map do |pull_request|
+        pull_request.attributes.merge(
+          "github_state" => "closed",
+          "pr_review_phase" => "merged",
+          "merged_commit_sha" => observations.fetch(pull_request.github_number) || pull_request.merged_commit_sha,
+          "updated_at" => now
+        )
+      end
+      Issue.upsert_all(
+        rows,
+        unique_by: :id,
+        update_only: %i[github_state pr_review_phase merged_commit_sha updated_at],
+        record_timestamps: false
+      )
     end
 
     # Clears the paid-escalated label from PRs that left the open set while

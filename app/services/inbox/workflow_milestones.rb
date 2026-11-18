@@ -29,7 +29,8 @@ module Inbox
     def call
       return empty unless self.class.supported?(entry)
 
-      { current_action: milestones.find { |milestone| milestone[:current] }&.fetch(:action), milestones: milestones }
+      actions = milestones.select { |milestone| milestone[:current] }.filter_map { |milestone| milestone[:action] }.uniq
+      { current_action: actions.first, current_actions: actions, milestones: milestones }
     end
 
     private
@@ -45,14 +46,7 @@ module Inbox
     end
 
     def design_milestone
-      feature = entry.issue.feature_intent
-      return milestone("Design", "not_applicable", "Not applicable", "No linked approval-gated feature.") unless feature&.approval_gated?
-
-      design_pr = feature.feature_intent_design_prs.order(created_at: :desc).first
-      approved = feature.approved_waiting_for_merge? || feature.released?
-      milestone("Design", approved ? "completed" : "blocked", approved ? "Approved" : "Approval required",
-        approved ? "The linked feature design is approved." : "Implementation is waiting for the linked feature design approval.",
-        revision: design_pr&.head_sha, actor: feature.approved_by&.name, url: design_pr&.github_url)
+      projected_milestone("design_approval", "Design")
     end
 
     def test_milestone
@@ -60,7 +54,7 @@ module Inbox
         action: "Review the proposed tests and add paid-tests-approved or paid-test-changes-requested.", url: entry.issue.github_url) if entry.test_review_pending?
       return milestone("Tests", "not_applicable", "Not applicable", "This project does not use strict TDD.") unless entry.project.tdd_mode == "strict"
 
-      milestone("Tests", "completed", "Approved", "Strict-TDD test review cleared before this implementation phase.", url: entry.issue.github_url)
+      projected_milestone("test_review", "Tests")
     end
 
     def implementation_milestone
@@ -70,7 +64,7 @@ module Inbox
           action: guidance_instruction, revision: current_revision, url: entry.issue.github_url, current: true)
       end
 
-      milestone("Implementation", "completed", "Complete", "This pull request has reached the review-ready phase.", revision: entry.issue.last_scanned_head_sha)
+      projected_milestone("implementation", "Implementation")
     end
 
     def code_review_milestone
@@ -78,7 +72,7 @@ module Inbox
       return milestone("Code review", "waiting", "Waiting", "Code review follows recovery of the stalled implementation.") if stalled_execution?
       return blocked_code_review_milestone if blocked_escalation?
 
-      milestone("Code review", "completed", "Complete", "The pull request is at its owner-review/merge decision.", revision: entry.issue.last_scanned_head_sha, url: entry.issue.github_url)
+      projected_milestone("code_review", "Code review")
     end
 
     def owner_milestone
@@ -94,7 +88,7 @@ module Inbox
         milestone("Owner approval", "current", "Review required", "The current revision needs owner approval.",
           action: guidance_instruction, revision: current_revision, url: entry.issue.github_url)
       else
-        milestone("Owner approval", "completed", "Approved", "The current review evidence is complete.", revision: current_revision, url: entry.issue.github_url)
+        projected_milestone("owner_approval", "Owner approval")
       end
     end
 
@@ -106,11 +100,15 @@ module Inbox
         return milestone("Merge", "waiting", "Waiting", "Merge follows current-revision owner approval.")
       end
 
+      unless authoritative.milestones.find { |item| item.id == "merge" }.state.in?(%w[current waiting])
+        return projected_milestone("merge", "Merge")
+      end
+
       state = manual_merge? ? "current" : "waiting"
       label = manual_merge? ? "Your next step" : "Automatic evaluation"
       action = manual_merge? ? guidance_instruction : "Paid will reevaluate after the remaining checks and policy allow merge."
       milestone("Merge", state, label, manual_merge? ? "Approval and merge are separate actions for this project." : "Automatic merge is enabled only when all policy conditions pass.",
-        action:, revision: current_revision, url: entry.issue.github_url)
+        action:, actor: manual_merge? ? "Repository maintainer" : "Paid", revision: current_revision, url: entry.issue.github_url)
     end
 
     def blocked_code_review_milestone
@@ -123,8 +121,34 @@ module Inbox
         action: REAPPROVE_ACTION, revision: current_revision, url: entry.issue.github_url)
     end
 
-    def milestone(name, state, label, reason, action: nil, revision: nil, actor: nil, url: nil, current: state == "current")
-      { name:, state:, label:, reason:, action:, revision:, actor:, url:, current: }.compact
+    # Approval facts come from the revision-aware source shared with progress
+    # API/chat. Entry context only adds recovery/test-review actions; it never
+    # turns unavailable or stale evidence into an approval.
+    # @spec INBOX-PROGRESS-004 OPERATOR-INBOX-024
+    def authoritative
+      @authoritative ||= ProgressProjection.call(issue: entry.issue)
+    end
+
+    def projected_milestone(id, name)
+      item = authoritative.milestones.find { |candidate| candidate.id == id }
+      state = item.state == "complete" ? "completed" : item.state
+      label = if item.state == "complete"
+        id.in?(%w[design_approval test_review owner_approval]) ? "Approved" : "Complete"
+      else
+        item.state.humanize
+      end
+      evidence = item.evidence.first || {}
+      reason = item.next_action || if item.state == "not_applicable"
+        "This milestone does not apply to the current project mode or work-item type."
+                                   else
+        "The current revision's recorded evidence satisfies this milestone."
+                                   end
+      milestone(name, state, label, reason, action: item.next_action, actor: item.actor,
+        revision: evidence[:revision], url: evidence[:url], evidence: item.evidence, current: item.state.in?(%w[current stale]))
+    end
+
+    def milestone(name, state, label, reason, action: nil, revision: nil, actor: nil, url: nil, evidence: nil, current: state == "current")
+      { name:, state:, label:, reason:, action:, revision:, actor:, url:, evidence:, current: }.compact
     end
 
     def guidance

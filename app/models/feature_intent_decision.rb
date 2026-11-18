@@ -15,6 +15,7 @@ class FeatureIntentDecision < ApplicationRecord
   belongs_to :feature_intent
   belongs_to :resolved_by, class_name: "User", optional: true
   belongs_to :source_agent_run, class_name: "AgentRun", optional: true
+  belongs_to :intent_checkpoint, class_name: "ProjectDelegation::IntentCheckpoint", optional: true
   has_many :facets, class_name: "FeatureIntentFacet", dependent: :nullify
   has_many :facet_evidence, class_name: "FeatureIntentFacetEvidence", dependent: :nullify
 

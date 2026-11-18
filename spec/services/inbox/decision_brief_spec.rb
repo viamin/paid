@@ -16,6 +16,242 @@ RSpec.describe Inbox::DecisionBrief do
   end
 
   # @spec OPERATOR-INBOX-027
+  it "grounds the goal in an approved feature intent rather than the work-item title" do
+    issue = create(:issue, project:, title: "Fix the unrelated queue item")
+    feature = create(:feature_intent, project:, title: "Export reliability", brief: "Exports complete without duplicate rows.",
+      approved_design_revision: "a" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "Exports complete without duplicate rows.",
+      goal_source: "Approved feature intent: Export reliability",
+      goal_revision: "a" * 40,
+      repository_context: project.full_name
+    )
+    expect(brief.linked_goal_intents).to eq([
+      { goal: "Exports complete without duplicate rows.", source: "Approved feature intent: Export reliability", revision: "a" * 40 }
+    ])
+    expect(brief.goal).not_to eq(issue.title)
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "uses the root work item's released intent for a linked pull request" do
+    root_issue = create(:issue, project:, title: "Root work")
+    pull_request = create(:issue, :pull_request, project:, parent_issue: root_issue, title: "Implementation pull request")
+    feature = create(:feature_intent, project:, brief: "Operators can export a complete report.",
+      approved_design_revision: "b" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: root_issue)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: pull_request))
+
+    expect(brief.to_h).to include(
+      goal: "Operators can export a complete report.",
+      goal_source: "Approved feature intent: #{feature.title}",
+      goal_revision: "b" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "uses released intent linked directly to a pull request in a batch" do
+    root_issue = create(:issue, project:, title: "Root work")
+    pull_request = create(:issue, :pull_request, project:, parent_issue: root_issue, title: "Implementation pull request")
+    feature = create(:feature_intent, project:, brief: "Operators can export a complete report.",
+      approved_design_revision: "c" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: pull_request)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: pull_request)
+    expected_goal = {
+      goal: "Operators can export a complete report.",
+      goal_source: "Approved feature intent: #{feature.title}",
+      goal_revision: "c" * 40
+    }
+
+    expect(described_class.call(entry: inbox_entry).to_h).to include(expected_goal)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+
+    expect(described_class.call(entry: inbox_entry).to_h).to include(expected_goal)
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "prefers approved intent when direct lookup finds a newer unapproved linked design" do
+    issue = create(:issue, project:)
+    approved = create(:feature_intent, project:, title: "Approved exports", brief: "Exports remain complete.",
+      approved_design_revision: "d" * 40, approved_revision_recorded_at: 2.days.ago)
+    unapproved = create(:feature_intent, :approved_waiting_for_merge, project:, title: "Unreleased exports",
+      approved_design_revision: nil, approved_revision_recorded_at: nil)
+    create(:feature_intent_issue, feature_intent: approved, issue:)
+    create(:feature_intent_issue, feature_intent: unapproved, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "Exports remain complete.",
+      goal_source: "Approved feature intent: Approved exports",
+      goal_revision: "d" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "prefers approved intent when batch lookup finds a newer unapproved linked design" do
+    issue = create(:issue, project:)
+    approved = create(:feature_intent, project:, title: "Approved exports", brief: "Exports remain complete.",
+      approved_design_revision: "e" * 40, approved_revision_recorded_at: 2.days.ago)
+    unapproved = create(:feature_intent, :approved_waiting_for_merge, project:, title: "Unreleased exports",
+      approved_design_revision: nil, approved_revision_recorded_at: nil)
+    create(:feature_intent_issue, feature_intent: approved, issue:)
+    create(:feature_intent_issue, feature_intent: unapproved, issue:)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+    brief = described_class.call(entry: inbox_entry)
+
+    expect(brief.to_h).to include(
+      goal: "Exports remain complete.",
+      goal_source: "Approved feature intent: Approved exports",
+      goal_revision: "e" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "uses the retained approved revision while a linked feature is revising" do
+    issue = create(:issue, project:)
+    feature = create(:feature_intent, project:, status: "revising", title: "Approved exports",
+      brief: "Exports remain complete during amendment review.", approved_design_revision: "k" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "Exports remain complete during amendment review.",
+      goal_source: "Approved feature intent: Approved exports",
+      goal_revision: "k" * 40
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "includes a revising feature with its retained approved revision in a batch" do
+    issue = create(:issue, project:)
+    revising = create(:feature_intent, project:, status: "revising", title: "Approved exports",
+      brief: "Exports remain complete during amendment review.", approved_design_revision: "l" * 40)
+    released = create(:feature_intent, project:, title: "Export performance",
+      brief: "Exports finish promptly.", approved_design_revision: "m" * 40)
+    create(:feature_intent_issue, feature_intent: revising, issue:)
+    create(:feature_intent_issue, feature_intent: released, issue:)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+    brief = described_class.call(entry: inbox_entry)
+
+    expect(brief.linked_goal_intents).to contain_exactly(
+      { goal: "Exports remain complete during amendment review.", source: "Approved feature intent: Approved exports", revision: "l" * 40 },
+      { goal: "Exports finish promptly.", source: "Approved feature intent: Export performance", revision: "m" * 40 }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "keeps one approved intent singular when it is linked to two entries in a batch" do
+    first_issue = create(:issue, project:)
+    second_issue = create(:issue, project:)
+    feature = create(:feature_intent, project:, title: "Export reliability", brief: "Exports remain complete.",
+      approved_design_revision: "j" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue: first_issue)
+    create(:feature_intent_issue, feature_intent: feature, issue: second_issue)
+    first_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: first_issue)
+    second_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: second_issue)
+
+    Inbox::GoalContext.preload(entries: [ first_entry, second_entry ])
+
+    [ first_entry, second_entry ].each do |inbox_entry|
+      brief = described_class.call(entry: inbox_entry)
+
+      expect(brief.to_h).to include(
+        goal: "Exports remain complete.",
+        goal_source: "Approved feature intent: Export reliability",
+        goal_revision: "j" * 40
+      )
+      expect(brief.linked_goal_intents).to eq([
+        { goal: "Exports remain complete.", source: "Approved feature intent: Export reliability", revision: "j" * 40 }
+      ])
+    end
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "does not treat an unreleased feature record as agreed intent" do
+    issue = create(:issue, project:)
+    feature = create(:feature_intent, :approved_waiting_for_merge, project:, approved_design_revision: "c" * 40)
+    create(:feature_intent_issue, feature_intent: feature, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "No approved intent is available for this work item.",
+      goal_source: "Feature intent is not approved"
+    )
+  end
+
+  # An issue may intentionally serve several designs (the link's issue index is
+  # not unique), so no approval supersedes another by recency.
+  # @spec OPERATOR-INBOX-027
+  it "preserves every linked approved intent when one issue serves two released designs" do
+    issue = create(:issue, project:)
+    first_design = create(:feature_intent, project:, title: "Exports reliability", brief: "Exports complete without duplicate rows.",
+      approved_design_revision: "f" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Export performance", brief: "Exports finish in under a second.",
+      approved_design_revision: "g" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:))
+
+    expect(brief.to_h).to include(
+      goal: "This work item serves more than one approved feature intent.",
+      goal_source: "Several approved feature intents are linked to this work item",
+      repository_context: project.full_name
+    )
+    expect(brief.goal_revision).to be_nil
+    expect(brief.linked_goal_intents).to contain_exactly(
+      { goal: "Exports complete without duplicate rows.", source: "Approved feature intent: Exports reliability", revision: "f" * 40 },
+      { goal: "Exports finish in under a second.", source: "Approved feature intent: Export performance", revision: "g" * 40 }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "preserves every linked approved intent through the batched goal-context lookup" do
+    issue = create(:issue, project:)
+    first_design = create(:feature_intent, project:, title: "Exports reliability", brief: "Exports complete without duplicate rows.",
+      approved_design_revision: "h" * 40, approved_revision_recorded_at: 3.days.ago)
+    second_design = create(:feature_intent, project:, title: "Export performance", brief: "Exports finish in under a second.",
+      approved_design_revision: "i" * 40, approved_revision_recorded_at: 1.day.ago)
+    create(:feature_intent_issue, feature_intent: first_design, issue:)
+    create(:feature_intent_issue, feature_intent: second_design, issue:)
+    inbox_entry = entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue:)
+
+    Inbox::GoalContext.preload(entries: [ inbox_entry ])
+    brief = described_class.call(entry: inbox_entry)
+
+    expect(brief.linked_goal_intents).to contain_exactly(
+      { goal: "Exports complete without duplicate rows.", source: "Approved feature intent: Exports reliability", revision: "h" * 40 },
+      { goal: "Exports finish in under a second.", source: "Approved feature intent: Export performance", revision: "i" * 40 }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-027
+  it "discloses unavailable agreed intent instead of relabeling the queue title as a goal" do
+    brief = described_class.call(entry: entry(Inbox::Queue::MANUAL_REVIEW_KIND,
+      title_text: "Resolve an unrelated queue item"))
+
+    expect(brief.to_h).to include(
+      goal: "No approved intent is available for this work item.",
+      goal_source: "Intent unavailable",
+      repository_context: project.full_name
+    )
+    expect(brief.to_h).not_to have_key(:goal_revision)
+    expect(brief.linked_goal_intents).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-027
   it "keeps a grounded product question separate from its evidence-backed recommendation" do
     brief = described_class.call(entry: entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
       questions: [ { "question" => "Which cache should exports use?", "recommendation" => "Redis",

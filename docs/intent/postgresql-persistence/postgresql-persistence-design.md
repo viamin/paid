@@ -66,6 +66,13 @@ Reference checks lock the referenced version against concurrent reassignment.
 The repair refuses existing invalid references rather than modifying
 application rows, and preserves the guards on rollback and schema bootstrap.
 
+Corrective migration replay preserves current canonical table, index, foreign-key
+and FX definitions alongside the tenant policy catalog. Reference-guard repair
+replaces any already-installed FX triggers transactionally, so upgrading a
+schema-loaded or newer database retains enforcement without duplicate-trigger
+failures. Corrective rollback retains the current guards rather than
+restoring weaker legacy enforcement.
+
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
 guards against unsafe runtime roles that would bypass those policies. The

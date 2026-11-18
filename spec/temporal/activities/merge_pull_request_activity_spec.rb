@@ -440,6 +440,15 @@ RSpec.describe Activities::MergePullRequestActivity do
         )
       end
 
+      # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
+      it "observes Paid's authoritative merge revision for closeout admission" do
+        expect(CloseoutVerifications::ObserveMerge).to receive(:call).with(
+          source_pr: issue, merge_commit_sha: "def456"
+        )
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+      end
+
       it "refreshes the source closure before auto-merging a Paid-generated PR" do # @spec PARTIAL-CLOSEOUT-050
         source_issue = create(:issue, project: project, github_number: 7)
         record_source_closeout_assessment(source_issue)
@@ -1071,6 +1080,13 @@ RSpec.describe Activities::MergePullRequestActivity do
           activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
           expect(issue.reload.pr_review_phase).to eq("merged")
+        end
+
+        # @spec STAGED-CLOSEOUT-ADOPTION-010
+        it "persists the fallback merge revision for closeout reconciliation" do
+          activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+          expect(issue.reload.merged_commit_sha).to eq("def456")
         end
 
         it "does not record a merge-permission rejection on the issue" do
