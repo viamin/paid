@@ -8,17 +8,19 @@ RSpec.describe CloseoutVerifications::Admit do
   let(:source_issue) { create(:issue, project:) }
   let(:source_pr) { create(:issue, :pull_request, project:, github_number: 42, pr_review_phase: "merged") }
   let!(:recipe) { create(:pre_commit_requirement, project:, account: project.account, enabled: true) }
+  let!(:assessment_run) do
+    create(:agent_run, :completed, project:, issue: source_issue, reconciliation: { "assessment" => {
+      "source_revision" => PartialCloseouts::Assessment.source_revision_for(source_issue),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(source_issue),
+      "criteria" => [ { "criterion" => "Merged evidence", "state" => "unmet" } ], "gaps" => []
+    } })
+  end
   let(:merge_sha) { "a" * 40 }
 
   before do
     FeatureFlags.enable!(:automation_phases, project:)
     project.update!(automation_phase_settings: { "phases" => { "release_deployment" => true } })
     StagedCloseoutAdoption::Enroll.call(project:, actor: maintainer, enabled: true)
-    create(:agent_run, :completed, project:, issue: source_issue, reconciliation: { "assessment" => {
-      "source_revision" => PartialCloseouts::Assessment.source_revision_for(source_issue),
-      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(source_issue),
-      "criteria" => [ { "criterion" => "Merged evidence", "state" => "unmet" } ], "gaps" => []
-    } })
     create(:agent_run, :completed, project:, issue: source_issue, pull_request_number: source_pr.github_number,
       result_commit_sha: "b" * 40)
   end
@@ -51,7 +53,6 @@ RSpec.describe CloseoutVerifications::Admit do
 
   # @spec STAGED-CLOSEOUT-ADOPTION-009
   it "admits one run for every eligible mapping for the same issue and pull request" do
-    assessment_run = AgentRun.completed.where(project:, issue: source_issue).find_by!(source_pull_request_number: nil)
     assessment = assessment_run.reconciliation.fetch("assessment")
     assessment["criteria"] << { "criterion" => "Second merged check", "state" => "unmet" }
     assessment_run.update!(reconciliation: { "assessment" => assessment })

@@ -42,14 +42,14 @@ RSpec.describe "TenantConfigurations" do
     it "refuses tenant phase rollback while a project has an active continuation grant" do
       project = create(:project, account:)
       account.tenant_setting!.update!(features: { "automation_phases" => true })
-      grant = create(:work_item_continuation_grant, project:)
+      create(:work_item_continuation_grant, project:)
 
       patch tenant_configuration_path, params: {
         tenant_setting: { features: { automation_phases: "0" } }
       }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("active continuation grants", grant.id.to_s)
+      expect(response.body).to include("active continuation grants", project.full_name, "revoke the grants")
       expect(account.tenant_setting.reload.features["automation_phases"]).to be(true)
     end
 

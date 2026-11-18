@@ -69,6 +69,25 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(source_run.reconciliation.dig("technical_prerequisite_evidence", "cleanup")).to include("completed" => true)
   end
 
+  # @spec PARTIAL-CLOSEOUT-032 STAGED-CLOSEOUT-ADOPTION-011
+  it "retains the provisioned environment identity after cleanup clears the run fields" do
+    stub_compatible_host
+    stub_provisioning
+    stub_command_execution
+    allow(agent_run).to receive(:provision_execution_environment) do
+      agent_run.update!(container_id: "fixture-container", container_host: "remote")
+    end
+    allow(agent_run).to receive(:cleanup_execution_environment) do
+      agent_run.update!(container_id: nil, container_host: nil)
+    end
+
+    described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+    expect(agent_run.reload.container_id).to be_nil
+    expect(agent_run.verification_result.dig("technical_prerequisite_validation", "environment"))
+      .to include("container_id" => "fixture-container", "container_host" => "remote")
+  end
+
   # @spec PARTIAL-CLOSEOUT-042
   it "records raw baseline/current samples and a mechanical comparison without claiming an improvement" do
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {
@@ -415,12 +434,16 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.evidence["checkout"]).to eq("b" * 40)
   end
 
-  # @spec PARTIAL-CLOSEOUT-032
-  it "cleans up resources when provisioning fails before it records a container" do
+  # @spec PARTIAL-CLOSEOUT-032 STAGED-CLOSEOUT-ADOPTION-011
+  it "retains provisioned identity when cleanup follows a provisioning exception" do
     stub_compatible_host
-    allow(agent_run).to receive(:provision_execution_environment)
-      .and_raise(Containers::Provision::Error, "image pull failed")
-    allow(agent_run).to receive(:cleanup_execution_environment)
+    allow(agent_run).to receive(:provision_execution_environment) do
+      agent_run.update!(container_id: "partially-provisioned", container_host: "remote")
+      raise Containers::Provision::Error, "image pull failed"
+    end
+    allow(agent_run).to receive(:cleanup_execution_environment) do
+      agent_run.update!(container_id: nil, container_host: nil)
+    end
 
     result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
 
@@ -428,6 +451,8 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup"))
       .to include("attempted" => true, "completed" => true)
+    expect(agent_run.verification_result.dig("technical_prerequisite_validation", "environment"))
+      .to include("container_id" => "partially-provisioned", "container_host" => "remote")
   end
 
   # @spec PARTIAL-CLOSEOUT-032
