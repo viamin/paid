@@ -267,18 +267,22 @@ class FeatureFlags
 
     private
 
+    # @spec AUTOMATION-PHASES-014
     def disable_phase_rollout!(project:)
-      projects = project ? [ project ] : phase_projects_affected_by_global_rollback
+      candidates = project ? [ project ] : Project.includes(account: :tenant_setting)
+      projects = candidates.select { |candidate| phase_disable_affects?(candidate) }
       Automation::PhaseRolloutRollback.call(projects:) do
         project ? feature(:automation_phases).disable(project) : feature(:automation_phases).disable
       end
     end
 
-    def phase_projects_affected_by_global_rollback
-      Project.includes(account: :tenant_setting).filter do |candidate|
-        candidate.account.tenant_setting&.features&.fetch("automation_phases", nil) != true &&
-          enabled?(:automation_phases, project: candidate)
-      end
+    # A rollback can only reinterpret a grant under legacy policy when it
+    # flips the project's effective flag state; a tenant-level `true`
+    # override keeps the project enabled after its Flipper gate is removed,
+    # so that actor-gate cleanup is harmless and stays unguarded.
+    def phase_disable_affects?(project)
+      project.account.tenant_setting&.features&.fetch("automation_phases", nil) != true &&
+        enabled?(:automation_phases, project: project)
     end
 
     def automation_phases_disabled_for_tenant?(tenant_setting:, features:)

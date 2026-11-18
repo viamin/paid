@@ -37,7 +37,10 @@ existing execution and Inbox behavior is untouched.
 
 `Automation::PhaseRolloutRollback` is the single rollback guard for supported
 project, tenant, and global mutations. It locks every effectively affected
-project before inspecting grants, so grant creation cannot race a rollback. An
+project before inspecting grants, so grant creation cannot race a rollback. A
+project is effectively affected only when the mutation flips its effective
+flag state: a tenant-level `true` override keeps a project enabled after its
+Flipper actor gate is removed, so that harmless gate cleanup is unguarded. An
 active grant refuses the mutation with its project and grant identifiers; the
 flag, settings, grant, and audit history remain unchanged. Once grants are
 terminal, the guard rechecks queued project work while the phase model is still

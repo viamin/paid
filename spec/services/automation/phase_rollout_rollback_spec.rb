@@ -31,6 +31,17 @@ RSpec.describe Automation::PhaseRolloutRollback do
     expect(grant.reload).to be_active
   end
 
+  it "permits actor-gate cleanup without inspecting grants when a tenant override keeps the project enabled" do
+    create(:tenant_setting, account:, features: { "automation_phases" => true })
+    grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+
+    FeatureFlags.disable!(:automation_phases, project:)
+
+    expect(FeatureFlags.rollout_status(:automation_phases)[:actors]).not_to include(project.flipper_id)
+    expect(FeatureFlags.enabled?(:automation_phases, project:)).to be(true)
+    expect(grant.reload).to be_active
+  end
+
   it "reconciles queued work after revocation before permitting rollback" do
     grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
     run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr")
