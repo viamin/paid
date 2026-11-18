@@ -346,9 +346,14 @@ the lane stays constant in database queries as its entry count grows.
 
 ### `escalated_pr`
 
-Backed by `Inbox::EscalatedPullRequests`, which `Inbox::Queue` filters to the
-operator's authorized Inbox projects rather than reimplementing the
-escalated-PR query. Like every other Inbox kind, it is account+owner scoped
+Backed by `Inbox::EscalatedPullRequests`, which accepts `Inbox::Queue`'s
+authorized project IDs and applies them to its existing escalated-PR query
+rather than materializing other authorized projects' blocked PRs for an
+in-memory filter. Selected-entry requests — the detail frame and full-page
+shows alike — also pass their parsed record ID to the same loader, so a stale
+escalation link performs one bounded authorized lookup before its redirect
+instead of materializing every matching blocked PR. Like every other Inbox
+kind, it is account+owner scoped
 and independent of auto-pick eligibility (`INBOX-FOUNDATION-006`).
 
 The entry payload carries the `Inbox::EscalatedPullRequests::Entry` as its

@@ -123,7 +123,7 @@ module CloseoutVerifications
         return if terminal?
 
         outcome = outcome_for(result)
-        record_terminal!(outcome, command:, technical_evidence: result.evidence)
+        record_terminal!(outcome, command:, technical_evidence: persisted_technical_evidence.presence || result.evidence)
       end
     end
 
@@ -191,6 +191,10 @@ module CloseoutVerifications
       )
     end
 
+    def persisted_technical_evidence
+      agent_run.verification_result[TechnicalPrerequisites::EVIDENCE_KEY]
+    end
+
     def identity_evidence
       mapping = StagedCloseoutMapping.find_by(id: agent_run.closeout_mapping_id)
       {
@@ -201,7 +205,9 @@ module CloseoutVerifications
         "recipe_version" => agent_run.closeout_recipe_version,
         "recipe_digest" => agent_run.closeout_recipe_digest,
         "mapping_id" => agent_run.closeout_mapping_id,
-        "environment" => { "container_host" => agent_run.container_host, "mapping_environment_class" => mapping&.environment_class }
+        "environment" => (persisted_technical_evidence&.fetch("environment", {}) || {}).merge(
+          "mapping_environment_class" => mapping&.environment_class
+        )
       }
     end
 

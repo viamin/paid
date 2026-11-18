@@ -52,7 +52,8 @@ RSpec.describe "TenantConfigurations" do
       expect(Nokogiri::HTML(response.body).text).to include(
         "active continuation grants",
         project.full_name,
-        "1 active continuation grant"
+        "1 active continuation grant",
+        "revoke the grants"
       )
       expect(account.tenant_setting.reload.features["automation_phases"]).to be(true)
     end
