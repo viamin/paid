@@ -60,7 +60,7 @@ recipe mismatch remain terminal stale outcomes. The terminal run retains a
 bounded closeout evidence envelope with the source/criterion/PR/revision,
 recipe and environment identity, command result, artifacts, timing, and a
 distinct pass, fail, unavailable, cancelled, stale, timeout, setup, or cleanup
-outcome. Capture the provisioned container identity and host before checkout or cleanup can clear them. Build the closeout receipt from the persisted technical record after cleanup so it retains that identity and the final cleanup verdict. A terminal identity is never executed again.
+outcome. Capture the provisioned container identity and host before checkout or cleanup can clear them. Build the closeout receipt from the persisted technical record after cleanup so it retains that identity and the final cleanup verdict. Cancellation uses the same final persisted technical record, including when execution raises after cancellation. If the run row disappears during execution, identity refresh must not skip resource cleanup from the in-memory handle; that cleanup does not attempt run-bound ledger or evidence writes. A terminal identity is never executed again.
 
 For projects with an adoption record, an incremental issue payload reporting a closed PR resolves its authoritative
 PR detail before committing that closure. A confirmed merge records the merge

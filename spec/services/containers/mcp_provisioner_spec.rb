@@ -467,6 +467,14 @@ RSpec.describe Containers::McpProvisioner do
 
         expect(agent_run.reload.mcp_sidecar_container_ids).to eq([])
       end
+
+      it "removes sidecars without persisting references when the run is unavailable" do
+        expect(agent_run).not_to receive(:update_columns)
+
+        provisioner.cleanup(agent_run, persist: false)
+
+        expect(docker_container).to have_received(:delete).with(force: true, v: true)
+      end
     end
 
     context "when container is already gone" do

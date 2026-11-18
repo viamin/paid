@@ -59,7 +59,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       branch_name: agent_run.branch_name,
       base_commit_sha: "a" * 40
     )
-    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: true)
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "native")).to include("stdout" => "analyzer 1.0", "exit_code" => 0)
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "checkout")).to eq("b" * 40)
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "tool_endpoints"))
@@ -322,8 +322,8 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
 
     expect(result.status).to eq("cancelled")
     expect(agent_run).not_to have_received(:execute_in_execution_environment)
-    expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:)
-    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:, persist: true)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: true)
     expect(agent_run.reload.status).to eq("cancelled")
   end
 
@@ -374,7 +374,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
     ).ordered.and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
 
-    expect(execution_runner).to receive(:cleanup_mcp_servers).with(agent_run:).ordered
+    expect(execution_runner).to receive(:cleanup_mcp_servers).with(agent_run:, persist: true).ordered
 
     described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
   end
@@ -448,7 +448,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
 
     expect(result.status).to eq("failed")
-    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: true)
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup"))
       .to include("attempted" => true, "completed" => true)
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "environment"))
@@ -558,5 +558,17 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       compatibility_failures: {},
       health_failures: {}
     )
+  end
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "a row disappearing during execution cannot skip resource cleanup" do
+    stub_compatible_host
+    stub_provisioning
+    allow(agent_run).to receive(:execute_in_execution_environment) do
+      agent_run.destroy!
+      raise RuntimeError, "interrupted"
+    end
+    expect { described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:) }.to raise_error(RuntimeError, "interrupted")
+    expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:, persist: false)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: false)
   end
 end

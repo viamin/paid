@@ -11,13 +11,13 @@ RSpec.describe Activities::CleanupMcpServersActivity do
     it "cleans up MCP sidecar containers" do
       provisioner = instance_double(Containers::McpProvisioner)
       allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
-      allow(provisioner).to receive(:cleanup).with(agent_run)
+      allow(provisioner).to receive(:cleanup).with(agent_run, persist: true)
       allow(AgentRun).to receive(:find_by).with(id: agent_run.id).and_return(agent_run)
 
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:agent_run_id]).to eq(agent_run.id)
-      expect(provisioner).to have_received(:cleanup).with(agent_run)
+      expect(provisioner).to have_received(:cleanup).with(agent_run, persist: true)
     end
 
     it "skips cleanup when agent run is missing" do

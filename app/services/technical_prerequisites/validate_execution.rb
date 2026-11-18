@@ -12,7 +12,7 @@ module TechnicalPrerequisites
   # attached tool is exercised by provisioning it and publishing its endpoint
   # to the analyzer. The run's verification_result is the durable,
   # revision-bound evidence record consumed by closeout assessment.
-  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050 STAGED-CLOSEOUT-ADOPTION-011
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
     COMMAND_TIMEOUT = 5.minutes
@@ -94,6 +94,10 @@ module TechnicalPrerequisites
       agent_run.reload
       environment = { "container_id" => agent_run.container_id, "container_host" => agent_run.container_host }.compact
       evidence["environment"] = environment if environment.present?
+    rescue ActiveRecord::RecordNotFound
+      # A deleted run must not prevent cleanup using the in-memory resource handle.
+      @run_available = false
+      nil
     end
 
     def prepare_checkout
@@ -344,8 +348,8 @@ module TechnicalPrerequisites
 
     def cleanup_errors
       [
-        -> { execution_runner.cleanup_mcp_servers(agent_run:) },
-        -> { agent_run.cleanup_execution_environment(force: true) }
+        -> { execution_runner.cleanup_mcp_servers(agent_run:, persist: run_available?) },
+        -> { agent_run.cleanup_execution_environment(force: true, persist: run_available?) }
       ].filter_map do |cleanup_step|
         cleanup_step.call
         nil
@@ -355,6 +359,8 @@ module TechnicalPrerequisites
     end
 
     def write_cleanup_evidence(completed:, errors: [])
+      return unless run_available?
+
       record = evidence.stringify_keys.merge(agent_run.verification_result.fetch(EVIDENCE_KEY, {}))
       cleanup = { "attempted" => true, "completed" => completed }
       cleanup["errors"] = errors if errors.any?
@@ -363,6 +369,8 @@ module TechnicalPrerequisites
       ))
       Evidence.record!(agent_run:, record: record.merge("cleanup" => cleanup))
     end
+
+    def run_available? = @run_available != false
 
     def validate_command!(command)
       return command if command.is_a?(String) && command.present?

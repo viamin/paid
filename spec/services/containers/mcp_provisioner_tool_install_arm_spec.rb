@@ -645,6 +645,14 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-002 # @spec TO
       expect(docker_container).to have_received(:delete).with(force: true, v: true)
       expect(agent_run.reload.tool_sidecar_container_ids).to eq([])
     end
+
+    it "removes tool sidecars without persisting references when the run is unavailable" do
+      expect(agent_run).not_to receive(:update_columns)
+
+      provisioner.cleanup(agent_run, persist: false)
+
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+    end
   end
 
   describe "#tool_sidecar_hostname" do
