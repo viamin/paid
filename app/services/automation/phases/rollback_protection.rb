@@ -65,8 +65,10 @@ module Automation
         private
 
         def affected_global_projects
-          grant_project_ids = WorkItemContinuationGrant.distinct.pluck(:project_id)
-          Project.where(id: grant_project_ids).includes(account: :tenant_setting).select do |project|
+          # A global Flipper disable clears every actor gate. Select its full
+          # effective scope before locking: selecting only projects that already
+          # have grants leaves a grant-free project unlocked for its first grant.
+          Project.includes(account: :tenant_setting).select do |project|
             rollout_enabled?(project) && !tenant_override_keeps_enabled?(project)
           end
         end
