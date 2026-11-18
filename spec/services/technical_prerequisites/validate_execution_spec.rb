@@ -59,7 +59,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       branch_name: agent_run.branch_name,
       base_commit_sha: "a" * 40
     )
-    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: true)
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "native")).to include("stdout" => "analyzer 1.0", "exit_code" => 0)
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "checkout")).to eq("b" * 40)
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "tool_endpoints"))
@@ -323,7 +323,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.status).to eq("cancelled")
     expect(agent_run).not_to have_received(:execute_in_execution_environment)
     expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:)
-    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: true)
     expect(agent_run.reload.status).to eq("cancelled")
   end
 
@@ -448,7 +448,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
 
     expect(result.status).to eq("failed")
-    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: true)
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup"))
       .to include("attempted" => true, "completed" => true)
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "environment"))
