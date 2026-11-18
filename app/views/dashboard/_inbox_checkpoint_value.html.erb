@@ -1,0 +1,18 @@
+<%# @spec PROJECT-DELEGATION-002 %>
+<% if value.nil? || (value.respond_to?(:empty?) && value.empty?) %>
+  <span class="text-gray-500">Not recorded.</span>
+<% elsif value.is_a?(Hash) %>
+  <dl class="space-y-1">
+    <% value.each do |key, item| %>
+      <div><dt class="font-medium"><%= key.to_s.humanize %></dt><dd class="break-words"><%= render "dashboard/inbox_checkpoint_value", value: item %></dd></div>
+    <% end %>
+  </dl>
+<% elsif value.is_a?(Array) %>
+  <ul class="list-disc space-y-1 pl-5">
+    <% value.each do |item| %>
+      <li class="break-words"><%= render "dashboard/inbox_checkpoint_value", value: item %></li>
+    <% end %>
+  </ul>
+<% else %>
+  <span class="whitespace-pre-wrap break-all"><%= value %></span>
+<% end %>

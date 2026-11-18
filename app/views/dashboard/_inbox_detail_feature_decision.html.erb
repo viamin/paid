@@ -72,6 +72,11 @@
     </div>
   <% end %>
 
+  <%# @spec PROJECT-DELEGATION-002 %>
+  <% decision_context.checkpoints.each do |checkpoint| %>
+    <%= render "dashboard/inbox_intent_checkpoint", checkpoint: checkpoint %>
+  <% end %>
+
   <% open_questions = feature_intent.feature_intent_decisions.questions.open_decisions %>
   <% if open_questions.any? %>
     <div class="space-y-2">

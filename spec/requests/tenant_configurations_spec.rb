@@ -49,7 +49,12 @@ RSpec.describe "TenantConfigurations" do
       }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("active continuation grants", project.full_name, "revoke the grants")
+      expect(Nokogiri::HTML(response.body).text).to include(
+        "active continuation grants",
+        project.full_name,
+        "1 active continuation grant",
+        "revoke the grants"
+      )
       expect(account.tenant_setting.reload.features["automation_phases"]).to be(true)
     end
 

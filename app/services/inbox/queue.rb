@@ -803,7 +803,7 @@ module Inbox
       only_record(scope).includes(
         :project,
         :approved_by,
-        :feature_intent_decisions,
+        { feature_intent_decisions: :intent_checkpoint },
         :feature_intent_design_prs,
         feature_intent_issues: [
           { issue: :project },

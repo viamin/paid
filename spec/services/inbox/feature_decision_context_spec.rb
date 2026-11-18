@@ -54,12 +54,13 @@ RSpec.describe Inbox::FeatureDecisionContext do
 
   it "projects queue-preloaded context without database queries" do
     feature_intent = create(:feature_intent, :confidence_driven)
-    create(:feature_intent_decision, feature_intent:)
+    checkpoint = create(:project_delegation_intent_checkpoint, feature_intent:)
+    create(:feature_intent_decision, feature_intent:, intent_checkpoint: checkpoint)
     issue = create(:issue, project: feature_intent.project)
     create(:feature_intent_issue, feature_intent:, issue:)
     readiness = Inbox::FeatureDecisionReadiness.call(feature_intent:)
     loaded_intent = FeatureIntent.includes(
-      :feature_intent_decisions,
+      { feature_intent_decisions: :intent_checkpoint },
       :feature_intent_design_prs,
       feature_intent_issues: [
         { issue: :project },

@@ -28,8 +28,8 @@ RSpec.describe SystemWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-022
-  it "allows the hosted browser suite to complete within a bounded job window" do
-    expect(system_job.fetch("timeout-minutes")).to eq(240)
+  it "allows the hosted browser suite to complete within GitHub's bounded job window" do
+    expect(system_job.fetch("timeout-minutes")).to eq(360)
   end
 
   it "passes test credentials to the system job" do
@@ -121,6 +121,19 @@ RSpec.describe SystemWorkflowFile, :no_db do
       "exit 1"
     )
     expect(run).not_to include("docker ps")
+  end
+
+  # @spec TEST-SUITE-019
+  it "retries an otherwise stalled system suite before the hosted job limit" do
+    run = system_step("Run system specs").fetch("run")
+
+    expect(run).to include(
+      "timeout --foreground 80m bin/rspec spec/system",
+      'rspec_status=${PIPESTATUS[0]}',
+      'if [ "$rspec_status" -eq 0 ]; then',
+      'if [ "$rspec_status" -ne 124 ] && ! grep -Fq',
+      'System specs stalled; restarted the PostgreSQL service and retrying'
+    )
   end
 
   # @spec TOOLCHAIN-PIN-029

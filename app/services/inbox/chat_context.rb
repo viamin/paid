@@ -232,6 +232,7 @@ module Inbox
 
       record_attributes(feature_intent, "title", "status", "brief", "acceptance_criteria", "criteria_clarity_explanation").merge(
         decisions: feature_intent.feature_intent_decisions.map(&:attributes),
+        intent_checkpoints: FeatureDecisionContext.call(feature_intent:).checkpoints.map(&:to_h),
         design_pull_requests: feature_intent.feature_intent_design_prs.map(&:attributes)
       )
     end

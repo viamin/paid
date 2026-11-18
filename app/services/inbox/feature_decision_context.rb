@@ -9,7 +9,9 @@ module Inbox
     Decision = Data.define(:id, :kind, :prompt, :design_claim)
     Task = Data.define(:number, :title, :url)
     DesignRevision = Data.define(:number, :revision, :state, :url)
-    Result = Data.define(:decisions, :tasks, :design_revisions, :next_actions)
+    Checkpoint = Data.define(:id, :status, :recommendation, :alternatives, :consequences, :affected_scope, :evidence,
+      :proposed_design_revision, :proposed_acceptance_revision, :questions)
+    Result = Data.define(:decisions, :tasks, :design_revisions, :next_actions, :checkpoints)
 
     def self.call(...) = new(...).call
 
@@ -23,7 +25,8 @@ module Inbox
         decisions: decisions,
         tasks: tasks,
         design_revisions: design_revisions,
-        next_actions: readiness.human_actions
+        next_actions: readiness.human_actions,
+        checkpoints: checkpoints
       )
     end
 
@@ -34,6 +37,21 @@ module Inbox
     def decisions
       feature_intent.feature_intent_decisions.select(&:open?).map do |decision|
         Decision.new(id: decision.id, kind: decision.kind, prompt: decision.prompt, design_claim: decision.design_claim)
+      end
+    end
+
+    # @spec PROJECT-DELEGATION-002
+    def checkpoints
+      questions = feature_intent.feature_intent_decisions.to_a
+      ActiveRecord::Associations::Preloader.new(records: questions, associations: :intent_checkpoint).call
+      questions.group_by(&:intent_checkpoint_id).filter_map do |id, questions|
+        next if id.nil?
+
+        checkpoint = questions.first.intent_checkpoint
+        next unless checkpoint&.feature_intent_id == feature_intent.id
+
+        attributes = checkpoint.attributes.symbolize_keys.slice(*(Checkpoint.members - [ :questions ]))
+        Checkpoint.new(**attributes, questions: questions.map { |question| { id: question.id, prompt: question.prompt } })
       end
     end
 
