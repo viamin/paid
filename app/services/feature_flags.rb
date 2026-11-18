@@ -207,6 +207,10 @@ class FeatureFlags
     def disable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
 
+      if flag_name.to_sym == :automation_phases && (resolved_actor.nil? || resolved_actor.is_a?(Project))
+        return disable_phase_rollout!(project: resolved_actor)
+      end
+
       unless resolved_actor
         # Flipper's boolean-gate disable already calls clear(feature), which
         # removes all gates (actor, group, percentage, etc.), so a global
@@ -215,6 +219,12 @@ class FeatureFlags
       end
 
       feature(flag_name).disable(resolved_actor)
+    end
+
+    def with_tenant_rollback_protection(tenant_setting:, features:)
+      return yield unless automation_phases_disabled_for_tenant?(tenant_setting:, features:)
+
+      Automation::PhaseRolloutRollback.call(projects: tenant_setting.account.projects) { yield }
     end
 
     def enable_percentage_of_actors(flag_name, percentage)
@@ -256,6 +266,25 @@ class FeatureFlags
     end
 
     private
+
+    def disable_phase_rollout!(project:)
+      projects = project ? [ project ] : phase_projects_affected_by_global_rollback
+      Automation::PhaseRolloutRollback.call(projects:) do
+        project ? feature(:automation_phases).disable(project) : feature(:automation_phases).disable
+      end
+    end
+
+    def phase_projects_affected_by_global_rollback
+      Project.includes(account: :tenant_setting).filter do |candidate|
+        candidate.account.tenant_setting&.features&.fetch("automation_phases", nil) != true &&
+          enabled?(:automation_phases, project: candidate)
+      end
+    end
+
+    def automation_phases_disabled_for_tenant?(tenant_setting:, features:)
+      requested = features.to_h["automation_phases"]
+      requested == false && tenant_setting.features.to_h["automation_phases"] != false
+    end
 
     def enqueue_partial_closeout_projection(flag_name, project)
       return unless flag_name.to_sym == :partial_closeout_lane_read_model && project

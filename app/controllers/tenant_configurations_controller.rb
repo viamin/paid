@@ -12,7 +12,10 @@ class TenantConfigurationsController < ApplicationController
     authorize current_account, :update?
 
     ActiveRecord::Base.transaction do
-      @tenant_setting.update!(tenant_setting_params)
+      settings = tenant_setting_params
+      FeatureFlags.with_tenant_rollback_protection(tenant_setting: @tenant_setting, features: settings["features"]) do
+        @tenant_setting.update!(settings)
+      end
 
       # update_chat_settings!'s second save resets saved_changes, so capture the
       # first save's change set now and merge the second save into it. The form
@@ -38,8 +41,8 @@ class TenantConfigurationsController < ApplicationController
     end
 
     redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
-  rescue ActiveRecord::RecordInvalid, FeatureFlags::InvalidPercentageError => e
-    @tenant_setting.errors.add(:base, e.message) if e.is_a?(FeatureFlags::InvalidPercentageError)
+  rescue ActiveRecord::RecordInvalid, FeatureFlags::InvalidPercentageError, Automation::PhaseRolloutRollback::ActiveGrantsError => e
+    @tenant_setting.errors.add(:base, e.message) unless e.is_a?(ActiveRecord::RecordInvalid)
     load_form_options
     render :edit, status: :unprocessable_content
   end

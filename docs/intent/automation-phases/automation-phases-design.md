@@ -35,6 +35,16 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+`Automation::PhaseRolloutRollback` is the single rollback guard for supported
+project, tenant, and global mutations. It locks every effectively affected
+project before inspecting grants, so grant creation cannot race a rollback. An
+active grant refuses the mutation with its project and grant identifiers; the
+flag, settings, grant, and audit history remain unchanged. Once grants are
+terminal, the guard rechecks queued project work while the phase model is still
+enabled, cancelling only automatic work that no longer has phase authority;
+manual and independently default-authorized work remains queued. Only then may
+the caller persist the rollback.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:

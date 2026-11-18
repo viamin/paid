@@ -104,14 +104,18 @@ module Automation
 
         ensure_delegation_permitted!
 
-        WorkItemContinuationGrant.create!(
-          project: project,
-          issue: issue,
-          start_phase: start_phase,
-          endpoint: endpoint,
-          source: "manual_start",
-          created_by: user
-        )
+        project.with_lock do
+          raise Error, "Automation phases rollout is no longer enabled for this project." unless RolloutGuard.enabled?(project)
+
+          WorkItemContinuationGrant.create!(
+            project: project,
+            issue: issue,
+            start_phase: start_phase,
+            endpoint: endpoint,
+            source: "manual_start",
+            created_by: user
+          )
+        end
       end
 
       private
