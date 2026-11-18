@@ -222,9 +222,10 @@ class FeatureFlags
     end
 
     def with_tenant_rollback_protection(tenant_setting:, features:)
-      return yield unless automation_phases_disabled_for_tenant?(tenant_setting:, features:)
+      projects = tenant_phase_rollback_projects(tenant_setting:, features:)
+      return yield if projects.empty?
 
-      Automation::PhaseRolloutRollback.call(projects: tenant_setting.account.projects) { yield }
+      Automation::PhaseRolloutRollback.call(projects:) { yield }
     end
 
     def enable_percentage_of_actors(flag_name, percentage)
@@ -285,9 +286,20 @@ class FeatureFlags
         enabled?(:automation_phases, project: project)
     end
 
-    def automation_phases_disabled_for_tenant?(tenant_setting:, features:)
-      requested = features.to_h["automation_phases"]
-      requested == false && tenant_setting.features.to_h["automation_phases"] != false
+    def tenant_phase_rollback_projects(tenant_setting:, features:)
+      return [] if features.nil?
+
+      tenant_setting.account.projects.select do |project|
+        phase_rollout_enabled_with?(project, tenant_setting.features) &&
+          !phase_rollout_enabled_with?(project, features)
+      end
+    end
+
+    def phase_rollout_enabled_with?(project, features)
+      override = features.to_h.stringify_keys["automation_phases"]
+      return override if [ true, false ].include?(override)
+
+      feature(:automation_phases).enabled?(project)
     end
 
     def enqueue_partial_closeout_projection(flag_name, project)

@@ -108,6 +108,38 @@ RSpec.describe Tools::GetUserSettings do
   end
 
   describe Tools::UpdateTenantSettings do
+    # @spec AUTOMATION-PHASES-014
+    it "refuses removal of an enabled phase override while an active grant exists" do
+      account = create(:account)
+      user = create(:user, :owner, account:)
+      session = create(:chat_session, account:, created_by: user)
+      project = create(:project, account:)
+      account.tenant_setting!.update!(features: { "automation_phases" => true })
+      grant = create(:work_item_continuation_grant, project:)
+
+      expect {
+        described_class.new(user:, session:).call(settings: { features: {} }, confirmed: true)
+      }.to raise_error(Automation::PhaseRolloutRollback::ActiveGrantsError, /#{project.id}.*#{grant.id}/)
+
+      expect(account.tenant_setting!.reload.features).to eq("automation_phases" => true)
+      expect(FeatureFlags.enabled?(:automation_phases, project:)).to be(true)
+    end
+
+    it "permits override removal when a project gate keeps the phase rollout enabled" do
+      account = create(:account)
+      user = create(:user, :owner, account:)
+      session = create(:chat_session, account:, created_by: user)
+      project = create(:project, account:)
+      account.tenant_setting!.update!(features: { "automation_phases" => true })
+      FeatureFlags.enable!(:automation_phases, project:)
+      create(:work_item_continuation_grant, project:)
+
+      described_class.new(user:, session:).call(settings: { features: {} }, confirmed: true)
+
+      expect(account.tenant_setting!.reload.features).to eq({})
+      expect(FeatureFlags.enabled?(:automation_phases, project:)).to be(true)
+    end
+
     it "updates tenant settings for an owner" do
       account = create(:account)
       user = create(:user, :owner, account:)
