@@ -32,7 +32,7 @@ class InboxController < ApplicationController
   # removal moved out of the default list.
   # @spec INBOX-PHASE-RELEVANCE-003
   def hidden_or_removed_entry
-    entry = inbox_queue.find_entry(params[:entry_id])
+    entry = bounded_entry
     @inbox_entries = [ entry ].compact if entry
     entry
   end
@@ -126,6 +126,10 @@ class InboxController < ApplicationController
       @inbox_entries = selected_entry_queue
       return
     end
+    if stale_show_request?
+      @inbox_entries = []
+      return
+    end
 
     @inbox_entries = inbox_queue.call
     load_inbox_presentations(entries: @inbox_entries)
@@ -158,19 +162,62 @@ class InboxController < ApplicationController
     detail_frame_request? || %w[open_chat supplement history].include?(action_name)
   end
 
+  # A request that resolves one selected entry: every `show` variant — the
+  # turbo-frame detail pane and the full-page render alike — plus the
+  # chat/supplement/history entry points.
+  def selected_entry_request?
+    single_entry_request? || action_name == "show"
+  end
+
+  # A full-page `show` of a link that no longer resolves can only redirect,
+  # so the bounded lookup's miss skips the list build — and the escalated-PR
+  # materialization that redirect used to pay for (#5165). The frame variant
+  # already returned through `single_entry_request?`.
+  # @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-015
+  def stale_show_request?
+    action_name == "show" && bounded_entry.nil?
+  end
+
   def selected_entry_queue
-    [ inbox_queue.find_entry(params[:entry_id]) ].compact
+    [ bounded_entry ].compact
+  end
+
+  # Bounded, authorized resolution of the one entry a selected-entry request
+  # targets: the parsed record ID keeps stale, hidden, and removed direct
+  # links on ID-scoped lane queries instead of materializing the lane — for
+  # escalated PRs, every matching blocked PR (#5165).
+  # @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-015
+  def bounded_entry
+    # An id without a record component can never match an entry, so skip the
+    # lookup instead of materializing the kind's unbounded lane.
+    return if selected_entry_record_id.blank?
+
+    @bounded_entry ||= Inbox::Queue.new(user: current_user, projects: @scoped_projects,
+      kinds: selected_entry_kinds, record_id: selected_entry_record_id).find_entry(params[:entry_id])
+  end
+
+  def selected_entry_kinds
+    @selected_kinds.presence || [ params[:entry_id].to_s.split(":", 2).first ]
   end
 
   def inbox_queue
+    # Unbounded on full-page shows: a valid direct link still renders the
+    # whole filtered list beside its detail pane, so only single-entry
+    # renders (whose ranking context reuses this queue) bound it.
     @inbox_queue ||= Inbox::Queue.new(user: current_user, projects: @scoped_projects,
-      kinds: queue_entry_kinds, sort: @selected_sort, scope: @selected_scope, query: @inbox_query)
+      kinds: queue_entry_kinds, sort: @selected_sort, scope: @selected_scope, query: @inbox_query,
+      record_id: single_entry_request? ? selected_entry_record_id : nil)
   end
 
   def queue_entry_kinds
-    return @selected_kinds unless single_entry_request?
+    single_entry_request? ? selected_entry_kinds : @selected_kinds
+  end
 
-    @selected_kinds.presence || [ params[:entry_id].to_s.split(":", 2).first ]
+  def selected_entry_record_id
+    return unless selected_entry_request?
+
+    # @spec OPERATOR-INBOX-002C OPERATOR-INBOX-015
+    params[:entry_id].to_s.split(":", 2).second
   end
 
   # @spec INBOX-PHASE-RELEVANCE-002
