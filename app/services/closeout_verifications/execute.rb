@@ -146,6 +146,7 @@ module CloseoutVerifications
     def persist_cancelled!(**evidence)
       return false unless agent_run.status == "cancelled"
 
+      evidence[:technical_evidence] = persisted_technical_evidence.presence || evidence[:technical_evidence]
       record_terminal!("cancelled", **evidence) unless agent_run.verification_result.key?(EVIDENCE_KEY)
       true
     end

@@ -278,4 +278,18 @@ RSpec.describe CloseoutVerificationJob do
     expect(receipt.fetch("environment")).to include("container_id" => "fixture-container", "container_host" => "local")
     expect(receipt.dig("technical_evidence", "cleanup", "completed")).to be(true)
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "cancelled receipt retains the final persisted cleanup verdict" do
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      agent_run.cancel!
+      agent_run.update!(verification_result: { TechnicalPrerequisites::EVIDENCE_KEY => {
+        "environment" => { "container_id" => "fixture", "container_host" => "local" },
+        "cleanup" => { "attempted" => true, "completed" => true }
+      } })
+      validation_result("cancelled", { "cleanup" => { "attempted" => true } })
+    end
+    described_class.perform_now(agent_run.id)
+    expect(agent_run.reload.verification_result.dig("closeout_verification", "technical_evidence", "cleanup", "completed")).to be(true)
+  end
 end

@@ -559,4 +559,20 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       health_failures: {}
     )
   end
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "a row disappearing during execution cannot skip resource cleanup" do
+    stub_compatible_host
+    stub_provisioning
+    missing = false
+    allow(agent_run).to receive(:reload).and_wrap_original do |original|
+      raise ActiveRecord::RecordNotFound, "run removed during execution" if missing
+      original.call
+    end
+    allow(agent_run).to receive(:execute_in_execution_environment) do
+      missing = true
+      raise RuntimeError, "interrupted"
+    end
+    expect { described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:) }.to raise_error(RuntimeError, "interrupted")
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+  end
 end

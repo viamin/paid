@@ -94,6 +94,9 @@ module TechnicalPrerequisites
       agent_run.reload
       environment = { "container_id" => agent_run.container_id, "container_host" => agent_run.container_host }.compact
       evidence["environment"] = environment if environment.present?
+    rescue ActiveRecord::RecordNotFound
+      # A deleted run must not prevent cleanup using the in-memory resource handle.
+      nil
     end
 
     def prepare_checkout
