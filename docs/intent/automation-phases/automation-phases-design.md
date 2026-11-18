@@ -51,6 +51,12 @@ workflow execution, rollback refuses with the affected project and run
 identifiers until the run finishes or is cancelled. Only then may the caller
 persist the rollback.
 
+Automatic queue admission shares the same project-row serialization boundary.
+After acquiring the lock it rechecks phase authority before inserting a run;
+an admission that observed the phase rollout before waiting is refused if the
+rollback completed while it waited, rather than being reinterpreted under
+legacy policy.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:

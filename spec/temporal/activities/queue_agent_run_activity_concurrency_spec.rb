@@ -3,7 +3,7 @@
 require "rails_helper"
 require "timeout"
 
-# @spec TEMPORAL-ORCHESTRATION-012
+# @spec TEMPORAL-ORCHESTRATION-012 AUTOMATION-PHASES-014
 RSpec.describe Activities::QueueAgentRunActivity do
   include ActiveJob::TestHelper
 
@@ -37,7 +37,39 @@ RSpec.describe Activities::QueueAgentRunActivity do
     expect(enqueued_jobs.count { |job| job[:job] == ProcessRunQueueJob }).to eq(1)
   end
 
+  it "refuses an automatic insertion that waited for phase rollout rollback" do
+    FeatureFlags.enable!(:automation_phases, project:)
+    project.update!(automation_phase_settings: { "phases" => { "coding" => false } })
+    issue = create(:issue, project:)
+
+    result = race_rollback_and_admission(issue)
+
+    expect(result).to include(queued: false, skipped: true, reason: "phase_rollout_changed")
+    expect(project.agent_runs).to be_empty
+    expect(FeatureFlags.enabled?(:automation_phases, project:)).to be(false)
+  end
+
   private
+
+  def race_rollback_and_admission(issue)
+    rollback_locked = Queue.new
+    release_rollback = Queue.new
+    observer = rollback_barrier(rollback_locked, release_rollback)
+
+    ActiveSupport::Notifications.subscribed(observer, "sql.active_record") do
+      rollback = rollback_thread
+      Timeout.timeout(10) { rollback_locked.pop }
+      admission = queue_thread({ project_id: project.id, issue_id: issue.id, goal: "create_pr" }, nil)
+      wait_for_project_lock
+      release_rollback << true
+
+      thread_value(rollback, "Rollback")
+      thread_value(admission, "Admission")
+    ensure
+      release_rollback << true
+      [ rollback, admission ].compact.each { |thread| thread.kill.join if thread.alive? }
+    end
+  end
 
   def race_admissions
     # Materialize shared setup before the two independent connections start.
@@ -87,5 +119,51 @@ RSpec.describe Activities::QueueAgentRunActivity do
         described_class.new.execute(input)
       end
     end
+  end
+
+  def rollback_thread
+    Thread.new do
+      Thread.current[:rollback_barrier] = true
+      ActiveRecord::Base.connection_pool.with_connection do
+        FeatureFlags.disable!(:automation_phases, project:)
+      end
+    end
+  end
+
+  def rollback_barrier(rollback_locked, release_rollback)
+    lambda do |event|
+      sql = event.payload[:sql]
+      next unless Thread.current[:rollback_barrier] && project_lock?(sql)
+
+      Thread.current[:rollback_barrier] = nil
+      rollback_locked << true
+      release_rollback.pop
+    end
+  end
+
+  def project_lock?(sql)
+    sql.include?(%q("projects")) && sql.include?("FOR UPDATE")
+  end
+
+  def wait_for_project_lock
+    Timeout.timeout(10) do
+      loop do
+        waiting = ActiveRecord::Base.connection.select_value(<<~SQL)
+          SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity
+            WHERE wait_event_type = 'Lock' AND query LIKE '%projects%FOR UPDATE%'
+          )
+        SQL
+        break if ActiveModel::Type::Boolean.new.cast(waiting)
+
+        Thread.pass
+      end
+    end
+  end
+
+  def thread_value(thread, label)
+    raise "#{label} timed out" unless thread.join(10)
+
+    thread.value
   end
 end

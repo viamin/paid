@@ -32,6 +32,7 @@ module Activities
       end
       trigger_type ||= "automatic"
       issue = issue_id ? Issue.find(issue_id) : nil
+      phase_rollout_observed = automatic_authorization && Automation::RolloutGuard.enabled?(project)
 
       # PR follow-up runs (source_pull_request_number present) intentionally do
       # not reuse the issue-trust gate below. They are authorized upstream by
@@ -92,24 +93,24 @@ module Activities
       # queued/active runs for the same issue or PR under concurrency.
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
-      # @spec TEMPORAL-ORCHESTRATION-012
-      agent_run, duplicate, enhancement_limit_reached, enhancement_held = begin
+      # @spec TEMPORAL-ORCHESTRATION-012 AUTOMATION-PHASES-014
+      agent_run, duplicate, enhancement_limit_reached, enhancement_held, phase_block_reason = begin
         AgentRun.transaction(requires_new: true) do
+          project.lock! if automatic_authorization
           issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
           if automatic_enhancement_held?(project, issue, goal, trigger_type)
-            [ nil, false, false, true ]
+            [ nil, false, false, true, nil ]
           elsif (existing = find_existing_run(project, issue, source_pull_request_number))
             if existing.goal == goal
               merge_draft_review_round_tracking!(existing,
                 count_toward_draft_review_round: count_toward_draft_review_round,
                 expected_draft_review_count: expected_draft_review_count)
             end
-            [ existing, true, false, false ]
+            [ existing, true, false, false, nil ]
           elsif enhancement_round_limit_reached?(project, issue, goal, trigger_type)
-            [ nil, false, true, false ]
+            [ nil, false, true, false, nil ]
           else
-            consume_enhancement_round!(issue) if automatic_enhancement?(goal, trigger_type, issue)
-            run = AgentRun.create!(
+            run = AgentRun.new(
               project: project,
               issue: issue,
               initiating_user_id: input[:initiating_user_id],
@@ -133,9 +134,16 @@ module Activities
               review_depth_snapshot: project.effective_review_depth,
               status: "queued"
             )
-            snapshot_page_load_evidence!(run, input[:focus_evidence])
-            snapshot_tdd_review_feedback!(run, input[:tdd_review_feedback])
-            [ run, false, false, false ]
+            reason = automatic_phase_block_reason(run, phase_rollout_observed)
+            if reason
+              [ nil, false, false, false, reason ]
+            else
+              consume_enhancement_round!(issue) if automatic_enhancement?(goal, trigger_type, issue)
+              run.save!
+              snapshot_page_load_evidence!(run, input[:focus_evidence])
+              snapshot_tdd_review_feedback!(run, input[:tdd_review_feedback])
+              [ run, false, false, false, nil ]
+            end
           end
         end
       rescue ActiveRecord::RecordNotUnique
@@ -153,7 +161,18 @@ module Activities
             expected_draft_review_count: expected_draft_review_count)
         end
 
-        [ existing, true, false, false ]
+        [ existing, true, false, false, nil ]
+      end
+
+      if phase_block_reason
+        logger.info(
+          message: "queue_agent_run.phase_authorization_blocked",
+          project_id: project.id,
+          issue_id: issue&.id,
+          goal: goal,
+          reason: phase_block_reason
+        )
+        return { queued: false, skipped: true, reason: phase_block_reason }
       end
 
       if enhancement_held
@@ -210,6 +229,15 @@ module Activities
     end
 
     private
+
+    def automatic_phase_block_reason(run, phase_rollout_observed)
+      if phase_rollout_observed && !Automation::RolloutGuard.enabled?(run.project)
+        return "phase_rollout_changed"
+      end
+
+      policy = AgentRuns::RecheckIssueEligibility.withdrawn_phase_policy(run)
+      "phase_policy_denied" if policy
+    end
 
     def automatic_enhancement?(goal, trigger_type, issue)
       issue.present? && goal == "enhance_issue" && trigger_type == "automatic"

@@ -125,11 +125,15 @@
   cancelling independently authorized work or bypassing tenant boundaries. If
   a phase-unauthorized queued run cannot be cancelled because it is already
   claimed for workflow execution, rollback SHALL refuse with the affected
-  project and run identifiers until reconciliation completes.
+  project and run identifiers until reconciliation completes. Automatic queue
+  admission SHALL serialize its policy recheck and insertion with rollback on
+  the affected project, and SHALL refuse a stale admission when rollback
+  completes after that admission observed phase-rollout policy.
   *Tests:* `spec/services/automation/rollout_guard_spec.rb`,
-  `spec/services/automation/phase_rollout_rollback_spec.rb`
+  `spec/services/automation/phase_rollout_rollback_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_concurrency_spec.rb`
   *Code:* `FeatureFlags`, `Automation::RolloutGuard`,
-  `Automation::PhaseRolloutRollback`
+  `Automation::PhaseRolloutRollback`, `Activities::QueueAgentRunActivity`
 
 - [x] **AUTOMATION-PHASES-015** — The system SHALL derive preview phase
   defaults from each project's currently effective capabilities without
