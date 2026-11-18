@@ -54,13 +54,17 @@ RSpec.describe Activities::QueueAgentRunActivity do
   def race_rollback_and_admission(issue)
     rollback_locked = Queue.new
     release_rollback = Queue.new
+    admission_backend = Queue.new
     observer = rollback_barrier(rollback_locked, release_rollback)
 
     ActiveSupport::Notifications.subscribed(observer, "sql.active_record") do
       rollback = rollback_thread
       Timeout.timeout(10) { rollback_locked.pop }
-      admission = queue_thread({ project_id: project.id, issue_id: issue.id, goal: "create_pr" }, nil)
-      wait_for_project_lock
+      admission = queue_thread(
+        { project_id: project.id, issue_id: issue.id, goal: "create_pr" },
+        backend_pid: admission_backend
+      )
+      wait_for_project_lock(Timeout.timeout(10) { admission_backend.pop })
       release_rollback << true
 
       thread_value(rollback, "Rollback")
@@ -76,46 +80,47 @@ RSpec.describe Activities::QueueAgentRunActivity do
     project.created_by.settings
     project.account.tenant_setting!
     input = { project_id: project.id, source_pull_request_number: 42, goal: "create_pr" }
-    ready = Queue.new
-    gates = [ Queue.new, Queue.new ]
+    first_locked = Queue.new
+    release_first = Queue.new
+    second_backend = Queue.new
     threads = []
-    observer = lookup_barrier(ready)
+    observer = admission_barrier(first_locked, release_first)
 
     ActiveSupport::Notifications.subscribed(observer, "sql.active_record") do
-      threads << queue_thread(input, gates[0])
+      threads << queue_thread(input, lock_gate: release_first)
+      Timeout.timeout(10) { first_locked.pop }
       threads << queue_thread(input.merge(count_toward_draft_review_round: true,
-        expected_draft_review_count: 5), gates[1])
+        expected_draft_review_count: 5), backend_pid: second_backend)
 
-      # Both lookups must observe no active run before either insert starts.
-      Timeout.timeout(10) { 2.times { ready.pop } }
-      gates[0] << true
+      wait_for_project_lock(Timeout.timeout(10) { second_backend.pop })
+      release_first << true
       raise "Winning admission timed out" unless threads[0].join(10)
       threads[0].value
 
-      gates[1] << true
       raise "Duplicate admission timed out" unless threads[1].join(10)
       threads.map(&:value)
     end
   ensure
-    gates&.each { |gate| gate << true }
+    release_first << true
     threads&.each { |thread| thread.kill.join if thread.alive? }
   end
 
-  def lookup_barrier(ready)
+  def admission_barrier(locked, release)
     lambda do |event|
-      gate = Thread.current[:queue_admission_gate]
-      next unless gate && event.payload[:sql].include?("\"agent_runs\"") && event.payload[:sql].include?("FOR UPDATE")
+      gate = Thread.current[:queue_admission_lock_gate]
+      next unless gate && project_lock?(event.payload[:sql])
 
-      Thread.current[:queue_admission_gate] = nil
-      ready << true
-      gate.pop
+      Thread.current[:queue_admission_lock_gate] = nil
+      locked << true
+      release.pop
     end
   end
 
-  def queue_thread(input, gate)
+  def queue_thread(input, lock_gate: nil, backend_pid: nil)
     Thread.new do
-      Thread.current[:queue_admission_gate] = gate
+      Thread.current[:queue_admission_lock_gate] = lock_gate
       ActiveRecord::Base.connection_pool.with_connection do
+        backend_pid << ActiveRecord::Base.connection.select_value("SELECT pg_backend_pid()") if backend_pid
         described_class.new.execute(input)
       end
     end
@@ -145,13 +150,13 @@ RSpec.describe Activities::QueueAgentRunActivity do
     sql.include?(%q("projects")) && sql.include?("FOR UPDATE")
   end
 
-  def wait_for_project_lock
+  def wait_for_project_lock(backend_pid)
     Timeout.timeout(10) do
       loop do
         waiting = ActiveRecord::Base.connection.select_value(<<~SQL)
           SELECT EXISTS (
             SELECT 1 FROM pg_stat_activity
-            WHERE wait_event_type = 'Lock' AND query LIKE '%projects%FOR UPDATE%'
+            WHERE pid = #{Integer(backend_pid)} AND wait_event_type = 'Lock'
           )
         SQL
         break if ActiveModel::Type::Boolean.new.cast(waiting)
