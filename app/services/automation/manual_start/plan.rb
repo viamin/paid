@@ -109,6 +109,8 @@ module Automation
         # created while the phase model is being rolled back for the project.
         # @spec AUTOMATION-PHASES-014
         Automation::Phases::RollbackProtection.with_project_lock(project) do
+          return unless FeatureFlags.enabled?(:automation_phases, project:)
+
           WorkItemContinuationGrant.create!(
             project: project,
             issue: issue,

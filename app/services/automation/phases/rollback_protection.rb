@@ -32,7 +32,11 @@ module Automation
         # Guards FeatureFlags.disable! for this flag. Yields inside the
         # protective transaction; raises RollbackBlockedError on refusal.
         def protect_disable(project: nil, actor: nil)
-          affected = affected_projects_for_disable(project:, actor:)
+          target = project || actor
+          return yield if target && !target.is_a?(Project)
+
+          affected = target ? [ target ] : affected_global_projects
+          return yield if target && (!rollout_enabled?(target) || tenant_override_keeps_enabled?(target))
           return yield if affected.empty?
 
           with_protection(affected) { yield }
@@ -43,9 +47,7 @@ module Automation
         def protect_tenant_features(account:, features:)
           return yield unless disabling_tenant_override?(features)
 
-          affected = account.projects.to_a.select do |project|
-            rollout_enabled?(project) && holds_grants?(project)
-          end
+          affected = account.projects.includes(account: :tenant_setting).select { |project| rollout_enabled?(project) }
           return yield if affected.empty?
 
           with_protection(affected) { yield }
@@ -62,16 +64,6 @@ module Automation
 
         private
 
-        def affected_projects_for_disable(project:, actor:)
-          target = project || actor
-          return affected_global_projects unless target
-          return [] unless target.is_a?(Project)
-          return [] unless rollout_enabled?(target) && holds_grants?(target)
-          return [] if tenant_override_keeps_enabled?(target)
-
-          [ target ]
-        end
-
         def affected_global_projects
           grant_project_ids = WorkItemContinuationGrant.distinct.pluck(:project_id)
           Project.where(id: grant_project_ids).includes(account: :tenant_setting).select do |project|
@@ -83,10 +75,6 @@ module Automation
           return false unless features.is_a?(Hash)
 
           ActiveModel::Type::Boolean.new.cast(features[FLAG.to_s]) == false
-        end
-
-        def holds_grants?(project)
-          WorkItemContinuationGrant.exists?(project_id: project.id)
         end
 
         def rollout_enabled?(project)
@@ -139,7 +127,12 @@ module Automation
           chain_ids = grant_chain_ids(project)
           return AgentRun.none if chain_ids.empty?
 
-          AgentRun.where(project_id: project.id, issue_id: chain_ids, status: "queued")
+          scope = AgentRun.where(project_id: project.id, status: "queued")
+          chain_pr_numbers = Issue.where(id: chain_ids, is_pull_request: true).pluck(:github_number)
+          return scope.where(issue_id: chain_ids) if chain_pr_numbers.empty?
+
+          scope.where(issue_id: chain_ids)
+            .or(scope.where(issue_id: nil, source_pull_request_number: chain_pr_numbers))
         end
 
         # The work chains continuation grants cover: the granted work items,

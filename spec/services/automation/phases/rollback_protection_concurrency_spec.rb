@@ -28,16 +28,25 @@ RSpec.describe Automation::Phases::RollbackProtection do
     it "refuses the rollback when a grant is created while it waits on the lock" do
       issue = create(:issue, project:, github_state: "open")
       grant_thread = create_grant_under_lock(issue)
-      releaser = Thread.new { release_queue << true }
+      disable_result = Queue.new
+      disable_thread = Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection do
+          FeatureFlags.disable!(:automation_phases, project: Project.find(project.id))
+          disable_result << :permitted
+        rescue FeatureFlags::RollbackBlockedError => error
+          disable_result << error
+        end
+      end
 
-      expect {
-        FeatureFlags.disable!(:automation_phases, project: Project.find(project.id))
-      }.to raise_error(FeatureFlags::RollbackBlockedError, /#{project.full_name}/)
+      wait_for_disable_to_block_on_lock
+      release_queue << true
+
+      expect(disable_result.pop).to be_a(FeatureFlags::RollbackBlockedError)
 
       expect(FeatureFlags.enabled?(:automation_phases, project: Project.find(project.id))).to be(true)
       expect(WorkItemContinuationGrant.active.where(project_id: project.id).exists?).to be(true)
     ensure
-      [ grant_thread, releaser ].compact.each { |thread| thread.kill.join if thread.alive? }
+      [ grant_thread, disable_thread ].compact.each { |thread| thread.kill.join if thread.alive? }
     end
   end
 
@@ -63,5 +72,20 @@ RSpec.describe Automation::Phases::RollbackProtection do
     end
     ready.pop
     thread
+  end
+
+  def wait_for_disable_to_block_on_lock
+    Timeout.timeout(5) do
+      loop do
+        waiting = ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+          SELECT EXISTS (
+            SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+          )
+        SQL
+        return if ActiveModel::Type::Boolean.new.cast(waiting)
+
+        Thread.pass
+      end
+    end
   end
 end

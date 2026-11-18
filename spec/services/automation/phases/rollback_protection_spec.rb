@@ -140,6 +140,21 @@ RSpec.describe Automation::Phases::RollbackProtection do
       expect(unrelated_run.reload.status).to eq("queued")
     end
 
+    it "reconciles PR-number-linked automatic runs without an issue" do
+      issue = create(:issue, project:, github_state: "open")
+      pull_request = create(:issue, project:, parent_issue: issue, is_pull_request: true,
+        github_number: 42, github_state: "open")
+      configure_phases("coding" => false, "merge" => false)
+      run = create(:agent_run, :queued, :automatic, project:, issue: nil, goal: "create_pr",
+        source_pull_request_number: pull_request.github_number, custom_prompt: "Repair pull request")
+      grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+      grant.revoke!
+
+      FeatureFlags.disable!(:automation_phases, project:)
+
+      expect(run.reload.status).to eq("cancelled")
+    end
+
     it "does not guard a project whose rollout is already off" do
       other = create(:project, account:)
 
@@ -260,8 +275,15 @@ RSpec.describe Automation::Phases::RollbackProtection do
       expect(queries.join).to match(/pg_advisory_xact_lock.*#{project.id}/)
     end
 
+    it "locks an enabled project before checking for grants" do
+      queries = capture_queries do
+        FeatureFlags.disable!(:automation_phases, project:)
+      end
+
+      expect(queries.join).to match(/pg_advisory_xact_lock.*#{project.id}/)
+    end
+
     it "shares the lock namespace with grant creation" do
-      issue = create(:issue, project:, github_state: "open")
       queries = capture_queries do
         described_class.with_project_lock(project) { project.work_item_continuation_grants.active.to_a }
       end
