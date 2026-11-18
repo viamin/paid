@@ -304,23 +304,28 @@ jobs:
           for attempt in 1 2 3; do
             : > "$failure_log"
             : > "$test_log"
-            if bin/rspec spec/system 2>&1 | tee "$failure_log"; then
+            set +e
+            timeout --foreground 80m bin/rspec spec/system 2>&1 | tee "$failure_log"
+            rspec_status=${PIPESTATUS[0]}
+            set -e
+            if [ "$rspec_status" -eq 0 ]; then
               exit 0
             fi
 
             # Rails can receive a nil PostgreSQL result from the hosted service
-            # while applying request tenant context. That is a runner-side
-            # transport failure, not a spec assertion. Retry only this known
-            # signature, keep the attempts bounded, and fail every other error
-            # immediately.
+            # while applying request tenant context. A hosted browser process
+            # can also stall without producing an RSpec failure. Both are
+            # runner-side infrastructure faults, not spec assertions. Retry
+            # only these known signatures, keep the attempts bounded, and fail
+            # every other error immediately.
             # Action Cable writes this exception to Rails' test log instead of
             # RSpec's stdout, so inspect the freshly cleared log for this
             # attempt as well as the captured spec output.
-            if ! grep -Fq "undefined method 'cmd_tuples' for nil" "$failure_log" "$test_log"; then
-              exit 1
+            if [ "$rspec_status" -ne 124 ] && ! grep -Fq "undefined method 'cmd_tuples' for nil" "$failure_log" "$test_log"; then
+              exit "$rspec_status"
             fi
             if [ "$attempt" -eq 3 ]; then
-              exit 1
+              exit "$rspec_status"
             fi
 
             # The result can remain empty for subsequent connections until the
@@ -345,7 +350,11 @@ jobs:
               sleep "$((readiness_attempt * 5))"
             done
 
-            echo "::warning::PostgreSQL returned an empty result while setting tenant context; restarted the service and retrying system specs (attempt $attempt/3)"
+            if [ "$rspec_status" -eq 124 ]; then
+              echo "::warning::System specs stalled; restarted the PostgreSQL service and retrying (attempt $attempt/3)"
+            else
+              echo "::warning::PostgreSQL returned an empty result while setting tenant context; restarted the service and retrying system specs (attempt $attempt/3)"
+            fi
             sleep "$((attempt * 5))"
           done
 

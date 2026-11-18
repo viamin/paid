@@ -54,15 +54,17 @@ report still fails the check. Recovery never re-runs legs that executed.
 
 The GitHub-hosted PostgreSQL service can rarely return an empty protocol result
 while Rails applies tenant context, surfacing from the adapter as a
-`cmd_tuples` call on `nil`. The system-test job may retry the complete browser
-suite after that exact infrastructure signature, with three total attempts so
-repeated transport faults remain bounded. Before each retry, the job restarts
-the PostgreSQL service container identified by GitHub Actions' job-service
-context and waits for it to accept connections; a missing or unavailable
-container fails closed. A short increasing
-delay then gives the hosted service time to settle. Any other failure exits
-immediately, and exhaustion of the bounded attempts still fails the job. The
-recovery does not skip examples or reinterpret assertion failures.
+`cmd_tuples` call on `nil`. A hosted browser process can also stall the suite
+without returning an assertion or adapter failure. The system-test job bounds
+each complete browser-suite attempt at 80 minutes and may retry the complete
+suite after either condition, with three total attempts so repeated transport
+faults remain bounded below GitHub's six-hour job maximum. Before each retry,
+the job restarts the PostgreSQL service container identified by GitHub Actions'
+job-service context and waits for it to accept connections; a missing or
+unavailable container fails closed. A short increasing delay then gives the
+hosted service time to settle. Any other failure exits immediately, and
+exhaustion of the bounded attempts still fails the job. The recovery does not
+skip examples or reinterpret assertion failures.
 
 System-test workflow runs do not use GitHub Actions workflow concurrency. GitHub
 keeps at most one pending run in a concurrency group and cancels a superseded

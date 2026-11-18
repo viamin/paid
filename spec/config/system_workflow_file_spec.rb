@@ -123,6 +123,19 @@ RSpec.describe SystemWorkflowFile, :no_db do
     expect(run).not_to include("docker ps")
   end
 
+  # @spec TEST-SUITE-019
+  it "retries an otherwise stalled system suite before the hosted job limit" do
+    run = system_step("Run system specs").fetch("run")
+
+    expect(run).to include(
+      "timeout --foreground 80m bin/rspec spec/system",
+      'rspec_status=${PIPESTATUS[0]}',
+      'if [ "$rspec_status" -eq 0 ]; then',
+      'if [ "$rspec_status" -ne 124 ] && ! grep -Fq',
+      'System specs stalled; restarted the PostgreSQL service and retrying'
+    )
+  end
+
   # @spec TOOLCHAIN-PIN-029
   it "installs the Chromium runtime libraries required by Cuprite" do
     runtime_step = system_step("Install Chromium runtime dependencies")
