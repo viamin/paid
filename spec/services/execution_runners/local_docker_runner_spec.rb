@@ -1668,7 +1668,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
         allow(agent_run).to receive(:workspace_volume_host).and_return("remote")
         allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
         allow(Containers::McpProvisioner).to receive(:for).with(agent_run).and_return(provisioner)
-        expect(provisioner).to receive(:cleanup).with(agent_run)
+        expect(provisioner).to receive(:cleanup).with(agent_run, persist: true)
 
         runner.cleanup_mcp_servers(agent_run: agent_run)
       end
