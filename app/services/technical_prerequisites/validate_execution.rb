@@ -57,6 +57,8 @@ module TechnicalPrerequisites
       # volume removal runs even if provisioning raises partway through.
       @environment_provisioned = true
       agent_run.provision_execution_environment(container_host: inspection.host)
+      agent_run.reload
+      evidence["environment"] = { "container_id" => agent_run.container_id, "container_host" => agent_run.container_host }
       return cancelled_result if cancelled?
 
       evidence["checkout"] = prepare_checkout
@@ -347,7 +349,7 @@ module TechnicalPrerequisites
     end
 
     def write_cleanup_evidence(completed:, errors: [])
-      record = agent_run.verification_result.fetch(EVIDENCE_KEY, {})
+      record = evidence.stringify_keys.merge(agent_run.verification_result.fetch(EVIDENCE_KEY, {}))
       cleanup = { "attempted" => true, "completed" => completed }
       cleanup["errors"] = errors if errors.any?
       agent_run.update!(verification_result: agent_run.verification_result.merge(

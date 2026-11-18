@@ -69,6 +69,25 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(source_run.reconciliation.dig("technical_prerequisite_evidence", "cleanup")).to include("completed" => true)
   end
 
+  # @spec PARTIAL-CLOSEOUT-032 STAGED-CLOSEOUT-ADOPTION-011
+  it "retains the provisioned environment identity after cleanup clears the run fields" do
+    stub_compatible_host
+    stub_provisioning
+    stub_command_execution
+    allow(agent_run).to receive(:provision_execution_environment) do
+      agent_run.update!(container_id: "fixture-container", container_host: "remote")
+    end
+    allow(agent_run).to receive(:cleanup_execution_environment) do
+      agent_run.update!(container_id: nil, container_host: nil)
+    end
+
+    described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+    expect(agent_run.reload.container_id).to be_nil
+    expect(agent_run.verification_result.dig("technical_prerequisite_validation", "environment"))
+      .to include("container_id" => "fixture-container", "container_host" => "remote")
+  end
+
   # @spec PARTIAL-CLOSEOUT-042
   it "records raw baseline/current samples and a mechanical comparison without claiming an improvement" do
     agent_run.update!(external_metadata: { TechnicalPrerequisites::RECIPE_KEY => {

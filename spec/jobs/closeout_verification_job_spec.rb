@@ -260,4 +260,22 @@ RSpec.describe CloseoutVerificationJob do
     expect(agent_run.reload).to have_attributes(status: "failed")
     expect(agent_run.verification_result.dig("closeout_verification", "outcome")).to eq("cleanup_failed")
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  it "copies the durable runtime identity and final cleanup verdict into the closeout receipt" do
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      returned = { "environment" => { "container_id" => "fixture-container", "container_host" => "local" },
+        "native" => { "exit_code" => 0 }, "cleanup" => { "attempted" => true } }
+      agent_run.update!(container_id: nil, container_host: nil, verification_result: {
+        TechnicalPrerequisites::EVIDENCE_KEY => returned.merge("cleanup" => { "attempted" => true, "completed" => true })
+      })
+      validation_result("completed", returned)
+    end
+
+    described_class.perform_now(agent_run.id)
+
+    receipt = agent_run.reload.verification_result.fetch("closeout_verification")
+    expect(receipt.fetch("environment")).to include("container_id" => "fixture-container", "container_host" => "local")
+    expect(receipt.dig("technical_evidence", "cleanup", "completed")).to be(true)
+  end
 end
