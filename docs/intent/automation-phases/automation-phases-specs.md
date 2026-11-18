@@ -122,7 +122,10 @@
   its rollout state and durable records with an inspectable reason. After a
   grant finishes or is revoked, rollback SHALL reconcile its affected queued
   work under the current phase policy before disabling the model, without
-  cancelling independently authorized work or bypassing tenant boundaries.
+  cancelling independently authorized work or bypassing tenant boundaries. If
+  a phase-unauthorized queued run cannot be cancelled because it is already
+  claimed for workflow execution, rollback SHALL refuse with the affected
+  project and run identifiers until reconciliation completes.
   *Tests:* `spec/services/automation/rollout_guard_spec.rb`,
   `spec/services/automation/phase_rollout_rollback_spec.rb`
   *Code:* `FeatureFlags`, `Automation::RolloutGuard`,

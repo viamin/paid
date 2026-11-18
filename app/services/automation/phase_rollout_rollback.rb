@@ -15,6 +15,16 @@ module Automation
       end
     end
 
+    class PendingReconciliationError < StandardError
+      attr_reader :project_ids, :run_ids
+
+      def initialize(runs)
+        @project_ids = runs.map(&:project_id).uniq.sort
+        @run_ids = runs.map(&:id).sort
+        super("Cannot disable automation phases while queued runs still need reconciliation for projects #{project_ids.join(', ')} (runs #{run_ids.join(', ')}). Wait for the runs to finish or cancel them, then retry rollback.")
+      end
+    end
+
     def self.call(projects:, &block) = new(projects:).call(&block)
 
     def initialize(projects:)
@@ -28,6 +38,9 @@ module Automation
         raise ActiveGrantsError, grants if grants.any?
 
         reconcile_queued_work(projects)
+        pending_runs = pending_reconciliation_runs(projects)
+        raise PendingReconciliationError, pending_runs if pending_runs.any?
+
         yield if block_given?
       end
     end
@@ -39,6 +52,12 @@ module Automation
     def reconcile_queued_work(projects)
       AgentRun.queued.where(project: projects).find_each do |run|
         AgentRuns::RecheckIssueEligibility.call(run)
+      end
+    end
+
+    def pending_reconciliation_runs(projects)
+      AgentRun.queued.where(project: projects).order(:id).lock.find_each.filter_map do |run|
+        run if AgentRuns::RecheckIssueEligibility.withdrawn_phase_policy(run)
       end
     end
   end

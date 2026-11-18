@@ -41,7 +41,8 @@ class TenantConfigurationsController < ApplicationController
     end
 
     redirect_to edit_tenant_configuration_path, notice: "Tenant configuration saved successfully."
-  rescue ActiveRecord::RecordInvalid, FeatureFlags::InvalidPercentageError, Automation::PhaseRolloutRollback::ActiveGrantsError => e
+  rescue ActiveRecord::RecordInvalid, FeatureFlags::InvalidPercentageError,
+    Automation::PhaseRolloutRollback::ActiveGrantsError, Automation::PhaseRolloutRollback::PendingReconciliationError => e
     @tenant_setting.errors.add(:base, e.message) unless e.is_a?(ActiveRecord::RecordInvalid)
     load_form_options
     render :edit, status: :unprocessable_content

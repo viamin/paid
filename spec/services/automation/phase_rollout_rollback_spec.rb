@@ -55,6 +55,20 @@ RSpec.describe Automation::PhaseRolloutRollback do
     expect(FeatureFlags.enabled?(:automation_phases, project:)).to be(false)
   end
 
+  it "refuses rollback while a claimed queued run remains phase-unauthorized" do
+    grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+    run = create(:agent_run, :queued, :automatic, :with_temporal, project:, issue:, goal: "create_pr")
+    disable_coding
+    grant.revoke!
+
+    expect {
+      FeatureFlags.disable!(:automation_phases, project:)
+    }.to raise_error(described_class::PendingReconciliationError, /#{project.id}.*#{run.id}/)
+
+    expect(run.reload.status).to eq("queued")
+    expect(FeatureFlags.enabled?(:automation_phases, project:)).to be(true)
+  end
+
   it "permits rollback after a finished grant without cancelling independently authorized work" do
     grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
     run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr")

@@ -45,8 +45,11 @@ active grant refuses the mutation with its project and grant identifiers; the
 flag, settings, grant, and audit history remain unchanged. Once grants are
 terminal, the guard rechecks queued project work while the phase model is still
 enabled, cancelling only automatic work that no longer has phase authority;
-manual and independently default-authorized work remains queued. Only then may
-the caller persist the rollback.
+manual and independently default-authorized work remains queued. If a
+phase-unauthorized run remains queued because it has already been claimed for
+workflow execution, rollback refuses with the affected project and run
+identifiers until the run finishes or is cancelled. Only then may the caller
+persist the rollback.
 
 ## Project phase defaults
 

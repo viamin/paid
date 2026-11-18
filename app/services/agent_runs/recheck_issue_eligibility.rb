@@ -46,6 +46,22 @@ module AgentRuns
       new(...).call
     end
 
+    def self.withdrawn_phase_policy(agent_run)
+      return unless automatic_authorization?(agent_run)
+      return unless Automation::RolloutGuard.enabled?(agent_run.project)
+
+      capability = PHASE_CAPABILITIES[agent_run.goal]
+      return if capability.nil?
+
+      policy = Automation::EffectivePolicy.call(
+        project: agent_run.project.reload,
+        phase: Automation::Phases.for_capability(capability),
+        work_item: agent_run,
+        trigger: :automatic
+      )
+      policy unless policy.permitted?
+    end
+
     def initialize(agent_run, after_claim: false)
       @agent_run = agent_run
       @after_claim = after_claim
@@ -79,24 +95,8 @@ module AgentRuns
     # inherit that priority from a failed manual run.
     # @spec AUTOMATION-PHASES-013
     def phase_revoked?
-      automatic_authorization = agent_run.automatic? || agent_run.external_metadata["automatic_authorization"] ||
-        (agent_run.manual? && agent_run.source_pull_request_number.present? && agent_run.initiating_user_id.nil?)
-      return false unless automatic_authorization
-      return false unless Automation::RolloutGuard.enabled?(agent_run.project)
-
-      capability = PHASE_CAPABILITIES[agent_run.goal]
-      return false if capability.nil?
-
-      policy = Automation::EffectivePolicy.call(
-        project: agent_run.project.reload,
-        phase: Automation::Phases.for_capability(capability),
-        work_item: agent_run,
-        trigger: :automatic
-      )
-      return false if policy.permitted?
-
-      @phase_policy = policy
-      true
+      @phase_policy = self.class.withdrawn_phase_policy(agent_run)
+      @phase_policy.present?
     end
 
     def cancel_phase_unauthorized_run
@@ -259,5 +259,11 @@ module AgentRuns
         error: error.message
       )
     end
+
+    def self.automatic_authorization?(agent_run)
+      agent_run.automatic? || agent_run.external_metadata["automatic_authorization"] ||
+        (agent_run.manual? && agent_run.source_pull_request_number.present? && agent_run.initiating_user_id.nil?)
+    end
+    private_class_method :automatic_authorization?
   end
 end
