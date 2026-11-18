@@ -221,10 +221,10 @@
   `escalated` transition rather than disappearing from the queue and the nav
   badge. The queue SHALL pass its authorized project IDs to the existing
   escalated-PR projection so its query excludes unrelated authorized projects
-  before project and account preloads. A selected detail request SHALL pass
-  its parsed record ID to that same projection; a missing or resolved direct
-  link therefore performs a bounded authorized lookup before its existing
-  filtered-Inbox redirect.
+  before project and account preloads. A selected-entry request — the detail
+  frame or a full-page show — SHALL pass its parsed record ID to that same
+  projection; a missing or resolved direct link therefore performs a bounded
+  authorized lookup before its existing filtered-Inbox redirect.
   *Code:* `app/services/inbox/escalated_pull_requests.rb`,
   `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/controllers/inbox_controller.rb`, `app/controllers/projects/agent_runs_controller.rb`,

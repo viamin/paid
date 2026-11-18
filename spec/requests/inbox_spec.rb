@@ -589,6 +589,48 @@ RSpec.describe "Inbox" do
     expect(blocked_pr_query).to include("\"issues\".\"id\"")
   end
 
+  # @spec OPERATOR-INBOX-015 OPERATOR-INBOX-002C
+  it "uses the selected escalation ID when a stale full-page link redirects" do
+    create(:issue, :pull_request,
+      project: project,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    queries = capture_queries do
+      get inbox_entry_path("#{Inbox::Queue::ESCALATED_PR_KIND}:999999")
+    end
+
+    expect(response).to redirect_to(inbox_path)
+    # The no-header request resolves the link through one ID-bounded
+    # authorized lookup; the redirect never materializes the lane.
+    blocked_pr_queries = queries.select { |sql| sql.include?("FROM \"issues\" INNER JOIN \"projects\"") }
+    expect(blocked_pr_queries).to contain_exactly(a_string_including("\"issues\".\"id\""))
+  end
+
+  # @spec OPERATOR-INBOX-015 OPERATOR-INBOX-002C
+  it "redirects a link without a record id without querying the lane" do
+    create(:issue, :pull_request,
+      project: project,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    queries = capture_queries do
+      get inbox_entry_path("#{Inbox::Queue::ESCALATED_PR_KIND}:")
+    end
+
+    expect(response).to redirect_to(inbox_path)
+    expect(queries).not_to include(a_string_including("pr_review_phase"))
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "renders the full filtered list beside a valid full-page selection" do
+    selected = create(:issue, :needs_input, project: project, title: "Selected question", body: questions_body)
+    create(:issue, :needs_input, project: project, title: "Other question", body: questions_body)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, selected))
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include('id="inbox-list"', "Selected question", "Other question")
+  end
+
   # @spec OPERATOR-INBOX-015
   it "rejects a detail frame selection excluded by the kind filter" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)
