@@ -219,11 +219,18 @@
   inbox, and operational auto-dismissal), and an escalation with reason
   `awaiting_approval` SHALL remain a visible inbox entry across the `ready` →
   `escalated` transition rather than disappearing from the queue and the nav
-  badge.
-  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
-  `app/controllers/projects/agent_runs_controller.rb`,
+  badge. The queue SHALL pass its authorized project IDs to the existing
+  escalated-PR projection so its query excludes unrelated authorized projects
+  before project and account preloads. A selected detail request SHALL pass
+  its parsed record ID to that same projection; a missing or resolved direct
+  link therefore performs a bounded authorized lookup before its existing
+  filtered-Inbox redirect.
+  *Code:* `app/services/inbox/escalated_pull_requests.rb`,
+  `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/controllers/inbox_controller.rb`, `app/controllers/projects/agent_runs_controller.rb`,
   `app/views/dashboard/_inbox_detail_escalated_pr.html.erb`.
-  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  *Test:* `spec/performance/inbox/escalated_pull_requests_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002D** — When an open issue's `paid_state` is

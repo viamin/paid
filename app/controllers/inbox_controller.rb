@@ -164,13 +164,21 @@ class InboxController < ApplicationController
 
   def inbox_queue
     @inbox_queue ||= Inbox::Queue.new(user: current_user, projects: @scoped_projects,
-      kinds: queue_entry_kinds, sort: @selected_sort, scope: @selected_scope, query: @inbox_query)
+      kinds: queue_entry_kinds, sort: @selected_sort, scope: @selected_scope, query: @inbox_query,
+      record_id: selected_entry_record_id)
   end
 
   def queue_entry_kinds
     return @selected_kinds unless single_entry_request?
 
     @selected_kinds.presence || [ params[:entry_id].to_s.split(":", 2).first ]
+  end
+
+  def selected_entry_record_id
+    return unless single_entry_request?
+
+    # @spec OPERATOR-INBOX-002C OPERATOR-INBOX-015
+    params[:entry_id].to_s.split(":", 2).second
   end
 
   # @spec INBOX-PHASE-RELEVANCE-002

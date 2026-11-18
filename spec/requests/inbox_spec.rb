@@ -573,6 +573,22 @@ RSpec.describe "Inbox" do
     expect(queries.grep(/FROM "(?:decomposition_decisions|change_intents|issue_continuation_requests)"/)).to be_empty
   end
 
+  # @spec OPERATOR-INBOX-015 OPERATOR-INBOX-002C
+  it "uses the selected escalation ID when a stale detail link is resolved" do
+    create(:issue, :pull_request,
+      project: project,
+      pr_review_phase: "escalated",
+      pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    queries = capture_queries do
+      get inbox_entry_path("#{Inbox::Queue::ESCALATED_PR_KIND}:999999"),
+        headers: { "Turbo-Frame" => "inbox-detail" }
+    end
+
+    expect(response).to redirect_to(inbox_path)
+    blocked_pr_query = queries.find { |sql| sql.include?("FROM \"issues\" INNER JOIN \"projects\"") }
+    expect(blocked_pr_query).to include("\"issues\".\"id\"")
+  end
+
   # @spec OPERATOR-INBOX-015
   it "rejects a detail frame selection excluded by the kind filter" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)

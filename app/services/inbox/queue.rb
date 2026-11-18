@@ -713,8 +713,7 @@ module Inbox
       ids = scoped_projects.map(&:id)
       return [] if ids.empty?
 
-      EscalatedPullRequests.call(account: user.account, pull_request_id: @record_id)
-        .select { |blocked| ids.include?(blocked.pull_request.project_id) }
+      EscalatedPullRequests.call(account: user.account, pull_request_id: @record_id, project_ids: ids)
         .map { |blocked| escalated_pr_entry(blocked) }
     end
 

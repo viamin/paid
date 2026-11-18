@@ -20,9 +20,10 @@ module Inbox
 
     def self.call(...) = new(...).call
 
-    def initialize(account:, pull_request_id: nil)
+    def initialize(account:, pull_request_id: nil, project_ids: nil)
       @account = account
       @pull_request_id = pull_request_id
+      @project_ids = project_ids
     end
 
     def call
@@ -39,6 +40,7 @@ module Inbox
     def blocked_scope
       Issue.joins(:project)
         .then { |scope| @pull_request_id ? scope.where(id: @pull_request_id) : scope }
+        .then { |scope| @project_ids ? scope.where(project_id: @project_ids) : scope }
         .where(projects: { account_id: account.id })
         .where(is_pull_request: true, github_state: "open", pr_review_phase: "escalated")
         .excluding_body
