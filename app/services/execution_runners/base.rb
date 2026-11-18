@@ -226,9 +226,10 @@ module ExecutionRunners
     # Tears down the MCP sidecar containers provisioned for +agent_run+.
     #
     # @param agent_run [AgentRun]
+    # @param persist [Boolean] whether cleanup may clear run-bound references
     # @return [void]
     # @spec CONTAINER-RUNTIME-033
-    def cleanup_mcp_servers(agent_run:)
+    def cleanup_mcp_servers(agent_run:, persist: true)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

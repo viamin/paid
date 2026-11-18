@@ -322,7 +322,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
 
     expect(result.status).to eq("cancelled")
     expect(agent_run).not_to have_received(:execute_in_execution_environment)
-    expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:)
+    expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:, persist: true)
     expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: true)
     expect(agent_run.reload.status).to eq("cancelled")
   end
@@ -374,7 +374,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
     ).ordered.and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
 
-    expect(execution_runner).to receive(:cleanup_mcp_servers).with(agent_run:).ordered
+    expect(execution_runner).to receive(:cleanup_mcp_servers).with(agent_run:, persist: true).ordered
 
     described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
   end
@@ -568,6 +568,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       raise RuntimeError, "interrupted"
     end
     expect { described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:) }.to raise_error(RuntimeError, "interrupted")
+    expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:, persist: false)
     expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true, persist: false)
   end
 end

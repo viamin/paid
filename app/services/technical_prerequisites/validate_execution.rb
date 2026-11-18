@@ -348,7 +348,7 @@ module TechnicalPrerequisites
 
     def cleanup_errors
       [
-        -> { execution_runner.cleanup_mcp_servers(agent_run:) },
+        -> { execution_runner.cleanup_mcp_servers(agent_run:, persist: run_available?) },
         -> { agent_run.cleanup_execution_environment(force: true, persist: run_available?) }
       ].filter_map do |cleanup_step|
         cleanup_step.call

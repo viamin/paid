@@ -181,12 +181,12 @@ module Containers
     # agent run. Both kinds share the run lifecycle cleanup entrypoint.
     #
     # @param agent_run [AgentRun] the run to clean up
-    def cleanup(agent_run)
+    def cleanup(agent_run, persist: true)
       container_ids = agent_run.mcp_sidecar_container_ids
       cleanup_containers(container_ids) if container_ids.present?
-      agent_run.update_columns(mcp_sidecar_container_ids: []) if container_ids.present?
+      agent_run.update_columns(mcp_sidecar_container_ids: []) if container_ids.present? && persist
 
-      cleanup_tool_sidecars(agent_run)
+      cleanup_tool_sidecars(agent_run, persist:)
 
       return if container_ids.blank?
 
@@ -199,13 +199,13 @@ module Containers
     # @param agent_run [AgentRun] the run to clean up
     # @spec TOOL-SIDECAR-005
     # @spec TOOL-SIDECAR-007
-    def cleanup_tool_sidecars(agent_run)
+    def cleanup_tool_sidecars(agent_run, persist: true)
       container_ids = agent_run.tool_sidecar_container_ids
       endpoints = agent_run.tool_sidecar_endpoints
       return if container_ids.blank? && endpoints.blank?
 
       cleanup_containers(container_ids) if container_ids.present?
-      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
+      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: []) if persist
 
       log_info("container_manager.tool_sidecars_cleaned_up",
         agent_run_id: agent_run.id,

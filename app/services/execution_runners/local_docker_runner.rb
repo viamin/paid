@@ -323,8 +323,10 @@ module ExecutionRunners
     end
 
     # @spec CONTAINER-RUNTIME-033
-    def cleanup_mcp_servers(agent_run:)
-      mcp_provisioner_for(agent_run).cleanup(agent_run)
+    def cleanup_mcp_servers(agent_run:, persist: true)
+      return mcp_provisioner_for(agent_run).cleanup(agent_run) if persist
+
+      mcp_provisioner_for(agent_run).cleanup(agent_run, persist: false)
     end
 
     # @spec CONTAINER-RUNTIME-034
