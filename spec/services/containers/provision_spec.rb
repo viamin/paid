@@ -4011,6 +4011,26 @@ RSpec.describe Containers::Provision do
       expect(service.container).to be_nil
     end
 
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "tears down resources after the run row was destroyed" do
+      agent_run.destroy!
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+      service.cleanup(force: true)
+
+      expect(service.container).to be_nil
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "tears down resources when another instance deleted the run row" do
+      AgentRun.find(agent_run.id).destroy!
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+      service.cleanup(force: true)
+
+      expect(service.container).to be_nil
+    end
+
     it "logs cleanup operations" do
       expect(agent_run).to receive(:log!).with("system", "container.cleanup.start",
         metadata: hash_including(container_id: "abc123container"))

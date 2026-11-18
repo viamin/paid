@@ -5166,7 +5166,7 @@ module Containers
         **metadata
       )
 
-      agent_run&.log!("system", message, metadata: metadata)
+      agent_run.log!("system", message, metadata: metadata) if agent_run&.persisted? && AgentRun.exists?(agent_run.id)
     end
 
     # RDR-041 / #2959 — emits an explicit `auth_source` field in provisioning
