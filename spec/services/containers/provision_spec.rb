@@ -4031,6 +4031,27 @@ RSpec.describe Containers::Provision do
       expect(service.container).to be_nil
     end
 
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "tears down resources when run deletion races the system log write" do
+      deleted = false
+      allow(AgentRun).to receive(:exists?).with(agent_run.id).and_wrap_original do |original, *args|
+        deleted ? original.call(*args) : true
+      end
+      allow(agent_run).to receive(:log!).and_wrap_original do |original, *args, **kwargs|
+        unless deleted
+          AgentRun.find(agent_run.id).destroy!
+          deleted = true
+        end
+
+        original.call(*args, **kwargs)
+      end
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+      service.cleanup(force: true)
+
+      expect(service.container).to be_nil
+    end
+
     it "logs cleanup operations" do
       expect(agent_run).to receive(:log!).with("system", "container.cleanup.start",
         metadata: hash_including(container_id: "abc123container"))

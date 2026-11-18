@@ -5166,7 +5166,16 @@ module Containers
         **metadata
       )
 
-      agent_run.log!("system", message, metadata: metadata) if agent_run&.persisted? && AgentRun.exists?(agent_run.id)
+      write_run_log(message, metadata)
+    end
+
+    def write_run_log(message, metadata)
+      return unless agent_run&.persisted? && AgentRun.exists?(agent_run.id)
+
+      agent_run.log!("system", message, metadata: metadata)
+    rescue ActiveRecord::InvalidForeignKey
+      # The run can be deleted after the existence check; its log must not
+      # prevent cleanup of the in-memory container handle.
     end
 
     # RDR-041 / #2959 — emits an explicit `auth_source` field in provisioning
