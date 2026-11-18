@@ -41,6 +41,7 @@ module TechnicalPrerequisites
 
       persist_terminal("failed", error: error.message)
     ensure
+      capture_environment_identity
       cleanup
     end
 
@@ -57,8 +58,7 @@ module TechnicalPrerequisites
       # volume removal runs even if provisioning raises partway through.
       @environment_provisioned = true
       agent_run.provision_execution_environment(container_host: inspection.host)
-      agent_run.reload
-      evidence["environment"] = { "container_id" => agent_run.container_id, "container_host" => agent_run.container_host }
+      capture_environment_identity
       return cancelled_result if cancelled?
 
       evidence["checkout"] = prepare_checkout
@@ -88,6 +88,12 @@ module TechnicalPrerequisites
       return if host.blank?
 
       agent_run.update!(external_metadata: agent_run.external_metadata.merge("planned_container_host" => host))
+    end
+
+    def capture_environment_identity
+      agent_run.reload
+      environment = { "container_id" => agent_run.container_id, "container_host" => agent_run.container_host }.compact
+      evidence["environment"] = environment if environment.present?
     end
 
     def prepare_checkout
