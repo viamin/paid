@@ -91,10 +91,10 @@ RSpec.describe FeatureFlags do
         class << self
           attr_reader :yielded, :last_scope
 
-          def protect_disable(project: nil, actor: nil, &block)
+          def protect_disable(project: nil, actor: nil)
             @last_scope = { project:, actor: }
             @yielded = true
-            block.call
+            yield
           end
         end
       end
