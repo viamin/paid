@@ -70,11 +70,10 @@ pending run even when cancellation of in-progress work is disabled. Leaving
 these required runs ungrouped ensures each pull-request check can reach a
 terminal result rather than being cancelled while queued.
 
-Allow the system-test job three hours at the GitHub job boundary. Dependency
-setup is separately bounded, while the browser suite contains enough examples
-to exceed the former two-hour job limit on a hosted runner. The larger limit
-remains a bounded failure window and does not change spec-level failure or retry
-behavior.
+Allow the system-test job GitHub's six-hour maximum at the job boundary.
+Dependency setup is separately bounded, while the browser suite can exceed the
+former four-hour allowance on a hosted runner. The larger limit remains a
+bounded failure window and does not change spec-level failure or retry behavior.
 
 ## Individual test costs
 
