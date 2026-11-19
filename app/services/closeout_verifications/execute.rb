@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module CloseoutVerifications
-  # Claims an admitted merge-bound verification and delegates repository work to
-  # the existing isolated technical-prerequisite executor.
-  # @spec STAGED-CLOSEOUT-ADOPTION-011 PARTIAL-CLOSEOUT-057
+  # Claims an admitted verification. Merge targets use the isolated technical
+  # executor; live targets use only the existing allowlisted read-only check.
+  # @spec STAGED-CLOSEOUT-ADOPTION-011 STAGED-CLOSEOUT-ADOPTION-012 PARTIAL-CLOSEOUT-057
   class Execute
     EVIDENCE_KEY = "closeout_verification".freeze
     TERMINAL_STATUSES = %w[completed failed cancelled].freeze
@@ -26,6 +26,8 @@ module CloseoutVerifications
     def call
       return if record_cancelled!
       return if terminal?
+
+      return execute_live_target if live_target?
 
       claim = claim!
       return unless claim
@@ -79,6 +81,22 @@ module CloseoutVerifications
       Claim.new(requirement, nil, false)
     end
 
+    def execute_live_target
+      attempt = claim_live_target!
+      return unless attempt
+
+      attempt = TrustedMeasurements::RunCheck.call(
+        project: agent_run.project, check_key: @live_mapping.target_key,
+        external_issue_number: agent_run.issue.github_number, criterion_key: agent_run.closeout_criterion_key,
+        expected_deployed_revision: agent_run.closeout_target_revision
+      )
+      finish_live_target!(attempt)
+    rescue StandardError => error
+      attempt = current_live_attempt
+      attempt ? finish_live_target!(attempt) : record_exception!(error)
+      raise
+    end
+
     def claim_for_eligibility
       reason = "reviewed mapping is stale: #{eligibility.reason}"
       eligibility.reason == "closeout assessment is stale" ? deferred(reason) : stale(reason)
@@ -93,6 +111,61 @@ module CloseoutVerifications
         mapping.criterion_key == agent_run.closeout_criterion_key &&
         mapping.target_version == agent_run.closeout_recipe_version &&
         mapping.target_digest == agent_run.closeout_recipe_digest
+    end
+
+    def live_target? = agent_run.closeout_target_revision.present?
+
+    def claim_live_target!
+      agent_run.with_lock do
+        return unless agent_run.status == "queued"
+
+        mapping = StagedCloseoutMapping.find_by(id: agent_run.closeout_mapping_id)
+        unless mapping && mapping.stage == "live_environment" && mapping.execution_path == "trusted_measurement" &&
+            mapping.issue_id == agent_run.issue_id && mapping.criterion_key == agent_run.closeout_criterion_key &&
+            mapping.target_version == agent_run.closeout_recipe_version && mapping.target_digest == agent_run.closeout_recipe_digest &&
+            mapping.environment_class == agent_run.closeout_environment &&
+            StagedCloseoutAdoption::Mappings.eligible_for(mapping:, project: agent_run.project, issue: agent_run.issue).eligible?
+          record_terminal!("stale", error: "reviewed live mapping is stale or unavailable")
+          return
+        end
+        if TrustedMeasurements::DeploymentSignal.current != agent_run.closeout_target_revision
+          record_terminal!("stale", error: "confirmed environment target changed or is unavailable")
+          return
+        end
+
+        agent_run.update!(status: "running", started_at: Time.current)
+        @live_mapping = mapping
+      end
+      true
+    end
+
+    def finish_live_target!(attempt)
+      agent_run.with_lock do
+        return if terminal?
+
+        outcome = attempt&.succeeded? ? "observed" : attempt&.failed? ? "failed" : "unknown"
+        evidence = identity_evidence.merge(
+          "outcome" => outcome, "recorded_at" => Time.current.iso8601,
+          "measurement_attempt_id" => attempt&.id, "measurement_status" => attempt&.status,
+          "measurement_result" => attempt&.result, "measurement_failure_reason" => attempt&.failure_reason,
+          "environment" => { "mapping_environment_class" => agent_run.closeout_environment,
+                             "target_revision" => agent_run.closeout_target_revision }
+        ).compact
+        agent_run.update!(closeout_measurement_attempt: attempt,
+          status: outcome == "observed" ? "completed" : "failed", completed_at: Time.current,
+          error_message: attempt&.failure_reason, verification_result: agent_run.verification_result.merge(EVIDENCE_KEY => evidence))
+      end
+      schedule_audit_if_new_evidence("observed")
+    end
+
+    def current_live_attempt
+      return unless @live_mapping
+
+      TrustedMeasurementAttempt.find_by(project: agent_run.project, issue: agent_run.issue,
+        check_key: @live_mapping.target_key, check_version: @live_mapping.target_version,
+        criterion_key: agent_run.closeout_criterion_key,
+        external_issue_number: agent_run.issue.github_number,
+        deployed_revision: agent_run.closeout_target_revision)
     end
 
     def merged_target?(mapping)

@@ -44,7 +44,15 @@ its execution job persist atomically, so an enqueue failure leaves no stranded
 queued identity against later observation. A bounded sweep retries
 persisted merged PR observations after a disabled enrollment is re-enabled or
 a webhook was missed. `live_environment` mappings do not qualify from a merge:
-they wait for a separately confirmed live target.
+they wait for a separately confirmed live target. A changed trusted environment
+signal admits one synthetic run per current reviewed criterion, check version,
+environment class, and signal revision; duplicate delivery and a bounded daily
+sweep converge on that identity. The live run rechecks the signal immediately
+before using the existing allowlisted read-only measurement, attaches that
+attempt and its bounded result to the run, and submits current terminal
+evidence to the existing report-only audit path. A successful read is evidence,
+not an automatic criterion or issue pass; missing, stale, failed, unavailable,
+or cross-tenant signals remain inspectable unknown or failure evidence.
 
 The dedicated closeout-verification worker claims only an admitted queued run.
 Immediately before execution it rechecks the persisted mapping against the
