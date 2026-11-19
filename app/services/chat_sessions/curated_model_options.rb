@@ -4,7 +4,7 @@ module ChatSessions
   # @spec CHAT-SESSION-PREFERENCES-003
   # @spec CHAT-API-026
   class CuratedModelOptions
-    Resolution = Data.define(:option, :rejection_reasons)
+    Resolution = Data.define(:option, :rejection_reasons, :requested_tier, :substitution_reason)
     TIERS = {
       "low" => "Low",
       "mid" => "Medium",
@@ -27,8 +27,28 @@ module ChatSessions
     def self.resolve_with_diagnostics(runner:, tier: "low", projects: [])
       Models::CatalogSnapshot.consistent_read do
         curated = new(runner, projects: projects)
-        option = curated.options.find { |candidate| candidate.tier == tier.to_s }
-        Resolution.new(option:, rejection_reasons: option ? [] : curated.rejection_reasons)
+        requested_tier = tier.to_s
+        option = tier_order(requested_tier).filter_map do |candidate_tier|
+          curated.options.find { |candidate| candidate.tier == candidate_tier }
+        end.first
+        Resolution.new(
+          option:,
+          rejection_reasons: option ? [] : curated.rejection_reasons,
+          requested_tier: requested_tier,
+          substitution_reason: option && option.tier != requested_tier ? :preferred_tier_unavailable : nil
+        )
+      end
+    end
+
+    # Tier selection is a preference, never an eligibility gate. Low prefers
+    # Low, Medium, High; Medium prefers Medium, Low, High; High prefers High,
+    # Medium, Low. This deterministic ordering keeps cost preference explicit
+    # while preserving a usable, policy-compatible chat route.
+    def self.tier_order(preferred_tier)
+      case preferred_tier.to_s
+      when "mid" then %w[mid low high]
+      when "high" then %w[high mid low]
+      else %w[low mid high]
       end
     end
 
@@ -68,10 +88,10 @@ module ChatSessions
       return [ :verified_model_restriction ] if verified.empty?
 
       permitted = verified.select { |model| policy_permitted?(model) }
-      return [ :operator_policy ] if permitted.empty?
-      return [ :low_tier_unavailable ] unless permitted.any? { |model| model.tier == "low" }
-
-      [ :operator_policy ]
+      # Reaching here with a non-empty permitted set means every compatible
+      # model carries a tier outside the curated TIERS mapping (for example
+      # nil), which is a tier-mapping gap rather than a policy exclusion.
+      [ permitted.empty? ? :operator_policy : :tier_unavailable ]
     end
     public :rejection_reasons
 

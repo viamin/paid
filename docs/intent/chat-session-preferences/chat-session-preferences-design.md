@@ -32,10 +32,11 @@ Medium, and High choices that are compatible with each chat-capable,
 non-free-policy runner; the label includes both the user-facing tier and the
 concrete model ID. A free-policy runner offers no saved model choice because
 the eligible free pool dynamically selects its model on every request. Low is
-the default for a new session. The selector is deliberately not a catalog
-browser: catalog refreshes may replace a compatible concrete model within its
-existing tier but cannot add choices or promote a chat to a more expensive
-tier. API-key availability evidence, operator disables, catalog tool support,
+the default preference for a new automatic session. If Low has no eligible
+candidate, automatic resolution uses Medium then High; Medium uses Low then
+High and High uses Medium then Low. The selector is deliberately not a catalog
+browser. Explicit choices stay exact, while automatic resolution may use the
+documented eligible alternative tier. API-key availability evidence, operator disables, catalog tool support,
 and agent-harness compatibility filter these choices. An unavailable tier has
 actionable feedback rather than silently selecting a higher tier.
 Project provider restrictions, model allowlists and exclusions, and tier
@@ -55,8 +56,10 @@ accepts: resolution on create remains the authority.
 The submitted option is resolved against the current user's available chat
 runners before it is saved, so a stale or crafted selection cannot pair a
 runner with an unrelated model. Legacy Automatic sessions (`model: nil`)
-resolve to Low on their next execution and record that effective choice;
-explicit stored models are preserved.
+resolve through the same preference policy on their next execution and record
+that effective choice; explicit stored models are preserved. Requested
+selection, effective runner/model/tier, and substitution reason are persisted
+separately; an ambiguous legacy stored model is treated as explicit.
 
 Changing the selection in either chat header saves through Turbo. A status
 beside the control shows when saving is in progress and whether it succeeded

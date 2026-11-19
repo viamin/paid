@@ -799,8 +799,15 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CollectMaintenanceToolEvidenceActivity, { agent_run_id: 42 },
           timeout: MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT, retry_policy: described_class::NO_RETRY)
-      expect(MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT).to be >
-        ((MaintenanceRuns::ToolEvidence::VERSION_TIMEOUT + MaintenanceRuns::ToolEvidence::ANALYSIS_TIMEOUT) * 2)
+      serial_command_budget = MaintenanceRuns::ToolEvidence::MAX_PACKAGE_SCOPES *
+        MaintenanceRuns::ToolEvidence::ADAPTERS.sum do |adapter|
+          MaintenanceRuns::ToolEvidence::PROVISION_TIMEOUT + (2 * MaintenanceRuns::ToolEvidence::VERSION_TIMEOUT) +
+            (adapter.analyses.size * MaintenanceRuns::ToolEvidence::ANALYSIS_TIMEOUT)
+        end
+      expect(MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT).to eq(
+        MaintenanceRuns::ToolEvidence::DISCOVERY_TIMEOUT + serial_command_budget +
+          MaintenanceRuns::ToolEvidence::ACTIVITY_OVERHEAD
+      )
     end
 
     # @spec MAINT-022 MAINT-040

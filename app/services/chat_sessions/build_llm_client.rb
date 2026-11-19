@@ -8,6 +8,11 @@ module ChatSessions
     GOOGLE_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     def self.call(chat_session:, actor: chat_session.created_by, message: nil)
+      FallbackRunners.restore_requested!(chat_session:)
+      new(chat_session: chat_session, actor: actor, message: message).call
+    end
+
+    def self.for_fallback(chat_session:, actor:, message:)
       new(chat_session: chat_session, actor: actor, message: message).call
     end
 
@@ -155,19 +160,39 @@ module ChatSessions
 
     def persist_curated_model!(runner)
       # @spec CHAT-API-026
-      option = CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects)
+      resolution = CuratedModelOptions.resolve_with_diagnostics(runner:, projects: chat_session.llm_policy_projects)
+      option = resolution.option
       unless option
         raise LlmClientConfigurationError,
-          "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy."
+          "No compatible chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy."
       end
 
       # @spec CHAT-THINKING-EFFORT-007
       metadata = ThinkingEffort.normalize_metadata(
-        metadata: chat_session.metadata.merge("model_tier" => option.tier),
+        metadata: automatic_selection_metadata(runner, resolution),
         model_id: option.model_id
       )
       chat_session.update!(runner:, model: option.model_id, metadata: metadata)
       option.model_id
+    end
+
+    # An automatic selection carries no model request: stale requested_model
+    # keys from an earlier explicit choice must not survive next to
+    # "requested_model_selection" => "automatic" and read as a user
+    # preference later (for example in FallbackRunners.fallback_metadata).
+    def automatic_selection_metadata(runner, resolution)
+      option = resolution.option
+      chat_session.metadata.merge(
+        "requested_model" => nil,
+        "requested_runner_id" => nil,
+        "model_tier" => option.tier,
+        "requested_model_tier" => resolution.requested_tier,
+        "requested_model_selection" => "automatic",
+        "effective_model" => option.model_id,
+        "effective_tier" => option.tier,
+        "effective_runner_id" => runner.id,
+        "model_substitution_reason" => resolution.substitution_reason&.to_s
+      ).compact
     end
 
     def default_openai_base_url(service_type)

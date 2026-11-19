@@ -260,22 +260,67 @@ module ChatSessions
       return nil unless runner
       return nil if runner.free_model_policy?
 
-      curated_model_for(runner).model_id
+      curated_resolution_for(runner).option.model_id
     end
 
     def session_metadata
-      return metadata.presence || {} if model.present? || resolved_runner.nil?
+      return explicit_selection_metadata if model.present?
+      return metadata.presence || {} if resolved_runner.nil?
       return metadata.presence || {} if resolved_runner.free_model_policy?
 
-      (metadata.presence || {}).merge("model_tier" => curated_model_for(resolved_runner).tier)
+      automatic_selection_metadata(curated_resolution_for(resolved_runner))
     end
 
-    def curated_model_for(runner)
+    def curated_resolution_for(runner)
       # @spec CHAT-API-026
       resolution = CuratedModelOptions.resolve_with_diagnostics(runner:, projects: policy_projects)
-      return resolution.option if resolution.option
+      return resolution if resolution.option
 
       raise ModelUnavailableError.new(runner:, rejection_reasons: resolution.rejection_reasons)
+    end
+
+    def explicit_selection_metadata
+      existing_metadata = metadata.presence || {}
+      tier = existing_metadata["model_tier"] if curated_selection_metadata?(existing_metadata)
+      existing_metadata.merge(
+        "model_tier" => tier,
+        "requested_model" => model,
+        "requested_runner_id" => resolved_runner&.id,
+        "requested_model_selection" => "explicit",
+        "requested_model_tier" => nil,
+        "effective_model" => model,
+        "effective_tier" => tier,
+        "effective_runner_id" => resolved_runner&.id,
+        "model_substitution_reason" => nil
+      ).compact
+    end
+
+    def curated_selection_metadata?(existing_metadata)
+      existing_metadata["requested_model_selection"] == "explicit" &&
+        existing_metadata["requested_model"] == model &&
+        existing_metadata["requested_runner_id"] == resolved_runner&.id &&
+        existing_metadata["effective_model"] == model &&
+        existing_metadata["effective_runner_id"] == resolved_runner&.id &&
+        existing_metadata["effective_tier"] == existing_metadata["model_tier"] &&
+        existing_metadata["model_tier"].present?
+    end
+
+    # Mirrors BuildLlmClient#automatic_selection_metadata: an automatic
+    # selection carries no model request, so caller-supplied metadata cannot
+    # leave stale explicit-request keys behind.
+    def automatic_selection_metadata(resolution)
+      option = resolution.option
+      (metadata.presence || {}).merge(
+        "requested_model" => nil,
+        "requested_runner_id" => nil,
+        "model_tier" => option.tier,
+        "requested_model_tier" => resolution.requested_tier,
+        "requested_model_selection" => "automatic",
+        "effective_model" => option.model_id,
+        "effective_tier" => option.tier,
+        "effective_runner_id" => resolved_runner.id,
+        "model_substitution_reason" => resolution.substitution_reason&.to_s
+      ).compact
     end
 
     def policy_projects

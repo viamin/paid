@@ -113,7 +113,9 @@ product-docs corpus is version controlled at `config/onboarding_product_docs.yml
 
 ### Catalog-safe chat bootstrap
 
-Onboarding resolves its initial Low-tier model from one shared catalog snapshot.
+Onboarding resolves its initial model through the shared tier-preference
+resolver and one shared catalog snapshot. Low is preferred, then Medium and
+High, so an otherwise eligible Medium or High model bootstraps valid credentials.
 `ModelsSyncJob` prepares the RubyLLM registry snapshot before taking its
 exclusive transaction-scoped catalog lock, then seeds from that snapshot and
 reconciles availability; curated chat resolution holds the corresponding
@@ -121,11 +123,11 @@ shared lock while it applies catalog, tool capability,
 availability, verified-model, and project/operator-policy filters. A refresh
 therefore cannot expose an intermediate provider catalog to a new account.
 
-If the completed snapshot contains no eligible Low-tier model, bootstrap rolls
+If the completed snapshot contains no eligible compatible model, bootstrap rolls
 back its credential, runner, and session and reports a typed reason: empty
 catalog, runner incompatibility, tool-capability mismatch, unavailability,
 verified-model restriction, operator/project policy restriction, or lack of a
-Low-tier candidate.
+compatible candidate.
 
 For a runner backed by a newly submitted provider API key, only fresh
 account-scoped unavailable evidence may remove a catalog candidate. A global

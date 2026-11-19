@@ -34,8 +34,11 @@
   do not belong to an available runner's curated choices. Free-policy runners
   SHALL not offer a saved curated model choice because their model is selected
   dynamically from the eligible free pool on each request. Low SHALL be the
-  default for new chats; legacy Automatic sessions SHALL resolve to Low on
-  execution while explicit stored selections remain unchanged. The choices and
+  default preference for new chats; automatic resolution SHALL use eligible
+  Medium then High when Low is absent, while explicit stored selections remain
+  unchanged and ambiguous legacy stored models are treated as explicit.
+  Requested and effective selection provenance SHALL remain separate through
+  fallback. The choices and
   defaults SHALL satisfy operator controls and every linked project's provider,
   model, and tier policies. The new-chat dialog SHALL offer only the choices
   permitted for the project selected in the dialog, re-resolving them whenever

@@ -43,7 +43,7 @@ module MaintenanceRuns
       ], %w[knip.json knip.jsonc knip.ts knip.js package.json])
     ].freeze
     ACTIVITY_TIMEOUT = DISCOVERY_TIMEOUT + (MAX_PACKAGE_SCOPES * ADAPTERS.sum do |adapter|
-      PROVISION_TIMEOUT + VERSION_TIMEOUT + (adapter.analyses.size * ANALYSIS_TIMEOUT)
+      PROVISION_TIMEOUT + (2 * VERSION_TIMEOUT) + (adapter.analyses.size * ANALYSIS_TIMEOUT)
     end) + ACTIVITY_OVERHEAD
     class TimeBudgetExhausted < StandardError
       attr_reader :checks

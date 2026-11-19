@@ -38,7 +38,8 @@ RSpec.describe ChatSessions::Create do
       runner = create_api_chat_runner
       options = { runner_id: runner.id, model: "gpt-4o", project_id: project.id,
                   system_prompt: "Use the selected project settings.",
-                  metadata: { "source" => "configured-create" }, auto_approve: true }
+                  metadata: { "source" => "configured-create", "model_tier" => "mid",
+                              "requested_model_tier" => "low", "effective_tier" => "mid" }, auto_approve: true }
 
       configured = described_class.call(account: account, user: user, **options)
 
@@ -47,9 +48,10 @@ RSpec.describe ChatSessions::Create do
         runner_id: runner.id,
         model: "gpt-4o",
         project_id: project.id,
-        metadata: { "source" => "configured-create" },
         auto_approve: true
       )
+      expect(configured.metadata).to include("source" => "configured-create", "requested_model_selection" => "explicit")
+      expect(configured.metadata).not_to include("model_tier", "requested_model_tier", "effective_tier")
       expect(configured.messages.system.sole.content).to eq("Use the selected project settings.")
     end
 
@@ -154,6 +156,28 @@ RSpec.describe ChatSessions::Create do
       expect(session.model).to eq("gpt-4o")
     end
 
+    # @spec CHAT-API-026 CHAT-SESSION-PREFERENCES-003
+    it "preserves validated curated tier provenance" do
+      runner = create_api_chat_runner
+      session = described_class.call(
+        account: account,
+        user: user,
+        runner_id: runner.id,
+        model: "gpt-4o",
+        metadata: {
+          "model_tier" => "low",
+          "requested_model" => "gpt-4o",
+          "requested_runner_id" => runner.id,
+          "requested_model_selection" => "explicit",
+          "effective_model" => "gpt-4o",
+          "effective_tier" => "low",
+          "effective_runner_id" => runner.id
+        }
+      )
+
+      expect(session.metadata).to include("model_tier" => "low", "effective_tier" => "low")
+    end
+
     it "defaults to the first configured API-key chat runner" do
       non_chat_runner = user.runners.find_by!(runner_key: "claude")
       non_chat_runner.update!(enabled_for_chat: false)
@@ -181,6 +205,44 @@ RSpec.describe ChatSessions::Create do
 
       expect(session.model).to eq("gpt-5.6-luna")
       expect(session.metadata).to include("model_tier" => "low")
+    end
+
+    # @spec CHAT-SESSION-PREFERENCES-003 CHAT-API-026
+    it "creates an automatic chat with a Medium model when Low is absent" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "chat-mid-only" } })
+      model = LlmModel.find_or_initialize_by(model_id: "chat-mid-only")
+      model.assign_attributes(provider: "openai", display_name: "Chat Mid Only", category: "coding",
+        tier: "mid", capability_score: 8.0, pricing_tier: "paid", catalog_source: "seeded", supports_tools: true, active: true)
+      model.save!
+
+      session = described_class.call(account: account, user: user, runner_id: runner.id)
+
+      expect(session).to have_attributes(model: "chat-mid-only")
+      expect(session.metadata).to include(
+        "requested_model_selection" => "automatic",
+        "model_tier" => "mid",
+        "model_substitution_reason" => "preferred_tier_unavailable"
+      )
+    end
+
+    # @spec CHAT-API-026
+    it "drops stale explicit request provenance when selecting a model automatically" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "chat-mid-only" } })
+      model = LlmModel.find_or_initialize_by(model_id: "chat-mid-only")
+      model.assign_attributes(provider: "openai", display_name: "Chat Mid Only", category: "coding",
+        tier: "mid", capability_score: 8.0, pricing_tier: "paid", catalog_source: "seeded", supports_tools: true, active: true)
+      model.save!
+
+      session = described_class.call(account: account, user: user, runner_id: runner.id,
+        metadata: { "requested_model" => "stale-user-choice", "requested_runner_id" => 999_999,
+                    "requested_model_selection" => "explicit" })
+
+      expect(session.metadata).to include("requested_model_selection" => "automatic", "effective_model" => "chat-mid-only")
+      expect(session.metadata).not_to include("requested_model", "requested_runner_id")
     end
 
     # @spec CHAT-API-018

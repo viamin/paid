@@ -326,8 +326,10 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   # @spec API-CONVERSATION-DELEGATION-003
   it "broadcasts a fallback notice and continues when a fallback runner is configured" do
     fallback_runner = configure_chat_fallback
-    allow(ChatSessions::BuildLlmClient).to receive(:call)
-      .and_return(rate_limited_llm_client, successful_fallback_llm_client)
+    allow(ChatSessions::BuildLlmClient).to receive_messages(
+      call: rate_limited_llm_client,
+      for_fallback: successful_fallback_llm_client
+    )
 
     expect {
       perform_message
@@ -483,14 +485,15 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   end
 
   def stub_mid_attempt_runner_switch(fallback_runner)
-    build_attempts = 0
     allow(ChatSessions::BuildLlmClient).to receive(:call)
       .with(hash_including(chat_session: chat_session, actor: user, message: be_a(ChatMessage)))
       .and_wrap_original do |_method, chat_session:, **|
-        build_attempts += 1
         ChatSession.where(id: chat_session.id).update_all(runner_id: fallback_runner.id)
-        build_attempts == 1 ? rate_limited_llm_client : successful_fallback_llm_client
+        rate_limited_llm_client
       end
+    allow(ChatSessions::BuildLlmClient).to receive(:for_fallback)
+      .with(hash_including(chat_session: chat_session, actor: user, message: be_a(ChatMessage)))
+      .and_return(successful_fallback_llm_client)
   end
 
   def configure_chat_fallback(configured: true)
