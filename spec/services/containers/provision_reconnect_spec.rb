@@ -9,6 +9,7 @@ RSpec.describe Containers::Provision, ".reconnect", :no_db do
       id: 456,
       project: project,
       container_host: "remote",
+      persisted?: true,
       log!: nil
     )
   end
