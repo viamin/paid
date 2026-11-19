@@ -1,0 +1,7 @@
+process_names:
+  - name: paid-puma
+    comm: [ruby]
+    cmdline: ['puma .*\[paid\]']
+  - name: paid-temporal-workers
+    comm: [ruby]
+    cmdline: ['ruby bin/temporal_worker']

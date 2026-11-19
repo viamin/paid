@@ -5,6 +5,41 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r OBSERVABILITY-001`).
 
+- [x] **OBSERVABILITY-005** — When an operator starts development memory
+  monitoring, its services SHALL run independently of Rails/PostgreSQL, retain
+  metrics in a named volume for up to 14 days subject to a 2 GB size bound,
+  declare CPU/memory limits and log rotation, and publish UI ports only on host
+  loopback. Stopping monitoring SHALL preserve its stored history and SHALL NOT
+  stop or recreate application services.
+  *Tests:* `spec/config/development_memory_monitoring_spec.rb`.
+
+- [x] **OBSERVABILITY-006** — Development memory monitoring SHALL scrape
+  Docker-host VM memory/swap, individual container memory and limits, fixed
+  host-wide Paid Puma/worker process groups, PostgreSQL activity, application
+  job activity through a narrow read-only aggregate, and both devcontainer
+  worker endpoints every 15 seconds. It SHALL NOT repeatedly invoke Rails'
+  broad metrics collector or PostgreSQL database-size scans.
+  Metrics SHALL NOT contain SQL text, credentials, or command lines as labels.
+  Configuration delivery SHALL work from inside a devcontainer without assuming
+  its repository path exists on the Docker daemon's host.
+  *Tests:* `spec/config/development_memory_monitoring_spec.rb`.
+
+- [x] **OBSERVABILITY-007** — The development memory dashboard SHALL show
+  scrape coverage, memory, swap, OOM signals and container starts on a UTC
+  timeline, retain unavailable series as unavailable, and distinguish OOM
+  victims from attribution of host exhaustion. Operator documentation SHALL
+  describe how to inspect the corresponding PgHero query interval and state
+  measured exporter limitations.
+  *Tests:* `spec/config/development_memory_monitoring_spec.rb`.
+
+- [x] **OBSERVABILITY-008** — Development memory activation SHALL reject
+  non-development environments before external mutation, generate owner-only
+  local credential files, provision a non-superuser read-only PostgreSQL
+  monitoring role, and seed runtime credentials without embedding them in
+  image layers or command arguments. Activation SHALL NOT recreate the running
+  application or delete monitoring volumes.
+  *Tests:* `spec/config/development_memory_monitoring_spec.rb`.
+
 - [x] **OBSERVABILITY-001** — When a client requests `GET /api/metrics`, the
   Rails app SHALL return Prometheus text exposition from the application
   collector and SHALL require a bearer token only when `METRICS_TOKEN` is set.

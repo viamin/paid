@@ -37,6 +37,7 @@ module Paid
       [ Temporalio::Contrib::OpenTelemetry::TracingInterceptor.new(tracer) ]
     end
 
+    # @spec OBSERVABILITY-006
     def prometheus_metrics_options(env = ENV)
       return unless metrics_exporter(env) == PROMETHEUS_EXPORTER
 
@@ -47,7 +48,9 @@ module Paid
           unit_suffix: UNIT_SUFFIX,
           durations_as_seconds: DURATIONS_AS_SECONDS
         ),
-        attach_service_name: true,
+        # The explicit global tag below already supplies service_name. Attaching
+        # the SDK's tag too produces duplicate labels rejected by Prometheus.
+        attach_service_name: false,
         global_tags: {
           "service_name" => env.fetch("TEMPORAL_METRICS_SERVICE_NAME", DEFAULT_SERVICE_NAME)
         },

@@ -1,0 +1,112 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "open3"
+require "securerandom"
+require "tmpdir"
+
+root = File.expand_path("..", __dir__)
+command = ARGV.fetch(0, "status")
+abort "Usage: bin/memory-monitoring [start|status|stop]" unless %w[start status stop].include?(command)
+# @spec OBSERVABILITY-008
+environment = ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development"
+abort "Memory monitoring is development only" unless environment == "development"
+
+compose = [ "docker", "compose", "--project-name", "paid-memory", "--project-directory", root,
+  "-f", File.join(root, "docker-compose.memory.yml") ]
+
+def run!(*arguments, input: nil)
+  stdout, stderr, status = Open3.capture3(*arguments, stdin_data: input.to_s)
+  abort "Command failed: #{arguments.first(3).join(' ')}\n#{stderr}" unless status.success?
+
+  puts stdout unless stdout.empty?
+  stdout
+end
+
+def stored_secret(name)
+  # Read through archive copy, not container stdout: credentials must not enter
+  # Docker logs, and some remote engines lose stdout from short-lived containers.
+  id, _error, created = Open3.capture3("docker", "create", "--network", "none", "--read-only", "--memory", "16m",
+    "--volume", "paid-memory_configuration:/config:ro", "paid-memory-config:local", "true")
+  abort "Cannot inspect monitoring credentials" unless created.success?
+  id = id.strip
+  begin
+    Dir.mktmpdir("paid-monitoring-credential") do |directory|
+      path = File.join(directory, name)
+      _output, error, copied = Open3.capture3("docker", "cp", "#{id}:/config/#{name}", path)
+      return nil if !copied.success? && error.include?("Could not find the file")
+      abort "Cannot read stored monitoring credential #{name}" unless copied.success?
+      File.read(path).strip
+    end
+  ensure
+    Open3.capture3("docker", "rm", id)
+  end
+end
+
+if command == "stop"
+  run!(*compose, "stop")
+  exit
+elsif command == "status"
+  run!(*compose, "ps")
+  exit
+end
+
+credentials = File.expand_path(ENV.fetch("PAID_MEMORY_CREDENTIAL_DIR", File.join(root, "tmp/memory-monitoring")))
+FileUtils.mkdir_p(credentials, mode: 0o700)
+File.chmod(0o700, credentials)
+# Configuration and canonical credentials live in a Docker volume, so changing
+# worktrees or rebuilding the devcontainer does not change Grafana's password.
+run!(*compose, "build", "config")
+run!(*compose, "run", "--rm", "--no-deps", "-T", "config")
+passwords = %w[postgres_password grafana_password].to_h do |name|
+  path = File.join(credentials, name)
+  value = stored_secret(name) || SecureRandom.hex(32)
+  abort "Stored monitoring credential is invalid" unless /\A[0-9a-f]{64}\z/.match?(value)
+  File.write(path, value + "\n", mode: "w", perm: 0o600)
+  File.chmod(0o600, path)
+  [ name, File.read(path).strip ]
+end
+
+# @spec OBSERVABILITY-008
+require "pg"
+admin = nil
+begin
+  admin = PG.connect(host: ENV["DB_ADMIN_HOST"] || ENV.fetch("DB_HOST", "postgres"),
+    port: ENV["DB_ADMIN_PORT"] || ENV.fetch("DB_PORT", "5432"), connect_timeout: 5,
+    user: ENV.fetch("DB_ADMIN_USERNAME"), password: ENV.fetch("DB_ADMIN_PASSWORD"),
+    dbname: ENV.fetch("PAID_MEMORY_DATABASE", "paid_development"))
+  admin.exec("BEGIN")
+  role = admin.exec("SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = 'paid_memory_monitor'").first
+  abort "Existing monitoring role has unexpected privileges" if role&.values&.include?("t")
+  memberships = admin.exec("SELECT parent.rolname FROM pg_auth_members m JOIN pg_roles parent ON parent.oid=m.roleid JOIN pg_roles member ON member.oid=m.member WHERE member.rolname='paid_memory_monitor'").map { |row| row.fetch("rolname") }
+  abort "Existing monitoring role has unexpected memberships" unless (memberships - [ "pg_monitor" ]).empty?
+
+  admin.exec("CREATE ROLE paid_memory_monitor LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE") unless role
+  password = admin.escape_literal(passwords.fetch("postgres_password"))
+  admin.exec("ALTER ROLE paid_memory_monitor PASSWORD #{password} CONNECTION LIMIT 4")
+  admin.exec("ALTER ROLE paid_memory_monitor SET default_transaction_read_only = on")
+  admin.exec("ALTER ROLE paid_memory_monitor SET statement_timeout = '5s'")
+  admin.exec("GRANT pg_monitor TO paid_memory_monitor")
+  database = admin.escape_identifier(ENV.fetch("PAID_MEMORY_DATABASE", "paid_development"))
+  admin.exec("GRANT CONNECT ON DATABASE #{database} TO paid_memory_monitor")
+  admin.exec("REVOKE SELECT (performed_at) ON public.good_jobs FROM paid_memory_monitor")
+  admin.exec("GRANT SELECT (queue_name, locked_by_id, finished_at) ON public.good_jobs TO paid_memory_monitor")
+  admin.exec("COMMIT")
+rescue PG::ConnectionBad => error
+  warn "PostgreSQL provisioning unavailable (#{error.class}); exporters will show missing database coverage"
+rescue PG::Error => error
+  abort "Monitoring role provisioning failed (#{error.class}); check administrator connectivity and permissions"
+ensure
+  admin&.close
+end
+
+# @spec OBSERVABILITY-005 OBSERVABILITY-006
+passwords.each do |name, value|
+  run!(*compose, "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "config", "-ec",
+    "umask 077; cat > /config/#{name}; chmod 0644 /config/#{name}", input: value)
+end
+run!(*compose, "up", "-d", "--no-deps", "--force-recreate", "prometheus", "grafana", "node-exporter", "cadvisor", "process-exporter", "postgres-exporter")
+puts "Grafana: http://localhost:#{ENV.fetch('PAID_MEMORY_GRAFANA_PORT', '3001')}/d/paid-development-memory"
+puts "Prometheus: http://localhost:#{ENV.fetch('PAID_MEMORY_PROMETHEUS_PORT', '9090')}"
+puts "Grafana user: admin; password file: #{File.join(credentials, 'grafana_password')}"

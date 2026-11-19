@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    stack: paid-development-memory
+
+rule_files: [/config/rules.yml]
+
+scrape_configs:
+  - job_name: paid-worker-poll
+    static_configs:
+      - targets: [paid-rails-app-1:9464]
+
+  - job_name: paid-worker-agent
+    static_configs:
+      - targets: [paid-rails-app-1:9465]
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: [node-exporter:9100]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: [cadvisor:8080]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: container_(memory_(working_set_bytes|rss|swap|cache|usage_bytes)|spec_memory_limit_bytes|start_time_seconds|last_seen|cpu_usage_seconds_total)
+        action: keep
+      - source_labels: [name]
+        regex: .+
+        action: keep
+
+  - job_name: process-exporter
+    static_configs:
+      - targets: [process-exporter:9256]
+
+  - job_name: postgres-exporter
+    static_configs:
+      - targets: [postgres-exporter:9187]

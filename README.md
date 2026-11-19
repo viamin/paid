@@ -212,6 +212,13 @@ bin/dev                 # Start Rails, JS/CSS watchers, GoodJob, and the split T
 | `PAID_PROXY_PORT` | Port the secrets proxy listens on (used by agent containers) | `3000` |
 | `PAID_DATABASE_PASSWORD` | Production database password | _(none)_ |
 
+### Memory investigations (development only)
+
+`bin/memory-monitoring start` launches a separate, resource-limited memory
+dashboard at <http://localhost:3001/d/paid-development-memory>. See
+[development memory investigations](docs/OBSERVABILITY.md#development-memory-investigations)
+for credentials, retention, exporter coverage, and correlation with PgHero.
+
 ### PgHero (development only)
 
 PgHero starts inside the existing Rails process; it does not need a separate

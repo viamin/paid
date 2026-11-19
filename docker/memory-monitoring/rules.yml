@@ -1,0 +1,31 @@
+groups:
+  - name: development-memory
+    rules:
+      - alert: PaidMemoryExporterDown
+        expr: up{job=~"node-exporter|cadvisor|process-exporter|postgres-exporter"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Memory investigation exporter is unavailable
+      - alert: PaidDockerHostOOMKill
+        expr: increase(node_vmstat_oom_kill[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: The Docker host recorded an OOM kill
+          description: Correlate container memory and PostgreSQL logs; this does not identify the workload that exhausted memory.
+      - alert: PaidMemoryDatabaseUnavailable
+        expr: pg_up == 0 or pg_exporter_last_scrape_error > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database investigation metrics are unavailable or incomplete
+      - alert: PaidDockerHostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Less than 10 percent of Docker-host memory is available
