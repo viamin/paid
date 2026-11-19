@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 
 class ChatSessionsController < ApplicationController
+  MODEL_PROVENANCE_METADATA_KEYS = %w[
+    model_tier requested_model requested_runner_id requested_model_selection
+    requested_model_tier effective_model effective_tier effective_runner_id
+    model_substitution_reason thinking_effort
+  ].freeze
+
   CREATE_RATE_LIMIT = 10
   CREATE_RATE_LIMIT_PERIOD = 1.minute
   CREATE_RATE_LIMIT_FALLBACK_CACHE = ActiveSupport::Cache::MemoryStore.new
@@ -187,7 +193,7 @@ class ChatSessionsController < ApplicationController
     authorize @chat_session
     attributes = update_params
     project_changed = attributes.key?(:project_id) && attributes[:project_id].to_s != @chat_session.project_id.to_s
-    metadata_changed = attributes.key?(:metadata) && attributes[:metadata] != @chat_session.metadata
+    metadata_changed = prompt_metadata_changed?(attributes)
     validate_api_chat_runner!(attributes[:runner_id]) if attributes.key?(:runner_id)
     @chat_session.update!(attributes)
     regenerate_system_message! if project_changed || metadata_changed
@@ -312,6 +318,13 @@ class ChatSessionsController < ApplicationController
     new_prompt = ChatSessions::BuildSystemPrompt.call(chat_session: @chat_session.reload)
     system_message = @chat_session.messages.where(role: "system").order(:created_at).first
     system_message&.update!(content: new_prompt)
+  end
+
+  def prompt_metadata_changed?(attributes)
+    return false unless attributes.key?(:metadata)
+
+    attributes[:metadata].except(*MODEL_PROVENANCE_METADATA_KEYS) !=
+      @chat_session.metadata.except(*MODEL_PROVENANCE_METADATA_KEYS)
   end
 
   def create_params

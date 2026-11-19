@@ -23,11 +23,12 @@ module ChatSessions
 
     def run_fallback_loop
       # @spec CHAT-API-006
+      ChatSessions::FallbackRunners.restore_requested!(chat_session: chat_session) unless @llm_client
       attempted_runners = [ chat_session.runner ].compact
       required_zdr = originating_zdr_required?
 
       loop do
-        @llm_client ||= ChatSessions::BuildLlmClient.call(
+        @llm_client ||= ChatSessions::BuildLlmClient.for_fallback(
           chat_session: chat_session,
           actor: actor,
           message: transport_attempt_message

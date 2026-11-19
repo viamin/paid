@@ -240,6 +240,30 @@ RSpec.describe ChatSessions::FallbackRunners do
       )
       expect(session.metadata).not_to have_key("requested_model_tier")
     end
+
+    # @spec CHAT-API-026
+    it "retries the explicit requested runner and model on the next turn" do
+      fallback = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      create(:llm_model, provider: "anthropic", model_id: "claude-sonnet-mid", tier: "mid", supports_tools: true)
+      requested = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-user-choice" } })
+      session = create(:chat_session, account: account, created_by: user, runner: requested, model: "gpt-user-choice",
+        metadata: { "requested_model" => "gpt-user-choice", "requested_runner_id" => requested.id,
+                    "requested_model_selection" => "explicit" })
+
+      described_class.switch!(chat_session: session, runner: fallback)
+      client = ChatSessions::BuildLlmClient.call(chat_session: session)
+
+      expect(client.model).to eq("gpt-user-choice")
+      expect(session.reload).to have_attributes(runner: requested, model: "gpt-user-choice")
+      expect(session.metadata).to include(
+        "effective_model" => "gpt-user-choice",
+        "effective_runner_id" => requested.id
+      )
+      expect(session.metadata).not_to have_key("model_substitution_reason")
+    end
   end
 
   def create_openrouter_runner(name:)

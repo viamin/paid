@@ -280,17 +280,29 @@ module ChatSessions
     end
 
     def explicit_selection_metadata
-      (metadata.presence || {}).merge(
-        "model_tier" => nil,
+      existing_metadata = metadata.presence || {}
+      tier = existing_metadata["model_tier"] if curated_selection_metadata?(existing_metadata)
+      existing_metadata.merge(
+        "model_tier" => tier,
         "requested_model" => model,
         "requested_runner_id" => resolved_runner&.id,
         "requested_model_selection" => "explicit",
         "requested_model_tier" => nil,
         "effective_model" => model,
-        "effective_tier" => nil,
+        "effective_tier" => tier,
         "effective_runner_id" => resolved_runner&.id,
         "model_substitution_reason" => nil
       ).compact
+    end
+
+    def curated_selection_metadata?(existing_metadata)
+      existing_metadata["requested_model_selection"] == "explicit" &&
+        existing_metadata["requested_model"] == model &&
+        existing_metadata["requested_runner_id"] == resolved_runner&.id &&
+        existing_metadata["effective_model"] == model &&
+        existing_metadata["effective_runner_id"] == resolved_runner&.id &&
+        existing_metadata["effective_tier"] == existing_metadata["model_tier"] &&
+        existing_metadata["model_tier"].present?
     end
 
     # Mirrors BuildLlmClient#automatic_selection_metadata: an automatic

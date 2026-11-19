@@ -60,6 +60,29 @@ module ChatSessions
       chat_session.update!(runner: runner, model: model, metadata: metadata)
     end
 
+    # Provider fallback is attempt-local for explicit selections. The fallback
+    # pair remains persisted long enough to describe that attempt, then the
+    # next turn retries the user's saved preference.
+    # @spec CHAT-API-026
+    def restore_requested!(chat_session:)
+      metadata = chat_session.metadata
+      return unless metadata["requested_model_selection"] == "explicit"
+
+      runner = chat_session.created_by.runners.kept_only.find_by(id: metadata["requested_runner_id"])
+      model = metadata["requested_model"]
+      return unless BuildLlmClient.usable_runner?(runner) && model.present?
+      return if chat_session.runner_id == runner.id && chat_session.model == model
+
+      restored_metadata = metadata.merge(
+        "model_tier" => metadata["requested_model_tier"],
+        "effective_model" => model,
+        "effective_tier" => metadata["requested_model_tier"],
+        "effective_runner_id" => runner.id,
+        "model_substitution_reason" => nil
+      ).compact
+      chat_session.update!(runner:, model:, metadata: restored_metadata)
+    end
+
     # @spec CHAT-API-019
     def free_pool_available?(runner, chat_session:)
       return true unless runner.free_model_policy?

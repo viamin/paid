@@ -156,6 +156,28 @@ RSpec.describe ChatSessions::Create do
       expect(session.model).to eq("gpt-4o")
     end
 
+    # @spec CHAT-API-026 CHAT-SESSION-PREFERENCES-003
+    it "preserves validated curated tier provenance" do
+      runner = create_api_chat_runner
+      session = described_class.call(
+        account: account,
+        user: user,
+        runner_id: runner.id,
+        model: "gpt-4o",
+        metadata: {
+          "model_tier" => "low",
+          "requested_model" => "gpt-4o",
+          "requested_runner_id" => runner.id,
+          "requested_model_selection" => "explicit",
+          "effective_model" => "gpt-4o",
+          "effective_tier" => "low",
+          "effective_runner_id" => runner.id
+        }
+      )
+
+      expect(session.metadata).to include("model_tier" => "low", "effective_tier" => "low")
+    end
+
     it "defaults to the first configured API-key chat runner" do
       non_chat_runner = user.runners.find_by!(runner_key: "claude")
       non_chat_runner.update!(enabled_for_chat: false)
