@@ -87,6 +87,18 @@ RSpec.describe MaintenanceRuns::IntentTraceabilityEvidence do
   end
 
   # @spec MAINT-046
+  it "discloses evidence entries omitted from a bounded finding" do
+    evidence = (1..6).map { |number| "Missing linked issue reference #{number}" }
+    create(:design_artifact_finding, project:, artifact_path: "docs/rdrs/RDR-075.md", evidence:)
+
+    snapshot = render
+
+    expect(snapshot).to include("Missing linked issue reference 5")
+    expect(snapshot).not_to include("Missing linked issue reference 6")
+    expect(snapshot).to match(/\(\+1 (more|additional|further) evidence entr(?:y|ies) omitted\)/i)
+  end
+
+  # @spec MAINT-046
   it "states absent reconciliation evidence as a coverage limitation, not a clean result" do
     snapshot = render
 

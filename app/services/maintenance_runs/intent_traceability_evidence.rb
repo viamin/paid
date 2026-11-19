@@ -106,9 +106,19 @@ module MaintenanceRuns
     end
 
     def describe(finding)
-      evidence = finding.evidence.first(MAX_EVIDENCE_ENTRIES).join("; ")
       "#{finding.artifact_path} — #{finding.state} (#{finding.status}, covered " \
-        "#{finding.covered_at.utc.iso8601})#{assignment(finding)}: #{evidence}"
+        "#{finding.covered_at.utc.iso8601})#{assignment(finding)}: #{rendered_evidence(finding)}"
+    end
+
+    def rendered_evidence(finding)
+      entries = finding.evidence
+      listed = entries.first(MAX_EVIDENCE_ENTRIES)
+      omitted = entries.size - listed.size
+      [ listed.join("; "), omitted_evidence_message(omitted) ].compact.join(" ")
+    end
+
+    def omitted_evidence_message(count)
+      "(+#{count} more evidence entries omitted)" if count.positive?
     end
 
     def assignment(finding)
