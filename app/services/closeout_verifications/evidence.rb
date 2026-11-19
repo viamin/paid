@@ -113,7 +113,7 @@ module CloseoutVerifications
         "stdout" => [ native["stdout"].to_s, MAX_OUTPUT_BYTES ],
         "stderr" => [ native["stderr"].to_s, MAX_OUTPUT_BYTES ] }
       record = {
-        "verification_run_id" => row.id, "source_issue_id" => issue.id, "project_id" => issue.project_id,
+        "verification_run_id" => row.id, "mapping_id" => row.mapping_id, "source_issue_id" => issue.id, "project_id" => issue.project_id,
         "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.target_revision.presence || row.base_sha,
         "recipe_version" => row.recipe_version, "recipe_digest" => row.recipe_digest,
         "outcome" => evidence["outcome"], "recorded_at" => evidence["recorded_at"],

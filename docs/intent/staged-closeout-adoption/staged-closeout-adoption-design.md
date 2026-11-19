@@ -147,3 +147,27 @@ enrollment change as skipped and applies every other profile target.
 | Registry references only | Prevents this feature from becoming a command or deployment executor. | Accepting arbitrary commands or targets would bypass existing authorization. |
 | Merge identity stored on the source PR and run | Lets a bounded sweep recover missed delivery without treating merge as deployment, while preserving exact evidence provenance. | Re-fetching GitHub for every sweep would make recovery depend on a live provider read and obscure the observed target. |
 | Explicit profile target for Fully Automatic | Enrollment flows through the reviewed planner/applier with the same per-level authorization and rollback as every other posture lever. | Deriving enrollment silently from merge/release settings would hide the adoption decision. |
+
+### Required-stage closure boundary
+
+A semantic all-satisfied assessment is necessary but does not override a declared
+reviewed postmerge or live check. Before either explicit or delegated GitHub
+closure, the shared closeout resolver verifies that each latest reviewed mapping
+for a current assessed criterion has complete, current, successful matching
+execution evidence. Revoked mappings, missing receipts, changed targets, expired
+results, failed checks and incomplete evidence keep the issue open with an
+inspectable criterion and next action. The same check is repeated immediately
+before external mutation and during local reconciliation. A successful native
+recipe or observed measurement remains evidence; it does not manufacture a
+semantic verdict or delegate closure authority. Unmapped legacy criteria retain
+the existing acceptance and policy gates.
+
+The same readiness predicate augments the shared source-reference disposition:
+an unverified required stage remains Tracks before merge even when a current
+semantic assessment is optimistic. The existing PR-head, verification-revision
+and citation comparisons remain unchanged. No merged PR body is rewritten.
+
+An audit cannot erase a reviewed requirement merely by omitting its criterion:
+a latest mapping bound to unchanged full issue intent remains required. If
+approved intent changes and the current assessment no longer contains that
+criterion, its historical mapping does not impose an obsolete requirement.
