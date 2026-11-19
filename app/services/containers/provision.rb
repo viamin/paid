@@ -5166,7 +5166,7 @@ module Containers
         **metadata
       )
 
-      agent_run&.log!("system", message, metadata: metadata)
+      safe_run_log("system", message, metadata: metadata)
     end
 
     # RDR-041 / #2959 — emits an explicit `auth_source` field in provisioning
@@ -5224,7 +5224,20 @@ module Containers
     def log_output(type, content)
       return if content.blank?
 
-      agent_run&.log!(type.to_s, content)
+      safe_run_log(type.to_s, content)
+    end
+
+    def safe_run_log(type, content, metadata: nil)
+      return unless agent_run&.persisted?
+
+      metadata ? agent_run.log!(type, content, metadata: metadata) : agent_run.log!(type, content)
+    rescue ActiveRecord::InvalidForeignKey
+      Rails.logger.warn(
+        message: "container_manager.run_log_write_skipped",
+        agent_run_id: agent_run&.id,
+        log_type: type,
+        reason: "run row deleted before log write"
+      )
     end
 
     def normalize_output_chunk(chunk)

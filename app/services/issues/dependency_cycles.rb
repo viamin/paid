@@ -69,7 +69,9 @@ module Issues
     def call
       return [] if nodes.empty?
 
-      components.filter_map { |component| cycle_for(component) }
+      cycles = components.filter_map { |component| cycle_for(component) }
+      preload_presentation_associations(cycles)
+      cycles
     rescue ActiveRecord::StatementInvalid => error
       raise CoverageUnavailable, error.message
     end
@@ -81,7 +83,19 @@ module Issues
     def nodes
       @nodes ||= Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
         .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
-        .includes(:project, parent_issue: :project).index_by(&:id)
+        .index_by(&:id)
+    end
+
+    # Project and parent context only render on a surviving cycle. Loading it
+    # for every graph node made ordinary Inbox filter availability hydrate the
+    # entire account-wide issue graph even when no cycle was present.
+    def preload_presentation_associations(cycles)
+      issues = cycles.flat_map { |cycle| cycle.issues + cycle.downstream_issues }.uniq(&:id)
+      return if issues.empty?
+
+      ActiveRecord::Associations::Preloader.new(
+        records: issues, associations: [ :project, { parent_issue: :project } ]
+      ).call
     end
 
     def edges

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_013104) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_19_013150) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3574,6 +3574,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_013104) do
     t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
   end
 
+  create_table "pghero_queries", comment: "Normalized SQL for development database diagnostics; system-wide, not tenant-owned.", force: :cascade do |t|
+    t.text "query"
+    t.index ["query"], name: "index_pghero_queries_on_query", using: :hash
+  end
+
+  create_table "pghero_query_stats", comment: "Development PgHero interval samples, retained for 14 days.", force: :cascade do |t|
+    t.bigint "calls"
+    t.datetime "captured_at", precision: nil
+    t.text "database"
+    t.bigint "query_hash"
+    t.bigint "query_id"
+    t.float "total_time", comment: "Combined planning and execution milliseconds."
+    t.text "user"
+    t.index ["database", "captured_at"], name: "index_pghero_query_stats_on_database_and_captured_at"
+    t.index ["query_id"], name: "index_pghero_query_stats_on_query_id"
+  end
+
+  create_table "pghero_space_stats", comment: "Development PgHero daily relation sizes, retained for 14 days.", force: :cascade do |t|
+    t.datetime "captured_at", precision: nil
+    t.text "database"
+    t.text "relation"
+    t.text "schema"
+    t.bigint "size"
+    t.index ["database", "captured_at"], name: "index_pghero_space_stats_on_database_and_captured_at"
+  end
+
   create_table "pr_templates", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "body", null: false
@@ -5574,6 +5600,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_013104) do
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"
+  add_foreign_key "pghero_query_stats", "pghero_queries", column: "query_id"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
@@ -6895,12 +6922,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_013104) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
