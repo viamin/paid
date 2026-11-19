@@ -139,4 +139,31 @@ RSpec.describe CloseoutVerifications::Execute do
 
     expect(PartialCloseouts::AutoAudit).not_to have_received(:call)
   end
+
+  %w[completed failed].each do |result_status|
+    # @spec PARTIAL-CLOSEOUT-057
+    it "admits one actual report-only audit after #{result_status} verification" do
+      project.update!(auto_pick_enabled: true, created_by: maintainer)
+      issue.update!(paid_state: "completed")
+      source_pr.update!(parent_issue: issue, github_state: "closed")
+      assessment_run = issue.agent_runs.sole
+      assessment_run.update!(goal: "analyze_issue", pull_request_number: nil, pull_request_url: nil)
+      assessment_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+        "criteria" => [ { "criterion" => "Merged evidence", "state" => "unmet" } ], "gaps" => []
+      } })
+      allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(
+        validation_result(result_status, { "native" => { "exit_code" => result_status == "completed" ? 0 : 1 } }))
+
+      described_class.call(agent_run:)
+      2.times { PartialCloseouts::AutoAudit.call(issue:) }
+
+      audits = IssueContinuationRequest.where(issue:).where("evidence->>'continuation_mode' = ?", "acceptance_audit")
+      expect(audits.count).to eq(1)
+      expect(audits.sole.evidence.fetch("source_revision")).to eq(PartialCloseouts::Assessment.source_revision_for(issue))
+      expect(AgentRun.find_by!(continuation_request_id: audits.sole.id).goal).to eq("analyze_issue")
+      expect(issue.agent_runs.where(goal: "create_pr")).to be_empty
+    end
+  end
 end
