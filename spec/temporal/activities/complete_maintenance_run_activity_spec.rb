@@ -60,6 +60,24 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
     )
   end
 
+  # @spec MAINT-022
+  it "forces a partial report when a planned analyzer dependency could not be installed" do
+    run.update!(external_metadata: {
+      "maintenance_tool_evidence" => {
+        "completed_checks" => [],
+        "incomplete_checks" => [ { "name" => "exhale_provision", "reason" => "dependency_install_failed" } ]
+      }
+    })
+    run.log!("stdout", report_output)
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(run.reload.maintenance_report).to have_attributes(
+      outcome: "partial",
+      incomplete_checks: [ { "name" => "exhale_provision", "reason" => "dependency_install_failed" } ]
+    )
+  end
+
   # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025
   it "persists findings and incomplete coverage from the agent report" do
     finding = {

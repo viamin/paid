@@ -23,11 +23,13 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     stub_analyzer_results
     evidence = described_class.call(run:)
 
+    expect_execution(".", adapter("exhale").availability_command, timeout: 30)
     expect_execution(".", adapter("exhale").provision_command, timeout: 300)
     expect_execution(".", %w[bundle exec exhale --version], timeout: 30)
     expect_execution(".", %w[bundle exec exhale dry --format json], timeout: 120)
     expect_execution(".", %w[bundle exec exhale complexity --format json], timeout: 120)
     expect_execution("frontend", %w[yarn knip --version], timeout: 30)
+    expect_execution("frontend", adapter("knip").availability_command, timeout: 30)
     expect_execution("frontend", adapter("knip").provision_command, timeout: 300)
     expect(evidence.fetch(:completed_checks).map { |check| check.fetch("name") })
       .to contain_exactly("exhale_dry", "exhale_complexity", "knip")
@@ -45,8 +47,9 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     allow(run).to receive(:execute_in_execution_environment).and_return(
       result(exit_code: 0, stdout: "./Gemfile\0./frontend/package.json\0"),
       result(exit_code: 0),
+      result(exit_code: 0),
       result(exit_code: 0, stdout: "exhale 1.2"), result(exit_code: 0, stdout: '{"duplicates":[]}'),
-      result(exit_code: 0, stdout: '{"complexity":[]}'), result(exit_code: 0),
+      result(exit_code: 0, stdout: '{"complexity":[]}'), result(exit_code: 0), result(exit_code: 0),
       result(exit_code: 0, stdout: "knip 5.0"),
       result(exit_code: 1, stdout: '{"unusedFiles":[]}')
     )
@@ -75,7 +78,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   end
 
   # @spec MAINT-040 MAINT-044
-  it "uses prompt-only fallback when matching analyzers cannot be provisioned from locked dependencies" do
+  it "uses prompt-only fallback when matching analyzers are not declared in locked dependencies" do
     allow(run).to receive(:execute_in_execution_environment).and_return(
       result(exit_code: 0, stdout: "./Gemfile\0./frontend/package.json\0"),
       result(exit_code: 1, stderr: "exhale is not locked"),
@@ -87,17 +90,40 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     expect(evidence).to include(completed_checks: [], incomplete_checks: [], prompt_context: nil)
   end
 
-  # @spec MAINT-040 MAINT-044
-  it "uses prompt-only fallback when a provisioned analyzer fails its version probe" do
+  # @spec MAINT-022 MAINT-040
+  it "records a locked dependency install failure as incomplete coverage" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
     allow(run).to receive(:execute_in_execution_environment).and_return(
       result(exit_code: 0, stdout: "./Gemfile\0"), result(exit_code: 0),
+      result(exit_code: 5, stderr: "bundle install failed")
+    )
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:completed_checks)).to be_empty
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "exhale_provision", "reason" => "dependency_install_failed",
+        "exit_code" => 5, "output" => include("bundle install failed"),
+        "provenance" => include("package_scope" => "."))
+    )
+  end
+
+  # @spec MAINT-022 MAINT-040
+  it "records a provisioned analyzer version probe failure as incomplete coverage" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
+    allow(run).to receive(:execute_in_execution_environment).and_return(
+      result(exit_code: 0, stdout: "./Gemfile\0"), result(exit_code: 0), result(exit_code: 0),
       result(exit_code: 127, stderr: "exhale: not found")
     )
 
     evidence = described_class.call(run:)
 
-    expect(evidence).to include(completed_checks: [], incomplete_checks: [], prompt_context: nil)
+    expect(evidence.fetch(:completed_checks)).to be_empty
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "exhale_version", "reason" => "version_probe_failed",
+        "exit_code" => 127, "output" => include("exhale: not found"),
+        "provenance" => include("package_scope" => "."))
+    )
   end
 
   # @spec MAINT-022 MAINT-042
@@ -130,6 +156,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   it "does not plan an analyzer when its matching package manifest is absent" do
     allow(run).to receive(:execute_in_execution_environment).and_return(
       result(exit_code: 0, stdout: "./Gemfile\0"),
+      result(exit_code: 0),
       result(exit_code: 0),
       result(exit_code: 0, stdout: "exhale 1.2"),
       result(exit_code: 0, stdout: "{}"),

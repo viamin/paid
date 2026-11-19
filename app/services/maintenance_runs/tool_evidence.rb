@@ -18,17 +18,19 @@ module MaintenanceRuns
       "-not", "-path", "*/node_modules/*", "-not", "-path", "*/vendor/*", "-not", "-path", "*/.git/*", "-print0" ].freeze
 
     Analysis = Data.define(:name, :command)
-    Adapter = Data.define(:name, :ecosystems, :manifest, :provision_command, :version_command, :analyses,
+    Adapter = Data.define(:name, :ecosystems, :manifest, :availability_command, :provision_command, :version_command, :analyses,
       :configuration_files)
     ADAPTERS = [
       Adapter.new("exhale", [ "ruby" ], "Gemfile", [ "sh", "-lc",
-        "ruby -rbundler -e 'lock = Bundler::LockfileParser.new(Bundler.read_file(\"Gemfile.lock\")); exit(lock.specs.any? { |spec| spec.name == \"exhale\" } ? 0 : 1)' && (bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3)" ],
+        "ruby -rbundler -e 'lock = Bundler::LockfileParser.new(Bundler.read_file(\"Gemfile.lock\")); exit(lock.specs.any? { |spec| spec.name == \"exhale\" } ? 0 : 1)'" ],
+        [ "sh", "-lc", "bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3" ],
         %w[bundle exec exhale --version], [
         Analysis.new("exhale_dry", %w[bundle exec exhale dry --format json]),
         Analysis.new("exhale_complexity", %w[bundle exec exhale complexity --format json])
       ], %w[.exhale.yml .exhale.yaml]),
       Adapter.new("knip", %w[javascript typescript], "package.json", [ "sh", "-lc",
-        "node -e 'const p = require(\"./package.json\"); const d = {...p.dependencies, ...p.devDependencies}; process.exit(d.knip && require(\"fs\").existsSync(\"yarn.lock\") ? 0 : 1)' && yarn install --frozen-lockfile --ignore-scripts --silent" ],
+        "node -e 'const p = require(\"./package.json\"); const d = {...p.dependencies, ...p.devDependencies}; process.exit(d.knip && require(\"fs\").existsSync(\"yarn.lock\") ? 0 : 1)'" ],
+        %w[yarn install --frozen-lockfile --ignore-scripts --silent],
         %w[yarn knip --version], [
         Analysis.new("knip", %w[yarn knip --reporter json])
       ], %w[knip.json knip.jsonc knip.ts knip.js package.json])
@@ -88,25 +90,30 @@ module MaintenanceRuns
     def collect_packages(adapter, scopes)
       return [] if scopes.empty?
 
-      available = scopes.first(MAX_PACKAGE_SCOPES).filter_map do |scope|
-        version = available_version(adapter, scope)
-        [ scope, version ] if version
-      end
-      return [] if available.empty?
-
-      checks = available.flat_map { |scope, version| collect(adapter, scope, version) }
+      checks = scopes.first(MAX_PACKAGE_SCOPES).flat_map { |scope| collect_package(adapter, scope) }
       checks << package_limit_check(adapter, scopes.size) if scopes.size > MAX_PACKAGE_SCOPES
       checks
     end
 
-    def available_version(adapter, scope)
+    def collect_package(adapter, scope)
+      available = execute_scoped(scope, adapter.availability_command, VERSION_TIMEOUT)
+      return [] unless exit_code(available) == 0
+
       provision = execute_scoped(scope, adapter.provision_command, PROVISION_TIMEOUT)
-      return unless exit_code(provision) == 0
+      return [ setup_check(adapter, scope, "provision", "dependency_install_failed", provision) ] unless exit_code(provision) == 0
 
       version = execute_scoped(scope, adapter.version_command, VERSION_TIMEOUT)
-      version if exit_code(version) == 0
-    rescue Containers::Provision::Error
-      nil
+      return [ setup_check(adapter, scope, "version", "version_probe_failed", version) ] unless exit_code(version) == 0
+
+      collect(adapter, scope, version)
+    rescue Containers::Provision::Error => error
+      [ setup_check(adapter, scope, "setup", "execution_unavailable", nil, error:) ]
+    end
+
+    def setup_check(adapter, scope, phase, reason, result, error: nil)
+      { "name" => "#{adapter.name}_#{phase}", "status" => "incomplete", "reason" => reason,
+        "exit_code" => exit_code(result), "output" => output(result),
+        "provenance" => provenance(adapter, scope, nil), "error_class" => error&.class&.name }.compact
     end
 
     def package_limit_check(adapter, count)
