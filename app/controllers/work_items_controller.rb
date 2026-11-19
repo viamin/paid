@@ -36,6 +36,21 @@ class WorkItemsController < ApplicationController
     redirect_to work_item_path(@work_item), notice: "Ticket assigned."
   end
 
+  # @spec UNIFIED-WORK-ITEMS-004 UNIFIED-WORK-ITEMS-009
+  def bulk_assign
+    items = policy_scope(WorkItem).where(id: Array(params[:work_item_ids]))
+    projects = assignable_projects_for(items)
+    if items.empty? || projects.empty?
+      redirect_to work_items_path, alert: "Select at least one ticket and one assignable project."
+      return
+    end
+
+    items.each { |item| authorize item, :show? }
+    WorkItems::AssignToProjects.call(work_items: items, projects:, actor: current_user)
+    audit_event("work_item.bulk_assigned", metadata: { work_item_ids: items.ids, project_ids: projects.map(&:id) })
+    redirect_to work_items_path, notice: "#{items.size} tickets assigned."
+  end
+
   def clear_review_flag
     authorize @work_item, :review?
 
@@ -78,8 +93,12 @@ class WorkItemsController < ApplicationController
   end
 
   def assignable_projects
+    assignable_projects_for([ @work_item ])
+  end
+
+  def assignable_projects_for(items)
     policy_scope(Project).where(id: Array(params[:project_ids])).select do |project|
-      policy(@work_item).assign_to_project?(project)
+      items.all? { |item| policy(item).assign_to_project?(project) }
     end
   end
 end

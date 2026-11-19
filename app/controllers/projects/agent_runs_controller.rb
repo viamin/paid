@@ -197,6 +197,19 @@ module Projects
           goal: goal
         )
       elsif goal == "enhance_issue"
+        if work_item
+          create_run_and_redirect(
+            on_error_path: new_project_agent_run_path(@project, goal: goal),
+            work_item: work_item,
+            custom_prompt: custom_prompt,
+            goal: goal,
+            priority_tier: priority_tier,
+            blocked_by_issue_ids: blocked_by_issue_ids,
+            plan_docs: plan_docs
+          )
+          return
+        end
+
         issue_ids = Array(params[:issue_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
         if issue_ids.empty?
           redirect_to new_project_agent_run_path(@project, goal: goal),
@@ -239,9 +252,9 @@ module Projects
           end
         end
 
-        # @spec UNIFIED-WORK-ITEMS-005 — a run started from a unified ticket
-        # composes its prompt through the unified work-item contract, whose
-        # trusted-comment admission never widens the GitHub path.
+        # @spec UNIFIED-WORK-ITEMS-005
+        # Non-GitHub ticket content is admitted and assembled through the
+        # unified trust boundary before it is persisted on the run.
         custom_prompt ||= WorkItems::BuildRunPrompt.call(work_item:, project: @project) if work_item
 
         create_run_and_redirect(

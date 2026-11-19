@@ -139,6 +139,23 @@ RSpec.describe "WorkItems browser" do
     end
   end
 
+  describe "POST /work_items/bulk_assign" do
+    before { sign_in member }
+
+    it "assigns several selected tickets to the selected projects" do
+      # @spec UNIFIED-WORK-ITEMS-004
+      other_item = create(:work_item, account:)
+      other_project = create(:project, account:)
+
+      post bulk_assign_work_items_path,
+        params: { work_item_ids: [ work_item.id, other_item.id ], project_ids: [ project.id, other_project.id ] }
+
+      expect(response).to redirect_to(work_items_path)
+      expect(work_item.reload.projects).to contain_exactly(project, other_project)
+      expect(other_item.reload.projects).to contain_exactly(project, other_project)
+    end
+  end
+
   describe "POST /work_items/:id/clear_review_flag" do
     before { work_item.update!(assignment_review_flagged_at: Time.current) }
 

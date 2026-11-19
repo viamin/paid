@@ -82,6 +82,8 @@ module Activities
 
     def analyze_issue(agent_run)
       agent_run.start!
+      return analyze_work_item(agent_run) if agent_run.work_item
+
       project = agent_run.project
       issue = agent_run.issue
       raise ArgumentError, "analyze_issue run requires an issue" unless issue
@@ -120,6 +122,28 @@ module Activities
       {
         agent_run_id: agent_run.id,
         issue_number: issue.github_number,
+        sufficient_context: parsed[:sufficient_context],
+        reasoning: parsed[:reasoning],
+        missing_context_areas: parsed[:missing_context_areas]
+      }
+    end
+
+    # @spec UNIFIED-WORK-ITEMS-005
+    def analyze_work_item(agent_run)
+      prompt = WorkItems::BuildRunPrompt.call(work_item: agent_run.work_item, project: agent_run.project) + <<~INSTRUCTION
+
+        Assess whether this ticket has sufficient context to start implementation.
+        Respond with ONLY JSON containing sufficient_context, reasoning, and missing_context_areas.
+      INSTRUCTION
+      response = call_llm(agent_run, prompt)
+      parsed = parse_response!(agent_run, response)
+      track_tokens(agent_run, response)
+      agent_run.log!("stdout", parsed.to_json)
+      complete_run!(agent_run, parsed, "analyzed")
+      ProcessRunQueueJob.perform_later
+      {
+        agent_run_id: agent_run.id,
+        work_item_id: agent_run.work_item_id,
         sufficient_context: parsed[:sufficient_context],
         reasoning: parsed[:reasoning],
         missing_context_areas: parsed[:missing_context_areas]

@@ -126,6 +126,9 @@ Rails.application.routes.draw do
   # RDR-079: account-scoped unified work-item browser.
   # @spec UNIFIED-WORK-ITEMS-004 UNIFIED-WORK-ITEMS-005
   resources :work_items, only: [ :index, :show ] do
+    collection do
+      post :bulk_assign
+    end
     member do
       get :start_run
       post :assign

@@ -4035,7 +4035,8 @@ class AgentRun < ApplicationRecord
   end
 
   def issue_goal_requires_issue
-    if goal.in?(%w[enhance_issue analyze_issue]) && issue_id.blank?
+    # @spec UNIFIED-WORK-ITEMS-005
+    if goal.in?(%w[enhance_issue analyze_issue]) && issue_id.blank? && work_item_id.blank?
       errors.add(:issue, "is required for #{goal} goals")
     end
   end
@@ -4096,6 +4097,7 @@ class AgentRun < ApplicationRecord
 
   # @spec ISSUE-ENHANCEMENT-001
   def prompt_for_enhance_issue
+    return work_item_goal_prompt("Enhance the ticket by providing implementation context or concise clarifying questions.") if work_item
     return nil unless issue
 
     # @spec ISSUE-ENHANCEMENT-014 @spec ISSUE-ENHANCEMENT-020
@@ -4115,10 +4117,16 @@ class AgentRun < ApplicationRecord
   end
 
   def prompt_for_analyze_issue
+    return work_item_goal_prompt("Assess whether the ticket has sufficient context to start implementation.") if work_item
     return nil unless issue
 
     "Analyze issue ##{issue.github_number} in #{project.full_name}. " \
       "Assess whether there is sufficient context to start implementation."
+  end
+
+  # @spec UNIFIED-WORK-ITEMS-005
+  def work_item_goal_prompt(instruction)
+    WorkItems::BuildRunPrompt.call(work_item:, project:) + "\n\n#{instruction}"
   end
 
   def prompt_for_lid_planning
@@ -4352,7 +4360,7 @@ class AgentRun < ApplicationRecord
     # scope, and guidance, so they need no issue or source PR.
     # @spec MAINT-010
     return if maintenance_goal?
-    return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
+    return if issue.present? || work_item.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
   end
