@@ -25,3 +25,5 @@
   select no more than 20 held issues per project before loading their
   provenance, while retaining every blocker and action for each selected issue;
   it SHALL not infer that a summarized admission control is a human decision.
+  It SHALL evaluate the candidate-eligibility exclusion once in a materialized
+  relation and reuse that relation for blocker and action selection.
