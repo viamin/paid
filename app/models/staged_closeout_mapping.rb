@@ -26,6 +26,15 @@ class StagedCloseoutMapping < ApplicationRecord
 
   scope :approved, -> { where(status: "approved") }
 
+  # Canonical criterion-identity digest: binds a mapping (or a later
+  # staleness check) to the issue's intent revision at computation time, so a
+  # changed issue body/title invalidates the binding without requiring an
+  # in-place edit to the reviewed row.
+  # @spec PARTIAL-CLOSEOUT-057
+  def self.digest_for(issue:, criterion_key:)
+    Digest::SHA256.hexdigest([ issue.id, criterion_key, PartialCloseouts::Assessment.intent_revision_for(issue) ].join("\0"))
+  end
+
   def current? = approved? && invalidated_at.nil?
   def approved? = status == "approved"
 

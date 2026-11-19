@@ -45,6 +45,35 @@
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-057** — When Paid builds the criterion-level
+  acceptance-audit packet and source revision for an issue, it SHALL include
+  each matching terminal `closeout_verification` record — keyed by issue,
+  criterion, source PR, target SHA, and recipe version — bounded and labeled
+  with its outcome, current/stale status, and recorded time. It SHALL mark a
+  record stale, without excluding it, when the issue's approved intent, the
+  pinned mapping's recipe version/digest, the source PR's authoritative merge
+  target, or its declared environment class has since changed; a failed,
+  unavailable, cancelled, or truncated record SHALL remain visible without
+  being represented as satisfied — satisfaction remains a semantic judgment
+  made only through `agent_harness`. The included evidence SHALL change the
+  audit's source revision so a prior verdict is not reused. When a newly
+  terminal, current `closeout_verification` result is recorded, Paid SHALL
+  request at most one report-only acceptance audit for that issue through the
+  existing bounded `PartialCloseouts::AutoAudit` retry/admission path,
+  scheduled outside the verification run's lock so a scheduling failure
+  cannot roll back its terminal status; a cancelled or stale-claim outcome
+  SHALL NOT schedule an audit, and this path SHALL NOT create or continue a
+  `create_pr` run.
+  *Code:* `app/services/closeout_verifications/evidence.rb`,
+  `app/services/partial_closeouts/audit_evidence.rb`,
+  `app/services/partial_closeouts/assessment.rb`,
+  `app/services/closeout_verifications/execute.rb`,
+  `app/models/staged_closeout_mapping.rb`.
+  *Test:* `spec/services/closeout_verifications/evidence_spec.rb`,
+  `spec/services/partial_closeouts/audit_evidence_spec.rb`,
+  `spec/services/partial_closeouts/assessment_spec.rb`,
+  `spec/services/closeout_verifications/execute_spec.rb`.
+
 - [ ] **PARTIAL-CLOSEOUT-052** — When a current closeout criterion has a
   reviewed staged-verification mapping, Paid SHALL create only one synthetic,
   report-only `closeout_verification` AgentRun goal for its selected

@@ -134,7 +134,7 @@ module StagedCloseoutAdoption
     end
 
     def criterion_digest(key = criterion_key)
-      Digest::SHA256.hexdigest([ issue.id, key, PartialCloseouts::Assessment.intent_revision_for(issue) ].join("\0"))
+      StagedCloseoutMapping.digest_for(issue:, criterion_key: key)
     end
 
     def validate_stage!
