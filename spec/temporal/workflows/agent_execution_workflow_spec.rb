@@ -790,6 +790,19 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       end
     end
 
+    # @spec MAINT-040 MAINT-042
+    it "allows every serial analyzer command budget plus collection overhead" do
+      stub_maintenance_activities
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::CollectMaintenanceToolEvidenceActivity, { agent_run_id: 42 },
+          timeout: MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT, retry_policy: described_class::NO_RETRY)
+      expect(MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT).to be >
+        ((MaintenanceRuns::ToolEvidence::VERSION_TIMEOUT + MaintenanceRuns::ToolEvidence::ANALYSIS_TIMEOUT) * 2)
+    end
+
     # @spec MAINT-020
     it "completes report-only without PR creation even when the agent reports no changes" do
       stub_maintenance_activities(has_changes: false)

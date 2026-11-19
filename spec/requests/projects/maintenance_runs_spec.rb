@@ -158,7 +158,8 @@ RSpec.describe "Project maintenance runs" do
         category: "unused_code", claim: "Legacy callback may be unused", symbols: [ "Legacy#call" ],
         locations: [ { path: "app/legacy.rb", line: 12 } ], supporting_evidence: [ "No direct callers" ],
         contrary_evidence: [ "Dynamic invocation remains possible" ], proposed_action: "Inspect registration",
-        validation_plan: "Exercise callback registration", verification_disposition: "unverified"
+        analyzer_provenance: {}, validation_plan: "Exercise callback registration",
+        verification_disposition: "unverified"
       } ] }
     run.log!("stdout", "<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->")
     Activities::CompleteMaintenanceRunActivity.new.execute(agent_run_id: run.id)

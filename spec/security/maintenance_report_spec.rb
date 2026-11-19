@@ -25,7 +25,7 @@ RSpec.describe MaintenanceReport, :tenant_isolation do
         run = create(:agent_run, :manual, project:, issue: nil, goal: "maintenance", maintenance_guidance: "Inspect")
         MaintenanceReports::Persist.call(run:, findings: [ {
           category: "unused_code", claim: "Legacy callback may be unused", symbols: [ "Legacy#call" ],
-          locations: [], verification_disposition: "unverified"
+          locations: [], analyzer_provenance: {}, verification_disposition: "unverified"
         } ])
       end
     end

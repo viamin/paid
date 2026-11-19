@@ -14,6 +14,7 @@ RSpec.describe MaintenanceReports::Persist do
       locations: [ { "path" => "app/workers/legacy_worker.rb", "line" => 12 } ],
       supporting_evidence: [ { "source" => "debride", "detail" => "no static callers" } ],
       contrary_evidence: [ { "source" => "rails", "detail" => "may be autoloaded" } ],
+      analyzer_provenance: { "name" => "debride", "version" => "1.14.0", "configuration" => ".debride.yml" },
       raw_tool_confidence: 0.72, agent_assessment: "needs_review", proposed_action: "Verify runtime references",
       validation_plan: "Exercise the production job path", verification_disposition: "unverified"
     }

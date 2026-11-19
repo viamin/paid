@@ -9,6 +9,7 @@ module MaintenanceRuns
     VERSION_TIMEOUT = 30
     ANALYSIS_TIMEOUT = 120
     OUTPUT_LIMIT = 20_000
+    ACTIVITY_OVERHEAD = 30
 
     Adapter = Data.define(:name, :ecosystems, :version_command, :command, :configuration)
     ADAPTERS = [
@@ -17,6 +18,7 @@ module MaintenanceRuns
       Adapter.new("knip", %w[javascript typescript], %w[yarn knip --version],
         %w[yarn knip --reporter json], "project Knip configuration")
     ].freeze
+    ACTIVITY_TIMEOUT = (ADAPTERS.size * (VERSION_TIMEOUT + ANALYSIS_TIMEOUT)) + ACTIVITY_OVERHEAD
 
     def self.call(...) = new(...).call
 

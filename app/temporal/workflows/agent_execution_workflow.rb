@@ -320,7 +320,8 @@ module Workflows
         # output is advisory candidate evidence for the agent, never a gate.
         if goal == "maintenance"
           run_activity(Activities::CollectMaintenanceToolEvidenceActivity,
-            { agent_run_id: agent_run_id }, timeout: 180, retry_policy: NO_RETRY)
+            { agent_run_id: agent_run_id }, timeout: MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT,
+            retry_policy: NO_RETRY)
         end
 
         # Step 4: Run the agent (long timeout, limited retry for worker recovery)
