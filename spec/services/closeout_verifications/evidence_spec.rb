@@ -182,7 +182,7 @@ RSpec.describe CloseoutVerifications::Evidence do
     create_verification_run(mapping:, outcome: "passed", merged_sha: "b" * 40)
 
     expect(described_class.revision_for(source_issue)).not_to eq(before_revision)
-    expect(described_class.records_for(source_issue).first).to include("outcome" => "passed", "target_sha" => "b" * 40)
+    expect(described_class.records_for(source_issue).last).to include("outcome" => "passed", "target_sha" => "b" * 40)
   end
 
   # @spec PARTIAL-CLOSEOUT-057
@@ -262,5 +262,24 @@ RSpec.describe CloseoutVerifications::Evidence do
     expect(described_class.current_for_run?(replay)).to be(true)
     expect(records.last).to include("verification_run_id" => replay.id, "outcome" => "failed", "error" => "new terminal result", "current" => true)
     expect(described_class.revision_for(source_issue, records:)).not_to eq(before_revision)
+  end
+
+  %w[failed unavailable cancelled passed].each do |prior_outcome|
+    # @spec PARTIAL-CLOSEOUT-057
+    it "retains a superseded #{prior_outcome} terminal record as stale history" do
+      persist_assessment!
+      mapping = approve_mapping
+      prior = create_verification_run(mapping:, outcome: prior_outcome)
+      source_pr.update!(merged_commit_sha: "b" * 40)
+      latest = create_verification_run(mapping:, outcome: prior_outcome == "passed" ? "failed" : "passed")
+
+      records = described_class.records_for(source_issue)
+
+      expect(records.size).to eq(2)
+      expect(records.first).to include("verification_run_id" => prior.id, "outcome" => prior_outcome, "current" => false)
+      expect(records.first.fetch("stale_reasons")).to include("superseded_result")
+      expect(records.last).to include("verification_run_id" => latest.id, "current" => true)
+      expect(described_class.current_for_run?(prior)).to be(false)
+    end
   end
 end

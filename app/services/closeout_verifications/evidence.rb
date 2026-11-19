@@ -43,9 +43,11 @@ module CloseoutVerifications
       issues_by_id = issues.index_by(&:id)
       mappings = StagedCloseoutMapping.where(id: rows.filter_map(&:mapping_id)).includes(:project).index_by(&:id)
       merged_shas = merged_shas_for(issues_by_id, rows)
+      latest_ids = rows.to_h { |row| [ [ row.issue_id, row.criterion_key ], row.id ] }
       rows.each do |row|
         records[row.issue_id] << present(row, mapping: mappings[row.mapping_id],
-          merged_sha: merged_shas[[ row.issue_id, row.pr_number ]], issue: issues_by_id.fetch(row.issue_id))
+          merged_sha: merged_shas[[ row.issue_id, row.pr_number ]], issue: issues_by_id.fetch(row.issue_id),
+          superseded: latest_ids[[ row.issue_id, row.criterion_key ]] != row.id)
       end
       records
     end
@@ -65,9 +67,7 @@ module CloseoutVerifications
       scope = scopes.reduce { |combined, candidate| combined.or(candidate) }
         .where(goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL, synthetic: true,
           status: CloseoutVerifications::Execute::TERMINAL_STATUSES)
-      latest = scope.select("DISTINCT ON (agent_runs.issue_id, agent_runs.closeout_criterion_key) agent_runs.id")
-        .order(:issue_id, :closeout_criterion_key, id: :desc)
-      AgentRun.where(id: latest).order(:id).pluck(*PLUCK_COLUMNS).map { |columns| Row.new(*columns) }
+      scope.order(:id).pluck(*PLUCK_COLUMNS).map { |columns| Row.new(*columns) }
     end
     private_class_method :fetch_rows
 
@@ -85,11 +85,12 @@ module CloseoutVerifications
     end
     private_class_method :merged_shas_for
 
-    def self.present(row, mapping:, merged_sha:, issue:)
+    def self.present(row, mapping:, merged_sha:, issue:, superseded:)
       evidence = row.verification_result.to_h[CloseoutVerifications::Execute::EVIDENCE_KEY].to_h
       technical = evidence["technical_evidence"].to_h
       native = technical["native"].to_h
       reasons = stale_reasons(row, mapping:, merged_sha:, issue:, evidence:)
+      reasons << "superseded_result" if superseded
       strings = { "error" => [ evidence["error"].to_s, MAX_ERROR ],
         "command" => [ evidence["command"].to_s, MAX_COMMAND_BYTES ],
         "stdout" => [ native["stdout"].to_s, MAX_OUTPUT_BYTES ],

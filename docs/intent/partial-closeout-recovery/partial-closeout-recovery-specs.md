@@ -54,7 +54,9 @@
   mismatched criterion/scope, and changed or unavailable underlying recipes
   SHALL make the result stale. Omitted or truncated verification input SHALL
   mark audit coverage incomplete, and omitted records SHALL still affect the
-  source revision. It SHALL mark a
+  source revision. Superseded terminal outcomes SHALL remain visible within
+  the bound, marked stale, or be explicitly accounted for as bounded omissions;
+  a later success SHALL NOT silently erase an earlier failure. It SHALL mark a
   record stale, without excluding it, when the issue's approved intent, the
   pinned mapping's recipe version/digest, the source PR's authoritative merge
   target, or its declared environment class has since changed; a failed,

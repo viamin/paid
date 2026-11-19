@@ -279,7 +279,10 @@ The projection revalidates the underlying recipe, requires the authoritative
 merge target, and checks mapping/criterion identity. Run IDs and bounded
 command/native results provide primary provenance. Packet omissions and
 truncation make audit coverage incomplete; an omission digest still changes
-the source revision when hidden evidence changes.
+the source revision when hidden evidence changes. Superseded terminal records
+remain visible within the bound and are marked stale; older records beyond
+the cap are accounted for by omission count and digest, rather than silently
+discarded before bounding.
 
 `CloseoutVerifications::Execute` schedules the normal
 `PartialCloseouts::AutoAudit` report-only path once a newly terminal, current
