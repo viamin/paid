@@ -925,16 +925,12 @@ RSpec.describe Containers::GitOperations do
         )
       end
 
-      it "falls back to a fresh fetch and warns when no admission head is recorded (legacy run)" do # @spec PR-BRANCH-PUBLISH-004
+      it "holds publication and retains the local result when the admission head is absent" do # @spec PR-BRANCH-PUBLISH-004
         agent_run.update!(expected_remote_head_sha: nil)
 
-        expect(Rails.logger).to receive(:warn).with(
-          hash_including(message: "container_git.missing_expected_remote_head", agent_run_id: agent_run.id)
-        )
-        expect_refresh_remote_branch(remote_sha, ordered: true)
-        expect_push_with_lease(remote_sha, success_result, ordered: true)
-
-        git_ops.push_branch
+        expect { git_ops.push_branch }.to raise_error(described_class::PushError, /no captured remote head/)
+        expect(agent_run.reload.unpublished_result_commit_sha).to eq(head_sha)
+        expect(agent_run.result_commit_sha).to be_nil
       end
 
       it "reads the expected head from this agent run only, never a sibling run's" do # @spec PR-BRANCH-PUBLISH-011
@@ -1115,6 +1111,15 @@ RSpec.describe Containers::GitOperations do
       expect_force_push(admitted_sha, success_result)
 
       git_ops.push_force_with_lease
+    end
+
+    # @spec PR-BRANCH-PUBLISH-004 PR-BRANCH-PUBLISH-012
+    it "holds force publication without an admitted or previously published head" do
+      agent_run.update!(expected_remote_head_sha: nil, result_commit_sha: nil)
+
+      expect { git_ops.push_force_with_lease }.to raise_error(described_class::PushError, /no captured remote head/)
+      expect(agent_run.reload.unpublished_result_commit_sha).to eq(head_sha)
+      expect(agent_run.result_commit_sha).to be_nil
     end
 
     it "marks the worktree as pushed and records result_commit_sha on success" do

@@ -805,9 +805,13 @@ module Containers
     # report the remote as matching itself, defeating --force-with-lease.
     # See docs/intent/pr-branch-publish-integrity.
     def expected_remote_head_for_publish # @spec PR-BRANCH-PUBLISH-003, PR-BRANCH-PUBLISH-004, PR-BRANCH-PUBLISH-011
-      agent_run.result_commit_sha.presence ||
-        agent_run.expected_remote_head_sha.presence ||
-        legacy_fetched_remote_head
+      expected = agent_run.result_commit_sha.presence || agent_run.expected_remote_head_sha.presence
+      return expected if expected
+
+      raise PushError,
+        "Publication held: no captured remote head for #{agent_run.branch_name}. " \
+        "Local result #{agent_run.unpublished_result_commit_sha} is retained. Reconcile it in a fresh run " \
+        "that captures the current remote head and revalidate before publishing; a fresh fetch cannot authorize overwriting contributor work."
     end
 
     # Persist the completed local revision before the network mutation. A
@@ -819,18 +823,6 @@ module Containers
 
     def record_published_result!(sha)
       agent_run.update!(result_commit_sha: sha, unpublished_result_commit_sha: nil)
-    end
-
-    # Runs admitted before expected_remote_head_sha existed have no immutable
-    # baseline recorded. Fall back to the prior fetch-then-lease behavior
-    # rather than blocking the push, but make the degraded path visible.
-    def legacy_fetched_remote_head
-      Rails.logger.warn(
-        message: "container_git.missing_expected_remote_head",
-        agent_run_id: agent_run.id,
-        branch_name: agent_run.branch_name
-      )
-      refresh_remote_branch_sha!(agent_run.branch_name)
     end
 
     def recover_from_changed_remote_head(expected_sha)
