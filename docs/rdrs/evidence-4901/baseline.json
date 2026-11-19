@@ -1,0 +1,716 @@
+{
+  "revision": "ee300f8deaa4cb0f11490178a42d9423e9729dd6",
+  "started_at": "2026-11-19T01:35:39Z",
+  "environment": "operating development devcontainer",
+  "browser": "Chromium 156.0.8078.47 built on Debian GNU/Linux 12 (bookworm)",
+  "ruby": "3.4.11",
+  "rails": "8.1.4.1",
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "workload": {
+    "project_id": 19,
+    "before": {
+      "issues": 3422,
+      "runs": 15475,
+      "escalated_prs": 0
+    },
+    "after": {
+      "issues": 3423,
+      "runs": 15476,
+      "escalated_prs": 0
+    }
+  },
+  "recipe": {
+    "identity": "4901-inbox-operating-browser-v1",
+    "sha256": "00aae327cf0f79345fd5649db59d61d2eaecddc0b6d46c935e4b0f135efb07cc",
+    "warmups_per_route": 1,
+    "samples_per_route": 5,
+    "navigation": "full document with warm process/browser/cache",
+    "authentication": "Warden test session for existing authorized project owner; normal controller/tenant/policy path",
+    "budget_seconds": 900,
+    "percentile": "linear interpolation at q*(n-1)",
+    "limitations": [
+      "Sequential observational comparison on changing live workload; no controlled causal performance claim",
+      "No production deployment; existing devcontainer is the only operating environment",
+      "No mutations submitted; redirects followed; five samples do not establish a stable population p95",
+      "SQL totals include browser-triggered requests during each navigation; controller actions are recorded separately",
+      "Does not attest the isolated recipe admission/resume infrastructure of #4894"
+    ]
+  },
+  "samples": [
+    {
+      "path": "/inbox/escalated_pr:7639?kind=escalated_pr&project_id=19",
+      "sample": 1,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:36:23Z",
+      "usable_ms": 26105.739,
+      "navigation": {
+        "ttfb_ms": 25215.69999998808,
+        "response_end_ms": 25231.399999976158,
+        "dom_content_loaded_ms": 25928.399999976158,
+        "load_ms": 26001.600000023842,
+        "redirect_count": 1,
+        "transfer_bytes": 165184
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 390,
+      "sql_ms": 24641.32,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 11417.461
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 303,
+          "ms": 875.375,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 3028.759,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 11342.709,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 23642.255,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox/escalated_pr:7639?kind=escalated_pr&project_id=19",
+      "sample": 2,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:36:49Z",
+      "usable_ms": 59823.597,
+      "navigation": {
+        "ttfb_ms": 57531.39999997616,
+        "response_end_ms": 58096.19999998808,
+        "dom_content_loaded_ms": 59234.19999998808,
+        "load_ms": 59448.5,
+        "redirect_count": 1,
+        "transfer_bytes": 165185
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 300,
+      "sql_ms": 47646.645,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 28854.169
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 387.588,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 303,
+          "ms": 870.058,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 24317.664,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 55437.506,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 27408.267,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox/escalated_pr:7639?kind=escalated_pr&project_id=19",
+      "sample": 3,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:37:49Z",
+      "usable_ms": 70526.954,
+      "navigation": {
+        "ttfb_ms": 70019,
+        "response_end_ms": 70049.10000002384,
+        "dom_content_loaded_ms": 70363.39999997616,
+        "load_ms": 70412.39999997616,
+        "redirect_count": 1,
+        "transfer_bytes": 163496
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 405,
+      "sql_ms": 63837.124,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 20176.989
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 3113.715,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 303,
+          "ms": 45689.537,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 23241.658,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox/escalated_pr:7639?kind=escalated_pr&project_id=19",
+      "sample": 4,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:38:59Z",
+      "usable_ms": 44428.498,
+      "navigation": {
+        "ttfb_ms": 43052.90000003576,
+        "response_end_ms": 43071.5,
+        "dom_content_loaded_ms": 44168.60000002384,
+        "load_ms": 44288.10000002384,
+        "redirect_count": 1,
+        "transfer_bytes": 165184
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 432,
+      "sql_ms": 45221.624,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 21778.334
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 303,
+          "ms": 1866.593,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 7292.0,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 24622.317,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 40378.683,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 33995.758,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox/escalated_pr:7639?kind=escalated_pr&project_id=19",
+      "sample": 5,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:39:44Z",
+      "usable_ms": 64692.097,
+      "navigation": {
+        "ttfb_ms": 63852,
+        "response_end_ms": 63892.30000001192,
+        "dom_content_loaded_ms": 64420.19999998808,
+        "load_ms": 64497.19999998808,
+        "redirect_count": 1,
+        "transfer_bytes": 165185
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 285,
+      "sql_ms": 61233.802,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 31570.364
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 2703.563,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 303,
+          "ms": 3668.977,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 59048.713,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox?kind=escalated_pr&project_id=19",
+      "sample": 1,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:42:11Z",
+      "usable_ms": 50170.616,
+      "navigation": {
+        "ttfb_ms": 49625,
+        "response_end_ms": 49630.60000002384,
+        "dom_content_loaded_ms": 49824.19999998808,
+        "load_ms": 49893.30000001192,
+        "redirect_count": 1,
+        "transfer_bytes": 165184
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 274,
+      "sql_ms": 52160.109,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 26286.25
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 1447.773,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 303,
+          "ms": 3346.269,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 28928.344,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 45718.675,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox?kind=escalated_pr&project_id=19",
+      "sample": 2,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:43:02Z",
+      "usable_ms": 48418.669,
+      "navigation": {
+        "ttfb_ms": 47790.30000001192,
+        "response_end_ms": 47811.80000001192,
+        "dom_content_loaded_ms": 48229.59999996424,
+        "load_ms": 48253.89999997616,
+        "redirect_count": 1,
+        "transfer_bytes": 165185
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 413,
+      "sql_ms": 46467.582,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 19487.803
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 303,
+          "ms": 2462.604,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 9540.893,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 22448.478,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 43192.495,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox?kind=escalated_pr&project_id=19",
+      "sample": 3,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:43:50Z",
+      "usable_ms": 74671.347,
+      "navigation": {
+        "ttfb_ms": 73923.79999995232,
+        "response_end_ms": 73949.29999995232,
+        "dom_content_loaded_ms": 74545.5,
+        "load_ms": 74591.69999998808,
+        "redirect_count": 1,
+        "transfer_bytes": 165184
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 427,
+      "sql_ms": 66787.298,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 30675.885
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 569.888,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 30634.148,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 303,
+          "ms": 50791.664,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 21519.958,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox?kind=escalated_pr&project_id=19",
+      "sample": 4,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:45:05Z",
+      "usable_ms": 37979.513,
+      "navigation": {
+        "ttfb_ms": 37522.40000003576,
+        "response_end_ms": 37533.60000002384,
+        "dom_content_loaded_ms": 37862.40000003576,
+        "load_ms": 37907.700000047684,
+        "redirect_count": 1,
+        "transfer_bytes": 165185
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 395,
+      "sql_ms": 44049.035,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 18421.563
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 303,
+          "ms": 2453.53,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 8540.693,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 23661.616,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 34139.964,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox?kind=escalated_pr&project_id=19",
+      "sample": 5,
+      "warmup": false,
+      "timestamp": "2026-11-19T01:45:43Z",
+      "usable_ms": 40164.578,
+      "navigation": {
+        "ttfb_ms": 38299,
+        "response_end_ms": 38318.30000001192,
+        "dom_content_loaded_ms": 39851.30000001192,
+        "load_ms": 40026.80000001192,
+        "redirect_count": 1,
+        "transfer_bytes": 165185
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 269,
+      "sql_ms": 39618.049,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 17867.066
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 912.578,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 303,
+          "ms": 3367.111,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 22214.507,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 33262.845,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    }
+  ],
+  "warmups": [
+    {
+      "path": "/inbox/escalated_pr:7639?kind=escalated_pr&project_id=19",
+      "sample": 0,
+      "warmup": true,
+      "timestamp": "2026-11-19T01:35:39Z",
+      "usable_ms": 43525.947,
+      "navigation": {
+        "ttfb_ms": 40841.40000003576,
+        "response_end_ms": 40844.5,
+        "dom_content_loaded_ms": 41116.60000002384,
+        "load_ms": 41125.10000002384,
+        "redirect_count": 1,
+        "transfer_bytes": 165184
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 323,
+      "sql_ms": 28455.939,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 13730.408
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 303,
+          "ms": 26487.291,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 12475.636,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    },
+    {
+      "path": "/inbox?kind=escalated_pr&project_id=19",
+      "sample": 0,
+      "warmup": true,
+      "timestamp": "2026-11-19T01:40:49Z",
+      "usable_ms": 82643.465,
+      "navigation": {
+        "ttfb_ms": 81154.29999995232,
+        "response_end_ms": 81200.09999996424,
+        "dom_content_loaded_ms": 82519.5,
+        "load_ms": 82568.79999995232,
+        "redirect_count": 1,
+        "transfer_bytes": 165185
+      },
+      "final_path": "/inbox",
+      "status": "complete",
+      "queries": 571,
+      "sql_ms": 83182.815,
+      "slowest_sql": {
+        "name": "Issue Eager Load",
+        "ms": 29208.508
+      },
+      "controller_actions": [
+        {
+          "controller": "InboxController",
+          "action": "count",
+          "status": 200,
+          "ms": 12290.073,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "show",
+          "status": 200,
+          "ms": 33269.519,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 303,
+          "ms": 53076.554,
+          "exception": null,
+          "debug_trace": null
+        },
+        {
+          "controller": "InboxController",
+          "action": "index",
+          "status": 200,
+          "ms": 26813.167,
+          "exception": null,
+          "debug_trace": null
+        }
+      ]
+    }
+  ],
+  "finished_at": "2026-11-19T01:46:23Z",
+  "elapsed_seconds": 643.814
+}
