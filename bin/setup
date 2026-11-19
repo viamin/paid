@@ -68,6 +68,7 @@ FileUtils.chdir APP_ROOT do
     system! "bin/rails db:prepare"
     system! "bin/rails db:reset" if ARGV.include?("--reset")
 
+    # @spec RAILS-CONTROL-PLANE-020 RAILS-CONTROL-PLANE-023
     if ENV["PAID_ENABLE_DEV_QUERY_STATS"] == "1" && ENV.fetch("RAILS_ENV", "development") == "development"
       puts "\n== Enabling development query stats =="
       require_relative "../config/worktree_database_names"
@@ -82,6 +83,13 @@ FileUtils.chdir APP_ROOT do
       psql_args.push("-p", admin_port.to_s) if admin_port
       system!({ "PGPASSWORD" => admin_password }, "psql", *psql_args,
         "-c", "CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+      app_role = database_url&.user ? URI::DEFAULT_PARSER.unescape(database_url.user) : ENV.fetch("DB_USERNAME", "paid")
+      track_planning = ENV.fetch("PAID_PG_TRACK_PLANNING", "on")
+      raise ArgumentError, "PAID_PG_TRACK_PLANNING must be on or off" unless %w[on off].include?(track_planning)
+
+      system!({ "PGPASSWORD" => admin_password }, "psql", *psql_args,
+        "-v", "app_role=#{app_role}", "-v", "track_planning=#{track_planning}",
+        "-f", File.join(APP_ROOT, "config/development_query_stats.sql"))
     end
   end
 

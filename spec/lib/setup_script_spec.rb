@@ -75,6 +75,27 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec RAILS-CONTROL-PLANE-020 RAILS-CONTROL-PLANE-023
+  it "provisions restricted capture for the URL's role and honors the planning opt-out" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge(
+        "PAID_ENABLE_DEV_QUERY_STATS" => "1", "RAILS_ENV" => "development",
+        "DATABASE_URL" => "postgresql://custom_app:app-password@custom-db:5544/other_dev",
+        "DB_ADMIN_USERNAME" => "postgres", "DB_ADMIN_PASSWORD" => "test-admin-password",
+        "PAID_PG_TRACK_PLANNING" => "off"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      calls = File.read(File.join(dir, "psql-calls.log"))
+      expect(calls).to include("-d other_dev -p 5544 -v app_role=custom_app -v track_planning=off")
+      expect(calls).to include("config/development_query_stats.sql")
+      expect(calls).not_to include("app-password", "test-admin-password")
+    end
+  end
+
   it "writes the metrics token file from METRICS_TOKEN so Prometheus scrape auth stays in sync" do
     # Regression guard: docker-compose.observability.yml mounts the host
     # metrics token file into the Prometheus container at the path

@@ -109,8 +109,7 @@ queries and query stats.
 Development PostgreSQL preloads `pg_stat_statements`, and the development
 primary database installs its extension so PgHero can show current query stats
 and slow queries. This applies to both Docker Compose and the VS Code
-devcontainer; it does not enable PgHero's historical query capture or change
-production PostgreSQL configuration. `bin/setup` installs the extension on
+devcontainer without changing production PostgreSQL configuration. `bin/setup` installs the extension on
 existing Compose development databases when query stats are enabled in the
 container environment. The development dashboard flags queries
 averaging at least 100 ms over five calls so low-volume performance problems
@@ -127,6 +126,62 @@ pending. Solid Cable 4.1 batches broadcasts through a Rails executor worker, so
 its shutdown is deferred only while the Rails unload lock is held. Outside code
 reload, shutdown remains synchronous. Broadcasts must survive shutdown and work
 afterward.
+
+## Development database investigation history
+
+Development query diagnostics retain samples in the existing primary database
+using PgHero's query, query-statistics, and space-statistics tables. The tables
+are installed through normal Rails migrations; collection runs only in
+development through GoodJob. Jobs check the environment before referencing the
+development-only PgHero gem. These database-wide diagnostic records are system
+infrastructure rather than tenant-owned records. The dashboard retains its
+existing read-only routes and query normalization. Stored query text is also
+normalized before persistence, including utility statements that PostgreSQL may
+report with literal values.
+
+A scheduled job captures query statistics once per minute, with overlapping
+captures and cleanup serialized through the same database advisory lock across
+web processes. PgHero 4.1 captures the 100 queries
+with the highest combined planning and execution time and resets the primary database's current
+query counters. Historical samples describe capture intervals; current counters
+describe work since the latest capture. Committed samples survive database
+recovery; the unsampled interval and interrupted queries can still be lost.
+Capture resets and inserts are not atomic in PgHero, so failure after a
+successful reset can lose an interval. Failed capture surfaces as a failed job,
+not as a successful empty sample, without an immediate unbounded retry loop
+during database recovery. Setup provisions an administrator-owned, no-argument
+reset helper restricted to the connected development database. The helper uses
+a fixed safe search path, revokes public execution, and grants execution only
+to the configured non-superuser application role. Collection uses that helper;
+the application role receives neither superuser authority nor general access to
+PostgreSQL's statistics-reset function.
+
+A daily job records table and index sizes and removes samples older than
+14 days from both statistics tables. Query-text records without retained samples
+are also removed so distinct query text cannot grow without bound. Retention
+applies only to diagnostic history. Missing tables before migration do not
+prevent application boot; capture failures remain visible in GoodJob.
+
+Development PostgreSQL enables `pg_stat_statements.track_planning` alongside
+execution statistics. Both Compose configurations carry the setting, and setup
+applies it to an existing supported local development server through the
+query-statistics provisioning boundary. Planning measurements add overhead,
+particularly when concurrent connections plan the same query. Operators can
+disable planning tracking without disabling query or space history. PgHero 4.1
+includes planning time in displayed and persisted query totals but does not
+display or persist planning counters separately; SQL against
+`pg_stat_statements` exposes them until the next capture reset or recovery.
+Neither PgHero history nor planning counters measure peak process memory or
+establish which process caused an out-of-memory kill.
+
+### Decisions and alternatives
+
+| Decision | Rationale | Alternative considered |
+| --- | --- | --- |
+| Store history in the primary database and collect through GoodJob | Uses the existing development stack and preserves committed samples across PostgreSQL recovery. | A separate monitoring database and scheduler add operating cost without recovering the unsampled interval. |
+| Use PgHero's supported interval capture | Supplies the dashboard's native query history with bounded capture size. | Custom cumulative snapshots avoid resets but require new counter-delta and reset-detection behavior. |
+| Retain 14 days and prune unused query text | Provides recent incident context with bounded historical duration. | Unlimited retention accumulates diagnostic data indefinitely. |
+| Enable development planning measurements with an operator opt-out | Makes expensive planning observable without changing production policy. | Execution-only measurement leaves nested-query planning costs unmeasured. |
 
 ## Deferred Work
 

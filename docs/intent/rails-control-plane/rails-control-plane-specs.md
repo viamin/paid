@@ -152,6 +152,69 @@ failures when no tmux socket responds.
   `config/pghero.yml`, `bin/dev-web`, `bin/setup`, `docker-compose.yml`,
   `.devcontainer/compose.yaml`, `docker/postgres/init-multiple-dbs.sh`.
 
+- [x] **RAILS-CONTROL-PLANE-020** — While Rails runs in development with
+  PgHero history tables migrated, GoodJob SHALL schedule query-statistics capture
+  every minute for the configured primary database and SHALL prevent concurrent
+  captures and cleanup across application processes using the same database
+  advisory lock. Each capture SHALL use PgHero's
+  supported top-100-by-combined-planning-and-execution-time interval capture, resetting current
+  counters for that database and persisting normalized query text, call counts,
+  combined planning/execution totals, and capture time in the existing primary database. Previously
+  committed samples SHALL remain available after database recovery. Stored query
+  text SHALL filter literal values, including those in utility statements.
+  Non-development environments SHALL NOT schedule or execute PgHero collection
+  or require its development-only gem at job execution. Development setup SHALL
+  provision an administrator-owned, no-argument reset helper scoped to the
+  connected database with a fixed safe search path and public execution revoked.
+  Only the configured application role SHALL receive helper execution; that
+  role SHALL remain non-superuser without general statistics-reset authority.
+  *Tests:* `spec/jobs/pg_hero_capture_query_stats_job_spec.rb`,
+  `spec/services/development/pg_hero_history_spec.rb`,
+  `spec/config/pg_hero_development_integration_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development database investigation history.
+
+- [x] **RAILS-CONTROL-PLANE-021** — While Rails runs in development,
+  GoodJob SHALL schedule daily PgHero table/index size capture and cleanup of
+  query and space samples older than 14 days in the configured primary database.
+  Cleanup SHALL remove query-text records without retained samples, SHALL NOT
+  remove query text referenced by retained samples, and SHALL NOT delete
+  application business records. Diagnostic tables SHALL be installed by normal
+  Rails migrations and SHALL NOT require another database or service.
+  *Tests:* `spec/jobs/pg_hero_capture_space_stats_job_spec.rb`,
+  `spec/services/development/pg_hero_history_spec.rb`,
+  `spec/jobs/pg_hero_clean_history_job_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development database investigation history.
+
+- [x] **RAILS-CONTROL-PLANE-022** — If development PgHero capture fails
+  because its tables are missing, PostgreSQL is recovering, permissions are
+  insufficient, or persistence fails, the job SHALL report failure through
+  GoodJob rather than a successful empty capture and SHALL NOT retry in an
+  immediate unbounded loop. Missing history tables SHALL NOT prevent application
+  boot. Diagnostics documentation SHALL identify the loss of unsampled or
+  interrupted work and the possible loss of an interval between PgHero's
+  non-atomic reset and insertion. Background collection SHALL preserve the
+  dashboard's read-only HTTP boundary and normalization requirements in
+  RAILS-CONTROL-PLANE-018.
+  *Tests:* `spec/jobs/pg_hero_capture_query_stats_job_spec.rb`,
+  `spec/services/development/pg_hero_history_spec.rb`,
+  `spec/requests/pghero_development_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development database investigation history.
+
+- [x] **RAILS-CONTROL-PLANE-023** — When development PostgreSQL query
+  diagnostics are provisioned through either supported Compose configuration
+  or setup of an existing supported local server, the system SHALL enable
+  `pg_stat_statements.track_planning` by default and SHALL provide a documented
+  operator opt-out independent of query and space history. Provisioning SHALL
+  NOT change production PostgreSQL configuration. Documentation SHALL describe
+  planning-tracking overhead, how to inspect planning counters through SQL,
+  their reset on query capture or database recovery, and their inclusion in
+  PgHero 4.1's combined totals without separate planning counters in its display
+  or stored history. Documentation SHALL distinguish these
+  diagnostics from peak process memory measurements and OOM attribution.
+  *Tests:* `spec/config/pg_hero_development_integration_spec.rb`,
+  `spec/lib/setup_script_spec.rb`.
+  *Design:* `rails-control-plane-design.md`, Development database investigation history.
+
 - [x] **RAILS-CONTROL-PLANE-007** — When multiple hosts run the GoodJob cron
   scheduler, the system SHALL prevent duplicate scheduled jobs by stamping
   every cron enqueue with a `(cron_key, cron_at)` pair guarded by the unique

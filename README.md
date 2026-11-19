@@ -233,12 +233,49 @@ including restricted agent containers that can reach the Compose proxy.
 The unauthenticated dashboard is read-only: requests that change database
 state are rejected, PgHero's kill and Explain controls are hidden, and query
 text is normalized to filter literal values.
-PgHero query history and cloud monitoring are not enabled, and no migrations or
-additional service are needed.
+PgHero history uses tables installed by the normal Rails migrations in the
+existing primary database, with no additional service. Cloud monitoring is disabled.
 The development PostgreSQL container enables current query stats with
 `pg_stat_statements`; PgHero's **Queries** page shows them after database
 activity. The overview flags queries averaging at least 100 ms over five calls.
-Historical query capture remains disabled.
+GoodJob captures the top 100 queries by total time every minute in development,
+and captures table/index sizes daily at 03:17 UTC. History is retained for
+14 days; daily cleanup runs at 03:27 UTC and removes unused query text as well.
+The scheduler must be running (`GOOD_JOB_ENABLE_CRON` must not be `false`).
+Capture and cleanup share a database lock so overlapping processes skip work.
+Failures appear in GoodJob rather than as successful empty samples.
+
+Run `bin/setup --skip-server` after updating to install the history tables and
+provision the restricted statistics-reset helper using `DB_ADMIN_USERNAME` and
+`DB_ADMIN_PASSWORD` when `PAID_ENABLE_DEV_QUERY_STATS=1`. The app role stays
+non-superuser; the helper can only reset statistics for its connected database.
+The dashboard's HTTP reset, kill, and Explain actions remain disabled.
+
+Development enables `pg_stat_statements.track_planning`. PgHero's displayed and
+stored totals combine planning and execution time; it does not retain those
+timings separately. Planning tracking adds overhead, particularly when concurrent
+connections plan the same query. Set `PAID_PG_TRACK_PLANNING=off` and rerun setup
+to disable it for new connections without disabling history. Reconnect existing
+Rails/worker processes to apply the database setting. Both Compose definitions
+also use this variable for their PostgreSQL startup default.
+
+Inspect separate planning counters before the next capture with:
+
+```sql
+SELECT queryid, plans, total_plan_time, max_plan_time, calls, total_exec_time
+FROM pg_stat_statements
+WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+ORDER BY total_plan_time DESC
+LIMIT 20;
+```
+
+PgHero resets current counters on each capture. Committed historical samples
+survive database recovery, but the unsampled interval and interrupted queries
+can be lost. PgHero's reset and insert are not atomic: failure between them can
+also lose an interval. Planning counters reset with capture or database recovery.
+This history does not measure peak process memory or identify the process that
+caused an OOM kill; correlate its timestamps with container memory metrics and
+PostgreSQL/kernel logs.
 
 ## Provider Auth Setup
 

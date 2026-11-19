@@ -43,6 +43,7 @@ services:
       # the container's non-loopback address, so Puma must listen there too.
       PAID_WEB_BIND_ADDRESS: "0.0.0.0"
       PAID_ENABLE_DEV_QUERY_STATS: "1"
+      PAID_PG_TRACK_PLANNING: "${PAID_PG_TRACK_PLANNING:-on}"
 
     depends_on:
       postgres:
@@ -57,7 +58,7 @@ services:
     # worktree's databases. The default max_connections=100 is exhausted under
     # that combined load; 200 gives headroom. Production sets max_connections at
     # its own DB layer (see docs/WORKER_POOL_TUNING.md).
-    command: postgres -c max_connections=200 -c shared_preload_libraries=pg_stat_statements
+    command: postgres -c max_connections=200 -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track_planning=${PAID_PG_TRACK_PLANNING:-on}
     restart: unless-stopped
     networks:
     - default
