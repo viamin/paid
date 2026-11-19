@@ -54,6 +54,24 @@ evidence to the existing report-only audit path. A successful read is evidence,
 not an automatic criterion or issue pass; missing, stale, failed, unavailable,
 or cross-tenant signals remain inspectable unknown or failure evidence.
 
+Live-target claim and completion preserve the same authority boundary as merged
+verification: inactive or paused authority, hard-stop budget, revoked policy,
+changed mapping/check, or an environment class different from the running
+environment cannot start a read. Completion rechecks the confirmed signal and
+retains a scoped measurement-attempt link and immutable result/timing snapshot.
+A read that finishes after its signal changes remains stale history. A
+measurement's successful execution is recorded as `observed`, without deciding
+that its measured value satisfies the criterion.
+
+The primary closeout audit packet projects these live receipts without
+requiring a merged PR. It binds the run, current reviewed mapping, signal
+revision, actual environment class, and matching tenant/issue/check/criterion
+measurement attempt. Missing or mutated attempt linkage, changed signal,
+changed intent/check, and the reviewed completion deadline invalidate current
+evidence and its source revision. Measured values and diagnostics are bounded;
+truncation makes coverage incomplete. Failed reads remain visible as failed
+evidence, and an observed read never becomes a whole-issue pass.
+
 The dedicated closeout-verification worker claims only an admitted queued run.
 Immediately before execution it rechecks the persisted mapping against the
 source issue, recorded merged revision, reviewed recipe version and digest,

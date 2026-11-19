@@ -34,6 +34,16 @@ RSpec.describe Llm::AnalyzePartialCloseout do
   end
 
   describe ".call" do
+    # @spec STAGED-CLOSEOUT-ADOPTION-012
+    it "uses observed trusted measurements as measured values rather than criterion verdicts" do
+      described_class.call(agent_run:)
+
+      expect(provider).to have_received(:send_message) do |prompt:, **|
+        expect(prompt).to include("outcome=observed", "measurement_status=succeeded",
+          "Compare measured values", "a successful read alone does not establish criterion satisfaction")
+      end
+    end
+
     # @spec LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-009
     it "assesses a cleaned-up run through a disposable text container" do
       agent_run.update!(container_id: "cleaned-up-run-container")
