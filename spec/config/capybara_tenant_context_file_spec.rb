@@ -13,6 +13,18 @@ RSpec.describe CapybaraTenantContextFile, :no_db do
   end
 
   # @spec POSTGRESQL-PERSISTENCE-012
+  it "installs exactly one wrapper around the finalized system-test Rack app" do
+    wrapped_app = instance_double(Proc)
+    allow(Capybara).to receive(:app) { wrapped_app }
+    allow(Capybara).to receive(:app=) { |app| wrapped_app = app }
+
+    CapybaraTenantContext.install!
+    CapybaraTenantContext.install!
+
+    expect(Capybara).to have_received(:app=).with(an_instance_of(CapybaraTenantContext)).once
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-012
   it "initializes browser-server connections before Warden deserializes the session user" do
     app = instance_double(Proc)
     environment = { "PATH_INFO" => "/" }
