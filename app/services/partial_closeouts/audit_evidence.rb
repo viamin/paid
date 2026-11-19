@@ -4,7 +4,7 @@ require "digest"
 
 module PartialCloseouts
   # Builds the bounded, provenance-labeled inputs for a semantic closeout audit.
-  # @spec PARTIAL-CLOSEOUT-047
+  # @spec PARTIAL-CLOSEOUT-047 PARTIAL-CLOSEOUT-057
   class AuditEvidence
     MAX_SOURCE_BODY = 16_000
     MAX_MERGED_PRS = 8
@@ -47,7 +47,9 @@ module PartialCloseouts
         goal: "create_pr", id: merged_prs.filter_map(&:run_id)).index_by(&:id)
       source = source_issue
       @source_digest = source.delete(:digest)
-      @source_revision = Assessment.source_revision_for(@issue, closeout_evidence: closeout)
+      closeout_verifications = CloseoutVerifications::Evidence.records_for(@issue)
+      @source_revision = Assessment.source_revision_for(@issue, closeout_evidence: closeout,
+        closeout_verification_evidence: closeout_verifications)
       @intent_revision = source.fetch(:intent_revision)
       delivery = merged_prs.map { |pr| merged_pr(pr, runs[pr.run_id], pr_bodies[[ pr.number, pr.url ]]) }
       current = current_run_summary
@@ -60,7 +62,8 @@ module PartialCloseouts
         omitted_merged_pr_count: omitted,
         closeout_evidence_revision: closeout.digest,
         pr_body_revision: closeout.pr_body_revision,
-        current_run_summary: current
+        current_run_summary: current,
+        closeout_verifications: closeout_verifications
       }.to_json
     end
 
