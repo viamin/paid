@@ -170,8 +170,8 @@ module MaintenanceRuns
     rescue TimeBudgetExhausted => error
       raise TimeBudgetExhausted.new(checks + error.checks)
     rescue Containers::Provision::Error => error
-      [ { "name" => adapter.name, "status" => "incomplete", "reason" => "execution_unavailable",
-          "provenance" => provenance(adapter, scope, nil), "error_class" => error.class.name } ]
+      checks << { "name" => adapter.name, "status" => "incomplete", "reason" => "execution_unavailable",
+                  "provenance" => provenance(adapter, scope, version), "error_class" => error.class.name }
     end
 
     def execute_scoped(scope, command, timeout)

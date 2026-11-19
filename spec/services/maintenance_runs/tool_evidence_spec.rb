@@ -260,6 +260,33 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     )
   end
 
+  # @spec MAINT-022 MAINT-040 MAINT-043
+  it "preserves completed analyzer checks when a later analysis cannot execute" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
+    executions = [
+      result(exit_code: 0, stdout: JSON.generate([ "./Gemfile" ])), result(exit_code: 0), result(exit_code: 0),
+      result(exit_code: 0, stdout: "exhale 1.2"), result(exit_code: 0, stdout: '{"findings":[]}'),
+      Containers::Provision::TimeoutError.new("complexity timed out")
+    ]
+    allow(run).to receive(:execute_in_execution_environment) do
+      execution = executions.shift
+      raise execution if execution.is_a?(Exception)
+
+      execution
+    end
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:completed_checks)).to contain_exactly(
+      include("name" => "exhale_dry", "provenance" => include("version" => "exhale 1.2"))
+    )
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "exhale", "reason" => "execution_unavailable",
+        "provenance" => include("version" => "exhale 1.2"),
+        "error_class" => "Containers::Provision::TimeoutError")
+    )
+  end
+
   # @spec MAINT-022 MAINT-040
   it "records analyzer output truncated at the evidence bound as incomplete coverage" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "typescript" ], "marker_files" => [])
