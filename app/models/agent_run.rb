@@ -357,6 +357,7 @@ class AgentRun < ApplicationRecord
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validates :closeout_verification_generation, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than: 3 }
   validates :originating_audit_run, presence: true, if: :layered_verification_repair?
   validate :originating_audit_run_is_audit, if: :layered_verification_repair?
   # @spec MAINT-011 — scope alone is not an investigation objective.

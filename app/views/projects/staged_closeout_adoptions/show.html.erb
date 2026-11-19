@@ -43,7 +43,7 @@
           <div><%= mapping.label :environment_class, "Environment (required for live checks)" %><%= mapping.text_field :environment_class, class: "block w-full rounded border-gray-300" %></div>
           <div><%= mapping.label :freshness_seconds, "Evidence validity in seconds" %><%= mapping.number_field :freshness_seconds, value: 3600, min: 1, required: true, class: "block w-full rounded border-gray-300" %></div>
           <%= mapping.fields_for :retry_policy do |retry_fields| %>
-            <div><%= retry_fields.label :max_attempts, "Maximum attempts" %><%= retry_fields.number_field :max_attempts, value: 1, min: 1, required: true, class: "block w-full rounded border-gray-300" %></div>
+            <div><%= retry_fields.label :max_attempts, "Maximum total attempts" %><%= retry_fields.number_field :max_attempts, value: 1, min: 1, max: CloseoutVerifications::RetryPolicy::MAX_ATTEMPTS, required: true, class: "block w-full rounded border-gray-300" %></div>
           <% end %>
         <% end %>
         <%= form.submit "Approve reviewed check", class: "rounded bg-indigo-600 px-4 py-2 text-white" %>

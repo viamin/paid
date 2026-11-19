@@ -60,4 +60,16 @@ RSpec.describe CloseoutVerifications::AdmitLiveTarget do
     expect(described_class.call(project: other, target_revision:).runs).to be_empty
     expect(AgentRun.where(project: other, goal: "closeout_verification")).to be_empty
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-015
+  it "returns no run when a concurrent admission wins the unique identity" do
+    mapping
+    allow(AgentRun).to receive(:create!).and_raise(ActiveRecord::RecordNotUnique,
+      "duplicate key violates unique constraint #{described_class::IDENTITY_INDEX}")
+
+    outcome = described_class.call(project:, target_revision:)
+
+    expect(outcome.runs).to be_empty
+    expect(outcome.reason).to eq("already_admitted")
+  end
 end

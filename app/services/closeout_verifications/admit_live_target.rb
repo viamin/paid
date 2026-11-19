@@ -5,7 +5,7 @@ module CloseoutVerifications
   # signal names the target. A merge is intentionally not an input here.
   # @spec STAGED-CLOSEOUT-ADOPTION-012
   class AdmitLiveTarget
-    IDENTITY_INDEX = "index_agent_runs_live_closeout_verification_identity".freeze
+    IDENTITY_INDEX = "index_agent_runs_live_closeout_verification_attempt_identity".freeze
 
     Outcome = Data.define(:runs, :reason) do
       def admitted? = runs.any?
@@ -29,7 +29,7 @@ module CloseoutVerifications
 
       results = reviewed.map { |mapping| eligibility(mapping) }
       runs = results.filter_map { |result| admit(result.mapping) if result.eligible? }
-      Outcome.new(runs, runs.empty? ? (results.map(&:reason).compact.first || "already_current_result") : nil)
+      Outcome.new(runs, runs.empty? ? (@existing_reason || results.map(&:reason).compact.first || "already_current_result") : nil)
     end
 
     private
@@ -54,21 +54,30 @@ module CloseoutVerifications
     end
 
     def admit(mapping)
-      return if existing_run(mapping)
+      retry_state = RetryPolicy.for(mapping:, run: existing_run(mapping))
+      unless retry_state.generation
+        @existing_reason = retry_state.reason
+        return
+      end
 
       AgentRun.transaction do
-        run = AgentRun.create!(attributes_for(mapping))
+        run = AgentRun.create!(attributes_for(mapping).merge(closeout_verification_generation: retry_state.generation))
         CloseoutVerificationJob.perform_later(run.id)
         run
       end
     rescue ActiveRecord::RecordNotUnique => error
-      raise unless error.message.include?(IDENTITY_INDEX) || existing_run(mapping)
+      raise unless error.message.include?(IDENTITY_INDEX)
+
+      existing_run(mapping)
+      @existing_reason = "already_admitted"
+      nil
     end
 
     def existing_run(mapping)
       run = AgentRun.where(project:, issue: mapping.issue, goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL,
         closeout_criterion_key: mapping.criterion_key, closeout_recipe_version: mapping.target_version,
-        closeout_environment: mapping.environment_class, closeout_target_revision: target_revision).first
+        closeout_environment: mapping.environment_class, closeout_target_revision: target_revision)
+        .order(closeout_verification_generation: :desc).first
       CloseoutVerificationJob.perform_later(run.id) if run&.status == "queued"
       run
     end

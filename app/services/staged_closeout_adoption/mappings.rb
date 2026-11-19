@@ -46,6 +46,9 @@ module StagedCloseoutAdoption
       raise Error, "staged closeout adoption is disabled" unless enrollment.enabled?
 
       validate_required_attributes!
+      unless CloseoutVerifications::RetryPolicy.limit(attributes.fetch("retry_policy", {}))
+        raise Error, "retry policy must permit between one and three total attempts"
+      end
       validate_criterion!
       validate_stage!
       target = resolve_target!
@@ -78,6 +81,8 @@ module StagedCloseoutAdoption
         mapping.staged_closeout_enrollment_id == enrollment.id
       return Result.new(mapping, "project_not_enrolled") unless enrollment.enabled?
       return Result.new(mapping, "mapping_not_current") unless mapping.current?
+      return Result.new(mapping, "source_issue_closed") unless Issue.where(id: issue.id, project_id: project.id, github_state: "open").exists?
+      return Result.new(mapping, "retry_policy_invalid") unless CloseoutVerifications::RetryPolicy.limit(mapping.retry_policy)
       observed_stage = observed_target || ("merged_revision" if observed_merge)
       observed_stage = nil unless %w[merged_revision live_environment].include?(observed_stage) && mapping.stage == observed_stage
       return Result.new(mapping, "criterion_not_current") unless admission_criteria(observed_target: observed_stage).include?(mapping.criterion_key)

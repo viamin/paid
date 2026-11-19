@@ -68,7 +68,8 @@ RSpec.describe Inbox::StagedCloseoutProgress do
     expect(described_class.call(issue:).find { |entry| entry.id == "acceptance_audit" }.state).not_to eq("complete")
     travel 61.seconds do
       expect(verification.state).to eq("stale")
-      expect(verification.next_action).to be_present
+      expect(verification.next_action).to include("attempt allowance is exhausted")
+      expect(verification.evidence.sole).to include(attempt: 1, maximum_attempts: 1, retry_reason: "retry_exhausted")
     end
   end
 

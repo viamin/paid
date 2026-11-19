@@ -179,6 +179,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Bounded observation and admission recovery for confirmed live environment targets"
     },
+    closeout_verification_retry_sweep: {
+      cron: "*/5 * * * *",
+      class: "CloseoutVerificationRetrySweepJob",
+      queue: "maintenance",
+      description: "Bounded recovery of reviewed closeout verification retry generations"
+    },
     partial_closeout_projection_reconciliation_sweep: {
       cron: "6-59/15 * * * *",
       class: "PartialCloseoutProjectionReconciliationSweepJob",

@@ -189,3 +189,26 @@ without adding a human Inbox item. Its selected-issue JSON and bearer-token API
 return the same progress facts. Source selections cannot read another project's
 issue. The enrollment summary names the actual wait or admitted run state
 instead of reporting an implemented scheduler as missing.
+
+### Bounded verification retries
+
+A reviewed retry policy permits one to three total execution attempts for an
+admission identity; absent policy means one attempt. A failed or expired result
+may admit a fresh generation after at least one minute, subject to the same
+current target, mapping, enrollment, phase, pause and budget guards. Cancellation
+never automatically retries the same identity. Each generation has its own run
+and immutable terminal receipt; webhook replay cannot execute or renew an old
+receipt. A bounded periodic retry sweep recovers missed retry observations.
+Closed source issues cannot admit checks, retries or automatic acceptance audits.
+
+A complete, current terminal staged observation may exempt only a report-only
+acceptance audit from the ordinary recent-PR synchronization grace. Plain
+coding and continuation keep that guard, and every other admission, prerequisite,
+authority and budget check remains active. This avoids consuming the reviewed
+evidence lifetime while waiting for a grace period intended for implementation.
+An audit queued before a newer observation may still report current facts, but
+its earlier admission cannot authorize closure of the newer evidence generation.
+The original request and report remain immutable; the same unchanged intent and
+closure-policy signature may request a fresh normal audit for that new source
+revision, retaining the existing per-source audit retry limit. Revoked policy or
+changed intent cannot use this refresh path.

@@ -14,10 +14,10 @@ module CloseoutVerifications
 
     Row = Data.define(:id, :issue_id, :pr_number, :base_sha, :criterion_key,
       :recipe_version, :recipe_digest, :mapping_id, :completed_at, :verification_result,
-      :target_revision, :environment_class, :measurement_attempt_id)
+      :target_revision, :environment_class, :measurement_attempt_id, :generation)
     PLUCK_COLUMNS = %i[id issue_id source_pull_request_number base_commit_sha closeout_criterion_key
       closeout_recipe_version closeout_recipe_digest closeout_mapping_id completed_at verification_result
-      closeout_target_revision closeout_environment closeout_measurement_attempt_id].freeze
+      closeout_target_revision closeout_environment closeout_measurement_attempt_id closeout_verification_generation].freeze
 
     def self.records_for(issue)
       records_for_issues([ issue ]).fetch(issue.id, [])
@@ -25,6 +25,17 @@ module CloseoutVerifications
 
     def self.records_for_issues(issues)
       bound(project_records(issues))
+    end
+
+    # Complete current terminal observations may authorize a report-only audit,
+    # never ordinary implementation or a semantic acceptance verdict.
+    # @spec STAGED-CLOSEOUT-ADOPTION-015
+    def self.audit_ready?(issue) = audit_ready_records?(records_for(issue))
+
+    def self.audit_ready_records?(records)
+      complete = records.none? { |record| record["evidence_truncated"] || record["omitted_record_count"].to_i.positive? }
+      outcomes = %w[passed observed failed unavailable timeout setup_failed cleanup_failed]
+      complete && records.any? { |record| record["current"] && record["outcome"].in?(outcomes) }
     end
 
     def self.current_for_run?(agent_run)
@@ -113,7 +124,8 @@ module CloseoutVerifications
         "stdout" => [ native["stdout"].to_s, MAX_OUTPUT_BYTES ],
         "stderr" => [ native["stderr"].to_s, MAX_OUTPUT_BYTES ] }
       record = {
-        "verification_run_id" => row.id, "mapping_id" => row.mapping_id, "source_issue_id" => issue.id, "project_id" => issue.project_id,
+        "verification_run_id" => row.id, "mapping_id" => row.mapping_id, "generation" => row.generation,
+        "source_issue_id" => issue.id, "project_id" => issue.project_id,
         "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.target_revision.presence || row.base_sha,
         "recipe_version" => row.recipe_version, "recipe_digest" => row.recipe_digest,
         "outcome" => evidence["outcome"], "recorded_at" => evidence["recorded_at"],
@@ -159,6 +171,7 @@ module CloseoutVerifications
       expected = { "source_issue_id" => issue.id, "criterion" => row.criterion_key, "source_pr_number" => row.pr_number,
         "merged_commit_sha" => row.base_sha, "recipe_version" => row.recipe_version,
         "recipe_digest" => row.recipe_digest, "mapping_id" => row.mapping_id }
+      expected["generation"] = row.generation unless row.generation.zero? && !evidence.key?("generation")
       reasons << "verification_identity_mismatch" unless expected.all? { |key, value| evidence[key].to_s == value.to_s }
       reasons
     end

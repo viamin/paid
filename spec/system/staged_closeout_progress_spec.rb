@@ -60,7 +60,7 @@ RSpec.describe "Staged closeout progress", system_driver: :paid_cuprite, type: :
   def check_expired_progress
     within("[data-testid='inbox-progress']") do
       expect(page).to have_css("[data-progress-state='stale']")
-      expect(page).to have_text("Collect current verification evidence")
+      expect(page).to have_text("attempt allowance is exhausted")
     end
   end
 
@@ -73,18 +73,27 @@ RSpec.describe "Staged closeout progress", system_driver: :paid_cuprite, type: :
     page.save_screenshot("/tmp/paid-overnight-5078-progress-browser.png")
   end
 
+  def execute_fixture_verification(run)
+    # Browser/Cable requests share the fixture's PostgreSQL session. Serialize
+    # the inline worker with their tenant-context changes, as HTTP already does.
+    CapybaraTenantContext.with_fixture_session do
+      CloseoutVerificationJob.perform_now(run.id)
+      expect(run.reload.status).to eq("completed")
+    end
+  end
+
   it "shows queued, actually observed and expired evidence without declaring accepted closure" do
     run = CloseoutVerifications::AdmitLiveTarget.call(project:).runs.sole
     visit project_staged_closeout_adoption_path(project, issue_id: issue.id)
     check_queued_progress
-    CloseoutVerificationJob.perform_now(run.id)
+    execute_fixture_verification(run)
     visit project_staged_closeout_adoption_path(project, issue_id: issue.id)
     check_observed_progress
     travel 61.seconds do
       visit project_staged_closeout_adoption_path(project, issue_id: issue.id)
       check_expired_progress
     end
-    expect(issue.reload.github_state).to eq("open")
+    CapybaraTenantContext.with_fixture_session { expect(issue.reload.github_state).to eq("open") }
     capture_responsive_progress
   end
 end
