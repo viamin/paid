@@ -44,7 +44,10 @@ module MaintenanceRuns
         runner_id: runner_id,
         agent_type: agent_type,
         goal: AgentRun::MAINTENANCE_GOAL,
-        custom_prompt: BuildPrompt.call(objective: objective, guidance: guidance, scope: scope, type: selected_type, type_value: type),
+        custom_prompt: BuildPrompt.call(
+          objective: objective, guidance: guidance, scope: scope,
+          type: selected_type, type_value: type, recipe_evidence: recipe_evidence
+        ),
         trigger_type: "manual",
         status: "queued",
         maintenance_objective: objective,
@@ -105,6 +108,14 @@ module MaintenanceRuns
       return @resolved_recipe if defined?(@resolved_recipe)
 
       @resolved_recipe = objective.present? ? Recipes.fetch(objective) : nil
+    end
+
+    # @spec MAINT-046 — a recipe whose contract names shared reconciliation
+    # evidence gets a start-time snapshot of the reconciler's persisted
+    # results embedded in the prompt, so the investigation consumes that
+    # evidence instead of reconstructing the inventory it forbids.
+    def recipe_evidence
+      resolved_recipe&.evidence_loader&.call(project:)
     end
 
     # An unmapped value is intentionally nil here. Its raw snapshot remains on

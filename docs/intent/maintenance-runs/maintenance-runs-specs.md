@@ -188,9 +188,13 @@
       no issue or pull-request change. The report shall include supporting and
       contrary evidence for missing, partial, unlinked/stale, deferred,
       unverifiable, duplicate, and ownership findings.
-      *Tests:* `spec/services/maintenance_runs/build_prompt_spec.rb`
+      *Tests:* `spec/services/maintenance_runs/build_prompt_spec.rb`,
+      `spec/services/maintenance_runs/intent_traceability_evidence_spec.rb`,
+      `spec/services/maintenance_runs/start_spec.rb`
       *Code:* `app/services/maintenance_runs/recipes.rb`,
-      `app/services/maintenance_runs/build_prompt.rb` (#4340)
+      `app/services/maintenance_runs/build_prompt.rb`,
+      `app/services/maintenance_runs/start.rb`,
+      `app/services/maintenance_runs/intent_traceability_evidence.rb` (#4340)
 
 ## Recurring Maintenance and Repair Handoff
 

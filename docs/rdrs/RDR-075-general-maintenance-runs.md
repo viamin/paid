@@ -215,7 +215,11 @@ separate merged artifact intent from proposed open-PR intent and disclose
 unresolved scope and incomplete remote coverage.
 
 The recipe carries forward deterministic reconciliation states for missing,
-partial, unlinked or stale, deferred, and unverifiable trees. Stored and
+partial, unlinked or stale, deferred, and unverifiable trees. Run admission
+snapshots the reconciler's persisted findings and stored associations into the
+run prompt — bounded, with omitted counts disclosed and absent results
+reported as an unresolved coverage limitation — so the investigation consumes
+the shared results instead of reconstructing them. Stored and
 cross-repository associations preserve known trees despite stale metadata or
 absent native children; superseded artifacts and valid shared trees are
 counterevidence against duplicate work. `agent_harness` assesses only whether

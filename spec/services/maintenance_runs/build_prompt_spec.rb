@@ -3,8 +3,8 @@
 require "rails_helper"
 
 RSpec.describe MaintenanceRuns::BuildPrompt do
-  def build_prompt(objective: nil, guidance: nil, scope: nil, type: nil, type_value: nil)
-    described_class.call(objective:, guidance:, scope:, type:, type_value:)
+  def build_prompt(objective: nil, guidance: nil, scope: nil, type: nil, type_value: nil, recipe_evidence: nil)
+    described_class.call(objective:, guidance:, scope:, type:, type_value:, recipe_evidence:)
   end
 
   # @spec MAINT-011
@@ -63,6 +63,22 @@ RSpec.describe MaintenanceRuns::BuildPrompt do
     expect(prompt).to match(/agent_harness/i)
     expect(prompt).to match(/cross-repository.*stale metadata.*native children/im)
     expect(prompt).to match(/report-only|no issue or pull-request changes/i)
+  end
+
+  # @spec MAINT-046
+  it "embeds the attached shared reconciliation evidence snapshot with consumption limits" do
+    prompt = build_prompt(objective: "intent_traceability", guidance: "Prioritize Forager", recipe_evidence: "PERSISTED RECONCILIATION SNAPSHOT")
+
+    expect(prompt).to include("Shared reconciliation evidence")
+    expect(prompt).to include("PERSISTED RECONCILIATION SNAPSHOT")
+    expect(prompt).to match(/coverage limitations/i)
+    expect(prompt).to match(/never as evidence of absence/i)
+  end
+
+  it "omits the shared reconciliation evidence section when no evidence is attached" do
+    prompt = build_prompt(guidance: "Audit workflow A")
+
+    expect(prompt).not_to include("Shared reconciliation evidence")
   end
 
   # @spec MAINT-OPT-001

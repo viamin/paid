@@ -129,6 +129,17 @@ tree completeness, stale metadata, deferral, and remote-coverage limits;
 `AssessDesignArtifactCandidates` uses `agent_harness` only for unresolved
 semantic scope, duplicate-work, and ownership questions.
 
+Run admission snapshots the reconciler's persisted results — pending
+`DesignArtifactFinding` gaps (state, status, coverage recency, evidence,
+assigned resolution issue) and stored `DesignArtifactAssociation` trees
+(identity and provenance) — into the run prompt through
+`MaintenanceRuns::IntentTraceabilityEvidence`. The snapshot is bounded and
+discloses every omission by count, states its capture time and latest issue
+coverage, and when nothing is persisted it is rendered as an unresolved
+coverage limitation rather than a clean result. The recipe registry
+entry owns this wiring, so every starting surface (UI, API, MCP tool) attaches
+identical evidence.
+
 The recipe accepts RDR identifiers, repository paths, revisions, and related
 workflow names as named scope. Its report distinguishes merged repository
 intent from proposed open design-PR intent, and treats inaccessible, stale, or

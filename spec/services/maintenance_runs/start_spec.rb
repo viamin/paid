@@ -133,6 +133,21 @@ RSpec.describe MaintenanceRuns::Start do
     expect(run.maintenance_scope_kind).to eq("broad")
   end
 
+  # @spec MAINT-046
+  it "snapshots the persisted reconciliation evidence into the prompt for an intent-traceability run" do
+    create(:design_artifact_finding, project:, artifact_path: "docs/rdrs/RDR-063.md", state: "missing_tree",
+      evidence: [ "No explicit qualified issue links were found" ])
+    create(:design_artifact_association, project:, artifact_path: "docs/rdrs/RDR-063.md",
+      issue_identity: "#{project.full_name}#12")
+
+    run = start(objective: "intent_traceability", scope: "RDR-063")
+
+    expect(run.custom_prompt).to include("Shared reconciliation evidence")
+    expect(run.custom_prompt).to include("docs/rdrs/RDR-063.md")
+    expect(run.custom_prompt).to include("missing_tree")
+    expect(run.custom_prompt).to include("#{project.full_name}#12")
+  end
+
   it "refuses to start when no runnable runner can be resolved" do
     allow(AgentRuns::RunnerResolver).to receive(:call)
       .with(project: project, goal: "maintenance")

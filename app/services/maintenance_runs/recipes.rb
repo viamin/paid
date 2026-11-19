@@ -8,12 +8,13 @@ module MaintenanceRuns
   # their version pins belong to #4330, not this registry.
   # @spec MAINT-011 MAINT-046
   module Recipes
-    Recipe = Data.define(:key, :version, :name, :objective_instructions)
+    Recipe = Data.define(:key, :version, :name, :objective_instructions, :evidence_loader)
 
     UNNECESSARY_CODE = Recipe.new(
       key: "unnecessary_code",
       version: "1",
       name: "Unnecessary code",
+      evidence_loader: nil,
       objective_instructions: <<~INSTRUCTIONS.chomp
         Investigate unnecessary code: unused code and dependencies, duplication,
         complexity, unnecessary abstractions, and obsolete behavior. Identify
@@ -28,9 +29,11 @@ module MaintenanceRuns
       key: "intent_traceability",
       version: "1",
       name: "Intent traceability",
+      evidence_loader: IntentTraceabilityEvidence,
       objective_instructions: <<~INSTRUCTIONS.chomp
         Audit RDR-to-issue traceability through the shared design-artifact
-        reconciliation results; do not build or infer a separate RDR inventory,
+        reconciliation results attached in the Shared reconciliation evidence
+        section of this prompt; do not build or infer a separate RDR inventory,
         issue catalog, scheduler, or structural verifier. Scope may name RDRs,
         repository paths, revisions, or related workflows.
 
