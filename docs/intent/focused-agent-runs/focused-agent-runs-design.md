@@ -69,6 +69,27 @@ Quality weights are selected per focus (`QualityMetric::FOCUS_WEIGHTS`,
 `review_feedback` run is weighted mostly on `focus_resolved`. `general` runs
 keep the composite weights, so their scores are unchanged.
 
+## Conversation feedback consumption
+
+The scanner's conversation-comment cutoff decides which trusted comments are
+still "new" enough to admit a follow-up run. A `completed` run's
+`completed_at` is the cutoff: comments older than it were shown to that run
+and are consumed. A terminal `no_output`/`no_changes` `create_pr` run is a
+valid no-change outcome for the feedback it was shown, but its status hides
+it from the completed-run lookup — so the same trusted comment kept
+re-admitting follow-ups (#5180).
+
+`check_conversation_comments` therefore takes its cutoff from the latest of
+the caller-supplied run (a `completed` run, or the focused run during
+`focus_resolved` attribution) and the newest
+`create_pr`/`no_output`/`no_changes` run whose focus actually includes the
+conversation section — `conversation` itself, plus the unscoped `general`
+and `label_action` focuses that include every applicable section (the same
+rule as `Prompts::BuildForPr#include_section?`). No-change runs with other
+focuses never saw the comments, so they consume nothing. All other cutoff
+consumers (review threads, changes requested, review-bot status, CI, policy
+and budget gates) keep using completed runs only.
+
 ## `focus_resolved` attribution
 
 A new `focus_resolved` metric (0.0 / 1.0) measures whether the focused
