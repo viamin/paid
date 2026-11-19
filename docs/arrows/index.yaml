@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-11-13
+last_updated: 2026-11-19
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  pr-branch-publish-integrity:
+    title: PR Branch Publish Integrity
+    path: docs/intent/pr-branch-publish-integrity/pr-branch-publish-integrity-design.md
+    specs: docs/intent/pr-branch-publish-integrity/pr-branch-publish-integrity-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-11-19
+    next: "Keep publication leases bound to immutable run admission or verified run output, never a head fetched by the same push attempt."
   development-environment-update:
     title: Development Environment Update
     path: docs/intent/development-environment-update/development-environment-update-design.md
