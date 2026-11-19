@@ -39,7 +39,7 @@ module ChatSessions
 
       (current_candidates + configured_candidates + automatic_candidates).uniq.select do |runner|
         free_pool_available?(runner, chat_session: chat_session) &&
-          curated_low_available?(runner, chat_session: chat_session) &&
+          curated_model_available?(runner, chat_session: chat_session) &&
           privacy_eligible?(runner, chat_session: chat_session, required_zdr: required_zdr)
       end
     end
@@ -76,7 +76,7 @@ module ChatSessions
     # next configured fallback — skip such runners up front, mirroring the
     # free-pool skip above.
     # @spec CHAT-API-026
-    def curated_low_available?(runner, chat_session:)
+    def curated_model_available?(runner, chat_session:)
       return true if runner.free_model_policy?
 
       CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects).present?
