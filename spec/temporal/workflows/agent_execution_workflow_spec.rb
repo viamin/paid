@@ -803,6 +803,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         ((MaintenanceRuns::ToolEvidence::VERSION_TIMEOUT + MaintenanceRuns::ToolEvidence::ANALYSIS_TIMEOUT) * 2)
     end
 
+    it "does not schedule tool evidence collection when replaying a pre-patch history" do
+      stub_maintenance_activities
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("agent-execution-maintenance-tool-evidence-v1").and_return(false)
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CollectMaintenanceToolEvidenceActivity, anything, anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RunAgentActivity, anything, anything)
+    end
+
     # @spec MAINT-020
     it "completes report-only without PR creation even when the agent reports no changes" do
       stub_maintenance_activities(has_changes: false)

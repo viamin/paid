@@ -7,6 +7,7 @@ module MaintenanceRuns
   # @spec MAINT-040 MAINT-041 MAINT-042 MAINT-043 MAINT-044 MAINT-045
   class ToolEvidence
     VERSION_TIMEOUT = 30
+    PROVISION_TIMEOUT = 300
     ANALYSIS_TIMEOUT = 120
     DISCOVERY_TIMEOUT = 30
     OUTPUT_LIMIT = 20_000
@@ -17,18 +18,23 @@ module MaintenanceRuns
       "-not", "-path", "*/node_modules/*", "-not", "-path", "*/vendor/*", "-not", "-path", "*/.git/*", "-print0" ].freeze
 
     Analysis = Data.define(:name, :command)
-    Adapter = Data.define(:name, :ecosystems, :manifest, :version_command, :analyses, :configuration_files)
+    Adapter = Data.define(:name, :ecosystems, :manifest, :provision_command, :version_command, :analyses,
+      :configuration_files)
     ADAPTERS = [
-      Adapter.new("exhale", [ "ruby" ], "Gemfile", %w[bundle exec exhale --version], [
+      Adapter.new("exhale", [ "ruby" ], "Gemfile", [ "sh", "-lc",
+        "ruby -rbundler -e 'lock = Bundler::LockfileParser.new(Bundler.read_file(\"Gemfile.lock\")); exit(lock.specs.any? { |spec| spec.name == \"exhale\" } ? 0 : 1)' && (bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3)" ],
+        %w[bundle exec exhale --version], [
         Analysis.new("exhale_dry", %w[bundle exec exhale dry --format json]),
         Analysis.new("exhale_complexity", %w[bundle exec exhale complexity --format json])
       ], %w[.exhale.yml .exhale.yaml]),
-      Adapter.new("knip", %w[javascript typescript], "package.json", %w[yarn knip --version], [
+      Adapter.new("knip", %w[javascript typescript], "package.json", [ "sh", "-lc",
+        "node -e 'const p = require(\"./package.json\"); const d = {...p.dependencies, ...p.devDependencies}; process.exit(d.knip && require(\"fs\").existsSync(\"yarn.lock\") ? 0 : 1)' && yarn install --frozen-lockfile --ignore-scripts --silent" ],
+        %w[yarn knip --version], [
         Analysis.new("knip", %w[yarn knip --reporter json])
       ], %w[knip.json knip.jsonc knip.ts knip.js package.json])
     ].freeze
     ACTIVITY_TIMEOUT = DISCOVERY_TIMEOUT + (MAX_PACKAGE_SCOPES * ADAPTERS.sum do |adapter|
-      VERSION_TIMEOUT + (adapter.analyses.size * ANALYSIS_TIMEOUT)
+      PROVISION_TIMEOUT + VERSION_TIMEOUT + (adapter.analyses.size * ANALYSIS_TIMEOUT)
     end) + ACTIVITY_OVERHEAD
 
     def self.call(...) = new(...).call
@@ -60,6 +66,8 @@ module MaintenanceRuns
       return [ discovery_check(discovery) ] unless exit_code(discovery) == 0
 
       adapters.flat_map { |adapter| collect_packages(adapter, package_scopes(discovery, adapter)) }
+    rescue Containers::Provision::Error => error
+      [ discovery_check(nil, error:) ]
     end
 
     def applicable_adapters
@@ -78,16 +86,27 @@ module MaintenanceRuns
     end
 
     def collect_packages(adapter, scopes)
-      return [ missing_packages_check(adapter) ] if scopes.empty?
+      return [] if scopes.empty?
 
-      checks = scopes.first(MAX_PACKAGE_SCOPES).flat_map { |scope| collect(adapter, scope) }
+      available = scopes.first(MAX_PACKAGE_SCOPES).filter_map do |scope|
+        version = available_version(adapter, scope)
+        [ scope, version ] if version
+      end
+      return [] if available.empty?
+
+      checks = available.flat_map { |scope, version| collect(adapter, scope, version) }
       checks << package_limit_check(adapter, scopes.size) if scopes.size > MAX_PACKAGE_SCOPES
       checks
     end
 
-    def missing_packages_check(adapter)
-      { "name" => "#{adapter.name}_package_discovery", "status" => "incomplete",
-        "reason" => "no_matching_package_manifest", "manifest" => adapter.manifest }
+    def available_version(adapter, scope)
+      provision = execute_scoped(scope, adapter.provision_command, PROVISION_TIMEOUT)
+      return unless exit_code(provision) == 0
+
+      version = execute_scoped(scope, adapter.version_command, VERSION_TIMEOUT)
+      version if exit_code(version) == 0
+    rescue Containers::Provision::Error
+      nil
     end
 
     def package_limit_check(adapter, count)
@@ -96,10 +115,7 @@ module MaintenanceRuns
         "analyzed_package_count" => MAX_PACKAGE_SCOPES }
     end
 
-    def collect(adapter, scope)
-      version = execute_scoped(scope, adapter.version_command, VERSION_TIMEOUT)
-      return [ unavailable_check(adapter, scope, version) ] unless exit_code(version) == 0
-
+    def collect(adapter, scope, version)
       adapter.analyses.map do |analysis|
         result = execute_scoped(scope, analysis.command, ANALYSIS_TIMEOUT)
         analyzer_check(adapter, analysis, scope, version, result)
@@ -117,14 +133,10 @@ module MaintenanceRuns
       run.execute_in_execution_environment(command, timeout:, stream: false)
     end
 
-    def discovery_check(result)
-      { "name" => "analyzer_package_discovery", "status" => "incomplete", "reason" => "unexpected_exit_code",
-        "exit_code" => exit_code(result), "output" => output(result) }
-    end
-
-    def unavailable_check(adapter, scope, version)
-      { "name" => adapter.name, "status" => "incomplete", "reason" => "unavailable_or_unsupported",
-        "provenance" => provenance(adapter, scope, version), "output" => output(version) }
+    def discovery_check(result, error: nil)
+      reason = error ? "execution_unavailable" : "unexpected_exit_code"
+      { "name" => "analyzer_package_discovery", "status" => "incomplete", "reason" => reason,
+        "exit_code" => exit_code(result), "output" => output(result), "error_class" => error&.class&.name }.compact
     end
 
     def analyzer_check(adapter, analysis, scope, version, result)

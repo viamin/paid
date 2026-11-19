@@ -318,7 +318,7 @@ module Workflows
         # Native maintenance analyzers run only after the pinned checkout is
         # available, and only inside the existing execution environment. Their
         # output is advisory candidate evidence for the agent, never a gate.
-        if goal == "maintenance"
+        if goal == "maintenance" && Temporalio::Workflow.patched("agent-execution-maintenance-tool-evidence-v1")
           run_activity(Activities::CollectMaintenanceToolEvidenceActivity,
             { agent_run_id: agent_run_id }, timeout: MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT,
             retry_policy: NO_RETRY)
