@@ -43,6 +43,45 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     )
   end
 
+  # @spec MAINT-040 MAINT-043
+  it "bounds aggregate prompt evidence without truncating report evidence" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
+    scopes = 10.times.map { |index| "package-#{index}" }
+    executions = [ result(exit_code: 0, stdout: scopes.map { |scope| "./#{scope}/Gemfile\0" }.join) ]
+    scopes.each do
+      executions.concat([
+        result(exit_code: 0), result(exit_code: 0), result(exit_code: 0, stdout: "exhale 1.2"),
+        result(exit_code: 0, stdout: "d" * described_class::OUTPUT_LIMIT),
+        result(exit_code: 0, stdout: "c" * described_class::OUTPUT_LIMIT)
+      ])
+    end
+    allow(run).to receive(:execute_in_execution_environment).and_return(*executions)
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:prompt_context).length).to be <= described_class::PROMPT_CONTEXT_LIMIT
+    expect(evidence.fetch(:prompt_context)).to include('"prompt_output_omitted":true')
+    expect(evidence.fetch(:completed_checks)).to include(
+      include("name" => "exhale_dry", "output" => start_with("d" * 19_000)),
+      include("name" => "exhale_complexity", "output" => start_with("c" * 19_000))
+    )
+  end
+
+  # @spec MAINT-041 MAINT-043
+  it "records checks omitted from prompt context when their metadata exceeds its aggregate budget" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [], "marker_files" => [])
+    sidecars.replace([ { "name" => "large-sidecar", "image" => "x" * 70_000, "port" => 8080 } ])
+    endpoints.replace([ { "name" => "large-sidecar", "url" => "http://large-sidecar:8080" } ])
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:prompt_context).length).to be <= described_class::PROMPT_CONTEXT_LIMIT
+    expect(evidence.fetch(:prompt_context)).to include(
+      '"reason":"checks_omitted"', '"omitted_checks":["marketplace_tool_attachments"]'
+    )
+    expect(evidence.fetch(:completed_checks).first.dig("provenance", 0, "image").length).to eq(70_000)
+  end
+
   def stub_analyzer_results
     allow(run).to receive(:execute_in_execution_environment).and_return(
       result(exit_code: 0, stdout: "./Gemfile\0./frontend/package.json\0"),

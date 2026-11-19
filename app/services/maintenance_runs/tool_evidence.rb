@@ -11,6 +11,8 @@ module MaintenanceRuns
     ANALYSIS_TIMEOUT = 120
     DISCOVERY_TIMEOUT = 30
     OUTPUT_LIMIT = 20_000
+    PROMPT_CONTEXT_LIMIT = 60_000
+    PROMPT_OUTPUT_LIMIT = 1_000
     MAX_PACKAGE_SCOPES = 10
     ACTIVITY_OVERHEAD = 30
     TIME_BUDGET_COMPLETION_BUFFER = 5
@@ -224,12 +226,49 @@ module MaintenanceRuns
     def prompt_context(checks)
       return if checks.empty?
 
-      <<~CONTEXT
+      header = <<~CONTEXT
         ## Tool-assisted maintenance evidence (advisory)
         The following checks ran inside this run's isolated checkout. Treat their output as candidate evidence only: verify callers, framework entry points, repository intent, deliberate duplication, dynamic callbacks, and externally consumed APIs through agent_harness before recommending a change. Tool matches never authorize a blocking gate, automatic repair, extraction, or deletion.
 
-        #{checks.to_json}
       CONTEXT
+      "#{header}#{prompt_checks(checks, PROMPT_CONTEXT_LIMIT - header.length - 1)}\n"
+    end
+
+    def prompt_checks(checks, budget)
+      serialized = []
+      checks.each do |check|
+        candidate = serialized + [ prompt_check(check) ]
+        break if candidate.to_json.length > budget
+
+        serialized = candidate
+      end
+      append_prompt_omission(serialized, checks, budget).to_json
+    end
+
+    def prompt_check(check)
+      output = check["output"]
+      return check unless output&.length.to_i > PROMPT_OUTPUT_LIMIT
+
+      check.merge("output" => output.first(PROMPT_OUTPUT_LIMIT), "prompt_output_omitted" => true,
+        "prompt_output_characters" => output.length)
+    end
+
+    def append_prompt_omission(serialized, checks, budget)
+      loop do
+        omitted = checks.drop(serialized.length)
+        return serialized if omitted.empty?
+
+        payload = serialized + [ prompt_omission(omitted) ]
+        return payload if payload.to_json.length <= budget
+        return [] if serialized.empty?
+
+        serialized.pop
+      end
+    end
+
+    def prompt_omission(checks)
+      { "name" => "prompt_context_budget", "status" => "incomplete",
+        "reason" => "checks_omitted", "omitted_checks" => checks.map { |check| check["name"] } }
     end
   end
 end

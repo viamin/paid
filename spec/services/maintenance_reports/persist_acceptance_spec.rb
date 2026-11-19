@@ -8,7 +8,7 @@ RSpec.describe MaintenanceReports::Persist do
   let(:finding) do
     { category: "unused_code", claim: "Legacy callback has no callers", symbols: [ "Legacy#call" ],
       locations: [ { path: "app/legacy.rb", line: 12 } ], supporting_evidence: [ "Inspected callers" ],
-      contrary_evidence: [ "May be invoked dynamically" ], analyzer_provenance: {},
+      contrary_evidence: [ "May be invoked dynamically" ], evidence_source: "agent", analyzer_provenance: {},
       verification_disposition: "unverified" }
   end
   let(:payload) do
