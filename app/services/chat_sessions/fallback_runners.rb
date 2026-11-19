@@ -46,7 +46,9 @@ module ChatSessions
 
     def switch!(chat_session:, runner:)
       # @spec CHAT-API-026
-      resolution = CuratedModelOptions.resolve_with_diagnostics(runner:, projects: chat_session.llm_policy_projects) unless runner.free_model_policy?
+      resolution = CuratedModelOptions.resolve_with_diagnostics(
+        runner:, tier: automatic_tier_preference(chat_session), projects: chat_session.llm_policy_projects
+      ) unless runner.free_model_policy?
       option = resolution&.option
       model = if runner.free_model_policy?
         FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
@@ -102,7 +104,15 @@ module ChatSessions
     def curated_model_available?(runner, chat_session:)
       return true if runner.free_model_policy?
 
-      CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects).present?
+      CuratedModelOptions.resolve(
+        runner:, tier: automatic_tier_preference(chat_session), projects: chat_session.llm_policy_projects
+      ).present?
+    end
+
+    def automatic_tier_preference(chat_session)
+      return "low" unless chat_session.metadata["requested_model_selection"] == "automatic"
+
+      chat_session.metadata["requested_model_tier"] || "low"
     end
 
     def fallback_metadata(chat_session:, runner:, model:, option:, resolution:)

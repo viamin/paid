@@ -217,6 +217,26 @@ RSpec.describe ChatSessions::FallbackRunners do
     end
 
     # @spec CHAT-API-026
+    it "preserves an automatic Medium preference on the fallback runner" do
+      runner = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      create(:llm_model, provider: "anthropic", model_id: "claude-haiku-low", tier: "low", supports_tools: true)
+      create(:llm_model, provider: "anthropic", model_id: "claude-sonnet-mid", tier: "mid", supports_tools: true)
+      session = create(:chat_session, account: account, created_by: user,
+        metadata: { "requested_model_selection" => "automatic", "requested_model_tier" => "mid" })
+
+      described_class.switch!(chat_session: session, runner: runner)
+
+      expect(session.reload).to have_attributes(runner: runner, model: "claude-sonnet-mid")
+      expect(session.metadata).to include(
+        "requested_model_selection" => "automatic",
+        "requested_model_tier" => "mid",
+        "model_tier" => "mid",
+        "effective_tier" => "mid"
+      )
+    end
+
+    # @spec CHAT-API-026
     it "preserves an explicit requested model while recording fallback execution separately" do
       runner = create(:runner, :api_key, user: user, runner_key: "claude",
         provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
