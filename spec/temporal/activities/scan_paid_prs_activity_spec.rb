@@ -2115,6 +2115,97 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("conversation_comments")
       end
+
+      # @spec FOCUSED-RUN-010
+      it "does not replay feedback consumed by a successful no-change follow-up" do
+        create(:agent_run, :no_output,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "conversation", error_message: "no_changes",
+          completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers].pluck(:type) }
+        expect(types).not_to include("conversation_comments")
+      end
+
+      # @spec FOCUSED-RUN-010
+      it "preserves newer comments after a successful no-change follow-up" do
+        create(:agent_run, :no_output,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "conversation", error_message: "no_changes",
+          completed_at: 45.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers].pluck(:type) }
+        expect(types).to include("conversation_comments")
+      end
+
+      # @spec FOCUSED-RUN-010
+      it "does not consume conversation feedback for another focus" do
+        create(:agent_run, :no_output,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "ci_fix", error_message: "no_changes",
+          completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers].pluck(:type) }
+        expect(types).to include("conversation_comments")
+      end
+
+      # @spec FOCUSED-RUN-010
+      it "does not consume conversation feedback for another PR" do
+        create(:agent_run, :no_output,
+          project: project, source_pull_request_number: 43,
+          goal: "create_pr", focus: "conversation", error_message: "no_changes",
+          completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers].pluck(:type) }
+        expect(types).to include("conversation_comments")
+      end
+
+      # @spec FOCUSED-RUN-010
+      it "does not consume conversation feedback for another project" do
+        other_project = create(:project, account: project.account)
+        create(:agent_run, :no_output,
+          project: other_project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "conversation", error_message: "no_changes",
+          completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers].pluck(:type) }
+        expect(types).to include("conversation_comments")
+      end
+
+      # @spec FOCUSED-RUN-010
+      it "does not consume feedback for an unrelated no-output reason" do
+        create(:agent_run, :no_output,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "conversation", error_message: "empty_output",
+          completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers].pluck(:type) }
+        expect(types).to include("conversation_comments")
+      end
+
+      # @spec FOCUSED-RUN-010
+      it "does not consume feedback when a follow-up failed" do
+        create(:agent_run, :failed,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "conversation", completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |entry| entry[:triggers].pluck(:type) }
+        expect(types).to include("conversation_comments")
+      end
     end
 
     context "when the recent comment page starts with an older-than-cutoff comment" do

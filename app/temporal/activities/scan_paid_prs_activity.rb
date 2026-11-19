@@ -3254,8 +3254,13 @@ module Activities
       [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
+    # @spec FOCUSED-RUN-010
     def check_conversation_comments(client, project, issue, last_run)
-      cutoff = last_run&.completed_at
+      no_change_completion = pr_run_history_scope(project, issue)
+        .where(goal: "create_pr", status: "no_output", error_message: "no_changes",
+          focus: %w[conversation general label_action])
+        .maximum(:completed_at)
+      cutoff = [ last_run&.completed_at, no_change_completion ].compact.max
       comments = pull_request_collector(project, client:)
         .fetch_recent_issue_comments(issue:, cutoff:) || []
 

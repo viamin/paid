@@ -117,3 +117,15 @@
   `AgentExecutionWorkflow#resolve_followup_review_threads_after_push`.
   *Test:* `spec/models/project_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
+
+## Conversation feedback consumption
+
+- [x] **FOCUSED-RUN-010** — When a same-project/PR `create_pr` follow-up
+  finishes `no_output` with reason `no_changes` and a focus that includes
+  conversation, the scanner SHALL consume conversation comments at or before
+  that completion time. Newer comments SHALL remain eligible. Failed,
+  incomplete, other-focused, other-project, and other-PR runs SHALL NOT consume
+  those comments. This SHALL NOT resolve review threads or CI failures.
+  Regression: #5180.
+  *Code:* `ScanPaidPrsActivity#check_conversation_comments`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

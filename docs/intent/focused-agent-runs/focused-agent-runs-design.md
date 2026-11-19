@@ -113,3 +113,16 @@ at the decision to escalate.
   change container/review/issue-creation flows.
 - **Not per-project configurable weights.** Focus weight maps are
   hard-coded today; per-account tuning is deferred until validated.
+
+## Conversation feedback consumption
+
+A successful `create_pr` follow-up with `no_output` / `no_changes` still
+finishes handling its conversation input. For conversation cutoffs only,
+include those terminal runs when their focus includes conversation
+(`conversation`, `general`, or `label_action`). Use the latest completion
+within the existing project/PR history scope. Other focused no-change runs,
+failed runs, and incomplete runs do not consume conversation input. Newer
+comments remain eligible, and review-thread, CI, and review freshness gates
+retain their own evidence rules. This prevents the repeated acceptance-comment
+loop observed in #5180 without interpreting a no-change outcome as code review
+approval or criterion satisfaction.
