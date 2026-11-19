@@ -18,6 +18,7 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
     end
   end
 
+  # @spec PARTIAL-CLOSEOUT-058
   it "classifies a completed audit with unmet criteria as a substantive assessment" do
     run.update!(status: "completed", completed_at: Time.current,
       reconciliation: { "assessment" => { "gaps" => [ { "criterion" => "c", "kind" => "agent", "title" => "t" } ] } })

@@ -328,6 +328,18 @@ RSpec.describe PartialCloseouts::AutoAudit do
     }.not_to have_enqueued_job(AcceptanceAuditRetryJob)
   end
 
+  # @spec PARTIAL-CLOSEOUT-058
+  it "exhausts malformed-assessment recovery without creating another audit" do
+    3.times do
+      result = Issues::RequestAcceptanceAudit.call(issue:, actor: owner)
+      result.agent_run.update!(status: "failed", completed_at: 2.hours.ago,
+        reconciliation: { "acceptance_audit_failure" => { "category" => "invalid_assessment" } })
+    end
+
+    expect(described_class.call(issue:).code).to eq(:retry_exhausted)
+    expect(issue.agent_runs.count).to eq(3)
+  end
+
   # @spec PARTIAL-CLOSEOUT-056
   it "reports retry-exhaustion state with its reason for the Inbox" do
     3.times do

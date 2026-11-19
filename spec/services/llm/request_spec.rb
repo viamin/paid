@@ -133,6 +133,33 @@ RSpec.describe Llm::Request do
     expect(provider).to have_received(:send_message).twice
   end
 
+  # @spec PARTIAL-CLOSEOUT-058
+  it "recovers from a timeout and malformed fallback without extending the bounded route" do
+    malformed_fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    valid_fallback = create(:runner, user: owner, runner_key: "claude",
+      tier_models: { "mid" => { "model_id" => "claude-mid", "provider_id" => 17 } })
+    [ malformed_fallback, valid_fallback ].each { |fallback| create(:runner_credential, runner: fallback, account: project.account) }
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(AgentHarness).to receive(:provider_class).with(:claude).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    malformed = instance_double(AgentHarness::Response, success?: true, output: "not json")
+    attempts = [ AgentHarness::TimeoutError.new("runner timed out"), malformed, response ]
+    allow(provider).to receive(:send_message) do
+      attempt = attempts.shift
+      raise attempt if attempt.is_a?(Exception)
+
+      attempt
+    end
+
+    result = described_class.call(agent_run: run, prompt: "Assess", timeout: 180,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ malformed_fallback.routing_key, valid_fallback.routing_key ],
+      response_validator: ->(candidate) { candidate.output == "ok" })
+
+    expect(result).to eq(response)
+    expect(provider).to have_received(:send_message).exactly(3).times
+  end
+
   # @spec LLM-ROUTING-008
   it "skips a pinned subscription without managed credentials and tries an authorized fallback" do
     project.account.runner_credentials.for_runner("codex").update_all(revoked_at: Time.current)
