@@ -182,6 +182,13 @@ or failed downloads, and oversized content remain unavailable through the CI
 diagnostic path; diagnostics contain only derived status/error information and
 never signed query strings or credentials.
 
+The API hop respects secondary-limit `Retry-After` seconds and the primary reset
+deadline when the response reports zero remaining quota, waiting until both
+deadlines permit requests. A secondary response with remaining primary quota
+does not inherit that unrelated quota window's reset. Missing or malformed
+deadlines use the existing health-state one-minute cooldown instead of epoch
+zero. These deadlines follow [GitHub's rate-limit guidance](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit).
+
 Project-scoped GitHub diagnostics are exposed as a sanitized read model for
 customer users and chat agents. The diagnostics report derived facts only:
 credential mode, installation/token health, whether the project webhook secret

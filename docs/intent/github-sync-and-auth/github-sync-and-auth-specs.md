@@ -119,6 +119,9 @@
   SHALL surface through the existing CI diagnostic failure path without logging
   credentials or signed query strings. The project-scoped client and its normal
   PAT fallback/error attribution remain authoritative for the GitHub API hop.
+  Rate-limited API responses SHALL honor `Retry-After`, any exhausted primary
+  quota reset, and the existing one-minute fallback when no valid deadline is
+  available; a non-exhausted primary reset SHALL NOT extend a secondary hold.
   *Code:* `app/services/github_client.rb`, `app/services/ci/failure_context.rb`.
   *Test:* `spec/services/github_client_spec.rb`,
   `spec/services/github_client/with_fallback_spec.rb`,

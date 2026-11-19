@@ -1311,7 +1311,31 @@ RSpec.describe GithubClient do
         client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
       end.to raise_error(GithubClient::RateLimitError)
 
+      state = GithubHealthState.find_by(endpoint: health_endpoint)
+      expect(state).to be_rate_limited
+      expect(state.rate_limited_until).to be_within(2.seconds).of(30.seconds.from_now)
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "honors a secondary Retry-After deadline without a primary reset header" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 403, headers: { "Retry-After" => "30", "X-RateLimit-Remaining" => "42" })
+
+      expect { client.check_run_log(repo, job_id: 789) }
+        .to raise_error(GithubClient::RateLimitError) { |error|
+          expect(error.reset_at).to be_within(2.seconds).of(30.seconds.from_now)
+        }
       expect(GithubHealthState.find_by(endpoint: health_endpoint)).to be_rate_limited
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "uses the health-state cooldown when a 429 has no reset headers" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs").to_return(status: 429)
+
+      expect { client.check_run_log(repo, job_id: 789) }.to raise_error(GithubClient::RateLimitError)
+      state = GithubHealthState.find_by(endpoint: health_endpoint)
+      expect(state).to be_rate_limited
+      expect(state.rate_limited_until).to be_within(2.seconds).of(1.minute.from_now)
     end
 
     # @spec GITHUB-SYNC-021

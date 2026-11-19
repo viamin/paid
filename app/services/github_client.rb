@@ -2191,7 +2191,11 @@ class GithubClient
   end
 
   def raise_actions_log_rate_limit!(response)
-    reset_at = Time.at(response.headers["x-ratelimit-reset"].to_i).presence
+    retry_after = Integer(response.headers["retry-after"], exception: false)
+    retry_at = retry_after.seconds.from_now if retry_after&.positive?
+    reset_epoch = Integer(response.headers["x-ratelimit-reset"], exception: false)
+    primary_reset = Time.at(reset_epoch) if response.headers["x-ratelimit-remaining"].to_s == "0" && reset_epoch&.positive?
+    reset_at = [ retry_at, primary_reset ].compact.max
     record_github_rate_limit(
       reset_at,
       remaining: response.headers["x-ratelimit-remaining"].to_i,
