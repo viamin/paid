@@ -31,15 +31,15 @@ require Rails.root.join("db/migrate/20261117100000_create_project_delegation_int
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
-    setup_complete = false
-
     skip "requires CREATE ROLE privilege for RLS policy checks" unless can_manage_roles?
 
-    install_tenant_policies
-    setup_complete = true
-    example.run
-  ensure
-    uninstall_tenant_policies if setup_complete
+    # @spec POSTGRESQL-PERSISTENCE-012 — preserve newer canonical policy groups
+    # instead of leaving the historical fixture's policy reconstruction behind.
+    ActiveRecord::Base.transaction(requires_new: true) do
+      install_tenant_policies
+      example.run
+      raise ActiveRecord::Rollback
+    end
   end
 
   let(:account_a) { create(:account) }
@@ -479,62 +479,6 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     ActiveRecord::Base.connection.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO paid_rls_spec")
     ActiveRecord::Base.connection.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO paid_rls_spec")
     ActiveRecord::Base.connection.execute("GRANT paid_rls_spec TO current_user")
-  end
-
-  def uninstall_tenant_policies
-    ActiveRecord::Base.connection.execute("RESET ROLE")
-    cleanup_restricted_role
-    ActiveRecord::Migration.suppress_messages do
-      TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.down if orchestration_decisions_have_strategy_version_reference?
-      AddStrategyVersionToOrchestrationDecisions.new.migrate(:down) if orchestration_decisions_have_strategy_version_reference?
-      EnableRlsOnStrategiesAndStrategyVersions.new.down if strategies_have_rls?
-      EnableRlsOnStrategyExperimentTables.new.down if strategy_experiment_tables_have_rls?
-      CreateOrchestrationDecisions.new.down if orchestration_decisions_table_exists?
-      disable_decomposition_decisions_rls if decomposition_decisions_have_rls?
-      CreateExceptionIncidents.new.down if exception_incidents_have_rls?
-      EnableRlsOnKnowledgeRecommendations.new.down if knowledge_recommendations_has_rls?
-      EnableRlsOnChatTables.new.down if chat_tables_have_rls?
-      EnableRlsOnLlmOutputMetrics.new.down if llm_output_metrics_has_rls?
-      EnableRlsOnKnowledgeUsageStats.new.down if knowledge_usage_stats_has_rls?
-      EnableRlsOnNotificationRuleStates.new.down
-      EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
-      EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
-      CreateFailureClassifications.new.down if failure_classifications_table_exists?
-      CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
-      CreateProjectDelegationIntentCheckpoints.new.down if intent_checkpoint_tables_exist?
-      CreateBoundedDelegatedActions.new.disable_tenant_rls
-      CreateTrustedMeasurementAttempts.new.disable_tenant_rls
-      CreateProjectDelegationPostures.new.disable_tenant_rls
-      CreateStagedCloseoutAdoption.new.disable_tenant_rls
-      EnableTenantRowLevelSecurity.new.down
-
-      EnableTenantRowLevelSecurity.new.up
-      CreateBoundedDelegatedActions.new.enable_tenant_rls
-      CreateTrustedMeasurementAttempts.new.enable_tenant_rls
-      CreateProjectDelegationPostures.new.enable_tenant_rls
-      CreateStagedCloseoutAdoption.new.enable_tenant_rls
-      EnableRlsOnNotificationRuleStates.new.up
-      EnableRlsOnKnowledgeUsageStats.new.up unless knowledge_usage_stats_has_rls?
-      EnableRlsOnLlmOutputMetrics.new.up unless llm_output_metrics_has_rls?
-      EnableRlsOnChatTables.new.up unless chat_tables_have_rls?
-      EnableRlsOnKnowledgeRecommendations.new.up unless knowledge_recommendations_has_rls?
-      EnableRlsOnIssueMergeSubscriptions.new.up unless issue_merge_subscriptions_has_rls?
-      EnableRlsOnAutoMergeAttempts.new.up unless auto_merge_attempts_have_rls?
-      CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
-      restore_exception_incidents_logidze!
-      CreateFailureClassifications.new.up unless failure_classifications_table_exists?
-      CreateInboxHistoryEvents.new.up unless inbox_history_events_table_exists?
-      CreateProjectDelegationIntentCheckpoints.new.up unless intent_checkpoint_tables_exist?
-      CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
-      AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
-      ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
-      TightenOrchestrationDecisionsStrategyVersionTenantCheck.new.up if orchestration_decisions_have_strategy_version_reference?
-      EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
-      EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
-      FixStrategiesRlsInfiniteRecursion.new.up
-      MakeProjectsGithubTokenOptionalInRls.new.up
-    end
-    OrchestrationDecision.reset_column_information
   end
 
   def knowledge_recommendations_has_rls?

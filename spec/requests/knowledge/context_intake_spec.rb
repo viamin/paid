@@ -66,6 +66,7 @@ RSpec.describe "Knowledge::ContextIntake" do
       expect(response.body).not_to include(second_question.fetch(:text))
     end
 
+    # @spec POSTGRESQL-PERSISTENCE-006
     it "renders the next round when follow-up questions are generated instead of completing immediately" do
       session.context_intake_responses.find_by!(question_key: first_question.fetch(:key))
              .update!(answer_text: "Enterprise workflow answer")
@@ -297,5 +298,7 @@ RSpec.describe "Knowledge::ContextIntake" do
         "answer_includes_any" => [ "enterprise" ]
       }
     )
+    # Transactional examples do not run the model's after_commit cache reset.
+    Knowledge::ContextIntake::QuestionnaireSchema.reset_default_catalog_cache!
   end
 end

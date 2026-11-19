@@ -3,7 +3,7 @@
 FactoryBot.define do
   factory :intent_conformance_decision do
     issue { association :issue, :pull_request }
-    actor { association :user }
+    actor { association :user, account: issue.project.account }
     action { IntentConformanceDecision::FIX_PR }
     head_sha { SecureRandom.hex(20) }
     reason { "Bring the PR back within the approved design's scope." }

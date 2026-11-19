@@ -30,10 +30,13 @@
 - [x] **POSTGRESQL-PERSISTENCE-006** — Tenant RLS policies SHALL reject
   cross-tenant writes for direct account rows, join rows, and project-owned
   records, while allowing a project to replace its account-owned GitHub token
-  with its account-owned GitHub App installation, instead of relying on
-  application checks alone.
-  *Tests:* `spec/security/tenant_context_spec.rb`.
-  *Code:* `EnableTenantRowLevelSecurity`, `TenantContext`.
+  with its account-owned GitHub App installation. Explicitly global catalog
+  records required by a tenant workflow SHALL be readable without granting
+  tenant mutation access, instead of relying on application checks alone.
+  *Tests:* `spec/security/tenant_context_spec.rb`,
+  `spec/requests/knowledge/context_intake_spec.rb`.
+  *Code:* `EnableTenantRowLevelSecurity`,
+  `AllowTenantReadsOfGlobalContextIntakeQuestions`, `TenantContext`.
 
 - [x] **POSTGRESQL-PERSISTENCE-008** — When a data migration reads or writes
   account-less global records on tenant-scoped tables, it SHALL run under
@@ -94,3 +97,34 @@
   automatic dumping, and explicit schema dumps SHALL remain available.
   *Tests:* `spec/config/active_record_automatic_schema_dump_spec.rb`, `spec/lib/dev_update_spec.rb`.
   *Code:* `config/initializers/automatic_schema_dump.rb`, `bin/dev-update`.
+
+- [x] **POSTGRESQL-PERSISTENCE-012** — When Rails writes or loads the canonical
+  `db/schema.rb`, it SHALL preserve PostgreSQL row-level-security enable/force
+  flags and policy definitions for every dumped table, including tenant-scoped
+  maintenance reports, findings, and occurrences. A schema-loaded database
+  SHALL therefore enforce the same tenant read and write boundary as its
+  migration-created counterpart.
+  Repairing a partial bootstrap SHALL restore the complete current policy
+  predicates and flags even when the accounts baseline already exists; older
+  permissive policy variants SHALL NOT remain alongside the current policy.
+  *Tests:* `spec/config/schema_column_order_spec.rb`,
+  `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`,
+  `spec/security/tenant_context_schema_bootstrap_spec.rb`.
+  *Code:* `SchemaRowLevelSecurity`, `RestoreTenantRlsPoliciesAfterSchemaBootstrap`,
+  `RestoreCompleteTenantPolicyCatalog`.
+
+- [x] **POSTGRESQL-PERSISTENCE-013** — Normal non-superuser/NOBYPASSRLS
+  application connections SHALL be able to plan reads of every protected
+  table without recursive policy failures. Strategy policies SHALL preserve
+  tenant-scoped writes and own/global reads. Database guards SHALL reject
+  current-version and parent-version references to another strategy, including
+  reassignment of a version with bound dependents, without relying on recursive
+  policy subqueries or bypassable model validation. A repair SHALL reject
+  pre-existing invalid references without modifying application rows. Guards
+  SHALL apply during explicit system access and survive schema bootstrap.
+  *Tests:* `spec/security/strategy_tenant_policies_spec.rb`,
+  `spec/security/strategy_reference_concurrency_spec.rb`,
+  `spec/migrations/restore_nonrecursive_strategy_tenant_policies_spec.rb`,
+  `spec/migrations/restore_complete_tenant_policy_catalog_spec.rb`.
+  *Code:* `RestoreNonrecursiveStrategyTenantPolicies`, strategy reference `fx`
+  functions and triggers.
