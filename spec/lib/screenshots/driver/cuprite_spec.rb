@@ -24,9 +24,7 @@ RSpec.describe Screenshots::Driver::Cuprite do
     )
   end
   let(:driver) { described_class.new(config:) }
-  let(:cuprite_driver) do
-    instance_double(Capybara::Cuprite::Driver, quit: true, wait_for_network_idle: true)
-  end
+  let(:cuprite_driver) { instance_double(Capybara::Cuprite::Driver, quit: true) }
   let(:session) { instance_double(Capybara::Session, current_path: "/dashboard") }
 
   before do
@@ -92,17 +90,20 @@ RSpec.describe Screenshots::Driver::Cuprite do
 
   it "waits for lazy frame requests before checking Turbo frame activity" do
     driver.instance_variable_set(:@session, session)
-    expect(cuprite_driver).to receive(:wait_for_network_idle).with(timeout: 10).ordered
+    expect(session).to receive(:has_no_css?).with(
+      "turbo-frame[data-dashboard-frames-target='frame']:not([complete])",
+      wait: 30
+    ).ordered
     expect(session).to receive(:has_no_css?).with("turbo-frame[busy]", wait: 5).ordered
 
     driver.wait_for_load
   end
 
-  it "fails when page network activity does not settle" do
-    allow(cuprite_driver).to receive(:wait_for_network_idle).and_return(false)
+  it "fails when deferred dashboard frames do not finish loading" do
+    allow(session).to receive(:has_no_css?).and_return(false)
     driver.instance_variable_set(:@session, session)
 
     expect { driver.wait_for_load }.to raise_error(Ferrum::TimeoutError)
-    expect(session).not_to have_received(:has_no_css?)
+    expect(session).to have_received(:has_no_css?).once
   end
 end
