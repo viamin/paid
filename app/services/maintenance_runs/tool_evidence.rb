@@ -13,6 +13,7 @@ module MaintenanceRuns
     OUTPUT_LIMIT = 20_000
     MAX_PACKAGE_SCOPES = 10
     ACTIVITY_OVERHEAD = 30
+    TIME_BUDGET_COMPLETION_BUFFER = 5
     SCOPED_EXECUTION = 'cd -- "$1" && shift && exec "$@"'
     PACKAGE_DISCOVERY = [ "find", ".", "-type", "f", "(", "-name", "Gemfile", "-o", "-name", "package.json", ")",
       "-not", "-path", "*/node_modules/*", "-not", "-path", "*/vendor/*", "-not", "-path", "*/.git/*", "-print0" ].freeze
@@ -38,11 +39,20 @@ module MaintenanceRuns
     ACTIVITY_TIMEOUT = DISCOVERY_TIMEOUT + (MAX_PACKAGE_SCOPES * ADAPTERS.sum do |adapter|
       PROVISION_TIMEOUT + VERSION_TIMEOUT + (adapter.analyses.size * ANALYSIS_TIMEOUT)
     end) + ACTIVITY_OVERHEAD
+    class TimeBudgetExhausted < StandardError
+      attr_reader :checks
+
+      def initialize(checks = [])
+        @checks = checks
+        super("maintenance analyzer time budget exhausted")
+      end
+    end
 
     def self.call(...) = new(...).call
 
-    def initialize(run:)
+    def initialize(run:, time_limit_seconds: nil)
       @run = run
+      @deadline = monotonic_now + time_limit_seconds if time_limit_seconds
     end
 
     def call
@@ -61,15 +71,22 @@ module MaintenanceRuns
     attr_reader :run
 
     def analyzer_checks
+      checks = []
       adapters = applicable_adapters
       return [] if adapters.empty?
 
       discovery = execute(PACKAGE_DISCOVERY, DISCOVERY_TIMEOUT)
       return [ discovery_check(discovery) ] unless exit_code(discovery) == 0
 
-      adapters.flat_map { |adapter| collect_packages(adapter, package_scopes(discovery, adapter)) }
+      adapters.each do |adapter|
+        checks.concat(collect_packages(adapter, package_scopes(discovery, adapter)))
+      end
+      checks
+    rescue TimeBudgetExhausted => error
+      checks.concat(error.checks)
+      checks << time_budget_check
     rescue Containers::Provision::Error => error
-      [ discovery_check(nil, error:) ]
+      checks << discovery_check(nil, error:)
     end
 
     def applicable_adapters
@@ -90,9 +107,14 @@ module MaintenanceRuns
     def collect_packages(adapter, scopes)
       return [] if scopes.empty?
 
-      checks = scopes.first(MAX_PACKAGE_SCOPES).flat_map { |scope| collect_package(adapter, scope) }
+      checks = []
+      scopes.first(MAX_PACKAGE_SCOPES).each do |scope|
+        checks.concat(collect_package(adapter, scope))
+      end
       checks << package_limit_check(adapter, scopes.size) if scopes.size > MAX_PACKAGE_SCOPES
       checks
+    rescue TimeBudgetExhausted => error
+      raise TimeBudgetExhausted.new(checks + error.checks)
     end
 
     def collect_package(adapter, scope)
@@ -123,10 +145,14 @@ module MaintenanceRuns
     end
 
     def collect(adapter, scope, version)
-      adapter.analyses.map do |analysis|
+      checks = []
+      adapter.analyses.each do |analysis|
         result = execute_scoped(scope, analysis.command, ANALYSIS_TIMEOUT)
-        analyzer_check(adapter, analysis, scope, version, result)
+        checks << analyzer_check(adapter, analysis, scope, version, result)
       end
+      checks
+    rescue TimeBudgetExhausted => error
+      raise TimeBudgetExhausted.new(checks + error.checks)
     rescue Containers::Provision::Error => error
       [ { "name" => adapter.name, "status" => "incomplete", "reason" => "execution_unavailable",
           "provenance" => provenance(adapter, scope, nil), "error_class" => error.class.name } ]
@@ -137,7 +163,24 @@ module MaintenanceRuns
     end
 
     def execute(command, timeout)
-      run.execute_in_execution_environment(command, timeout:, stream: false)
+      run.execute_in_execution_environment(command, timeout: bounded_timeout(timeout), stream: false)
+    end
+
+    def bounded_timeout(timeout)
+      return timeout unless @deadline
+
+      remaining = (@deadline - monotonic_now).ceil
+      raise TimeBudgetExhausted unless remaining.positive?
+
+      [ timeout, remaining ].min
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def time_budget_check
+      { "name" => "analyzer_time_budget", "status" => "incomplete", "reason" => "time_budget_exhausted" }
     end
 
     def discovery_check(result, error: nil)

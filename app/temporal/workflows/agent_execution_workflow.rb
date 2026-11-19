@@ -150,6 +150,7 @@ module Workflows
           Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
         )
         max_execution_seconds = agent_run_result[:max_execution_seconds]
+        execution_deadline = Temporalio::Workflow.now + max_execution_seconds if goal == "maintenance" && max_execution_seconds
         audit_timeout_seconds = agent_run_result[:audit_timeout_seconds]
         tdd_phase = agent_run_result[:tdd_phase]
         runner_id = agent_run_result[:runner_id]
@@ -319,8 +320,18 @@ module Workflows
         # available, and only inside the existing execution environment. Their
         # output is advisory candidate evidence for the agent, never a gate.
         if goal == "maintenance" && Temporalio::Workflow.patched("agent-execution-maintenance-tool-evidence-v1")
+          analyzer_input = { agent_run_id: agent_run_id }
+          analyzer_timeout = MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT
+          if execution_deadline
+            remaining_seconds = [ (execution_deadline - Temporalio::Workflow.now).ceil, 1 ].max
+            analyzer_timeout = [ analyzer_timeout, remaining_seconds ].min
+            analyzer_input[:time_limit_seconds] = [
+              remaining_seconds - MaintenanceRuns::ToolEvidence::TIME_BUDGET_COMPLETION_BUFFER,
+              0
+            ].max
+          end
           run_activity(Activities::CollectMaintenanceToolEvidenceActivity,
-            { agent_run_id: agent_run_id }, timeout: MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT,
+            analyzer_input, timeout: analyzer_timeout,
             retry_policy: NO_RETRY)
         end
 
@@ -339,7 +350,11 @@ module Workflows
         # Cap the activity timeout by the project's max execution time limit
         # (plus a buffer for Temporal overhead). This ensures runs are terminated
         # even when the per-runner timeout budget is larger.
-        if max_execution_seconds
+        if execution_deadline
+          remaining_seconds = [ (execution_deadline - Temporalio::Workflow.now).ceil, 0 ].max
+          execution_limit = remaining_seconds + 300
+          activity_timeout = [ activity_timeout, execution_limit ].min
+        elsif max_execution_seconds
           execution_limit = max_execution_seconds + 300
           activity_timeout = [ activity_timeout, execution_limit ].min
         end

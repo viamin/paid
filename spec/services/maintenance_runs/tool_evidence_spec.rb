@@ -91,6 +91,19 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   end
 
   # @spec MAINT-022 MAINT-040
+  it "records incomplete analyzer coverage when its execution budget is exhausted" do
+    allow(run).to receive(:execute_in_execution_environment)
+
+    evidence = described_class.call(run:, time_limit_seconds: 0)
+
+    expect(run).not_to have_received(:execute_in_execution_environment)
+    expect(evidence.fetch(:completed_checks)).to be_empty
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "analyzer_time_budget", "reason" => "time_budget_exhausted")
+    )
+  end
+
+  # @spec MAINT-022 MAINT-040
   it "records a locked dependency install failure as incomplete coverage" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
     allow(run).to receive(:execute_in_execution_environment).and_return(

@@ -10,7 +10,10 @@ module Activities
 
     def execute(input)
       agent_run = AgentRun.find(input[:agent_run_id])
-      evidence = MaintenanceRuns::ToolEvidence.call(run: agent_run)
+      evidence = MaintenanceRuns::ToolEvidence.call(
+        run: agent_run,
+        time_limit_seconds: input[:time_limit_seconds]
+      )
       metadata = agent_run.external_metadata.deep_dup
       metadata["maintenance_tool_evidence"] = evidence.deep_stringify_keys
       agent_run.update!(external_metadata: metadata)

@@ -779,10 +779,10 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
-    def stub_maintenance_activities(has_changes: false, success: true, completion_success: true)
+    def stub_maintenance_activities(has_changes: false, success: true, completion_success: true, create_result: { agent_run_id: 42 })
       allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
         case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+        when "Activities::CreateAgentRunActivity" then create_result
         when "Activities::RunAgentActivity" then { success: success, has_changes: has_changes, output_present: true }
         when "Activities::CompleteMaintenanceRunActivity" then { agent_run_id: 42, success: completion_success }
         else {}
@@ -801,6 +801,24 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
           timeout: MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT, retry_policy: described_class::NO_RETRY)
       expect(MaintenanceRuns::ToolEvidence::ACTIVITY_TIMEOUT).to be >
         ((MaintenanceRuns::ToolEvidence::VERSION_TIMEOUT + MaintenanceRuns::ToolEvidence::ANALYSIS_TIMEOUT) * 2)
+    end
+
+    # @spec MAINT-022 MAINT-040
+    it "caps analyzer collection by the run's remaining execution budget" do
+      allow(Temporalio::Workflow).to receive(:now).and_return(
+        Time.zone.parse("2026-11-19 12:00:00"),
+        Time.zone.parse("2026-11-19 12:01:40")
+      )
+      stub_maintenance_activities(create_result: { agent_run_id: 42, max_execution_seconds: 600 })
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::CollectMaintenanceToolEvidenceActivity,
+        { agent_run_id: 42, time_limit_seconds: 495 },
+        timeout: 500,
+        retry_policy: described_class::NO_RETRY
+      )
     end
 
     it "does not schedule tool evidence collection when replaying a pre-patch history" do
