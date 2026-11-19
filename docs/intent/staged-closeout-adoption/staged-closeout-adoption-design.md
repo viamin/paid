@@ -174,6 +174,19 @@ criterion, its historical mapping does not impose an obsolete requirement.
 
 ### Existing closeout progress
 
+Reviewed required-stage criterion keys are immutable identities in acceptance
+reports. The analyzer supplies those keys explicitly and requires exactly one
+assessment for each, without paraphrasing or inferring semantic equivalence.
+Missing, renamed or duplicate required keys fail the existing bounded response
+contract before persistence. Unmapped criteria retain ordinary semantic review.
+
+A current all-satisfied historical report whose required keys are missing may
+obtain a normal report-only repair audit when all required verification remains
+current, complete and successful. Prior reports and admissions remain intact;
+the existing automatic per-source attempt budget counts the malformed completion.
+Valid unmet or unknown verdicts do not qualify, and repair never grants closure
+or implementation authority.
+
 The Inbox's detail-scoped progress projection also presents required-stage
 verification, semantic acceptance audit and factual source-issue closure as
 separate milestones. Verification exposes its reviewed criterion, queued or

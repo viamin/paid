@@ -87,7 +87,10 @@ module PartialCloseouts
     def retry_decision(source_revision)
       requests = acceptance_audit_requests(source_revision)
       intent_runs = audit_runs(requests, intent_revision: Assessment.intent_revision_for(issue))
-      return :already_audited unless intent_runs.all? { |run| retryable_failure?(run) }
+      repair_snapshot = Assessment.call(issue).assessment if AuditRefreshNeeded.binding_repair?(issue:)
+      return :already_audited unless intent_runs.all? do |run|
+        retryable_failure?(run) || repairable_completion?(run, repair_snapshot)
+      end
       # The retry budget belongs to the source revision — the evidence
       # generation — not to the approved-intent revision. Any issue-body edit
       # changes the intent revision, so a budget keyed to it would let one edit
@@ -95,7 +98,7 @@ module PartialCloseouts
       # review).
       attempt_count = audit_attempt_count(requests)
       return :retry_exhausted if attempt_count >= MAX_ATTEMPTS
-      return if intent_runs.empty?
+      return if intent_runs.empty? || repairable_completion?(intent_runs.first, repair_snapshot)
 
       newest = intent_runs.first
       if newest.completed_at.blank? || newest.completed_at > AcceptanceAuditRetryJob.retry_delay(attempt_count + 1).ago
@@ -104,6 +107,13 @@ module PartialCloseouts
       end
 
       newest
+    end
+
+    # A current but misbound completion spends an attempt like every other
+    # report; it does not permanently suppress a bounded structural repair.
+    # @spec STAGED-CLOSEOUT-ADOPTION-017
+    def repairable_completion?(run, snapshot)
+      snapshot.present? && run.status == "completed" && run.reconciliation["assessment"] == snapshot
     end
 
     def retryable_failure?(run)
