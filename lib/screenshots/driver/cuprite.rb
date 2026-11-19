@@ -15,6 +15,8 @@ module Screenshots
   module Driver
     class Cuprite < Base
       CAPYBARA_REMOTE_PORT = 4001
+      PENDING_DASHBOARD_FRAMES = "turbo-frame[data-dashboard-frames-target='frame']:not([complete])"
+      PENDING_INBOX_BADGE = "turbo-frame#inbox_nav_badge_desktop:not([complete])"
 
       def start_browser
         register_driver
@@ -45,6 +47,13 @@ module Screenshots
       end
 
       def wait_for_load
+        unless session.has_no_css?(PENDING_DASHBOARD_FRAMES, wait: 30)
+          raise Ferrum::TimeoutError, "Timed out waiting for deferred dashboard frames to load"
+        end
+        unless session.has_no_css?(PENDING_INBOX_BADGE, wait: 30)
+          raise Ferrum::TimeoutError, "Timed out waiting for the desktop Inbox badge to load"
+        end
+
         session.has_no_css?("turbo-frame[busy]", wait: 5)
       end
 

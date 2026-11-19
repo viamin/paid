@@ -79,7 +79,7 @@ RSpec.describe CloseoutVerifications::Admit do
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-010
-  it "converges concurrent admission and preserves a current completed result" do
+  it "converges concurrent admission and does not renew a terminal result without a reviewed retry allowance" do
     approve_mapping
     first = described_class.call(source_pr:, merge_commit_sha: merge_sha)
     replay = described_class.call(source_pr:, merge_commit_sha: merge_sha)
@@ -88,7 +88,7 @@ RSpec.describe CloseoutVerifications::Admit do
 
     expect(first).to be_admitted
     expect(replay.reason).to eq("already_admitted")
-    expect(described_class.call(source_pr:, merge_commit_sha: merge_sha).reason).to eq("already_current_result")
+    expect(described_class.call(source_pr:, merge_commit_sha: merge_sha).reason).to eq("retry_exhausted")
   end
 
   # @spec STAGED-CLOSEOUT-ADOPTION-010
@@ -108,7 +108,7 @@ RSpec.describe CloseoutVerifications::Admit do
   it "converges an insert race on the admission identity" do
     approve_mapping
     allow(AgentRun).to receive(:create!).and_raise(ActiveRecord::RecordNotUnique,
-      'duplicate key value violates unique constraint "index_agent_runs_closeout_verification_identity"')
+      "duplicate key value violates unique constraint \"#{described_class::IDENTITY_INDEX}\"")
 
     outcome = described_class.call(source_pr:, merge_commit_sha: merge_sha)
 

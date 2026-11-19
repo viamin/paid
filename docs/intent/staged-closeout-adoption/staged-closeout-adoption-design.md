@@ -147,3 +147,71 @@ enrollment change as skipped and applies every other profile target.
 | Registry references only | Prevents this feature from becoming a command or deployment executor. | Accepting arbitrary commands or targets would bypass existing authorization. |
 | Merge identity stored on the source PR and run | Lets a bounded sweep recover missed delivery without treating merge as deployment, while preserving exact evidence provenance. | Re-fetching GitHub for every sweep would make recovery depend on a live provider read and obscure the observed target. |
 | Explicit profile target for Fully Automatic | Enrollment flows through the reviewed planner/applier with the same per-level authorization and rollback as every other posture lever. | Deriving enrollment silently from merge/release settings would hide the adoption decision. |
+
+### Required-stage closure boundary
+
+A semantic all-satisfied assessment is necessary but does not override a declared
+reviewed postmerge or live check. Before either explicit or delegated GitHub
+closure, the shared closeout resolver verifies that each latest reviewed mapping
+for a current assessed criterion has complete, current, successful matching
+execution evidence. Revoked mappings, missing receipts, changed targets, expired
+results, failed checks and incomplete evidence keep the issue open with an
+inspectable criterion and next action. The same check is repeated immediately
+before external mutation and during local reconciliation. A successful native
+recipe or observed measurement remains evidence; it does not manufacture a
+semantic verdict or delegate closure authority. Unmapped legacy criteria retain
+the existing acceptance and policy gates.
+
+The same readiness predicate augments the shared source-reference disposition:
+an unverified required stage remains Tracks before merge even when a current
+semantic assessment is optimistic. The existing PR-head, verification-revision
+and citation comparisons remain unchanged. No merged PR body is rewritten.
+
+An audit cannot erase a reviewed requirement merely by omitting its criterion:
+a latest mapping bound to unchanged full issue intent remains required. If
+approved intent changes and the current assessment no longer contains that
+criterion, its historical mapping does not impose an obsolete requirement.
+
+### Existing closeout progress
+
+The Inbox's detail-scoped progress projection also presents required-stage
+verification, semantic acceptance audit and factual source-issue closure as
+separate milestones. Verification exposes its reviewed criterion, queued or
+running state, target revision/environment, terminal outcome and freshness.
+Waiting work names its next supported action; evidence collection never stands
+in for the semantic verdict. The same structured projection is available to
+Inbox chat. Reads do not enqueue work or create operator notifications; ordinary
+queued/running verification remains outside human Action Required.
+
+The existing Acceptance checks page accepts a project-scoped source selection,
+including a previously closed mapped issue, so ongoing checks can be inspected
+without adding a human Inbox item. Its selected-issue JSON and bearer-token API
+return the same progress facts. Source selections cannot read another project's
+issue. The enrollment summary names the actual wait or admitted run state
+instead of reporting an implemented scheduler as missing.
+
+### Bounded verification retries
+
+A reviewed retry policy permits one to three total execution attempts for an
+admission identity; absent policy means one attempt. A failed or expired result
+may admit a fresh generation after at least one minute, subject to the same
+current target, mapping, enrollment, phase, pause and budget guards. Cancellation
+never automatically retries the same identity. Each generation has its own run
+and immutable terminal receipt; webhook replay cannot execute or renew an old
+receipt. A bounded periodic retry sweep recovers missed retry observations.
+Closed source issues cannot admit checks, retries or automatic acceptance audits.
+An explicit source-issue pause also blocks new admissions and defers queued
+verification claims without collecting evidence or consuming the attempt. The
+same identity can resume after unpausing, subject to all current claim guards.
+
+A complete, current terminal staged observation may exempt only a report-only
+acceptance audit from the ordinary recent-PR synchronization grace. Plain
+coding and continuation keep that guard, and every other admission, prerequisite,
+authority and budget check remains active. This avoids consuming the reviewed
+evidence lifetime while waiting for a grace period intended for implementation.
+An audit queued before a newer observation may still report current facts, but
+its earlier admission cannot authorize closure of the newer evidence generation.
+The original request and report remain immutable; the same unchanged intent and
+closure-policy signature may request a fresh normal audit for that new source
+revision, retaining the existing per-source audit retry limit. Revoked policy or
+changed intent cannot use this refresh path.

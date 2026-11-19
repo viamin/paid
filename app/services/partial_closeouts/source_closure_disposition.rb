@@ -4,7 +4,7 @@ module PartialCloseouts
   # The only authority for a source issue closing reference. Semantic
   # assessment arrives through Llm::AnalyzePartialCloseout; this object only
   # validates that its criterion-level result still describes current evidence.
-  # @spec PARTIAL-CLOSEOUT-029
+  # @spec PARTIAL-CLOSEOUT-029 STAGED-CLOSEOUT-ADOPTION-013
   class SourceClosureDisposition
     CLOSE = "close"
     TRACK = "track"
@@ -53,7 +53,8 @@ module PartialCloseouts
 
     def closes?
       issue.present? && Assessment.input_complete?(assessment) && current_revisions? && current_head? && current_verification? && gaps.empty? &&
-        criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" && cited?(criterion) }
+        criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" && cited?(criterion) } &&
+        CloseoutVerifications::ClosureReadiness.call(issue:, criteria: criteria.pluck("criterion")).ready?
     end
 
     def current_revisions?

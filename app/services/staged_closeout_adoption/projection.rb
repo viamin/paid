@@ -2,7 +2,7 @@
 
 module StagedCloseoutAdoption
   # Shared inspectable read model for operator and agent/API surfaces.
-  # @spec STAGED-CLOSEOUT-ADOPTION-001 STAGED-CLOSEOUT-ADOPTION-004
+  # @spec STAGED-CLOSEOUT-ADOPTION-001 STAGED-CLOSEOUT-ADOPTION-004 STAGED-CLOSEOUT-ADOPTION-014
   class Projection
     MAPPING_FIELDS = %w[
       id issue_id criterion_key stage phase target_shape execution_path target_key target_version target_digest
@@ -46,9 +46,21 @@ module StagedCloseoutAdoption
     def automatic_run_reason
       return "project_not_enrolled" unless project.staged_closeout_enrollment&.enabled?
       return "no_approved_mapping" if mapping_results.empty?
-      return "scheduler_not_implemented" if mapping_results.any?(&:eligible?)
+      eligible = mapping_results.find(&:eligible?)
+      return waiting_reason(eligible.mapping) if eligible
 
       current_result.reason
+    end
+
+    def waiting_reason(mapping)
+      return "waiting_for_source_pr_verification" if mapping.stage == "pre_merge"
+
+      run = AgentRun.where(project:, issue_id: mapping.issue_id, closeout_mapping_id: mapping.id,
+        goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL, synthetic: true).order(id: :desc).first
+      return "verification_#{run.status}" if run&.status.in?(%w[queued running])
+      return "waiting_for_current_verification" if run
+
+      mapping.stage == "merged_revision" ? "waiting_for_merge_observation" : "waiting_for_environment_signal"
     end
 
     def current_result

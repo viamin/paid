@@ -124,7 +124,7 @@ module Issues
         return failure(:not_stalled, "This issue was already resolved complete against the current evidence.")
       end
 
-      return assessment_current_refusal if acceptance_audit? && !PartialCloseouts::Assessment.call(issue).stale?
+      return assessment_current_refusal if acceptance_audit? && !PartialCloseouts::AuditRefreshNeeded.call(issue:)
 
       blocker = status.blockers.reject { |candidate| bypasses_human_prerequisite?(candidate) }.first
       return failure(blocker.code, status.reason) if blocker

@@ -23,7 +23,7 @@ module Issues
       @authorization_check = authorization_check
     end
 
-    def call # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037 UPSTREAM-ISSUE-008
+    def call # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037 UPSTREAM-ISSUE-008 STAGED-CLOSEOUT-ADOPTION-013
       return failure(:invalid_reason, "A closeout reason is required.") if reason.blank?
       return failure(:generic_reason, "Enter a specific completion rationale that references the recorded evidence " \
         "(for example which merged PRs or no-code declaration cover each acceptance criterion).") if canned_reason?
@@ -64,6 +64,11 @@ module Issues
         return failure(:scanner_managed, "This record has no GitHub Issue to close. Wait for or repair the next " \
           "authoritative code-scanning snapshot so scanner reconciliation can observe source closure.")
       end
+      verification = CloseoutVerifications::ClosureReadiness.call(issue:)
+      unless verification.ready?
+        detail = verification.blockers.map { |blocker| "#{blocker.criterion_key}: #{blocker.next_action}" }.join(" ")
+        return failure(:verification_required, detail)
+      end
       return failure(:audit_pending, "A current acceptance audit is required before GitHub can be closed.") unless accepted_assessment?
       return failure(:open_prerequisites, "Current prerequisites or required verification still block GitHub closure.") if closure_blocked?
 
@@ -91,6 +96,9 @@ module Issues
       return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless remote_state.in?(%w[open closed])
 
       if remote_state == "open"
+        validation = issue.with_lock { validate_closeout }
+        return validation unless validation.success?
+
         if authorization_check && !authorization_check.call
           return failure(:authorization_changed, "Delegated closure authority changed; review the current project policy.")
         end

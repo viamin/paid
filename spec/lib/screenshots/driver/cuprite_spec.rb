@@ -24,12 +24,13 @@ RSpec.describe Screenshots::Driver::Cuprite do
     )
   end
   let(:driver) { described_class.new(config:) }
+  let(:cuprite_driver) { instance_double(Capybara::Cuprite::Driver, quit: true) }
   let(:session) { instance_double(Capybara::Session, current_path: "/dashboard") }
 
   before do
     allow(Capybara::Session).to receive(:new).and_return(session)
     allow(session).to receive_messages(
-      driver: instance_double(Capybara::Cuprite::Driver, quit: true),
+      driver: cuprite_driver,
       save_screenshot: true,
       visit: true,
       has_no_css?: true,
@@ -85,5 +86,36 @@ RSpec.describe Screenshots::Driver::Cuprite do
     expect(email_field).to have_received(:set).with("screenshot@example.com")
     expect(password_field).to have_received(:set).with("secret")
     expect(submit_button).to have_received(:click)
+  end
+
+  it "waits for lazy frame requests before checking Turbo frame activity" do
+    driver.instance_variable_set(:@session, session)
+    expect(session).to receive(:has_no_css?).with(
+      "turbo-frame[data-dashboard-frames-target='frame']:not([complete])",
+      wait: 30
+    ).ordered
+    expect(session).to receive(:has_no_css?).with(
+      "turbo-frame#inbox_nav_badge_desktop:not([complete])",
+      wait: 30
+    ).ordered
+    expect(session).to receive(:has_no_css?).with("turbo-frame[busy]", wait: 5).ordered
+
+    driver.wait_for_load
+  end
+
+  it "fails when deferred dashboard frames do not finish loading" do
+    allow(session).to receive(:has_no_css?).and_return(false)
+    driver.instance_variable_set(:@session, session)
+
+    expect { driver.wait_for_load }.to raise_error(Ferrum::TimeoutError)
+    expect(session).to have_received(:has_no_css?).once
+  end
+
+  it "fails when the desktop Inbox badge does not finish loading" do
+    allow(session).to receive(:has_no_css?).and_return(true, false)
+    driver.instance_variable_set(:@session, session)
+
+    expect { driver.wait_for_load }.to raise_error(Ferrum::TimeoutError)
+    expect(session).to have_received(:has_no_css?).twice
   end
 end

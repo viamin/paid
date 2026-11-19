@@ -112,7 +112,7 @@ RSpec.describe "Staged closeout adoption settings" do
 
     get project_staged_closeout_adoption_path(project), as: :json
 
-    expect(response.parsed_body).to include("automatic_run_reason" => "scheduler_not_implemented")
+    expect(response.parsed_body).to include("automatic_run_reason" => "waiting_for_source_pr_verification")
     expect(response.parsed_body.fetch("mappings").sole).to include("eligibility_reason" => nil)
 
     StagedCloseoutAdoption::Mappings.revoke(mapping:, project:, actor: owner, issue:, attributes: {})

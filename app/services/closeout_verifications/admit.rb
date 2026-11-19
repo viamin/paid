@@ -5,7 +5,7 @@ module CloseoutVerifications
   # enqueue ProcessRunQueueJob: execution has a dedicated successor contract.
   # @spec STAGED-CLOSEOUT-ADOPTION-009 STAGED-CLOSEOUT-ADOPTION-010
   class Admit
-    IDENTITY_INDEX = "index_agent_runs_closeout_verification_identity".freeze
+    IDENTITY_INDEX = "index_agent_runs_closeout_verification_attempt_identity".freeze
 
     Outcome = Data.define(:runs, :reason) do
       def admitted? = runs.any?
@@ -75,11 +75,19 @@ module CloseoutVerifications
 
     def admit(mapping)
       existing = existing_run(mapping)
-      return nil if existing
+      retry_state = RetryPolicy.for(mapping:, run: existing)
+      unless retry_state.generation
+        @existing_reason = case retry_state.reason
+        when "verification_in_progress" then "already_admitted"
+        when "result_current" then "already_current_result"
+        else retry_state.reason
+        end
+        return
+      end
 
-      persist_admission(mapping)
+      persist_admission(mapping, retry_state.generation)
     rescue ActiveRecord::RecordNotUnique => error
-      raise error unless identity_collision?(error) || existing_run(mapping)
+      raise error unless identity_collision?(error)
 
       @existing_reason ||= "already_admitted"
       nil
@@ -88,9 +96,9 @@ module CloseoutVerifications
     # The run row and its GoodJob row commit together: an enqueue failure
     # rolls the admission back instead of stranding a queued identity that
     # every later observation would refuse to re-enqueue.
-    def persist_admission(mapping)
+    def persist_admission(mapping, generation)
       AgentRun.transaction do
-        run = AgentRun.create!(run_attributes(mapping))
+        run = AgentRun.create!(run_attributes(mapping).merge(closeout_verification_generation: generation))
         CloseoutVerificationJob.perform_later(run.id)
         run
       end
@@ -103,7 +111,7 @@ module CloseoutVerifications
     end
 
     def existing_run(mapping)
-      run = identity_scope(mapping).first
+      run = identity_scope(mapping).order(closeout_verification_generation: :desc).first
       return unless run
 
       CloseoutVerificationJob.perform_later(run.id) if run.status == "queued"

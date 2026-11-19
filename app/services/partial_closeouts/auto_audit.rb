@@ -25,12 +25,13 @@ module PartialCloseouts
       return result(:automation_disabled) unless Issues::AutoPickProjectGate.call(issue.project)
 
       issue.with_lock do
-        status = Issues::CloseoutStatus.call(issue)
+        return result(:issue_closed) unless issue.github_state == "open"
+        status = Issues::CloseoutStatus.call(issue, acceptance_audit: true)
         return result(:not_stalled) unless stalled_or_refreshable?(status)
         assessment = Assessment.call(
           issue, evidence: status.evidence, technical_evidence: status.technical_evidence
         )
-        return result(:assessment_current) unless assessment.stale?
+        return result(:assessment_current) unless AuditRefreshNeeded.call(issue:, assessment:)
         return result(:blocked) if status.blockers.any? { |blocker| blocker.code != :human_prerequisite_notification }
 
         decision = retry_decision(assessment.current_source_revision)

@@ -103,6 +103,21 @@ RSpec.describe CloseoutVerificationJob do
     expect(agent_run.reload).to have_attributes(status: "queued", started_at: nil, completed_at: nil)
   end
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-016
+  it "defers a paused source issue without executing the native recipe" do
+    run = agent_run
+    stub_request(:post, "https://api.github.com/repos/#{project.full_name}/issues/#{issue.github_number}/labels")
+      .to_return(status: 200, body: "[]")
+    issue.update!(paused: true)
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+      .and_return(validation_result("completed", { "native" => { "exit_code" => 0 }, "cleanup" => { "completed" => true } }))
+
+    described_class.perform_now(run.id)
+
+    expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
+    expect(run.reload).to have_attributes(status: "queued", started_at: nil, completed_at: nil)
+  end
+
   # @spec STAGED-CLOSEOUT-ADOPTION-011
   it "defers a hard-stop budget without consuming the admitted identity" do
     allow(CostBudgets::Check).to receive(:call).and_return({ allowed: false, reason: "hard stop" })

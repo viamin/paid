@@ -46,6 +46,9 @@ module StagedCloseoutAdoption
       raise Error, "staged closeout adoption is disabled" unless enrollment.enabled?
 
       validate_required_attributes!
+      unless CloseoutVerifications::RetryPolicy.limit(attributes.fetch("retry_policy", {}))
+        raise Error, "retry policy must permit between one and three total attempts"
+      end
       validate_criterion!
       validate_stage!
       target = resolve_target!
@@ -69,15 +72,19 @@ module StagedCloseoutAdoption
       mapping
     end
 
-    # Used by #5074 at its future queue/claim boundary; it never authorizes a
-    # run itself. The reason is deliberately inspectable on operator surfaces.
-    # @spec STAGED-CLOSEOUT-ADOPTION-004 STAGED-CLOSEOUT-ADOPTION-007
+    # Rechecks reviewed scope and authority at admission and claim boundaries;
+    # the reason remains inspectable on operator surfaces.
+    # @spec STAGED-CLOSEOUT-ADOPTION-004 STAGED-CLOSEOUT-ADOPTION-007 STAGED-CLOSEOUT-ADOPTION-016
     def eligible_for(mapping, observed_merge: false, observed_target: nil)
       return Result.new(mapping, "mapping_scope_mismatch") unless mapping.project_id == project.id &&
         mapping.account_id == project.account_id && issue&.project_id == project.id && mapping.issue_id == issue.id &&
         mapping.staged_closeout_enrollment_id == enrollment.id
       return Result.new(mapping, "project_not_enrolled") unless enrollment.enabled?
       return Result.new(mapping, "mapping_not_current") unless mapping.current?
+      source_state = Issue.where(id: issue.id, project_id: project.id).pick(:github_state, :paused)
+      return Result.new(mapping, "source_issue_closed") unless source_state&.first == "open"
+      return Result.new(mapping, "source_issue_paused") if source_state.last
+      return Result.new(mapping, "retry_policy_invalid") unless CloseoutVerifications::RetryPolicy.limit(mapping.retry_policy)
       observed_stage = observed_target || ("merged_revision" if observed_merge)
       observed_stage = nil unless %w[merged_revision live_environment].include?(observed_stage) && mapping.stage == observed_stage
       return Result.new(mapping, "criterion_not_current") unless admission_criteria(observed_target: observed_stage).include?(mapping.criterion_key)

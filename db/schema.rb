@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_103105) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_19_134957) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -326,6 +326,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_103105) do
     t.string "closeout_recipe_digest", comment: "Reviewed recipe digest bound to this synthetic closeout verification run."
     t.string "closeout_recipe_version", comment: "Reviewed recipe version bound to this synthetic closeout verification run."
     t.string "closeout_target_revision", comment: "Confirmed environment signal revision bound to a live-target verification run."
+    t.integer "closeout_verification_generation", default: 0, null: false, comment: "Zero-based reviewed retry generation; terminal verification runs are never restarted."
     t.datetime "completed_at"
     t.jsonb "confidence_delivery_snapshot", default: {}, null: false, comment: "Immutable confidence-delivery scope, evidence, thresholds, and merged-design baseline admitted for this run."
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
@@ -446,9 +447,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_103105) do
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_and_maintenance_goal", where: "((goal)::text = 'maintenance'::text)"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
-    t.index ["project_id", "issue_id", "closeout_criterion_key", "closeout_recipe_version", "closeout_environment", "closeout_target_revision"], name: "index_agent_runs_live_closeout_verification_identity", unique: true, where: "(((goal)::text = 'closeout_verification'::text) AND (closeout_target_revision IS NOT NULL))"
+    t.index ["project_id", "issue_id", "closeout_criterion_key", "closeout_recipe_version", "closeout_environment", "closeout_target_revision", "closeout_verification_generation"], name: "index_agent_runs_live_closeout_verification_attempt_identity", unique: true, where: "(((goal)::text = 'closeout_verification'::text) AND (closeout_target_revision IS NOT NULL))"
     t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])) AND ((goal)::text <> 'closeout_verification'::text))"
-    t.index ["project_id", "issue_id", "source_pull_request_number", "base_commit_sha", "closeout_mapping_id"], name: "index_agent_runs_closeout_verification_identity", unique: true, where: "((goal)::text = 'closeout_verification'::text)"
+    t.index ["project_id", "issue_id", "source_pull_request_number", "base_commit_sha", "closeout_mapping_id", "closeout_verification_generation"], name: "index_agent_runs_closeout_verification_attempt_identity", unique: true, where: "((goal)::text = 'closeout_verification'::text)"
     t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])) AND ((goal)::text <> 'closeout_verification'::text))"
     t.index ["project_id", "source_pull_request_number", "status"], name: "idx_agent_runs_review_feedback_lookup"
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
@@ -7018,12 +7019,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_103105) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL

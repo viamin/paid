@@ -71,7 +71,8 @@ module Issues
       audit_bypass = acceptance_audit && audit_prerequisite_bypass?(issue, evidence:, inputs:)
       blockers = admission_blockers(issue, prerequisites: prerequisites, inputs: inputs, audit_bypass:)
       if blockers.empty? && evidence.present?
-        blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids, audit_bypass:) ].compact
+        audit_scope = audit_bypass || (acceptance_audit && CloseoutVerifications::Evidence.audit_ready?(issue))
+        blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids, audit_bypass: audit_scope) ].compact
       end
 
       Result.new(

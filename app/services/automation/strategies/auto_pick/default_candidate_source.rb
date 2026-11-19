@@ -322,6 +322,7 @@ module Automation
             # exactly as before.
             authorized_ids = Array(continuation_authorized_issue_ids)
             acceptance_audit_ids = Array(acceptance_audit_authorized_issue_ids)
+            staged_audit_ids = staged_audit_sync_exempt_issue_ids(project, acceptance_audit_ids)
 
             base = Issue.ready_for_work(project)
               .where.not(id: inputs.blocking_issue_ids)
@@ -331,7 +332,7 @@ module Automation
               # Applies regardless of paid_state so a create_pr run that
               # already recorded a PR number cannot be immediately re-picked
               # while local PR sync is still catching up (#3432).
-              .where.not(id: inputs.unsynced_pr_produced_issue_ids)
+              .where.not(id: inputs.unsynced_pr_produced_issue_ids - staged_audit_ids)
               # Once a merged PR row is authoritatively linked back to its
               # source issue (via +parent_issue_id+ or the originating run's
               # recorded +pull_request_number+), the issue stays ineligible
@@ -416,6 +417,19 @@ module Automation
               .where("agent_runs.completed_at > ?", PR_SYNC_GRACE_PERIOD.ago)
               .where("NOT EXISTS (#{Issue::AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY})")
               .pluck(:issue_id)
+          end
+
+          # A current, complete pinned receipt proves the staged observation
+          # has occurred. Only report-only audits get this exception; ordinary
+          # implementation retains its PR synchronization guard unchanged.
+          # @spec STAGED-CLOSEOUT-ADOPTION-015
+          def staged_audit_sync_exempt_issue_ids(project, authorized_ids)
+            return [] if authorized_ids.empty?
+
+            issues = project.issues.issues_only.where(id: authorized_ids).to_a
+            CloseoutVerifications::Evidence.records_for_issues(issues).filter_map do |issue_id, records|
+              issue_id if CloseoutVerifications::Evidence.audit_ready_records?(records)
+            end
           end
 
           # Issue ids with a merged PR row authoritatively linked back to the

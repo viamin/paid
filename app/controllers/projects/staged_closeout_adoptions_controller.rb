@@ -3,7 +3,7 @@
 module Projects
   # Operator/API surface for reviewed staged-closeout eligibility. It never
   # dispatches a check; automatic scheduling belongs to #5074.
-  # @spec STAGED-CLOSEOUT-ADOPTION-001 STAGED-CLOSEOUT-ADOPTION-002 STAGED-CLOSEOUT-ADOPTION-006
+  # @spec STAGED-CLOSEOUT-ADOPTION-001 STAGED-CLOSEOUT-ADOPTION-002 STAGED-CLOSEOUT-ADOPTION-006 STAGED-CLOSEOUT-ADOPTION-014
   class StagedCloseoutAdoptionsController < ApplicationController
     before_action :set_project
 
@@ -49,7 +49,12 @@ module Projects
     end
 
     def payload
-      StagedCloseoutAdoption::Projection.for_project(@project)
+      data = StagedCloseoutAdoption::Projection.for_project(@project)
+      return data if params[:issue_id].blank?
+
+      issue = @project.issues.issues_only.find(params.expect(:issue_id))
+      @closeout_progress = Inbox::StagedCloseoutProgress.call(issue:)
+      data.merge(progress: @closeout_progress.map(&:to_h))
     end
 
     def mapping_fields
@@ -89,7 +94,8 @@ module Projects
 
     def prepare_review
       @adoption = payload
-      @review_issues = @project.issues.issues_only.where(github_state: "open").order(:github_number)
+      scope = @project.issues.issues_only
+      @review_issues = scope.where(github_state: "open").or(scope.where(id: params[:issue_id])).order(:github_number)
       @review_issue = @review_issues.find_by(id: params[:issue_id])
       assessment = PartialCloseouts::Assessment.call(@review_issue) if @review_issue
       @review_criteria = assessment && !assessment.stale? ? assessment.criteria.map { |criterion| criterion.fetch("criterion") } : []
