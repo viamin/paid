@@ -48,12 +48,26 @@ module Activities
 
     def persist_agent_report(agent_run)
       attributes = MaintenanceReports::AgentReport.parse(agent_run.agent_summary_tail_with_stderr_fallback)
+      attributes = merge_tool_evidence(attributes, agent_run)
       MaintenanceReports::Persist.call(run: agent_run, **attributes)
     rescue MaintenanceReports::AgentReport::InvalidReport => e
       MaintenanceReports::Persist.call(run: agent_run,
         incomplete_checks: [ { "name" => "agent_report", "reason" => "parse_failure" } ])
       logger.warn(message: "agent_execution.maintenance_report_parse_failed", agent_run_id: agent_run.id,
         error_class: e.class.name, error: e.message)
+    end
+
+    # Tool output is collected before the agent starts and remains durable even
+    # if the agent summarizes only a subset of it. Findings still require the
+    # agent's structured provenance and semantic assessment.
+    def merge_tool_evidence(attributes, agent_run)
+      evidence = agent_run.external_metadata.fetch("maintenance_tool_evidence", {})
+      return attributes unless evidence.is_a?(Hash)
+
+      attributes.merge(
+        completed_checks: Array(attributes[:completed_checks]) + Array(evidence["completed_checks"]),
+        incomplete_checks: Array(attributes[:incomplete_checks]) + Array(evidence["incomplete_checks"])
+      )
     end
 
     def fail_with_write_boundary_violation(agent_run)

@@ -153,28 +153,28 @@
 
 ## Tool Integration
 
-- [ ] **MAINT-040**: The system shall invoke native CLI analyzers through
+- [x] **MAINT-040**: The system shall invoke native CLI analyzers through
       `AgentRun#execute_in_execution_environment` against the run's pinned
       checkout, without provisioning a `tool_sidecar` for that analyzer,
       using the live execution-environment path validated in
       [#4604](https://github.com/viamin/paid/issues/4604). Before selecting
       an additional analyzer, the recipe shall verify that analyzer's
       availability and supported invocation in the agent image.
-- [ ] **MAINT-041**: The system shall resolve RDR-073 marketplace tool
+- [x] **MAINT-041**: The system shall resolve RDR-073 marketplace tool
       attachments for a maintenance run using the same matching contract
       (language, repository-file, explicit attachment, task-text, and
       optional issue-label conditions) that any other run goal uses, with no
       maintenance-specific matching engine.
-- [ ] **MAINT-042**: Where a repository is polyglot, the system shall resolve
+- [x] **MAINT-042**: Where a repository is polyglot, the system shall resolve
       applicable analyzer capabilities per relevant package/ecosystem rather
       than applying one tool's results repository-wide.
-- [ ] **MAINT-043**: The system shall record the resolved analyzer
+- [x] **MAINT-043**: The system shall record the resolved analyzer
       name/version/configuration as provenance on every finding and report
       that used it.
-- [ ] **MAINT-044**: If no applicable tool or native analyzer exists for the
+- [x] **MAINT-044**: If no applicable tool or native analyzer exists for the
       run's objective and repository, then the system shall fall back to a
       prompt-only investigation rather than failing the run outright.
-- [ ] **MAINT-045**: The system shall not treat a language or repository-file
+- [x] **MAINT-045**: The system shall not treat a language or repository-file
       match alone as authorization for an automatic fix or a blocking gate.
 
 ## Recurring Maintenance and Repair Handoff

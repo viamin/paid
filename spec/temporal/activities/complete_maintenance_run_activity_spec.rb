@@ -43,6 +43,23 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
     )
   end
 
+  # @spec MAINT-043
+  it "retains pre-agent tool provenance as completed report evidence" do
+    run.update!(external_metadata: {
+      "maintenance_tool_evidence" => {
+        "completed_checks" => [ { "name" => "knip", "provenance" => { "version" => "5.0" } } ],
+        "incomplete_checks" => []
+      }
+    })
+    run.log!("stdout", report_output)
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(run.reload.maintenance_report.completed_checks).to include(
+      "name" => "knip", "provenance" => { "version" => "5.0" }
+    )
+  end
+
   # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025
   it "persists findings and incomplete coverage from the agent report" do
     finding = {

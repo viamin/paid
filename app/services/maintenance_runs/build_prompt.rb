@@ -38,7 +38,7 @@ module MaintenanceRuns
         - The requested scope bounds your recommendations, not your access to supporting evidence. You may inspect callers, tests, framework entry points, and design documents anywhere in the repository to validate a claim.
         - Explain any recommendation that requires changes beyond the requested scope; expanding the repair scope requires explicit authorization from the requester.
         - Record the resolved scope you actually investigated and any exclusions in the report.
-        - For each finding, report its category, the affected locations or symbols, the claim, supporting evidence, known counterevidence, and a proposed action. Similarity alone does not establish that code should be shared; absence of static references does not establish that code can be deleted.
+        - For each finding, report its category, the affected locations or symbols, the claim, supporting evidence, known counterevidence, analyzer name/version/configuration when tool evidence was used, and a proposed action. Similarity alone does not establish that code should be shared; absence of static references does not establish that code can be deleted.
         - If evidence is missing or an analysis could not be completed, say so explicitly as an unresolved candidate or coverage limitation. Never present an incomplete scan as a clean result.
         - Retain deliberate repository exceptions in evidence.repository_exceptions with intent references, rationale, and your current or stale assessment. Report stale exceptions explicitly; an exception is reviewable intent, not permission to hide a finding.
 

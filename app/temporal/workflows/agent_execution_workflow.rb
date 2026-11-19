@@ -315,6 +315,14 @@ module Workflows
               rebase_succeeded: rebase_result[:rebase_succeeded] }, timeout: 60)
         end
 
+        # Native maintenance analyzers run only after the pinned checkout is
+        # available, and only inside the existing execution environment. Their
+        # output is advisory candidate evidence for the agent, never a gate.
+        if goal == "maintenance"
+          run_activity(Activities::CollectMaintenanceToolEvidenceActivity,
+            { agent_run_id: agent_run_id }, timeout: 180, retry_policy: NO_RETRY)
+        end
+
         # Step 4: Run the agent (long timeout, limited retry for worker recovery)
         # Budget based on the expected runner attempts for this run
         # (from CreateAgentRunActivity), plus a small Temporal buffer.
