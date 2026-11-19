@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_013150) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_19_064751) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -346,6 +346,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_013150) do
     t.text "error_message"
     t.string "execution_origin", default: "paid_native", null: false, comment: "Whether the run executed inside Paid or was ingested from an external toolchain."
     t.integer "expected_draft_review_count"
+    t.string "expected_remote_head_sha", limit: 40, comment: "Immutable PR branch tip captured at checkout admission; the --force-with-lease baseline a publish is entitled to overwrite until superseded by this run's own verified result_commit_sha."
     t.jsonb "external_metadata", default: {}, null: false, comment: "Structured metadata captured from external execution and migration workflows."
     t.string "external_run_key", comment: "Stable external run identifier used for idempotent ingestion."
     t.string "external_source_key", comment: "External system that executed the run, such as github_copilot, cursor, devin, factory, or internal_agent_workflows."
@@ -419,6 +420,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_013150) do
     t.jsonb "tool_sidecar_snapshot", default: [], null: false, comment: "Marketplace tool sidecar definitions snapshotted when the run attaches entries"
     t.string "trigger_type", limit: 50, default: "automatic", null: false
     t.integer "turns_completed", default: 0, null: false, comment: "Number of agent turns completed, tracked via streaming JSONL progress events"
+    t.string "unpublished_result_commit_sha", limit: 40, comment: "Local commit retained when publication is rejected; distinct from the last successfully published result_commit_sha."
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.bigint "work_item_id"
@@ -6863,12 +6865,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_013150) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL

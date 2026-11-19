@@ -382,6 +382,8 @@ class AgentRun < ApplicationRecord
   validates :base_commit_sha, length: { maximum: 40 }
   validates :approved_design_revision, length: { maximum: 40 }
   validates :result_commit_sha, length: { maximum: 40 }
+  validates :expected_remote_head_sha, length: { maximum: 40 }
+  validates :unpublished_result_commit_sha, length: { maximum: 40 }
   validates :pull_request_url, length: { maximum: 500 }
   validates :review_url, length: { maximum: 500 }
   validates :temporal_workflow_id, length: { maximum: 255 }

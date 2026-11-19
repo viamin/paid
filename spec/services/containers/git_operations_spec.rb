@@ -512,7 +512,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(Containers::Provision::Result.success(stdout: "#{merge_base_sha}\n", stderr: "", exit_code: 0))
     end
 
-    it "clones and checks out the existing branch via fetch" do
+    it "clones and checks out the existing branch via fetch" do # @spec PR-BRANCH-PUBLISH-001
       # First switch attempt fails (branch not local yet in shallow clone)
       allow(container_service).to receive(:execute)
         .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
@@ -531,11 +531,33 @@ RSpec.describe Containers::GitOperations do
         .with([ "git", "checkout", "-B", "fix-bug-branch", "refs/remotes/origin/fix-bug-branch" ], timeout: nil, stream: false)
         .and_return(success_result)
 
+      # First rev-parse HEAD (clone_repo's "already cloned?" check) reports
+      # not-a-repo so the clone proceeds; the second (this method's own
+      # admission capture, after checkout) reports the checked-out tip.
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result, Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0))
+
       git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
 
-      expect(agent_run.reload.branch_name).to eq("fix-bug-branch")
-      expect(agent_run.worktree_path).to eq("/workspace")
-      expect(agent_run.base_commit_sha).to eq(merge_base_sha)
+      expect_admitted_branch_state
+    end
+
+    it "does not overwrite an already-recorded expected_remote_head_sha on a retried checkout" do # @spec PR-BRANCH-PUBLISH-002
+      preadmitted_sha = "9999999999999999999999999999999999999999"
+      agent_run.update!(expected_remote_head_sha: preadmitted_sha)
+
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+
+      expect(agent_run.reload.expected_remote_head_sha).to eq(preadmitted_sha)
     end
 
     it "skips clone and fetch when branch already exists locally (idempotent retry)" do
@@ -591,9 +613,14 @@ RSpec.describe Containers::GitOperations do
           .with([ "git", "fetch", "origin", "refs/pull/42/head:deleted-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(success_result)
 
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+          .and_return(not_a_repo_result, Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0))
+
         git_ops.clone_and_checkout_branch(branch_name: "deleted-branch", pull_request_number: 42)
 
         expect(agent_run.reload.branch_name).to eq("deleted-branch")
+        expect(agent_run.expected_remote_head_sha).to eq(head_sha)
       end
 
       it "raises CloneError when PR ref fetch also fails" do
@@ -628,13 +655,27 @@ RSpec.describe Containers::GitOperations do
 
       expect(agent_run.reload.base_commit_sha).to eq(head_sha)
     end
+
+    def expect_admitted_branch_state
+      expect(agent_run.reload).to have_attributes(
+        branch_name: "fix-bug-branch",
+        worktree_path: "/workspace",
+        base_commit_sha: merge_base_sha,
+        expected_remote_head_sha: head_sha
+      )
+    end
   end
 
   describe "#push_branch" do
     let(:head_sha) { "def456789012345678901234567890abcdef1234" }
+    let(:admitted_sha) { "aaa1111111111111111111111111111111111111" }
     let(:remote_sha) { "abc9999999999999999999999999999999999999" }
-    let(:bot_identity) { Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com") }
-    let(:stale_push_result) do
+
+    def bot_identity
+      Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com")
+    end
+
+    def stale_push_result
       Containers::Provision::Result.failure(
         error: "Command exited with code 1",
         stdout: "",
@@ -753,129 +794,162 @@ RSpec.describe Containers::GitOperations do
       end
     end
 
-    it "uses --force-with-lease for existing PR branches" do
-      agent_run.update!(source_pull_request_number: 42)
+    context "with an existing PR branch" do
+      before do
+        agent_run.update!(source_pull_request_number: 42, expected_remote_head_sha: admitted_sha)
+      end
 
-      allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
-        .and_return(success_result)
+      it "uses the admission head as the --force-with-lease expectation, without a preflight fetch" do # @spec PR-BRANCH-PUBLISH-003
+        expect(container_service).not_to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
 
-      allow(container_service).to receive(:execute)
-        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
-        .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
+        expect_push_with_lease(admitted_sha, success_result)
 
-      expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
-        .and_return(success_result)
+        git_ops.push_branch
+      end
 
-      git_ops.push_branch
-    end
+      it "prefers the run's own last published SHA over the admission head once one exists" do # @spec PR-BRANCH-PUBLISH-003
+        agent_run.update!(result_commit_sha: remote_sha)
 
-    it "fetches the remote branch before pushing on existing PR branches" do
-      agent_run.update!(source_pull_request_number: 42)
+        expect_push_with_lease(remote_sha, success_result)
 
-      expect_refresh_remote_branch(remote_sha, ordered: true)
-      expect_push_with_lease(remote_sha, success_result, ordered: true)
+        git_ops.push_branch
+      end
 
-      git_ops.push_branch
-    end
+      # Lost-update regression: a contributor published Y (remote_sha) while
+      # this run was still admitted at X (admitted_sha). A push that used a
+      # freshly fetched remote SHA as its own lease expectation would see Y
+      # and report itself as matching, silently discarding Y. The fix must
+      # instead let the lease reject against the immutable admission value,
+      # then rebase onto Y so Y stays an ancestor of what gets published.
+      it "rebases onto a concurrently published commit instead of silently overwriting it" do # @spec PR-BRANCH-PUBLISH-005, PR-BRANCH-PUBLISH-007
+        expect_push_with_lease(admitted_sha, stale_push_result, ordered: true)
+        expect_not_shallow_repo(ordered: true)
+        expect_refresh_remote_branch(remote_sha, ordered: true)
+        expect_git_identity_config(ordered: true)
 
-    it "does not fetch before pushing on new branches" do
-      expect(container_service).not_to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
+          .and_return(success_result)
+          .ordered
 
-      git_ops.push_branch
-    end
+        expect_push_with_lease(remote_sha, success_result, ordered: true)
 
-    it "raises PushError when fetch fails on existing PR branch" do
-      agent_run.update!(source_pull_request_number: 42)
+        git_ops.push_branch
 
-      allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
-        .and_return(failure_result)
+        expect(agent_run.reload.result_commit_sha).to eq(head_sha)
+        expect(agent_run.unpublished_result_commit_sha).to be_nil # @spec PR-BRANCH-PUBLISH-012
+      end
 
-      expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Fetch failed/)
-    end
+      it "raises PushError when rebasing after a stale rejection conflicts, preserving local commits" do # @spec PR-BRANCH-PUBLISH-006
+        rebase_failure = Containers::Provision::Result.failure(
+          error: "Command exited with code 1",
+          stdout: "",
+          stderr: "CONFLICT (content): Merge conflict in app/models/example.rb",
+          exit_code: 1
+        )
 
-    it "raises PushError with remote ref context when remote SHA resolution fails" do
-      agent_run.update!(source_pull_request_number: 42)
-      rev_parse_failure = Containers::Provision::Result.failure(
-        error: "Command exited with code 128",
-        stdout: "",
-        stderr: "fatal: ambiguous argument 'refs/remotes/origin/paid/test-branch'",
-        exit_code: 128
-      )
+        expect_push_with_lease(admitted_sha, stale_push_result, ordered: true)
+        expect_not_shallow_repo(ordered: true)
+        expect_refresh_remote_branch(remote_sha, ordered: true)
+        expect_git_identity_config(ordered: true)
 
-      allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
-        .and_return(success_result)
+        expect_failed_rebase(rebase_failure)
 
-      allow(container_service).to receive(:execute)
-        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
-        .and_return(rev_parse_failure)
+        expect { git_ops.push_branch }.to raise_error(
+          described_class::PushError,
+          /Rebase onto origin\/paid\/test-branch failed after branch advanced remotely/
+        )
+        expect(agent_run.reload.result_commit_sha).to be_nil
+        expect(agent_run.unpublished_result_commit_sha).to eq(head_sha) # @spec PR-BRANCH-PUBLISH-012
+      end
 
-      expect { git_ops.push_branch }.to raise_error(
-        described_class::PushError,
-        /refs\/remotes\/origin\/paid\/test-branch/
-      )
-    end
+      # Covers a race after the recovery preflight: a second concurrent push
+      # (beyond the one that caused the first rejection) lands between the
+      # recovery fetch and the retry push. Bounded recovery means this raises
+      # rather than attempting a further rebase-and-retry loop.
+      it "raises PushError describing the changed head when a further concurrent push lands during recovery" do # @spec PR-BRANCH-PUBLISH-008
+        expect_push_with_lease(admitted_sha, stale_push_result, ordered: true)
+        expect_not_shallow_repo(ordered: true)
+        expect_refresh_remote_branch(remote_sha, ordered: true)
+        expect_git_identity_config(ordered: true)
 
-    it "refreshes the explicit remote-tracking ref before resolving the lease SHA" do
-      agent_run.update!(source_pull_request_number: 42)
+        expect(container_service).to receive(:execute)
+          .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
+          .and_return(success_result)
+          .ordered
 
-      expect(container_service).to receive(:execute)
-        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
-        .and_return(success_result)
-        .ordered
+        expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
 
-      expect(container_service).to receive(:execute)
-        .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
-        .and_return(Containers::Provision::Result.success(stdout: "#{remote_sha}\n", stderr: "", exit_code: 0))
-        .ordered
+        expect { git_ops.push_branch }.to raise_error(
+          described_class::PushError,
+          /remote head for paid\/test-branch changed again during recovery/
+        )
+        expect(agent_run.reload.result_commit_sha).to be_nil
+        expect(agent_run.unpublished_result_commit_sha).to eq(head_sha) # @spec PR-BRANCH-PUBLISH-012
+      end
 
-      expect(container_service).to receive(:execute)
-        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
-        .and_return(success_result)
-        .ordered
+      it "raises PushError when the recovery fetch fails" do
+        expect_push_with_lease(admitted_sha, stale_push_result, ordered: true)
+        expect_not_shallow_repo(ordered: true)
 
-      git_ops.push_branch
-    end
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .and_return(failure_result)
 
-    it "rebases onto the refreshed remote branch after a stale info rejection" do
-      agent_run.update!(source_pull_request_number: 42)
-      refreshed_remote_sha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        expect { git_ops.push_branch }.to raise_error(described_class::PushError, /Fetch failed/)
+      end
 
-      expect_refresh_remote_branch(remote_sha, ordered: true)
-      expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
-      expect_not_shallow_repo(ordered: true)
-      expect_refresh_remote_branch(refreshed_remote_sha, ordered: true)
-      expect_git_identity_config(ordered: true)
+      it "raises PushError with remote ref context when the recovery's remote SHA resolution fails" do
+        rev_parse_failure = Containers::Provision::Result.failure(
+          error: "Command exited with code 128",
+          stdout: "",
+          stderr: "fatal: ambiguous argument 'refs/remotes/origin/paid/test-branch'",
+          exit_code: 128
+        )
 
-      expect(container_service).to receive(:execute)
-        .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
-        .and_return(success_result)
-        .ordered
+        expect_push_with_lease(admitted_sha, stale_push_result, ordered: true)
+        expect_not_shallow_repo(ordered: true)
 
-      expect_push_with_lease(refreshed_remote_sha, success_result, ordered: true)
+        allow(container_service).to receive(:execute)
+          .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .and_return(success_result)
 
-      git_ops.push_branch
-    end
+        allow(container_service).to receive(:execute)
+          .with([ "git", "rev-parse", "refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false)
+          .and_return(rev_parse_failure)
 
-    it "raises PushError when rebasing after stale info fails" do
-      agent_run.update!(source_pull_request_number: 42)
-      rebase_failure = Containers::Provision::Result.failure(
-        error: "Command exited with code 1",
-        stdout: "",
-        stderr: "CONFLICT (content): Merge conflict in app/models/example.rb",
-        exit_code: 1
-      )
+        expect { git_ops.push_branch }.to raise_error(
+          described_class::PushError,
+          /refs\/remotes\/origin\/paid\/test-branch/
+        )
+      end
 
-      expect_stale_info_recovery_rebase_failure(rebase_failure)
+      it "falls back to a fresh fetch and warns when no admission head is recorded (legacy run)" do # @spec PR-BRANCH-PUBLISH-004
+        agent_run.update!(expected_remote_head_sha: nil)
 
-      expect { git_ops.push_branch }.to raise_error(
-        described_class::PushError,
-        /Rebase onto origin\/paid\/test-branch failed after branch advanced remotely/
-      )
+        expect(Rails.logger).to receive(:warn).with(
+          hash_including(message: "container_git.missing_expected_remote_head", agent_run_id: agent_run.id)
+        )
+        expect_refresh_remote_branch(remote_sha, ordered: true)
+        expect_push_with_lease(remote_sha, success_result, ordered: true)
+
+        git_ops.push_branch
+      end
+
+      it "reads the expected head from this agent run only, never a sibling run's" do # @spec PR-BRANCH-PUBLISH-011
+        other_run = create(
+          :agent_run, :running, project: project, runner: runner,
+          branch_name: "paid/other-branch", source_pull_request_number: 7,
+          expected_remote_head_sha: "ffffffffffffffffffffffffffffffffffffffff"
+        )
+
+        expect_push_with_lease(admitted_sha, success_result)
+
+        git_ops.push_branch
+
+        expect(other_run.reload.expected_remote_head_sha).to eq("ffffffffffffffffffffffffffffffffffffffff")
+      end
     end
 
     it "raises PushError when branch_name is blank" do
@@ -978,22 +1052,97 @@ RSpec.describe Containers::GitOperations do
       receive_check.ordered if ordered
     end
 
-    def expect_stale_info_recovery_rebase_failure(rebase_failure)
-      expect_refresh_remote_branch(remote_sha, ordered: true)
-      expect_push_with_lease(remote_sha, stale_push_result, ordered: true)
-      expect_not_shallow_repo(ordered: true)
-      expect_refresh_remote_branch("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ordered: true)
-      expect_git_identity_config(ordered: true)
-
+    def expect_failed_rebase(result)
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "origin/paid/test-branch" ], timeout: nil, stream: false)
-        .and_return(rebase_failure)
+        .and_return(result)
         .ordered
-
       expect(container_service).to receive(:execute)
         .with([ "git", "rebase", "--abort" ], timeout: nil, stream: false)
         .and_return(success_result)
         .ordered
+    end
+  end
+
+  describe "#push_force_with_lease" do
+    let(:head_sha) { "def456789012345678901234567890abcdef1234" }
+    let(:admitted_sha) { "aaa1111111111111111111111111111111111111" }
+    let(:remote_sha) { "abc9999999999999999999999999999999999999" }
+
+    def bot_identity
+      Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com")
+    end
+
+    def stale_push_result
+      Containers::Provision::Result.failure(
+        error: "Command exited with code 1",
+        stdout: "",
+        stderr: " ! [rejected] paid/test-branch -> paid/test-branch (stale info)",
+        exit_code: 1
+      )
+    end
+
+    before do
+      agent_run.update!(branch_name: "paid/test-branch")
+      create(:worktree, project: project, agent_run: agent_run, branch_name: "paid/test-branch", status: "active")
+      allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+    end
+
+    def expect_force_push(sha, result)
+      expect(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(result)
+    end
+
+    it "uses the run's last published SHA as the lease expectation, without a preflight fetch" do # @spec PR-BRANCH-PUBLISH-009
+      agent_run.update!(result_commit_sha: remote_sha)
+
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/paid/test-branch:refs/remotes/origin/paid/test-branch" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+      expect_force_push(remote_sha, success_result)
+
+      expect(git_ops.push_force_with_lease).to eq(head_sha)
+    end
+
+    it "falls back to the admission head when the run has not yet published" do # @spec PR-BRANCH-PUBLISH-009
+      agent_run.update!(expected_remote_head_sha: admitted_sha)
+
+      expect_force_push(admitted_sha, success_result)
+
+      git_ops.push_force_with_lease
+    end
+
+    it "marks the worktree as pushed and records result_commit_sha on success" do
+      agent_run.update!(result_commit_sha: remote_sha)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "push", "--no-verify", "origin", "paid/test-branch", "--force-with-lease=paid/test-branch:#{remote_sha}" ], timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      git_ops.push_force_with_lease
+
+      expect(agent_run.reload.result_commit_sha).to eq(head_sha)
+      expect(agent_run.unpublished_result_commit_sha).to be_nil # @spec PR-BRANCH-PUBLISH-012
+      expect(agent_run.worktree.reload).to be_pushed
+    end
+
+    it "raises PushError without retrying when the lease is rejected as stale (lost-update guard)" do # @spec PR-BRANCH-PUBLISH-010
+      agent_run.update!(result_commit_sha: remote_sha)
+      expect_force_push(remote_sha, stale_push_result)
+
+      expect { git_ops.push_force_with_lease }.to raise_error(described_class::PushError, /Force push failed/)
+      expect(agent_run.reload.result_commit_sha).to eq(remote_sha)
+      expect(agent_run.unpublished_result_commit_sha).to eq(head_sha) # @spec PR-BRANCH-PUBLISH-012
+    end
+
+    it "raises PushError when branch_name is blank" do
+      agent_run.update!(branch_name: nil)
+
+      expect { git_ops.push_force_with_lease }.to raise_error(described_class::PushError, /branch_name is blank/)
     end
   end
 

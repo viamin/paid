@@ -294,10 +294,11 @@ module Containers
     # @param pull_request_number [Integer, nil] PR number for fallback fetch
     # @return [void]
     # @raise [CloneError] when clone or checkout fails
-    def clone_and_checkout_branch(branch_name:, pull_request_number: nil, persist: true)
+    def clone_and_checkout_branch(branch_name:, pull_request_number: nil, persist: true) # @spec PR-BRANCH-PUBLISH-001, PR-BRANCH-PUBLISH-002
       clone_repo
       configure_git_identity!
       checkout_remote_branch(branch_name, pull_request_number: pull_request_number)
+      admitted_head_sha = head_sha
       base_sha = record_merge_base
 
       return unless persist
@@ -305,7 +306,8 @@ module Containers
       agent_run.update!(
         worktree_path: "/workspace",
         branch_name: branch_name,
-        base_commit_sha: base_sha
+        base_commit_sha: base_sha,
+        expected_remote_head_sha: agent_run.expected_remote_head_sha || admitted_head_sha
       )
     end
 
@@ -370,6 +372,7 @@ module Containers
     # @raise [PushError] when the push fails
     def push_branch
       validate_branch_name!
+      preserve_unpublished_result!(head_sha)
 
       # Defensive: a prior attempt hard-killed mid-retry could leave the flag
       # set, which would route this first push to the PAT. Clear it so the App
@@ -389,7 +392,7 @@ module Containers
       raise PushError, "Push failed: #{error_with_stderr(result)}" if result.failure?
 
       sha = head_sha
-      agent_run.update!(result_commit_sha: sha)
+      record_published_result!(sha)
       agent_run.worktree&.mark_pushed!
 
       sha
@@ -708,16 +711,16 @@ module Containers
     #
     # @return [String] the result commit SHA
     # @raise [PushError] when the push fails
-    def push_force_with_lease
+    def push_force_with_lease # @spec PR-BRANCH-PUBLISH-009, PR-BRANCH-PUBLISH-010
       validate_branch_name!
+      preserve_unpublished_result!(head_sha)
 
-      expected_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
-      result = push_with_lease(expected_remote_sha)
+      result = push_with_lease(expected_remote_head_for_publish)
 
       raise PushError, "Force push failed: #{error_with_stderr(result)}" if result.failure?
 
       sha = head_sha
-      agent_run.update!(result_commit_sha: sha)
+      record_published_result!(sha)
       agent_run.worktree&.mark_pushed!
 
       sha
@@ -786,15 +789,72 @@ module Containers
       recover_existing_new_branch_push(result)
     end
 
-    def push_existing_pr_branch
-      expected_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
-      result = push_with_lease(expected_remote_sha)
+    def push_existing_pr_branch # @spec PR-BRANCH-PUBLISH-003, PR-BRANCH-PUBLISH-005, PR-BRANCH-PUBLISH-006, PR-BRANCH-PUBLISH-007, PR-BRANCH-PUBLISH-008
+      expected_sha = expected_remote_head_for_publish
+      result = push_with_lease(expected_sha)
       return result unless stale_info_rejection?(result)
 
+      recover_from_changed_remote_head(expected_sha)
+    end
+
+    # The immutable baseline this push is entitled to overwrite: this run's
+    # own last verified publish to this exact branch, or — before any publish
+    # has succeeded — the PR tip recorded at checkout admission
+    # (AgentRun#expected_remote_head_sha). Deliberately never a SHA read from
+    # a `git fetch` issued by this same push attempt: that would always
+    # report the remote as matching itself, defeating --force-with-lease.
+    # See docs/intent/pr-branch-publish-integrity.
+    def expected_remote_head_for_publish # @spec PR-BRANCH-PUBLISH-003, PR-BRANCH-PUBLISH-004, PR-BRANCH-PUBLISH-011
+      agent_run.result_commit_sha.presence ||
+        agent_run.expected_remote_head_sha.presence ||
+        legacy_fetched_remote_head
+    end
+
+    # Persist the completed local revision before the network mutation. A
+    # rejected lease therefore leaves an exact, inspectable recovery target,
+    # while result_commit_sha remains reserved for a revision Git accepted.
+    def preserve_unpublished_result!(sha) # @spec PR-BRANCH-PUBLISH-012
+      agent_run.update!(unpublished_result_commit_sha: sha)
+    end
+
+    def record_published_result!(sha)
+      agent_run.update!(result_commit_sha: sha, unpublished_result_commit_sha: nil)
+    end
+
+    # Runs admitted before expected_remote_head_sha existed have no immutable
+    # baseline recorded. Fall back to the prior fetch-then-lease behavior
+    # rather than blocking the push, but make the degraded path visible.
+    def legacy_fetched_remote_head
+      Rails.logger.warn(
+        message: "container_git.missing_expected_remote_head",
+        agent_run_id: agent_run.id,
+        branch_name: agent_run.branch_name
+      )
+      refresh_remote_branch_sha!(agent_run.branch_name)
+    end
+
+    def recover_from_changed_remote_head(expected_sha)
       ensure_rebase_history!(agent_run.branch_name)
-      refreshed_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
+      actual_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
       recover_branch_drift!(agent_run.branch_name)
-      push_with_lease(refreshed_remote_sha)
+
+      result = push_with_lease(actual_remote_sha)
+      raise_changed_head_again!(expected_sha, actual_remote_sha) if stale_info_rejection?(result)
+
+      result
+    end
+
+    # A second stale-info rejection means another writer landed a commit
+    # between the fetch above and this retry push. Surface it explicitly
+    # rather than looping: the run's commits stay in the container, ready
+    # for a Temporal retry or manual replay to resolve against whatever the
+    # remote is by then.
+    def raise_changed_head_again!(expected_sha, rebased_onto_sha)
+      raise PushError,
+        "Push failed: remote head for #{agent_run.branch_name} changed again during recovery " \
+        "(originally expected #{expected_sha}, rebased onto #{rebased_onto_sha}, but another push " \
+        "landed before the retry). Local commits were not discarded or overwritten; retry to " \
+        "resolve against the current remote head."
     end
 
     def ensure_rebase_history!(branch)
