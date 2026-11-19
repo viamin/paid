@@ -218,6 +218,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         )
       end
 
+      # @spec CHAT-API-026 CHAT-SESSION-PREFERENCES-003
+      it "records automatic provenance without stale requests when re-pinning a runnerless session" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test", api_service_type: "openai")
+        fallback_runner = create(:runner, :api_key, user: user, runner_key: "opencode", provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "openai", "model" => "chat-mid-only" } })
+        model = LlmModel.find_or_initialize_by(model_id: "chat-mid-only")
+        model.assign_attributes(provider: "openai", display_name: "Chat Mid Only", category: "coding",
+          tier: "mid", capability_score: 8.0, pricing_tier: "paid", catalog_source: "seeded", supports_tools: true, active: true)
+        model.save!
+        session = create(:chat_session, account: account, created_by: user, model: "stale-user-choice",
+          metadata: { "requested_model" => "stale-user-choice", "requested_model_selection" => "explicit" })
+
+        expect(described_class.call(chat_session: session).model).to eq("chat-mid-only")
+        expect(session.reload).to have_attributes(runner: fallback_runner, model: "chat-mid-only")
+        expect(session.metadata).to include(
+          "requested_model_selection" => "automatic",
+          "effective_runner_id" => fallback_runner.id
+        )
+        expect(session.metadata).not_to include("requested_model", "requested_runner_id")
+      end
+
       it "returns an HttpClient with OpenAICompatibleTransport" do
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")
         runner = create(:runner, :api_key,

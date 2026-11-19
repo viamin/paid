@@ -260,7 +260,7 @@ module ChatSessions
       return nil unless runner
       return nil if runner.free_model_policy?
 
-      curated_model_for(runner).model_id
+      curated_resolution_for(runner).option.model_id
     end
 
     def session_metadata
@@ -268,13 +268,13 @@ module ChatSessions
       return metadata.presence || {} if resolved_runner.nil?
       return metadata.presence || {} if resolved_runner.free_model_policy?
 
-      automatic_selection_metadata(curated_model_for(resolved_runner))
+      automatic_selection_metadata(curated_resolution_for(resolved_runner))
     end
 
-    def curated_model_for(runner)
+    def curated_resolution_for(runner)
       # @spec CHAT-API-026
       resolution = CuratedModelOptions.resolve_with_diagnostics(runner:, projects: policy_projects)
-      return resolution.option if resolution.option
+      return resolution if resolution.option
 
       raise ModelUnavailableError.new(runner:, rejection_reasons: resolution.rejection_reasons)
     end
@@ -293,15 +293,21 @@ module ChatSessions
       ).compact
     end
 
+    # Mirrors BuildLlmClient#automatic_selection_metadata: an automatic
+    # selection carries no model request, so caller-supplied metadata cannot
+    # leave stale explicit-request keys behind.
     def automatic_selection_metadata(resolution)
+      option = resolution.option
       (metadata.presence || {}).merge(
-        "model_tier" => resolution.tier,
-        "requested_model_tier" => "low",
+        "requested_model" => nil,
+        "requested_runner_id" => nil,
+        "model_tier" => option.tier,
+        "requested_model_tier" => resolution.requested_tier,
         "requested_model_selection" => "automatic",
-        "effective_model" => resolution.model_id,
-        "effective_tier" => resolution.tier,
+        "effective_model" => option.model_id,
+        "effective_tier" => option.tier,
         "effective_runner_id" => resolved_runner.id,
-        "model_substitution_reason" => resolution.tier == "low" ? nil : "preferred_tier_unavailable"
+        "model_substitution_reason" => resolution.substitution_reason&.to_s
       ).compact
     end
 

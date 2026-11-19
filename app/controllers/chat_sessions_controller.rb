@@ -375,6 +375,7 @@ class ChatSessionsController < ApplicationController
       "requested_model" => selection.model_id,
       "requested_runner_id" => selection.runner_id,
       "requested_model_selection" => "explicit",
+      "requested_model_tier" => nil,
       "effective_model" => selection.model_id,
       "effective_tier" => selection.tier,
       "effective_runner_id" => selection.runner_id,

@@ -1550,6 +1550,23 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.reload.metadata).not_to include("model_tier", "requested_model_tier", "effective_tier")
       end
 
+      # @spec CHAT-API-026 CHAT-SESSION-PREFERENCES-003
+      it "clears stale tier provenance when selecting a curated model after automatic selection" do
+        chat_session.update!(metadata: { "requested_model_selection" => "automatic", "requested_model_tier" => "low" })
+        runner = create_openai_chat_runner
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.tier == "mid" }
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_model: selection.value }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include(
+          "requested_model" => "gpt-5.6-terra",
+          "requested_model_selection" => "explicit",
+          "requested_model_tier" => nil
+        )
+        expect(chat_session.reload.metadata).not_to include("requested_model_tier")
+      end
+
       # @spec CHAT-THINKING-EFFORT-002 CHAT-THINKING-EFFORT-005
       it "leaves default thinking effort absent when a model-only update changes the effective model" do
         system_message = create(:chat_message, chat_session: chat_session, role: "system", content: "Existing system message")

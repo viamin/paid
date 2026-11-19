@@ -26,6 +26,19 @@ RSpec.describe ChatSessions::CuratedModelOptions do
     expect(described_class.resolve(runner:, tier: "high")).to have_attributes(model_id: high.model_id, tier: "high")
   end
 
+  # @spec CHAT-API-026
+  it "reports a tier-mapping gap separately from operator policy" do
+    create(:llm_model, :openai, tier: nil, supports_tools: true)
+
+    resolution = described_class.resolve_with_diagnostics(runner:)
+
+    expect(resolution.option).to be_nil
+    expect(resolution.rejection_reasons).to eq([ :tier_unavailable ])
+    expect(
+      ChatSessions::ModelUnavailableError.new(runner:, rejection_reasons: resolution.rejection_reasons).message
+    ).to include("curated Low, Medium, or High tier")
+  end
+
   # @spec ONBOARD-CHAT-014
   it "does not let stale unavailable evidence suppress a Low-tier onboarding model" do
     model = create(:llm_model, :openai, tier: "low", supports_tools: true)

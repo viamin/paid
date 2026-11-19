@@ -205,6 +205,24 @@ RSpec.describe ChatSessions::Create do
       )
     end
 
+    # @spec CHAT-API-026
+    it "drops stale explicit request provenance when selecting a model automatically" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "chat-mid-only" } })
+      model = LlmModel.find_or_initialize_by(model_id: "chat-mid-only")
+      model.assign_attributes(provider: "openai", display_name: "Chat Mid Only", category: "coding",
+        tier: "mid", capability_score: 8.0, pricing_tier: "paid", catalog_source: "seeded", supports_tools: true, active: true)
+      model.save!
+
+      session = described_class.call(account: account, user: user, runner_id: runner.id,
+        metadata: { "requested_model" => "stale-user-choice", "requested_runner_id" => 999_999,
+                    "requested_model_selection" => "explicit" })
+
+      expect(session.metadata).to include("requested_model_selection" => "automatic", "effective_model" => "chat-mid-only")
+      expect(session.metadata).not_to include("requested_model", "requested_runner_id")
+    end
+
     # @spec CHAT-API-018
     it "leaves a new free-policy chat unpinned for per-request model selection" do
       runner = create(:runner, :api_key, user: user, runner_key: "opencode",

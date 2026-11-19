@@ -164,21 +164,28 @@ module ChatSessions
 
       # @spec CHAT-THINKING-EFFORT-007
       metadata = ThinkingEffort.normalize_metadata(
-        metadata: automatic_selection_metadata(option, resolution),
+        metadata: automatic_selection_metadata(runner, resolution),
         model_id: option.model_id
       )
       chat_session.update!(runner:, model: option.model_id, metadata: metadata)
       option.model_id
     end
 
-    def automatic_selection_metadata(option, resolution)
+    # An automatic selection carries no model request: stale requested_model
+    # keys from an earlier explicit choice must not survive next to
+    # "requested_model_selection" => "automatic" and read as a user
+    # preference later (for example in FallbackRunners.fallback_metadata).
+    def automatic_selection_metadata(runner, resolution)
+      option = resolution.option
       chat_session.metadata.merge(
+        "requested_model" => nil,
+        "requested_runner_id" => nil,
         "model_tier" => option.tier,
         "requested_model_tier" => resolution.requested_tier,
         "requested_model_selection" => "automatic",
         "effective_model" => option.model_id,
         "effective_tier" => option.tier,
-        "effective_runner_id" => chat_session.runner_id,
+        "effective_runner_id" => runner.id,
         "model_substitution_reason" => resolution.substitution_reason&.to_s
       ).compact
     end

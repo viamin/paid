@@ -88,8 +88,10 @@ module ChatSessions
       return [ :verified_model_restriction ] if verified.empty?
 
       permitted = verified.select { |model| policy_permitted?(model) }
-      return [ :operator_policy ] if permitted.empty?
-      [ :operator_policy ]
+      # Reaching here with a non-empty permitted set means every compatible
+      # model carries a tier outside the curated TIERS mapping (for example
+      # nil), which is a tier-mapping gap rather than a policy exclusion.
+      [ permitted.empty? ? :operator_policy : :tier_unavailable ]
     end
     public :rejection_reasons
 
