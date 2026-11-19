@@ -2,7 +2,7 @@
 
 ## Expected remote head identity
 
-- [x] **PR-BRANCH-PUBLISH-001**: When `GitOperations#clone_and_checkout_branch` checks out an existing PR's remote branch and persists admission state, the system shall record the checked-out HEAD SHA as `AgentRun#expected_remote_head_sha` if no value is already recorded for that run.
+- [x] **PR-BRANCH-PUBLISH-001**: When `GitOperations#clone_and_checkout_branch` checks out an existing PR's remote branch and persists admission state, the system shall atomically record the checked-out HEAD SHA as `AgentRun#expected_remote_head_sha` only if no value is already recorded for that run.
 - [x] **PR-BRANCH-PUBLISH-002**: The system shall never overwrite an already-recorded `AgentRun#expected_remote_head_sha` on a subsequent checkout of the same run.
 
 ## Lease expectation source
@@ -28,4 +28,4 @@
 
 ## Rejected local result retention
 
-- [x] **PR-BRANCH-PUBLISH-012**: Before attempting a publish, the system shall persist the local HEAD as `AgentRun#unpublished_result_commit_sha`; if publication is rejected, that exact revision shall remain available for recovery, while a successful publish shall move the published HEAD to `result_commit_sha` and clear the unpublished value.
+- [x] **PR-BRANCH-PUBLISH-012**: Before attempting a publish, the system shall persist the local HEAD as `AgentRun#unpublished_result_commit_sha`; if publication is rejected after a recovery rebase, it shall persist the rebased local HEAD before the retry so that exact rejected revision remains available for recovery, while a successful publish shall move the published HEAD to `result_commit_sha` and clear the unpublished value.

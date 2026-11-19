@@ -50,9 +50,9 @@ re-derived from a live fetch at push time:
    out the remote branch, before the agent makes any commits. This is the
    actual PR tip the run started from — not `base_commit_sha` (merge-base
    with the default branch, used for diff/review framing) and not a value
-   re-read later. Write-once: a retried checkout (same Temporal activity
-   attempt restarting before any push) does not overwrite an
-   already-recorded value.
+   re-read later. A conditional database update makes the assignment atomic:
+   a retried or overlapping checkout cannot overwrite an already-recorded
+   value.
 2. **Superseding value** — `AgentRun#result_commit_sha`, the SHA this run
    itself last successfully published to that exact branch. Once a run has
    pushed, it has verified (by successfully rebasing or pushing) that this
@@ -107,7 +107,8 @@ rebase, or a second rejected lease all raise `PushError` with the git stderr
 than returning as if the push had landed.
 
 Before either publication route performs its network mutation, it records the
-current local HEAD in `AgentRun#unpublished_result_commit_sha`. This remains
+current local HEAD in `AgentRun#unpublished_result_commit_sha`. After a clean
+recovery rebase, it records the rebased HEAD before the retry. This remains
 available in existing run records when Git rejects publication, giving the
 existing failure surfaces an exact revision for replay or manual recovery.
 `result_commit_sha` continues to mean a successfully published revision; on
@@ -134,7 +135,7 @@ gets pushed next.
 |---|---|---|---|
 | Source of the lease's expected SHA | Immutable per-run value (`expected_remote_head_sha` / `result_commit_sha`), never a value from a fetch issued by the same push attempt | Fresh `git fetch` + `rev-parse` immediately before each push (prior behavior) | The prior approach can never detect a concurrent change that landed before its own fetch — it always reports the remote as matching itself. An immutable value captured at admission is the only value that predates every possible concurrent writer during this run's working window. |
 | Where the admission value is captured | `clone_and_checkout_branch`, right after checkout, before any commit | Deriving it from `base_commit_sha` (merge-base with default branch) | `base_commit_sha` is explicitly the merge-base, not the PR tip — a long-lived PR branch diverges from the default branch, so merge-base understates how much of the branch's own history the run is entitled to overwrite. Using it as the lease SHA would make `--force-with-lease` reject (or silently mismatch) even the common, uncontested case. |
-| Idempotency of the admission capture | Write-once (`||=`-style): a retried checkout of the same run does not overwrite a previously recorded value | Re-capture on every checkout attempt | `clone_and_checkout_branch` can be retried by Temporal before any push happens. Re-capturing on every attempt is only a problem if a retry's local HEAD can differ from the first attempt's (it currently cannot, since no commits have been made yet), but pinning it write-once removes the dependency on that invariant and keeps the "admission" value meaning what its name says even if the checkout path grows a case where it can differ. |
+| Idempotency of the admission capture | Conditional database update: set the admission SHA only where the persisted value is null | Re-capture on every checkout attempt | `clone_and_checkout_branch` can be retried or overlapped by Temporal before any push happens. The conditional update admits exactly one checked-out tip and keeps the "admission" value immutable even when concurrent executions loaded a blank in-memory record. |
 | Recovery depth for `push_existing_pr_branch` | One rebase-and-retry attempt; a second rejection raises | An unbounded retry loop until the lease succeeds | The acceptance criteria explicitly rule out an unbounded retry loop. A second rejection means a second concurrent writer raced the first recovery; surfacing it (rather than looping) keeps the failure visible and keeps token/compute spend bounded. The run's commits are not discarded, so a subsequent Temporal retry or manual replay can still resolve it. |
 | Recovery depth for `push_force_with_lease` | None added; a stale-info rejection raises `PushError` as before | Add the same rebase-and-retry recovery as `push_existing_pr_branch` | This path already runs after an explicit rebase onto a *different* branch (the sibling run's branch, for conflict resolution) chosen by its caller. There is no well-defined "rebase onto the newer tip of my own branch" step to insert without redesigning `Conflicts::Resolve`'s rebase target, and the caller already converts the raised error into an actionable `manual` hold. Only the lease's expected-SHA source needed to change to close the lost-update gap on this route. |
 | Legacy runs with no recorded `expected_remote_head_sha` | Fall back to a fresh fetch (prior behavior) with a `warn` log | Raise, blocking the push | Runs admitted before this column existed have no immutable baseline recorded. Blocking them would turn a forward-looking safety fix into an outage for in-flight runs. The fallback is narrowly the prior behavior, logged so it is visible, and only reachable while no admission value exists. |

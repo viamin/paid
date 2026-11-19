@@ -303,11 +303,13 @@ module Containers
 
       return unless persist
 
+      AgentRun.where(id: agent_run.id, expected_remote_head_sha: nil)
+        .update_all(expected_remote_head_sha: admitted_head_sha, updated_at: Time.current)
+      agent_run.reload
       agent_run.update!(
         worktree_path: "/workspace",
         branch_name: branch_name,
-        base_commit_sha: base_sha,
-        expected_remote_head_sha: agent_run.expected_remote_head_sha || admitted_head_sha
+        base_commit_sha: base_sha
       )
     end
 
@@ -837,6 +839,7 @@ module Containers
       ensure_rebase_history!(agent_run.branch_name)
       actual_remote_sha = refresh_remote_branch_sha!(agent_run.branch_name)
       recover_branch_drift!(agent_run.branch_name)
+      preserve_unpublished_result!(head_sha)
 
       result = push_with_lease(actual_remote_sha)
       raise_changed_head_again!(expected_sha, actual_remote_sha) if stale_info_rejection?(result)

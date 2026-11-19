@@ -560,6 +560,27 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.reload.expected_remote_head_sha).to eq(preadmitted_sha)
     end
 
+    it "conditionally records the admission head to preserve an overlapping checkout's value" do # @spec PR-BRANCH-PUBLISH-001, PR-BRANCH-PUBLISH-002
+      sha_result = Containers::Provision::Result.success(stdout: "#{head_sha}\n", stderr: "", exit_code: 0)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(sha_result)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "switch", "--", "fix-bug-branch" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      queries = []
+      callback = ->(_name, _started, _finished, _unique_id, payload) { queries << payload[:sql] }
+
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        git_ops.clone_and_checkout_branch(branch_name: "fix-bug-branch")
+      end
+
+      expect(queries).to include(
+        a_string_matching(/UPDATE "agent_runs".*"expected_remote_head_sha".*WHERE.*"expected_remote_head_sha" IS NULL/)
+      )
+    end
+
     it "skips clone and fetch when branch already exists locally (idempotent retry)" do
       # On Temporal retry, rev-parse HEAD succeeds (clone already done)
       # and switch succeeds (branch already checked out).
@@ -682,6 +703,13 @@ RSpec.describe Containers::GitOperations do
         stderr: " ! [rejected] paid/test-branch -> paid/test-branch (stale info)",
         exit_code: 1
       )
+    end
+
+    def stub_head_shas(*shas)
+      results = shas.map { |sha| Containers::Provision::Result.success(stdout: "#{sha}\n", stderr: "", exit_code: 0) }
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(*results)
     end
 
     before do
@@ -869,6 +897,8 @@ RSpec.describe Containers::GitOperations do
       # recovery fetch and the retry push. Bounded recovery means this raises
       # rather than attempting a further rebase-and-retry loop.
       it "raises PushError describing the changed head when a further concurrent push lands during recovery" do # @spec PR-BRANCH-PUBLISH-008
+        rebased_head_sha = "fed456789012345678901234567890abcdef1234"
+        stub_head_shas(head_sha, rebased_head_sha)
         expect_push_with_lease(admitted_sha, stale_push_result, ordered: true)
         expect_not_shallow_repo(ordered: true)
         expect_refresh_remote_branch(remote_sha, ordered: true)
@@ -886,7 +916,7 @@ RSpec.describe Containers::GitOperations do
           /remote head for paid\/test-branch changed again during recovery/
         )
         expect(agent_run.reload.result_commit_sha).to be_nil
-        expect(agent_run.unpublished_result_commit_sha).to eq(head_sha) # @spec PR-BRANCH-PUBLISH-012
+        expect(agent_run.unpublished_result_commit_sha).to eq(rebased_head_sha) # @spec PR-BRANCH-PUBLISH-012
       end
 
       it "raises PushError when the recovery fetch fails" do
