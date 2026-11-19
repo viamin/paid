@@ -6,6 +6,7 @@ require "digest"
 require "faraday/retry"
 require "faraday/http_cache"
 require "net/http"
+require "timeout"
 require "uri"
 
 # GitHub API client wrapper with error handling and rate limit awareness.
@@ -29,6 +30,7 @@ class GithubClient
   RETRY_BACKOFF_FACTOR = 2
   ACTIONS_LOG_OPEN_TIMEOUT = 5
   ACTIONS_LOG_READ_TIMEOUT = 15
+  ACTIONS_LOG_TOTAL_TIMEOUT = 30
   MAX_ACTIONS_LOG_BYTES = 5.megabytes
   ACTIONS_LOG_BLOB_HOST_SUFFIX = ".blob.core.windows.net"
 
@@ -2205,17 +2207,19 @@ class GithubClient
   end
 
   def download_actions_log(uri)
-    Net::HTTP.start(
-      uri.host,
-      uri.port,
-      use_ssl: true,
-      open_timeout: ACTIONS_LOG_OPEN_TIMEOUT,
-      read_timeout: ACTIONS_LOG_READ_TIMEOUT
-    ) do |http|
-      request = Net::HTTP::Get.new(uri.request_uri, actions_log_download_headers)
-      result = nil
-      http.request(request) { |response| result = read_actions_log_response(response) }
-      result
+    Timeout.timeout(ACTIONS_LOG_TOTAL_TIMEOUT) do
+      Net::HTTP.start(
+        uri.host,
+        uri.port,
+        use_ssl: true,
+        open_timeout: ACTIONS_LOG_OPEN_TIMEOUT,
+        read_timeout: ACTIONS_LOG_READ_TIMEOUT
+      ) do |http|
+        request = Net::HTTP::Get.new(uri.request_uri, actions_log_download_headers)
+        result = nil
+        http.request(request) { |response| result = read_actions_log_response(response) }
+        result
+      end
     end
   rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError, SystemCallError, IOError, EOFError,
          OpenSSL::SSL::SSLError

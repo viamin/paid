@@ -1270,6 +1270,27 @@ RSpec.describe GithubClient do
     end
 
     # @spec GITHUB-SYNC-021
+    it "stops a signed-log download that keeps dripping chunks within the socket timeout" do
+      signed_url = "https://results.blob.core.windows.net/logs/789?sig=redacted"
+      response = Net::HTTPOK.new("1.1", "200", "OK")
+      http = instance_double(Net::HTTP)
+      stub_const("GithubClient::ACTIONS_LOG_TOTAL_TIMEOUT", 0.01)
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 302, headers: { "Location" => signed_url })
+      allow(Net::HTTP).to receive(:start).and_yield(http)
+      allow(http).to receive(:request).and_yield(response)
+      allow(response).to receive(:read_body) do |&consume|
+        loop do
+          consume.call("x")
+          Thread.pass
+        end
+      end
+
+      expect { client.check_run_log(repo, job_id: 789) }
+        .to raise_error(GithubClient::ApiError, "Actions job log download request failed")
+    end
+
+    # @spec GITHUB-SYNC-021
     it "refreshes an expired GitHub credential before obtaining the log redirect" do
       refreshed_token = "ghp_refreshed_token_123456789012345678901234"
       refresh = -> { refreshed_token }
