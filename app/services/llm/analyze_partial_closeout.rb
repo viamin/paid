@@ -19,7 +19,9 @@ module Llm
     # CLI-backed subscriptions need startup and reasoning time. Keep this below
     # the activity's 120s budget, allowing authentication and timeout cleanup.
     TIMEOUT = 60
-    RECOVERABLE_CATEGORIES = %w[timeout transport_error unsuccessful_response invalid_json invalid_assessment].freeze
+    # Malformed responses recover inside Request's bounded runner attempts. Only
+    # execution failures may escape into a Temporal activity retry.
+    RECOVERABLE_CATEGORIES = %w[timeout transport_error unsuccessful_response].freeze
     MAX_OPEN_ISSUES = 50
     # Bound shared with the deterministic reconciler; keep assessments
     # contract-valid BEFORE the activity persists them so a violating
