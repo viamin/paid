@@ -155,7 +155,12 @@
 
 - [x] **LAYERED-VERIFY-024** — A `layered_verification_audit` run SHALL
   execute the checks its verification plan selected
-  (`LAYERED-VERIFY-021`) — including the correspondence checks against
+  (`LAYERED-VERIFY-021`). The audit prompt SHALL supply each selected obligation's
+  canonical source path, external revision, framework and approval state, and each
+  correspondence claim's source/target references, abstraction boundaries and
+  assumptions as untrusted assessment inputs. Reported input revisions SHALL
+  distinguish the pinned code revision from the obligation's source revision.
+  Executed checks SHALL include the selected correspondence checks against
   `LayeredVerificationCorrespondenceClaim`s (`business_to_model`,
   `business_to_spec`, `spec_to_code`, `model_to_code`) and semantic-audit
   checks — and SHALL record each outcome as a `LayeredVerificationCheckResult`
