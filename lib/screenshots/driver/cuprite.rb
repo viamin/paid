@@ -45,6 +45,10 @@ module Screenshots
       end
 
       def wait_for_load
+        unless session.driver.wait_for_network_idle(timeout: 10)
+          raise Ferrum::TimeoutError, "Timed out waiting for screenshot page network activity to settle"
+        end
+
         session.has_no_css?("turbo-frame[busy]", wait: 5)
       end
 
