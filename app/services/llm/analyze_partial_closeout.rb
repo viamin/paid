@@ -379,13 +379,15 @@ module Llm
 
     def structural_invalid_fields(parsed)
       fields = []
+      fields << violation("gaps", "array with at most #{MAX_GAPS} entries", parsed["gaps"]) unless parsed["gaps"].is_a?(Array) && parsed["gaps"].size <= MAX_GAPS
+      fields << violation("criteria", "array with at most #{MAX_GAPS} entries when present", parsed["criteria"]) unless parsed["criteria"].nil? || (parsed["criteria"].is_a?(Array) && parsed["criteria"].size <= MAX_GAPS)
       Array(parsed["gaps"]).each_with_index do |gap, index|
         fields.concat(invalid_gap_fields(gap, index))
       end
       Array(parsed["criteria"]).each_with_index do |criterion, index|
         fields.concat(invalid_criterion_fields(criterion, index))
       end
-      fields << violation("next_action", "object", parsed["next_action"]) if parsed.key?("next_action") && !parsed["next_action"].is_a?(Hash)
+      fields.concat(invalid_next_action_fields(parsed["next_action"])) if parsed.key?("next_action")
       fields << violation("classification", "supported classification", parsed["classification"]) if parsed["classification"].present? && !VALID_CLASSIFICATIONS.include?(parsed["classification"])
       fields << violation("technical_authorizations", "human gap authorization reference", parsed["criteria"]) unless valid_technical_authorizations?(parsed)
       fields << violation("$", "valid partial-closeout assessment", "invalid") if fields.empty?
@@ -419,11 +421,24 @@ module Llm
       fields = []
       fields << violation("criteria[#{index}].criterion", "nonblank string", criterion["criterion"]) unless criterion["criterion"].is_a?(String) && criterion["criterion"].present?
       fields << violation("criteria[#{index}].state", "satisfied, unmet, or unknown", criterion["state"]) unless VALID_STATES.include?(criterion["state"])
+      fields << violation("criteria[#{index}].optional_fields", "strings when present", criterion) unless optional_strings?(criterion, %w[prerequisite technical_authorization_id])
       fields << violation("criteria[#{index}].owner_issue_number", "positive integer when present", criterion["owner_issue_number"]) unless valid_owner?(criterion)
       fields << violation("criteria[#{index}].prerequisite_kind", "human or external", criterion["prerequisite_kind"]) if criterion["prerequisite_kind"].present? && !%w[human external].include?(criterion["prerequisite_kind"])
       fields << violation("criteria[#{index}].validation_kind", "supported validation kind", criterion["validation_kind"]) if criterion["validation_kind"].present? && !%w[native tool_sidecar performance_measurement].include?(criterion["validation_kind"])
+      fields << violation("criteria[#{index}].technical_authorization_id", "validation kind when present", criterion["technical_authorization_id"]) if criterion["technical_authorization_id"].present? && criterion["validation_kind"].blank?
+      fields << violation("criteria[#{index}].technical_authorization_id", "non-human technical criterion", criterion["technical_authorization_id"]) if criterion["technical_authorization_id"].present? && criterion["prerequisite_kind"] == "human"
+      fields << violation("criteria[#{index}].validation_tool_name", "non-empty string for tool_sidecar", criterion["validation_tool_name"]) if criterion["validation_tool_name"].present? && !(criterion["validation_kind"] == "tool_sidecar" && criterion["validation_tool_name"].is_a?(String) && criterion["validation_tool_name"].present?)
       fields << violation("criteria[#{index}].validation_requirement_id", "enabled matching recipe", criterion["validation_requirement_id"]) if criterion["validation_requirement_id"].present? && !validation_recipe_ids.include?(criterion["validation_requirement_id"])
       fields << violation("criteria[#{index}].evidence", "valid evidence entries", criterion["evidence"]) unless valid_evidence?(criterion["evidence"])
+      fields
+    end
+
+    def invalid_next_action_fields(next_action)
+      return [ violation("next_action", "object", next_action) ] unless next_action.is_a?(Hash)
+
+      fields = []
+      fields << violation("next_action.kind", "nonblank string", next_action["kind"]) unless next_action["kind"].is_a?(String) && next_action["kind"].present?
+      fields << violation("next_action.explanation", "nonblank string", next_action["explanation"]) unless next_action["explanation"].is_a?(String) && next_action["explanation"].present?
       fields
     end
 
