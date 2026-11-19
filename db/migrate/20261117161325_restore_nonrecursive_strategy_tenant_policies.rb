@@ -2,6 +2,7 @@
 
 require_relative "20260511040425_fix_strategies_rls_infinite_recursion"
 
+# @spec POSTGRESQL-PERSISTENCE-013
 class RestoreNonrecursiveStrategyTenantPolicies < ActiveRecord::Migration[8.1]
   def up
     # Restore the final intended visibility, not recursive predicates captured
