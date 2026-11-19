@@ -40,7 +40,25 @@ RSpec.describe DevelopmentMemoryMonitoring do
     expect(queries.fetch("paid_goodjob").fetch("query")).to include("WHERE finished_at IS NULL")
     expect(compose.fetch("services").fetch("postgres-exporter").fetch("command")).to include("--no-collector.database")
     process = YAML.load_file(File.join(config_root, "processes.yml"))
-    expect(process.fetch("process_names").map { |group| group.fetch("name") }).to eq(%w[paid-puma paid-temporal-workers])
+    expect(process.fetch("process_names").map { |group| group.fetch("name") }).to eq(%w[paid-puma paid-temporal-poll paid-temporal-agent paid-temporal-both paid-temporal-workers])
+  end
+
+  # @spec OBSERVABILITY-006
+  it "assigns modes exclusively and preserves legacy worker coverage" do
+    groups = YAML.load_file(File.join(config_root, "processes.yml")).fetch("process_names")
+    matching_group = lambda do |command|
+      groups.find { |group| group.fetch("cmdline").all? { |pattern| Regexp.new(pattern).match?(command) } }&.fetch("name")
+    end
+
+    %w[poll agent both].each do |mode|
+      expect(matching_group.call("ruby bin/temporal_worker --mode=#{mode}")).to eq("paid-temporal-#{mode}")
+      expect(matching_group.call("/usr/local/bin/ruby bin/temporal_worker --mode=#{mode}")).to eq("paid-temporal-#{mode}")
+    end
+    expect(matching_group.call("ruby bin/temporal_worker")).to eq("paid-temporal-workers")
+    expect(matching_group.call("ruby bin/temporal_worker --mode=invalid")).to eq("paid-temporal-workers")
+    expect(matching_group.call("ruby bin/temporal_worker_helper")).to be_nil
+    procfile = File.read(File.join(root, "Procfile.dev"))
+    expect(procfile).to include("bin/temporal_worker --mode=poll", "bin/temporal_worker --mode=agent")
   end
 
   # @spec OBSERVABILITY-007

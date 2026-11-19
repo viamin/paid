@@ -2,6 +2,16 @@ process_names:
   - name: paid-puma
     comm: [ruby]
     cmdline: ['puma .*\[paid\]']
+  - name: paid-temporal-poll
+    comm: [ruby]
+    cmdline: ['^(?:\S*/)?ruby bin/temporal_worker --mode=poll$']
+  - name: paid-temporal-agent
+    comm: [ruby]
+    cmdline: ['^(?:\S*/)?ruby bin/temporal_worker --mode=agent$']
+  - name: paid-temporal-both
+    comm: [ruby]
+    cmdline: ['^(?:\S*/)?ruby bin/temporal_worker --mode=both$']
+  # Legacy workers stay visible until they restart with a mode-specific title.
   - name: paid-temporal-workers
     comm: [ruby]
-    cmdline: ['ruby bin/temporal_worker']
+    cmdline: ['^(?:\S*/)?ruby bin/temporal_worker(?: |$)']

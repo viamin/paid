@@ -19,6 +19,10 @@
   job activity through a narrow read-only aggregate, and both devcontainer
   worker endpoints every 15 seconds. It SHALL NOT repeatedly invoke Rails'
   broad metrics collector or PostgreSQL database-size scans.
+  Worker RSS and swap SHALL be distinguished by validated poll, agent, and
+  combined mode using fixed process groups matched by stable launch arguments.
+  Workers SHALL reject a launch mode conflicting with their environment mode.
+  Workers without a mode argument SHALL remain visible in an unclassified group.
   Metrics SHALL NOT contain SQL text, credentials, or command lines as labels.
   Configuration delivery SHALL work from inside a devcontainer without assuming
   its repository path exists on the Docker daemon's host.

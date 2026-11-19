@@ -324,7 +324,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Paid process RSS (Docker host)",
-      "description": "Host-wide fixed Puma/Temporal groups may include matching worktrees. Shared pages can be counted more than once.",
+      "description": "Host-wide Puma and separate poll, agent, and combined-mode Temporal worker RSS. paid-temporal-workers is unclassified legacy workers or historical combined data. Matching worktrees may be included; shared pages can be counted more than once.",
       "gridPos": {
         "x": 0,
         "y": 28,
@@ -369,7 +369,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Paid process swap (Docker host)",
-      "description": "Process-group swapped memory; missing means unavailable.",
+      "description": "Swapped memory for Puma and each Temporal worker mode. paid-temporal-workers is unclassified legacy workers or historical combined data. Falling RSS with rising swap is not proof of memory reclamation; missing means unavailable.",
       "gridPos": {
         "x": 12,
         "y": 28,

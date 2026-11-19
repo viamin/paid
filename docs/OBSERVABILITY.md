@@ -583,7 +583,15 @@ scans. Validation requests under development load took approximately 26 and
 instead. Job lock owners are observations, not proof of currently executing
 instructions. Process RSS groups aggregate matching Paid Puma/Temporal processes
 across the Docker host, including additional worktrees. RSS includes shared pages
-and should not be summed as unique physical usage. Host memory means the Linux
+and should not be summed as unique physical usage. Temporal workers expose fixed
+`paid-temporal-poll`, `paid-temporal-agent`, and `paid-temporal-both` groups through
+validated `--mode=poll|agent|both` launch arguments. The RSS and swap panels distinguish those groups;
+`paid-temporal-workers` is unclassified legacy workers or historical combined
+data. Lower RSS with higher swap is not proof of reclaimed memory. Workers reject arguments that conflict with `TEMPORAL_WORKER_MODE`. The stable
+launch arguments avoid startup title-matching races. Deploying the launch-command
+change requires restarting the workers; Paid's normal
+full auto-update handles that restart. Refresh monitoring configuration with
+`bin/memory-monitoring start` after updating it. Host memory means the Linux
 Docker VM, not macOS physical memory.
 
 On the validated OrbStack host, a disposable 32 MiB container was OOM-killed

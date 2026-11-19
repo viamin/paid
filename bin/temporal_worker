@@ -37,7 +37,7 @@ workflows = Workflows.constants.map { |c| Workflows.const_get(c) }
 poll_workflows = workflows.select { |w| w == Workflows::GitHubPollWorkflow }
 agent_workflows = workflows.reject { |w| w == Workflows::GitHubPollWorkflow }
 begin
-  worker_mode = Paid::TemporalWorkerConfig.worker_mode
+  worker_mode = Paid::TemporalWorkerConfig.launch_mode(ARGV)
 rescue ArgumentError => error
   warn error.message
   exit 1
