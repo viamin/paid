@@ -113,4 +113,30 @@ RSpec.describe CloseoutVerifications::Execute do
 
     expect { described_class.call(agent_run:) }.not_to change { AgentRun.where(goal: "create_pr").count }
   end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "does not request an audit when intent changes during verification" do
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      issue.update!(body: "Changed acceptance")
+      validation_result("completed", { "native" => { "exit_code" => 0 } })
+    end
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.call(agent_run:)
+
+    expect(PartialCloseouts::AutoAudit).not_to have_received(:call)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "does not request an audit when the authoritative target changes during verification" do
+    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      source_pr.update!(merged_commit_sha: "b" * 40)
+      validation_result("completed", { "native" => { "exit_code" => 0 } })
+    end
+    allow(PartialCloseouts::AutoAudit).to receive(:call)
+
+    described_class.call(agent_run:)
+
+    expect(PartialCloseouts::AutoAudit).not_to have_received(:call)
+  end
 end

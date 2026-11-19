@@ -24,6 +24,10 @@ module StagedCloseoutAdoption
     def self.revoke(mapping:, project:, actor:, issue:, attributes:)
       new(project:, actor:, issue:, attributes:).revoke(mapping)
     end
+    def self.target_current?(mapping:, project:)
+      new(project:).target_current?(mapping)
+    end
+
     def self.eligible_for(mapping:, project:, issue:, observed_merge: false)
       new(project:, issue:).eligible_for(mapping, observed_merge:)
     end
@@ -84,6 +88,16 @@ module StagedCloseoutAdoption
       Result.new(mapping, nil)
     rescue Error => error
       Result.new(mapping, error.message)
+    end
+
+    # Revalidates a reviewed target without consulting the acceptance assessment,
+    # whose source revision itself includes verification evidence.
+    # @spec PARTIAL-CLOSEOUT-057
+    def target_current?(mapping)
+      mapping.project_id == project.id && target_matches?(mapping)
+    rescue Error => error
+      Rails.logger.info(message: "staged_closeout.target_unavailable", mapping_id: mapping.id, reason: error.message)
+      false
     end
 
     private

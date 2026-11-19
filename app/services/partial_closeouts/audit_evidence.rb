@@ -55,6 +55,13 @@ module PartialCloseouts
       current = current_run_summary
       omitted = closeout.merged_prs.size - merged_prs.size
       @coverage = coverage_for(source, delivery, current, omitted)
+      verification_reasons = []
+      verification_reasons << "closeout_verification_records_omitted" if closeout_verifications.any? { |record| record["omitted_record_count"].to_i.positive? }
+      verification_reasons << "closeout_verification_evidence_truncated" if closeout_verifications.any? { |record| record["evidence_truncated"] }
+      if verification_reasons.any?
+        @coverage["complete"] = false
+        @coverage["reasons"].concat(verification_reasons)
+      end
 
       {
         source_issue: source,

@@ -146,6 +146,7 @@ module CloseoutVerifications
     # schedule an audit.
     def schedule_audit_if_new_evidence(outcome)
       return unless outcome && outcome != "cancelled"
+      return unless Evidence.current_for_run?(agent_run)
 
       PartialCloseouts::AutoAudit.call(issue: agent_run.issue)
     end

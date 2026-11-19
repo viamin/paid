@@ -49,7 +49,12 @@
   acceptance-audit packet and source revision for an issue, it SHALL include
   each matching terminal `closeout_verification` record — keyed by issue,
   criterion, source PR, target SHA, and recipe version — bounded and labeled
-  with its outcome, current/stale status, and recorded time. It SHALL mark a
+  with its run provenance, bounded command/result evidence, outcome,
+  current/stale status, and recorded time. Missing authoritative targets,
+  mismatched criterion/scope, and changed or unavailable underlying recipes
+  SHALL make the result stale. Omitted or truncated verification input SHALL
+  mark audit coverage incomplete, and omitted records SHALL still affect the
+  source revision. It SHALL mark a
   record stale, without excluding it, when the issue's approved intent, the
   pinned mapping's recipe version/digest, the source PR's authoritative merge
   target, or its declared environment class has since changed; a failed,
@@ -64,7 +69,8 @@
   cannot roll back its terminal status; a cancelled or stale-claim outcome
   SHALL NOT schedule an audit, and this path SHALL NOT create or continue a
   `create_pr` run.
-  *Code:* `app/services/closeout_verifications/evidence.rb`,
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/closeout_verifications/evidence.rb`,
   `app/services/partial_closeouts/audit_evidence.rb`,
   `app/services/partial_closeouts/assessment.rb`,
   `app/services/closeout_verifications/execute.rb`,

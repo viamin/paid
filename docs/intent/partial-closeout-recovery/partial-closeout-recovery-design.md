@@ -275,6 +275,12 @@ authoritative merge target, or a declared environment class has since
 changed, but is marked stale rather than removed; a failed, unavailable, or
 cancelled result remains visible without being represented as satisfied —
 satisfaction remains a semantic judgment made only through `agent_harness`.
+The projection revalidates the underlying recipe, requires the authoritative
+merge target, and checks mapping/criterion identity. Run IDs and bounded
+command/native results provide primary provenance. Packet omissions and
+truncation make audit coverage incomplete; an omission digest still changes
+the source revision when hidden evidence changes.
+
 `CloseoutVerifications::Execute` schedules the normal
 `PartialCloseouts::AutoAudit` report-only path once a newly terminal, current
 result is persisted, mirroring `TechnicalPrerequisiteValidationJob#finish!`:

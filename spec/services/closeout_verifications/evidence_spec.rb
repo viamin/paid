@@ -184,4 +184,82 @@ RSpec.describe CloseoutVerifications::Evidence do
     expect(described_class.revision_for(source_issue)).not_to eq(before_revision)
     expect(described_class.records_for(source_issue).first).to include("outcome" => "passed", "target_sha" => "b" * 40)
   end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "marks an unavailable authoritative merge target stale" do
+    persist_assessment!
+    mapping = approve_mapping
+    create_verification_run(mapping:)
+    source_pr.update!(merged_commit_sha: nil)
+
+    expect(described_class.records_for(source_issue).first).to include("current" => false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "revalidates the actual recipe instead of comparing two old snapshots" do
+    persist_assessment!
+    mapping = approve_mapping
+    create_verification_run(mapping:)
+    recipe.update!(command: "bin/replaced-check")
+
+    expect(described_class.records_for(source_issue).first).to include("current" => false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "rejects a criterion that does not match the reviewed mapping" do
+    persist_assessment!
+    mapping = approve_mapping
+    create_verification_run(mapping:).update_column(:closeout_criterion_key, "Other criterion")
+
+    expect(described_class.records_for(source_issue).first).to include("current" => false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "includes primary run provenance and bounded command results" do
+    persist_assessment!
+    mapping = approve_mapping
+    run = create_verification_run(mapping:)
+    receipt = run.verification_result.fetch("closeout_verification").merge(
+      "command" => "bin/reviewed-check", "technical_evidence" => {
+        "native" => { "stdout" => "Verified fixture", "stderr" => "", "exit_code" => 0 },
+        "cleanup" => { "completed" => true }
+      })
+    run.update!(verification_result: { "closeout_verification" => receipt })
+
+    record = described_class.records_for(source_issue).first
+
+    expect(record).to include("verification_run_id" => run.id, "command" => "bin/reviewed-check")
+    expect(record.fetch("native")).to include("exit_code" => 0, "stdout" => "Verified fixture")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "changes the revision when an omitted criterion loses its reviewed mapping" do
+    stub_const("#{described_class}::MAX_RECORDS", 1)
+    persist_assessment!(criterion_keys: [ "Merged evidence", "Second check" ])
+    mappings = [ "Merged evidence", "Second check" ].map { |key| approve_mapping(criterion_key: key) }
+    mappings.each { |mapping| create_verification_run(mapping:) }
+    before_revision = described_class.revision_for(source_issue)
+    StagedCloseoutAdoption::Mappings.revoke(mapping: mappings.first, project:, actor: maintainer,
+      issue: source_issue, attributes: {})
+
+    expect(described_class.revision_for(source_issue)).not_to eq(before_revision)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "projects a new result for the oldest criterion beyond the record cap" do
+    keys = Array.new(described_class::MAX_RECORDS + 1) { |index| "Criterion #{index}" }
+    persist_assessment!(criterion_keys: keys)
+    mappings = keys.map { |key| approve_mapping(criterion_key: key) }
+    mappings.each { |mapping| create_verification_run(mapping:) }
+    before_revision = described_class.revision_for(source_issue)
+    source_pr.update!(merged_commit_sha: "b" * 40)
+    replay = create_verification_run(mapping: mappings.first, outcome: "failed", error: "Replay failed")
+
+    records = described_class.records_for(source_issue)
+
+    expect(records.size).to eq(described_class::MAX_RECORDS)
+    expect(records.last).to include("verification_run_id" => replay.id, "outcome" => "failed")
+    expect(described_class.revision_for(source_issue)).not_to eq(before_revision)
+    expect(described_class.current_for_run?(replay)).to be(true)
+  end
 end

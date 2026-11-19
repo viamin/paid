@@ -19,17 +19,17 @@ RSpec.describe PartialCloseouts::AuditEvidence do
     StagedCloseoutAdoption::Enroll.call(project:, actor: maintainer, enabled: true)
   end
 
-  def persist_assessment!
+  def persist_assessment!(criterion_keys: [ "Merged evidence" ])
     create(:agent_run, :completed, project:, issue:, reconciliation: { "assessment" => {
       "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
       "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
-      "criteria" => [ { "criterion" => "Merged evidence", "state" => "unmet" } ], "gaps" => []
+      "criteria" => criterion_keys.map { |key| { "criterion" => key, "state" => "unmet" } }, "gaps" => []
     } })
   end
 
-  def approve_mapping
+  def approve_mapping(criterion_key: "Merged evidence")
     StagedCloseoutAdoption::Mappings.approve(project:, actor: maintainer, issue:, attributes: {
-      criterion_key: "Merged evidence", stage: "merged_revision", phase: "release_deployment",
+      criterion_key:, stage: "merged_revision", phase: "release_deployment",
       target_shape: "source_pr_merged_revision", execution_path: "technical_prerequisite",
       target_key: recipe.id, freshness_seconds: 60
     })
@@ -119,5 +119,34 @@ RSpec.describe PartialCloseouts::AuditEvidence do
       closeout_mapping_id: other_mapping.id, closeout_criterion_key: other_mapping.criterion_key,
       closeout_recipe_version: other_mapping.target_version, closeout_recipe_digest: other_mapping.target_digest,
       verification_result: { "closeout_verification" => { "outcome" => "passed" } })
+  end
+  # @spec PARTIAL-CLOSEOUT-057
+  it "marks the audit input incomplete when verification records are omitted" do
+    stub_const("CloseoutVerifications::Evidence::MAX_RECORDS", 1)
+    persist_assessment!(criterion_keys: [ "Merged evidence", "Second check" ])
+    mappings = [ "Merged evidence", "Second check" ].map { |key| approve_mapping(criterion_key: key) }
+    mappings.each { |mapping| create_verification_run(mapping:) }
+    builder = described_class.new(issue:, agent_run:)
+    packet = JSON.parse(builder.call)
+
+    expect(packet.fetch("closeout_verifications").size).to be <= 1
+    expect(builder.coverage).to include("complete" => false)
+    expect(builder.coverage.fetch("reasons")).to include("closeout_verification_records_omitted")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "marks the audit input incomplete when primary verification output is truncated" do
+    persist_assessment!
+    mapping = approve_mapping
+    run = create_verification_run(mapping:)
+    receipt = run.verification_result.fetch("closeout_verification").merge("technical_evidence" => {
+      "native" => { "stdout" => "x" * 30_000, "exit_code" => 0 }
+    })
+    run.update!(verification_result: { "closeout_verification" => receipt })
+    builder = described_class.new(issue:, agent_run:)
+    packet = JSON.parse(builder.call)
+
+    expect(packet.fetch("closeout_verifications").first.dig("native", "stdout").bytesize).to be <= 2_000
+    expect(builder.coverage).to include("complete" => false)
   end
 end
