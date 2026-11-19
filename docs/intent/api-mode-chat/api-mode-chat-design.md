@@ -208,11 +208,16 @@ rather than exposing every catalog row or relying on a hard-coded provider
 fallback. The shared resolver applies catalog activity, operator state, tool
 support, agent-harness compatibility, and fresh runner/account availability
 evidence.
-OpenAI resolves Low/Medium/High to GPT-5.6 Luna/Terra/Sol. A missing Low tier
-is actionable and does not escalate to a higher tier. The selected concrete
-model and tier are recorded on the chat session so request and usage records
-can be explained after catalog refresh. Existing explicit session models are
-retained; legacy Automatic sessions resolve to Low when first executed.
+OpenAI resolves Low/Medium/High to GPT-5.6 Luna/Terra/Sol. Automatic tier
+selection is a preference: Low orders Low, Medium, High; Medium orders Medium,
+Low, High; High orders High, Medium, Low. Every candidate still passes catalog,
+operator, tool, transport/auth, availability, privacy, budget, project-policy,
+permission, and free-policy gates before ordering. Requested selection and
+effective runner/model/tier are recorded separately with a substitution reason.
+Explicit session models are attempted exactly as selected; a failure can enter
+configured provider fallback, which resolves an eligible model on its alternate
+runner without overwriting the saved preference. An ambiguous legacy stored
+model is treated conservatively as explicit.
 
 What ships today:
 

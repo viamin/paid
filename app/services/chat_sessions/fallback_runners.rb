@@ -46,14 +46,15 @@ module ChatSessions
 
     def switch!(chat_session:, runner:)
       # @spec CHAT-API-026
-      option = CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects) unless runner.free_model_policy?
+      resolution = CuratedModelOptions.resolve_with_diagnostics(runner:, projects: chat_session.llm_policy_projects) unless runner.free_model_policy?
+      option = resolution&.option
       model = if runner.free_model_policy?
         FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
       else
         option&.model_id ||
-          raise(LlmClientConfigurationError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
+          raise(LlmClientConfigurationError, "No compatible chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
       end
-      metadata = chat_session.metadata.merge("model_tier" => option&.tier).compact
+      metadata = fallback_metadata(chat_session:, runner:, model:, option:, resolution:)
       # @spec CHAT-THINKING-EFFORT-005
       metadata = ThinkingEffort.normalize_metadata(metadata:, model_id: model)
       chat_session.update!(runner: runner, model: model, metadata: metadata)
@@ -69,7 +70,7 @@ module ChatSessions
       false
     end
 
-    # Non-free fallbacks switch to the curated Low tier, and switch! raises
+    # Non-free fallbacks resolve the requested tier preference, and switch! raises
     # LlmClientConfigurationError when none resolves. That error is not an
     # AgentHarness::Error, so FallbackLoop would abort instead of trying the
     # next configured fallback — skip such runners up front, mirroring the
@@ -79,6 +80,23 @@ module ChatSessions
       return true if runner.free_model_policy?
 
       CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects).present?
+    end
+
+    def fallback_metadata(chat_session:, runner:, model:, option:, resolution:)
+      metadata = chat_session.metadata
+      requested_model = metadata["requested_model"] || (chat_session.model if metadata["requested_model_selection"] != "automatic")
+      requested_runner_id = metadata["requested_runner_id"] || (chat_session.runner_id if requested_model)
+      metadata.merge(
+        "requested_model" => requested_model,
+        "requested_runner_id" => requested_runner_id,
+        "requested_model_selection" => requested_model ? "explicit" : "automatic",
+        "requested_model_tier" => metadata["requested_model_tier"] || "low",
+        "model_tier" => option&.tier,
+        "effective_model" => model,
+        "effective_tier" => option&.tier,
+        "effective_runner_id" => runner.id,
+        "model_substitution_reason" => "fallback_runner"
+      ).compact
     end
 
     # @spec MODEL-POLICY-024

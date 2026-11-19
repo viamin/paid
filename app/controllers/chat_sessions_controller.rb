@@ -333,7 +333,9 @@ class ChatSessionsController < ApplicationController
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     normalize_legacy_create_params!(permitted)
+    direct_model = permitted[:model].present? && permitted[:runner_model].blank?
     resolve_runner_model_selection!(permitted)
+    mark_direct_model_selection!(permitted) if direct_model
     resolve_thinking_effort!(permitted)
     normalize_thinking_effort_for_model!(permitted)
     permitted
@@ -344,7 +346,9 @@ class ChatSessionsController < ApplicationController
       .permit(:title, :model, :project_id, :runner_id, :runner_model, :provider_id, :auto_approve, :thinking_effort, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
+    direct_model = permitted[:model].present? && permitted[:runner_model].blank?
     resolve_runner_model_selection!(permitted)
+    mark_direct_model_selection!(permitted) if direct_model
     resolve_thinking_effort!(permitted)
     normalize_thinking_effort_for_model!(permitted)
     permitted
@@ -366,9 +370,31 @@ class ChatSessionsController < ApplicationController
 
     permitted[:runner_id] = selection.runner_id
     permitted[:model] = selection.model_id
-    metadata = merged_metadata(permitted).merge("model_tier" => selection.tier)
+    metadata = merged_metadata(permitted).merge(
+      "model_tier" => selection.tier,
+      "requested_model" => selection.model_id,
+      "requested_runner_id" => selection.runner_id,
+      "requested_model_selection" => "explicit",
+      "effective_model" => selection.model_id,
+      "effective_tier" => selection.tier,
+      "effective_runner_id" => selection.runner_id,
+      "model_substitution_reason" => nil
+    )
     # @spec CHAT-THINKING-EFFORT-005
     permitted[:metadata] = ChatSessions::ThinkingEffort.normalize_metadata(metadata:, model_id: selection.model_id)
+  end
+
+  def mark_direct_model_selection!(permitted)
+    model_id = permitted[:model]
+    runner_id = permitted[:runner_id] || @chat_session&.runner_id
+    permitted[:metadata] = merged_metadata(permitted).merge(
+      "requested_model" => model_id,
+      "requested_runner_id" => runner_id,
+      "requested_model_selection" => "explicit",
+      "effective_model" => model_id,
+      "effective_runner_id" => runner_id,
+      "model_substitution_reason" => nil
+    ).compact
   end
 
   # Validates a direct, user-submitted thinking_effort value strictly against
@@ -442,6 +468,14 @@ class ChatSessionsController < ApplicationController
       container_requested_at: session.container_requested_at,
       container_ready_at: session.container_ready_at,
       model: session.model,
+      requested_model: session.metadata["requested_model"],
+      requested_runner_id: session.metadata["requested_runner_id"],
+      requested_model_selection: session.metadata["requested_model_selection"],
+      requested_model_tier: session.metadata["requested_model_tier"],
+      effective_model: session.metadata["effective_model"] || session.model,
+      effective_tier: session.metadata["effective_tier"] || session.metadata["model_tier"],
+      effective_runner_id: session.metadata["effective_runner_id"] || session.runner_id,
+      model_substitution_reason: session.metadata["model_substitution_reason"],
       thinking_effort: ChatSessions::ThinkingEffort.normalize(
         model_id: session.model,
         value: session.metadata["thinking_effort"],

@@ -8,7 +8,7 @@ module ChatSessions
 
     def initialize(runner:, rejection_reasons:)
       @rejection_reasons = rejection_reasons.map(&:to_sym).freeze
-      super("No compatible Low chat model is available for #{runner.display_name}. #{guidance}")
+      super("No compatible chat model is available for #{runner.display_name}. #{guidance}")
     end
 
     private
@@ -21,7 +21,6 @@ module ChatSessions
       when :unavailable then "All compatible models are currently unavailable; retry after availability checks refresh."
       when :verified_model_restriction then "Your verified-model settings exclude every compatible model."
       when :operator_policy then "Operator or project policy excludes every compatible model."
-      when :low_tier_unavailable then "No compatible Low-tier model is configured for this provider."
       else "Check the catalog, API availability, verified-model settings, and operator policy."
       end
     end

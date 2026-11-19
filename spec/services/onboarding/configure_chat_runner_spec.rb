@@ -50,6 +50,20 @@ RSpec.describe Onboarding::ConfigureChatRunner do
   end
 
   %w[openai anthropic].each do |service_type|
+    # @spec ONBOARD-CHAT-014 CHAT-API-026
+    it "bootstraps #{service_type} with a Medium model when Low is absent" do
+      LlmModel.where(provider: service_type, tier: "low").delete_all
+      create(:llm_model, provider: service_type, model_id: "#{service_type}-chat-mid", tier: "mid", supports_tools: true)
+
+      result = described_class.call(account:, user:, api_service_type: service_type, api_key: "test-key")
+
+      expect(result.chat_session).to have_attributes(model: "#{service_type}-chat-mid")
+      expect(result.chat_session.metadata).to include(
+        "model_tier" => "mid",
+        "model_substitution_reason" => "preferred_tier_unavailable"
+      )
+    end
+
     # @spec ONBOARD-CHAT-014
     it "rolls back a genuinely empty #{service_type} catalog with an actionable reason" do
       LlmModel.where(provider: service_type).delete_all

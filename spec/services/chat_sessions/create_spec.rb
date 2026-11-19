@@ -47,9 +47,9 @@ RSpec.describe ChatSessions::Create do
         runner_id: runner.id,
         model: "gpt-4o",
         project_id: project.id,
-        metadata: { "source" => "configured-create" },
         auto_approve: true
       )
+      expect(configured.metadata).to include("source" => "configured-create", "requested_model_selection" => "explicit")
       expect(configured.messages.system.sole.content).to eq("Use the selected project settings.")
     end
 
@@ -181,6 +181,26 @@ RSpec.describe ChatSessions::Create do
 
       expect(session.model).to eq("gpt-5.6-luna")
       expect(session.metadata).to include("model_tier" => "low")
+    end
+
+    # @spec CHAT-SESSION-PREFERENCES-003 CHAT-API-026
+    it "creates an automatic chat with a Medium model when Low is absent" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "chat-mid-only" } })
+      model = LlmModel.find_or_initialize_by(model_id: "chat-mid-only")
+      model.assign_attributes(provider: "openai", display_name: "Chat Mid Only", category: "coding",
+        tier: "mid", capability_score: 8.0, pricing_tier: "paid", catalog_source: "seeded", supports_tools: true, active: true)
+      model.save!
+
+      session = described_class.call(account: account, user: user, runner_id: runner.id)
+
+      expect(session).to have_attributes(model: "chat-mid-only")
+      expect(session.metadata).to include(
+        "requested_model_selection" => "automatic",
+        "model_tier" => "mid",
+        "model_substitution_reason" => "preferred_tier_unavailable"
+      )
     end
 
     # @spec CHAT-API-018

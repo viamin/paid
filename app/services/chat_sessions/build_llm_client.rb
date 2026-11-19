@@ -155,19 +155,32 @@ module ChatSessions
 
     def persist_curated_model!(runner)
       # @spec CHAT-API-026
-      option = CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects)
+      resolution = CuratedModelOptions.resolve_with_diagnostics(runner:, projects: chat_session.llm_policy_projects)
+      option = resolution.option
       unless option
         raise LlmClientConfigurationError,
-          "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy."
+          "No compatible chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy."
       end
 
       # @spec CHAT-THINKING-EFFORT-007
       metadata = ThinkingEffort.normalize_metadata(
-        metadata: chat_session.metadata.merge("model_tier" => option.tier),
+        metadata: automatic_selection_metadata(option, resolution),
         model_id: option.model_id
       )
       chat_session.update!(runner:, model: option.model_id, metadata: metadata)
       option.model_id
+    end
+
+    def automatic_selection_metadata(option, resolution)
+      chat_session.metadata.merge(
+        "model_tier" => option.tier,
+        "requested_model_tier" => resolution.requested_tier,
+        "requested_model_selection" => "automatic",
+        "effective_model" => option.model_id,
+        "effective_tier" => option.tier,
+        "effective_runner_id" => chat_session.runner_id,
+        "model_substitution_reason" => resolution.substitution_reason&.to_s
+      ).compact
     end
 
     def default_openai_base_url(service_type)

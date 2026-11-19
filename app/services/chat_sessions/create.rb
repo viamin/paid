@@ -264,10 +264,11 @@ module ChatSessions
     end
 
     def session_metadata
-      return metadata.presence || {} if model.present? || resolved_runner.nil?
+      return explicit_selection_metadata if model.present?
+      return metadata.presence || {} if resolved_runner.nil?
       return metadata.presence || {} if resolved_runner.free_model_policy?
 
-      (metadata.presence || {}).merge("model_tier" => curated_model_for(resolved_runner).tier)
+      automatic_selection_metadata(curated_model_for(resolved_runner))
     end
 
     def curated_model_for(runner)
@@ -276,6 +277,29 @@ module ChatSessions
       return resolution.option if resolution.option
 
       raise ModelUnavailableError.new(runner:, rejection_reasons: resolution.rejection_reasons)
+    end
+
+    def explicit_selection_metadata
+      (metadata.presence || {}).merge(
+        "requested_model" => model,
+        "requested_runner_id" => resolved_runner&.id,
+        "requested_model_selection" => "explicit",
+        "effective_model" => model,
+        "effective_runner_id" => resolved_runner&.id,
+        "model_substitution_reason" => nil
+      ).compact
+    end
+
+    def automatic_selection_metadata(resolution)
+      (metadata.presence || {}).merge(
+        "model_tier" => resolution.tier,
+        "requested_model_tier" => "low",
+        "requested_model_selection" => "automatic",
+        "effective_model" => resolution.model_id,
+        "effective_tier" => resolution.tier,
+        "effective_runner_id" => resolved_runner.id,
+        "model_substitution_reason" => resolution.tier == "low" ? nil : "preferred_tier_unavailable"
+      ).compact
     end
 
     def policy_projects
