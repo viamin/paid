@@ -533,6 +533,88 @@ Notes:
 
 ---
 
+## Development memory investigations
+
+Run `bin/memory-monitoring start` from the devcontainer to start an independent,
+metrics-only Compose project. It does not recreate Rails, workers, or PostgreSQL.
+It needs the existing `DB_HOST`, `DB_ADMIN_USERNAME`, and `DB_ADMIN_PASSWORD`
+environment variables to provision its monitoring role. `RAILS_ENV`/`RACK_ENV`
+must select development. The default application network is `paid_default`;
+override `PAID_MEMORY_APP_NETWORK` if needed. The supported target names are the
+checked-in devcontainer's `paid-rails-app-1` and `paid-postgres-1`.
+
+- Grafana: <http://localhost:3001/d/paid-development-memory>
+- Prometheus targets: <http://localhost:9090/targets>
+- Grafana username: `admin`; its generated password is in
+  `tmp/memory-monitoring/grafana_password`, with owner-only permissions.
+- `bin/memory-monitoring status` shows container state.
+- `bin/memory-monitoring stop` stops only monitoring and retains its volumes.
+
+Open these URLs in the Docker host's browser; `localhost` inside another
+container is not the Docker host. Override `PAID_MEMORY_GRAFANA_PORT` or
+`PAID_MEMORY_PROMETHEUS_PORT` to avoid host port conflicts. Set
+`PAID_MEMORY_CREDENTIAL_DIR` to choose the local credential-copy directory.
+The canonical passwords live in the configuration volume and are reused on
+subsequent starts, including from another worktree. Starting refreshes the
+configuration and recreates only monitoring containers. Do not delete the
+configuration volume independently of Grafana's data volume: Grafana's existing
+admin password is retained in its database.
+
+The profile uses standard exporters and persistent Prometheus/Grafana volumes.
+The PostgreSQL role is `NOSUPERUSER NOBYPASSRLS`, defaults to read-only
+transactions, and has `pg_monitor` plus SELECT on only GoodJob's queue, lock
+owner, and finished timestamp columns. It cannot read serialized job arguments.
+Administrator credentials are not passed to exporters. Configuration is seeded
+through a small image so activation works inside a devcontainer without
+requiring the client's repository path on the Docker host.
+
+Memory is sampled every 15 seconds. Retention is up to 14 days with a 2 GB
+Prometheus block-retention limit; WAL/head data and Grafana consume additional
+disk. The running services have a combined 1 GiB memory ceiling and individual
+CPU limits. The init container has a separate 32 MiB limit. Actual overhead
+depends on container count and time-series cardinality; the dashboard includes
+monitoring's own working set. Exporter ports are not published; the two UI ports
+bind only to host loopback. cAdvisor intentionally uses privileged, read-only
+host mounts and must be operated only by trusted Docker administrators.
+
+The profile avoids the broad Rails metrics endpoint and PostgreSQL database-size
+scans. Validation requests under development load took approximately 26 and
+22 seconds respectively; the narrowed exporter uses fixed read-only aggregates
+instead. Job lock owners are observations, not proof of currently executing
+instructions. Process RSS groups aggregate matching Paid Puma/Temporal processes
+across the Docker host, including additional worktrees. RSS includes shared pages
+and should not be summed as unique physical usage. Host memory means the Linux
+Docker VM, not macOS physical memory.
+
+On the validated OrbStack host, a disposable 32 MiB container was OOM-killed
+without exhausting host memory. The host OOM counter increased, but cAdvisor's
+per-container OOM counter stayed zero. Container OOM attribution is therefore
+marked unavailable and the unreliable metric is excluded from collection; the
+dashboard uses host counter changes, container memory,
+start timestamp changes, and PostgreSQL logs. A killed process is not necessarily
+the workload responsible for exhausting memory. Missing series remain missing;
+check both scrape coverage and the PostgreSQL coverage/error panels.
+
+For an incident, select its UTC window in Grafana and inspect the same interval
+in PgHero. PgHero captures once per minute, so it cannot establish a precise
+query-to-memory causal relationship. Its SQL history can also be inspected with:
+
+```sql
+SELECT s.captured_at, s.calls, s.total_time, q.query
+FROM pghero_query_stats s
+JOIN pghero_queries q ON q.id = s.query_id
+WHERE s.captured_at >= '2026-11-19 13:00:00+00'
+  AND s.captured_at < '2026-11-19 13:10:00+00'
+ORDER BY s.captured_at, s.total_time DESC;
+```
+
+The SDK worker exporters must emit each label once. Paid disables SDK automatic
+service-name attachment because its configured global `service_name` already
+supplies that label. Workers running older code can appear down in Targets with
+`label name "service_name" is not unique`; deploy the fix and restart those
+workers rather than dropping labels or pretending their scrape succeeded.
+Alerts are visible locally in Prometheus; this profile sends no notifications.
+
 ## Health Checks [IMPLEMENTED]
 
 ```ruby

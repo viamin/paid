@@ -1,0 +1,10 @@
+# @spec OBSERVABILITY-007
+apiVersion: 1
+providers:
+  - name: Development memory
+    folder: Paid
+    type: file
+    disableDeletion: false
+    editable: false
+    options:
+      path: /config/grafana/dashboards

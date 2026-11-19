@@ -71,6 +71,59 @@ The repo also checks in the observability overlay and provisioning assets:
 - `alertmanager/alertmanager.yml` provides the initial routing/inhibition
   configuration for those Prometheus alerts.
 
+## Development memory investigations
+
+The devcontainer memory profile runs Prometheus, Grafana, node-exporter,
+cAdvisor, process-exporter, and postgres-exporter in a separate Compose project.
+Its lifetime is independent of Rails and PostgreSQL. It attaches only Prometheus
+and postgres-exporter to the existing application network; starting or stopping
+monitoring does not recreate application services. Named volumes retain metrics,
+dashboard state, and runtime configuration across restarts. Configuration is
+copied from a small image rather than host bind mounts so the same launcher
+works when Docker is controlled from inside the devcontainer.
+The profile does not scrape Rails' broad metrics endpoint: a validation request
+took about 26 seconds under the observed development load. It instead obtains
+unfinished job counts through a narrow PostgreSQL aggregate. The monitoring role
+receives SELECT only on GoodJob's queue and lifecycle timestamp columns, not
+serialized job arguments. PostgreSQL's database-size collector is disabled: its
+validation scrape took about 22 seconds. Temporal telemetry supplies its configured service-name
+tag once; SDK automatic service-name attachment is disabled to avoid invalid
+duplicate Prometheus labels.
+
+Prometheus scrapes every 15 seconds and retains up to 14 days, bounded by a
+2 GB time-series size limit. Every monitoring service has CPU and memory limits,
+and its Docker logs rotate. Only the Grafana and Prometheus UI ports are
+published, on host loopback. Exporter endpoints remain on the private monitoring
+network. Grafana credentials and the PostgreSQL monitoring password are
+generated locally in ignored, owner-only files; administrator credentials are
+used only while provisioning a non-superuser, read-only `pg_monitor` role.
+Credentials are seeded at runtime, never baked into an image or committed.
+
+The memory dashboard distinguishes Docker-host VM memory from the physical
+macOS host. It shows available memory, swap, individual container memory and
+limits, OOM counters, container starts, process RSS, and database/job activity.
+Process groups include all matching Paid Puma and Temporal worker processes on
+that Docker host, including matching additional worktrees. They are not claimed
+to belong to one container. Container charts supply exact container attribution;
+shared process pages must not be summed to infer physical memory consumption.
+Scrape health and missing series remain visible rather than being replaced by
+healthy zeroes. OOM observations identify a killed workload, not the workload
+that caused host exhaustion. PgHero provides query history for the selected
+incident interval; SQL text and command lines are not metric labels.
+On the validated OrbStack host, a controlled container-local OOM increased the
+host counter and set Docker's OOMKilled state, but cAdvisor's container OOM
+counter stayed zero. The dashboard therefore uses the host OOM counter and
+marks container-level OOM attribution unavailable rather than displaying that
+counter as reliable evidence.
+
+### Development memory decisions
+
+| Decision | Rationale | Alternative considered |
+| --- | --- | --- |
+| Reuse standard exporters and an isolated metrics-only profile | Collects independently of Rails/DB with bounded overhead and no extra application tables. | Starting the complete log stack adds unrelated services during memory diagnosis. |
+| Add process-exporter with two fixed groups | Separates Puma and worker RSS inside the shared app container without labels containing command lines. | Container-only metrics cannot distinguish these processes. |
+| Persist configuration through a small initialization image | Avoids container-to-host bind-path mismatches when launched inside a devcontainer. | Direct repository bind mounts refer to the Docker daemon's filesystem, not the client container. |
+
 ## Self-Hosted Log Aggregation
 
 Paid's supported self-hosted logging path is Loki plus Promtail, aligned with

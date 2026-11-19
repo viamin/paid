@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "active_support/core_ext/object/blank"
 require "temporalio/runtime"
 require_relative "../../../lib/paid/temporal_observability"
 
 RSpec.describe Paid::TemporalObservability do
   describe ".prometheus_metrics_options" do
-    it "builds Prometheus runtime telemetry with seconds-based duration histograms" do
+    # @spec OBSERVABILITY-006
+    it "builds Prometheus runtime telemetry with seconds-based histograms and one service-name label" do
       options = described_class.prometheus_metrics_options(
         "TEMPORAL_PROMETHEUS_BIND_ADDRESS" => "127.0.0.1:9464"
       )
@@ -18,6 +20,7 @@ RSpec.describe Paid::TemporalObservability do
       expect(options.prometheus.durations_as_seconds).to be(true)
       expect(options.metric_prefix).to eq("temporal_")
       expect(options.global_tags).to include("service_name" => "paid-temporal-worker")
+      expect(options.attach_service_name).to be(false)
     end
   end
 

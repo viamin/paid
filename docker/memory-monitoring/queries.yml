@@ -1,0 +1,32 @@
+paid_goodjob:
+  query: |
+    SELECT queue_name,
+      count(*) FILTER (WHERE locked_by_id IS NOT NULL) AS locked,
+      count(*) AS unfinished
+    FROM public.good_jobs
+    WHERE finished_at IS NULL
+    GROUP BY queue_name
+  metrics:
+    - queue_name:
+        usage: LABEL
+        description: GoodJob queue
+    - locked:
+        usage: GAUGE
+        description: Unfinished jobs with a recorded lock owner; not proof of live execution
+    - unfinished:
+        usage: GAUGE
+        description: Unfinished jobs in this queue
+
+paid_postgres:
+  query: |
+    SELECT state, count(*) AS connections
+    FROM pg_catalog.pg_stat_activity
+    WHERE backend_type = 'client backend' AND state IS NOT NULL
+    GROUP BY state
+  metrics:
+    - state:
+        usage: LABEL
+        description: PostgreSQL client backend state
+    - connections:
+        usage: GAUGE
+        description: Client connections across the Docker PostgreSQL server
