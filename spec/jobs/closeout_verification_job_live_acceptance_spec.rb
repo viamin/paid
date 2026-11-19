@@ -77,6 +77,18 @@ RSpec.describe CloseoutVerificationJob do
     CloseoutVerifications::AdmitLiveTarget.call(project:).runs.sole
   end
 
+  { goal: "create_pr", synthetic: false }.each do |attribute, value|
+    # @spec STAGED-CLOSEOUT-ADOPTION-012
+    it "rejects a live job with the wrong #{attribute} identity before any read" do
+      run = admit_live_run
+      run.update_column(attribute, value)
+
+      expect { described_class.perform_now(run.id) }.not_to change(TrustedMeasurementAttempt, :count)
+      expect(run.reload.status).to eq("failed")
+      expect(run.verification_result.dig("closeout_verification", "outcome")).to eq("stale")
+    end
+  end
+
   # @spec STAGED-CLOSEOUT-ADOPTION-012
   it "defers a project paused after admission without reading live data" do
     run = admit_live_run

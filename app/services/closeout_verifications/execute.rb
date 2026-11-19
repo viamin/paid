@@ -118,6 +118,10 @@ module CloseoutVerifications
     def claim_live_target!
       agent_run.with_lock do
         return unless agent_run.status == "queued"
+        unless agent_run.goal == AgentRun::CLOSEOUT_VERIFICATION_GOAL && agent_run.synthetic?
+          record_terminal!("stale", error: "run is not an admitted closeout verification")
+          return
+        end
         return if paused? || !Project.active.where(id: agent_run.project_id).exists?
         return unless budget[:allowed]
 

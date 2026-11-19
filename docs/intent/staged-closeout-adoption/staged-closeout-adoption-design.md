@@ -56,7 +56,8 @@ not an automatic criterion or issue pass; missing, stale, failed, unavailable,
 or cross-tenant signals remain inspectable unknown or failure evidence.
 
 Live-target claim and completion preserve the same authority boundary as merged
-verification: inactive or paused authority, hard-stop budget, revoked policy,
+verification. Only an admitted synthetic closeout-verification goal may enter
+the live execution path: inactive or paused authority, hard-stop budget, revoked policy,
 changed mapping/check, or an environment class different from the running
 environment cannot start a read. Completion rechecks the confirmed signal and
 retains a scoped measurement-attempt link and immutable result/timing snapshot.
