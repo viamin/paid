@@ -16,9 +16,7 @@ module Development
 
       def insert_query_stats(stats, captured_at)
         filtered = stats.map do |stat|
-          stat.merge(query: PgQuery.normalize(stat.fetch(:query)))
-        rescue PgQuery::ParseError
-          stat.merge(query: "<unable to filter data>")
+          stat.merge(query: PgHeroQueryText.call(stat.fetch(:query)))
         end
         super(filtered, captured_at)
       end

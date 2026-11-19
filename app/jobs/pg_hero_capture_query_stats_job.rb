@@ -2,6 +2,7 @@
 
 class PgHeroCaptureQueryStatsJob < ApplicationJob
   queue_as :metrics
+  self.perform_timeout = 30
 
   # @spec RAILS-CONTROL-PLANE-020 RAILS-CONTROL-PLANE-022
   def perform

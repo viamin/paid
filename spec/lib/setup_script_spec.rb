@@ -96,6 +96,22 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec RAILS-CONTROL-PLANE-023
+  it "does not provision development diagnostics when RACK_ENV selects production" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge(
+        "PAID_ENABLE_DEV_QUERY_STATS" => "1", "RAILS_ENV" => nil, "RACK_ENV" => "production",
+        "DB_HOST" => "postgres", "DB_ADMIN_USERNAME" => "postgres", "DB_ADMIN_PASSWORD" => "test-admin-password"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "psql-calls.log"))).to be(false)
+    end
+  end
+
   it "writes the metrics token file from METRICS_TOKEN so Prometheus scrape auth stays in sync" do
     # Regression guard: docker-compose.observability.yml mounts the host
     # metrics token file into the Prometheus container at the path

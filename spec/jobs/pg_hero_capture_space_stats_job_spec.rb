@@ -7,4 +7,9 @@ RSpec.describe "PgHeroCaptureSpaceStatsJob", :no_db do
   it "does not invoke PgHero outside development" do
     expect { PgHeroCaptureSpaceStatsJob.new.perform }.not_to raise_error
   end
+
+  # @spec RAILS-CONTROL-PLANE-022
+  it "bounds stalled relation inspection" do
+    expect(PgHeroCaptureSpaceStatsJob.perform_timeout).to be_between(1, 59)
+  end
 end

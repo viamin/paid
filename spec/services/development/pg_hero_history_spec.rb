@@ -46,6 +46,22 @@ RSpec.describe "Development::PgHeroHistory" do
   end
 
   # @spec RAILS-CONTROL-PLANE-020
+  it "removes comments and filters utility statements whose values PostgreSQL does not normalize" do
+    allow(database).to receive_messages(query_stats: [
+      { query: "SELECT 1 /* private-comment-token */", query_hash: 501, user: "paid", calls: 1, total_time: 1.0 },
+      { query: "COMMENT ON TABLE issues IS 'private-utility-value'", query_hash: 502, user: "paid", calls: 1, total_time: 1.0 },
+      { query: "DO $$ BEGIN RAISE NOTICE 'private-body-value'; END $$", query_hash: 503, user: "paid", calls: 1, total_time: 1.0 }
+    ], reset_query_stats: true)
+
+    history.capture_queries
+
+    queries = PgHero::Query.pluck(:query)
+    expect(queries).to include("SELECT $1")
+    expect(queries.join).not_to include("private-comment-token", "private-utility-value", "private-body-value")
+    expect(PgHero::QueryStats.count).to eq(3)
+  end
+
+  # @spec RAILS-CONTROL-PLANE-020
   it "does not collect outside development" do
     expect(database).not_to receive(:capture_query_stats)
 

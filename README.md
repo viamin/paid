@@ -243,7 +243,10 @@ and captures table/index sizes daily at 03:17 UTC. History is retained for
 14 days; daily cleanup runs at 03:27 UTC and removes unused query text as well.
 The scheduler must be running (`GOOD_JOB_ENABLE_CRON` must not be `false`).
 Capture and cleanup share a database lock so overlapping processes skip work.
-Failures appear in GoodJob rather than as successful empty samples.
+Failures appear in GoodJob rather than as successful empty samples. Each
+history job has a 30-second runtime ceiling. Stored SQL has its comments removed
+and its literals filtered, including utility-statement values that PostgreSQL's
+normalizer leaves intact.
 
 Run `bin/setup --skip-server` after updating to install the history tables and
 provision the restricted statistics-reset helper using `DB_ADMIN_USERNAME` and

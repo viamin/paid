@@ -137,7 +137,9 @@ development-only PgHero gem. These database-wide diagnostic records are system
 infrastructure rather than tenant-owned records. The dashboard retains its
 existing read-only routes and query normalization. Stored query text is also
 normalized before persistence, including utility statements that PostgreSQL may
-report with literal values.
+report with literal values. PostgreSQL scanner token boundaries remove SQL
+comments and replace residual literals after normalization, without treating
+quoted identifiers or comment-like text inside string literals as SQL comments.
 
 A scheduled job captures query statistics once per minute, with overlapping
 captures and cleanup serialized through the same database advisory lock across
@@ -149,10 +151,14 @@ recovery; the unsampled interval and interrupted queries can still be lost.
 Capture resets and inserts are not atomic in PgHero, so failure after a
 successful reset can lose an interval. Failed capture surfaces as a failed job,
 not as a successful empty sample, without an immediate unbounded retry loop
-during database recovery. Setup provisions an administrator-owned, no-argument
+during database recovery. All three history jobs use ApplicationJob's 30-second
+perform ceiling so stalled diagnostics cannot occupy a worker indefinitely.
+Setup provisions an administrator-owned, no-argument
 reset helper restricted to the connected development database. The helper uses
 a fixed safe search path, revokes public execution, and grants execution only
-to the configured non-superuser application role. Collection uses that helper;
+to the configured non-superuser application role. Reprovisioning restores
+administrator ownership and revokes prior helper execution grants before
+granting the configured role access. Collection uses that helper;
 the application role receives neither superuser authority nor general access to
 PostgreSQL's statistics-reset function.
 
@@ -162,6 +168,8 @@ are also removed so distinct query text cannot grow without bound. Retention
 applies only to diagnostic history. Missing tables before migration do not
 prevent application boot; capture failures remain visible in GoodJob.
 
+Setup resolves its environment from `RAILS_ENV`, then `RACK_ENV`, then the
+development default before running any diagnostic administrator provisioning.
 Development PostgreSQL enables `pg_stat_statements.track_planning` alongside
 execution statistics. Both Compose configurations carry the setting, and setup
 applies it to an existing supported local development server through the

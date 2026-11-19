@@ -161,13 +161,16 @@ failures when no tmux socket responds.
   counters for that database and persisting normalized query text, call counts,
   combined planning/execution totals, and capture time in the existing primary database. Previously
   committed samples SHALL remain available after database recovery. Stored query
-  text SHALL filter literal values, including those in utility statements.
+  text SHALL filter literal values, including those in utility statements, and
+  remove SQL comments without corrupting multibyte query text.
   Non-development environments SHALL NOT schedule or execute PgHero collection
   or require its development-only gem at job execution. Development setup SHALL
   provision an administrator-owned, no-argument reset helper scoped to the
   connected database with a fixed safe search path and public execution revoked.
   Only the configured application role SHALL receive helper execution; that
   role SHALL remain non-superuser without general statistics-reset authority.
+  Reprovisioning SHALL restore administrator ownership and revoke former
+  application roles' helper execution grants.
   *Tests:* `spec/jobs/pg_hero_capture_query_stats_job_spec.rb`,
   `spec/services/development/pg_hero_history_spec.rb`,
   `spec/config/pg_hero_development_integration_spec.rb`.
@@ -189,7 +192,9 @@ failures when no tmux socket responds.
   because its tables are missing, PostgreSQL is recovering, permissions are
   insufficient, or persistence fails, the job SHALL report failure through
   GoodJob rather than a successful empty capture and SHALL NOT retry in an
-  immediate unbounded loop. Missing history tables SHALL NOT prevent application
+  immediate unbounded loop. Query capture, space capture, and cleanup jobs SHALL
+  use the ApplicationJob perform timeout with a 30-second ceiling. Missing
+  history tables SHALL NOT prevent application
   boot. Diagnostics documentation SHALL identify the loss of unsampled or
   interrupted work and the possible loss of an interval between PgHero's
   non-atomic reset and insertion. Background collection SHALL preserve the
@@ -205,7 +210,8 @@ failures when no tmux socket responds.
   or setup of an existing supported local server, the system SHALL enable
   `pg_stat_statements.track_planning` by default and SHALL provide a documented
   operator opt-out independent of query and space history. Provisioning SHALL
-  NOT change production PostgreSQL configuration. Documentation SHALL describe
+  NOT change production PostgreSQL configuration, including when production
+  is selected through `RACK_ENV` without `RAILS_ENV`. Documentation SHALL describe
   planning-tracking overhead, how to inspect planning counters through SQL,
   their reset on query capture or database recovery, and their inclusion in
   PgHero 4.1's combined totals without separate planning counters in its display

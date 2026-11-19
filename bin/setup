@@ -69,7 +69,8 @@ FileUtils.chdir APP_ROOT do
     system! "bin/rails db:reset" if ARGV.include?("--reset")
 
     # @spec RAILS-CONTROL-PLANE-020 RAILS-CONTROL-PLANE-023
-    if ENV["PAID_ENABLE_DEV_QUERY_STATS"] == "1" && ENV.fetch("RAILS_ENV", "development") == "development"
+    rails_environment = ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development"
+    if ENV["PAID_ENABLE_DEV_QUERY_STATS"] == "1" && rails_environment == "development"
       puts "\n== Enabling development query stats =="
       require_relative "../config/worktree_database_names"
       database_url = URI.parse(ENV["DATABASE_URL"]) if ENV["DATABASE_URL"]

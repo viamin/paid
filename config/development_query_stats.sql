@@ -25,7 +25,27 @@ AS $$
     0::bigint
   );
 $$;
+ALTER FUNCTION paid_diagnostics.reset_query_stats() OWNER TO CURRENT_USER;
 REVOKE ALL ON FUNCTION paid_diagnostics.reset_query_stats() FROM PUBLIC;
+-- CREATE OR REPLACE preserves old ACLs. Remove grants from former app roles.
+DO $reconcile_permissions$
+DECLARE
+  grantee_name text;
+BEGIN
+  FOR grantee_name IN
+    SELECT DISTINCT role.rolname
+    FROM pg_catalog.pg_proc AS function
+    CROSS JOIN LATERAL pg_catalog.aclexplode(function.proacl) AS privilege
+    JOIN pg_catalog.pg_roles AS role ON role.oid = privilege.grantee
+    WHERE function.oid = 'paid_diagnostics.reset_query_stats()'::regprocedure
+      AND privilege.grantee <> function.proowner
+  LOOP
+    EXECUTE pg_catalog.format(
+      'REVOKE ALL ON FUNCTION paid_diagnostics.reset_query_stats() FROM %I', grantee_name
+    );
+  END LOOP;
+END;
+$reconcile_permissions$;
 GRANT EXECUTE ON FUNCTION paid_diagnostics.reset_query_stats() TO :"app_role";
 ALTER DATABASE :"DBNAME" SET pg_stat_statements.track_planning TO :'track_planning';
 COMMIT;
