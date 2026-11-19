@@ -91,6 +91,13 @@ through a bounded maintenance sweep. The effective graph includes resolved
 cross-project references and follows the same open-state and child-to-parent
 contextual-reference exclusions as readiness.
 
+Graph discovery reads only the fields needed to calculate components. Project
+and parent presentation context is batch-loaded only after a cycle survives
+that calculation, for the cycle members and its downstream-held work. This
+keeps filtered Inbox availability able to preserve account-wide cycle coverage
+without hydrating presentation associations for every open issue in an
+acyclic account graph.
+
 The maintenance sweep pages accounts by immutable account ID. A root invocation
 captures the highest account ID as its cycle boundary; each continuation keeps
 that boundary and resumes after its last successfully reconciled account. This
