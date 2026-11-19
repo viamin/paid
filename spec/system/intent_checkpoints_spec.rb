@@ -46,10 +46,10 @@ RSpec.describe "Intent checkpoint decisions", system_driver: :paid_cuprite, type
         find("textarea").set("Keep the narrow rollout.")
         click_button "Save response"
       end
+      expect(page).not_to have_css("form[action$='/decisions/#{question.id}/respond']")
       expect(page).to have_text("Response saved.")
     end
 
-    expect(page).not_to have_css("form[action$='/decisions/#{questions.last.id}/respond']")
     expect(checkpoint.reload).to be_settled
     expect(checkpoint.settlements.sole.answers.size).to eq(2)
     expect(feature.reload.status).to eq("needs_decision")
