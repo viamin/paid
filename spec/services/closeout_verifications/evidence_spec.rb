@@ -158,13 +158,13 @@ RSpec.describe CloseoutVerifications::Evidence do
     expect(described_class.records_for(source_issue).size).to eq(described_class::MAX_RECORDS)
   end
 
-  it "produces a stable revision across replayed reads regardless of the recorded timestamp" do
+  it "produces a stable revision across replayed reads within the reviewed freshness window" do
     persist_assessment!
     mapping = approve_mapping
     create_verification_run(mapping:, outcome: "passed")
 
     first = described_class.revision_for(source_issue)
-    travel 5.minutes do
+    travel 5.seconds do
       second = described_class.revision_for(source_issue, records: described_class.records_for(source_issue))
       expect(second).to eq(first)
     end
@@ -282,5 +282,45 @@ RSpec.describe CloseoutVerifications::Evidence do
       expect(records.last).to include("verification_run_id" => latest.id, "current" => true)
       expect(described_class.current_for_run?(prior)).to be(false)
     end
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "expires a passing result and invalidates its evidence revision after the reviewed window" do
+    persist_assessment!
+    mapping = approve_mapping
+    run = create_verification_run(mapping:)
+    initial_revision = described_class.revision_for(source_issue)
+
+    travel (mapping.freshness_seconds + 1).seconds do
+      record = described_class.records_for(source_issue).sole
+      expect(record).to include("current" => false)
+      expect(record.fetch("stale_reasons")).to include("verification_expired")
+      expect(Time.iso8601(record.fetch("expires_at"))).to be_within(0.001).of(run.completed_at + mapping.freshness_seconds)
+      expect(described_class.revision_for(source_issue)).not_to eq(initial_revision)
+      expect(described_class.current_for_run?(run)).to be(false)
+    end
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "cannot treat a result with no authoritative completion time as current" do
+    persist_assessment!
+    mapping = approve_mapping
+    create_verification_run(mapping:).update_column(:completed_at, nil)
+
+    record = described_class.records_for(source_issue).sole
+    expect(record).to include("current" => false)
+    expect(record.fetch("stale_reasons")).to include("verification_time_unavailable")
+  end
+
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "cannot treat a future completion time as current evidence" do
+    persist_assessment!
+    mapping = approve_mapping
+    create_verification_run(mapping:).update_column(:completed_at, 2.minutes.from_now)
+
+    record = described_class.records_for(source_issue).sole
+    expect(record).to include("current" => false)
+    expect(record.fetch("stale_reasons")).to include("verification_time_in_future")
   end
 end

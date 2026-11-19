@@ -54,7 +54,11 @@
   mismatched criterion/scope, and changed or unavailable underlying recipes
   SHALL make the result stale. Omitted or truncated verification input SHALL
   mark audit coverage incomplete, and omitted records SHALL still affect the
-  source revision. Superseded terminal outcomes SHALL remain visible within
+  source revision. Evidence SHALL expire at the host-recorded completion time
+  plus the reviewed freshness period; a missing or future completion time SHALL leave it
+  stale. The packet SHALL expose the expiry, and expiration SHALL change the
+  source revision so a cached verdict cannot authorize closure.
+  Superseded terminal outcomes SHALL remain visible within
   the bound, marked stale, or be explicitly accounted for as bounded omissions;
   a later success SHALL NOT silently erase an earlier failure. It SHALL mark a
   record stale, without excluding it, when the issue's approved intent, the

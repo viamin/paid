@@ -3,8 +3,8 @@
 require "digest"
 
 module CloseoutVerifications
-  # Bounded primary evidence for semantic acceptance. Freshness is structural:
-  # a passing command never mechanically satisfies an issue criterion.
+  # Bounded primary evidence for semantic acceptance. Currentness requires
+  # reviewed bindings and lifetime; a passing command never satisfies a criterion.
   # @spec PARTIAL-CLOSEOUT-057
   class Evidence
     MAX_RECORDS = 8
@@ -13,9 +13,9 @@ module CloseoutVerifications
     MAX_COMMAND_BYTES = 1_000
 
     Row = Data.define(:id, :issue_id, :pr_number, :base_sha, :criterion_key,
-      :recipe_version, :recipe_digest, :mapping_id, :verification_result)
+      :recipe_version, :recipe_digest, :mapping_id, :completed_at, :verification_result)
     PLUCK_COLUMNS = %i[id issue_id source_pull_request_number base_commit_sha closeout_criterion_key
-      closeout_recipe_version closeout_recipe_digest closeout_mapping_id verification_result].freeze
+      closeout_recipe_version closeout_recipe_digest closeout_mapping_id completed_at verification_result].freeze
 
     def self.records_for(issue)
       records_for_issues([ issue ]).fetch(issue.id, [])
@@ -43,11 +43,12 @@ module CloseoutVerifications
       issues_by_id = issues.index_by(&:id)
       mappings = StagedCloseoutMapping.where(id: rows.filter_map(&:mapping_id)).includes(:project).index_by(&:id)
       merged_shas = merged_shas_for(issues_by_id, rows)
+      observed_at = Time.current
       latest_ids = rows.to_h { |row| [ [ row.issue_id, row.criterion_key ], row.id ] }
       rows.each do |row|
         records[row.issue_id] << present(row, mapping: mappings[row.mapping_id],
           merged_sha: merged_shas[[ row.issue_id, row.pr_number ]], issue: issues_by_id.fetch(row.issue_id),
-          superseded: latest_ids[[ row.issue_id, row.criterion_key ]] != row.id)
+          superseded: latest_ids[[ row.issue_id, row.criterion_key ]] != row.id, observed_at:)
       end
       records
     end
@@ -85,12 +86,22 @@ module CloseoutVerifications
     end
     private_class_method :merged_shas_for
 
-    def self.present(row, mapping:, merged_sha:, issue:, superseded:)
+    def self.present(row, mapping:, merged_sha:, issue:, superseded:, observed_at:)
       evidence = row.verification_result.to_h[CloseoutVerifications::Execute::EVIDENCE_KEY].to_h
       technical = evidence["technical_evidence"].to_h
       native = technical["native"].to_h
       reasons = stale_reasons(row, mapping:, merged_sha:, issue:, evidence:)
       reasons << "superseded_result" if superseded
+      expires_at = row.completed_at + mapping.freshness_seconds if row.completed_at && mapping
+      if reasons.empty?
+        if row.completed_at.nil?
+          reasons << "verification_time_unavailable"
+        elsif row.completed_at > observed_at
+          reasons << "verification_time_in_future"
+        elsif expires_at && expires_at <= observed_at
+          reasons << "verification_expired"
+        end
+      end
       strings = { "error" => [ evidence["error"].to_s, MAX_ERROR ],
         "command" => [ evidence["command"].to_s, MAX_COMMAND_BYTES ],
         "stdout" => [ native["stdout"].to_s, MAX_OUTPUT_BYTES ],
@@ -100,6 +111,8 @@ module CloseoutVerifications
         "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.base_sha,
         "recipe_version" => row.recipe_version, "recipe_digest" => row.recipe_digest,
         "outcome" => evidence["outcome"], "recorded_at" => evidence["recorded_at"],
+        "completed_at" => row.completed_at&.utc&.iso8601(6), "expires_at" => expires_at&.utc&.iso8601(6),
+        "freshness_seconds" => mapping&.freshness_seconds,
         "error" => bounded(*strings.fetch("error")), "error_truncated" => strings.fetch("error").first.bytesize > MAX_ERROR,
         "command" => bounded(*strings.fetch("command")),
         "native" => { "exit_code" => native["exit_code"], "stdout" => bounded(*strings.fetch("stdout")),

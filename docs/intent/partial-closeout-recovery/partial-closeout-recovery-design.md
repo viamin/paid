@@ -282,7 +282,11 @@ truncation make audit coverage incomplete; an omission digest still changes
 the source revision when hidden evidence changes. Superseded terminal records
 remain visible within the bound and are marked stale; older records beyond
 the cap are accounted for by omission count and digest, rather than silently
-discarded before bounding.
+discarded before bounding. Current evidence also requires an authoritative
+completion timestamp within the reviewed freshness period. The packet exposes
+its absolute expiry; expiration changes the source revision once, invalidating
+a cached acceptance verdict without clock-driven churn on already-stale
+history.
 
 `CloseoutVerifications::Execute` schedules the normal
 `PartialCloseouts::AutoAudit` report-only path once a newly terminal, current
