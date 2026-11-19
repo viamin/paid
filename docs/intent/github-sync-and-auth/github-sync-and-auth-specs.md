@@ -110,6 +110,23 @@
   *Code:* `app/services/github_client.rb`.
   *Test:* `spec/services/github_client_spec.rb`.
 
+- [x] **GITHUB-SYNC-021** — When CI diagnosis retrieves an Actions job log,
+  the system SHALL authenticate only the GitHub API request that obtains the
+  signed log location. It SHALL fetch only an HTTPS Azure Blob signed location
+  from the approved host boundary without an `Authorization` header, with
+  bounded time and response size. Unsupported or hostile locations, redirects,
+  expired or failed downloads, and oversized logs SHALL remain unavailable and
+  SHALL surface through the existing CI diagnostic failure path without logging
+  credentials or signed query strings. The project-scoped client and its normal
+  PAT fallback/error attribution remain authoritative for the GitHub API hop.
+  Rate-limited API responses SHALL honor `Retry-After`, any exhausted primary
+  quota reset, and the existing one-minute fallback when no valid deadline is
+  available; a non-exhausted primary reset SHALL NOT extend a secondary hold.
+  *Code:* `app/services/github_client.rb`, `app/services/ci/failure_context.rb`.
+  *Test:* `spec/services/github_client_spec.rb`,
+  `spec/services/github_client/with_fallback_spec.rb`,
+  `spec/services/ci/failure_context_spec.rb`.
+
 - [x] **GITHUB-SYNC-012** — During GitHub sync, the system SHALL reconcile
   every open issue or pull request with a configured needs-input label and persisted
   clarification questions whose `paid_state` has drifted away from

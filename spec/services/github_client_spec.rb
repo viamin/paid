@@ -1194,6 +1194,198 @@ RSpec.describe GithubClient do
   describe "#check_run_log" do
     let(:repo) { "owner/repo" }
 
+    # @spec GITHUB-SYNC-021
+    it "downloads an approved signed Actions log without forwarding Authorization" do
+      api_stub = stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .with(headers: { "Authorization" => "token #{token}" })
+        .to_return(
+          status: 302,
+          headers: { "Location" => "https://results.blob.core.windows.net/logs/789?sig=redacted" }
+        )
+      log_stub = stub_request(:get, "https://results.blob.core.windows.net/logs/789?sig=redacted")
+        .with { |request| request.headers["Authorization"].nil? }
+        .to_return(status: 200, body: "Failure/Error: expected true")
+
+      result = client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+
+      expect(result).to eq("Failure/Error: expected true")
+      expect(api_stub).to have_been_requested.once
+      expect(log_stub).to have_been_requested.once
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "rejects an unapproved redirect target without exposing its signed query" do
+      signed_url = "https://attacker.example/log?sig=secret-signature"
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 302, headers: { "Location" => signed_url })
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::ApiError) { |error| expect(error.message).not_to include("secret-signature") }
+
+      expect(a_request(:get, signed_url)).not_to have_been_requested
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "surfaces expired signed-log downloads without exposing their query" do
+      signed_url = "https://results.blob.core.windows.net/logs/789?sig=expired-signature"
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 302, headers: { "Location" => signed_url })
+      stub_request(:get, signed_url).to_return(status: 403, body: "AuthenticationFailed")
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::ApiError) { |error|
+        expect(error.status).to eq(403)
+        expect(error.message).not_to include("expired-signature")
+      }
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "does not follow redirects from the signed-log target" do
+      signed_url = "https://results.blob.core.windows.net/logs/789?sig=redacted"
+      redirected_url = "https://attacker.example/log?sig=secret-signature"
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 302, headers: { "Location" => signed_url })
+      stub_request(:get, signed_url).to_return(status: 302, headers: { "Location" => redirected_url })
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::ApiError, /status 302/)
+
+      expect(a_request(:get, redirected_url)).not_to have_been_requested
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "rejects oversized signed-log downloads" do
+      signed_url = "https://results.blob.core.windows.net/logs/789?sig=redacted"
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 302, headers: { "Location" => signed_url })
+      stub_request(:get, signed_url)
+        .to_return(status: 200, headers: { "Content-Length" => (GithubClient::MAX_ACTIONS_LOG_BYTES + 1).to_s })
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::ApiError, /exceeded configured size limit/)
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "stops a signed-log download that keeps dripping chunks within the socket timeout" do
+      signed_url = "https://results.blob.core.windows.net/logs/789?sig=redacted"
+      response = Net::HTTPOK.new("1.1", "200", "OK")
+      http = instance_double(Net::HTTP)
+      stub_const("GithubClient::ACTIONS_LOG_TOTAL_TIMEOUT", 0.01)
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 302, headers: { "Location" => signed_url })
+      allow(Net::HTTP).to receive(:start).and_yield(http)
+      allow(http).to receive(:request).and_yield(response)
+      allow(response).to receive(:read_body) do |&consume|
+        loop do
+          consume.call("x")
+          Thread.pass
+        end
+      end
+
+      expect { client.check_run_log(repo, job_id: 789) }
+        .to raise_error(GithubClient::ApiError, "Actions job log download request failed")
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "refreshes an expired GitHub credential before obtaining the log redirect" do
+      refreshed_token = "ghp_refreshed_token_123456789012345678901234"
+      refresh = -> { refreshed_token }
+      refreshing_client = described_class.new(token:, token_refresher: refresh)
+      signed_url = "https://results.blob.core.windows.net/logs/789?sig=redacted"
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .with(headers: { "Authorization" => "token #{token}" })
+        .to_return(status: 401)
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .with(headers: { "Authorization" => "token #{refreshed_token}" })
+        .to_return(status: 302, headers: { "Location" => signed_url })
+      stub_request(:get, signed_url).to_return(status: 200, body: "refreshed log")
+
+      expect(refreshing_client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789"))
+        .to eq("refreshed log")
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "preserves GitHub rate-limit errors from the authenticated API hop" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 403, headers: { "X-RateLimit-Remaining" => "0", "X-RateLimit-Reset" => "1" })
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::RateLimitError)
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "treats a secondary rate limit 403 with Retry-After as a rate limit, not a permission failure" do
+      reset_time = 1.hour.from_now.to_i
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(
+          status: 403,
+          body: { message: "You have exceeded a secondary rate limit" }.to_json,
+          headers: { "X-RateLimit-Remaining" => "42", "X-RateLimit-Reset" => reset_time.to_s, "Retry-After" => "30" }
+        )
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::RateLimitError)
+
+      state = GithubHealthState.find_by(endpoint: health_endpoint)
+      expect(state).to be_rate_limited
+      expect(state.rate_limited_until).to be_within(2.seconds).of(30.seconds.from_now)
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "honors a secondary Retry-After deadline without a primary reset header" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 403, headers: { "Retry-After" => "30", "X-RateLimit-Remaining" => "42" })
+
+      expect { client.check_run_log(repo, job_id: 789) }
+        .to raise_error(GithubClient::RateLimitError) { |error|
+          expect(error.reset_at).to be_within(2.seconds).of(30.seconds.from_now)
+        }
+      expect(GithubHealthState.find_by(endpoint: health_endpoint)).to be_rate_limited
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "uses the health-state cooldown when a 429 has no reset headers" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs").to_return(status: 429)
+
+      expect { client.check_run_log(repo, job_id: 789) }.to raise_error(GithubClient::RateLimitError)
+      state = GithubHealthState.find_by(endpoint: health_endpoint)
+      expect(state).to be_rate_limited
+      expect(state.rate_limited_until).to be_within(2.seconds).of(1.minute.from_now)
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "treats a 429 on the authenticated API hop as a rate limit" do
+      reset_time = 1.hour.from_now.to_i
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 429, headers: { "X-RateLimit-Remaining" => "0", "X-RateLimit-Reset" => reset_time.to_s })
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::RateLimitError)
+
+      expect(GithubHealthState.find_by(endpoint: health_endpoint)).to be_rate_limited
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "records a health failure when the authenticated API hop fails at the network level" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_raise(Faraday::ConnectionFailed.new("connection reset"))
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::ApiError, /Faraday::ConnectionFailed/)
+
+      state = GithubHealthState.find_by(endpoint: health_endpoint)
+      expect(state).to be_present
+      expect(state.failure_count).to eq(1)
+    end
+
     it "fetches GitHub Actions job logs for a check run details URL" do
       stub = stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
         .to_return(status: 200, body: "Failure/Error: expected true", headers: { "Content-Type" => "text/plain" })

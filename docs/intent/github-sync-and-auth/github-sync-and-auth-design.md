@@ -172,6 +172,23 @@ health-state recording). The plain Octokit pass-throughs stay on a delegated
 wrapper that applies the same error translation contract, so callers keep a
 small, stable API without duplicating rescue boilerplate throughout the class.
 
+Actions job-log retrieval is a two-hop read. The project-scoped GitHub client
+authenticates the GitHub API hop and preserves its normal App/PAT fallback and
+error attribution. A successful response may supply one signed Azure Blob
+location. Paid validates that location as HTTPS on the approved Azure Blob
+host boundary, then downloads it with no `Authorization` header, no further
+redirects, and bounded timeout and response size. Unsupported targets, expired
+or failed downloads, and oversized content remain unavailable through the CI
+diagnostic path; diagnostics contain only derived status/error information and
+never signed query strings or credentials.
+
+The API hop respects secondary-limit `Retry-After` seconds and the primary reset
+deadline when the response reports zero remaining quota, waiting until both
+deadlines permit requests. A secondary response with remaining primary quota
+does not inherit that unrelated quota window's reset. Missing or malformed
+deadlines use the existing health-state one-minute cooldown instead of epoch
+zero. These deadlines follow [GitHub's rate-limit guidance](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#exceeding-the-rate-limit).
+
 Project-scoped GitHub diagnostics are exposed as a sanitized read model for
 customer users and chat agents. The diagnostics report derived facts only:
 credential mode, installation/token health, whether the project webhook secret
