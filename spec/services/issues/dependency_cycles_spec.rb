@@ -41,6 +41,15 @@ RSpec.describe Issues::DependencyCycles do
     expect(cycle.downstream_issues).to contain_exactly(issues[2])
   end
 
+  # @spec AUTO-PICK-QUEUE-014
+  it "does not eager-load presentation associations when the account graph is acyclic" do
+    graph((1..40).to_a)
+
+    queries = capture_queries { expect(described_class.call(account:)).to be_empty }
+
+    expect(queries).not_to include(a_string_matching(/LEFT OUTER JOIN/))
+  end
+
   # @spec AUTO-PICK-QUEUE-015
   it "carries declaration provenance on each concrete path edge" do
     issues = graph([ 1, 2 ])

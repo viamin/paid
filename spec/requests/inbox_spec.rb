@@ -1777,6 +1777,20 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Other account PR")
   end
 
+  # @spec OPERATOR-INBOX-002C AUTO-PICK-QUEUE-014
+  it "keeps an escalated-pr project filter from eager-loading an acyclic account graph" do
+    create_escalated_pr(title: "Escalated PR", github_number: 503)
+    Array.new(40) { |index| create(:issue, project:, github_number: 600 + index, github_state: "open") }
+
+    queries = capture_queries do
+      get inbox_path(project_id: project.id, kind: Inbox::Queue::ESCALATED_PR_KIND)
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Escalated PR")
+    expect(queries).not_to include(a_string_matching(/parent_issues_issues/))
+  end
+
   # @spec OPERATOR-INBOX-002C
   it "renders escalated-pr detail with counters and the inbox-scoped unblock action" do
     escalated = create_escalated_pr(

@@ -104,8 +104,11 @@
   graph SHALL include resolved cross-project references and apply the existing
   open-state and contextual parent-reference exclusions. A reconciliation
   failure SHALL be reported as unavailable rather than as zero cycles; cache
-  invalidation SHALL occur only after successful reconciliation; and each page
-  SHALL log duration and allocations. *Tests:*
+  invalidation SHALL occur only after successful reconciliation; each page
+  SHALL log duration and allocations; and an acyclic graph scan SHALL not
+  hydrate project or parent presentation associations for every graph node.
+  Presentation associations SHALL instead be batch-loaded only for cycles that
+  survive graph analysis. *Tests:*
   `spec/services/issues/dependency_cycles_spec.rb`,
   `spec/jobs/dependency_cycle_reconciliation_job_spec.rb`.
   *Code:* `Issues::DependencyCycles`, `DependencyCycleReconciliationJob`.
