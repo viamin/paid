@@ -59,6 +59,20 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     expect_execution("frontend", adapter("knip").availability_command, timeout: 30)
   end
 
+  # @spec MAINT-040 MAINT-042
+  it "selects an analyzer from a nested package manifest absent from the project language profile" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ])
+    allow(run).to receive(:execute_in_execution_environment).and_return(
+      result(exit_code: 0, stdout: JSON.generate([ "./frontend/package.json" ])),
+      result(exit_code: 1, stderr: "knip is not locked")
+    )
+
+    evidence = described_class.call(run:)
+
+    expect_execution("frontend", adapter("knip").availability_command, timeout: 30)
+    expect(evidence).to include(completed_checks: [], incomplete_checks: [], prompt_context: nil)
+  end
+
   # @spec MAINT-040 MAINT-043
   it "bounds aggregate prompt evidence without truncating report evidence" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
@@ -86,6 +100,8 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   # @spec MAINT-041 MAINT-043
   it "records checks omitted from prompt context when their metadata exceeds its aggregate budget" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [], "marker_files" => [])
+    allow(run).to receive(:execute_in_execution_environment)
+      .and_return(result(exit_code: 0, stdout: "[]"))
     sidecars.replace([ { "name" => "large-sidecar", "image" => "x" * 70_000, "port" => 8080 } ])
     endpoints.replace([ { "name" => "large-sidecar", "url" => "http://large-sidecar:8080" } ])
 
@@ -137,10 +153,12 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   it "uses a prompt-only investigation when no applicable ecosystem has a native analyzer" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "python" ], "marker_files" => [])
     allow(run).to receive(:execute_in_execution_environment)
+      .and_return(result(exit_code: 0, stdout: "[]"))
 
     evidence = described_class.call(run:)
 
-    expect(run).not_to have_received(:execute_in_execution_environment)
+    expect(run).to have_received(:execute_in_execution_environment)
+      .with(described_class::PACKAGE_DISCOVERY, timeout: 30, stream: false)
     expect(evidence).to include(completed_checks: [], incomplete_checks: [], prompt_context: nil)
   end
 
@@ -324,6 +342,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   it "exposes existing marketplace sidecar endpoints as advisory evidence without creating a matcher or gate" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [], "marker_files" => [])
     allow(run).to receive(:execute_in_execution_environment)
+      .and_return(result(exit_code: 0, stdout: "[]"))
     sidecars.replace([ { "name" => "semantic-search", "image" => "example/search:2", "port" => 8080 } ])
     endpoints.replace([ { "name" => "semantic-search", "url" => "http://semantic-search:8080" } ])
 

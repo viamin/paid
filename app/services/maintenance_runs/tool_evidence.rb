@@ -79,14 +79,13 @@ module MaintenanceRuns
 
     def analyzer_checks
       checks = []
-      adapters = applicable_adapters
-      return [] if adapters.empty?
+      return [] unless run.maintenance_objective == "unnecessary_code"
 
       discovery = execute(PACKAGE_DISCOVERY, DISCOVERY_TIMEOUT)
       return [ discovery_check(discovery) ] unless exit_code(discovery) == 0
 
       paths = package_paths(discovery)
-      adapters.each do |adapter|
+      applicable_adapters(paths).each do |adapter|
         checks.concat(collect_packages(adapter, package_scopes(paths, adapter)))
       end
       checks
@@ -101,11 +100,9 @@ module MaintenanceRuns
       checks << discovery_check(discovery, error:, reason: "invalid_result_shape")
     end
 
-    def applicable_adapters
-      return [] unless run.maintenance_objective == "unnecessary_code"
-
-      languages = Array(run.project.effective_repo_profile["languages"]).map(&:to_s)
-      ADAPTERS.select { |adapter| (adapter.ecosystems & languages).any? }
+    def applicable_adapters(paths)
+      manifests = paths.to_h { |path| [ File.basename(path), true ] }
+      ADAPTERS.select { |adapter| manifests.key?(adapter.manifest) }
     end
 
     def package_paths(discovery)
