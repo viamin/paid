@@ -6,6 +6,12 @@ class CapybaraTenantContextFile < Pathname
 end
 
 RSpec.describe CapybaraTenantContextFile, :no_db do
+  let(:worker) { ActionCable::Server::Worker.new(max_size: 1) }
+  let(:connection) do
+    logger = ActionCable::Connection::TaggedLoggerProxy.new(Rails.logger, tags: [])
+    instance_double(ActionCable::Connection::Base, logger:)
+  end
+
   # @spec POSTGRESQL-PERSISTENCE-012
   it "initializes browser-server connections before Warden deserializes the session user" do
     app = instance_double(Proc)
@@ -29,5 +35,29 @@ RSpec.describe CapybaraTenantContextFile, :no_db do
     Rails.application.executor.wrap { }
 
     expect(TenantContext).not_to have_received(:apply_system_access!)
+  end
+
+  # @spec POSTGRESQL-PERSISTENCE-012
+  it "keeps Cable work outside a browser request's shared fixture session" do
+    allow(TenantContext).to receive(:with_system_access).and_yield
+    allow(TenantContext).to receive(:apply_system_access!)
+    entered = Queue.new
+    release = Queue.new
+    attempted = Queue.new
+    app = ->(_environment) { entered << true; release.pop; [ 200, {}, [] ] }
+    request_thread = Thread.new { CapybaraTenantContext.new(app).call({}) }
+    raise "Browser request did not start" unless entered.pop(timeout: 5)
+    cable_thread = Thread.new do
+      attempted << true
+      worker.work(connection) { }
+    end
+    raise "Cable worker did not start" unless attempted.pop(timeout: 5)
+
+    expect(cable_thread.join(0.2)).to be_nil
+  ensure
+    release << true if release
+    request_thread&.join(5) || request_thread&.kill&.join
+    cable_thread&.join(5) || cable_thread&.kill&.join
+    worker&.halt
   end
 end

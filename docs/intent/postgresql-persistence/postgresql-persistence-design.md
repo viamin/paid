@@ -97,9 +97,15 @@ The browser-test Rack boundary restores that baseline after the complete request
 scope unwinds, including errors. It does not install global executor callbacks
 that mutate pooled session state during unrelated work or fixture teardown.
 The browser regression server handles one request at a time because transactional
-fixtures pin a single PostgreSQL session across threads. Application concurrency
-tests use independent connections instead of interleaving tenant settings on
-that shared session.
+fixtures pin a single PostgreSQL session across threads. Its Rack boundary and
+ActionCable worker callbacks share a reentrant fixture-session lock: an entire
+HTTP request or Cable unit, including tenant cleanup, completes before another
+can change that session's tenant settings. This applies only to the test harness.
+System teardown closes browser transports and drains Cable workers before Rails
+unpins the fixture connection and removes its thread lock, preventing late Cable
+cleanup from racing the example's tenant restoration or the next fixture.
+Application concurrency tests use independent connections instead of interleaving
+tenant settings on that shared session.
 
 The container-runtime provisioner applies that same boundary to agent test
 services: bootstrap credentials administer PostgreSQL, while each run receives
