@@ -117,7 +117,7 @@ module CloseoutVerifications
     # terminal outcome must supersede, whether or not it is current.
     def self.latest_per_criterion(records)
       records.transform_values do |entries|
-        entries.group_by { |entry| entry["criterion_key"] }.values.map(&:last)
+        entries.reverse_each.uniq { |entry| entry["criterion_key"] }.reverse
       end
     end
     private_class_method :latest_per_criterion
