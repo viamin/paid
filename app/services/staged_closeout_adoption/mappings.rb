@@ -28,8 +28,8 @@ module StagedCloseoutAdoption
       new(project:).target_current?(mapping)
     end
 
-    def self.eligible_for(mapping:, project:, issue:, observed_merge: false)
-      new(project:, issue:).eligible_for(mapping, observed_merge:)
+    def self.eligible_for(mapping:, project:, issue:, observed_merge: false, observed_target: nil)
+      new(project:, issue:).eligible_for(mapping, observed_merge:, observed_target:)
     end
 
     def initialize(project:, actor: nil, issue: nil, attributes: {})
@@ -72,13 +72,15 @@ module StagedCloseoutAdoption
     # Used by #5074 at its future queue/claim boundary; it never authorizes a
     # run itself. The reason is deliberately inspectable on operator surfaces.
     # @spec STAGED-CLOSEOUT-ADOPTION-004 STAGED-CLOSEOUT-ADOPTION-007
-    def eligible_for(mapping, observed_merge: false)
+    def eligible_for(mapping, observed_merge: false, observed_target: nil)
       return Result.new(mapping, "mapping_scope_mismatch") unless mapping.project_id == project.id &&
         mapping.account_id == project.account_id && issue&.project_id == project.id && mapping.issue_id == issue.id &&
         mapping.staged_closeout_enrollment_id == enrollment.id
       return Result.new(mapping, "project_not_enrolled") unless enrollment.enabled?
       return Result.new(mapping, "mapping_not_current") unless mapping.current?
-      return Result.new(mapping, "criterion_not_current") unless admission_criteria(observed_merge:).include?(mapping.criterion_key)
+      observed_stage = observed_target || ("merged_revision" if observed_merge)
+      observed_stage = nil unless %w[merged_revision live_environment].include?(observed_stage) && mapping.stage == observed_stage
+      return Result.new(mapping, "criterion_not_current") unless admission_criteria(observed_target: observed_stage).include?(mapping.criterion_key)
       return Result.new(mapping, "criterion_changed") unless criterion_digest(mapping.criterion_key) == mapping.criterion_digest
       return Result.new(mapping, "phase_policy_disabled") unless Automation::EffectivePolicy.call(
         project:, phase: mapping.phase, work_item: issue, trigger: :automatic
@@ -127,11 +129,11 @@ module StagedCloseoutAdoption
       assessment.criteria.map { |criterion| criterion.fetch("criterion") }
     end
 
-    # A newly observed merge changes delivery evidence, not approved intent.
+    # A newly observed target changes delivery evidence, not approved intent.
     # It may schedule a reviewed check but cannot satisfy acceptance itself.
     # @spec STAGED-CLOSEOUT-ADOPTION-010
-    def admission_criteria(observed_merge:)
-      return criteria unless observed_merge
+    def admission_criteria(observed_target:)
+      return criteria unless observed_target
       unless assessment.intent_revision == PartialCloseouts::Assessment.intent_revision_for(issue)
         raise Error, "closeout assessment is stale"
       end

@@ -67,6 +67,7 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
         KnowledgeAuditRetentionJob
         LegacyPartialCloseoutReconciliationSweepJob
         LinearTicketSyncJob
+        LiveTargetCloseoutVerificationSweepJob
         ModelHealthCheckJob
         OrphanBranchReaperJob
         PartialCloseoutAcceptanceAuditSweepJob

@@ -13,9 +13,11 @@ module CloseoutVerifications
     MAX_COMMAND_BYTES = 1_000
 
     Row = Data.define(:id, :issue_id, :pr_number, :base_sha, :criterion_key,
-      :recipe_version, :recipe_digest, :mapping_id, :completed_at, :verification_result)
+      :recipe_version, :recipe_digest, :mapping_id, :completed_at, :verification_result,
+      :target_revision, :environment_class, :measurement_attempt_id)
     PLUCK_COLUMNS = %i[id issue_id source_pull_request_number base_commit_sha closeout_criterion_key
-      closeout_recipe_version closeout_recipe_digest closeout_mapping_id completed_at verification_result].freeze
+      closeout_recipe_version closeout_recipe_digest closeout_mapping_id completed_at verification_result
+      closeout_target_revision closeout_environment closeout_measurement_attempt_id].freeze
 
     def self.records_for(issue)
       records_for_issues([ issue ]).fetch(issue.id, [])
@@ -43,12 +45,16 @@ module CloseoutVerifications
       issues_by_id = issues.index_by(&:id)
       mappings = StagedCloseoutMapping.where(id: rows.filter_map(&:mapping_id)).includes(:project).index_by(&:id)
       merged_shas = merged_shas_for(issues_by_id, rows)
+      measurements = TrustedMeasurementAttempt.where(id: rows.filter_map(&:measurement_attempt_id),
+        issue_id: records.keys, project_id: issues.map(&:project_id)).index_by(&:id)
+      live_revision = TrustedMeasurements::DeploymentSignal.current if rows.any? { |row| row.target_revision.present? }
       observed_at = Time.current
       latest_ids = rows.to_h { |row| [ [ row.issue_id, row.criterion_key ], row.id ] }
       rows.each do |row|
         records[row.issue_id] << present(row, mapping: mappings[row.mapping_id],
           merged_sha: merged_shas[[ row.issue_id, row.pr_number ]], issue: issues_by_id.fetch(row.issue_id),
-          superseded: latest_ids[[ row.issue_id, row.criterion_key ]] != row.id, observed_at:)
+          superseded: latest_ids[[ row.issue_id, row.criterion_key ]] != row.id, observed_at:,
+          measurement: measurements[row.measurement_attempt_id], live_revision:)
       end
       records
     end
@@ -86,11 +92,11 @@ module CloseoutVerifications
     end
     private_class_method :merged_shas_for
 
-    def self.present(row, mapping:, merged_sha:, issue:, superseded:, observed_at:)
+    def self.present(row, mapping:, merged_sha:, issue:, superseded:, observed_at:, measurement:, live_revision:)
       evidence = row.verification_result.to_h[CloseoutVerifications::Execute::EVIDENCE_KEY].to_h
       technical = evidence["technical_evidence"].to_h
       native = technical["native"].to_h
-      reasons = stale_reasons(row, mapping:, merged_sha:, issue:, evidence:)
+      reasons = stale_reasons(row, mapping:, merged_sha:, issue:, evidence:, measurement:, live_revision:)
       reasons << "superseded_result" if superseded
       expires_at = row.completed_at + mapping.freshness_seconds if row.completed_at && mapping
       if reasons.empty?
@@ -106,9 +112,9 @@ module CloseoutVerifications
         "command" => [ evidence["command"].to_s, MAX_COMMAND_BYTES ],
         "stdout" => [ native["stdout"].to_s, MAX_OUTPUT_BYTES ],
         "stderr" => [ native["stderr"].to_s, MAX_OUTPUT_BYTES ] }
-      {
+      record = {
         "verification_run_id" => row.id, "source_issue_id" => issue.id, "project_id" => issue.project_id,
-        "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.base_sha,
+        "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.target_revision.presence || row.base_sha,
         "recipe_version" => row.recipe_version, "recipe_digest" => row.recipe_digest,
         "outcome" => evidence["outcome"], "recorded_at" => evidence["recorded_at"],
         "completed_at" => row.completed_at&.utc&.iso8601(6), "expires_at" => expires_at&.utc&.iso8601(6),
@@ -125,6 +131,8 @@ module CloseoutVerifications
         "current" => reasons.empty?,
         "stale_reasons" => reasons
       }
+      record.merge!(measurement_fields(row, evidence, record)) if live_target?(row, mapping)
+      record
     end
     private_class_method :present
 
@@ -133,7 +141,7 @@ module CloseoutVerifications
     end
     private_class_method :bounded
 
-    def self.stale_reasons(row, mapping:, merged_sha:, issue:, evidence:)
+    def self.stale_reasons(row, mapping:, merged_sha:, issue:, evidence:, measurement:, live_revision:)
       return [ "mapping_revoked" ] unless mapping&.current?
       return [ "mapping_scope_mismatch" ] unless mapping.issue_id == issue.id &&
         mapping.project_id == issue.project_id && mapping.account_id == mapping.project.account_id && mapping.criterion_key == row.criterion_key
@@ -141,7 +149,11 @@ module CloseoutVerifications
       reasons = []
       reasons << "recipe_changed" if mapping.target_version != row.recipe_version || mapping.target_digest != row.recipe_digest ||
         !StagedCloseoutAdoption::Mappings.target_current?(mapping:, project: mapping.project)
-      reasons << "target_changed" if merged_sha.blank? || merged_sha != row.base_sha
+      if live_target?(row, mapping)
+        reasons.concat(live_stale_reasons(row, mapping:, issue:, evidence:, measurement:, live_revision:))
+      else
+        reasons << "target_changed" if merged_sha.blank? || merged_sha != row.base_sha
+      end
       reasons << "intent_changed" if mapping.criterion_digest != StagedCloseoutMapping.digest_for(issue:, criterion_key: mapping.criterion_key)
       reasons << "environment_changed" if environment_changed?(evidence, mapping)
       expected = { "source_issue_id" => issue.id, "criterion" => row.criterion_key, "source_pr_number" => row.pr_number,
@@ -151,6 +163,51 @@ module CloseoutVerifications
       reasons
     end
     private_class_method :stale_reasons
+
+    def self.live_target?(row, mapping)
+      row.target_revision.present? || mapping&.stage == "live_environment"
+    end
+    private_class_method :live_target?
+
+    def self.live_stale_reasons(row, mapping:, issue:, evidence:, measurement:, live_revision:)
+      reasons = []
+      reasons << "target_changed" if live_revision.blank? || row.target_revision != live_revision
+      reasons << "environment_changed" unless row.environment_class == mapping.environment_class && row.environment_class == Rails.env.to_s
+      reasons << "verification_identity_mismatch" unless evidence["target_revision"] == row.target_revision &&
+        evidence["measurement_attempt_id"] == row.measurement_attempt_id
+      unless measurement && measurement.account_id == mapping.account_id && measurement.project_id == issue.project_id &&
+          measurement.issue_id == issue.id && measurement.external_issue_number == issue.github_number &&
+          measurement.criterion_key == row.criterion_key && measurement.check_key == mapping.target_key &&
+          measurement.check_version.to_s == row.recipe_version && measurement.deployed_revision == row.target_revision
+        return reasons + [ "measurement_unavailable_or_mismatched" ]
+      end
+
+      unless measurement.status == evidence["measurement_status"] && measurement.result == evidence["measurement_result"] &&
+          measurement.failure_reason.to_s == evidence["measurement_failure_reason"].to_s &&
+          measurement.executed_at&.utc&.iso8601(6) == evidence["measurement_executed_at"]
+        reasons << "measurement_changed"
+      end
+      reasons
+    end
+    private_class_method :live_stale_reasons
+
+    def self.measurement_fields(row, evidence, record)
+      raw_result = evidence["measurement_result"]
+      result = raw_result.is_a?(Hash) ? raw_result : {}
+      encoded = JSON.generate(result)
+      truncated = encoded.bytesize > MAX_OUTPUT_BYTES || row.target_revision.to_s.bytesize > 250 ||
+        evidence["measurement_failure_reason"].to_s.bytesize > MAX_ERROR
+      {
+        "stage" => "live_environment", "target_revision" => bounded(row.target_revision.to_s, 250),
+        "measurement_attempt_id" => row.measurement_attempt_id,
+        "measurement_status" => bounded(evidence["measurement_status"].to_s, 50),
+        "measurement_executed_at" => bounded(evidence["measurement_executed_at"].to_s, 50),
+        "measurement_failure_reason" => bounded(evidence["measurement_failure_reason"].to_s, MAX_ERROR),
+        "measurement_result" => truncated ? bounded(encoded, MAX_OUTPUT_BYTES) : result,
+        "evidence_truncated" => record["evidence_truncated"] || truncated
+      }
+    end
+    private_class_method :measurement_fields
 
     def self.environment_changed?(evidence, mapping)
       mapping.environment_class.present? && evidence.dig("environment", "mapping_environment_class") != mapping.environment_class
