@@ -19,25 +19,40 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   end
 
   # @spec MAINT-040 MAINT-042 MAINT-043
-  it "runs the Ruby and JS analyzers in the run execution environment and records their provenance" do
-    allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "exhale 1.2"),
-      result(exit_code: 1, stdout: '{"issues":[]}'),
-      result(exit_code: 0, stdout: "knip 5.0"),
-      result(exit_code: 1, stdout: '{"unusedFiles":[]}')
-    )
-
+  it "runs each analyzer recipe in its discovered package scope and records distinct evidence" do
+    stub_analyzer_results
     evidence = described_class.call(run:)
 
-    expect(run).to have_received(:execute_in_execution_environment).with(
-      %w[bundle exec exhale --version], timeout: 30, stream: false
+    expect_execution(".", %w[bundle exec exhale --version], timeout: 30)
+    expect_execution(".", %w[bundle exec exhale dry --format json], timeout: 120)
+    expect_execution(".", %w[bundle exec exhale complexity --format json], timeout: 120)
+    expect_execution("frontend", %w[yarn knip --version], timeout: 30)
+    expect(evidence.fetch(:completed_checks).map { |check| check.fetch("name") })
+      .to contain_exactly("exhale_dry", "exhale_complexity", "knip")
+    expect(evidence.fetch(:prompt_context)).to include("exhale", "knip")
+    expect(evidence.fetch(:completed_checks)).to include(
+      include("name" => "exhale_dry", "output" => include("duplicates"),
+        "provenance" => include("package_scope" => ".")),
+      include("name" => "exhale_complexity", "output" => include("complexity")),
+      include("name" => "knip", "exit_code" => 1,
+        "provenance" => include("package_scope" => "frontend"))
     )
-    expect(run).to have_received(:execute_in_execution_environment).with(
-      %w[yarn knip --version], timeout: 30, stream: false
+  end
+
+  def stub_analyzer_results
+    allow(run).to receive(:execute_in_execution_environment).and_return(
+      result(exit_code: 0, stdout: "./Gemfile\0./frontend/package.json\0"),
+      result(exit_code: 0, stdout: "exhale 1.2"), result(exit_code: 0, stdout: '{"duplicates":[]}'),
+      result(exit_code: 0, stdout: '{"complexity":[]}'), result(exit_code: 0, stdout: "knip 5.0"),
+      result(exit_code: 1, stdout: '{"unusedFiles":[]}')
     )
-    expect(evidence.fetch(:completed_checks).map { |check| check.fetch("name") }).to contain_exactly("exhale", "knip")
-    expect(evidence.fetch(:prompt_context)).to include("Exhale", "Knip")
-    expect(evidence.fetch(:completed_checks)).to include(include("name" => "knip", "exit_code" => 1))
+  end
+
+  def expect_execution(scope, command, timeout:)
+    expect(run).to have_received(:execute_in_execution_environment).with(
+      [ "sh", "-lc", described_class::SCOPED_EXECUTION, "paid-analyzer", scope, *command ],
+      timeout:, stream: false
+    )
   end
 
   # @spec MAINT-044
@@ -49,6 +64,34 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
 
     expect(run).not_to have_received(:execute_in_execution_environment)
     expect(evidence).to include(completed_checks: [], incomplete_checks: [], prompt_context: nil)
+  end
+
+  # @spec MAINT-042
+  it "records planned package discovery as incomplete when manifests cannot be resolved" do
+    allow(run).to receive(:execute_in_execution_environment).and_return(result(exit_code: 2, stderr: "find failed"))
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:completed_checks)).to be_empty
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "analyzer_package_discovery", "reason" => "unexpected_exit_code")
+    )
+  end
+
+  # @spec MAINT-042
+  it "does not report completed coverage when a matching package manifest is absent" do
+    allow(run).to receive(:execute_in_execution_environment).and_return(
+      result(exit_code: 0, stdout: "./Gemfile\0"),
+      result(exit_code: 0, stdout: "exhale 1.2"),
+      result(exit_code: 0, stdout: "{}"),
+      result(exit_code: 0, stdout: "{}")
+    )
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:incomplete_checks)).to include(
+      include("name" => "knip_package_discovery", "reason" => "no_matching_package_manifest")
+    )
   end
 
   # @spec MAINT-041 MAINT-045

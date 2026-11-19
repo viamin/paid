@@ -65,7 +65,7 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
     finding = {
       category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ],
       locations: [ { path: "app/workflows/a.rb", line: 18 } ], supporting_evidence: [ { source: "inspection" } ],
-      contrary_evidence: [], analyzer_provenance: {}, raw_tool_confidence: nil,
+      contrary_evidence: [], evidence_source: "agent", analyzer_provenance: {}, raw_tool_confidence: nil,
       agent_assessment: "actionable", proposed_action: "Remove the callback", validation_plan: "Run workflow specs",
       verification_disposition: "unverified"
     }

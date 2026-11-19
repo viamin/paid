@@ -11,10 +11,11 @@ module MaintenanceReports
     REPORT_PATTERN = /<!--\s*maintenance-report-start\s*-->\n?(.*?)\n?<!--\s*maintenance-report-end\s*-->/m.freeze
     ARRAY_FIELDS = %w[exclusions completed_checks incomplete_checks findings].freeze
     REQUIRED_FINDING_FIELDS = %w[
-      category claim symbols locations analyzer_provenance verification_disposition
+      category claim symbols locations evidence_source analyzer_provenance verification_disposition
     ].freeze
     DISPOSITIONS = MaintenanceFindingOccurrence::DISPOSITIONS
     ASSESSMENTS = MaintenanceFindingOccurrence::ASSESSMENTS
+    EVIDENCE_SOURCES = %w[agent tool].freeze
 
     def self.parse(output) = new(output).parse
 
@@ -84,17 +85,18 @@ module MaintenanceReports
     def validate_analyzer_provenance!(finding)
       require_type!(finding, "analyzer_provenance", Hash)
       provenance = finding.fetch("analyzer_provenance")
-      if provenance.empty?
-        return if finding["raw_tool_confidence"].nil?
+      return if finding["evidence_source"] == "agent" && provenance.empty?
 
-        raise InvalidReport, "tool-derived finding analyzer_provenance must not be empty"
-      end
+      raise InvalidReport, "tool-derived finding analyzer_provenance must not be empty" if provenance.empty?
 
       missing = %w[name version configuration].reject { |field| provenance[field].present? }
       raise InvalidReport, "finding analyzer_provenance is missing: #{missing.join(', ')}" if missing.any?
     end
 
     def validate_persistence_bounds!(finding)
+      unless EVIDENCE_SOURCES.include?(finding["evidence_source"])
+        raise InvalidReport, "finding evidence source is invalid"
+      end
       confidence = finding["raw_tool_confidence"]
       unless confidence.nil? || (confidence.is_a?(Numeric) && confidence.between?(0, 1))
         raise InvalidReport, "finding raw_tool_confidence must be a number between 0 and 1"
