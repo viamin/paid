@@ -2,6 +2,7 @@
 
 require "capybara/cuprite"
 require "capybara/rspec"
+require "monitor"
 require_relative "chromium_availability"
 
 # Note: this is registered as `:paid_cuprite`, not `:cuprite`, on purpose.
@@ -30,12 +31,77 @@ end
 
 SYSTEM_DRIVER = :rack_test
 
-Capybara.server = :puma, { Silent: true }
+# A Cuprite/Puma request checks out a different connection from the example.
+# Wrap the complete Rack stack so Warden can deserialize the session user before
+# ApplicationController resolves and applies the signed-in user's tenant.
+# @spec POSTGRESQL-PERSISTENCE-012
+class CapybaraTenantContext
+  FIXTURE_SESSION_LOCK = Monitor.new
+
+  def self.install!
+    return if Capybara.app.is_a?(self)
+
+    Capybara.app = new(Capybara.app)
+  end
+
+  def self.with_fixture_session
+    FIXTURE_SESSION_LOCK.synchronize do
+      TenantContext.with_system_access { yield }
+    ensure
+      TenantContext.apply_system_access!
+    end
+  end
+
+  def initialize(app)
+    @app = app
+  end
+
+  def call(environment)
+    self.class.with_fixture_session { @app.call(environment) }
+  end
+end
+
+# Cable workers share the transactional fixture's PostgreSQL session too.
+# Serialize complete units of work with HTTP, including their context cleanup.
+ActionCable::Server::Worker.set_callback(:work, :around) do |_worker, work|
+  CapybaraTenantContext.with_fixture_session { work.call }
+end
+
+# RackTest and the example share a database connection. ApplicationController
+# deliberately clears request tenant context, so restore the test harness's
+# system-access baseline before assertions run on that shared connection.
+# Browser-driven specs use a separate server connection and do not need this.
+# @spec POSTGRESQL-PERSISTENCE-012
+module RackTestTenantContext
+  def process(...)
+    super
+  ensure
+    TenantContext.apply_system_access!
+  end
+end
+
+Capybara::RackTest::Browser.prepend(RackTestTenantContext)
+
+# Transactional browser examples pin one PostgreSQL session across threads.
+# Concurrent requests cannot safely interleave tenant session settings on it.
+Capybara.server = :puma, { Silent: true, Threads: "0:1" }
 Capybara.server_host = "127.0.0.1"
 Capybara.default_max_wait_time = 5
 
 RSpec.configure do |config|
+  config.after(:each, type: :system) do
+    # Close transports and finish their tenant cleanup before fixtures unpin
+    # the shared connection and return it to the pool without a thread lock.
+    Capybara.reset_sessions!
+    workers = ActionCable.server.worker_pool
+    ActionCable.server.restart
+    raise "Cable work did not finish before fixture teardown" unless workers.executor.wait_for_termination(5)
+  end
+
   config.before(:each, type: :system) do |example|
+    # Rails initializes its system-test Rack app after support files load.
+    # Wrap that final app rather than the value Rails replaces on startup.
+    CapybaraTenantContext.install!
     driven_by example.metadata.fetch(:system_driver, SYSTEM_DRIVER)
   end
 

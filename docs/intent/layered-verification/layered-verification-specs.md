@@ -357,6 +357,9 @@
   that approval attempt is rejected. PostgreSQL SHALL enforce project
   ownership of the run and JSON-bound references and the approval actor's
   account, with reference guards preserved through schema-based bootstrap.
+  Corrective migration replay SHALL retain those guards when their FX
+  triggers are already installed, and corrective rollback SHALL NOT replace
+  current reference enforcement with weaker legacy guards.
   Authorized project readers SHALL be able to inspect bounded package history
   and detail through the authenticated API and MCP. Package history and detail
   lineage SHALL use an exclusive immutable-package-ID cursor, default to 50
@@ -379,7 +382,8 @@
   `spec/requests/projects/layered_verification_review_packages_spec.rb`,
   `spec/requests/api/v1/projects/layered_verification_review_packages_spec.rb`,
   `spec/mcp/tools/layered_verification_review_packages_spec.rb`,
-  `spec/migrations/create_layered_verification_review_packages_spec.rb`
+  `spec/migrations/create_layered_verification_review_packages_spec.rb`,
+  `spec/migrations/preserve_layered_review_reference_guards_spec.rb`
   *Code:* `app/models/layered_verification_review_package.rb`,
   `LayeredVerification::ReviewPackages::Capture`/`::Approve`,
   `app/controllers/projects/layered_verification_review_packages_controller.rb` (#4433, #5127)

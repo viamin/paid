@@ -8,15 +8,23 @@ class PreserveLayeredReviewReferenceGuards < ActiveRecord::Migration[8.1]
     CreateLayeredVerificationReviewPackages.new.send(:remove_project_reference_enforcement)
     create_function :enforce_layered_review_package_references, version: 1
     create_function :enforce_layered_review_approval_actor, version: 1
-    create_trigger :enforce_layered_review_package_references, version: 1, on: :layered_verification_review_packages
-    create_trigger :enforce_layered_review_approval_actor, version: 1, on: :layered_verification_review_approvals
+    replace_trigger :enforce_layered_review_package_references, on: :layered_verification_review_packages
+    replace_trigger :enforce_layered_review_approval_actor, on: :layered_verification_review_approvals
   end
 
   def down
-    drop_trigger :enforce_layered_review_approval_actor, on: :layered_verification_review_approvals
-    drop_trigger :enforce_layered_review_package_references, on: :layered_verification_review_packages
-    drop_function :enforce_layered_review_approval_actor
-    drop_function :enforce_layered_review_package_references
-    CreateLayeredVerificationReviewPackages.new.send(:enforce_project_references)
+    # A corrective rollback retains the current reference guards.
+  end
+
+  private
+
+  def replace_trigger(name, on:)
+    exists = select_value(<<~SQL)
+      SELECT 1 FROM pg_trigger
+      WHERE tgrelid = #{connection.quote("public.#{on}")}::regclass
+        AND tgname = #{connection.quote(name.to_s)}
+    SQL
+    drop_trigger(name, on:) if exists
+    create_trigger(name, version: 1, on:)
   end
 end

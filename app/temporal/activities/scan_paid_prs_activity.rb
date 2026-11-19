@@ -83,6 +83,16 @@ module Activities
       issue_implementation
       label_action
     ].freeze
+    # Focuses whose PR prompt actually includes the conversation section (the
+    # same rule as Prompts::BuildForPr#include_section?): the conversation
+    # focus scopes to it, while the unscoped general and label_action focuses
+    # include every applicable section. A no-change run with any other focus
+    # never saw the conversation comments and must not consume them.
+    CONVERSATION_SCOPE_FOCUSES = %w[
+      conversation
+      general
+      label_action
+    ].freeze
     FOCUS_PRIORITY = %w[
       merge_conflict
       ci_fix
@@ -3254,8 +3264,8 @@ module Activities
       [ { type: "review_bot_threads", details: "#{review_bot_threads.size} unresolved review bot thread(s)" } ]
     end
 
-    def check_conversation_comments(client, project, issue, last_run)
-      cutoff = last_run&.completed_at
+    def check_conversation_comments(client, project, issue, last_run) # @spec FOCUSED-RUN-010
+      cutoff = conversation_feedback_cutoff(project, issue, last_run)
       comments = pull_request_collector(project, client:)
         .fetch_recent_issue_comments(issue:, cutoff:) || []
 
@@ -3274,6 +3284,26 @@ module Activities
       return [] if relevant.empty?
 
       [ { type: "conversation_comments", details: "#{relevant.size} new comment(s)" } ]
+    end
+
+    # The conversation cutoff is the latest of the caller-supplied run (a
+    # completed run, or the focused run during focus_resolved attribution)
+    # and the newest terminal no-change run that actually included
+    # conversation scope. A no_output/no_changes create_pr run is a valid
+    # no-change outcome for the feedback it was shown; without it the same
+    # trusted comment keeps re-admitting follow-ups (#5180).
+    def conversation_feedback_cutoff(project, issue, last_run)
+      no_change_run = conversation_scope_no_change_run(project, issue)
+      [ last_run&.completed_at, no_change_run&.completed_at ].compact.max
+    end
+
+    def conversation_scope_no_change_run(project, issue)
+      pr_run_history_scope(project, issue)
+        .where(goal: "create_pr", status: "no_output", error_message: "no_changes")
+        .where(focus: CONVERSATION_SCOPE_FOCUSES)
+        .where.not(completed_at: nil)
+        .order(completed_at: :desc)
+        .first
     end
 
     def fetch_reviews(client, project, issue)

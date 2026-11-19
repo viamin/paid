@@ -21,6 +21,9 @@ RSpec.describe "Chat diagrams", :js, system_driver: :paid_cuprite, type: :system
 
   # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-011
   it "supports keyboard selection and preserves an unsent comment while expanded" do
+    # This is an existing-diagram keyboard interaction. Live transport is
+    # exercised separately below, rather than racing this fixture's insertion.
+    allow(ActionCable.server).to receive(:broadcast)
     diagram = create(:chat_diagram, chat_session:)
     visit chat_session_path(chat_session)
 
