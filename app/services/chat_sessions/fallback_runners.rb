@@ -86,11 +86,12 @@ module ChatSessions
       metadata = chat_session.metadata
       requested_model = metadata["requested_model"] || (chat_session.model if metadata["requested_model_selection"] != "automatic")
       requested_runner_id = metadata["requested_runner_id"] || (chat_session.runner_id if requested_model)
+      requested_selection = requested_model ? "explicit" : "automatic"
       metadata.merge(
         "requested_model" => requested_model,
         "requested_runner_id" => requested_runner_id,
-        "requested_model_selection" => requested_model ? "explicit" : "automatic",
-        "requested_model_tier" => metadata["requested_model_tier"] || "low",
+        "requested_model_selection" => requested_selection,
+        "requested_model_tier" => (metadata["requested_model_tier"] || "low" if requested_selection == "automatic"),
         "model_tier" => option&.tier,
         "effective_model" => model,
         "effective_tier" => option&.tier,

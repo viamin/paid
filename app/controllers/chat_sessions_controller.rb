@@ -388,13 +388,16 @@ class ChatSessionsController < ApplicationController
     model_id = permitted[:model]
     runner_id = permitted[:runner_id] || @chat_session&.runner_id
     permitted[:metadata] = merged_metadata(permitted).merge(
+      "model_tier" => nil,
       "requested_model" => model_id,
       "requested_runner_id" => runner_id,
       "requested_model_selection" => "explicit",
+      "requested_model_tier" => nil,
       "effective_model" => model_id,
+      "effective_tier" => nil,
       "effective_runner_id" => runner_id,
       "model_substitution_reason" => nil
-    ).compact
+    )
   end
 
   # Validates a direct, user-submitted thinking_effort value strictly against
@@ -423,7 +426,7 @@ class ChatSessionsController < ApplicationController
 
     permitted[:metadata] = ChatSessions::ThinkingEffort.normalize_metadata(
       metadata: merged_metadata(permitted), model_id: permitted[:model] || @chat_session&.model
-    )
+    ).compact
   end
 
   # Submitted metadata wins over the stored metadata, so a partial update

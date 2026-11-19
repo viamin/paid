@@ -38,7 +38,8 @@ RSpec.describe ChatSessions::Create do
       runner = create_api_chat_runner
       options = { runner_id: runner.id, model: "gpt-4o", project_id: project.id,
                   system_prompt: "Use the selected project settings.",
-                  metadata: { "source" => "configured-create" }, auto_approve: true }
+                  metadata: { "source" => "configured-create", "model_tier" => "mid",
+                              "requested_model_tier" => "low", "effective_tier" => "mid" }, auto_approve: true }
 
       configured = described_class.call(account: account, user: user, **options)
 
@@ -50,6 +51,7 @@ RSpec.describe ChatSessions::Create do
         auto_approve: true
       )
       expect(configured.metadata).to include("source" => "configured-create", "requested_model_selection" => "explicit")
+      expect(configured.metadata).not_to include("model_tier", "requested_model_tier", "effective_tier")
       expect(configured.messages.system.sole.content).to eq("Use the selected project settings.")
     end
 

@@ -238,6 +238,7 @@ RSpec.describe ChatSessions::FallbackRunners do
         "effective_runner_id" => runner.id,
         "model_substitution_reason" => "fallback_runner"
       )
+      expect(session.metadata).not_to have_key("requested_model_tier")
     end
   end
 

@@ -281,10 +281,13 @@ module ChatSessions
 
     def explicit_selection_metadata
       (metadata.presence || {}).merge(
+        "model_tier" => nil,
         "requested_model" => model,
         "requested_runner_id" => resolved_runner&.id,
         "requested_model_selection" => "explicit",
+        "requested_model_tier" => nil,
         "effective_model" => model,
+        "effective_tier" => nil,
         "effective_runner_id" => resolved_runner&.id,
         "model_substitution_reason" => nil
       ).compact
