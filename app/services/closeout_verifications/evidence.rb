@@ -13,9 +13,11 @@ module CloseoutVerifications
     MAX_COMMAND_BYTES = 1_000
 
     Row = Data.define(:id, :issue_id, :pr_number, :base_sha, :criterion_key,
-      :recipe_version, :recipe_digest, :mapping_id, :completed_at, :verification_result)
+      :recipe_version, :recipe_digest, :mapping_id, :completed_at, :verification_result,
+      :environment, :target_revision)
     PLUCK_COLUMNS = %i[id issue_id source_pull_request_number base_commit_sha closeout_criterion_key
-      closeout_recipe_version closeout_recipe_digest closeout_mapping_id completed_at verification_result].freeze
+      closeout_recipe_version closeout_recipe_digest closeout_mapping_id completed_at verification_result
+      closeout_environment closeout_target_revision].freeze
 
     def self.records_for(issue)
       records_for_issues([ issue ]).fetch(issue.id, [])
@@ -108,7 +110,8 @@ module CloseoutVerifications
         "stderr" => [ native["stderr"].to_s, MAX_OUTPUT_BYTES ] }
       {
         "verification_run_id" => row.id, "source_issue_id" => issue.id, "project_id" => issue.project_id,
-        "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.base_sha,
+        "criterion_key" => row.criterion_key, "pr_number" => row.pr_number,
+        "target_sha" => row.target_revision.presence || row.base_sha,
         "recipe_version" => row.recipe_version, "recipe_digest" => row.recipe_digest,
         "outcome" => evidence["outcome"], "recorded_at" => evidence["recorded_at"],
         "completed_at" => row.completed_at&.utc&.iso8601(6), "expires_at" => expires_at&.utc&.iso8601(6),
@@ -141,16 +144,33 @@ module CloseoutVerifications
       reasons = []
       reasons << "recipe_changed" if mapping.target_version != row.recipe_version || mapping.target_digest != row.recipe_digest ||
         !StagedCloseoutAdoption::Mappings.target_current?(mapping:, project: mapping.project)
-      reasons << "target_changed" if merged_sha.blank? || merged_sha != row.base_sha
+      reasons << "target_changed" unless target_current?(row, merged_sha)
       reasons << "intent_changed" if mapping.criterion_digest != StagedCloseoutMapping.digest_for(issue:, criterion_key: mapping.criterion_key)
       reasons << "environment_changed" if environment_changed?(evidence, mapping)
-      expected = { "source_issue_id" => issue.id, "criterion" => row.criterion_key, "source_pr_number" => row.pr_number,
-        "merged_commit_sha" => row.base_sha, "recipe_version" => row.recipe_version,
+      expected = { "source_issue_id" => issue.id, "criterion" => row.criterion_key,
+        "recipe_version" => row.recipe_version,
         "recipe_digest" => row.recipe_digest, "mapping_id" => row.mapping_id }
+      expected.merge!(target_identity(row))
       reasons << "verification_identity_mismatch" unless expected.all? { |key, value| evidence[key].to_s == value.to_s }
       reasons
     end
     private_class_method :stale_reasons
+
+    def self.target_current?(row, merged_sha)
+      if row.target_revision.present?
+        TrustedMeasurements::DeploymentSignal.current == row.target_revision
+      else
+        merged_sha.present? && merged_sha == row.base_sha
+      end
+    end
+    private_class_method :target_current?
+
+    def self.target_identity(row)
+      return { "target_revision" => row.target_revision } if row.target_revision.present?
+
+      { "source_pr_number" => row.pr_number, "merged_commit_sha" => row.base_sha }
+    end
+    private_class_method :target_identity
 
     def self.environment_changed?(evidence, mapping)
       mapping.environment_class.present? && evidence.dig("environment", "mapping_environment_class") != mapping.environment_class

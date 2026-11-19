@@ -146,6 +146,7 @@ module CloseoutVerifications
         outcome = attempt&.succeeded? ? "observed" : attempt&.failed? ? "failed" : "unknown"
         evidence = identity_evidence.merge(
           "outcome" => outcome, "recorded_at" => Time.current.iso8601,
+          "target_revision" => agent_run.closeout_target_revision,
           "measurement_attempt_id" => attempt&.id, "measurement_status" => attempt&.status,
           "measurement_result" => attempt&.result, "measurement_failure_reason" => attempt&.failure_reason,
           "environment" => { "mapping_environment_class" => agent_run.closeout_environment,

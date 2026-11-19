@@ -263,6 +263,7 @@ class AgentRun < ApplicationRecord
 
   belongs_to :project, counter_cache: true
   belongs_to :issue, optional: true
+  belongs_to :closeout_measurement_attempt, class_name: "TrustedMeasurementAttempt", optional: true
   # @spec UNIFIED-WORK-ITEMS-005
   belongs_to :work_item, optional: true
   belongs_to :continuation_request, class_name: "IssueContinuationRequest", optional: true
