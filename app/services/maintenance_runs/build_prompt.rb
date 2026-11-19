@@ -62,9 +62,13 @@ module MaintenanceRuns
         coverage limitations to disclose — never as evidence of absence.
 
         <untrusted-reconciliation-evidence>
-        #{recipe_evidence}
+        #{escaped_recipe_evidence}
         </untrusted-reconciliation-evidence>
       SECTION
+    end
+
+    def escaped_recipe_evidence
+      ERB::Util.html_escape(recipe_evidence)
     end
 
     def investigation_contract
