@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_064751) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_19_103105) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -320,9 +320,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_064751) do
     t.bigint "blocked_by_issue_ids", default: [], comment: "IDs of issues/PRs that block the created issue from being picked up for work.", array: true
     t.string "branch_name", limit: 255
     t.string "closeout_criterion_key", comment: "Reviewed criterion bound to this synthetic closeout verification run."
+    t.string "closeout_environment", comment: "Reviewed live environment class bound to a closeout verification run."
     t.bigint "closeout_mapping_id", comment: "Reviewed staged-closeout mapping revision admitted for this synthetic verification run."
+    t.bigint "closeout_measurement_attempt_id", comment: "Trusted measurement attempt attached to a live-target closeout verification run."
     t.string "closeout_recipe_digest", comment: "Reviewed recipe digest bound to this synthetic closeout verification run."
     t.string "closeout_recipe_version", comment: "Reviewed recipe version bound to this synthetic closeout verification run."
+    t.string "closeout_target_revision", comment: "Confirmed environment signal revision bound to a live-target verification run."
     t.datetime "completed_at"
     t.jsonb "confidence_delivery_snapshot", default: {}, null: false, comment: "Immutable confidence-delivery scope, evidence, thresholds, and merged-design baseline admitted for this run."
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
@@ -427,6 +430,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_064751) do
     t.string "worktree_path", limit: 500
     t.index "status, COALESCE(completed_at, updated_at)", name: "index_agent_runs_on_status_terminal_timestamp"
     t.index ["approved_design_revision"], name: "index_agent_runs_on_approved_design_revision"
+    t.index ["closeout_measurement_attempt_id"], name: "index_agent_runs_on_closeout_measurement_attempt_id"
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
@@ -442,6 +446,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_064751) do
     t.index ["project_id", "goal", "status"], name: "index_agent_runs_cycle_analysis_lookup"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_and_maintenance_goal", where: "((goal)::text = 'maintenance'::text)"
     t.index ["project_id", "goal"], name: "index_agent_runs_on_project_id_and_goal"
+    t.index ["project_id", "issue_id", "closeout_criterion_key", "closeout_recipe_version", "closeout_environment", "closeout_target_revision"], name: "index_agent_runs_live_closeout_verification_identity", unique: true, where: "(((goal)::text = 'closeout_verification'::text) AND (closeout_target_revision IS NOT NULL))"
     t.index ["project_id", "issue_id", "goal"], name: "idx_agent_runs_unique_active_issue", unique: true, where: "((issue_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])) AND ((goal)::text <> 'closeout_verification'::text))"
     t.index ["project_id", "issue_id", "source_pull_request_number", "base_commit_sha", "closeout_mapping_id"], name: "index_agent_runs_closeout_verification_identity", unique: true, where: "((goal)::text = 'closeout_verification'::text)"
     t.index ["project_id", "source_pull_request_number", "goal"], name: "idx_agent_runs_unique_active_pr", unique: true, where: "((source_pull_request_number IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('pending'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('waiting_recovery'::character varying)::text])) AND ((goal)::text <> 'closeout_verification'::text))"
@@ -5267,6 +5272,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_064751) do
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
   add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
+  add_foreign_key "agent_runs", "trusted_measurement_attempts", column: "closeout_measurement_attempt_id"
   add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
   add_foreign_key "agent_runs", "work_items"
   add_foreign_key "api_usage_attempts", "accounts"
@@ -6865,12 +6871,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_064751) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL

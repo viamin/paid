@@ -13,9 +13,10 @@ module CloseoutVerifications
 
     def self.call(...) = new(...).call
 
-    def initialize(project:, target_revision: TrustedMeasurements::DeploymentSignal.current)
+    def initialize(project:, target_revision: TrustedMeasurements::DeploymentSignal.current, mapping_ids: nil)
       @project = project
       @target_revision = target_revision.to_s
+      @mapping_ids = mapping_ids
     end
 
     def call
@@ -23,18 +24,34 @@ module CloseoutVerifications
       return Outcome.new([], "project_inactive") unless Project.active.where(id: project.id).exists?
       return Outcome.new([], "project_paused") if paused?
 
-      results = mappings.map { |mapping| StagedCloseoutAdoption::Mappings.eligible_for(mapping:, project:, issue: mapping.issue) }
+      reviewed = mappings.to_a
+      return Outcome.new([], "no_live_environment_mapping") if reviewed.empty?
+
+      results = reviewed.map { |mapping| eligibility(mapping) }
       runs = results.filter_map { |result| admit(result.mapping) if result.eligible? }
       Outcome.new(runs, runs.empty? ? (results.map(&:reason).compact.first || "already_current_result") : nil)
     end
 
     private
 
-    attr_reader :project, :target_revision
+    attr_reader :project, :target_revision, :mapping_ids
 
-    def mappings = project.staged_closeout_mappings.approved.where(stage: "live_environment").includes(:issue).order(:id)
+    def mappings
+      scope = project.staged_closeout_mappings.approved.where(stage: "live_environment").includes(:issue)
+      scope = scope.where(id: mapping_ids) unless mapping_ids.nil?
+      scope.order(:id)
+    end
 
     def paused? = project.paused? || project.scheduler_paused? || project.quality_paused? || project.account.scheduler_paused?
+
+    def eligibility(mapping)
+      result = StagedCloseoutAdoption::Mappings.eligible_for(mapping:, project:, issue: mapping.issue,
+        observed_target: "live_environment")
+      return result unless result.eligible?
+      return result if mapping.environment_class == Rails.env.to_s
+
+      StagedCloseoutAdoption::Mappings::Result.new(mapping, "environment_class_mismatch")
+    end
 
     def admit(mapping)
       return if existing_run(mapping)

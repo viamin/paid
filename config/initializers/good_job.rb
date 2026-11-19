@@ -174,10 +174,10 @@ Rails.application.configure do
       description: "Daily bounded admission recovery for observed merged pull requests"
     },
     live_target_closeout_verification_sweep: {
-      cron: "55 5 * * *",
+      cron: "*/5 * * * *",
       class: "LiveTargetCloseoutVerificationSweepJob",
       queue: "maintenance",
-      description: "Daily bounded admission recovery for confirmed live environment targets"
+      description: "Bounded observation and admission recovery for confirmed live environment targets"
     },
     partial_closeout_projection_reconciliation_sweep: {
       cron: "6-59/15 * * * *",

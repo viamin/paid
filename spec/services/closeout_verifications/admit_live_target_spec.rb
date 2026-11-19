@@ -9,6 +9,7 @@ RSpec.describe CloseoutVerifications::AdmitLiveTarget do
   let(:target_revision) { "development:fixture:content" }
 
   before do
+    project.update!(created_by: maintainer)
     FeatureFlags.enable!(:automation_phases, project:)
     project.update!(automation_phase_settings: { "phases" => { "operations" => true } })
     StagedCloseoutAdoption::Enroll.call(project:, actor: maintainer, enabled: true)
@@ -23,7 +24,7 @@ RSpec.describe CloseoutVerifications::AdmitLiveTarget do
     StagedCloseoutAdoption::Mappings.approve(project:, actor: maintainer, issue:, attributes: {
       criterion_key: "Live evidence", stage: "live_environment", phase: "operations", target_shape: "live_signal",
       execution_path: "trusted_measurement", target_key: "agent_planning_hold_reconciliation_closed_count",
-      environment_class: "development", freshness_seconds: 60
+      environment_class: Rails.env.to_s, freshness_seconds: 60
     })
   end
 
@@ -34,7 +35,7 @@ RSpec.describe CloseoutVerifications::AdmitLiveTarget do
     second = described_class.call(project:, target_revision:)
 
     expect(first.runs).to contain_exactly(an_object_having_attributes(closeout_mapping_id: reviewed.id,
-      closeout_environment: "development", closeout_target_revision: target_revision))
+      closeout_environment: Rails.env.to_s, closeout_target_revision: target_revision))
     expect(second.runs).to be_empty
     expect(AgentRun.where(goal: "closeout_verification").count).to eq(1)
   end

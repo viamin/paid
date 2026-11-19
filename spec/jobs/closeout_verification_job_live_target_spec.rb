@@ -17,6 +17,7 @@ RSpec.describe CloseoutVerificationJob do
   end
 
   before do
+    project.update!(created_by: maintainer)
     FeatureFlags.enable!(:automation_phases, project:)
     project.update!(automation_phase_settings: { "phases" => { "operations" => true } })
     StagedCloseoutAdoption::Enroll.call(project:, actor: maintainer, enabled: true)
@@ -28,7 +29,7 @@ RSpec.describe CloseoutVerificationJob do
     StagedCloseoutAdoption::Mappings.approve(project:, actor: maintainer, issue:, attributes: {
       criterion_key: "Live evidence", stage: "live_environment", phase: "operations", target_shape: "live_signal",
       execution_path: "trusted_measurement", target_key: "agent_planning_hold_reconciliation_closed_count",
-      environment_class: "production", freshness_seconds: 60
+      environment_class: Rails.env.to_s, freshness_seconds: 60
     })
   end
 

@@ -114,7 +114,7 @@ module CloseoutVerifications
         "stderr" => [ native["stderr"].to_s, MAX_OUTPUT_BYTES ] }
       record = {
         "verification_run_id" => row.id, "source_issue_id" => issue.id, "project_id" => issue.project_id,
-        "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.base_sha,
+        "criterion_key" => row.criterion_key, "pr_number" => row.pr_number, "target_sha" => row.target_revision.presence || row.base_sha,
         "recipe_version" => row.recipe_version, "recipe_digest" => row.recipe_digest,
         "outcome" => evidence["outcome"], "recorded_at" => evidence["recorded_at"],
         "completed_at" => row.completed_at&.utc&.iso8601(6), "expires_at" => expires_at&.utc&.iso8601(6),
@@ -171,7 +171,7 @@ module CloseoutVerifications
 
     def self.live_stale_reasons(row, mapping:, issue:, evidence:, measurement:, live_revision:)
       reasons = []
-      reasons << "live_target_changed_or_unavailable" if live_revision.blank? || row.target_revision != live_revision
+      reasons << "target_changed" if live_revision.blank? || row.target_revision != live_revision
       reasons << "environment_changed" unless row.environment_class == mapping.environment_class && row.environment_class == Rails.env.to_s
       reasons << "verification_identity_mismatch" unless evidence["target_revision"] == row.target_revision &&
         evidence["measurement_attempt_id"] == row.measurement_attempt_id

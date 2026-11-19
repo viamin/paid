@@ -14,6 +14,8 @@ class TrustedMeasurementAttempt < ApplicationRecord
   belongs_to :account
   belongs_to :project
   belongs_to :issue, optional: true
+  has_many :closeout_verification_runs, class_name: "AgentRun", foreign_key: :closeout_measurement_attempt_id,
+    dependent: :nullify, inverse_of: :closeout_measurement_attempt
 
   validates :external_issue_number, presence: true
   validates :criterion_key, presence: true

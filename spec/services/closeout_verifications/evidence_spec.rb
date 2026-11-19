@@ -32,6 +32,46 @@ RSpec.describe CloseoutVerifications::Evidence do
     })
   end
 
+  def approve_live_mapping
+    StagedCloseoutAdoption::Mappings.approve(project:, actor: maintainer, issue: source_issue, attributes: {
+      criterion_key: "Live evidence", stage: "live_environment", phase: "operations",
+      target_shape: "live_signal", execution_path: "trusted_measurement",
+      target_key: "agent_planning_hold_reconciliation_closed_count", environment_class: Rails.env.to_s,
+      freshness_seconds: 60
+    })
+  end
+
+  def create_live_verification_run(mapping:, target_revision:)
+    attempt = create(:trusted_measurement_attempt, :succeeded, project:, issue: source_issue,
+      external_issue_number: source_issue.github_number, criterion_key: mapping.criterion_key,
+      check_key: mapping.target_key, check_version: mapping.target_version, deployed_revision: target_revision)
+    create(:agent_run, project:, issue: source_issue, agent_type: "internal_agent",
+      goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL, synthetic: true, status: "completed", completed_at: Time.current,
+      closeout_mapping_id: mapping.id, closeout_criterion_key: mapping.criterion_key,
+      closeout_recipe_version: mapping.target_version, closeout_recipe_digest: mapping.target_digest,
+      closeout_environment: mapping.environment_class, closeout_target_revision: target_revision,
+      closeout_measurement_attempt: attempt,
+      verification_result: { "closeout_verification" => {
+        "source_issue_id" => source_issue.id, "criterion" => mapping.criterion_key,
+        "target_revision" => target_revision, "recipe_version" => mapping.target_version,
+        "recipe_digest" => mapping.target_digest, "mapping_id" => mapping.id,
+        "outcome" => "observed", "recorded_at" => Time.current.iso8601,
+        "measurement_attempt_id" => attempt.id, "measurement_status" => attempt.status,
+        "measurement_result" => attempt.result, "measurement_failure_reason" => attempt.failure_reason,
+        "measurement_executed_at" => attempt.executed_at.utc.iso8601(6),
+        "environment" => { "mapping_environment_class" => mapping.environment_class,
+                           "target_revision" => target_revision }
+      } })
+  end
+
+  def with_env(overrides)
+    previous = overrides.to_h { |key, _value| [ key, ENV[key] ] }
+    overrides.each { |key, value| ENV[key] = value }
+    yield
+  ensure
+    previous.each { |key, value| ENV[key] = value }
+  end
+
   def create_verification_run(mapping:, pr: source_pr, merged_sha: pr.merged_commit_sha, outcome: "passed",
     status: nil, error: nil, issue: source_issue)
     status ||= outcome == "cancelled" ? "cancelled" : (outcome == "passed" ? "completed" : "failed")
@@ -132,6 +172,25 @@ RSpec.describe CloseoutVerifications::Evidence do
     record = described_class.records_for(source_issue).first
 
     expect(record).to include("current" => false, "stale_reasons" => [ "target_changed" ])
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-012 PARTIAL-CLOSEOUT-057
+  it "uses the trusted signal revision as the current target identity for live evidence" do
+    persist_assessment!(criterion_keys: [ "Live evidence" ])
+    mapping = approve_live_mapping
+    run = create_live_verification_run(mapping:, target_revision: "live-revision-a")
+
+    with_env("PAID_DEPLOYED_REVISION" => "live-revision-a") do
+      expect(described_class.records_for(source_issue).sole).to include(
+        "target_sha" => "live-revision-a", "current" => true, "stale_reasons" => [])
+      expect(described_class.current_for_run?(run)).to be(true)
+    end
+
+    with_env("PAID_DEPLOYED_REVISION" => "live-revision-b") do
+      expect(described_class.records_for(source_issue).sole).to include(
+        "target_sha" => "live-revision-a", "current" => false, "stale_reasons" => [ "target_changed" ])
+      expect(described_class.current_for_run?(run)).to be(false)
+    end
   end
 
   it "marks a record stale when the issue's approved intent has since changed" do

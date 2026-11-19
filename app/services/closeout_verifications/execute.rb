@@ -118,13 +118,16 @@ module CloseoutVerifications
     def claim_live_target!
       agent_run.with_lock do
         return unless agent_run.status == "queued"
+        return if paused? || !Project.active.where(id: agent_run.project_id).exists?
+        return unless budget[:allowed]
 
         mapping = StagedCloseoutMapping.find_by(id: agent_run.closeout_mapping_id)
         unless mapping && mapping.stage == "live_environment" && mapping.execution_path == "trusted_measurement" &&
             mapping.issue_id == agent_run.issue_id && mapping.criterion_key == agent_run.closeout_criterion_key &&
             mapping.target_version == agent_run.closeout_recipe_version && mapping.target_digest == agent_run.closeout_recipe_digest &&
-            mapping.environment_class == agent_run.closeout_environment &&
-            StagedCloseoutAdoption::Mappings.eligible_for(mapping:, project: agent_run.project, issue: agent_run.issue).eligible?
+            mapping.environment_class == agent_run.closeout_environment && mapping.environment_class == Rails.env.to_s &&
+            StagedCloseoutAdoption::Mappings.eligible_for(mapping:, project: agent_run.project, issue: agent_run.issue,
+              observed_target: "live_environment").eligible?
           record_terminal!("stale", error: "reviewed live mapping is stale or unavailable")
           return
         end
@@ -140,22 +143,27 @@ module CloseoutVerifications
     end
 
     def finish_live_target!(attempt)
+      outcome = nil
       agent_run.with_lock do
         return if terminal?
 
-        outcome = attempt&.succeeded? ? "observed" : attempt&.failed? ? "failed" : "unknown"
+        changed_target = TrustedMeasurements::DeploymentSignal.current != agent_run.closeout_target_revision
+        outcome = changed_target ? "stale" : attempt&.succeeded? ? "observed" : attempt&.failed? ? "failed" : "unknown"
         evidence = identity_evidence.merge(
           "outcome" => outcome, "recorded_at" => Time.current.iso8601,
+          "target_revision" => agent_run.closeout_target_revision,
           "measurement_attempt_id" => attempt&.id, "measurement_status" => attempt&.status,
           "measurement_result" => attempt&.result, "measurement_failure_reason" => attempt&.failure_reason,
+          "measurement_executed_at" => attempt&.executed_at&.utc&.iso8601(6),
           "environment" => { "mapping_environment_class" => agent_run.closeout_environment,
                              "target_revision" => agent_run.closeout_target_revision }
         ).compact
         agent_run.update!(closeout_measurement_attempt: attempt,
           status: outcome == "observed" ? "completed" : "failed", completed_at: Time.current,
-          error_message: attempt&.failure_reason, verification_result: agent_run.verification_result.merge(EVIDENCE_KEY => evidence))
+          error_message: changed_target ? "confirmed environment target changed during collection" : attempt&.failure_reason,
+          verification_result: agent_run.verification_result.merge(EVIDENCE_KEY => evidence))
       end
-      schedule_audit_if_new_evidence("observed")
+      schedule_audit_if_new_evidence(outcome)
     end
 
     def current_live_attempt

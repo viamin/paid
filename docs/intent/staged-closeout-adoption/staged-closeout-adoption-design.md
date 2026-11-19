@@ -20,7 +20,7 @@ ineligible without deleting its history.
 Enrollments, mappings, and their source issues are tenant-owned records. When a
 project or its account is deleted, mappings are removed before their referenced
 parents and reviewers so the ordinary owner lifecycle can remove the complete
-adoption graph.
+adoption graph. Deleting a measurement first nullifies optional run links, retaining run history without blocking issue or project deletion.
 
 A reviewed mapping is an append-only revision for one source issue and stable
 criterion string. It pins its stage, target shape, existing execution-path
@@ -46,8 +46,9 @@ persisted merged PR observations after a disabled enrollment is re-enabled or
 a webhook was missed. `live_environment` mappings do not qualify from a merge:
 they wait for a separately confirmed live target. A changed trusted environment
 signal admits one synthetic run per current reviewed criterion, check version,
-environment class, and signal revision; duplicate delivery and a bounded daily
-sweep converge on that identity. The live run rechecks the signal immediately
+environment class, and signal revision; duplicate delivery and a five-minute bounded signal-observation
+sweep converge on that identity. Project and mapping cursors bound each job,
+so a project with many reviewed checks cannot monopolize a sweep. The live run rechecks the signal immediately
 before using the existing allowlisted read-only measurement, attaches that
 attempt and its bounded result to the run, and submits current terminal
 evidence to the existing report-only audit path. A successful read is evidence,
@@ -59,7 +60,7 @@ verification: inactive or paused authority, hard-stop budget, revoked policy,
 changed mapping/check, or an environment class different from the running
 environment cannot start a read. Completion rechecks the confirmed signal and
 retains a scoped measurement-attempt link and immutable result/timing snapshot.
-A read that finishes after its signal changes remains stale history. A
+A read that finishes after its signal changes remains stale history. New target observations may reuse the approved criteria while their full intent revision is unchanged, even when earlier measurement evidence made the previous assessment stale; changed intent still requires a current review. A
 measurement's successful execution is recorded as `observed`, without deciding
 that its measured value satisfies the criterion.
 
