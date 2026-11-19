@@ -17,8 +17,12 @@ module MaintenanceRuns
     ACTIVITY_OVERHEAD = 30
     TIME_BUDGET_COMPLETION_BUFFER = 5
     SCOPED_EXECUTION = 'cd -- "$1" && shift && exec "$@"'
-    PACKAGE_DISCOVERY = [ "find", ".", "-type", "f", "(", "-name", "Gemfile", "-o", "-name", "package.json", ")",
-      "-not", "-path", "*/node_modules/*", "-not", "-path", "*/vendor/*", "-not", "-path", "*/.git/*", "-print0" ].freeze
+    PACKAGE_DISCOVERY_SCRIPT = <<~'SH'.squish.freeze
+      find . -type f \( -name Gemfile -o -name package.json \)
+        -not -path '*/node_modules/*' -not -path '*/vendor/*' -not -path '*/.git/*' -print0 |
+        ruby -rjson -e 'STDOUT.write(JSON.generate(STDIN.read.split("\0").reject(&:empty?)))'
+    SH
+    PACKAGE_DISCOVERY = [ "sh", "-lc", PACKAGE_DISCOVERY_SCRIPT ].freeze
 
     Analysis = Data.define(:name, :command, :result_key)
     Adapter = Data.define(:name, :ecosystems, :manifest, :availability_command, :provision_command, :version_command, :analyses,
@@ -49,6 +53,7 @@ module MaintenanceRuns
         super("maintenance analyzer time budget exhausted")
       end
     end
+    class InvalidPackageDiscovery < StandardError; end
 
     def self.call(...) = new(...).call
 
@@ -80,8 +85,9 @@ module MaintenanceRuns
       discovery = execute(PACKAGE_DISCOVERY, DISCOVERY_TIMEOUT)
       return [ discovery_check(discovery) ] unless exit_code(discovery) == 0
 
+      paths = package_paths(discovery)
       adapters.each do |adapter|
-        checks.concat(collect_packages(adapter, package_scopes(discovery, adapter)))
+        checks.concat(collect_packages(adapter, package_scopes(paths, adapter)))
       end
       checks
     rescue TimeBudgetExhausted => error
@@ -89,6 +95,10 @@ module MaintenanceRuns
       checks << time_budget_check
     rescue Containers::Provision::Error => error
       checks << discovery_check(nil, error:)
+    rescue JSON::ParserError => error
+      checks << discovery_check(discovery, error:, reason: "invalid_result_json")
+    rescue InvalidPackageDiscovery => error
+      checks << discovery_check(discovery, error:, reason: "invalid_result_shape")
     end
 
     def applicable_adapters
@@ -98,8 +108,15 @@ module MaintenanceRuns
       ADAPTERS.select { |adapter| (adapter.ecosystems & languages).any? }
     end
 
-    def package_scopes(discovery, adapter)
-      discovery[:stdout].to_s.split("\0").filter_map do |path|
+    def package_paths(discovery)
+      paths = JSON.parse(discovery[:stdout].to_s)
+      return paths if paths.is_a?(Array) && paths.all? { |path| path.is_a?(String) }
+
+      raise InvalidPackageDiscovery, "package discovery must return an array of paths"
+    end
+
+    def package_scopes(paths, adapter)
+      paths.filter_map do |path|
         next unless File.basename(path) == adapter.manifest
 
         File.dirname(path.delete_prefix("./")).presence || "."
@@ -185,8 +202,8 @@ module MaintenanceRuns
       { "name" => "analyzer_time_budget", "status" => "incomplete", "reason" => "time_budget_exhausted" }
     end
 
-    def discovery_check(result, error: nil)
-      reason = error ? "execution_unavailable" : "unexpected_exit_code"
+    def discovery_check(result, error: nil, reason: nil)
+      reason ||= error ? "execution_unavailable" : "unexpected_exit_code"
       { "name" => "analyzer_package_discovery", "status" => "incomplete", "reason" => reason,
         "exit_code" => exit_code(result), "output" => output(result), "error_class" => error&.class&.name }.compact
     end

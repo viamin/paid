@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "open3"
+require "tmpdir"
 
 RSpec.describe MaintenanceRuns::ToolEvidence do
   let(:project) { instance_double(Project, effective_repo_profile: profile) }
@@ -43,11 +45,25 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     )
   end
 
+  # @spec MAINT-040 MAINT-042
+  it "discovers package scopes after execution output normalization" do
+    discovery = normalized_discovery_output
+    allow(run).to receive(:execute_in_execution_environment).and_return(
+      result(exit_code: 0, stdout: discovery),
+      result(exit_code: 1), result(exit_code: 1)
+    )
+
+    described_class.call(run:)
+
+    expect_execution(".", adapter("exhale").availability_command, timeout: 30)
+    expect_execution("frontend", adapter("knip").availability_command, timeout: 30)
+  end
+
   # @spec MAINT-040 MAINT-043
   it "bounds aggregate prompt evidence without truncating report evidence" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
     scopes = 10.times.map { |index| "package-#{index}" }
-    executions = [ result(exit_code: 0, stdout: scopes.map { |scope| "./#{scope}/Gemfile\0" }.join) ]
+    executions = [ result(exit_code: 0, stdout: JSON.generate(scopes.map { |scope| "./#{scope}/Gemfile" })) ]
     scopes.each do
       executions.concat([
         result(exit_code: 0), result(exit_code: 0), result(exit_code: 0, stdout: "exhale 1.2"),
@@ -84,7 +100,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
 
   def stub_analyzer_results
     allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "./Gemfile\0./frontend/package.json\0"),
+      result(exit_code: 0, stdout: JSON.generate([ "./Gemfile", "./frontend/package.json" ])),
       result(exit_code: 0),
       result(exit_code: 0),
       result(exit_code: 0, stdout: "exhale 1.2"), result(exit_code: 0, stdout: '{"findings":[]}'),
@@ -92,6 +108,18 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
       result(exit_code: 0, stdout: "knip 5.0"),
       result(exit_code: 1, stdout: '{"issues":[]}')
     )
+  end
+
+  def normalized_discovery_output
+    Dir.mktmpdir do |directory|
+      FileUtils.mkdir_p(File.join(directory, "frontend"))
+      FileUtils.touch(File.join(directory, "Gemfile"))
+      FileUtils.touch(File.join(directory, "frontend", "package.json"))
+      stdout, stderr, status = Open3.capture3(*described_class::PACKAGE_DISCOVERY, chdir: directory)
+      raise stderr unless status.success?
+
+      Containers::Provision.allocate.send(:normalize_output_chunk, stdout)
+    end
   end
 
   def expect_execution(scope, command, timeout:)
@@ -119,7 +147,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   # @spec MAINT-040 MAINT-044
   it "uses prompt-only fallback when matching analyzers are not declared in locked dependencies" do
     allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "./Gemfile\0./frontend/package.json\0"),
+      result(exit_code: 0, stdout: JSON.generate([ "./Gemfile", "./frontend/package.json" ])),
       result(exit_code: 1, stderr: "exhale is not locked"),
       result(exit_code: 1, stderr: "knip is not locked")
     )
@@ -146,7 +174,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   it "records a locked dependency install failure as incomplete coverage" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
     allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "./Gemfile\0"), result(exit_code: 0),
+      result(exit_code: 0, stdout: JSON.generate([ "./Gemfile" ])), result(exit_code: 0),
       result(exit_code: 5, stderr: "bundle install failed")
     )
 
@@ -164,7 +192,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   it "records a provisioned analyzer version probe failure as incomplete coverage" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
     allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "./Gemfile\0"), result(exit_code: 0), result(exit_code: 0),
+      result(exit_code: 0, stdout: JSON.generate([ "./Gemfile" ])), result(exit_code: 0), result(exit_code: 0),
       result(exit_code: 127, stderr: "exhale: not found")
     )
 
@@ -182,7 +210,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   it "records malformed and structurally invalid analyzer JSON as incomplete coverage" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
     allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "./Gemfile\0"), result(exit_code: 0), result(exit_code: 0),
+      result(exit_code: 0, stdout: JSON.generate([ "./Gemfile" ])), result(exit_code: 0), result(exit_code: 0),
       result(exit_code: 0, stdout: "exhale 1.2"),
       result(exit_code: 0, stdout: "not-json"),
       result(exit_code: 1, stdout: '{"wrong_shape":[]}')
@@ -202,7 +230,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "typescript" ], "marker_files" => [])
     oversized_json = JSON.generate("issues" => [ "x" * described_class::OUTPUT_LIMIT ])
     allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "./package.json\0"), result(exit_code: 0), result(exit_code: 0),
+      result(exit_code: 0, stdout: JSON.generate([ "./package.json" ])), result(exit_code: 0), result(exit_code: 0),
       result(exit_code: 0, stdout: "knip 5.0"), result(exit_code: 0, stdout: oversized_json)
     )
 
@@ -242,10 +270,24 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     )
   end
 
+  # @spec MAINT-022 MAINT-042
+  it "records malformed structured discovery output as incomplete coverage" do
+    allow(run).to receive(:execute_in_execution_environment)
+      .and_return(result(exit_code: 0, stdout: '{"path":"./Gemfile"}'))
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:completed_checks)).to be_empty
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "analyzer_package_discovery", "reason" => "invalid_result_shape",
+        "error_class" => "MaintenanceRuns::ToolEvidence::InvalidPackageDiscovery")
+    )
+  end
+
   # @spec MAINT-042 MAINT-044
   it "does not plan an analyzer when its matching package manifest is absent" do
     allow(run).to receive(:execute_in_execution_environment).and_return(
-      result(exit_code: 0, stdout: "./Gemfile\0"),
+      result(exit_code: 0, stdout: JSON.generate([ "./Gemfile" ])),
       result(exit_code: 0),
       result(exit_code: 0),
       result(exit_code: 0, stdout: "exhale 1.2"),
@@ -264,7 +306,7 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
   it "reports package scopes beyond the evidence output limit as incomplete coverage" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "typescript" ], "marker_files" => [])
     scopes = 12.times.map { |index| "package-#{index}-#{"x" * 1_950}" }
-    discovery = scopes.map { |scope| "./#{scope}/package.json\0" }.join
+    discovery = JSON.generate(scopes.map { |scope| "./#{scope}/package.json" })
     executions = [ result(exit_code: 0, stdout: discovery) ]
     executions.concat(Array.new(described_class::MAX_PACKAGE_SCOPES) { result(exit_code: 1) })
     allow(run).to receive(:execute_in_execution_environment).and_return(*executions)
