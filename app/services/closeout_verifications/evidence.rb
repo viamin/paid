@@ -65,9 +65,7 @@ module CloseoutVerifications
       scope = scopes.reduce { |combined, candidate| combined.or(candidate) }
         .where(goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL, synthetic: true,
           status: CloseoutVerifications::Execute::TERMINAL_STATUSES)
-      latest = scope.select("DISTINCT ON (agent_runs.issue_id, agent_runs.closeout_criterion_key) agent_runs.id")
-        .order(:issue_id, :closeout_criterion_key, id: :desc)
-      AgentRun.where(id: latest).order(:id).pluck(*PLUCK_COLUMNS).map { |columns| Row.new(*columns) }
+      scope.order(:id).pluck(*PLUCK_COLUMNS).map { |columns| Row.new(*columns) }
     end
     private_class_method :fetch_rows
 

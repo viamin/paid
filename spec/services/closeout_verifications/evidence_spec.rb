@@ -170,19 +170,20 @@ RSpec.describe CloseoutVerifications::Evidence do
     end
   end
 
-  it "changes the revision when a new terminal result supersedes the prior one" do
+  # @spec PARTIAL-CLOSEOUT-057
+  it "keeps failed terminal retries visible after a later retry passes" do
     persist_assessment!
     mapping = approve_mapping
-    create_verification_run(mapping:, outcome: "failed", merged_sha: "a" * 40)
+    failed_run = create_verification_run(mapping:, outcome: "failed", merged_sha: "a" * 40)
     before_revision = described_class.revision_for(source_issue)
 
-    # A later terminal result for the same criterion carries a new admission
-    # identity (e.g. a corrected re-merge observed at a new SHA); the
-    # criterion-level projection replaces the prior entry with it.
-    create_verification_run(mapping:, outcome: "passed", merged_sha: "b" * 40)
+    passed_run = create_verification_run(mapping:, outcome: "passed", merged_sha: "b" * 40)
 
     expect(described_class.revision_for(source_issue)).not_to eq(before_revision)
-    expect(described_class.records_for(source_issue).first).to include("outcome" => "passed", "target_sha" => "b" * 40)
+    expect(described_class.records_for(source_issue)).to contain_exactly(
+      include("verification_run_id" => failed_run.id, "outcome" => "failed", "target_sha" => "a" * 40),
+      include("verification_run_id" => passed_run.id, "outcome" => "passed", "target_sha" => "b" * 40)
+    )
   end
 
   # @spec PARTIAL-CLOSEOUT-057
