@@ -125,8 +125,12 @@ module Llm
     # failure must not hide it (#5002 review).
     def resolve_outcome
       raise @permanent_failure if @permanent_failure
-      raise @transient_failure if @transient_failure
+      # A later transport-successful response rejected by the caller contract
+      # is more actionable than an earlier transport interruption. Return it
+      # so the caller can retain its bounded structural diagnostics; a valid
+      # later response would already have returned from the routing loop.
       return @invalid_response if @invalid_response
+      raise @transient_failure if @transient_failure
       return @unsuccessful_response if @unsuccessful_response
       if @missing_managed_credential
         raise AgentHarness::ConfigurationError, "No managed subscription credential is available for isolated text requests"
