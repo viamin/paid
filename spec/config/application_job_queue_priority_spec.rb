@@ -92,6 +92,9 @@ RSpec.describe ApplicationJob, :no_db do # @spec UNIFIED-WORK-ITEMS-002
         AbTestAnalysisCheckJob
         AbTestAnalysisJob
         ContainerMetricsCollectionJob
+        PgHeroCaptureQueryStatsJob
+        PgHeroCaptureSpaceStatsJob
+        PgHeroCleanHistoryJob
         QualityMetricsCollectionJob
         ScheduledMutationSweepJob
         ServiceContainerMetricsCollectionJob

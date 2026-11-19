@@ -456,6 +456,15 @@ Rails.application.configure do
   }
 end
 
+# @spec RAILS-CONTROL-PLANE-020 RAILS-CONTROL-PLANE-021
+if Rails.env.development?
+  Rails.application.config.good_job.cron.merge!(
+    pghero_query_capture: { cron: "* * * * *", class: "PgHeroCaptureQueryStatsJob" },
+    pghero_space_capture: { cron: "17 3 * * *", class: "PgHeroCaptureSpaceStatsJob" },
+    pghero_history_cleanup: { cron: "27 3 * * *", class: "PgHeroCleanHistoryJob" }
+  )
+end
+
 # TenantSetting-dependent config resolved in to_prepare so that the
 # autoloaded TenantSetting model is fully available (not during boot).
 # to_prepare runs after after_initialize on first boot, and again on
