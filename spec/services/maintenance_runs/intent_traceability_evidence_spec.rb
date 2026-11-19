@@ -56,6 +56,17 @@ RSpec.describe MaintenanceRuns::IntentTraceabilityEvidence do
     expect(snapshot).to include("canonical issue-tree manifest")
   end
 
+  # @spec MAINT-046
+  it "uses persisted association evidence for clean reconciliation coverage" do
+    completed_at = Time.utc(2026, 11, 2, 12, 0, 0)
+    create(:design_artifact_association, project:, created_at: completed_at, updated_at: completed_at)
+
+    snapshot = render
+
+    expect(snapshot).to include("2026-11-02T12:00:00Z")
+    expect(snapshot).not_to include("never completed")
+  end
+
   it "discloses findings and associations omitted beyond the snapshot bounds" do
     create_list(:design_artifact_finding, 3, project:)
     create_list(:design_artifact_association, 3, project:)

@@ -69,12 +69,15 @@ module MaintenanceRuns
 
     def header
       "Captured #{Time.current.utc.iso8601} from persisted FeatureIntents::ReconcileDesignArtifacts " \
-        "results; it reflects the most recent reconciliation pass (latest issue coverage " \
+        "results; it reports the latest persisted issue coverage (" \
         "#{latest_coverage_at}), not live GitHub or repository state."
     end
 
     def latest_coverage_at
-      project.design_artifact_findings.maximum(:covered_at)&.utc&.iso8601 || "never completed"
+      [
+        project.design_artifact_findings.maximum(:covered_at),
+        project.design_artifact_associations.maximum(:updated_at)
+      ].compact.max&.utc&.iso8601 || "unavailable"
     end
 
     def findings_section
