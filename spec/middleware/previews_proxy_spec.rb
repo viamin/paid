@@ -116,6 +116,46 @@ RSpec.describe PreviewsProxy do
       expect(viewer.association(:account)).to be_loaded
     end
 
+    # @spec LIVE-PREVIEW-004
+    it "bootstraps protected-user session deserialization before policy scoping" do
+      serialized = User.serialize_into_session(user)
+      allow(warden).to receive(:user) { User.serialize_from_session(*serialized) }
+
+      TenantContext.with(nil) do
+        viewer = middleware.send(:current_user_for, "warden" => warden)
+
+        expect(viewer&.id).to eq(user.id)
+        expect(viewer.association(:account)).to be_loaded
+        expect(TenantContext.bypass_enabled?).to be(false)
+      end
+    end
+
+    # @spec LIVE-PREVIEW-004
+    it "denies another account after protected-user session deserialization" do
+      other_account = create(:account)
+      other_user = create(:user, :owner, account: other_account)
+      serialized = User.serialize_into_session(other_user)
+      allow(warden).to receive(:user) { User.serialize_from_session(*serialized) }
+      upstream = stub_request(:get, "http://127.0.0.1:#{port}/issues/42").to_return(status: 200, body: "private")
+
+      response = TenantContext.with(nil) { mock_request.get("/previews/s3cret-token/issues/42") }
+
+      expect(response.status).to eq(404)
+      expect(upstream).not_to have_been_requested
+    end
+
+    # @spec LIVE-PREVIEW-004
+    it "restores caller context if protected-user session deserialization raises" do
+      allow(warden).to receive(:user).and_raise(ArgumentError, "invalid fixture session")
+
+      TenantContext.with(account) do
+        expect { middleware.send(:current_user_for, "warden" => warden) }
+          .to raise_error(ArgumentError, "invalid fixture session")
+        expect(Current.account).to eq(account)
+        expect(TenantContext.bypass_enabled?).to be(false)
+      end
+    end
+
     it "preloads the preview session project/account chain for policy checks" do
       resolved_session = middleware.send(:resolve_session, session.token)
 

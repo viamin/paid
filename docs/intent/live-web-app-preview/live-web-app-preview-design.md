@@ -32,6 +32,15 @@ The repo now includes substantial runtime infrastructure:
 
 These are real execution surfaces, not placeholders.
 
+## Preview Viewer Bootstrap
+
+Preview requests run in Rack middleware before the controller's current-user
+bootstrap. Resolve the Warden session user and preload its account inside an
+intentional system-read scope, then restore the caller's tenant settings.
+Evaluate `PreviewSessionPolicy` under the viewer's own account. Missing or
+invalid sessions must also restore the prior context; loading a preview iframe
+must not discard a valid signed-in session because users are RLS-protected.
+
 ## Interactive Verification Result Contract
 
 After the agent executes, `AgentRuns::VerificationResultRecorder` reads the

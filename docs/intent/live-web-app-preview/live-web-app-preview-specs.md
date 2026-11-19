@@ -36,10 +36,14 @@
 - [x] **LIVE-PREVIEW-004** — When a preview is served at `/previews/:token`,
   the system SHALL route the root-path experience through the tunnel-backed
   proxy path instead of mixing real proxying with controller-side simulated
-  preview fallback.
+  preview fallback. The middleware SHALL resolve the existing Warden session
+  user and preload its account inside the narrow system-read bootstrap before
+  tenant-scoped policy evaluation; it SHALL restore the caller's RLS context
+  on success and error and SHALL retain cross-account and project-role denials.
   *Code:* `app/middleware/previews_proxy.rb`, `app/controllers/previews_controller.rb`.
   *Test:* `spec/middleware/previews_proxy_spec.rb`, `spec/requests/previews_spec.rb`,
   `spec/requests/projects_spec.rb`.
+  *Issue:* #5078 (acceptance-discovered preview-session bootstrap regression).
 
 - [x] **LIVE-PREVIEW-005** — When an agent performs interactive verification,
   the system SHALL persist a verification outcome and related artifacts beyond

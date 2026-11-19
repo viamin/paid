@@ -224,11 +224,14 @@ class PreviewsProxy
     false
   end
 
+  # Session deserialization itself reads the RLS-protected users table.
+  # Policy evaluation remains outside this identity-bootstrap scope.
+  # @spec LIVE-PREVIEW-004
   def current_user_for(env)
-    user_id = env["warden"]&.user&.id
-    return if user_id.blank?
-
     TenantContext.with_system_access do
+      user_id = env["warden"]&.user&.id
+      return if user_id.blank?
+
       User.includes(:account).find_by(id: user_id).tap { |user| user&.account }
     end
   end
