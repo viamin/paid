@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_17_175320) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_19_013104) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -8809,6 +8809,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_17_175320) do
       WITH CHECK ((paid_tenant_bypass() OR (EXISTS ( SELECT 1
    FROM projects
   WHERE ((projects.id = context_intake_questions.project_id) AND (projects.account_id = paid_current_account_id()))))));
+  SQL
+
+  execute <<~SQL
+    CREATE POLICY "tenant_isolation_global_catalog_read" ON "public"."context_intake_questions"
+      AS PERMISSIVE
+      FOR SELECT
+      USING ((project_id IS NULL));
   SQL
 
   execute <<~SQL

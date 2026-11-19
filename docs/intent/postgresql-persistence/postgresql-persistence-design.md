@@ -85,6 +85,8 @@ database tasks. The shipped policy set does not just hide rows on reads; it also
 cross-tenant join rows and direct-account writes whose foreign keys point at a
 different tenant. A project credential transition accepts either a GitHub token
 or a GitHub App installation only when it belongs to the project's account.
+Explicitly global catalog rows needed by a tenant workflow are exposed through
+read-only policies; tenant mutations remain project-scoped.
 CI grants its dedicated test runtime role `CREATEROLE` so
 RLS regression specs can create and revoke their restricted test role. The CI
 role remains explicitly `NOSUPERUSER` and `NOBYPASSRLS`, matching the runtime
