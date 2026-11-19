@@ -260,6 +260,24 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     expect(evidence.fetch(:incomplete_checks)).to be_empty
   end
 
+  # @spec MAINT-022 MAINT-042
+  it "reports package scopes beyond the evidence output limit as incomplete coverage" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "typescript" ], "marker_files" => [])
+    scopes = 12.times.map { |index| "package-#{index}-#{"x" * 1_950}" }
+    discovery = scopes.map { |scope| "./#{scope}/package.json\0" }.join
+    executions = [ result(exit_code: 0, stdout: discovery) ]
+    executions.concat(Array.new(described_class::MAX_PACKAGE_SCOPES) { result(exit_code: 1) })
+    allow(run).to receive(:execute_in_execution_environment).and_return(*executions)
+
+    evidence = described_class.call(run:)
+
+    expect(discovery.length).to be > described_class::OUTPUT_LIMIT
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "knip_package_discovery", "reason" => "package_scope_limit_exceeded",
+        "discovered_package_count" => 12, "analyzed_package_count" => described_class::MAX_PACKAGE_SCOPES)
+    )
+  end
+
   # @spec MAINT-041 MAINT-045
   it "exposes existing marketplace sidecar endpoints as advisory evidence without creating a matcher or gate" do
     allow(project).to receive(:effective_repo_profile).and_return("languages" => [], "marker_files" => [])

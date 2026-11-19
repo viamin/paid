@@ -99,7 +99,7 @@ module MaintenanceRuns
     end
 
     def package_scopes(discovery, adapter)
-      output(discovery).to_s.split("\0").filter_map do |path|
+      discovery[:stdout].to_s.split("\0").filter_map do |path|
         next unless File.basename(path) == adapter.manifest
 
         File.dirname(path.delete_prefix("./")).presence || "."
