@@ -6,22 +6,7 @@ require Rails.root.join("db/migrate/20261117075035_restore_complete_tenant_polic
 # DDL remains inside each example's transaction, in the isolated test database.
 # @spec POSTGRESQL-PERSISTENCE-012
 RSpec.describe RestoreCompleteTenantPolicyCatalog do
-  # This migration is also the cleanup boundary for non-transactional migration
-  # examples that precede it in a randomized shard. Keep its catalog durable so
-  # the following schema-bootstrap examples exercise the canonical boundary.
-  self.use_transactional_tests = false
-
   let(:connection) { ActiveRecord::Base.connection }
-
-  before do
-    connection.drop_table(:bootstrap_policy_probe, if_exists: true)
-    repair
-  end
-
-  after do
-    connection.drop_table(:bootstrap_policy_probe, if_exists: true)
-    repair
-  end
 
   def policy(table)
     connection.select_one("SELECT qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = '#{table}' AND policyname = 'tenant_isolation'")

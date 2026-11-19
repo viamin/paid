@@ -12,20 +12,22 @@ RSpec.describe CapybaraTenantContextFile, :no_db do
     environment = { "PATH_INFO" => "/" }
     allow(app).to receive(:call).with(environment).and_return([ 200, {}, [] ])
     allow(TenantContext).to receive(:with_system_access).and_yield
+    allow(TenantContext).to receive(:apply_system_access!)
 
     response = CapybaraTenantContext.new(app).call(environment)
 
     expect(response).to eq([ 200, {}, [] ])
     expect(TenantContext).to have_received(:with_system_access)
+    expect(TenantContext).to have_received(:apply_system_access!)
     expect(app).to have_received(:call).with(environment)
   end
 
   # @spec POSTGRESQL-PERSISTENCE-012
-  it "restores system access after Rails executor request cleanup" do
+  it "does not mutate pooled session state for unrelated Rails executor work" do
     allow(TenantContext).to receive(:apply_system_access!)
 
     Rails.application.executor.wrap { }
 
-    expect(TenantContext).to have_received(:apply_system_access!).twice
+    expect(TenantContext).not_to have_received(:apply_system_access!)
   end
 end

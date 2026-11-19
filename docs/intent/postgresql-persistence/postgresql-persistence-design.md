@@ -76,9 +76,8 @@ restoring weaker legacy enforcement.
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
 guards against unsafe runtime roles that would bypass those policies. The
-tenant-context writer retries once when PostgreSQL transiently returns no
-result for its parameterized setting query, then raises a repeated failure so
-no request continues with an uncertain RLS session state. The
+tenant-context writer bypasses Rails's query cache for its parameterized
+session-setting queries. The
 database-backed CI workflows start their PostgreSQL service with the bootstrap
 role, then create and use a dedicated non-superuser application role for Rails
 database tasks. The shipped policy set does not just hide rows on reads; it also rejects
@@ -94,6 +93,13 @@ guard's safety boundary. CI test connections default to the application's
 explicit system-access setting so independently opened test connections retain
 the harness context; tenant-isolation examples set the value false before
 asserting scoped behavior.
+The browser-test Rack boundary restores that baseline after the complete request
+scope unwinds, including errors. It does not install global executor callbacks
+that mutate pooled session state during unrelated work or fixture teardown.
+The browser regression server handles one request at a time because transactional
+fixtures pin a single PostgreSQL session across threads. Application concurrency
+tests use independent connections instead of interleaving tenant settings on
+that shared session.
 
 The container-runtime provisioner applies that same boundary to agent test
 services: bootstrap credentials administer PostgreSQL, while each run receives
@@ -106,6 +112,11 @@ attributes, and the token records retain change history through Logidze.
 
 Knowledge search uses PostgreSQL text-search features (`tsvector`, `pg_trgm`,
 GIN indexes, trigger-maintained search vectors) for the shipped full-text path.
+
+Migration replay tests isolate their DDL in rollback-only transactions. Testing
+a historical rollback must restore the exact pre-example catalog, including
+policies and enable/force flags added by later migrations; replaying only an
+older migration list is not sufficient cleanup for a randomized suite.
 
 ## Deferred Work
 

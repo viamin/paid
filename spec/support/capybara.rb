@@ -41,18 +41,14 @@ class CapybaraTenantContext
 
   def call(environment)
     TenantContext.with_system_access { @app.call(environment) }
+  ensure
+    # The outer scope can have captured the cleared state left by an earlier
+    # request. Restore the fixture baseline after that scope has unwound too.
+    TenantContext.apply_system_access!
   end
 end
 
 Capybara.app = CapybaraTenantContext.new(Rails.application)
-
-# The Puma server starts each request through the Rails executor. Establish the
-# same baseline on its checked-out connection before middleware deserializes the
-# Warden session, then restore it after controller cleanup. The Rack wrapper
-# above also covers Capybara's direct app path.
-# @spec POSTGRESQL-PERSISTENCE-012
-Rails.application.executor.to_run { TenantContext.apply_system_access! }
-Rails.application.executor.to_complete { TenantContext.apply_system_access! }
 
 # RackTest and the example share a database connection. ApplicationController
 # deliberately clears request tenant context, so restore the test harness's
@@ -69,12 +65,19 @@ end
 
 Capybara::RackTest::Browser.prepend(RackTestTenantContext)
 
-Capybara.server = :puma, { Silent: true }
+# Transactional browser examples pin one PostgreSQL session across threads.
+# Concurrent requests cannot safely interleave tenant session settings on it.
+Capybara.server = :puma, { Silent: true, Threads: "0:1" }
 Capybara.server_host = "127.0.0.1"
 Capybara.default_max_wait_time = 5
 
 RSpec.configure do |config|
   config.before(:each, type: :system) do |example|
+    # Rails initializes its system-test Rack app after support files load.
+    # Wrap that final app rather than the value Rails replaces on startup.
+    unless Capybara.app.is_a?(CapybaraTenantContext)
+      Capybara.app = CapybaraTenantContext.new(Capybara.app)
+    end
     driven_by example.metadata.fetch(:system_driver, SYSTEM_DRIVER)
   end
 
