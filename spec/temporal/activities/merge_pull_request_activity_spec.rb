@@ -67,7 +67,10 @@ RSpec.describe Activities::MergePullRequestActivity do
             action: "merge",
             evidence: Automation::DelegatedActionAdmission.admission_evidence(
               work_item: delegated_pr, action: "merge", acceptance_refs: [ "AC-1" ],
-              stop_before_phase: "release_deployment"
+              stop_before_phase: "release_deployment", action_evidence: {
+                required_checks: [ "ci" ], review_merge_state: "mergeable",
+                dependencies: [], open_followups: []
+              }
             ))
         end
 
@@ -78,7 +81,10 @@ RSpec.describe Activities::MergePullRequestActivity do
             action: "review",
             evidence: Automation::DelegatedActionAdmission.admission_evidence(
               work_item: delegated_pr, action: "review", acceptance_refs: [ "AC-1" ],
-              stop_before_phase: "merge"
+              stop_before_phase: "merge", action_evidence: {
+                failure_classification: "review_requested", attempted_recovery: "review",
+                current_checks: [ "assessment" ], budget_evidence: "current"
+              }
             ))
         end
 

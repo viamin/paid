@@ -86,4 +86,83 @@ RSpec.describe Issues::AutoResolveCloseout do
     expect(described_class.call(agent_run: run, client:)).to eq(:closed)
     expect(described_class.call(agent_run: run, client:)).to eq(:already_closed)
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-017
+  context "with a historical audit that paraphrased a reviewed criterion" do
+    def historical_misbound_audit
+      verification = CloseoutVerifications::AdmitLiveTarget.call(project:).runs.sole
+      CloseoutVerificationJob.perform_now(verification.id)
+      audit = issue.agent_runs.find_by!(goal: "analyze_issue", status: "queued")
+      finish_audit(audit)
+      payload = audit.reconciliation.deep_dup
+      payload["assessment"]["criteria"][0]["criterion"] = "Paraphrased observation"
+      audit.update!(reconciliation: payload)
+      audit
+    end
+
+    it "admits one repair without changing old authority or implementation" do
+      old = historical_misbound_audit
+      evidence = old.continuation_request.evidence.deep_dup
+      expect(described_class.call(agent_run: old, client:)).to eq(:blocked)
+      expect(client).not_to have_received(:update_issue)
+
+      repair = PartialCloseouts::AutoAudit.call(issue:)
+
+      expect(repair).to be_scheduled
+      expect(repair.agent_run.goal).to eq("analyze_issue")
+      expect(old.continuation_request.reload.evidence).to eq(evidence)
+      expect(issue.agent_runs.where(goal: "create_pr").count).to eq(1)
+      expect(issue.reload.github_state).to eq("open")
+      finish_audit(repair.agent_run)
+      expect(PartialCloseouts::SourceClosureDisposition.for(repair.agent_run)["disposition"]).to eq("close")
+      expect_idempotent_closure(repair.agent_run)
+    end
+
+    it "counts the old malformed completions toward the automatic attempt cap" do
+      old = historical_misbound_audit
+      2.times do
+        request = create(:issue_continuation_request, :consumed, issue:, project:,
+          evidence: old.continuation_request.evidence.deep_dup)
+        create(:agent_run, :completed, issue:, project:, goal: "analyze_issue", continuation_request: request,
+          result_commit_sha: nil, reconciliation: old.reconciliation.deep_dup)
+      end
+
+      expect(PartialCloseouts::AutoAudit.call(issue:).code).to eq(:retry_exhausted)
+    end
+
+    it "keeps repair report-only after closure delegation is revoked" do
+      historical_misbound_audit
+      ProjectDelegation::SelectPosture.call(project:, actor: owner, level: "conservative")
+
+      repair = PartialCloseouts::AutoAudit.call(issue:)
+
+      expect(repair).to be_scheduled
+      expect(repair.agent_run.continuation_request.evidence["closeout_policy_signature"]).to be_blank
+      finish_audit(repair.agent_run)
+      expect(described_class.call(agent_run: repair.agent_run, client:)).to eq(:not_delegated)
+      expect(client).not_to have_received(:update_issue)
+    end
+
+    it "does not repair a valid unknown verdict to seek acceptance" do
+      old = historical_misbound_audit
+      payload = old.reconciliation.deep_dup
+      payload["assessment"]["criteria"][0]["state"] = "unknown"
+      old.update!(reconciliation: payload)
+
+      expect(PartialCloseouts::AuditRefreshNeeded.call(issue:)).to be(false)
+      expect(PartialCloseouts::AutoAudit.call(issue:).code).to eq(:assessment_current)
+    end
+
+    it "does not refresh an optimistic report while required evidence is failed" do
+      old = historical_misbound_audit
+      verification = issue.agent_runs.find_by!(goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL)
+      receipt = verification.verification_result.deep_dup
+      receipt["closeout_verification"]["outcome"] = "failed"
+      verification.update!(verification_result: receipt)
+      payload = old.reconciliation.fetch("assessment").except("source_revision", "intent_revision")
+      old.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(old, payload) })
+
+      expect(PartialCloseouts::AuditRefreshNeeded.call(issue:)).to be(false)
+    end
+  end
 end

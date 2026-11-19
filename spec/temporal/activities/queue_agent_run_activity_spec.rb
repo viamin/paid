@@ -778,7 +778,11 @@ RSpec.describe Activities::QueueAgentRunActivity do
           issue: pull_request,
           action: "review",
           evidence: Automation::DelegatedActionAdmission.admission_evidence(
-            work_item: pull_request, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+            work_item: pull_request, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge",
+            action_evidence: {
+              failure_classification: "review_requested", attempted_recovery: "review",
+              current_checks: [ "assessment" ], budget_evidence: "current"
+            }
           ))
       end
 

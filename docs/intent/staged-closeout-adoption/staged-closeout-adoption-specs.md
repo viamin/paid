@@ -1,5 +1,9 @@
 # EARS Specs: Staged Closeout Adoption
 
+- [x] **STAGED-CLOSEOUT-ADOPTION-017** — When assessing reviewed required-stage criteria, the analyzer SHALL require every bound criterion key exactly once without paraphrasing, and reject missing, renamed or duplicate identities through existing bounded response validation. A current all-satisfied historical report missing required keys MAY obtain a normal report-only repair when every required check is current, complete and successful; automatic repair SHALL retain prior reports/admissions and count them toward the existing per-source audit attempt cap. Valid unmet/unknown results SHALL NOT trigger this repair or authorize implementation or closure.
+  *Test:* `spec/services/llm/analyze_partial_closeout_required_criteria_spec.rb`, `spec/services/issues/auto_resolve_closeout_staged_retry_spec.rb`.
+  *Issue:* #5194.
+
 - [x] **STAGED-CLOSEOUT-ADOPTION-006** — When an authorized maintainer opens project acceptance-check settings, Paid SHALL provide HTML controls to inspect and change enrollment, review or replace a mapping using current criteria and permitted registry targets, revoke a mapping, and inspect revision history with reviewer identity, time and eligibility reasons; equivalent JSON actions SHALL remain available.
   *Test:* `spec/requests/projects/staged_closeout_adoptions_spec.rb`.
 

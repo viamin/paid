@@ -69,6 +69,13 @@ changing one, so it is not a drift event.
 never supplies execution authority. That stays with the RDR-077 phase policy
 and the RDR-078 bounded authorization for the admitted lineage.
 
+`ProjectDelegation::ActionPlan` is the shared action-specific decision boundary.
+It requires the evidence tuple and same-work lineage for each of the five
+delegated classes, rejects product/release/settings/hold/scope expansion, and
+records an immutable `project_delegation.action_evaluated` audit receipt for
+both permits and focused-decision stops. Follow-up ownership records are
+explicitly non-executing; the follow-up remains a separate admission.
+
 Recording a follow-up permits the finding, affected scope, evidence, owner,
 and completion dependency that RDR-071 already requires, and nothing more. The
 follow-up stays a separate work item with its own admission, policy snapshot,

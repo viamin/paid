@@ -7,6 +7,7 @@ class AccountActivityEvent < ApplicationRecord
     bounded_action.authorized
     bounded_action.revoked
     bounded_action.completed
+    project_delegation.action_evaluated
   ].freeze
 
   ACTION_CATEGORIES = {
@@ -69,6 +70,7 @@ class AccountActivityEvent < ApplicationRecord
     "bounded_action.completed" => "approval",
     "project_delegation.posture_selected" => "project",
     "project_delegation.rollback" => "project",
+    "project_delegation.action_evaluated" => "project",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",
     "egress_allowlist.account_entry_created" => "egress_allowlist",

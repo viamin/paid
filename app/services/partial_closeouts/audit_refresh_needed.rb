@@ -9,6 +9,7 @@ module PartialCloseouts
     def self.call(issue:, assessment: Assessment.call(issue))
       return true if assessment.stale?
       return false unless assessment.closeout_state == "accepted_awaiting_github_closure"
+      return true if binding_repair?(issue:, assessment:)
       return false unless SourceClosureDisposition.call(issue:, assessment: assessment.assessment)["disposition"] == SourceClosureDisposition::CLOSE
 
       signature = Issues::AutoResolveCloseout.authority_signature(issue)
@@ -26,6 +27,22 @@ module PartialCloseouts
         evidence["closeout_policy_signature"] == signature &&
         evidence["intent_revision"] == Assessment.intent_revision_for(issue) &&
         evidence["source_revision"].present? && evidence["source_revision"] != assessment.current_source_revision
+    end
+
+    # A malformed historical completion cannot authorize closure. A fresh
+    # report may restore its identities without altering the old assessment.
+    # @spec STAGED-CLOSEOUT-ADOPTION-017
+    def self.binding_repair?(issue:, assessment: Assessment.call(issue))
+      return false unless issue.github_state == "open" && !assessment.stale? &&
+        assessment.closeout_state == "accepted_awaiting_github_closure"
+
+      readiness = CloseoutVerifications::ClosureReadiness.new(issue:, criteria: assessment.criteria.pluck("criterion"))
+      return false unless readiness.call.blockers.any? { |blocker| blocker.code == :criterion_not_assessed }
+
+      # Failed, revoked, stale or incomplete evidence cannot qualify merely
+      # because the semantic report was optimistic about its other criteria.
+      keys = readiness.requirements.map(&:criterion_key)
+      CloseoutVerifications::ClosureReadiness.call(issue:, criteria: keys).ready?
     end
   end
 end

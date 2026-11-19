@@ -42,6 +42,8 @@ module Automation
       "merge" => "release_deployment"
     }.freeze
 
+    ACTION_CLASSES = EffectivePolicy::ACTION_CLASS_BY_DELEGATED_ACTION.freeze
+
     # The work item for a run: its issue when issue-scoped, otherwise the
     # project's PR row for a PR-scoped run (review goals).
     def self.work_item_for(project:, issue_id: nil, pull_request_number: nil)
@@ -99,7 +101,7 @@ module Automation
     # admission and recheck sides of the contract cannot drift. The pinned
     # lineage records the same-work chain the authorization governs.
     # @spec BOUNDED-PHASE-AUTHORIZATION-001
-    def self.admission_evidence(work_item:, action:, acceptance_refs:, stop_before_phase:)
+    def self.admission_evidence(work_item:, action:, acceptance_refs:, stop_before_phase:, action_evidence: {})
       {
         "intent_digest" => "sha256:#{PartialCloseouts::Assessment.intent_revision_for(work_item)}",
         "acceptance_refs" => acceptance_refs,
@@ -107,17 +109,18 @@ module Automation
         "posture_signature" => posture_signature_for(project: work_item.project, action: action),
         "phase" => ACTION_PHASES.fetch(action),
         "stop_before_phase" => stop_before_phase,
-        BoundedDelegatedAction::LINEAGE_KEY => lineage_issue_ids(work_item)
+        BoundedDelegatedAction::LINEAGE_KEY => lineage_issue_ids(work_item),
+        "action_evidence" => action_evidence.is_a?(Hash) ? action_evidence.stringify_keys : {}
       }
     end
 
     def self.call(project:, issue: nil, pull_request_number: nil, goal: nil, action: nil,
-      boundary:, trigger: :automatic)
+      action_evidence: {}, boundary:, trigger: :automatic)
       work_item = issue || work_item_for(project:, pull_request_number:)
       delegated_action = action || GOAL_ACTIONS[goal.to_s]
       return nil if work_item.nil? || delegated_action.nil?
 
-      new(work_item: work_item, action: delegated_action, boundary: boundary, trigger:).call
+      new(work_item: work_item, action: delegated_action, action_evidence:, boundary:, trigger:).call
     end
 
     # Successful execution reaches the action's exclusive stop. Completion is
@@ -133,9 +136,10 @@ module Automation
       end.any?
     end
 
-    def initialize(work_item:, action:, boundary:, trigger:)
+    def initialize(work_item:, action:, action_evidence: {}, boundary:, trigger:)
       @work_item = work_item
       @action = action
+      @action_evidence = action_evidence
       @boundary = boundary
       @trigger = trigger
     end
@@ -146,7 +150,10 @@ module Automation
       return nil if authorization.nil?
 
       authorization.with_lock do
-        DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+        boundary_decision = DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+        return boundary_decision if boundary_decision.blocked?
+
+        action_decision
       end
     end
 
@@ -158,7 +165,52 @@ module Automation
 
     private
 
-    attr_reader :work_item, :action, :boundary, :trigger
+    attr_reader :work_item, :action, :action_evidence, :boundary, :trigger
+
+    def action_decision
+      decision = ProjectDelegation::ActionPlan.call(
+        project:, work_item:, action: ACTION_CLASSES.fetch(action), evidence: action_plan_evidence
+      )
+      return delegated_result(decision, notification: nil) if decision.permitted?
+
+      notification = FocusedDecision.call(
+        account: project.account,
+        subject: work_item,
+        source: DelegatedWorkBoundary::NOTIFICATION_SOURCE,
+        title: "Delegated action needs a focused decision",
+        description: "Delegated work is paused before #{boundary} until its action evidence is reviewed.",
+        metadata: {
+          "authorization_id" => authorization.id,
+          "boundary" => boundary.to_s,
+          "reasons" => decision.reasons
+        }
+      )
+      delegated_result(decision, notification:)
+    end
+
+    def delegated_result(decision, notification:)
+      DelegatedWorkBoundary::Result.new(
+        permitted: decision.permitted?, boundary:, reasons: decision.reasons, notification:
+      )
+    end
+
+    def action_plan_evidence
+      authorization.admission_snapshot.slice(
+        "intent_revision", "acceptance_revision", "evidence_revision", BoundedDelegatedAction::LINEAGE_KEY
+      ).merge(
+        "policy_signature" => ProjectDelegation::Posture.resolve(project).policy_signature
+      ).merge(stored_action_evidence)
+        .merge(normalized_action_evidence)
+    end
+
+    def stored_action_evidence
+      value = authorization.admission_snapshot["action_evidence"]
+      value.is_a?(Hash) ? value : {}
+    end
+
+    def normalized_action_evidence
+      action_evidence.is_a?(Hash) ? action_evidence.stringify_keys : {}
+    end
 
     def project
       work_item.project

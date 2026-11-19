@@ -123,8 +123,14 @@ module Automation
         work_item: issue,
         action:,
         acceptance_refs: evidence_value("acceptance_refs"),
-        stop_before_phase: evidence_value("stop_before_phase")
+        stop_before_phase: evidence_value("stop_before_phase"),
+        action_evidence: action_evidence
       )
+    end
+
+    def action_evidence
+      value = evidence_value("action_evidence")
+      value.is_a?(Hash) ? value : {}
     end
 
     def evidence_value(key)

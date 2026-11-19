@@ -7,13 +7,23 @@ require "rails_helper"
 RSpec.describe TenantContext, :tenant_isolation do
   def projection_records
     described_class.with_system_access do
-      projects = [ create(:project), create(:project) ]
+      projects = create_list(:account, 2).map { |account| create(:project, account:) }
       checkpoints = projects.map { |project| PartialCloseoutProjection.create!(project:, computed_at: Time.current, generation: SecureRandom.uuid) }
       entries = checkpoints.map do |checkpoint|
         PartialCloseoutProjectionEntry.create!(project: checkpoint.project, issue: create(:issue, project: checkpoint.project),
           evidence_digest: "a" * 64, projection_generation: checkpoint.generation)
       end
       [ projects, checkpoints, entries ]
+    end
+  end
+
+  def intent_checkpoint_records
+    described_class.with_system_access do
+      projects = create_list(:account, 2).map { |account| create(:project, account:) }
+      checkpoints = projects.map do |project|
+        create(:project_delegation_intent_checkpoint, feature_intent: create(:feature_intent, project:))
+      end
+      [ checkpoints, checkpoints.map { |checkpoint| create(:project_delegation_intent_settlement, intent_checkpoint: checkpoint) } ]
     end
   end
 
@@ -24,7 +34,7 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   it "isolates later layered-verification findings without installing policies in the test" do
     projects, findings = described_class.with_system_access do
-      projects = [ create(:project), create(:project) ]
+      projects = create_list(:account, 2).map { |account| create(:project, account:) }
       findings = projects.map do |project|
         create(:layered_verification_finding, project:, obligation: create(:layered_verification_obligation, project:),
           agent_run: create(:agent_run, project:))
@@ -59,11 +69,7 @@ RSpec.describe TenantContext, :tenant_isolation do
 
   # @spec PROJECT-DELEGATION-002 POSTGRESQL-PERSISTENCE-012
   it "isolates newer intent checkpoints and settlements after unmodified bootstrap" do
-    checkpoints, settlements = described_class.with_system_access do
-      checkpoints = create_list(:project_delegation_intent_checkpoint, 2)
-      settlements = checkpoints.map { |checkpoint| create(:project_delegation_intent_settlement, intent_checkpoint: checkpoint) }
-      [ checkpoints, settlements ]
-    end
+    checkpoints, settlements = intent_checkpoint_records
 
     described_class.with(checkpoints.first.feature_intent.project.account) do
       expect(ProjectDelegation::IntentCheckpoint.where(id: checkpoints.map(&:id))).to contain_exactly(checkpoints.first)
