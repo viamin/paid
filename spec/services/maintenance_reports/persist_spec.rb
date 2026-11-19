@@ -14,19 +14,21 @@ RSpec.describe MaintenanceReports::Persist do
       locations: [ { "path" => "app/workers/legacy_worker.rb", "line" => 12 } ],
       supporting_evidence: [ { "source" => "debride", "detail" => "no static callers" } ],
       contrary_evidence: [ { "source" => "rails", "detail" => "may be autoloaded" } ],
+      evidence_source: "tool",
       analyzer_provenance: { "name" => "debride", "version" => "1.14.0", "configuration" => ".debride.yml" },
       raw_tool_confidence: 0.72, agent_assessment: "needs_review", proposed_action: "Verify runtime references",
       validation_plan: "Exercise the production job path", verification_disposition: "unverified"
     }
   end
 
-  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025
+  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025 MAINT-043
   it "persists completed coverage and separates tool confidence from agent assessment" do
     report = described_class.call(run:, resolved_scope: "app/workers", completed_checks: [ { "name" => "debride" } ], findings: [ finding ])
 
     expect(report).to have_attributes(outcome: "completed", resolved_scope: "app/workers")
     occurrence = report.finding_occurrences.sole
-    expect(occurrence).to have_attributes(raw_tool_confidence: 0.72, agent_assessment: "needs_review", verification_disposition: "unverified")
+    expect(occurrence).to have_attributes(evidence_source: "tool", raw_tool_confidence: 0.72,
+      agent_assessment: "needs_review", verification_disposition: "unverified")
     expect(occurrence.maintenance_finding).to have_attributes(project: project, status: "open")
   end
 

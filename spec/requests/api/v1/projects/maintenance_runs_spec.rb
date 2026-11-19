@@ -102,13 +102,14 @@ RSpec.describe "Maintenance runs API" do
     )
   end
 
-  # @spec MAINT-016 MAINT-025
-  it "exposes analyzer provenance for report findings" do
+  # @spec MAINT-016 MAINT-025 MAINT-043
+  it "exposes tool evidence source and analyzer provenance for report findings" do
     run = create(:agent_run, project:, goal: "maintenance", issue: nil, custom_prompt: "Audit workflow A",
       maintenance_guidance: "Audit workflow A")
     MaintenanceReports::Persist.call(run:, findings: [ {
       category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ], locations: [],
-      analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
+      evidence_source: "tool", analyzer_provenance: { name: "debride", version: "1.14.0", configuration: "default" },
+      verification_disposition: "unverified"
     } ])
 
     run.maintenance_report.finding_occurrences.sole.maintenance_finding.dismiss!(reason: "Intentional compatibility callback")
@@ -116,9 +117,10 @@ RSpec.describe "Maintenance runs API" do
     get "/api/v1/projects/#{project.id}/maintenance_runs/#{run.id}", headers: headers
 
     expect(response.parsed_body.dig("maintenance", "report", "findings", 0, "analyzer_provenance"))
-      .to eq("name" => "debride", "version" => "1.14.0")
+      .to eq("name" => "debride", "version" => "1.14.0", "configuration" => "default")
     expect(response.parsed_body.dig("maintenance", "report", "findings", 0)).to include(
-      "observed_status" => "open", "status" => "dismissed", "dismissal_reason" => "Intentional compatibility callback"
+      "evidence_source" => "tool", "observed_status" => "open", "status" => "dismissed",
+      "dismissal_reason" => "Intentional compatibility callback"
     )
   end
 

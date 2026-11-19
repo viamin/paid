@@ -83,7 +83,8 @@ module Tools
           {
             claim: occurrence.claim, category: occurrence.category, symbols: occurrence.symbols, locations: occurrence.locations,
             supporting_evidence: occurrence.supporting_evidence, contrary_evidence: occurrence.contrary_evidence,
-            analyzer_provenance: occurrence.analyzer_provenance, raw_tool_confidence: occurrence.raw_tool_confidence,
+            evidence_source: occurrence.evidence_source, analyzer_provenance: occurrence.analyzer_provenance,
+            raw_tool_confidence: occurrence.raw_tool_confidence,
             agent_assessment: occurrence.agent_assessment,
             proposed_action: occurrence.proposed_action, validation_plan: occurrence.validation_plan,
             observed_status: occurrence.observed_status, dismissal_reason: occurrence.maintenance_finding.dismissal_reason,

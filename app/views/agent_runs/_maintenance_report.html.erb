@@ -17,6 +17,7 @@
       <li class="rounded border border-gray-100 p-3 dark:border-gray-700">
         <strong><%= occurrence.claim %></strong> — <%= occurrence.maintenance_finding.status.humanize %>
         <p>Assessment: <%= occurrence.agent_assessment || "Not assessed" %>; verification: <%= occurrence.verification_disposition.humanize %>.</p>
+        <p>Evidence source: <%= occurrence.evidence_source.humanize %>.</p>
         <p>Analyzer provenance: <%= occurrence.analyzer_provenance.presence&.to_json || "Not recorded" %>.</p>
         <p>Observed status: <%= occurrence.observed_status.humanize %>; current status: <%= occurrence.maintenance_finding.status.humanize %>.</p>
         <% if occurrence.maintenance_finding.reassessment_required? %>

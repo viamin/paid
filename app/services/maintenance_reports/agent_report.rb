@@ -15,7 +15,7 @@ module MaintenanceReports
     ].freeze
     DISPOSITIONS = MaintenanceFindingOccurrence::DISPOSITIONS
     ASSESSMENTS = MaintenanceFindingOccurrence::ASSESSMENTS
-    EVIDENCE_SOURCES = %w[agent tool].freeze
+    EVIDENCE_SOURCES = MaintenanceFindingOccurrence::EVIDENCE_SOURCES
 
     def self.parse(output) = new(output).parse
 

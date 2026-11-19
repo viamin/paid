@@ -170,6 +170,6 @@ RSpec.describe "Project maintenance runs" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Scope not resolved", "Collected preliminary trace", "unavailable_service",
       "vendor callbacks", "No direct callers", "Dynamic invocation remains possible", "Inspect registration",
-      "Exercise callback registration", "app/legacy.rb", "Legacy#call")
+      "Exercise callback registration", "app/legacy.rb", "Legacy#call", "Evidence source: Agent")
   end
 end
