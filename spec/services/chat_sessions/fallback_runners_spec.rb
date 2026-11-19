@@ -66,6 +66,16 @@ RSpec.describe ChatSessions::FallbackRunners do
       expect(chat_session.reload.runner).to eq(primary_runner)
     end
 
+    # @spec CHAT-API-026
+    it "keeps a fallback provider with a usable Medium tier when Low is absent" do
+      fallback = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      create(:llm_model, provider: "anthropic", model_id: "claude-sonnet-mid", tier: "mid", supports_tools: true)
+      user.settings.update_columns(kb_chat_fallback_runners: [ fallback.routing_key ])
+
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([ fallback ])
+    end
+
 
     it "allows fallback to another API-key runner with the same runner key" do
       fallback_runner = create_openrouter_runner(name: "Fallback")
@@ -204,6 +214,98 @@ RSpec.describe ChatSessions::FallbackRunners do
 
       expect(session.reload).to have_attributes(runner: runner, model: "gpt-5.6-luna")
       expect(session.metadata).to include("model_tier" => "low")
+    end
+
+    # @spec CHAT-API-026
+    it "preserves an automatic Medium preference on the fallback runner" do
+      runner = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      create(:llm_model, provider: "anthropic", model_id: "claude-haiku-low", tier: "low", supports_tools: true)
+      create(:llm_model, provider: "anthropic", model_id: "claude-sonnet-mid", tier: "mid", supports_tools: true)
+      session = create(:chat_session, account: account, created_by: user,
+        metadata: { "requested_model_selection" => "automatic", "requested_model_tier" => "mid" })
+
+      described_class.switch!(chat_session: session, runner: runner)
+
+      expect(session.reload).to have_attributes(runner: runner, model: "claude-sonnet-mid")
+      expect(session.metadata).to include(
+        "requested_model_selection" => "automatic",
+        "requested_model_tier" => "mid",
+        "model_tier" => "mid",
+        "effective_tier" => "mid"
+      )
+    end
+
+    # @spec CHAT-API-026
+    it "preserves an explicit requested model while recording fallback execution separately" do
+      runner = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      create(:llm_model, provider: "anthropic", model_id: "claude-sonnet-mid", tier: "mid", supports_tools: true)
+      original = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-user-choice" } })
+      session = create(:chat_session, account: account, created_by: user, runner: original, model: "gpt-user-choice")
+
+      described_class.switch!(chat_session: session, runner: runner)
+
+      expect(session.reload).to have_attributes(runner: runner, model: "claude-sonnet-mid")
+      expect(session.metadata).to include(
+        "requested_model" => "gpt-user-choice",
+        "requested_runner_id" => original.id,
+        "requested_model_selection" => "explicit",
+        "effective_model" => "claude-sonnet-mid",
+        "effective_tier" => "mid",
+        "effective_runner_id" => runner.id,
+        "model_substitution_reason" => "fallback_runner"
+      )
+      expect(session.metadata).not_to have_key("requested_model_tier")
+    end
+
+    # @spec CHAT-API-026
+    it "retries the explicit requested runner and model on the next turn" do
+      fallback = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      create(:llm_model, provider: "anthropic", model_id: "claude-sonnet-mid", tier: "mid", supports_tools: true)
+      requested = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-user-choice" } })
+      session = create(:chat_session, account: account, created_by: user, runner: requested, model: "gpt-user-choice",
+        metadata: { "requested_model" => "gpt-user-choice", "requested_runner_id" => requested.id,
+                    "requested_model_selection" => "explicit" })
+
+      described_class.switch!(chat_session: session, runner: fallback)
+      client = ChatSessions::BuildLlmClient.call(chat_session: session)
+
+      expect(client.model).to eq("gpt-user-choice")
+      expect(session.reload).to have_attributes(runner: requested, model: "gpt-user-choice")
+      expect(session.metadata).to include(
+        "effective_model" => "gpt-user-choice",
+        "effective_runner_id" => requested.id
+      )
+      expect(session.metadata).not_to have_key("model_substitution_reason")
+    end
+
+    # @spec CHAT-API-026
+    it "restores the known tier of a curated explicit model after fallback" do
+      fallback = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      create(:llm_model, provider: "anthropic", model_id: "claude-sonnet-mid", tier: "mid", supports_tools: true)
+      requested = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
+      session = create(:chat_session, account: account, created_by: user, runner: requested, model: "gpt-5.6-luna",
+        metadata: { "model_tier" => "low", "requested_model" => "gpt-5.6-luna",
+                    "requested_runner_id" => requested.id, "requested_model_selection" => "explicit" })
+
+      described_class.switch!(chat_session: session, runner: fallback)
+      ChatSessions::BuildLlmClient.call(chat_session: session)
+
+      expect(session.reload).to have_attributes(runner: requested, model: "gpt-5.6-luna")
+      expect(session.metadata).to include(
+        "requested_model_tier" => "low",
+        "model_tier" => "low",
+        "effective_tier" => "low"
+      )
     end
   end
 

@@ -181,7 +181,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
 
     context "with an OpenAI-compatible API key runner" do
       # @spec CHAT-SESSION-PREFERENCES-003
-      it "moves a legacy Automatic session to the curated Low model without replacing explicit selections" do
+      it "resolves a legacy Automatic session to an eligible tier without replacing explicit selections" do
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test", api_service_type: "openai")
         runner = create(:runner, :api_key, user: user, runner_key: "opencode", provider_api_key: api_key_record,
           config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
@@ -197,6 +197,46 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         expect(automatic.reload.metadata).to include("model_tier" => "low")
         expect(described_class.call(chat_session: explicit).model).to eq("gpt-4o")
         expect(explicit.reload.model).to eq("gpt-4o")
+      end
+
+      # @spec CHAT-API-026 CHAT-SESSION-PREFERENCES-003
+      it "resolves a legacy Automatic session to Medium when Low is unavailable" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test", api_service_type: "openai")
+        runner = create(:runner, :api_key, user: user, runner_key: "opencode", provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "openai", "model" => "chat-mid-only" } })
+        model = LlmModel.find_or_initialize_by(model_id: "chat-mid-only")
+        model.assign_attributes(provider: "openai", display_name: "Chat Mid Only", category: "coding",
+          tier: "mid", capability_score: 8.0, pricing_tier: "paid", catalog_source: "seeded", supports_tools: true, active: true)
+        model.save!
+        automatic = create(:chat_session, account: account, created_by: user, runner: runner, model: nil)
+
+        expect(described_class.call(chat_session: automatic).model).to eq("chat-mid-only")
+        expect(automatic.reload.metadata).to include(
+          "requested_model_selection" => "automatic",
+          "effective_tier" => "mid",
+          "model_substitution_reason" => "preferred_tier_unavailable"
+        )
+      end
+
+      # @spec CHAT-API-026 CHAT-SESSION-PREFERENCES-003
+      it "records automatic provenance without stale requests when re-pinning a runnerless session" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test", api_service_type: "openai")
+        fallback_runner = create(:runner, :api_key, user: user, runner_key: "opencode", provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "openai", "model" => "chat-mid-only" } })
+        model = LlmModel.find_or_initialize_by(model_id: "chat-mid-only")
+        model.assign_attributes(provider: "openai", display_name: "Chat Mid Only", category: "coding",
+          tier: "mid", capability_score: 8.0, pricing_tier: "paid", catalog_source: "seeded", supports_tools: true, active: true)
+        model.save!
+        session = create(:chat_session, account: account, created_by: user, model: "stale-user-choice",
+          metadata: { "requested_model" => "stale-user-choice", "requested_model_selection" => "explicit" })
+
+        expect(described_class.call(chat_session: session).model).to eq("chat-mid-only")
+        expect(session.reload).to have_attributes(runner: fallback_runner, model: "chat-mid-only")
+        expect(session.metadata).to include(
+          "requested_model_selection" => "automatic",
+          "effective_runner_id" => fallback_runner.id
+        )
+        expect(session.metadata).not_to include("requested_model", "requested_runner_id")
       end
 
       it "returns an HttpClient with OpenAICompatibleTransport" do

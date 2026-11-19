@@ -27,14 +27,18 @@
 
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
-  SHALL use the same curated Low/Medium/High resolver. It SHALL default new and
-  legacy Automatic sessions to Low, retain an explicit existing model, record
-  the effective tier and concrete model, and reject an unavailable Low tier
-  with actionable feedback rather than escalating cost. Fallback candidate
-  selection SHALL skip a non-free runner whose Low tier cannot resolve
-  (catalog gap, fresh unavailability evidence, or policy exclusion) so later
-  usable fallbacks remain reachable, mirroring the CHAT-API-019 free-pool
-  skip. Free-policy runners remain unpinned at creation so CHAT-API-018
+  SHALL use the same curated Low/Medium/High resolver. Automatic Low selection
+  SHALL order Low, Medium, High; Medium SHALL order Medium, Low, High; High
+  SHALL order High, Medium, Low. An eligible alternate tier SHALL be selected
+  when the preferred tier is absent, while catalog, availability, auth/transport,
+  tool, privacy, budget, operator, project, permission, and free-policy gates
+  remain enforced. Explicit concrete selections SHALL be attempted without
+  same-runner substitution. Requested selection and effective runner/model/tier
+  SHALL be persisted separately with a substitution reason; ambiguous legacy
+  stored models are explicit. Provider fallback SHALL retain an explicit
+  preference and resolve an eligible automatic model only on its alternate
+  runner. Empty compatible candidate sets remain actionable failures.
+  Free-policy runners remain unpinned at creation so CHAT-API-018
   remains authoritative. OpenAI
   Low, Medium, and High SHALL resolve to GPT-5.6 Luna, Terra, and Sol
   respectively.

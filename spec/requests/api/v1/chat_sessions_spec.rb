@@ -24,6 +24,22 @@ RSpec.describe "Mobile chat sessions API" do
     expect(created).to include("title" => "New native chat", "container_capability" => "none")
   end
 
+  # @spec CHAT-API-026
+  it "exposes requested and effective model provenance" do
+    provenance = {
+      "requested_model" => "selected-low", "requested_runner_id" => 123,
+      "requested_model_selection" => "explicit", "requested_model_tier" => "low",
+      "effective_model" => "fallback-medium", "effective_tier" => "mid",
+      "effective_runner_id" => 456, "model_substitution_reason" => "fallback_runner"
+    }
+    chat_session.update!(model: "fallback-medium", metadata: provenance)
+
+    get "/api/v1/chat/sessions/#{chat_session.id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(provenance)
+  end
+
   # @spec MOBILE-API-011 CHAT-API-001
   it "updates and transitions a chat session through the bearer-authenticated namespace" do
     patch "/api/v1/chat/sessions/#{chat_session.id}", params: { title: "Renamed" }, headers: headers

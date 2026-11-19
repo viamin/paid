@@ -7,14 +7,36 @@ RSpec.describe ChatSessions::CuratedModelOptions do
   let(:provider_api_key) { create(:provider_api_key, user:, api_service_type: "openai") }
   let(:runner) { create(:runner, :api_key, user:, provider_api_key:, runner_key: "codex") }
 
-  # @spec ONBOARD-CHAT-014
-  it "reports a low-tier rejection without treating a higher-tier catalog as usable" do
+  # @spec CHAT-API-026 ONBOARD-CHAT-014
+  it "resolves a Medium model when the preferred Low tier is unavailable" do
     create(:llm_model, :openai, tier: "mid", supports_tools: true)
 
     resolution = described_class.resolve_with_diagnostics(runner:)
 
+    expect(resolution.option).to have_attributes(tier: "mid")
+    expect(resolution.substitution_reason).to eq(:preferred_tier_unavailable)
+  end
+
+  # @spec CHAT-API-026
+  it "uses documented deterministic alternate orders for Medium and High preferences" do
+    low = create(:llm_model, :openai, tier: "low", supports_tools: true)
+    high = create(:llm_model, :openai, tier: "high", supports_tools: true)
+
+    expect(described_class.resolve(runner:, tier: "mid")).to have_attributes(model_id: low.model_id, tier: "low")
+    expect(described_class.resolve(runner:, tier: "high")).to have_attributes(model_id: high.model_id, tier: "high")
+  end
+
+  # @spec CHAT-API-026
+  it "reports a tier-mapping gap separately from operator policy" do
+    create(:llm_model, :openai, tier: nil, supports_tools: true)
+
+    resolution = described_class.resolve_with_diagnostics(runner:)
+
     expect(resolution.option).to be_nil
-    expect(resolution.rejection_reasons).to eq([ :low_tier_unavailable ])
+    expect(resolution.rejection_reasons).to eq([ :tier_unavailable ])
+    expect(
+      ChatSessions::ModelUnavailableError.new(runner:, rejection_reasons: resolution.rejection_reasons).message
+    ).to include("curated Low, Medium, or High tier")
   end
 
   # @spec ONBOARD-CHAT-014
