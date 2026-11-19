@@ -3,7 +3,7 @@
 module CloseoutVerifications
   # Claims an admitted merge-bound verification and delegates repository work to
   # the existing isolated technical-prerequisite executor.
-  # @spec STAGED-CLOSEOUT-ADOPTION-011
+  # @spec STAGED-CLOSEOUT-ADOPTION-011 PARTIAL-CLOSEOUT-057
   class Execute
     EVIDENCE_KEY = "closeout_verification".freeze
     TERMINAL_STATUSES = %w[completed failed cancelled].freeze
@@ -31,11 +31,11 @@ module CloseoutVerifications
       return unless claim
 
       result = validation_executor.call(agent_run:, native_command: claim.command)
-      finish!(result, command: claim.command)
+      schedule_audit_if_new_evidence(finish!(result, command: claim.command))
     end
 
     def record_exception!(error)
-      finish_exception!(error)
+      schedule_audit_if_new_evidence(finish_exception!(error))
     end
 
     private
@@ -124,6 +124,7 @@ module CloseoutVerifications
 
         outcome = outcome_for(result)
         record_terminal!(outcome, command:, technical_evidence: persisted_technical_evidence.presence || result.evidence)
+        outcome
       end
     end
 
@@ -134,7 +135,20 @@ module CloseoutVerifications
 
         outcome = error.is_a?(ApplicationJob::PerformTimeoutError) ? "timeout" : "setup_failed"
         record_terminal!(outcome, error: error.message)
+        outcome
       end
+    end
+
+    # Scheduled outside the run lock, mirroring
+    # TechnicalPrerequisiteValidationJob#finish!: a scheduling failure here
+    # must not roll back the terminal status already persisted on this run.
+    # A cancelled outcome is a withdrawal, not new evidence, and does not
+    # schedule an audit.
+    def schedule_audit_if_new_evidence(outcome)
+      return unless outcome && outcome != "cancelled"
+      return unless Evidence.current_for_run?(agent_run)
+
+      PartialCloseouts::AutoAudit.call(issue: agent_run.issue)
     end
 
     def record_cancelled!

@@ -88,13 +88,14 @@ module PartialCloseouts
       coverage.is_a?(Hash) && coverage["complete"] == true
     end
 
-    # @spec PARTIAL-CLOSEOUT-047
+    # @spec PARTIAL-CLOSEOUT-047 PARTIAL-CLOSEOUT-057
     def self.source_revision_for(issue, closeout_evidence: Issues::CloseoutEvidence.call(issue), technical_evidence: nil,
-      trusted_measurement_evidence: nil)
+      trusted_measurement_evidence: nil, closeout_verification_evidence: nil)
       prerequisite_revision = TechnicalPrerequisites::Evidence.revision_for(issue, records: technical_evidence)
       measurement_revision = TrustedMeasurements::Evidence.revision_for(issue, records: trusted_measurement_evidence)
+      verification_revision = CloseoutVerifications::Evidence.revision_for(issue, records: closeout_verification_evidence)
       revisions = [ closeout_evidence.digest, closeout_evidence.pr_body_revision,
-        prerequisite_revision, measurement_revision ].compact
+        prerequisite_revision, measurement_revision, verification_revision ].compact
 
       return closeout_evidence.digest if revisions.one?
 
@@ -105,22 +106,25 @@ module PartialCloseouts
       closeout_evidence = Issues::CloseoutEvidence.results_for(issues)
       technical_evidence = TechnicalPrerequisites::Evidence.records_for_issues(issues)
       trusted_evidence = TrustedMeasurements::Evidence.records_for_issues(issues)
+      verification_evidence = CloseoutVerifications::Evidence.records_for_issues(issues)
 
       issues.to_h do |issue|
         revision = source_revision_for(issue, closeout_evidence: closeout_evidence.fetch(issue.id),
           technical_evidence: technical_evidence.fetch(issue.id),
-          trusted_measurement_evidence: trusted_evidence.fetch(issue.id))
+          trusted_measurement_evidence: trusted_evidence.fetch(issue.id),
+          closeout_verification_evidence: verification_evidence.fetch(issue.id))
         [ issue.id, revision ]
       end
     end
 
     # @spec OPERATOR-INBOX-016
     def initialize(issue, evidence: nil, technical_evidence: nil, trusted_measurement_evidence: nil,
-      persisted_assessment: nil)
+      closeout_verification_evidence: nil, persisted_assessment: nil)
       @issue = issue
       @evidence = evidence
       @technical_evidence = technical_evidence
       @trusted_measurement_evidence = trusted_measurement_evidence
+      @closeout_verification_evidence = closeout_verification_evidence
       @persisted_assessment = persisted_assessment
     end
 
@@ -204,7 +208,8 @@ module PartialCloseouts
         issue,
         closeout_evidence: @evidence || Issues::CloseoutEvidence.call(issue),
         technical_evidence: @technical_evidence,
-        trusted_measurement_evidence: @trusted_measurement_evidence
+        trusted_measurement_evidence: @trusted_measurement_evidence,
+        closeout_verification_evidence: @closeout_verification_evidence
       )
     end
 

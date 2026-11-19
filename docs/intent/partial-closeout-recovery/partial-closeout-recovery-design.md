@@ -262,6 +262,41 @@ premerge checks pass. Any later closure remains subject to the existing
 criterion acceptance decision and delegated policy gates; no staged-verifier
 result, recipe, agent report, or PR prose is closure authority.
 
+#### Acceptance-audit evidence inclusion (#5076)
+
+`PartialCloseouts::AuditEvidence` includes each matching terminal
+`closeout_verification` record in its bounded packet through
+`CloseoutVerifications::Evidence`, keyed by issue, criterion, source PR,
+target SHA, and recipe version, and folds its revision into
+`Assessment.source_revision_for` so a prior verdict cannot be reused once new
+staged-verification evidence exists. A record stays visible when the issue's
+approved intent, the pinned mapping's recipe version/digest, the source PR's
+authoritative merge target, or a declared environment class has since
+changed, but is marked stale rather than removed; a failed, unavailable, or
+cancelled result remains visible without being represented as satisfied —
+satisfaction remains a semantic judgment made only through `agent_harness`.
+The projection revalidates the underlying recipe, requires the authoritative
+merge target, and checks mapping/criterion identity. Run IDs and bounded
+command/native results provide primary provenance. Packet omissions and
+truncation make audit coverage incomplete; an omission digest still changes
+the source revision when hidden evidence changes. Superseded terminal records
+remain visible within the bound and are marked stale; older records beyond
+the cap are accounted for by omission count and digest, rather than silently
+discarded before bounding. Current evidence also requires an authoritative
+completion timestamp within the reviewed freshness period. The packet exposes
+its absolute expiry; expiration changes the source revision once, invalidating
+a cached acceptance verdict without clock-driven churn on already-stale
+history.
+
+`CloseoutVerifications::Execute` schedules the normal
+`PartialCloseouts::AutoAudit` report-only path once a newly terminal, current
+result is persisted, mirroring `TechnicalPrerequisiteValidationJob#finish!`:
+the call happens outside the run's lock, so a scheduling failure cannot roll
+back the already-recorded terminal status, and a cancelled or stale-claim
+outcome is not new evidence and does not schedule an audit. This reuses the
+existing bounded retry/admission path; it never creates or continues a
+`create_pr` run.
+
 ### Reviewed performance measurements (#4894)
 
 A performance prerequisite is a distinct reviewed recipe, not an inference
