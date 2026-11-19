@@ -5232,7 +5232,7 @@ module Containers
     end
 
     def safe_run_log(type, content, metadata: nil)
-      return unless agent_run&.persisted? && AgentRun.exists?(agent_run.id)
+      return unless agent_run&.persisted?
 
       metadata ? agent_run.log!(type, content, metadata: metadata) : agent_run.log!(type, content)
     rescue ActiveRecord::InvalidForeignKey

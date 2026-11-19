@@ -4060,9 +4060,6 @@ RSpec.describe Containers::Provision do
     # @spec STAGED-CLOSEOUT-ADOPTION-011
     it "tears down resources when run deletion races the system log write" do
       deleted = false
-      allow(AgentRun).to receive(:exists?).with(agent_run.id).and_wrap_original do |original, *args|
-        deleted ? original.call(*args) : true
-      end
       allow(agent_run).to receive(:log!).and_wrap_original do |original, *args, **kwargs|
         unless deleted
           AgentRun.find(agent_run.id).destroy!
@@ -4077,11 +4074,19 @@ RSpec.describe Containers::Provision do
         agent_run_id: agent_run.id,
         log_type: "system",
         reason: "run row deleted before log write"
-      )
+      ).twice
 
       service.cleanup(force: true)
 
       expect(service.container).to be_nil
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "does not query run existence before logging cleanup" do
+      expect(AgentRun).not_to receive(:exists?)
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+      service.cleanup(force: true)
     end
 
     it "logs cleanup operations" do
