@@ -171,3 +171,21 @@ An audit cannot erase a reviewed requirement merely by omitting its criterion:
 a latest mapping bound to unchanged full issue intent remains required. If
 approved intent changes and the current assessment no longer contains that
 criterion, its historical mapping does not impose an obsolete requirement.
+
+### Existing closeout progress
+
+The Inbox's detail-scoped progress projection also presents required-stage
+verification, semantic acceptance audit and factual source-issue closure as
+separate milestones. Verification exposes its reviewed criterion, queued or
+running state, target revision/environment, terminal outcome and freshness.
+Waiting work names its next supported action; evidence collection never stands
+in for the semantic verdict. The same structured projection is available to
+Inbox chat. Reads do not enqueue work or create operator notifications; ordinary
+queued/running verification remains outside human Action Required.
+
+The existing Acceptance checks page accepts a project-scoped source selection,
+including a previously closed mapped issue, so ongoing checks can be inspected
+without adding a human Inbox item. Its selected-issue JSON and bearer-token API
+return the same progress facts. Source selections cannot read another project's
+issue. The enrollment summary names the actual wait or admitted run state
+instead of reporting an implemented scheduler as missing.

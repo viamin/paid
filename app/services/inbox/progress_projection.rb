@@ -4,7 +4,7 @@ module Inbox
   # Read-only, detail-scoped lifecycle projection. It deliberately reads the
   # records which already control delivery; queue membership and badge counts
   # never instantiate it.
-  # @spec INBOX-PROGRESS-001 INBOX-PROGRESS-002 INBOX-PROGRESS-003
+  # @spec INBOX-PROGRESS-001 INBOX-PROGRESS-002 INBOX-PROGRESS-003 STAGED-CLOSEOUT-ADOPTION-014
   class ProgressProjection
     STATES = %w[complete current waiting blocked stale not_applicable unknown].freeze
     Milestone = Data.define(:id, :label, :state, :evidence, :next_action, :actor) do
@@ -33,7 +33,8 @@ module Inbox
         operating_mode: project.operating_mode,
         tdd_mode: project.tdd_mode,
         current_head: issue.last_scanned_head_sha,
-        milestones: [ design_approval, design_release, test_review, implementation, code_review, owner_approval, merge ]
+        milestones: [ design_approval, design_release, test_review, implementation, code_review, owner_approval, merge ] +
+          StagedCloseoutProgress.call(issue:)
       )
     end
 

@@ -1,8 +1,8 @@
-<%# @spec INBOX-PROGRESS-001 %>
+<%# @spec INBOX-PROGRESS-001 STAGED-CLOSEOUT-ADOPTION-014 %>
 <section class="mb-6 rounded-lg border border-gray-200 p-4" data-testid="inbox-progress">
-  <h3 class="text-sm font-semibold text-gray-900">Delivery progress</h3>
+  <h3 class="text-sm font-semibold text-gray-900"><%= local_assigns.fetch(:heading, "Delivery progress") %></h3>
   <ol class="mt-3 space-y-2">
-    <% projection.milestones.each do |milestone| %>
+    <% local_assigns.fetch(:milestones) { projection.milestones }.each do |milestone| %>
       <li class="text-sm">
         <div class="flex items-start justify-between gap-3">
           <span class="font-medium text-gray-800"><%= milestone.label %></span>
@@ -15,6 +15,14 @@
                 <span><%= evidence[:source].to_s.humanize %></span>
                 <% if evidence[:revision].present? %>
                   <code class="break-all"><%= evidence[:revision] %></code>
+                <% end %>
+                <% %i[criterion run_state environment outcome completed_at expires_at].each do |field| %>
+                  <% if evidence[field].present? %>
+                    <span class="block break-words"><%= field.to_s.humanize %>: <%= field.in?(%i[run_state outcome]) ? evidence[field].to_s.humanize : evidence[field] %></span>
+                  <% end %>
+                <% end %>
+                <% if evidence[:observed_values].present? %>
+                  <code class="block break-all">Observed values: <%= evidence[:observed_values].to_json %></code>
                 <% end %>
                 <% if safe_github_url?(evidence[:url]) %>
                   <%= link_to "View evidence", evidence[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>

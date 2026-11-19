@@ -18,15 +18,11 @@ module CloseoutVerifications
     end
 
     def call
-      Result.new(mappings.filter_map { |mapping| blocker_for(mapping) })
+      Result.new(requirements.filter_map { |mapping| blocker_for(mapping) })
     end
 
-    private
-
-    attr_reader :issue
-
-    def mappings
-      issue.project.staged_closeout_mappings.where(issue:)
+    def requirements
+      @requirements ||= issue.project.staged_closeout_mappings.where(issue:)
         .order(:criterion_key, revision: :desc).to_a.uniq(&:criterion_key)
         .select do |mapping|
           mapping.stage.in?(%w[merged_revision live_environment]) &&
@@ -34,6 +30,10 @@ module CloseoutVerifications
               mapping.criterion_digest == StagedCloseoutMapping.digest_for(issue:, criterion_key: mapping.criterion_key))
         end
     end
+
+    private
+
+    attr_reader :issue
 
     def criteria = @criteria ||= PartialCloseouts::Assessment.call(issue).criteria.pluck("criterion")
 

@@ -4,7 +4,7 @@ module Inbox
   # A typed, local projection for the selected Inbox entry. It deliberately
   # reads persisted scan and feature evidence; building an Inbox list never
   # invokes it, so list/count requests remain free of per-row remote calls.
-  # @spec OPERATOR-INBOX-024
+  # @spec OPERATOR-INBOX-024 STAGED-CLOSEOUT-ADOPTION-014
   class WorkflowMilestones
     SUPPORTED_KINDS = [
       Queue::MERGE_APPROVAL_KIND,
@@ -42,7 +42,9 @@ module Inbox
     end
 
     def milestones
-      @milestones ||= [ design_milestone, test_milestone, implementation_milestone, code_review_milestone, owner_milestone, merge_milestone ].compact
+      @milestones ||= [ design_milestone, test_milestone, implementation_milestone, code_review_milestone, owner_milestone, merge_milestone ].compact +
+        authoritative.milestones.select { |item| item.id.in?(%w[closeout_verification acceptance_audit source_closure]) }
+          .map { |item| projected_milestone(item.id, item.label) }
     end
 
     def design_milestone

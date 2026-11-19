@@ -4,7 +4,7 @@ module Api
   module V1
     module Projects
       # Bearer-token API parity for the operator staged-closeout surface.
-      # @spec STAGED-CLOSEOUT-ADOPTION-001 STAGED-CLOSEOUT-ADOPTION-002 STAGED-CLOSEOUT-ADOPTION-004
+      # @spec STAGED-CLOSEOUT-ADOPTION-001 STAGED-CLOSEOUT-ADOPTION-002 STAGED-CLOSEOUT-ADOPTION-004 STAGED-CLOSEOUT-ADOPTION-014
       class StagedCloseoutAdoptionsController < BaseController
         before_action -> { require_scope!(:inbox) }
         before_action :set_project
@@ -51,7 +51,11 @@ module Api
         end
 
         def payload
-          StagedCloseoutAdoption::Projection.for_project(@project)
+          data = StagedCloseoutAdoption::Projection.for_project(@project)
+          return data if params[:issue_id].blank?
+
+          issue = @project.issues.issues_only.find(params.expect(:issue_id))
+          data.merge(progress: Inbox::StagedCloseoutProgress.call(issue:).map(&:to_h))
         end
 
         def mapping_fields
