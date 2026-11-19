@@ -38,9 +38,35 @@ RSpec.describe CloseoutVerifications::RetryPolicy do
     CloseoutVerifications::AdmitLiveTarget.call(project:).runs
   end
 
+  def stub_pause_label_writes
+    url = "https://api.github.com/repos/#{project.full_name}/issues/#{issue.github_number}/labels"
+    stub_request(:post, url).to_return(status: 200, body: "[]")
+    stub_request(:delete, "#{url}/paid-paused").to_return(status: 204)
+  end
+
   it "admits no verification after the source issue is closed" do
     issue.update!(github_state: "closed")
     expect(admit).to be_empty
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-016
+  it "admits no verification while the source issue is paused" do
+    stub_pause_label_writes
+    issue.update!(paused: true)
+    expect(admit).to be_empty
+  end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-016
+  it "defers a source-paused claim and resumes the same attempt after unpausing" do
+    stub_pause_label_writes
+    run = admit.sole
+    issue.update!(paused: true)
+    expect { CloseoutVerificationJob.perform_now(run.id) }.not_to change(TrustedMeasurementAttempt, :count)
+    expect(run.reload.status).to eq("queued")
+    issue.update!(paused: false)
+    CloseoutVerificationJob.perform_now(run.id)
+    expect(run.reload.status).to eq("completed")
+    expect(AgentRun.where(issue:, goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL).count).to eq(1)
   end
 
   it "does not read for a source closed after admission" do

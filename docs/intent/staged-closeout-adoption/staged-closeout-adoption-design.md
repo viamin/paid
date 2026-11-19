@@ -200,6 +200,9 @@ never automatically retries the same identity. Each generation has its own run
 and immutable terminal receipt; webhook replay cannot execute or renew an old
 receipt. A bounded periodic retry sweep recovers missed retry observations.
 Closed source issues cannot admit checks, retries or automatic acceptance audits.
+An explicit source-issue pause also blocks new admissions and defers queued
+verification claims without collecting evidence or consuming the attempt. The
+same identity can resume after unpausing, subject to all current claim guards.
 
 A complete, current terminal staged observation may exempt only a report-only
 acceptance audit from the ordinary recent-PR synchronization grace. Plain

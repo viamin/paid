@@ -40,6 +40,10 @@
   *Test:* `spec/services/issues/auto_resolve_closeout_staged_spec.rb`.
   *Issue:* #5078.
 
+- [x] **STAGED-CLOSEOUT-ADOPTION-016** — While a source issue is explicitly paused, Paid SHALL admit no new staged verification or retry and SHALL defer an already queued verification without consuming its attempt identity or collecting evidence. Progress SHALL identify the source unpause action. After an authorized unpause, the same queued attempt MAY execute under the ordinary authority, mapping, target and budget guards.
+  *Test:* `spec/services/closeout_verifications/retry_policy_lifecycle_spec.rb`, `spec/jobs/closeout_verification_job_spec.rb`, `spec/services/inbox/staged_closeout_progress_spec.rb`.
+  *Issue:* #5078.
+
 - [x] **STAGED-CLOSEOUT-ADOPTION-014** — While a reviewed postmerge or live criterion is pending, the existing closeout/progress surfaces SHALL show its run state, criterion, target revision and environment, evidence freshness, separate audit outcome and factual issue-closure state with the current supported waiting or operator action. Detail reads SHALL be read-only, the structured agent progress projection SHALL carry the same facts, and ordinary queued or running verification SHALL NOT create human Action Required work.
   *Test:* `spec/services/inbox/staged_closeout_progress_spec.rb`, `spec/requests/projects/staged_closeout_progress_spec.rb`, `spec/system/staged_closeout_progress_spec.rb`.
   *Issue:* #5078.

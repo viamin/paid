@@ -2,7 +2,7 @@
 
 module Inbox
   # Read-only detail projection; ordinary queue/count queries do not call it.
-  # @spec STAGED-CLOSEOUT-ADOPTION-014
+  # @spec STAGED-CLOSEOUT-ADOPTION-014 STAGED-CLOSEOUT-ADOPTION-016
   class StagedCloseoutProgress
     MAX_RECORDS = 8
 
@@ -33,7 +33,9 @@ module Inbox
     def current_records = current_runs.filter_map { |run| records.find { |record| record["verification_run_id"] == run.id } }
 
     def verification
-      state = if current_runs.any? { |run| run.status == "running" }
+      state = if issue.paused?
+        "blocked"
+      elsif current_runs.any? { |run| run.status == "running" }
         "current"
       elsif current_runs.any? { |run| run.status == "queued" }
         "waiting"
@@ -44,7 +46,9 @@ module Inbox
       else
         "blocked"
       end
-      action = if state.in?(%w[current waiting])
+      action = if issue.paused?
+        "Unpause the source issue to allow verification to start or resume."
+      elsif state.in?(%w[current waiting])
         "Wait for the current verification run to finish."
       elsif ready?
         "Wait for acceptance assessment; collected evidence alone does not close the issue."

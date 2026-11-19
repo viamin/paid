@@ -59,6 +59,18 @@ RSpec.describe Inbox::StagedCloseoutProgress do
     expect(milestones.find { |entry| entry.id == "source_closure" }.state).not_to eq("complete")
   end
 
+  # @spec STAGED-CLOSEOUT-ADOPTION-016
+  it "names the source unpause action instead of waiting for a deferred check to finish" do
+    run = CloseoutVerifications::AdmitLiveTarget.call(project:).runs.sole
+    stub_request(:post, "https://api.github.com/repos/#{project.full_name}/issues/#{issue.github_number}/labels")
+      .to_return(status: 200, body: "[]")
+    issue.update!(paused: true)
+
+    expect(verification.state).to eq("blocked")
+    expect(verification.next_action).to include("Unpause the source issue")
+    expect(run.reload.status).to eq("queued")
+  end
+
   it "shows actual observed values and expiry separately from an unmet audit" do
     run = CloseoutVerifications::AdmitLiveTarget.call(project:).runs.sole
     CloseoutVerificationJob.perform_now(run.id)

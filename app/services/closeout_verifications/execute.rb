@@ -187,9 +187,11 @@ module CloseoutVerifications
       source_pr&.merged_commit_sha == agent_run.base_commit_sha && mapping.issue_id == agent_run.issue_id
     end
 
+    # @spec STAGED-CLOSEOUT-ADOPTION-016
     def paused?
       project = agent_run.project
-      project.paused? || project.scheduler_paused? || project.quality_paused? || project.account.scheduler_paused?
+      project.paused? || project.scheduler_paused? || project.quality_paused? || project.account.scheduler_paused? ||
+        Issue.where(id: agent_run.issue_id, project_id: project.id, paused: true).exists?
     end
 
     def policy_permitted?(mapping)
