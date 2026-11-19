@@ -5166,10 +5166,6 @@ module Containers
         **metadata
       )
 
-      write_run_log(message, metadata)
-    end
-
-    def write_run_log(message, metadata)
       safe_run_log("system", message, metadata: metadata)
     end
 
