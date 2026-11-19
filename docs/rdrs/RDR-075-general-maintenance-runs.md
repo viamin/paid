@@ -205,6 +205,33 @@ report. Dismissals retain reasons; materially changed evidence requires
 reassessment. Repository-owned exceptions remain reviewable project intent,
 and stale exceptions are reported rather than silently carried forever.
 
+### Intent-traceability recipe
+
+The `intent_traceability` recipe audits RDR-to-issue traceability using the
+shared design-artifact reconciliation inventory and structural verifier. It
+does not create a second RDR inventory, scheduler, issue catalog, or verifier.
+Its scope may name RDRs, paths, revisions, or related workflows. Reports
+separate merged artifact intent from proposed open-PR intent and disclose
+unresolved scope and incomplete remote coverage.
+
+The recipe carries forward deterministic reconciliation states for missing,
+partial, unlinked or stale, deferred, and unverifiable trees. Run admission
+snapshots the reconciler's persisted findings and stored associations into the
+run prompt — bounded, with omitted counts disclosed and absent results
+reported as an unresolved coverage limitation — so the investigation consumes
+the shared results instead of reconstructing them. The prompt delimits every
+snapshot value as untrusted evidence, never as agent instructions. Stored and
+cross-repository associations preserve known trees despite stale metadata or
+absent native children; superseded artifacts and valid shared trees are
+counterevidence against duplicate work. `agent_harness` assesses only whether
+issue scope covers the plan, work is a probable duplicate, or repository
+ownership conflicts. The scan remains report-only; authorized users may later
+link work, repair metadata, or draft bounded tasks through the repair path.
+Manual and scheduled runs retain normal authorization, budgets, recurrence,
+and the default-off `maintenance_runs` rollout guard. Evaluate useful
+findings, false positives, incomplete coverage, and cost beyond Paid; this
+repository/GitHub-evidence recipe requires no analyzer sidecar.
+
 ### Tool integration
 
 Use RDR-073 marketplace attachments and matching to make tools available.
@@ -351,12 +378,15 @@ language; only its final audit closes it.
 - [#4331](https://github.com/viamin/paid/issues/4331): Turn selected maintenance findings into bounded repair work
 - [#4332](https://github.com/viamin/paid/issues/4332): Schedule opt-in recurring maintenance with budgets and overlap prevention
 - [#4333](https://github.com/viamin/paid/issues/4333): Reuse maintenance evidence for advisory PR audits
+- [#4340](https://github.com/viamin/paid/issues/4340): Add the report-only intent-traceability recipe using shared reconciliation evidence
 - [#4334](https://github.com/viamin/paid/issues/4334): Validate and close out general maintenance runs
 
 ## Validation
 
-Use behavior tests and failing-first EARS-linked implementation tests. This
-design finalization changes documentation only and requires no application test.
+Use behavior tests and failing-first EARS-linked implementation tests. The
+intent-traceability recipe is covered by `MAINT-046` prompt-contract tests;
+cross-repository evaluation remains required closeout evidence rather than a
+claim inferred from a local test.
 
 Acceptance scenarios:
 

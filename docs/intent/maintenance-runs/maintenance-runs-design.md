@@ -119,6 +119,48 @@ observed at that pinned revision while the canonical finding retains its
 cross-run status. The no-duplicates rule applies to canonical findings, not
 to the necessary per-report occurrence records.
 
+## Intent-Traceability Recipe
+
+The `intent_traceability` recipe is a report-only consumer of
+`FeatureIntents::ReconcileDesignArtifacts` and its persisted reconciliation
+results. It must not build another RDR inventory, scheduler, issue catalog, or
+structural verifier. The shared reconciler determines explicit link existence,
+tree completeness, stale metadata, deferral, and remote-coverage limits;
+`AssessDesignArtifactCandidates` uses `agent_harness` only for unresolved
+semantic scope, duplicate-work, and ownership questions.
+
+Run admission snapshots the reconciler's persisted results — pending
+`DesignArtifactFinding` gaps (state, status, coverage recency, evidence,
+assigned resolution issue) and stored `DesignArtifactAssociation` trees
+(identity and provenance) — into the run prompt through
+`MaintenanceRuns::IntentTraceabilityEvidence`. The snapshot is bounded and
+discloses every omission by count, states its capture time and latest issue
+coverage, and when nothing is persisted it is rendered as an unresolved
+coverage limitation rather than a clean result. The recipe registry
+entry owns this wiring, so every starting surface (UI, API, MCP tool) attaches
+identical evidence. The prompt delimits the snapshot as untrusted evidence and
+directs the maintenance agent never to treat any value it contains as an
+instruction.
+
+The recipe accepts RDR identifiers, repository paths, revisions, and related
+workflow names as named scope. Its report distinguishes merged repository
+intent from proposed open design-PR intent, and treats inaccessible, stale, or
+partial remote evidence as unresolved coverage rather than absence. It reports
+missing, partial, unlinked/stale, deferred, and unverifiable trees alongside
+probable duplicate work and ownership conflicts, with supporting and contrary
+evidence. Stored associations, cross-repository trees, and superseded artifact
+state remain evidence to preserve; neither absent native children nor stale
+metadata authorizes duplicate task filing.
+
+An assessment may recommend only a bounded follow-up: link existing work,
+repair metadata, or draft missing tasks through the existing authorized repair
+path. The scan itself makes no GitHub issue or pull-request changes. The
+recipe uses ordinary maintenance finding recurrence, dismissal, authorization,
+budget, scheduled-run controls, and the `maintenance_runs` default-off guard.
+It requires no analyzer sidecar because it uses repository and GitHub evidence.
+Evaluation records useful findings, false positives, unresolved coverage, and
+investigation cost on repositories beyond Paid as well as Paid.
+
 A `MaintenanceSchedule` (project-scoped, opt-in) captures the same
 objective/scope/guidance/limits shape and objective admission rule as a manual
 run plus recurrence:

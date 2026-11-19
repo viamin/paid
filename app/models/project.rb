@@ -316,6 +316,7 @@ class Project < ApplicationRecord
   has_many :intent_conformance_shadow_evaluations, dependent: :destroy
   has_many :facet_confidence_evaluations, dependent: :destroy
   has_many :design_artifact_findings, dependent: :destroy
+  has_many :design_artifact_associations, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   # @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
   has_many :layered_verification_obligations, dependent: :delete_all

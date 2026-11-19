@@ -421,6 +421,10 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+Its intent-traceability recipe consumes shared design-artifact reconciliation
+evidence to investigate RDR-to-issue coverage, duplicate work, and repository
+ownership. Structural link and coverage states remain deterministic; only
+semantic scope and ownership questions go through `agent_harness`.
 A planned optimization recipe family extends that capability with
 non-functional audits selected from a code-defined catalog and scoped by a
 free-form natural-language target as readily as paths or symbols. Semantic
