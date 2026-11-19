@@ -6,7 +6,7 @@ module ProjectDelegation
   # execution authority. Execution remains governed by the RDR-077/RDR-078
   # phase and bounded-action contracts.
   #
-  # @spec PROJECT-DELEGATION-003
+  # @spec PROJECT-DELEGATION-003 @spec PROJECT-DELEGATION-004
   class ActionPlan
     ACTIONS = ProjectDelegation::Posture::DELEGATED_ACTION_CLASSES.freeze
     RESERVED_KEYS = %w[
@@ -21,6 +21,7 @@ module ProjectDelegation
       "evidence_gated_issue_closure" => %w[required_checks review_merge_state dependencies open_followups],
       "cycle_analysis_and_repair" => %w[cycle_evidence proposed_repair result recurrence_count]
     }.freeze
+    EMPTY_COLLECTION_ALLOWED = %w[dependencies open_followups].freeze
 
     Decision = Data.define(:permitted, :action, :reasons, :audit_event) do
       def permitted? = permitted
@@ -84,7 +85,7 @@ module ProjectDelegation
     def missing_evidence
       (COMMON_EVIDENCE + REQUIRED_EVIDENCE.fetch(action)).uniq.filter do |key|
         value = evidence[key]
-        value.nil? || (value.respond_to?(:empty?) && value.empty?)
+        value.nil? || (value.respond_to?(:empty?) && value.empty? && EMPTY_COLLECTION_ALLOWED.exclude?(key))
       end.map { |key| "missing_#{key}" }
     end
 

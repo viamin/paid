@@ -14,7 +14,11 @@ RSpec.describe Automation::AuthorizeBoundedAction do
     {
       "intent_digest" => intent_digest,
       "acceptance_refs" => [ "AC-1" ],
-      "stop_before_phase" => "merge"
+      "stop_before_phase" => "merge",
+      "action_evidence" => {
+        "cycle_evidence" => [ "failed_check" ], "proposed_repair" => "bounded repair",
+        "result" => "pending", "recurrence_count" => 1
+      }
     }
   end
 
@@ -58,7 +62,8 @@ RSpec.describe Automation::AuthorizeBoundedAction do
         work_item: issue,
         action: "repair",
         acceptance_refs: [ "AC-1" ],
-        stop_before_phase: "merge"
+        stop_before_phase: "merge",
+        action_evidence: evidence.fetch("action_evidence")
       )
     )
     expect(result).to be_permitted

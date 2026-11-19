@@ -81,4 +81,14 @@ RSpec.describe ProjectDelegation::ActionPlan do
     expect(result).to be_blocked
     expect(result.reasons).to include("follow_up_execution_prohibited")
   end
+
+  it "accepts an evidenced closeout with no dependencies or open follow-ups" do
+    result = described_class.call(project:, work_item: issue, actor: user,
+      action: "evidence_gated_issue_closure", evidence: common.merge(
+        "required_checks" => [ "ci" ], "review_merge_state" => "mergeable",
+        "dependencies" => [], "open_followups" => []
+      ))
+
+    expect(result).to be_permitted
+  end
 end

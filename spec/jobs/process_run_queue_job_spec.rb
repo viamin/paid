@@ -1619,7 +1619,11 @@ RSpec.describe ProcessRunQueueJob do
             issue: work_item,
             action: "review",
             evidence: Automation::DelegatedActionAdmission.admission_evidence(
-              work_item: work_item, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge"
+              work_item: work_item, action: "review", acceptance_refs: [ "AC-1" ], stop_before_phase: "merge",
+              action_evidence: {
+                failure_classification: "review_requested", attempted_recovery: "review",
+                current_checks: [ "assessment" ], budget_evidence: "current"
+              }
             ))
         end
 

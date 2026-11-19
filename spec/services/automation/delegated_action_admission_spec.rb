@@ -41,16 +41,34 @@ RSpec.describe Automation::DelegatedActionAdmission do
   end
 
   def recheck(goal: nil, action: nil, boundary: :dequeue, work_item: issue, trigger: :automatic,
-    pull_request_number: nil)
+    pull_request_number: nil, action_evidence: default_action_evidence(action || described_class::GOAL_ACTIONS[goal.to_s]))
     described_class.call(
       project: project,
       issue: work_item,
       pull_request_number: pull_request_number,
       goal: goal,
       action: action,
+      action_evidence: action_evidence,
       boundary: boundary,
       trigger: trigger
     )
+  end
+
+  def default_action_evidence(action)
+    {
+      "review" => {
+        failure_classification: "review_requested", attempted_recovery: "review",
+        current_checks: [ "assessment" ], budget_evidence: "current"
+      },
+      "repair" => {
+        cycle_evidence: [ "failed_check" ], proposed_repair: "bounded repair",
+        result: "pending", recurrence_count: 1
+      },
+      "merge" => {
+        required_checks: [ "ci" ], review_merge_state: "mergeable",
+        dependencies: [], open_followups: []
+      }
+    }.fetch(action, {})
   end
 
   it "permits delegated work whose authorization is current at every fact" do # @spec PROJECT-DELEGATION-004
@@ -58,6 +76,17 @@ RSpec.describe Automation::DelegatedActionAdmission do
 
     expect(recheck(goal: "review")).to be_permitted
     expect(Notification.count).to eq(0)
+  end
+
+  it "blocks execution when the action-specific contract rejects its evidence" do # @spec PROJECT-DELEGATION-003
+    authorize(action: "review")
+
+    result = recheck(goal: "review", action_evidence: {})
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include("missing_failure_classification")
+    expect(AccountActivityEvent.where(action: "project_delegation.action_evaluated").last.metadata)
+      .to include("action" => "technical_stop_recovery", "result" => "focused_decision_required")
   end
 
   it "fails closed and records a security pause while no canonical security assessment is available" do # @spec PROJECT-DELEGATION-007

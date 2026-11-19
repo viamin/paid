@@ -61,6 +61,23 @@ RSpec.describe AccountActivityEvent do
       end
       expect(rollback.reload.metadata).to include("revision" => 2)
     end
+
+    # @spec PROJECT-DELEGATION-003
+    it "protects action-evaluation receipts from direct database mutation" do
+      evaluation = described_class.create!(
+        account: account,
+        action: "project_delegation.action_evaluated",
+        metadata: { "action" => "technical_stop_recovery", "result" => "permitted" }
+      )
+
+      expect_db_rejection(/append-only/) do
+        described_class.where(id: evaluation.id).update_all(metadata: { "result" => "blocked" })
+      end
+      expect_db_rejection(/append-only/) do
+        described_class.where(id: evaluation.id).delete_all
+      end
+      expect(evaluation.reload.metadata).to include("result" => "permitted")
+    end
   end
 
   describe ".actions_for_category" do
