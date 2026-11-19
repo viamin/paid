@@ -65,6 +65,8 @@ module Activities
     # logs, posts the enhancement comment, and applies label state.
     # @spec ISSUE-ENHANCEMENT-006
     def enhance_issue_post_run(agent_run)
+      return enhance_work_item_post_run(agent_run) if agent_run.work_item
+
       project = agent_run.project
       issue = agent_run.issue
       raise ArgumentError, "enhance_issue run requires an issue" unless issue
@@ -85,6 +87,24 @@ module Activities
       return parsed if parsed[:recovered_paid_question_comment]
 
       finish_enhance_issue(agent_run, project, issue, client, parsed)
+    end
+
+    # Non-GitHub tickets have already passed WorkItems::Trust::Admit while
+    # their run prompt was assembled. They never use GitHub comments, labels,
+    # or issue lifecycle state; provider comments go through the configured
+    # tracker adapter instead.
+    # @spec UNIFIED-WORK-ITEMS-005
+    def enhance_work_item_post_run(agent_run)
+      parsed = JSON.parse(strip_markdown_fence(extract_json_payload(collect_agent_stdout(agent_run))), symbolize_names: true)
+      raise_parse_error!(agent_run, "missing structured enhancement output") unless valid_structured_output?(parsed)
+
+      WorkItems::PostComment.call(work_item: agent_run.work_item, project: agent_run.project, body: parsed[:comment_body])
+      agent_run.log!("stdout", parsed[:comment_body])
+      complete_run!(agent_run, sufficient_context: parsed[:sufficient_context])
+      ProcessRunQueueJob.perform_later
+      { agent_run_id: agent_run.id, work_item_id: agent_run.work_item_id, sufficient_context: parsed[:sufficient_context] }
+    rescue JSON::ParserError => error
+      raise_parse_error!(agent_run, error.message)
     end
 
     # Build comment, post, apply labels, complete run.

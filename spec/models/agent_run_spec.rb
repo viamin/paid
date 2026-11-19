@@ -397,6 +397,15 @@ RSpec.describe AgentRun do
         expect(agent_run.errors[:issue]).to include("is required for enhance_issue goals")
       end
 
+      it "accepts an assigned non-GitHub work item without an issue" do
+        # @spec UNIFIED-WORK-ITEMS-005
+        project = create(:project)
+        work_item = create(:work_item, account: project.account)
+        agent_run = build(:agent_run, :enhance_issue_goal, project:, issue: nil, work_item:)
+
+        expect(agent_run).to be_valid
+      end
+
       it "does not require an issue for create_issue goals" do
         agent_run = build(:agent_run, :create_issue_goal)
 
@@ -418,6 +427,15 @@ RSpec.describe AgentRun do
 
         expect(agent_run).not_to be_valid
         expect(agent_run.errors[:issue]).to include("is required for analyze_issue goals")
+      end
+
+      it "accepts an assigned non-GitHub work item without an issue" do
+        # @spec UNIFIED-WORK-ITEMS-005
+        project = create(:project)
+        work_item = create(:work_item, account: project.account)
+        agent_run = build(:agent_run, :analyze_issue_goal, project:, issue: nil, work_item:)
+
+        expect(agent_run).to be_valid
       end
     end
 
