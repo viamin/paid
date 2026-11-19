@@ -8,7 +8,7 @@ module ChatSessions
     GOOGLE_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     def self.call(chat_session:, actor: chat_session.created_by, message: nil)
-      FallbackRunners.restore_requested!(chat_session: chat_session)
+      FallbackRunners.restore_requested!(chat_session:)
       new(chat_session: chat_session, actor: actor, message: message).call
     end
 

@@ -23,16 +23,12 @@ module ChatSessions
 
     def run_fallback_loop
       # @spec CHAT-API-006
-      ChatSessions::FallbackRunners.restore_requested!(chat_session: chat_session) unless @llm_client
       attempted_runners = [ chat_session.runner ].compact
       required_zdr = originating_zdr_required?
+      fallback_attempt = false
 
       loop do
-        @llm_client ||= ChatSessions::BuildLlmClient.for_fallback(
-          chat_session: chat_session,
-          actor: actor,
-          message: transport_attempt_message
-        )
+        @llm_client ||= fallback_attempt ? build_fallback_llm_client : build_llm_client
         agent_loop = ChatSessions::AgentLoop.new(**fallback_loop_kwargs)
         return agent_loop.run
       rescue AgentHarness::Error => e
@@ -47,7 +43,20 @@ module ChatSessions
         required_zdr ||= fallback_runner.zero_data_retention?
         discard_partial_attempt(agent_loop&.created_message_ids)
         switch_to_fallback_runner(fallback_runner, e)
+        fallback_attempt = true
       end
+    end
+
+    def build_llm_client
+      ChatSessions::BuildLlmClient.call(**llm_client_arguments)
+    end
+
+    def build_fallback_llm_client
+      ChatSessions::BuildLlmClient.for_fallback(**llm_client_arguments)
+    end
+
+    def llm_client_arguments
+      { chat_session: chat_session, actor: actor, message: transport_attempt_message }
     end
 
     def with_attempt_heartbeat(turn)

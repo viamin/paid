@@ -384,7 +384,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
       create(:chat_message, chat_session: chat_session, role: "user", content: "Concurrent request")
       fallback_runner = configure_chat_fallback
       fallback_client = inspecting_llm_client(final_response)
-      allow(ChatSessions::BuildLlmClient).to receive(:call)
+      allow(ChatSessions::BuildLlmClient).to receive(:for_fallback)
         .with(chat_session: chat_session, actor: user, message: originating_message).and_return(fallback_client)
 
       result = described_class.call(
