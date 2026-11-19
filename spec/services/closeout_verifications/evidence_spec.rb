@@ -246,20 +246,21 @@ RSpec.describe CloseoutVerifications::Evidence do
   end
 
   # @spec PARTIAL-CLOSEOUT-057
-  it "projects a new result for the oldest criterion beyond the record cap" do
-    keys = Array.new(described_class::MAX_RECORDS + 1) { |index| "Criterion #{index}" }
-    persist_assessment!(criterion_keys: keys)
-    mappings = keys.map { |key| approve_mapping(criterion_key: key) }
-    mappings.each { |mapping| create_verification_run(mapping:) }
+  it "retains a newly superseding result when its criterion was previously capped" do
+    criterion_keys = (1..9).map { |n| "Criterion #{n}" }
+    persist_assessment!(criterion_keys:)
+    mappings = criterion_keys.map { |key| approve_mapping(criterion_key: key) }
+    mappings.each { |mapping| create_verification_run(mapping:, outcome: "passed") }
     before_revision = described_class.revision_for(source_issue)
+
     source_pr.update!(merged_commit_sha: "b" * 40)
-    replay = create_verification_run(mapping: mappings.first, outcome: "failed", error: "Replay failed")
+    replay = create_verification_run(mapping: mappings.first, merged_sha: source_pr.merged_commit_sha,
+      outcome: "failed", error: "new terminal result")
 
     records = described_class.records_for(source_issue)
-
-    expect(records.size).to eq(described_class::MAX_RECORDS)
-    expect(records.last).to include("verification_run_id" => replay.id, "outcome" => "failed")
-    expect(described_class.revision_for(source_issue)).not_to eq(before_revision)
+    expect(records.map { |record| record["criterion_key"] }).to eq(criterion_keys.drop(2) + [ criterion_keys.first ])
     expect(described_class.current_for_run?(replay)).to be(true)
+    expect(records.last).to include("verification_run_id" => replay.id, "outcome" => "failed", "error" => "new terminal result", "current" => true)
+    expect(described_class.revision_for(source_issue, records:)).not_to eq(before_revision)
   end
 end

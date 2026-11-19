@@ -72,6 +72,20 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   end
 
   describe "#execute" do
+    it "analyzes an assigned non-GitHub work item without fetching GitHub content" do
+      # @spec UNIFIED-WORK-ITEMS-005
+      account = project.account
+      account.tenant_setting!.update!(features: { "unified_work_items" => true })
+      work_item = create(:work_item, account:)
+      run = create(:agent_run, project:, issue: nil, work_item:, goal: "analyze_issue")
+
+      expect(client).not_to receive(:issue_comments)
+      result = activity.execute(agent_run_id: run.id)
+
+      expect(result).to include(work_item_id: work_item.id, sufficient_context: true)
+      expect(run.reload.status).to eq("completed")
+    end
+
     it "returns sufficient_context: true for a well-described issue with knowledge context" do
       grant = create(:work_item_continuation_grant, project:, issue:,
         start_phase: "issue_preparation", endpoint: "issue_preparation")

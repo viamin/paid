@@ -170,6 +170,17 @@ RSpec.describe "Projects work-item integration" do
       expect(AgentRun.last.custom_prompt).to include("Hand written")
     end
 
+    it "queues an enhancement run from an assigned non-GitHub ticket" do
+      # @spec UNIFIED-WORK-ITEMS-005
+      create(:work_item_assignment, account: account, work_item: work_item, project: project)
+
+      expect {
+        post project_agent_runs_path(project), params: { goal: "enhance_issue", work_item_id: work_item.id }
+      }.to change(AgentRun, :count).by(1)
+
+      expect(AgentRun.last).to have_attributes(work_item: work_item, issue: nil, goal: "enhance_issue", status: "queued")
+    end
+
     it "preserves run authorization" do
       # @spec UNIFIED-WORK-ITEMS-005
       plain_user = create(:user, account: account)

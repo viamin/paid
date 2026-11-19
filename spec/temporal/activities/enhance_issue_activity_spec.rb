@@ -53,6 +53,25 @@ RSpec.describe Activities::EnhanceIssueActivity do
     expect(grant.reload).to be_completed
   end
 
+  it "posts enhancement output to an assigned non-GitHub work item" do
+    # @spec UNIFIED-WORK-ITEMS-005
+    account = project.account
+    account.tenant_setting!.update!(features: { "unified_work_items" => true })
+    configuration = create(:tracker_configuration, configurable: account, tracker_type: "linear")
+    work_item = create(:work_item, account:, tracker_configuration: configuration)
+    create(:work_item_assignment, account:, work_item:, project:)
+    run = create(:agent_run, project:, issue: nil, work_item:, goal: "enhance_issue")
+    adapter = instance_double(IssueTrackers::Adapters::Base)
+    allow(IssueTrackers::Adapters::Linear).to receive(:new).and_return(adapter)
+    allow(adapter).to receive(:add_comment).with(external_id: work_item.external_id, body: structured_comment_body)
+    run.log!("stdout", delimiter_wrap(structured_work_item_output))
+
+    result = activity.execute(agent_run_id: run.id)
+
+    expect(result).to include(work_item_id: work_item.id, sufficient_context: true)
+    expect(run.reload.status).to eq("completed")
+  end
+
   def expect_label_added(label)
     expect(client).to have_received(:add_labels_to_issue).with(
       project.full_name,
@@ -81,6 +100,14 @@ RSpec.describe Activities::EnhanceIssueActivity do
 
   def delimiter_wrap(payload)
     "#{described_class::OUTPUT_DELIMITER}\n#{payload}\n#{described_class::OUTPUT_DELIMITER}"
+  end
+
+  def structured_comment_body
+    "## Implementation context\n- Use the unified ticket contract."
+  end
+
+  def structured_work_item_output
+    { sufficient_context: true, comment_body: structured_comment_body }.to_json
   end
 
   def paid_bot_question_comment(created_at:)
