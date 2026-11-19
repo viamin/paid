@@ -21,6 +21,12 @@ module Automation
   class EffectivePolicy
     SOURCES = %i[legacy_policy manual_action continuation_grant project_defaults].freeze
     REASONS = %i[phase_disabled phase_enabled posture_restricted bounded_phase_stop].freeze
+    ACTION_CLASS_BY_DELEGATED_ACTION = {
+      "review" => "technical_stop_recovery",
+      "repair" => "cycle_analysis_and_repair",
+      "merge" => "evidence_gated_issue_closure",
+      "issue_closure" => "evidence_gated_issue_closure"
+    }.freeze
 
     Decision = Struct.new(:permitted, :source, :reason, :phase, :grant, :posture, :phase_policy_signature,
       keyword_init: true) do
@@ -75,6 +81,8 @@ module Automation
     def call
       return legacy_decision unless enabled?
       return block(:posture_restricted) if delegated_action && !posture.bounded_delivery?
+      return block(:action_not_delegated) if delegated_action &&
+        posture.enabled_action_classes.exclude?(ACTION_CLASS_BY_DELEGATED_ACTION.fetch(delegated_action.to_s, delegated_action.to_s))
       return permit(:manual_action, :phase_enabled) if manual_action?
       return block(:bounded_phase_stop) if bounded_phase_stopped?
 
