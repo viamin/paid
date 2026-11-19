@@ -177,6 +177,21 @@
 - [ ] **MAINT-045**: The system shall not treat a language or repository-file
       match alone as authorization for an automatic fix or a blocking gate.
 
+- [x] **MAINT-046**: When a user selects the `intent_traceability` maintenance
+      recipe, the system shall direct the report-only investigation to consume
+      shared design-artifact reconciliation evidence for RDR-to-issue trees,
+      distinguish merged artifacts from proposed open design PRs and disclose
+      unresolved scope or incomplete remote coverage. The investigation shall
+      retain known stored or cross-repository trees despite stale metadata or
+      absent native children; semantic scope, duplicate-work, and ownership
+      questions shall be assessed through `agent_harness`, while scanning makes
+      no issue or pull-request change. The report shall include supporting and
+      contrary evidence for missing, partial, unlinked/stale, deferred,
+      unverifiable, duplicate, and ownership findings.
+      *Tests:* `spec/services/maintenance_runs/build_prompt_spec.rb`
+      *Code:* `app/services/maintenance_runs/recipes.rb`,
+      `app/services/maintenance_runs/build_prompt.rb` (#4340)
+
 ## Recurring Maintenance and Repair Handoff
 
 - [ ] **MAINT-060**: The system shall allow a project to configure a
@@ -242,6 +257,7 @@
 | [#4331](https://github.com/viamin/paid/issues/4331) (M04) | MAINT-018, MAINT-070–073 |
 | [#4332](https://github.com/viamin/paid/issues/4332) (M05) | MAINT-003, MAINT-060–064 |
 | [#4333](https://github.com/viamin/paid/issues/4333) (M06) | MAINT-080–083 |
+| [#4340](https://github.com/viamin/paid/issues/4340) | MAINT-046 |
 | [#4334](https://github.com/viamin/paid/issues/4334) (C75) | MAINT-090–091 |
 
 MAINT-004 is shared rollout preservation work: M01 implements readable

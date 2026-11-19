@@ -52,6 +52,19 @@ RSpec.describe MaintenanceRuns::BuildPrompt do
     expect(prompt).to include("Focus on workflows")
   end
 
+  # @spec MAINT-046
+  it "guides intent-traceability audits through the shared reconciler without mutation" do
+    prompt = build_prompt(objective: "intent_traceability", scope: "RDR-063, docs/rdrs, Forager workflows")
+
+    expect(prompt).to include("RDR-063, docs/rdrs, Forager workflows")
+    expect(prompt).to match(/shared design-artifact\s+reconciliation/i)
+    expect(prompt).to match(/merged.*proposed open design-PR intent/i)
+    expect(prompt).to match(/missing.*partial.*unlinked.*stale.*deferred.*unverifiable/im)
+    expect(prompt).to match(/agent_harness/i)
+    expect(prompt).to match(/cross-repository.*stale metadata.*native children/im)
+    expect(prompt).to match(/report-only|no issue or pull-request changes/i)
+  end
+
   # @spec MAINT-OPT-001
   it "composes recipe instructions with a selected optimization type" do
     type = MaintenanceRuns::OptimizationTypes.fetch("performance")
