@@ -10,6 +10,22 @@ module Paid
       validate_worker_mode!(env.fetch("TEMPORAL_WORKER_MODE", "both"))
     end
 
+    # @spec OBSERVABILITY-006
+    def launch_mode(arguments, env = ENV)
+      return worker_mode(env) if arguments.empty?
+
+      unless arguments.one? && arguments.first.start_with?("--mode=")
+        raise ArgumentError, "Expected one --mode=poll|agent|both argument"
+      end
+
+      mode = validate_worker_mode!(arguments.first.delete_prefix("--mode="))
+      if env.key?("TEMPORAL_WORKER_MODE") && env.fetch("TEMPORAL_WORKER_MODE") != mode
+        raise ArgumentError, "Worker mode argument conflicts with TEMPORAL_WORKER_MODE"
+      end
+
+      mode
+    end
+
     def validate_worker_mode!(worker_mode)
       return worker_mode if VALID_MODES.include?(worker_mode)
 

@@ -102,6 +102,13 @@ Credentials are seeded at runtime, never baked into an image or committed.
 The memory dashboard distinguishes Docker-host VM memory from the physical
 macOS host. It shows available memory, swap, individual container memory and
 limits, OOM counters, container starts, process RSS, and database/job activity.
+Development worker launch commands include an explicit `--mode=poll` or
+`--mode=agent` argument. Workers validate that argument against any environment
+mode before starting work. The exporter sees the stable mode from process
+launch and assigns fixed poll, agent, or combined groups without a startup-title
+race. Workers launched without a mode argument remain in the legacy group.
+The RSS and swap panels use those groups; historical combined series remain
+visible for older intervals.
 Process groups include all matching Paid Puma and Temporal worker processes on
 that Docker host, including matching additional worktrees. They are not claimed
 to belong to one container. Container charts supply exact container attribution;
@@ -121,7 +128,7 @@ counter as reliable evidence.
 | Decision | Rationale | Alternative considered |
 | --- | --- | --- |
 | Reuse standard exporters and an isolated metrics-only profile | Collects independently of Rails/DB with bounded overhead and no extra application tables. | Starting the complete log stack adds unrelated services during memory diagnosis. |
-| Add process-exporter with two fixed groups | Separates Puma and worker RSS inside the shared app container without labels containing command lines. | Container-only metrics cannot distinguish these processes. |
+| Add process-exporter with fixed Puma and mode-specific worker groups | Separates Puma, poll-worker and agent-worker RSS/swap inside the shared app container without labels containing command lines. | Container-only metrics cannot distinguish these processes. |
 | Persist configuration through a small initialization image | Avoids container-to-host bind-path mismatches when launched inside a devcontainer. | Direct repository bind mounts refer to the Docker daemon's filesystem, not the client container. |
 
 ## Self-Hosted Log Aggregation

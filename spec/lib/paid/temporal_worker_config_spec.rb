@@ -20,6 +20,31 @@ RSpec.describe Paid::TemporalWorkerConfig do # @spec TEMPORAL-ORCHESTRATION-002
     end
   end
 
+  # @spec OBSERVABILITY-006
+  describe "explicit launch modes" do
+    it "accepts each mode without requiring an environment override" do
+      %w[poll agent both].each do |mode|
+        expect(described_class.launch_mode([ "--mode=#{mode}" ], {})).to eq(mode)
+      end
+    end
+
+    it "accepts a matching environment mode" do
+      expect(described_class.launch_mode([ "--mode=poll" ], "TEMPORAL_WORKER_MODE" => "poll")).to eq("poll")
+    end
+
+    it "rejects a conflicting environment mode" do
+      expect {
+        described_class.launch_mode([ "--mode=poll" ], "TEMPORAL_WORKER_MODE" => "agent")
+      }.to raise_error(ArgumentError, /conflicts/)
+    end
+
+    it "rejects invalid, duplicate and unknown mode arguments" do
+      [ [ "--mode=invalid" ], [ "--mode=poll", "--mode=agent" ], [ "--other=poll" ] ].each do |arguments|
+        expect { described_class.launch_mode(arguments, {}) }.to raise_error(ArgumentError)
+      end
+    end
+  end
+
   describe ".selected_activity_slots" do
     let(:slots) do
       {
