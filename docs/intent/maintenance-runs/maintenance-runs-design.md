@@ -138,7 +138,9 @@ discloses every omission by count, states its capture time and latest issue
 coverage, and when nothing is persisted it is rendered as an unresolved
 coverage limitation rather than a clean result. The recipe registry
 entry owns this wiring, so every starting surface (UI, API, MCP tool) attaches
-identical evidence.
+identical evidence. The prompt delimits the snapshot as untrusted evidence and
+directs the maintenance agent never to treat any value it contains as an
+instruction.
 
 The recipe accepts RDR identifiers, repository paths, revisions, and related
 workflow names as named scope. Its report distinguishes merged repository

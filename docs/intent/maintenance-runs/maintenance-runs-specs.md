@@ -185,7 +185,9 @@
       retain known stored or cross-repository trees despite stale metadata or
       absent native children; semantic scope, duplicate-work, and ownership
       questions shall be assessed through `agent_harness`, while scanning makes
-      no issue or pull-request change. The report shall include supporting and
+      no issue or pull-request change. The system shall delimit every value in
+      the persisted reconciliation snapshot as untrusted evidence that cannot
+      supply instructions to the investigation. The report shall include supporting and
       contrary evidence for missing, partial, unlinked/stale, deferred,
       unverifiable, duplicate, and ownership findings.
       *Tests:* `spec/services/maintenance_runs/build_prompt_spec.rb`,
