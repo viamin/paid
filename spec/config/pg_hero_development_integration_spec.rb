@@ -62,9 +62,29 @@ RSpec.describe PgHeroDevelopmentIntegration, :no_db do
     expect(docker_compose).to include('PAID_ENABLE_DEV_QUERY_STATS: "1"')
   end
 
+  # @spec RAILS-CONTROL-PLANE-020
+  it "does not schedule diagnostic collection in the test environment" do
+    expect(Rails.application.config.good_job.cron.keys.grep(/pghero/)).to be_empty
+  end
+
   def reset_pghero_config
     %i[config databases file_config password username].each do |name|
       PgHero.remove_instance_variable(:"@#{name}") if PgHero.instance_variable_defined?(:"@#{name}")
     end
+  end
+
+  # @spec RAILS-CONTROL-PLANE-023
+  it "enables planning measurement in both Compose setups with an operator opt-out" do
+    %w[.devcontainer/compose.yaml docker-compose.yml].each do |path|
+      expect(Rails.root.join(path).read).to include("pg_stat_statements.track_planning=", "PAID_PG_TRACK_PLANNING")
+    end
+    expect(Rails.root.join("README.md").read).to include("PAID_PG_TRACK_PLANNING", "planning", "overhead")
+  end
+
+  # @spec RAILS-CONTROL-PLANE-023
+  it "documents combined totals and the limits of retained memory evidence" do
+    readme = Rails.root.join("README.md").read
+
+    expect(readme).to include("planning and execution", "14 days", "every minute", "memory")
   end
 end

@@ -3062,6 +3062,20 @@ RSpec.describe Containers::Provision do
         service.execute("echo 'hello'")
       end
 
+      # @spec STAGED-CLOSEOUT-ADOPTION-011
+      it "preserves command success when the run is destroyed before streamed output logging" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          agent_run.destroy!
+          block.call(:stdout, "command output\n")
+          [ [ "command output\n" ], [], 0 ]
+        end
+
+        result = service.execute("echo 'hello'")
+
+        expect(result).to be_success
+        expect(result[:stdout]).to eq("command output\n")
+      end
+
       it "accepts array command format" do
         expect(mock_container).to receive(:exec).with([ "ls", "-la" ], hash_including(wait: anything))
 
@@ -3318,6 +3332,18 @@ RSpec.describe Containers::Provision do
           .to raise_error(described_class::OutputAbortError) { |e|
             expect(e.matched_output).to eq(quota_error)
           }
+      end
+
+      # @spec STAGED-CLOSEOUT-ADOPTION-011
+      it "preserves the output abort when another instance deletes the run" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          AgentRun.find(agent_run.id).destroy!
+          block.call(:stderr, quota_error)
+          [ [], [ quota_error ], 1 ]
+        end
+
+        expect { service.execute("kilo run --auto", stream: false, abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError)
       end
 
       it "stops the container immediately" do
@@ -4009,6 +4035,58 @@ RSpec.describe Containers::Provision do
       service.cleanup
 
       expect(service.container).to be_nil
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "tears down resources after the run row was destroyed" do
+      agent_run.destroy!
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+      service.cleanup(force: true)
+
+      expect(service.container).to be_nil
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "tears down resources when another instance deleted the run row" do
+      AgentRun.find(agent_run.id).destroy!
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+      service.cleanup(force: true)
+
+      expect(service.container).to be_nil
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "tears down resources when run deletion races the system log write" do
+      deleted = false
+      allow(agent_run).to receive(:log!).and_wrap_original do |original, *args, **kwargs|
+        unless deleted
+          AgentRun.find(agent_run.id).destroy!
+          deleted = true
+        end
+
+        original.call(*args, **kwargs)
+      end
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+      expect(Rails.logger).to receive(:warn).with(
+        message: "container_manager.run_log_write_skipped",
+        agent_run_id: agent_run.id,
+        log_type: "system",
+        reason: "run row deleted before log write"
+      ).twice
+
+      service.cleanup(force: true)
+
+      expect(service.container).to be_nil
+    end
+
+    # @spec STAGED-CLOSEOUT-ADOPTION-011
+    it "does not query run existence before logging cleanup" do
+      expect(AgentRun).not_to receive(:exists?)
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+
+      service.cleanup(force: true)
     end
 
     it "logs cleanup operations" do

@@ -15,7 +15,7 @@
 services:
   postgres:
     image: postgres:16.15
-    command: postgres -c shared_preload_libraries=pg_stat_statements
+    command: postgres -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track_planning=${PAID_PG_TRACK_PLANNING:-on}
     restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -80,6 +80,7 @@ services:
       RAILS_ENV: development
       PAID_WEB_BIND_ADDRESS: 0.0.0.0
       PAID_ENABLE_DEV_QUERY_STATS: "1"
+      PAID_PG_TRACK_PLANNING: "${PAID_PG_TRACK_PLANNING:-on}"
       RAILS_LOG_TO_STDOUT: "1"
       PAID_LOG_FORMAT: json
       REDIS_URL: redis://redis:6379/0
