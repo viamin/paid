@@ -58,7 +58,7 @@ Status markers: `[ ]` planned implementation gap.
   (the settlement policy binds `settled_by` to the current account in both its
   read and write clauses).
 
-- [ ] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
+- [x] **PROJECT-DELEGATION-003** — When `bounded_delivery` is current, the
   system SHALL delegate only bounded implementation choices, focused follow-up
   ownership, technical-stop recovery, evidence-gated issue closure, and
   bounded cycle analysis/repair, each with the action-specific evidence and
@@ -66,6 +66,11 @@ Status markers: `[ ]` planned implementation gap.
   requirements, scope, acceptance criteria, explicit holds, release,
   deployment, settings changes, or new work lineage, except for the narrow
   follow-up recording exception in PROJECT-DELEGATION-008.
+  *Verified by:* `spec/services/project_delegation/action_plan_spec.rb`
+  (action-specific evidence, immutable action audit receipts, reserved decision
+  prohibitions, explicit holds, scope/lineage boundaries, and non-executing
+  follow-up recording), `app/services/project_delegation/action_plan.rb`, and
+  the action-class mapping in `app/services/automation/effective_policy.rb`.
 
 - [x] **PROJECT-DELEGATION-004** — Before creating, queueing, dequeueing,
   retrying, following up, repairing, or closing delegated work, the system
