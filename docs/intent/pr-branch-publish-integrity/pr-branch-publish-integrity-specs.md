@@ -8,7 +8,7 @@
 ## Lease expectation source
 
 - [x] **PR-BRANCH-PUBLISH-003**: When publishing an existing PR branch or force-publishing after a conflict rebase, the system shall use `AgentRun#result_commit_sha` (when present) or else `AgentRun#expected_remote_head_sha` as the `--force-with-lease` expected SHA, and shall not substitute a SHA read from a `git fetch` issued by that same push attempt.
-- [ ] **PR-BRANCH-PUBLISH-004**: If neither `result_commit_sha` nor `expected_remote_head_sha` is recorded for the run, the system SHALL hold publication without fetching a substitute lease or pushing, retain the exact local result revision, and explain that recovery requires reconciling that result in a fresh run with a captured remote head. A legacy run SHALL NOT authorize overwriting contributor work. Source issue: #5177; acceptance pending.
+- [x] **PR-BRANCH-PUBLISH-004**: If neither `result_commit_sha` nor `expected_remote_head_sha` is recorded for the run, the system SHALL hold publication without fetching a substitute lease or pushing, retain the exact local result revision, and explain that recovery requires reconciling that result in a fresh run with a captured remote head. A legacy run SHALL NOT authorize overwriting contributor work. Source issue: #5177.
 
 ## Rejected-lease recovery (existing-PR publish route)
 
