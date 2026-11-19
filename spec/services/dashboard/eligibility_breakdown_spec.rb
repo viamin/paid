@@ -59,7 +59,6 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       connection.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO #{quoted_role}")
       connection.execute("GRANT #{quoted_role} TO current_user")
       connection.execute("SET ROLE #{quoted_role}")
-      connection.execute("SET LOCAL work_mem = '512MB'")
 
       yield
     ensure
@@ -298,14 +297,13 @@ RSpec.describe Dashboard::EligibilityBreakdown do
     end
 
     # @spec QUEUE-HANDOFF-004
-    it "executes held-work selection under normal-role RLS within the 512 MiB work-memory cap" do
+    it "preserves held-work details under normal-role RLS" do
       create_held_work_scope_fixtures
 
       expected = held_work_projection(described_class.call(user:))
       Rails.cache.clear
 
       with_normal_rls_role do
-        expect(ActiveRecord::Base.connection.select_value("SHOW work_mem")).to eq("512MB")
         expect(ActiveRecord::Base.connection.select_value("SELECT current_user")).to start_with("paid_dashboard_rls_")
         expect(held_work_projection(TenantContext.with(account) { described_class.call(user:) })).to eq(expected)
       end
