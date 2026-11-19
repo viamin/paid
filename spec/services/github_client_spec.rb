@@ -1297,6 +1297,50 @@ RSpec.describe GithubClient do
       end.to raise_error(GithubClient::RateLimitError)
     end
 
+    # @spec GITHUB-SYNC-021
+    it "treats a secondary rate limit 403 with Retry-After as a rate limit, not a permission failure" do
+      reset_time = 1.hour.from_now.to_i
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(
+          status: 403,
+          body: { message: "You have exceeded a secondary rate limit" }.to_json,
+          headers: { "X-RateLimit-Remaining" => "42", "X-RateLimit-Reset" => reset_time.to_s, "Retry-After" => "30" }
+        )
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::RateLimitError)
+
+      expect(GithubHealthState.find_by(endpoint: health_endpoint)).to be_rate_limited
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "treats a 429 on the authenticated API hop as a rate limit" do
+      reset_time = 1.hour.from_now.to_i
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_return(status: 429, headers: { "X-RateLimit-Remaining" => "0", "X-RateLimit-Reset" => reset_time.to_s })
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::RateLimitError)
+
+      expect(GithubHealthState.find_by(endpoint: health_endpoint)).to be_rate_limited
+    end
+
+    # @spec GITHUB-SYNC-021
+    it "records a health failure when the authenticated API hop fails at the network level" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
+        .to_raise(Faraday::ConnectionFailed.new("connection reset"))
+
+      expect do
+        client.check_run_log(repo, details_url: "https://github.com/owner/repo/actions/runs/456/job/789")
+      end.to raise_error(GithubClient::ApiError, /Faraday::ConnectionFailed/)
+
+      state = GithubHealthState.find_by(endpoint: health_endpoint)
+      expect(state).to be_present
+      expect(state.failure_count).to eq(1)
+    end
+
     it "fetches GitHub Actions job logs for a check run details URL" do
       stub = stub_request(:get, "#{api_base}/repos/#{repo}/actions/jobs/789/logs")
         .to_return(status: 200, body: "Failure/Error: expected true", headers: { "Content-Type" => "text/plain" })

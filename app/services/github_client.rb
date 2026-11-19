@@ -2146,6 +2146,7 @@ class GithubClient
       raise_actions_log_api_error!(response)
     end
   rescue Faraday::Error => error
+    record_github_health_failure("Actions job log request failed (#{error.class.name})")
     raise ApiError.new("Actions job log request failed (#{error.class.name})")
   end
 
@@ -2174,9 +2175,15 @@ class GithubClient
     when 404
       raise NotFoundError
     when 403
-      raise_actions_log_rate_limit!(response) if response.headers["x-ratelimit-remaining"].to_s == "0"
+      if response.headers["x-ratelimit-remaining"].to_s == "0" ||
+          response.headers["retry-after"].present? ||
+          response.body.to_s.include?("rate limit")
+        raise_actions_log_rate_limit!(response)
+      end
 
       raise ApiError.new("Actions job log request failed (status 403)", status: 403)
+    when 429
+      raise_actions_log_rate_limit!(response)
     else
       record_github_health_failure("Actions job log request failed (status #{response.status})") if response.status >= 500
       raise ApiError.new("Actions job log request failed (status #{response.status})", status: response.status)
