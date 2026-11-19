@@ -68,6 +68,27 @@
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_focus_resolution_spec.rb`.
 
+## Conversation feedback consumption
+
+- [x] **FOCUSED-RUN-010** — When a `create_pr` run on an existing PR
+  terminates `no_output` with the `no_changes` reason and a focus whose PR
+  prompt actually includes the conversation section (the `conversation`
+  focus, plus the unscoped `general` and `label_action` focuses that include
+  every applicable section), the PR scanner SHALL treat that run's
+  `completed_at` as the conversation-comment cutoff for the same project and
+  PR, consuming older trusted conversation comments exactly as a `completed`
+  run's timestamp does. Comments newer than that cutoff SHALL remain
+  actionable; no-change runs with any other focus, failed or unfinished
+  runs, and runs from other PRs or other projects SHALL NOT consume
+  comments; and review-thread, changes-requested, review-bot, CI, policy,
+  and budget gating SHALL keep deriving their cutoffs from `completed` runs
+  only.
+  *Code:* `ScanPaidPrsActivity#check_conversation_comments`,
+  `ScanPaidPrsActivity#conversation_feedback_cutoff`,
+  `ScanPaidPrsActivity#conversation_scope_no_change_run`,
+  `ScanPaidPrsActivity::CONVERSATION_SCOPE_FOCUSES`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_conversation_feedback_spec.rb`.
+
 ## Follow-up loop breaker
 
 - [x] **FOCUSED-RUN-006** — When PR scan lifecycle signals show a
