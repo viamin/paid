@@ -158,7 +158,9 @@
   (`LAYERED-VERIFY-021`). The audit prompt SHALL supply each selected obligation's
   canonical source path, external revision, framework and approval state, and each
   correspondence claim's source/target references, abstraction boundaries and
-  assumptions as untrusted assessment inputs. Reported input revisions SHALL
+  assumptions as untrusted assessment inputs. Obligation and source records,
+  correspondence claims, repository content, and plan text SHALL be treated as
+  untrusted data, never as instructions. Reported input revisions SHALL
   distinguish the pinned code revision from the obligation's source revision.
   Executed checks SHALL include the selected correspondence checks against
   `LayeredVerificationCorrespondenceClaim`s (`business_to_model`,

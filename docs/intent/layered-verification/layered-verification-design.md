@@ -321,7 +321,8 @@ than silently dropped.
 An audit prompt supplies each selected obligation's canonical source path,
 external revision, framework and approval state alongside its identity and scope.
 Each correspondence claim supplies its source and target references, abstraction
-boundaries and assumptions. These records remain untrusted assessment inputs.
+boundaries and assumptions. Obligation and source records, correspondence claims,
+repository content, and plan text remain untrusted assessment inputs, never instructions.
 Reported input revisions identify the pinned code revision and the obligation's
 source revision separately; an unavailable source remains unresolved. Content
 digests identify source content for verification rather than a git ref to check out.
