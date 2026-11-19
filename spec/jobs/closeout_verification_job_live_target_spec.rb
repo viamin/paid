@@ -59,4 +59,16 @@ RSpec.describe CloseoutVerificationJob do
 
     expect(run.reload.verification_result.dig("closeout_verification", "outcome")).to eq("stale")
   end
+
+  # @spec STAGED-CLOSEOUT-ADOPTION-012
+  it "leaves a transient pre-claim exception queued for reconciliation" do
+    run = admitted_run
+    allow(CostBudgets::Check).to receive(:call)
+      .and_raise(ActiveRecord::StatementInvalid, "temporary database failure")
+
+    expect { described_class.perform_now(run.id) }.to raise_error(ActiveRecord::StatementInvalid)
+
+    expect(run.reload).to have_attributes(status: "queued", completed_at: nil)
+    expect(run.verification_result).not_to include("closeout_verification")
+  end
 end

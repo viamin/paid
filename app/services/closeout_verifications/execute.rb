@@ -91,9 +91,11 @@ module CloseoutVerifications
         expected_deployed_revision: agent_run.closeout_target_revision
       )
       finish_live_target!(attempt)
-    rescue StandardError => error
+    rescue StandardError
       attempt = current_live_attempt
-      attempt ? finish_live_target!(attempt) : record_exception!(error)
+      raise unless attempt
+
+      finish_live_target!(attempt)
       raise
     end
 
