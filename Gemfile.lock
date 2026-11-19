@@ -120,7 +120,7 @@ GEM
     addressable (2.9.2)
       public_suffix (>= 2.0.2, < 8.0)
     afm (1.0.1)
-    agent-harness (0.44.36)
+    agent-harness (0.44.39)
       json_schemer (~> 2.4)
       logger (>= 1.6, < 2.0)
       ruby_llm (~> 2.0)
@@ -569,7 +569,7 @@ GEM
       activerecord (>= 6.1)
       railties (>= 6.1)
     public_suffix (7.0.5)
-    puma (8.1.0)
+    puma (8.1.1)
       nio4r (~> 2.0)
     pundit (2.5.2)
       activesupport (>= 3.0.0)
@@ -642,7 +642,7 @@ GEM
       redis-client (= 0.30.1)
     redis-client (0.30.1)
       connection_pool
-    regexp_parser (2.13.1)
+    regexp_parser (2.13.4)
     reline (0.7.0)
       io-console (~> 0.5)
     responders (3.2.1)
@@ -843,7 +843,7 @@ PLATFORMS
   x86_64-linux-musl
 
 DEPENDENCIES
-  agent-harness (= 0.44.36)
+  agent-harness (= 0.44.39)
   avo (= 4.4.4)
   aws-sdk-s3
   bootsnap
@@ -937,7 +937,7 @@ CHECKSUMS
   adamantium (0.2.0) sha256=5379dc1090ec6ce115eaed4271a2056f3b72ee94d1ff866a169bbb37a3c8c504
   addressable (2.9.2) sha256=9117c7e7d6ee07230e75ce41fb9401ae55354dc654fcd0e862ba41d539e9a610
   afm (1.0.1) sha256=4fc98c6ea9cad60c25ae12bad517513b0d6fdbedc099e25be88bf47977b7d879
-  agent-harness (0.44.36) sha256=b5eea8219fdf4eb3f1eccf0573278b33e050a051cdcf783cdd742791adbc6668
+  agent-harness (0.44.39) sha256=038fc9c21ab51491fa3c3138ec28fe9577038cd3eb346bbf2d458986322ec37d
   amazing_print (2.0.0) sha256=2e36aba46ac78d37ed27ca0e2056afe3583183bb5c64f157c246b267355e5d6a
   anima (0.3.2) sha256=467f775e5c7721f1ac19c0efcef2ca56489b9673809371b12514a77e11cbfc00
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
@@ -1121,7 +1121,7 @@ CHECKSUMS
   propshaft (1.3.2) sha256=1d56a3e56a92c21bfc29caf07406b5386b00d4c47ddf357cf989a5a234b1389e
   prosopite (2.5.0) sha256=48ed8b147d119c58ad7ea6dfb9ff7f6741053db3161dcc01ccd53b144f2fd689
   public_suffix (7.0.5) sha256=1a8bb08f1bbea19228d3bed6e5ed908d1cb4f7c2726d18bd9cadf60bc676f623
-  puma (8.1.0) sha256=86337ed8a60eb3f246c287b7ffd7cbb81dee5a2408b745e2c33e77760b7c2ac7
+  puma (8.1.1) sha256=24800758cf064ecc19d056301b6946f628d77ea14653d485fa17ff6a6331555c
   pundit (2.5.2) sha256=e374152baa24f90b630428293faf4b4c5468fc3cc010165f7d8fcb44ce108bbd
   qdrant-ruby (0.11.0) sha256=b7947df957d2625c175250383fe0a0ce516b6d2059aab0306193737e41df3070
   raabro (1.5.0) sha256=3f998a7bc84f9c84df3ab580634d2e0a5bda4f0841168d56035f529c9877440a
@@ -1144,7 +1144,7 @@ CHECKSUMS
   rdoc (8.1.0) sha256=befc37880a5cfd36dcb176c748b5fd5ee39dd3536a75e81824e4972ce230f60a
   redis (6.0.0) sha256=de71c10edd106986b759ec7ecdd08b63b9c0ee7414a0d0c1da73d31ba2bccda6
   redis-client (0.30.1) sha256=5151bc5c7bbfe48623732cdae3b900d8a22dc691cc7cdfacfb351ac55116522d
-  regexp_parser (2.13.1) sha256=5aedb6b7c35688f51e86eef17a15374dfd287c83f4ca644b2c5f3ec50a33b44b
+  regexp_parser (2.13.4) sha256=1d0547814f57e6f00946957bd0ca201bc42f42cfb08eee89df60998aedcd8a3b
   reline (0.7.0) sha256=5b012d8e55dbf9d450f12bde2cf7d15ff546ae80b3f8f3b30e570d431815583d
   responders (3.2.1) sha256=c2772970cbda654c0e772d852e5a851e82cd8e96f5fa958650861ba75b8ffa84
   rexml (3.4.4) sha256=19e0a2c3425dfbf2d4fc1189747bdb2f849b6c5e74180401b15734bc97b5d142
