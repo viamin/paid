@@ -66,7 +66,7 @@ class RestoreTenantRlsPoliciesAfterSchemaBootstrap < ActiveRecord::Migration[8.1
   def restore_group(tables, migration, method)
     tables = tables.select { |table| table_exists?(table) }
     return if tables.empty?
-    return if tables.all? { |table| policy_present?(table) }
+    return if tables.all? { |table| policy_present?(table) && row_level_security_enabled?(table) }
 
     tables.each { |table| drop_tenant_policy(table) }
     migration.send(method)
@@ -90,6 +90,10 @@ class RestoreTenantRlsPoliciesAfterSchemaBootstrap < ActiveRecord::Migration[8.1
           AND policyname = 'tenant_isolation'
       )
     SQL
+  end
+
+  def row_level_security_enabled?(table)
+    truthy?(select_value("SELECT relrowsecurity FROM pg_class WHERE oid = #{quote("public.#{table}")}::regclass"))
   end
 
   def drop_tenant_policy(table)

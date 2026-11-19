@@ -21,6 +21,19 @@ RSpec.describe RestoreTenantRlsPoliciesAfterSchemaBootstrap do
     described_class.new.up
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-012
+  it "re-enables row-level security when its policy remains" do
+    connection = ActiveRecord::Base.connection
+    connection.execute "ALTER TABLE execution_usages DISABLE ROW LEVEL SECURITY"
+
+    described_class.new.up
+
+    expect(policy_present?(connection, "execution_usages")).to be(true)
+    expect(row_level_security_enabled?(connection, "execution_usages")).to be(true)
+  ensure
+    described_class.new.up
+  end
+
   def policy_present?(connection, table)
     connection.select_value(<<~SQL.squish).to_i.positive?
       SELECT COUNT(*)
