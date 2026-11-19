@@ -29,11 +29,16 @@ module Dashboard
     attr_reader :excluded, :projects
 
     def held_issue_ids
-      ranked_held_issues.where("held_issue_rank <= ?", MAX_HELD_ISSUES).pluck(Arel.sql("held_issues.id"))
+      Issue.connection.select_values(ranked_held_issues_sql).map!(&:to_i)
     end
 
-    def ranked_held_issues
-      Issue.unscoped.from("(#{held_issue_candidates.to_sql}) AS held_issues")
+    def ranked_held_issues_sql
+      <<~SQL.squish
+        WITH excluded_issues AS MATERIALIZED (#{excluded.select(:id).to_sql})
+        SELECT held_issues.id
+        FROM (#{held_issue_candidates.to_sql}) AS held_issues
+        WHERE held_issue_rank <= #{MAX_HELD_ISSUES}
+      SQL
     end
 
     def held_issue_candidates
@@ -65,8 +70,12 @@ module Dashboard
       end
     end
 
-    def no_progress_hold_scope(issue_ids = excluded.select(:id))
+    def no_progress_hold_scope(issue_ids = excluded_issue_ids)
       AgentRun.where(issue_id: no_progress_diagnostics.keys).where(issue_id: issue_ids)
+    end
+
+    def excluded_issue_ids
+      Issue.unscoped.from("excluded_issues").select(Arel.sql("id"))
     end
 
     def no_progress_diagnostics
@@ -82,36 +91,36 @@ module Dashboard
         end
     end
 
-    def local_dependency_blockers(issue_ids = excluded.select(:id))
+    def local_dependency_blockers(issue_ids = excluded_issue_ids)
       local_dependency_blocker_scope(issue_ids).includes(:depends_on_issue)
         .each_with_object(blocker_map) { |dependency, blockers| append_local_blocker(dependency, blockers) }
     end
 
-    def local_dependency_blocker_scope(issue_ids = excluded.select(:id))
+    def local_dependency_blocker_scope(issue_ids = excluded_issue_ids)
       IssueDependency.joins(:issue, :depends_on_issue)
         .where(issue_id: issue_ids, depends_on_issue: { github_state: "open" })
         .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
         .excluding_parent_references
     end
 
-    def deployment_dependency_blockers(issue_ids = excluded.select(:id))
+    def deployment_dependency_blockers(issue_ids = excluded_issue_ids)
       deployment_dependency_blocker_scope(issue_ids).includes(:depends_on_issue)
         .each_with_object(blocker_map) { |dependency, blockers| append_deployment_blocker(dependency, blockers) }
     end
 
-    def deployment_dependency_blocker_scope(issue_ids = excluded.select(:id))
+    def deployment_dependency_blocker_scope(issue_ids = excluded_issue_ids)
       IssueDependency.joins(:depends_on_issue)
         .where(issue_id: issue_ids, requires_deployment: true)
         .where(depends_on_issue: { is_pull_request: true, deployed_at: nil })
         .where.not(depends_on_issue: { github_state: "open" })
     end
 
-    def external_dependency_blockers(issue_ids = excluded.select(:id))
+    def external_dependency_blockers(issue_ids = excluded_issue_ids)
       external_dependency_blocker_scope(issue_ids)
         .each_with_object(blocker_map) { |dependency, blockers| append_external_blocker(dependency, blockers) }
     end
 
-    def external_dependency_blocker_scope(issue_ids = excluded.select(:id))
+    def external_dependency_blocker_scope(issue_ids = excluded_issue_ids)
       IssueDependency.still_blocking_external_for_account(projects.first.account_id).where(issue_id: issue_ids)
     end
 
@@ -139,7 +148,7 @@ module Dashboard
         end
     end
 
-    def design_amendment_actions(issue_ids = excluded.select(:id))
+    def design_amendment_actions(issue_ids = excluded_issue_ids)
       design_amendment_action_scope(issue_ids)
         .pluck(:issue_id)
         .each_with_object(action_map) do |issue_id, actions|
@@ -147,12 +156,12 @@ module Dashboard
         end
     end
 
-    def design_amendment_action_scope(issue_ids = excluded.select(:id))
+    def design_amendment_action_scope(issue_ids = excluded_issue_ids)
       DesignAmendmentPause.held.where(issue_id: issue_ids).joins(:design_amendment)
         .where(design_amendments: { project_id: projects.map(&:id) })
     end
 
-    def feature_decision_actions(issue_ids = excluded.select(:id))
+    def feature_decision_actions(issue_ids = excluded_issue_ids)
       feature_decision_action_scope(issue_ids)
         .pluck(:issue_id, "feature_intents.id", "feature_intents.title")
         .each_with_object(action_map) do |(issue_id, id, title), actions|
@@ -160,7 +169,7 @@ module Dashboard
         end
     end
 
-    def feature_decision_action_scope(issue_ids = excluded.select(:id))
+    def feature_decision_action_scope(issue_ids = excluded_issue_ids)
       FeatureIntentIssue.joins(:feature_intent)
         .where(issue_id: issue_ids)
         .where(feature_hold_condition)

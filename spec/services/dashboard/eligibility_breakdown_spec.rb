@@ -42,6 +42,77 @@ RSpec.describe Dashboard::EligibilityBreakdown do
     end
   end
 
+  def with_normal_rls_role
+    skip "requires CREATE ROLE privilege for normal-role RLS coverage" unless can_manage_roles?
+
+    role = "paid_dashboard_rls_#{Process.pid}_#{SecureRandom.hex(4)}"
+    quoted_role = ActiveRecord::Base.connection.quote_table_name(role)
+    connection = ActiveRecord::Base.connection
+    connection.transaction(requires_new: true) do
+      connection.execute("CREATE ROLE #{quoted_role} NOLOGIN NOSUPERUSER NOBYPASSRLS")
+      expect(connection.select_value("SELECT relrowsecurity FROM pg_class WHERE oid = 'issues'::regclass")).to be(true)
+      expect(
+        connection.select_value("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = #{connection.quote(role)}")
+      ).to be(false)
+      connection.execute("GRANT USAGE ON SCHEMA public TO #{quoted_role}")
+      connection.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO #{quoted_role}")
+      connection.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO #{quoted_role}")
+      connection.execute("GRANT #{quoted_role} TO current_user")
+      connection.execute("SET ROLE #{quoted_role}")
+
+      yield
+    ensure
+      TenantContext.clear!
+      connection.execute("RESET ROLE")
+      connection.execute("DROP OWNED BY #{quoted_role}")
+      connection.execute("DROP ROLE IF EXISTS #{quoted_role}")
+    end
+  end
+
+  def can_manage_roles?
+    ActiveModel::Type::Boolean.new.cast(
+      ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+        SELECT rolcreaterole
+        FROM pg_roles
+        WHERE rolname = current_user
+      SQL
+    )
+  end
+
+  def held_work_projection(breakdowns)
+    breakdowns.map do |breakdown|
+      [
+        breakdown.project.id,
+        breakdown.held_issues.map do |held_issue|
+          [
+            held_issue.issue.id,
+            held_issue.blockers.map { |blocker| [ blocker.label, blocker.url ] },
+            held_issue.actions.map { |action| [ action.label, action.inbox_kind, action.entry_id ] },
+            held_issue.diagnostic
+          ]
+        end
+      ]
+    end
+  end
+
+  def create_held_work_scope_fixtures
+    local_blocker = create(:issue, project:, github_state: "open", paid_state: "new")
+    local_held = create(:issue, project:, github_state: "open", paid_state: "new")
+    create(:issue_dependency, issue: local_held, depends_on_issue: local_blocker)
+    deployment_target = create(:issue, :closed, :pull_request, project:, paid_state: "new")
+    deployment_held = create(:issue, project:, github_state: "open", paid_state: "new")
+    create(:issue_dependency, issue: deployment_held, depends_on_issue: deployment_target, requires_deployment: true)
+    external_held = create(:issue, project:, github_state: "open", paid_state: "new")
+    create(:issue_dependency, issue: external_held, depends_on_issue: nil,
+      depends_on_owner: "example", depends_on_repo: "external", depends_on_number: 42)
+    feature_held = create(:issue, project:, github_state: "open", paid_state: "new")
+    feature_intent = create(:feature_intent, project:, status: "design_open", approved_design_revision: nil)
+    create(:feature_intent_issue, feature_intent:, issue: feature_held)
+    amendment_held = create(:issue, project:, github_state: "open", paid_state: "new")
+    create(:design_amendment_pause, design_amendment: create(:design_amendment, project:), issue: amendment_held)
+    create_no_progress_runs(create(:issue, project:, github_state: "open", paid_state: "new"))
+  end
+
   describe ".call" do
     # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
     it "reports an unseeded eligible issue even with unrelated queued and active work" do
@@ -178,6 +249,25 @@ RSpec.describe Dashboard::EligibilityBreakdown do
     end
 
     # @spec QUEUE-HANDOFF-004
+    it "preserves deployment and external dependency blockers" do
+      deployment_target = create(:issue, :closed, :pull_request, project: project, paid_state: "new")
+      deployment_held = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:issue_dependency, issue: deployment_held, depends_on_issue: deployment_target, requires_deployment: true)
+      external_held = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:issue_dependency, issue: external_held, depends_on_issue: nil,
+        depends_on_owner: "example", depends_on_repo: "external", depends_on_number: 42)
+
+      held_issues = described_class.call(user: user).sole.held_issues.index_by { |detail| detail.issue.id }
+
+      expect(held_issues.fetch(deployment_held.id).blockers).to contain_exactly(
+        have_attributes(label: "##{deployment_target.github_number} #{deployment_target.title} (awaiting deployment)", url: deployment_target.github_url)
+      )
+      expect(held_issues.fetch(external_held.id).blockers).to contain_exactly(
+        have_attributes(label: "example/external#42 (external dependency)", url: "https://github.com/example/external/issues/42")
+      )
+    end
+
+    # @spec QUEUE-HANDOFF-004
     it "bounds held issue selection before loading dependency provenance" do
       first = create_dependency_held_issues(project)
       second_project = create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true)
@@ -193,6 +283,30 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       )
       expect(details_by_project.fetch(project)).to all(have_attributes(blockers: [ have_attributes(url: first.fetch(:blocker).github_url) ]))
       expect(details_by_project.fetch(second_project)).to all(have_attributes(blockers: [ have_attributes(url: second.fetch(:blocker).github_url) ]))
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "materializes the held-work exclusion once for blocker and action selection" do
+      create_dependency_held_issues(project)
+
+      queries = capture_queries { described_class.call(user: user) }
+      held_work_query = queries.find { |query| query.include?("WITH excluded_issues AS MATERIALIZED") }
+
+      expect(held_work_query).to include("WITH excluded_issues AS MATERIALIZED")
+      expect(held_work_query.scan("FROM excluded_issues").size).to eq(6)
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "preserves held-work details under normal-role RLS" do
+      create_held_work_scope_fixtures
+
+      expected = held_work_projection(described_class.call(user:))
+      Rails.cache.clear
+
+      with_normal_rls_role do
+        expect(ActiveRecord::Base.connection.select_value("SELECT current_user")).to start_with("paid_dashboard_rls_")
+        expect(held_work_projection(TenantContext.with(account) { described_class.call(user:) })).to eq(expected)
+      end
     end
 
     # @spec QUEUE-HANDOFF-004
