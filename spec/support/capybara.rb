@@ -35,6 +35,12 @@ SYSTEM_DRIVER = :rack_test
 # ApplicationController resolves and applies the signed-in user's tenant.
 # @spec POSTGRESQL-PERSISTENCE-012
 class CapybaraTenantContext
+  def self.install!
+    return if Capybara.app.is_a?(self)
+
+    Capybara.app = new(Capybara.app)
+  end
+
   def initialize(app)
     @app = app
   end
@@ -47,8 +53,6 @@ class CapybaraTenantContext
     TenantContext.apply_system_access!
   end
 end
-
-Capybara.app = CapybaraTenantContext.new(Rails.application)
 
 # RackTest and the example share a database connection. ApplicationController
 # deliberately clears request tenant context, so restore the test harness's
@@ -75,9 +79,7 @@ RSpec.configure do |config|
   config.before(:each, type: :system) do |example|
     # Rails initializes its system-test Rack app after support files load.
     # Wrap that final app rather than the value Rails replaces on startup.
-    unless Capybara.app.is_a?(CapybaraTenantContext)
-      Capybara.app = CapybaraTenantContext.new(Capybara.app)
-    end
+    CapybaraTenantContext.install!
     driven_by example.metadata.fetch(:system_driver, SYSTEM_DRIVER)
   end
 
