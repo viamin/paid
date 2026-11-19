@@ -5170,12 +5170,7 @@ module Containers
     end
 
     def write_run_log(message, metadata)
-      return unless agent_run&.persisted? && AgentRun.exists?(agent_run.id)
-
-      agent_run.log!("system", message, metadata: metadata)
-    rescue ActiveRecord::InvalidForeignKey
-      # The run can be deleted after the existence check; its log must not
-      # prevent cleanup of the in-memory container handle.
+      safe_run_log("system", message, metadata: metadata)
     end
 
     # RDR-041 / #2959 — emits an explicit `auth_source` field in provisioning
@@ -5233,7 +5228,20 @@ module Containers
     def log_output(type, content)
       return if content.blank?
 
-      agent_run&.log!(type.to_s, content)
+      safe_run_log(type.to_s, content)
+    end
+
+    def safe_run_log(type, content, metadata: nil)
+      return unless agent_run&.persisted? && AgentRun.exists?(agent_run.id)
+
+      metadata ? agent_run.log!(type, content, metadata: metadata) : agent_run.log!(type, content)
+    rescue ActiveRecord::InvalidForeignKey
+      Rails.logger.warn(
+        message: "container_manager.run_log_write_skipped",
+        agent_run_id: agent_run&.id,
+        log_type: type,
+        reason: "run row deleted before log write"
+      )
     end
 
     def normalize_output_chunk(chunk)

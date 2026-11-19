@@ -3062,6 +3062,20 @@ RSpec.describe Containers::Provision do
         service.execute("echo 'hello'")
       end
 
+      # @spec STAGED-CLOSEOUT-ADOPTION-011
+      it "preserves command success when the run is destroyed before streamed output logging" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          agent_run.destroy!
+          block.call(:stdout, "command output\n")
+          [ [ "command output\n" ], [], 0 ]
+        end
+
+        result = service.execute("echo 'hello'")
+
+        expect(result).to be_success
+        expect(result[:stdout]).to eq("command output\n")
+      end
+
       it "accepts array command format" do
         expect(mock_container).to receive(:exec).with([ "ls", "-la" ], hash_including(wait: anything))
 
@@ -3318,6 +3332,18 @@ RSpec.describe Containers::Provision do
           .to raise_error(described_class::OutputAbortError) { |e|
             expect(e.matched_output).to eq(quota_error)
           }
+      end
+
+      # @spec STAGED-CLOSEOUT-ADOPTION-011
+      it "preserves the output abort when another instance deletes the run" do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          AgentRun.find(agent_run.id).destroy!
+          block.call(:stderr, quota_error)
+          [ [], [ quota_error ], 1 ]
+        end
+
+        expect { service.execute("kilo run --auto", stream: false, abort_patterns: abort_patterns) }
+          .to raise_error(described_class::OutputAbortError)
       end
 
       it "stops the container immediately" do
@@ -4046,6 +4072,12 @@ RSpec.describe Containers::Provision do
         original.call(*args, **kwargs)
       end
       expect(mock_container).to receive(:delete).with(force: true, v: true)
+      expect(Rails.logger).to receive(:warn).with(
+        message: "container_manager.run_log_write_skipped",
+        agent_run_id: agent_run.id,
+        log_type: "system",
+        reason: "run row deleted before log write"
+      )
 
       service.cleanup(force: true)
 
