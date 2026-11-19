@@ -50,9 +50,11 @@ RSpec.describe "Intent checkpoint decisions", system_driver: :paid_cuprite, type
       expect(page).to have_text("Response saved.")
     end
 
-    expect(checkpoint.reload).to be_settled
-    expect(checkpoint.settlements.sole.answers.size).to eq(2)
-    expect(feature.reload.status).to eq("needs_decision")
+    CapybaraTenantContext.with_fixture_session do
+      expect(checkpoint.reload).to be_settled
+      expect(checkpoint.settlements.sole.answers.size).to eq(2)
+      expect(feature.reload.status).to eq("needs_decision")
+    end
   end
 
   def visit_checkpoint
