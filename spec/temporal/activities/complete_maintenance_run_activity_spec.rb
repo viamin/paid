@@ -109,6 +109,28 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
       incomplete_checks: [ { "name" => "agent_report", "reason" => "parse_failure" } ])
   end
 
+  # @spec MAINT-021 MAINT-022 MAINT-043
+  it "retains tool evidence when the agent report is malformed" do
+    run.update!(external_metadata: {
+      "maintenance_tool_evidence" => {
+        "completed_checks" => [ { "name" => "knip", "provenance" => { "version" => "5.0" } } ],
+        "incomplete_checks" => [ { "name" => "exhale_dry", "reason" => "invalid_result_json" } ]
+      }
+    })
+    run.log!("stdout", "Investigation finished, but no structured report was emitted.")
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(run.reload.maintenance_report).to have_attributes(
+      outcome: "partial",
+      completed_checks: [ { "name" => "knip", "provenance" => { "version" => "5.0" } } ],
+      incomplete_checks: contain_exactly(
+        { "name" => "agent_report", "reason" => "parse_failure" },
+        { "name" => "exhale_dry", "reason" => "invalid_result_json" }
+      )
+    )
+  end
+
   it "is idempotent for an already-finished run" do
     run.update!(status: "cancelled", completed_at: Time.current)
 

@@ -51,8 +51,10 @@ module Activities
       attributes = merge_tool_evidence(attributes, agent_run)
       MaintenanceReports::Persist.call(run: agent_run, **attributes)
     rescue MaintenanceReports::AgentReport::InvalidReport => e
-      MaintenanceReports::Persist.call(run: agent_run,
-        incomplete_checks: [ { "name" => "agent_report", "reason" => "parse_failure" } ])
+      attributes = merge_tool_evidence({
+        incomplete_checks: [ { "name" => "agent_report", "reason" => "parse_failure" } ]
+      }, agent_run)
+      MaintenanceReports::Persist.call(run: agent_run, **attributes)
       logger.warn(message: "agent_execution.maintenance_report_parse_failed", agent_run_id: agent_run.id,
         error_class: e.class.name, error: e.message)
     end

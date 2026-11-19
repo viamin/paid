@@ -20,7 +20,7 @@ module MaintenanceRuns
     PACKAGE_DISCOVERY = [ "find", ".", "-type", "f", "(", "-name", "Gemfile", "-o", "-name", "package.json", ")",
       "-not", "-path", "*/node_modules/*", "-not", "-path", "*/vendor/*", "-not", "-path", "*/.git/*", "-print0" ].freeze
 
-    Analysis = Data.define(:name, :command)
+    Analysis = Data.define(:name, :command, :result_key)
     Adapter = Data.define(:name, :ecosystems, :manifest, :availability_command, :provision_command, :version_command, :analyses,
       :configuration_files)
     ADAPTERS = [
@@ -28,14 +28,14 @@ module MaintenanceRuns
         "ruby -rbundler -e 'lock = Bundler::LockfileParser.new(Bundler.read_file(\"Gemfile.lock\")); exit(lock.specs.any? { |spec| spec.name == \"exhale\" } ? 0 : 1)'" ],
         [ "sh", "-lc", "bundle check || BUNDLE_FROZEN=true bundle install --jobs 4 --retry 3" ],
         %w[bundle exec exhale --version], [
-        Analysis.new("exhale_dry", %w[bundle exec exhale dry --format json]),
-        Analysis.new("exhale_complexity", %w[bundle exec exhale complexity --format json])
+        Analysis.new("exhale_dry", %w[bundle exec exhale dry --format json], "findings"),
+        Analysis.new("exhale_complexity", %w[bundle exec exhale complexity --format json], "units")
       ], %w[.exhale.yml .exhale.yaml]),
       Adapter.new("knip", %w[javascript typescript], "package.json", [ "sh", "-lc",
         "node -e 'const p = require(\"./package.json\"); const d = {...p.dependencies, ...p.devDependencies}; process.exit(d.knip && require(\"fs\").existsSync(\"yarn.lock\") ? 0 : 1)'" ],
         %w[yarn install --frozen-lockfile --ignore-scripts --silent],
         %w[yarn knip --version], [
-        Analysis.new("knip", %w[yarn knip --reporter json])
+        Analysis.new("knip", %w[yarn knip --reporter json], "issues")
       ], %w[knip.json knip.jsonc knip.ts knip.js package.json])
     ].freeze
     ACTIVITY_TIMEOUT = DISCOVERY_TIMEOUT + (MAX_PACKAGE_SCOPES * ADAPTERS.sum do |adapter|
@@ -192,10 +192,24 @@ module MaintenanceRuns
     end
 
     def analyzer_check(adapter, analysis, scope, version, result)
-      status = exit_code(result).in?([ 0, 1 ]) ? "completed" : "incomplete"
+      reason = analyzer_failure_reason(analysis, result)
+      details = output_details(result)
+      status = reason ? "incomplete" : "completed"
       { "name" => analysis.name, "status" => status, "exit_code" => exit_code(result),
-        "provenance" => provenance(adapter, scope, version, analysis.command), "output" => output(result),
-        "reason" => ("unexpected_exit_code" unless status == "completed") }.compact
+        "provenance" => provenance(adapter, scope, version, analysis.command),
+        "reason" => reason }.merge(details).compact
+    end
+
+    def analyzer_failure_reason(analysis, result)
+      return "unexpected_exit_code" unless exit_code(result).in?([ 0, 1 ])
+      return "output_truncated" if output_truncated?(result)
+
+      parsed = JSON.parse(result[:stdout].to_s)
+      return if parsed.is_a?(Hash) && parsed[analysis.result_key].is_a?(Array)
+
+      "invalid_result_shape"
+    rescue JSON::ParserError
+      "invalid_result_json"
     end
 
     def marketplace_check
@@ -214,9 +228,25 @@ module MaintenanceRuns
     end
 
     def output(result)
-      return if result.nil?
+      output_details(result)["output"]
+    end
 
-      [ result[:stdout], result[:stderr] ].compact.join("\n").truncate(OUTPUT_LIMIT)
+    def output_details(result)
+      return {} if result.nil?
+
+      raw_output = raw_output(result)
+      details = { "output" => raw_output.truncate(OUTPUT_LIMIT, omission: "") }
+      return details unless output_truncated?(result)
+
+      details.merge("output_truncated" => true, "output_bytes" => raw_output.bytesize)
+    end
+
+    def output_truncated?(result)
+      raw_output(result).length > OUTPUT_LIMIT
+    end
+
+    def raw_output(result)
+      [ result[:stdout], result[:stderr] ].compact_blank.join("\n")
     end
 
     def exit_code(result)

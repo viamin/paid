@@ -35,9 +35,9 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
       .to contain_exactly("exhale_dry", "exhale_complexity", "knip")
     expect(evidence.fetch(:prompt_context)).to include("exhale", "knip")
     expect(evidence.fetch(:completed_checks)).to include(
-      include("name" => "exhale_dry", "output" => include("duplicates"),
+      include("name" => "exhale_dry", "output" => include("findings"),
         "provenance" => include("package_scope" => ".")),
-      include("name" => "exhale_complexity", "output" => include("complexity")),
+      include("name" => "exhale_complexity", "output" => include("units")),
       include("name" => "knip", "exit_code" => 1,
         "provenance" => include("package_scope" => "frontend"))
     )
@@ -51,8 +51,8 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     scopes.each do
       executions.concat([
         result(exit_code: 0), result(exit_code: 0), result(exit_code: 0, stdout: "exhale 1.2"),
-        result(exit_code: 0, stdout: "d" * described_class::OUTPUT_LIMIT),
-        result(exit_code: 0, stdout: "c" * described_class::OUTPUT_LIMIT)
+        result(exit_code: 0, stdout: JSON.generate("findings" => [ "d" * 19_000 ])),
+        result(exit_code: 0, stdout: JSON.generate("units" => [ "c" * 19_000 ]))
       ])
     end
     allow(run).to receive(:execute_in_execution_environment).and_return(*executions)
@@ -62,8 +62,8 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     expect(evidence.fetch(:prompt_context).length).to be <= described_class::PROMPT_CONTEXT_LIMIT
     expect(evidence.fetch(:prompt_context)).to include('"prompt_output_omitted":true')
     expect(evidence.fetch(:completed_checks)).to include(
-      include("name" => "exhale_dry", "output" => start_with("d" * 19_000)),
-      include("name" => "exhale_complexity", "output" => start_with("c" * 19_000))
+      include("name" => "exhale_dry", "output" => include("d" * 19_000)),
+      include("name" => "exhale_complexity", "output" => include("c" * 19_000))
     )
   end
 
@@ -87,10 +87,10 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
       result(exit_code: 0, stdout: "./Gemfile\0./frontend/package.json\0"),
       result(exit_code: 0),
       result(exit_code: 0),
-      result(exit_code: 0, stdout: "exhale 1.2"), result(exit_code: 0, stdout: '{"duplicates":[]}'),
-      result(exit_code: 0, stdout: '{"complexity":[]}'), result(exit_code: 0), result(exit_code: 0),
+      result(exit_code: 0, stdout: "exhale 1.2"), result(exit_code: 0, stdout: '{"findings":[]}'),
+      result(exit_code: 0, stdout: '{"units":[]}'), result(exit_code: 0), result(exit_code: 0),
       result(exit_code: 0, stdout: "knip 5.0"),
-      result(exit_code: 1, stdout: '{"unusedFiles":[]}')
+      result(exit_code: 1, stdout: '{"issues":[]}')
     )
   end
 
@@ -178,6 +178,44 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     )
   end
 
+  # @spec MAINT-022 MAINT-040
+  it "records malformed and structurally invalid analyzer JSON as incomplete coverage" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "ruby" ], "marker_files" => [])
+    allow(run).to receive(:execute_in_execution_environment).and_return(
+      result(exit_code: 0, stdout: "./Gemfile\0"), result(exit_code: 0), result(exit_code: 0),
+      result(exit_code: 0, stdout: "exhale 1.2"),
+      result(exit_code: 0, stdout: "not-json"),
+      result(exit_code: 1, stdout: '{"wrong_shape":[]}')
+    )
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:completed_checks)).to be_empty
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "exhale_dry", "reason" => "invalid_result_json"),
+      include("name" => "exhale_complexity", "reason" => "invalid_result_shape")
+    )
+  end
+
+  # @spec MAINT-022 MAINT-040
+  it "records analyzer output truncated at the evidence bound as incomplete coverage" do
+    allow(project).to receive(:effective_repo_profile).and_return("languages" => [ "typescript" ], "marker_files" => [])
+    oversized_json = JSON.generate("issues" => [ "x" * described_class::OUTPUT_LIMIT ])
+    allow(run).to receive(:execute_in_execution_environment).and_return(
+      result(exit_code: 0, stdout: "./package.json\0"), result(exit_code: 0), result(exit_code: 0),
+      result(exit_code: 0, stdout: "knip 5.0"), result(exit_code: 0, stdout: oversized_json)
+    )
+
+    evidence = described_class.call(run:)
+
+    expect(evidence.fetch(:completed_checks)).to be_empty
+    expect(evidence.fetch(:incomplete_checks)).to contain_exactly(
+      include("name" => "knip", "reason" => "output_truncated", "output_truncated" => true,
+        "output_bytes" => oversized_json.bytesize,
+        "output" => satisfy { |output| output.length == described_class::OUTPUT_LIMIT })
+    )
+  end
+
   # @spec MAINT-022 MAINT-042
   it "records discovery execution failures as incomplete coverage" do
     allow(run).to receive(:execute_in_execution_environment)
@@ -211,8 +249,8 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
       result(exit_code: 0),
       result(exit_code: 0),
       result(exit_code: 0, stdout: "exhale 1.2"),
-      result(exit_code: 0, stdout: "{}"),
-      result(exit_code: 0, stdout: "{}")
+      result(exit_code: 0, stdout: '{"findings":[]}'),
+      result(exit_code: 0, stdout: '{"units":[]}')
     )
 
     evidence = described_class.call(run:)
