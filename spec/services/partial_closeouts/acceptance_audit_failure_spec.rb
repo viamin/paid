@@ -42,7 +42,7 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
   end
 
   it "classifies typed transport categories as transient" do
-    %w[transport_error timeout unsuccessful_response invalid_json].each do |category|
+    %w[transport_error timeout unsuccessful_response invalid_json invalid_assessment].each do |category|
       transient = failing_run(status: "failed", category: category, error_message: "audit failed")
 
       expect(described_class.classify(transient)).to eq(:transient_transport)

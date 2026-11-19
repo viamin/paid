@@ -19,7 +19,7 @@ module Llm
     # CLI-backed subscriptions need startup and reasoning time. Keep this below
     # the activity's 120s budget, allowing authentication and timeout cleanup.
     TIMEOUT = 60
-    RECOVERABLE_CATEGORIES = %w[timeout transport_error unsuccessful_response].freeze
+    RECOVERABLE_CATEGORIES = %w[timeout transport_error unsuccessful_response invalid_json invalid_assessment].freeze
     MAX_OPEN_ISSUES = 50
     # Bound shared with the deterministic reconciler; keep assessments
     # contract-valid BEFORE the activity persists them so a violating
@@ -117,7 +117,7 @@ module Llm
       @timeout = timeout
     end
 
-    def call # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-034
+    def call # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-034 PARTIAL-CLOSEOUT-058
       @request_id = SecureRandom.uuid
       @attempt_id = SecureRandom.uuid
       parsed = parse_response
@@ -302,7 +302,8 @@ module Llm
 
     def parse_response # @spec PARTIAL-CLOSEOUT-031
       response = Request.call(agent_run: agent_run, prompt: prompt, timeout: @timeout,
-        per_runner_timeout: TIMEOUT, fallback_runner_identifiers: @fallback_runner_identifiers)
+        per_runner_timeout: TIMEOUT, fallback_runner_identifiers: @fallback_runner_identifiers,
+        response_validator: method(:response_contract_valid?))
       retain_provenance(response)
       if response.respond_to?(:success?) && !response.success?
         raise assessment_failure("unsuccessful_response")
@@ -313,6 +314,17 @@ module Llm
     rescue JSON::ParserError
       # Parser messages can quote untrusted response content, including secrets.
       raise assessment_failure("invalid_json"), cause: nil
+    end
+
+    # Request owns eligible-runner routing. Supplying the local structural
+    # contract here lets it move past a transport-successful malformed answer
+    # to an owner-authorized fallback without provider-specific wrappers.
+    def response_contract_valid?(response)
+      output = response.respond_to?(:output) ? response.output : response.to_s
+      parsed = JSON.parse(strip_markdown_fence(output.to_s.strip))
+      valid_assessment?(parsed.deep_stringify_keys)
+    rescue JSON::ParserError
+      false
     end
 
     def assessment_failure(category, invalid_fields = [])
@@ -374,6 +386,9 @@ module Llm
         fields.concat(invalid_criterion_fields(criterion, index))
       end
       fields << violation("next_action", "object", parsed["next_action"]) if parsed.key?("next_action") && !parsed["next_action"].is_a?(Hash)
+      fields << violation("classification", "supported classification", parsed["classification"]) if parsed["classification"].present? && !VALID_CLASSIFICATIONS.include?(parsed["classification"])
+      fields << violation("technical_authorizations", "human gap authorization reference", parsed["criteria"]) unless valid_technical_authorizations?(parsed)
+      fields << violation("$", "valid partial-closeout assessment", "invalid") if fields.empty?
       fields
     end
 
@@ -383,6 +398,18 @@ module Llm
       fields = []
       fields << violation("gaps[#{index}].criterion", "nonblank string", gap["criterion"]) unless gap["criterion"].is_a?(String) && gap["criterion"].present?
       fields << violation("gaps[#{index}].kind", "agent, human, or external", gap["kind"]) unless VALID_KINDS.include?(gap["kind"])
+      fields << violation("gaps[#{index}].optional_fields", "strings when present", gap) unless optional_strings?(gap, %w[title body next_step workflow technical_authorization_id])
+      fields << violation("gaps[#{index}].owner_issue_number", "positive integer when present", gap["owner_issue_number"]) unless valid_owner?(gap)
+      fields << violation("gaps[#{index}].retain_on_source", "agent gap without owner", gap["retain_on_source"]) unless valid_source_retention?(gap)
+      fields << violation("gaps[#{index}].workflow", "supported workflow", gap["workflow"]) if gap["workflow"].present? && !VALID_WORKFLOWS.include?(gap["workflow"])
+      fields << violation("gaps[#{index}].technical_authorization_id", "human gap only", gap["technical_authorization_id"]) if gap["technical_authorization_id"].present? && gap["kind"] != "human"
+      fields << violation("gaps[#{index}].owner", "actionable owner", gap) unless owner_resolvable?(gap)
+      fields << violation("gaps[#{index}].external_dependency", "owner, repo, and positive number", gap["external_dependency"]) if gap["kind"] == "external" && !valid_external_dependency?(gap["external_dependency"])
+      if gap["kind"] == "human"
+        fields << violation("gaps[#{index}].references", "valid references", gap["references"]) unless valid_references?(gap["references"])
+        fields << violation("gaps[#{index}].policy_selection", "valid policy selection", gap["policy_selection"]) unless valid_policy_selection?(gap["policy_selection"])
+        fields << violation("gaps[#{index}].attribution", "valid attribution", gap["attribution"]) unless valid_attribution?(gap["attribution"], gap["criterion"])
+      end
       fields
     end
 
@@ -392,6 +419,11 @@ module Llm
       fields = []
       fields << violation("criteria[#{index}].criterion", "nonblank string", criterion["criterion"]) unless criterion["criterion"].is_a?(String) && criterion["criterion"].present?
       fields << violation("criteria[#{index}].state", "satisfied, unmet, or unknown", criterion["state"]) unless VALID_STATES.include?(criterion["state"])
+      fields << violation("criteria[#{index}].owner_issue_number", "positive integer when present", criterion["owner_issue_number"]) unless valid_owner?(criterion)
+      fields << violation("criteria[#{index}].prerequisite_kind", "human or external", criterion["prerequisite_kind"]) if criterion["prerequisite_kind"].present? && !%w[human external].include?(criterion["prerequisite_kind"])
+      fields << violation("criteria[#{index}].validation_kind", "supported validation kind", criterion["validation_kind"]) if criterion["validation_kind"].present? && !%w[native tool_sidecar performance_measurement].include?(criterion["validation_kind"])
+      fields << violation("criteria[#{index}].validation_requirement_id", "enabled matching recipe", criterion["validation_requirement_id"]) if criterion["validation_requirement_id"].present? && !validation_recipe_ids.include?(criterion["validation_requirement_id"])
+      fields << violation("criteria[#{index}].evidence", "valid evidence entries", criterion["evidence"]) unless valid_evidence?(criterion["evidence"])
       fields
     end
 

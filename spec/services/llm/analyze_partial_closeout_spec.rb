@@ -560,7 +560,12 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     it "raises when an agent gap has neither a title nor an owner issue" do
       allow(llm_response).to receive(:output).and_return({ gaps: [ { criterion: "dispatch", kind: "agent", body: "Wire dispatch" } ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(
+            path: "gaps[0].owner", expected: "actionable owner", actual: "hash"
+          )
+        end
     end
 
     it "accepts an agent gap that reuses an existing owner without a title" do

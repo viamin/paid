@@ -115,6 +115,24 @@ RSpec.describe Llm::Request do
     )
   end
 
+  # @spec PARTIAL-CLOSEOUT-058
+  it "tries an authorized fallback after a transport-successful response fails the caller contract" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    malformed = instance_double(AgentHarness::Response, success?: true, output: "not json")
+    allow(provider).to receive(:send_message).and_return(malformed, response)
+
+    result = described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ],
+      response_validator: ->(candidate) { candidate.output == "ok" })
+
+    expect(result).to eq(response)
+    expect(provider).to have_received(:send_message).twice
+  end
+
   # @spec LLM-ROUTING-008
   it "skips a pinned subscription without managed credentials and tries an authorized fallback" do
     project.account.runner_credentials.for_runner("codex").update_all(revoked_at: Time.current)

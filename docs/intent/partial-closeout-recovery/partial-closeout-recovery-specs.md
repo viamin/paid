@@ -45,6 +45,29 @@
   `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-058** — When a report-only acceptance-audit response
+  is transport-successful but fails JSON or strict assessment validation, Paid
+  SHALL reject it before it becomes assessment evidence and MAY make one fresh
+  request to each owner-authorized eligible fallback within the existing
+  bounded total deadline and per-runner timeout. If all candidates are
+  malformed, Paid SHALL retain only bounded provider/model, request/attempt,
+  category, timestamp, and rejected field path/expected-type/actual-type
+  diagnostics; it SHALL NOT retain model output, prompt content, credentials,
+  or unbounded values. Invalid JSON and invalid assessments SHALL use the
+  existing bounded report-only retry policy and record successor lineage, while
+  a valid unmet or unknown assessment remains substantive and SHALL NOT retry.
+  This recovery SHALL preserve runner authorization, credentials, privacy,
+  budgets, isolation, and report-only admission and SHALL NOT authorize repair
+  or implementation work.
+  *Code:* `app/services/llm/request.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/run_acceptance_audit_activity.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`.
+  *Test:* `spec/services/llm/request_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-057** — When Paid builds the criterion-level
   acceptance-audit packet and source revision for an issue, it SHALL include
   each matching terminal `closeout_verification` record — keyed by issue,
