@@ -31,7 +31,14 @@ Status markers: `[ ]` planned implementation gap.
   recommendation and consequences, and bind a human's settled answers to the
   current immutable design and acceptance revision at settlement; it SHALL NOT ask again downstream
   unless new evidence conflicts with, invalidates, or materially expands it.
-  *Verified by:* `spec/services/project_delegation/intent_checkpoint/plan_spec.rb`,
+  The existing feature-decision Inbox, detail API and on-demand chat context
+  SHALL expose the same persisted grouped recommendation, alternatives and
+  consequences before a human answers; presentation SHALL NOT infer missing
+  guidance or change approval or execution authority.
+  *Verified by:* `spec/requests/intent_checkpoints_spec.rb`,
+  `spec/system/intent_checkpoints_spec.rb`,
+  `spec/services/inbox/feature_decision_context_spec.rb`,
+  `spec/services/project_delegation/intent_checkpoint/plan_spec.rb`,
   `spec/services/project_delegation/intent_checkpoint/settle_spec.rb`,
   `spec/services/project_delegation/intent_checkpoint/redecision_spec.rb`,
   `spec/services/project_delegation/intent_checkpoint/route_drift_spec.rb`,

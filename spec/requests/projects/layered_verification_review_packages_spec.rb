@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe "Layered verification review packages" do
   # @spec LAYERED-VERIFY-023
   let(:account) { create(:account) }
-  let(:user) { create(:user, :owner, account:) }
+  let(:user) { create(:user, :owner, account:, name: "Florinda D'Amore") }
   let(:project) { create(:project, account:, created_by: user) }
   let(:obligation) do
     create(:layered_verification_obligation, project:,
@@ -42,7 +42,7 @@ RSpec.describe "Layered verification review packages" do
       get project_layered_verification_review_packages_path(project)
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include(
+      expect(Nokogiri::HTML(response.body).text).to include(
         "Review packages",
         package.package_digest,
         "A retry captures one charge.",
@@ -118,7 +118,7 @@ RSpec.describe "Layered verification review packages" do
       get project_agent_run_path(project, audit)
 
       intent_section = section(response.body, "layered-verification-intent-validation")
-      expect(intent_section).to include("Validated", user.name)
+      expect(Nokogiri::HTML(intent_section).text).to include("Validated", user.name)
       expect(intent_section).not_to include("Unknown")
     end
 
@@ -192,7 +192,7 @@ RSpec.describe "Layered verification review packages" do
       get project_agent_run_path(project, audit)
 
       intent_section = section(response.body, "layered-verification-intent-validation")
-      expect(intent_section).to include("Validated", user.name)
+      expect(Nokogiri::HTML(intent_section).text).to include("Validated", user.name)
       expect(intent_section).not_to include("Unknown")
     end
 

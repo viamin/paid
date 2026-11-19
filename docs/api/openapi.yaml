@@ -1402,6 +1402,28 @@ components:
                   kind: {type: string, enum: [question, inferred_decision]}
                   prompt: {type: string}
                   design_claim: {type: string}
+            intent_checkpoints:
+              type: array
+              description: Persisted grouped guidance shared with the Inbox and on-demand chat context.
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  status: {type: string, enum: [open, settled, rejected, amended]}
+                  recommendation: {type: string}
+                  alternatives: {type: array, items: {}}
+                  consequences: {type: array, items: {}}
+                  affected_scope: {type: object}
+                  evidence: {type: array, items: {}}
+                  proposed_design_revision: {type: string}
+                  proposed_acceptance_revision: {type: string}
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: integer}
+                        prompt: {type: string}
             affected_tasks:
               type: array
               items:

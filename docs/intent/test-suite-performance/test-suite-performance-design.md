@@ -54,15 +54,17 @@ report still fails the check. Recovery never re-runs legs that executed.
 
 The GitHub-hosted PostgreSQL service can rarely return an empty protocol result
 while Rails applies tenant context, surfacing from the adapter as a
-`cmd_tuples` call on `nil`. The system-test job may retry the complete browser
-suite after that exact infrastructure signature, with three total attempts so
-repeated transport faults remain bounded. Before each retry, the job restarts
-the PostgreSQL service container identified by GitHub Actions' job-service
-context and waits for it to accept connections; a missing or unavailable
-container fails closed. A short increasing
-delay then gives the hosted service time to settle. Any other failure exits
-immediately, and exhaustion of the bounded attempts still fails the job. The
-recovery does not skip examples or reinterpret assertion failures.
+`cmd_tuples` call on `nil`. A hosted browser process can also stall the suite
+without returning an assertion or adapter failure. The system-test job bounds
+each complete browser-suite attempt at 80 minutes and may retry the complete
+suite after either condition, with three total attempts so repeated transport
+faults remain bounded below GitHub's six-hour job maximum. Before each retry,
+the job restarts the PostgreSQL service container identified by GitHub Actions'
+job-service context and waits for it to accept connections; a missing or
+unavailable container fails closed. A short increasing delay then gives the
+hosted service time to settle. Any other failure exits immediately, and
+exhaustion of the bounded attempts still fails the job. The recovery does not
+skip examples or reinterpret assertion failures.
 
 System-test workflow runs do not use GitHub Actions workflow concurrency. GitHub
 keeps at most one pending run in a concurrency group and cancels a superseded
@@ -70,11 +72,10 @@ pending run even when cancellation of in-progress work is disabled. Leaving
 these required runs ungrouped ensures each pull-request check can reach a
 terminal result rather than being cancelled while queued.
 
-Allow the system-test job three hours at the GitHub job boundary. Dependency
-setup is separately bounded, while the browser suite contains enough examples
-to exceed the former two-hour job limit on a hosted runner. The larger limit
-remains a bounded failure window and does not change spec-level failure or retry
-behavior.
+Allow the system-test job GitHub's six-hour maximum at the job boundary.
+Dependency setup is separately bounded, while the browser suite can exceed the
+former four-hour allowance on a hosted runner. The larger limit remains a
+bounded failure window and does not change spec-level failure or retry behavior.
 
 ## Individual test costs
 

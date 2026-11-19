@@ -259,6 +259,7 @@ module Api
           blockers: readiness.blockers.map { |blocker| { code: blocker.code, message: blocker.message } },
           human_actions: readiness.human_actions.map { |action| { kind: action.kind, message: action.message } },
           decisions: context.decisions.map(&:to_h),
+          intent_checkpoints: context.checkpoints.map(&:to_h),
           affected_tasks: context.tasks.map(&:to_h),
           design_revisions: context.design_revisions.map(&:to_h)
         }
