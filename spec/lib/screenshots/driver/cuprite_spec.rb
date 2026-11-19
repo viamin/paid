@@ -94,6 +94,11 @@ RSpec.describe Screenshots::Driver::Cuprite do
       "turbo-frame[data-dashboard-frames-target='frame']:not([complete])",
       wait: 30
     ).ordered
+    expect(session).to receive(:has_no_css?).with(
+      "turbo-frame[id^='inbox_nav_badge_']:not([complete])",
+      visible: true,
+      wait: 30
+    ).ordered
     expect(session).to receive(:has_no_css?).with("turbo-frame[busy]", wait: 5).ordered
 
     driver.wait_for_load
@@ -105,5 +110,13 @@ RSpec.describe Screenshots::Driver::Cuprite do
 
     expect { driver.wait_for_load }.to raise_error(Ferrum::TimeoutError)
     expect(session).to have_received(:has_no_css?).once
+  end
+
+  it "fails when the visible Inbox badge does not finish loading" do
+    allow(session).to receive(:has_no_css?).and_return(true, false)
+    driver.instance_variable_set(:@session, session)
+
+    expect { driver.wait_for_load }.to raise_error(Ferrum::TimeoutError)
+    expect(session).to have_received(:has_no_css?).twice
   end
 end
