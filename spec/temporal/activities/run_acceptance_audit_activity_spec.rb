@@ -135,6 +135,22 @@ RSpec.describe Activities::RunAcceptanceAuditActivity do
     expect(run.reconciliation).not_to have_key("assessment")
   end
 
+  # @spec PARTIAL-CLOSEOUT-058
+  it "persists bounded safe malformed-assessment diagnostics" do
+    oversized_provider = "p" * 200
+    failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new("Invalid", category: "invalid_assessment",
+      provider: oversized_provider, model: { unsafe: "value" }, request_id: "r" * 200, attempt_id: "a" * 200,
+      invalid_fields: [ { path: "gaps[0].attribution", expected: "valid attribution", actual: "nil_class", ignored: "secret" } ])
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+
+    expect { described_class.new.execute(agent_run_id: run.id) }.to raise_error(failure)
+    expect(run.reload.reconciliation.fetch("acceptance_audit_failure")).to include(
+      "category" => "invalid_assessment", "provider" => "p" * 120, "model" => "Hash",
+      "request_id" => "r" * 120, "attempt_id" => "a" * 120,
+      "invalid_fields" => [ { "path" => "gaps[0].attribution", "expected" => "valid attribution", "actual" => "nil_class" } ]
+    )
+  end
+
   # @spec PROJECT-DELEGATION-002
   it "routes one focused re-decision when refreshed criteria drift from a settled checkpoint" do
     feature_intent = create(:feature_intent, project:)

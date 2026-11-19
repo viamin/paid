@@ -137,6 +137,30 @@ explicitly. Failed responses identify the runner and safe status metadata
 without provider payloads or credentials. Harness authentication exceptions
 retain their type. Assessment failures never become acceptance evidence.
 
+### Malformed report-only assessment recovery (#5184)
+
+The report-only acceptance-audit path treats a transport-successful response
+as usable only after local JSON and assessment-contract validation. The shared
+`Llm::Request` route accepts a caller-provided structural response validator,
+so an invalid JSON document or invalid assessment can consume a fresh,
+owner-authorized eligible fallback within the existing total deadline and
+per-runner timeout. It does not add a provider-specific Paid wrapper. Where
+the selected agent-harness route exposes enforced structured output, that
+public contract is used in addition to local validation; otherwise the local
+validator remains the fail-closed boundary.
+
+If every eligible response is malformed, the audit persists only bounded safe
+diagnostics: provider/model provenance, request and attempt identities,
+category, timestamp, and at most ten rejected field paths with expected and
+actual types. It never stores prompt text, model output, credentials, raw
+values, or arbitrary error payloads. Invalid JSON and invalid assessment are
+explicit transient audit-execution failures: the existing three-attempt,
+30/60-minute shared acceptance-audit policy may create a fresh report-only
+attempt through ordinary admission. Each attempt records its successor lineage
+and terminal reason. A valid assessment with unmet or unknown criteria remains
+substantive and is never retried to seek a different verdict. This path is
+report-only and cannot authorize implementation, repair, or issue closure.
+
 The existing criterion-level partial-closeout assessment is the sole authority
 for publishing a source issue's closing reference. Before a new source PR is
 published, Paid obtains the assessment through `agent_harness`, snapshots the

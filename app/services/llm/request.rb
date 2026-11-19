@@ -6,7 +6,7 @@ module Llm
     def self.call(...) = new(...).call
 
     def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil,
-      fallback_runner_identifiers: [], per_runner_timeout: nil)
+      fallback_runner_identifiers: [], per_runner_timeout: nil, response_validator: nil)
       @runner_identifier = runner
       @model = model
       @agent_run = agent_run
@@ -17,14 +17,16 @@ module Llm
       @timeout = timeout
       @fallback_runner_identifiers = fallback_runner_identifiers
       @per_runner_timeout = per_runner_timeout
+      @response_validator = response_validator
       @permanent_failure = nil
       @transient_failure = nil
       @unsuccessful_response = nil
+      @invalid_response = nil
       @eligible_route = false
       @missing_managed_credential = false
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 LLM-ROUTING-009 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 LLM-ROUTING-009 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -86,7 +88,16 @@ module Llm
       end
 
       response = perform_request(runner, timeout: @per_runner_timeout ? [ remaining, @per_runner_timeout ].min : remaining)
-      return response if !response.respond_to?(:success?) || response.success?
+      if !response.respond_to?(:success?) || response.success?
+        return response if valid_response?(response)
+
+        # A transport-successful response can still be unusable for a caller's
+        # public response contract. Keep only the response object in memory so
+        # the caller can safely classify it after all authorized candidates
+        # have been exhausted; never log or persist its output here.
+        @invalid_response = response
+        return
+      end
 
       @unsuccessful_response ||= response
       nil
@@ -114,6 +125,11 @@ module Llm
     # failure must not hide it (#5002 review).
     def resolve_outcome
       raise @permanent_failure if @permanent_failure
+      # A later transport-successful response rejected by the caller contract
+      # is more actionable than an earlier transport interruption. Return it
+      # so the caller can retain its bounded structural diagnostics; a valid
+      # later response would already have returned from the routing loop.
+      return @invalid_response if @invalid_response
       raise @transient_failure if @transient_failure
       return @unsuccessful_response if @unsuccessful_response
       if @missing_managed_credential
@@ -126,6 +142,16 @@ module Llm
 
     def retryable_failure?(failure)
       !failure.is_a?(AgentHarness::AuthenticationError) && !failure.is_a?(AgentHarness::ConfigurationError)
+    end
+
+    def valid_response?(response)
+      return true unless @response_validator
+
+      @response_validator.call(response)
+    rescue StandardError => error
+      Rails.logger.warn(message: "llm.request_response_rejected", project_id: @project&.id,
+        agent_run_id: agent_run&.id, error_class: error.class.name)
+      false
     end
 
     # A candidate that is discarded, owned by another account, or not permitted

@@ -528,7 +528,12 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       oversized = (1..(described_class::MAX_GAPS + 1)).map { |i| { criterion: "gap #{i}", kind: "agent", title: "Task #{i}" } }
       allow(llm_response).to receive(:output).and_return({ gaps: oversized }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(
+            path: "gaps", expected: "array with at most #{described_class::MAX_GAPS} entries", actual: "array"
+          )
+        end
     end
 
     it "raises when a gap entry is not an object" do
@@ -560,7 +565,12 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     it "raises when an agent gap has neither a title nor an owner issue" do
       allow(llm_response).to receive(:output).and_return({ gaps: [ { criterion: "dispatch", kind: "agent", body: "Wire dispatch" } ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(
+            path: "gaps[0].owner", expected: "actionable owner", actual: "hash"
+          )
+        end
     end
 
     it "accepts an agent gap that reuses an existing owner without a title" do

@@ -8,8 +8,9 @@ module Activities
   class RunAcceptanceAuditActivity < BaseActivity
     activity_name "RunAcceptanceAudit"
     MAX_ASSESSMENT_TIMEOUT = 300
+    MAX_DIAGNOSTIC_VALUE_LENGTH = 120
 
-    def execute(input) # @spec PARTIAL-CLOSEOUT-049
+    def execute(input) # @spec PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       track_phase(agent_run_id: agent_run.id, phase_key: "run_acceptance_audit",
         phase_group: "agent", agent_run: agent_run) do
@@ -56,11 +57,28 @@ module Activities
         timeout: [ Llm::AnalyzePartialCloseout::TIMEOUT * (fallbacks.size + 1), MAX_ASSESSMENT_TIMEOUT ].min)
     rescue Llm::AnalyzePartialCloseout::AssessmentFailure => error
       agent_run.update!(reconciliation: agent_run.reconciliation.merge(
-        "acceptance_audit_failure" => {
-          "category" => error.diagnostic.fetch(:category, "transport_error"), "at" => Time.current.iso8601
-        }
+        "acceptance_audit_failure" => failure_diagnostic(error)
       ))
       raise
+    end
+
+    def failure_diagnostic(error)
+      diagnostic = error.diagnostic.stringify_keys.slice("category", "provider", "model", "request_id", "attempt_id")
+        .transform_values { |value| bounded_diagnostic_value(value) }
+      diagnostic["invalid_fields"] = Array(error.diagnostic[:invalid_fields]).first(10).filter_map do |field|
+        next unless field.respond_to?(:slice)
+
+        field.stringify_keys.slice("path", "expected", "actual").transform_values { |value| bounded_diagnostic_value(value) }
+      end
+      diagnostic["category"] ||= "transport_error"
+      diagnostic["at"] = Time.current.iso8601
+      diagnostic
+    end
+
+    def bounded_diagnostic_value(value)
+      return value.to_s.first(MAX_DIAGNOSTIC_VALUE_LENGTH) if value.is_a?(String) || value.is_a?(Numeric) || value.is_a?(Symbol)
+
+      value.class.name.first(MAX_DIAGNOSTIC_VALUE_LENGTH)
     end
   end
 end
