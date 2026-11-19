@@ -5,6 +5,8 @@ require "octokit"
 require "digest"
 require "faraday/retry"
 require "faraday/http_cache"
+require "net/http"
+require "uri"
 
 # GitHub API client wrapper with error handling and rate limit awareness.
 #
@@ -25,6 +27,10 @@ class GithubClient
   RETRY_INTERVAL = 0.5
   RETRY_INTERVAL_RANDOMNESS = 0.5
   RETRY_BACKOFF_FACTOR = 2
+  ACTIONS_LOG_OPEN_TIMEOUT = 5
+  ACTIONS_LOG_READ_TIMEOUT = 15
+  MAX_ACTIONS_LOG_BYTES = 5.megabytes
+  ACTIONS_LOG_BLOB_HOST_SUFFIX = ".blob.core.windows.net"
 
   # Base error for all GitHub client errors
   class Error < StandardError; end
@@ -804,13 +810,15 @@ class GithubClient
   # @param repo [String] Repository in "owner/name" format
   # @param check_run [Hash] Check run hash from +check_runs_for_ref+
   # @return [String] Raw log text, or an empty string when no job log is available
+  # @spec GITHUB-SYNC-021
   def check_run_log(repo, check_run)
     job_id = check_run[:job_id] || actions_job_id_from_url(check_run[:details_url])
     return "" unless job_id
 
-    handle_errors do
-      client.get("#{Octokit::Repository.path(repo)}/actions/jobs/#{job_id}/logs").to_s
-    end
+    log_location = actions_log_redirect(repo, job_id)
+    log = log_location.is_a?(URI::HTTPS) ? download_actions_log(log_location) : log_location
+    record_github_health_success
+    log
   end
 
   # Fetches all conversation comments on an issue or pull request.
@@ -2116,6 +2124,117 @@ class GithubClient
 
   def actions_job_id_from_url(url)
     url.to_s[%r{/actions/runs/\d+/job/(\d+)}, 1]
+  end
+
+  # Octokit follows cross-host redirects by replacing Authorization with a
+  # literal dummy header. Actions log locations are already signed, and Azure
+  # Blob rejects that dummy header. Keep authentication on the GitHub API hop
+  # and make the approved signed-target hop explicitly anonymous instead.
+  # @spec GITHUB-SYNC-021
+  def actions_log_redirect(repo, job_id)
+    token_refreshed = false
+    loop do
+      response = actions_log_api_connection.get("#{Octokit::Repository.path(repo)}/actions/jobs/#{job_id}/logs")
+      if response.status == 401 && !token_refreshed && refresh_token!
+        token_refreshed = true
+        next
+      end
+
+      return approved_actions_log_uri!(response.headers["location"]) if response.status == 302
+      return bounded_actions_log_body(response.body) if response.status.between?(200, 299)
+
+      raise_actions_log_api_error!(response)
+    end
+  rescue Faraday::Error => error
+    raise ApiError.new("Actions job log request failed (#{error.class.name})")
+  end
+
+  def actions_log_api_connection
+    connection = client.__getobj__.send(:client_without_redirects)
+    connection.builder.delete(Octokit::Response::RaiseError)
+    connection
+  end
+
+  def approved_actions_log_uri!(location)
+    uri = URI.parse(location.to_s)
+    unless uri.is_a?(URI::HTTPS) && uri.host&.downcase&.end_with?(ACTIONS_LOG_BLOB_HOST_SUFFIX) &&
+        uri.port == 443 && uri.userinfo.blank? && uri.fragment.blank?
+      raise ApiError, "Actions job log redirect target is not approved"
+    end
+
+    uri
+  rescue URI::InvalidURIError
+    raise ApiError, "Actions job log redirect target is not approved"
+  end
+
+  def raise_actions_log_api_error!(response)
+    case response.status
+    when 401
+      raise AuthenticationError
+    when 404
+      raise NotFoundError
+    when 403
+      raise_actions_log_rate_limit!(response) if response.headers["x-ratelimit-remaining"].to_s == "0"
+
+      raise ApiError.new("Actions job log request failed (status 403)", status: 403)
+    else
+      record_github_health_failure("Actions job log request failed (status #{response.status})") if response.status >= 500
+      raise ApiError.new("Actions job log request failed (status #{response.status})", status: response.status)
+    end
+  end
+
+  def raise_actions_log_rate_limit!(response)
+    reset_at = Time.at(response.headers["x-ratelimit-reset"].to_i).presence
+    record_github_rate_limit(
+      reset_at,
+      remaining: response.headers["x-ratelimit-remaining"].to_i,
+      limit: response.headers["x-ratelimit-limit"].to_i
+    )
+    raise RateLimitError.new(reset_at)
+  end
+
+  def download_actions_log(uri)
+    Net::HTTP.start(
+      uri.host,
+      uri.port,
+      use_ssl: true,
+      open_timeout: ACTIONS_LOG_OPEN_TIMEOUT,
+      read_timeout: ACTIONS_LOG_READ_TIMEOUT
+    ) do |http|
+      request = Net::HTTP::Get.new(uri.request_uri, actions_log_download_headers)
+      result = nil
+      http.request(request) { |response| result = read_actions_log_response(response) }
+      result
+    end
+  rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError, SystemCallError, IOError, EOFError,
+         OpenSSL::SSL::SSLError
+    raise ApiError, "Actions job log download request failed"
+  end
+
+  def actions_log_download_headers
+    { "Accept" => "application/octet-stream", "User-Agent" => "PaidActionsLogReader/1.0" }
+  end
+
+  def read_actions_log_response(response)
+    unless response.is_a?(Net::HTTPSuccess)
+      raise ApiError.new("Actions job log download failed (status #{response.code})", status: response.code.to_i)
+    end
+
+    content_length = Integer(response["content-length"], exception: false)
+    raise ApiError, "Actions job log download exceeded configured size limit" if content_length && content_length > MAX_ACTIONS_LOG_BYTES
+
+    body = +""
+    response.read_body do |chunk|
+      body << chunk
+      raise ApiError, "Actions job log download exceeded configured size limit" if body.bytesize > MAX_ACTIONS_LOG_BYTES
+    end
+    body
+  end
+
+  def bounded_actions_log_body(body)
+    raise ApiError, "Actions job log download exceeded configured size limit" if body.to_s.bytesize > MAX_ACTIONS_LOG_BYTES
+
+    body.to_s
   end
 
   def check_run_output_text(check_run)

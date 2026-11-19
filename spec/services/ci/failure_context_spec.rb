@@ -35,6 +35,23 @@ RSpec.describe Ci::FailureContext do
     expect(context.output).to include("database \"app_test\" does not exist")
   end
 
+  # @spec GITHUB-SYNC-021
+  it "records unavailable job-log retrieval without presenting it as empty coverage" do
+    check = { id: 1, name: "rspec", conclusion: "failure", output_text: "" }
+    allow(github_client).to receive(:check_run_log).with(repo, check)
+      .and_raise(GithubClient::ApiError.new("Actions job log download failed (status 403)", status: 403))
+    allow(Rails.logger).to receive(:warn)
+
+    context = described_class.call(repo: repo, checks: [ check ], github_client: github_client)
+
+    expect(context.output).to eq("")
+    expect(Rails.logger).to have_received(:warn).with(hash_including(
+      message: "ci.failure_context_log_fetch_failed",
+      check_run_id: 1,
+      error_class: "GithubClient::ApiError"
+    ))
+  end
+
   it "redacts secrets before extracting check output for prompts" do
     check = {
       id: 1,

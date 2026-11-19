@@ -119,6 +119,17 @@ RSpec.describe GithubClient::WithFallback do
       expect(wrapper.update_issue("owner/repo", 42, title: "X")).to eq(:retried_result)
     end
 
+    # @spec GITHUB-SYNC-021
+    it "preserves PAT fallback attribution for denied Actions log API hops" do
+      check = { details_url: "https://github.com/owner/repo/actions/runs/456/job/789" }
+      expect(primary).to receive(:check_run_log)
+        .with("owner/repo", check)
+        .and_raise(GithubClient::ApiError.new("Actions job log request failed (status 403)", status: 403))
+      expect(fallback).to receive(:check_run_log).with("owner/repo", check).and_return("fallback log")
+
+      expect(wrapper.check_run_log("owner/repo", check)).to eq("fallback log")
+    end
+
     # @spec GITHUB-SYNC-017
     it "retries a statusless GitHub workflow-permission rejection", :no_db do
       error = GithubClient::ApiError.new(

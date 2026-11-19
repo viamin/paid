@@ -172,6 +172,16 @@ health-state recording). The plain Octokit pass-throughs stay on a delegated
 wrapper that applies the same error translation contract, so callers keep a
 small, stable API without duplicating rescue boilerplate throughout the class.
 
+Actions job-log retrieval is a two-hop read. The project-scoped GitHub client
+authenticates the GitHub API hop and preserves its normal App/PAT fallback and
+error attribution. A successful response may supply one signed Azure Blob
+location. Paid validates that location as HTTPS on the approved Azure Blob
+host boundary, then downloads it with no `Authorization` header, no further
+redirects, and bounded timeout and response size. Unsupported targets, expired
+or failed downloads, and oversized content remain unavailable through the CI
+diagnostic path; diagnostics contain only derived status/error information and
+never signed query strings or credentials.
+
 Project-scoped GitHub diagnostics are exposed as a sanitized read model for
 customer users and chat agents. The diagnostics report derived facts only:
 credential mode, installation/token health, whether the project webhook secret
