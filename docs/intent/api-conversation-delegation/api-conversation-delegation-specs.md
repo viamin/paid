@@ -17,7 +17,9 @@
   identity and one effective retry owner wired through by
   API-CONVERSATION-DELEGATION-003 below, while runner switching and workflow
   recovery remain owned entirely by `ChatSessions::FallbackLoop` at the Paid
-  layer.
+  layer. A normalized result with neither usable text nor callable tools is a
+  Paid-owned `empty_response` failed-turn outcome, not a provider-specific
+  refusal inference or a successful assistant transcript row.
   *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
   *Code:* `ChatSessions::BuildLlmClient::HttpClient#call`,
   `ChatSessions::BuildLlmClient::HttpClient#build_request`,

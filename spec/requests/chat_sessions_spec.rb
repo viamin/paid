@@ -1263,6 +1263,21 @@ RSpec.describe "ChatSessions" do
         expect(progress.text).to include("Response stopped")
       end
 
+      # @spec CHAT-TURN-RECOVERY-008
+      it "renders a durable Retry action for an empty-response failure" do
+        user_message = create(:chat_message, chat_session: chat_session, role: "user")
+        turn = create(:chat_turn, chat_session: chat_session, user_message: user_message,
+          status: "failed", failure_classification: "empty_response")
+        chat_session.messages.create!(role: "system", content: "The assistant could not finish this response.",
+          metadata: { "chat_turn_failure_notice" => true, "chat_turn_id" => turn.id, "retry_available" => true })
+
+        get chat_session_path(chat_session)
+
+        retry_button = Nokogiri::HTML(response.body).at_css("[data-chat-turn-failure-notice] [data-chat-turn-id='#{turn.id}']")
+        expect(retry_button).to be_present
+        expect(retry_button.text).to include("Retry")
+      end
+
       # @spec CHAT-API-027
       it "pins the active session with a bounded preview when it falls outside the first batch" do
         create(:chat_message, chat_session: chat_session, content: "x" * 1_000)
