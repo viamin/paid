@@ -26,6 +26,53 @@ RSpec.describe ChatSessions::IsolatedTransport, type: :service do
     } ], stream: true }
   end
 
+  # @spec API-CONVERSATION-DELEGATION-001
+  it "streams text to the chat client before execution finishes without forwarding tool events" do
+    chunks = []
+    allow(executor).to receive(:execute) do |_command, **options|
+      packets = [
+        { type: "event", payload: { type: "response_started" } },
+        { type: "event", payload: { type: "text_delta", content: "Hello " } },
+        { type: "event", payload: { type: "tool_call_delta", arguments_json: "{}" } },
+        { type: "event", payload: { type: "text_delta", content: "world" } },
+        { type: "result", payload: { status: "succeeded", content: "Hello world", tool_calls: [] } }
+      ]
+      # Docker output may split a JSON line or combine several packets.
+      output = packets.map { |packet| JSON.generate(packet) }.join("\n") + "\n"
+      output.bytes.each_slice(17) do |bytes|
+        options[:output_observer].call(:stdout, bytes.pack("C*"))
+      end
+      expect(chunks).to eq([ "Hello ", "world" ])
+    end
+
+    result = isolated_client.call([ { role: "user", content: "Hello" } ], on_chunk: chunks.method(:<<))
+
+    expect(result[:content]).to eq("Hello world")
+    expect(chunks).to eq([ "Hello ", "world" ])
+  end
+
+  # @spec API-CONVERSATION-DELEGATION-001, API-CONVERSATION-DELEGATION-007
+  it "delivers only completed tool calls to the chat client with provider IDs and arguments intact" do
+    arguments = '{"status":"completed","type":"text_delta"}'
+    state = { protocol: "responses", output: [ { type: "function_call", call_id: "provider_1" } ] }
+    allow(executor).to receive(:execute) do |_command, **options|
+      options[:output_observer].call(:stdout, JSON.generate(
+        type: "result", payload: { status: "partial", content: "", provider_state: state,
+          tool_calls: [
+            { id: "harness_1", provider_id: "provider_1", name: "list_projects", arguments_json: arguments, status: "completed" },
+            { id: "harness_2", provider_id: "provider_2", name: "create_issue", arguments_json: "{", status: "incomplete" }
+          ] }
+      ) + "\n")
+    end
+
+    result = isolated_client.call([ { role: "user", content: "List projects" } ])
+
+    expect(result[:tool_calls]).to eq([
+      { id: "provider_1", name: "list_projects", arguments: arguments }
+    ])
+    expect(result[:provider_state]).to eq(state.deep_symbolize_keys)
+  end
+
   # @spec CHAT-ISOLATION-001
   it "runs the normalized chat request in the disposable executor without serializing its API key" do
     transport = described_class.new(chat_session:, runner:, api_key: "secret-api-key", executor: executor)
@@ -47,8 +94,23 @@ RSpec.describe ChatSessions::IsolatedTransport, type: :service do
     response = transport.call(request, &received.method(:<<))
 
     expect(response).to include(status: :succeeded, content: "Hello", model: "gpt-test")
-    expect(received).to eq([ { type: "text_delta", content: "Hello" } ])
+    expect(received).to eq([ { type: :text_delta, content: "Hello" } ])
     expect(executor).to have_received(:close).once
+  end
+
+  # @spec API-CONVERSATION-DELEGATION-001
+  it "restores completed tool-call statuses across the container JSON boundary" do
+    transport = described_class.new(chat_session:, runner:, api_key: "secret-api-key", executor: executor)
+    allow(executor).to receive(:execute) do |_command, **options|
+      options[:output_observer].call(:stdout, JSON.generate(
+        type: "result", payload: { status: "succeeded", content: "",
+          tool_calls: [ { id: "call_1", name: "list_projects", arguments_json: "{}", status: "completed" } ] }
+      ) + "\n")
+    end
+
+    expect(transport.call(request)[:tool_calls]).to eq([
+      { id: "call_1", name: "list_projects", arguments_json: "{}", status: :completed }
+    ])
   end
 
   # @spec CHAT-ISOLATION-001
@@ -89,6 +151,14 @@ RSpec.describe ChatSessions::IsolatedTransport, type: :service do
     options = nil
     allow(Containers::StandaloneTextExecutor).to receive(:new) { |**new_options| options = new_options; executor }
     -> { options }
+  end
+
+  def isolated_client
+    transport = described_class.new(chat_session:, runner:, api_key: "secret-api-key", executor: executor)
+    ChatSessions::BuildLlmClient::HttpClient.new(
+      chat_session:, provider: :openai, protocol: :responses, endpoint: "https://api.openai.com/v1",
+      api_key: "secret-api-key", model: "gpt-test", chat_transport: transport
+    )
   end
 
   def stub_deadline_execution(deadline)
