@@ -66,6 +66,10 @@ Status markers: `[ ]` planned implementation gap.
   requirements, scope, acceptance criteria, explicit holds, release,
   deployment, settings changes, or new work lineage, except for the narrow
   follow-up recording exception in PROJECT-DELEGATION-008.
+  The immutable action receipt SHALL preserve the supplied intent, acceptance
+  and evidence revisions and the declared action-specific input values needed to
+  reconstruct the decision, rather than only their field names. Undeclared
+  caller input values SHALL NOT be copied into the receipt.
   *Verified by:* `spec/services/project_delegation/action_plan_spec.rb`
   (action-specific evidence, immutable action audit receipts, reserved decision
   prohibitions, explicit holds, scope/lineage boundaries, and non-executing

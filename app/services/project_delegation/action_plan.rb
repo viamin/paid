@@ -117,6 +117,7 @@ module ProjectDelegation
         "policy_signature" => posture.policy_signature,
         "work_item_id" => work_item&.id,
         "lineage" => bounded_lineage,
+        "decision_inputs" => evidence.slice(*(COMMON_EVIDENCE + REQUIRED_EVIDENCE.fetch(action, []))),
         "input_evidence_refs" => evidence.keys.sort,
         "output_evidence_refs" => output_evidence_refs,
         "routed_decision" => reasons.empty? ? nil : { "kind" => "focused_decision", "required" => true }
