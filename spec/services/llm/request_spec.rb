@@ -183,6 +183,19 @@ RSpec.describe Llm::Request do
     expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
   end
 
+  # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+  it "does not reject an expired refreshable Codex credential before isolated recovery" do
+    credential = project.account.runner_credentials.for_runner("codex").first
+    credential.update!(token: file_fixture("codex_auth_valid.json").read, expires_at: 1.minute.ago)
+    allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:codex).and_return(true)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(agent_run: run, prompt: "Assess", timeout: 30)).to eq(response)
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).with(
+      account: project.account, runner: runner, timeout: be_between(1, 30)
+    )
+  end
+
   # @spec LLM-ROUTING-008
   it "uses the selected runner owner's managed credential when no account is supplied" do
     previous_account = Current.account

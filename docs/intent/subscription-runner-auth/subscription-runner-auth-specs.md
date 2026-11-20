@@ -67,6 +67,21 @@
   `Runners::SubscriptionAuthMaterializers`, `Runners::ManagedCredentialLifecycle`,
   `Containers::Provision`.
 
+- [x] **SUBSCRIPTION-RUNNER-AUTH-006** — When a managed rotating credential's
+  access token is expired but its canonical, unrevoked native auth state has
+  refresh material and the provider-owned exchange is supported, provisioning
+  and isolated text execution SHALL keep it eligible for one serialized refresh
+  attempt before rejecting it. A revoked credential, missing refresh material,
+  unsupported exchange, or unsuccessful exchange SHALL not materialize the
+  expired token; it SHALL report the managed source as requiring reconnection.
+  Host-forwarded credentials remain a distinct source and SHALL NOT be imported
+  into the managed record by this recovery path.
+  *Tests:* `spec/services/runners/managed_credential_lifecycle_spec.rb`,
+  `spec/requests/api/standalone_text_credentials_spec.rb`,
+  `spec/services/llm/request_spec.rb`.
+  *Code:* `Runners::ManagedCredentialLifecycle`, `Llm::Request`,
+  `Api::StandaloneTextCredentialsController`, `Containers::Provision`.
+
 - [x] **RUNNER-LOGIN-NAV-001** — The application-wide Operations menu
   (desktop and mobile) SHALL expose a single provider-neutral "Runner
   Logins" entry point to the login-flow picker (`new_runner_login_flow_path`)

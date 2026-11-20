@@ -8,9 +8,9 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
   let(:user) { create(:user, account: account) }
   let(:valid_codex_auth) { file_fixture("codex_auth_valid.json").read }
 
-  def create_credential(runner_key:, token:, expires_at: nil)
+  def create_credential(runner_key:, token:, expires_at: nil, revoked_at: nil)
     create(:runner_credential, account: account, created_by: user, runner_key: runner_key,
-      auth_kind: "oauth_token", token: token, expires_at: expires_at)
+      auth_kind: "oauth_token", token: token, expires_at: expires_at, revoked_at: revoked_at)
   end
 
   def refreshed_codex_auth
@@ -156,6 +156,30 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
 
       expect(JSON.parse(first_credential.reload.token).dig("claudeAiOauth", "accessToken")).to eq("refreshed-1")
       expect(JSON.parse(second_credential.reload.token).dig("claudeAiOauth", "accessToken")).to eq("refreshed-2")
+    end
+  end
+
+  describe ".readiness" do
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "keeps an expired unrevoked Codex credential with a refresh token eligible for recovery" do
+      credential = create_credential(runner_key: "codex", token: valid_codex_auth,
+        expires_at: 1.minute.ago)
+      stub_exchange_supported
+
+      expect(described_class.readiness(credential, runner_key: "codex")).to eq(:refreshable)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "does not treat revoked or refresh-token-less expired credentials as recoverable" do
+      revoked = create_credential(runner_key: "codex", token: valid_codex_auth,
+        expires_at: 1.minute.ago, revoked_at: Time.current)
+      missing_refresh = JSON.parse(valid_codex_auth).tap { |payload| payload["tokens"].delete("refresh_token") }
+      expired = create_credential(runner_key: "codex", token: JSON.generate(missing_refresh),
+        expires_at: 1.minute.ago)
+      stub_exchange_supported
+
+      expect(described_class.readiness(revoked, runner_key: "codex")).to eq(:revoked)
+      expect(described_class.readiness(expired, runner_key: "codex")).to eq(:missing_refresh_material)
     end
   end
 

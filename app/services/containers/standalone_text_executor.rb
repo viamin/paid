@@ -225,7 +225,7 @@ module Containers
       return nil if runner.api_key?
       return nil unless Runners::ManagedCredentialLifecycle.rotating?(runner.runner_key)
 
-      account.runner_credentials.active.for_runner(runner.runner_key)
+      account.runner_credentials.where(revoked_at: nil).for_runner(runner.runner_key)
         .order(created_at: :desc, id: :desc).first
     end
 

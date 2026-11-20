@@ -3645,7 +3645,8 @@ module Containers
       credential = codex_managed_runner_credential
       return false unless credential
 
-      refresh_codex_managed_credential!(provision: true)
+      refreshed = refresh_codex_managed_credential!(provision: true)
+      return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "codex") == :fresh
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_codex_managed_caches
@@ -3851,8 +3852,7 @@ module Containers
     def codex_managed_runner_credential
       return @codex_managed_runner_credential if defined?(@codex_managed_runner_credential)
 
-      @codex_managed_runner_credential = managed_subscription_credential_scope_for("codex")&.active
-        &.order(created_at: :desc, id: :desc)&.first
+      @codex_managed_runner_credential = latest_non_revoked_managed_subscription_credential_for("codex")
     end
 
     def opencode_managed_runner_credential

@@ -75,6 +75,17 @@ harvests the broker's rotated OAuth state back into the canonical
 `RunnerCredential` before releasing the per-credential lease. Both remain
 `remote_safe: false` until broader remote-hardening is proven.
 
+Credential readiness is shared by agent provisioning and isolated text
+execution. It classifies fresh access, refreshable expiry, revoked state,
+missing refresh material, and unsupported refresh without inspecting or
+logging token contents. An expired Codex credential is selected only while its
+canonical unrevoked auth state can reach the existing provider-owned exchange;
+the same row and lease serialize refresh and later rotation harvest. If that
+exchange cannot make the record fresh, no expired native file is materialized.
+Host-forwarded rotation remains intentionally separate: it is not imported
+into a managed record unless an existing authorized identity/writeback boundary
+already establishes equivalence.
+
 ## Exceptions Preserved
 
 - **Codex remote placement is still gated off.** The managed materializer is

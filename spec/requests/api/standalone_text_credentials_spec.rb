@@ -50,22 +50,46 @@ RSpec.describe "Standalone text credentials" do
       .with(hash_including(secret: a_string_including("eyJserver-refreshed-access")))
   end
 
-  # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
-  it "still materializes when the pre-run refresh exchange fails" do
+  # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+  it "recovers an expired unrevoked Codex credential before isolated materialization" do
     credential = create(:runner_credential, account: account, runner: runner,
-      token: valid_codex_auth, expires_at: 1.minute.from_now)
+      token: valid_codex_auth, expires_at: 1.minute.ago)
+    refreshed = JSON.parse(valid_codex_auth)
+    refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
+    refreshed["tokens"]["expires_at"] = 1.hour.from_now.utc.iso8601
     allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true,
-      exchange_refresh_token: { "error" => "invalid_grant" })
-    provider = instance_double(Runners::SubscriptionAuthProviders::Codex, materialize: materialization_double)
+      exchange_refresh_token_supported?: true, exchange_refresh_token: refreshed)
+    provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
+    allow(provider).to receive(:materialize).and_return(materialization_double(secret: "fresh"))
     allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
     identity = Containers::StandaloneTextCredential.issue(account: account, runner: runner, expires_in: 30)
 
     post "/api/proxy/standalone-text-credential", headers: { "Authorization" => "Bearer #{identity}" }
 
     expect(response).to have_http_status(:ok)
+    expect(credential.reload).to be_active
+    expect(provider).to have_received(:materialize)
+      .with(hash_including(secret: a_string_including("eyJserver-refreshed-access")))
+  end
+
+  # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+  it "rejects an expired credential when the pre-run refresh exchange fails" do
+    credential = create(:runner_credential, account: account, runner: runner,
+      token: valid_codex_auth, expires_at: 1.minute.from_now)
+    allow(AgentHarness::Authentication).to receive_messages(
+      exchange_refresh_token_supported?: true,
+      exchange_refresh_token: { "error" => "invalid_grant" })
+    provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
+    allow(provider).to receive(:materialize)
+    allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
+    identity = Containers::StandaloneTextCredential.issue(account: account, runner: runner, expires_in: 30)
+
+    post "/api/proxy/standalone-text-credential", headers: { "Authorization" => "Bearer #{identity}" }
+
+    expect(response).to have_http_status(:service_unavailable)
+    expect(response.parsed_body).to eq("error" => "Managed subscription credential requires reconnecting")
     expect(credential.reload.token).to eq(valid_codex_auth)
-    expect(credential.reload.last_used_at).to be_present
+    expect(provider).not_to have_received(:materialize)
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005

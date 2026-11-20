@@ -63,6 +63,21 @@ module Runners
           AgentHarness::Authentication.exchange_refresh_token_supported?(exchange_key)
       end
 
+      # Classifies whether a canonical managed credential can be materialized
+      # now or can safely reach the provider-owned refresh boundary. This is
+      # intentionally credential-specific: host-forwarded auth is a separate
+      # source and never makes a managed record ready.
+      # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+      def readiness(credential, runner_key:)
+        return :missing unless credential
+        return :revoked if credential.revoked?
+        return :fresh unless near_expiry?(credential, runner_key: runner_key)
+        return :unsupported_refresh unless rotating?(runner_key) && refresh_supported?(runner_key)
+        return :missing_refresh_material unless parsed_secret(credential, runner_key: runner_key)&.refreshable?
+
+        :refreshable
+      end
+
       def near_expiry?(credential, runner_key:)
         return false unless credential
 
