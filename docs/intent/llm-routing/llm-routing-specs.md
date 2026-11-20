@@ -22,7 +22,8 @@
 - [x] **LLM-ROUTING-006** — A standalone isolated text request SHALL bound
   prompt and output size, deadline, cancellation, and egress. Its container SHALL
   have a 1 GiB memory limit with no additional swap allowance while preserving
-  CPU and process limits (#5206); it SHALL remove
+  CPU and process limits (#5206), a 256 MiB private home tmpfs and a separate
+  64 MiB temporary tmpfs (#5211); it SHALL remove
   its container after success, failure, timeout, provisioning failure, or
   worker interruption, and SHALL never fall back to host execution. Its
   worker-death orphan-sweep lifetime SHALL not expire during healthy reuse of

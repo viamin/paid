@@ -353,7 +353,7 @@ module Containers
         "HostConfig" => {
           "Memory" => DEFAULTS[:memory_bytes], "MemorySwap" => DEFAULTS[:memory_bytes],
           "CpuPeriod" => 100_000, "CpuQuota" => DEFAULTS[:cpu_quota], "PidsLimit" => DEFAULTS[:pids_limit],
-          "Tmpfs" => { "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777", "/home/agent" => "size=#{64 * 1024 * 1024},mode=0700,uid=1000,gid=1000" },
+          "Tmpfs" => { "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777", "/home/agent" => "size=#{256 * 1024 * 1024},mode=0700,uid=1000,gid=1000" },
           "NetworkMode" => NetworkPolicy::INFRA_NETWORK_NAME
         },
         "Env" => [ "HOME=/home/agent" ],
