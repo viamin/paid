@@ -42,7 +42,9 @@
   snapshotted project set can finish even when a project persistently fails or
   later projects are created during the cycle. Per-project hold reconciliation
   SHALL run only on the first issue page. Each page SHALL report project and
-  issue counts, duration, allocations, and peak RSS.
+  issue counts, duration, allocations, and numeric peak RSS in KiB when supplied
+  by the operating system; an unavailable RSS source SHALL remain explicitly
+  absent (#5217).
   *Code:* `AutoPickEligibilitySweepJob#perform`,
   `Issues::BulkEnqueueEligible#candidate_page`.
   *Test:* `spec/jobs/auto_pick_eligibility_sweep_job_spec.rb`,

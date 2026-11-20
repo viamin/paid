@@ -33,6 +33,37 @@ RSpec.describe AutoPickEligibilitySweepJob do
   end
 
   # @spec EAGER-QUEUE-017
+  it "reports numeric peak RSS and the completed page counts" do
+    create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    allow(Issues::BulkEnqueueEligible).to receive(:call).and_return(page_result(candidate_count: 2, created_count: 1))
+    allow(File).to receive(:foreach).and_call_original
+    allow(File).to receive(:foreach).with("/proc/self/status")
+      .and_yield("Name:\truby\n").and_yield("VmHWM:\t123456 kB\n")
+
+    described_class.perform_now
+
+    expect(Rails.logger).to have_received(:info).with(hash_including(
+      message: "auto_pick_eligibility_sweep.page_completed",
+      project_count: 1, issue_count: 2, enqueued_count: 1,
+      duration_ms: be >= 0, allocations: be >= 0, peak_rss_kb: 123456
+    ))
+  end
+
+  # @spec EAGER-QUEUE-017
+  it "reports unavailable peak RSS without failing the sweep" do
+    create(:project, account:, created_by: owner, auto_pick_enabled: true)
+    allow(Issues::BulkEnqueueEligible).to receive(:call).and_return(page_result)
+    allow(File).to receive(:foreach).and_call_original
+    allow(File).to receive(:foreach).with("/proc/self/status").and_raise(Errno::ENOENT)
+
+    expect { described_class.perform_now }.not_to raise_error
+
+    expect(Rails.logger).to have_received(:info).with(hash_including(
+      message: "auto_pick_eligibility_sweep.page_completed", peak_rss_kb: nil
+    ))
+  end
+
+  # @spec EAGER-QUEUE-017
   it "covers every project in a bounded cycle through durable continuations" do
     stub_const("AutoPickEligibilitySweepJob::PROJECT_PAGE_SIZE", 1)
     first_project = create(:project, account:, created_by: owner, auto_pick_enabled: true)
