@@ -424,17 +424,40 @@ RSpec.describe Containers::Provision do
     before do
       service.instance_variable_set(:@container, mock_container)
       allow(service).to receive(:backend).and_return(backend)
+      allow(backend).to receive(:exec_in_container).with(mock_container,
+        [ "git", "config", "--global", "--add", "safe.directory", "/workspace" ], user: "agent")
+        .and_return([ [], [], 0 ])
+    end
+
+    # @spec LAYERED-VERIFY-010 MAINT-020
+    it "preserves scoped Git read access before sealing the root-owned checkout" do
+      expect(backend).to receive(:exec_in_container).with(mock_container,
+        [ "git", "config", "--global", "--add", "safe.directory", "/workspace" ], user: "agent")
+        .ordered.and_return([ [], [], 0 ])
+      expect(backend).to receive(:exec_in_container).with(mock_container,
+        [ "sh", "-lc", "chown -R root:agent /workspace && chmod -R g+rX,a-w /workspace" ], user: "root")
+        .ordered.and_return([ [], [], 0 ])
+
+      service.make_workspace_read_only!
     end
 
     # @spec MAINT-020
     it "removes agent write access to the prepared checkout" do
       expect(backend).to receive(:exec_in_container).with(
         mock_container,
-        [ "sh", "-lc", "chown -R root:root /workspace && chmod -R a-w /workspace" ],
+        [ "sh", "-lc", "chown -R root:agent /workspace && chmod -R g+rX,a-w /workspace" ],
         user: "root"
       ).and_return([ [], [], 0 ])
 
       expect(service.make_workspace_read_only!).to be_nil
+    end
+
+    # @spec LAYERED-VERIFY-010 MAINT-020
+    it "fails closed when Git trust setup has no exit status" do
+      allow(backend).to receive(:exec_in_container).and_return([ [], [], nil ])
+
+      expect { service.make_workspace_read_only! }
+        .to raise_error(Containers::Provision::ProvisionError, /Could not seal report-only workspace/)
     end
 
     it "fails closed when the checkout cannot be sealed" do

@@ -26,7 +26,7 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
     } })
     command_result = Containers::Provision::Result.success(stdout: "Error: Invariant Safety is violated.\n", stderr: "", exit_code: 12)
     allow(audit).to receive(:execute_in_execution_environment).with(
-      [ "tlc", "-config", "model/Checkout.cfg", "model/Checkout.tla" ], timeout: 60, stream: false
+      [ "tlc", "-metadir", a_string_matching(%r{\A/tmp/paid-layered-verification-tlc-[0-9a-f]{24}\z}), "-config", "model/Checkout.cfg", "model/Checkout.tla" ], timeout: 60, stream: false
     ).and_return(command_result)
     allow(AgentRun).to receive(:find).with(audit.id).and_return(audit)
     evidence_key = expect_counterexample_upload(audit, obligation)

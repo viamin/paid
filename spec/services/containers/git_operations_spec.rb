@@ -246,6 +246,46 @@ RSpec.describe Containers::GitOperations do
       expect(maintenance_run.reload.base_commit_sha).to eq(revision)
     end
 
+    # @spec LAYERED-VERIFY-024
+    it "fetches an issue-less audit's pinned revision before branch creation" do
+      revision = "d" * 40
+      audit = create(:agent_run, :running, project:, runner:, issue: nil, goal: "layered_verification_audit",
+        external_metadata: { "layered_verification" => { "target_revision" => revision } })
+      operations = described_class.new(container_service:, agent_run: audit)
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result, Containers::Provision::Result.success(stdout: "#{revision}\n", stderr: "", exit_code: 0))
+      expect(container_service).to receive(:execute)
+        .with([ "git", "cat-file", "-e", "#{revision}^{commit}" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result)
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", revision ],
+          timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV).ordered.and_return(success_result)
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", revision ], timeout: nil, stream: false).ordered.and_return(success_result)
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", "-b", anything ], timeout: nil, stream: false).ordered.and_return(success_result)
+
+      operations.clone_and_setup_branch
+
+      expect(audit.reload.base_commit_sha).to eq(revision)
+    end
+
+    # @spec LAYERED-VERIFY-024
+    it "refuses an issue-less audit without a pinned revision" do
+      agent_run.update!(goal: "layered_verification_audit", issue: nil, external_metadata: {})
+
+      expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::Error, /pinned target revision/)
+    end
+
+    # @spec LAYERED-VERIFY-024
+    it "refuses audit metadata that is not a resolved commit SHA" do
+      agent_run.update!(goal: "layered_verification_audit", issue: nil,
+        external_metadata: { "layered_verification" => { "target_revision" => "--orphan=unapproved" } })
+
+      expect { git_ops.clone_and_setup_branch }.to raise_error(described_class::Error, /pinned target revision/)
+    end
+
     it "sets worktree_path to /workspace" do
       git_ops.clone_and_setup_branch
 

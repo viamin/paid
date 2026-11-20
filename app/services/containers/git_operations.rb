@@ -1104,6 +1104,14 @@ module Containers
     def checkout_approved_revision
       # @spec MAINT-015
       return checkout_pinned_commit(agent_run.maintenance_pinned_revision) if agent_run.maintenance_goal?
+      # @spec LAYERED-VERIFY-024
+      if agent_run.layered_verification_audit_goal?
+        revision = agent_run.external_metadata.dig("layered_verification", "target_revision")
+        unless revision.is_a?(String) && revision.match?(/\A[0-9a-f]{40}\z/i)
+          raise Error, "A layered-verification audit requires a valid pinned target revision"
+        end
+        return checkout_pinned_commit(revision)
+      end
       return unless agent_run.issue&.feature_intent && agent_run.base_commit_sha.present?
 
       result = execute_git("checkout", agent_run.base_commit_sha)

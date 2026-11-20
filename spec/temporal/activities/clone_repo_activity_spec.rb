@@ -75,6 +75,20 @@ RSpec.describe Activities::CloneRepoActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    context "when the run is for a layered-verification audit" do
+      let(:agent_run) do
+        create(:agent_run, :running, project:, issue: nil, goal: "layered_verification_audit", container_id: "abc123")
+      end
+
+      # @spec LAYERED-VERIFY-010
+      it "seals the checkout after Paid finishes setup" do
+        expect(Containers::TokenOptimization).to receive(:codegraph_setup).with(container_service:).ordered
+        expect(container_service).to receive(:make_workspace_read_only!).ordered
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+    end
+
     context "when the run is for maintenance" do
       let(:agent_run) do
         create(:agent_run, :running, project: project, issue: nil, goal: "maintenance",

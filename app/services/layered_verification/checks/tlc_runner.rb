@@ -12,12 +12,13 @@ module LayeredVerification
         @command_runner = command_runner
         @module_path = module_path
         @config_path = config_path
+        @metadata_directory = "/tmp/paid-layered-verification-tlc-#{SecureRandom.hex(12)}"
       end
 
       def call
         return non_applicable("no declared TLA+ model/config pair") if module_path.blank? || config_path.blank?
 
-        output, status = command_runner.call("tlc", "-config", config_path, module_path)
+        output, status = command_runner.call("tlc", "-metadir", metadata_directory, "-config", config_path, module_path)
         return non_applicable("tlc binary is unavailable") if status == 127
         return completed(output) if status.zero? && output.include?("Model checking completed.")
         return contradicted(output) if output.match?(/invariant.*violation|error: invariant/i)
@@ -33,7 +34,7 @@ module LayeredVerification
 
       private
 
-      attr_reader :command_runner, :config_path, :module_path
+      attr_reader :command_runner, :config_path, :module_path, :metadata_directory
 
       def completed(output)
         { execution_state: "completed", obligation_coverage: "supported", limitations: "TLC checked only the declared bounds and assumptions.", output: }

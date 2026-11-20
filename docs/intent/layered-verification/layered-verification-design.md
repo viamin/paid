@@ -353,6 +353,20 @@ one — with the one addition that it records its post-repair obligations
 the named verifying checks rerun with new `LayeredVerificationCheckResult`
 rows) before reporting completion.
 
+The audit checkout resolves the request's immutable target revision from its
+layered-verification metadata as a full commit SHA, fetches it when absent from the shallow clone,
+and checks it out before creating the working branch. Missing or unavailable
+pins stop execution; the current default branch never substitutes for the
+requested revision. After Paid installs its hooks and analysis metadata, the
+workspace is sealed read-only for the audit agent and deterministic checks.
+The agent retains Git read access through a trust entry for this exact workspace
+path; no wildcard trust or source/Git write access is granted. Agent-group read
+access is preserved even for private checkout permissions, while root ownership
+prevents the agent from restoring writes.
+TLC writes its generated state into unique per-check container-local temporary storage through
+its [documented `-metadir` option](https://github.com/tlaplus/tlaplus/blob/master/general/docs/current-tools.md), outside the canonical checkout. Repair runs
+retain their separately authorized writable checkout.
+
 A **manual audit** can be created without a GitHub issue (RDR-076's "Manual
 audit... create an audit run without requiring a GitHub issue"), the one
 documented exception to the normal issue-driven run-creation path; the run
