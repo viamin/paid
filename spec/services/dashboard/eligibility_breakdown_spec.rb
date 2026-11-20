@@ -108,9 +108,15 @@ RSpec.describe Dashboard::EligibilityBreakdown do
     feature_held = create(:issue, project:, github_state: "open", paid_state: "new")
     feature_intent = create(:feature_intent, project:, status: "design_open", approved_design_revision: nil)
     create(:feature_intent_issue, feature_intent:, issue: feature_held)
+    confidence_feature_held = create(:issue, project:, github_state: "open", paid_state: "new")
+    confidence_feature_intent = create(:feature_intent, :confidence_driven, project:)
+    create(:feature_intent_issue, feature_intent: confidence_feature_intent,
+      issue: confidence_feature_held, release_state: "held")
     amendment_held = create(:issue, project:, github_state: "open", paid_state: "new")
     create(:design_amendment_pause, design_amendment: create(:design_amendment, project:), issue: amendment_held)
     create_no_progress_runs(create(:issue, project:, github_state: "open", paid_state: "new"))
+
+    { feature_held:, confidence_feature_held: }
   end
 
   describe ".call" do
@@ -298,9 +304,15 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
     # @spec QUEUE-HANDOFF-004
     it "preserves held-work details under normal-role RLS" do
-      create_held_work_scope_fixtures
+      fixtures = create_held_work_scope_fixtures
 
-      expected = held_work_projection(described_class.call(user:))
+      expected_breakdowns = described_class.call(user:)
+      expected = held_work_projection(expected_breakdowns)
+      held_issue_ids = expected_breakdowns.sole.held_issues.map { |detail| detail.issue.id }
+      expect(held_issue_ids).to include(
+        fixtures.fetch(:feature_held).id,
+        fixtures.fetch(:confidence_feature_held).id
+      )
       Rails.cache.clear
 
       with_normal_rls_role do
