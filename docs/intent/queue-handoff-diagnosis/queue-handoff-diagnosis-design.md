@@ -54,6 +54,13 @@ truncates the blockers or actions for a selected issue. For a decision-held
 issue, it preserves the owning feature decision or amendment hold. Feature
 decisions route to their existing Inbox action; amendment holds direct the
 operator to the affected issue's existing review context.
+
+Held-work ranking evaluates the shared candidate-eligibility exclusion once in
+a materialized `excluded_issues` relation. The blocker and decision subqueries
+read their issue IDs from that relation while the outer candidate exclusion
+remains in place. This keeps the existing ranking and tenant-visible result
+set while preventing each subquery from independently expanding the
+tenant-policy-qualified eligibility relation.
 Other admission controls remain summarized rather than being inferred as a
 human decision or made actionable by the diagnostic.
 
