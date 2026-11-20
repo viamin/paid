@@ -158,7 +158,8 @@ RSpec.describe "Project maintenance runs" do
         category: "unused_code", claim: "Legacy callback may be unused", symbols: [ "Legacy#call" ],
         locations: [ { path: "app/legacy.rb", line: 12 } ], supporting_evidence: [ "No direct callers" ],
         contrary_evidence: [ "Dynamic invocation remains possible" ], proposed_action: "Inspect registration",
-        validation_plan: "Exercise callback registration", verification_disposition: "unverified"
+        evidence_source: "agent", analyzer_provenance: {}, validation_plan: "Exercise callback registration",
+        verification_disposition: "unverified"
       } ] }
     run.log!("stdout", "<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->")
     Activities::CompleteMaintenanceRunActivity.new.execute(agent_run_id: run.id)
@@ -169,6 +170,6 @@ RSpec.describe "Project maintenance runs" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Scope not resolved", "Collected preliminary trace", "unavailable_service",
       "vendor callbacks", "No direct callers", "Dynamic invocation remains possible", "Inspect registration",
-      "Exercise callback registration", "app/legacy.rb", "Legacy#call")
+      "Exercise callback registration", "app/legacy.rb", "Legacy#call", "Evidence source: Agent")
   end
 end

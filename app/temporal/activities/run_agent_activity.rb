@@ -977,7 +977,10 @@ module Activities
     end
 
     def base_prompt_for(agent_run)
-      agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
+      prompt = agent_run.custom_prompt.presence || agent_run.send(:base_prompt)
+      return prompt unless agent_run.maintenance_goal?
+
+      [ prompt, agent_run.external_metadata.dig("maintenance_tool_evidence", "prompt_context") ].compact.join("\n\n")
     end
 
     def effective_prompt_for(agent_run:, base_prompt:, runner_key:)

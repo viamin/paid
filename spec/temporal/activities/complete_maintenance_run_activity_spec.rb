@@ -43,12 +43,47 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
     )
   end
 
+  # @spec MAINT-043
+  it "retains pre-agent tool provenance as completed report evidence" do
+    run.update!(external_metadata: {
+      "maintenance_tool_evidence" => {
+        "completed_checks" => [ { "name" => "knip", "provenance" => { "version" => "5.0" } } ],
+        "incomplete_checks" => []
+      }
+    })
+    run.log!("stdout", report_output)
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(run.reload.maintenance_report.completed_checks).to include(
+      "name" => "knip", "provenance" => { "version" => "5.0" }
+    )
+  end
+
+  # @spec MAINT-022
+  it "forces a partial report when a planned analyzer dependency could not be installed" do
+    run.update!(external_metadata: {
+      "maintenance_tool_evidence" => {
+        "completed_checks" => [],
+        "incomplete_checks" => [ { "name" => "exhale_provision", "reason" => "dependency_install_failed" } ]
+      }
+    })
+    run.log!("stdout", report_output)
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(run.reload.maintenance_report).to have_attributes(
+      outcome: "partial",
+      incomplete_checks: [ { "name" => "exhale_provision", "reason" => "dependency_install_failed" } ]
+    )
+  end
+
   # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-025
   it "persists findings and incomplete coverage from the agent report" do
     finding = {
       category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ],
       locations: [ { path: "app/workflows/a.rb", line: 18 } ], supporting_evidence: [ { source: "inspection" } ],
-      contrary_evidence: [], analyzer_provenance: { name: "prompt" }, raw_tool_confidence: nil,
+      contrary_evidence: [], evidence_source: "agent", analyzer_provenance: {}, raw_tool_confidence: nil,
       agent_assessment: "actionable", proposed_action: "Remove the callback", validation_plan: "Run workflow specs",
       verification_disposition: "unverified"
     }
@@ -72,6 +107,28 @@ RSpec.describe Activities::CompleteMaintenanceRunActivity do
 
     expect(run.reload.maintenance_report).to have_attributes(outcome: "partial",
       incomplete_checks: [ { "name" => "agent_report", "reason" => "parse_failure" } ])
+  end
+
+  # @spec MAINT-021 MAINT-022 MAINT-043
+  it "retains tool evidence when the agent report is malformed" do
+    run.update!(external_metadata: {
+      "maintenance_tool_evidence" => {
+        "completed_checks" => [ { "name" => "knip", "provenance" => { "version" => "5.0" } } ],
+        "incomplete_checks" => [ { "name" => "exhale_dry", "reason" => "invalid_result_json" } ]
+      }
+    })
+    run.log!("stdout", "Investigation finished, but no structured report was emitted.")
+
+    described_class.new.execute(agent_run_id: run.id)
+
+    expect(run.reload.maintenance_report).to have_attributes(
+      outcome: "partial",
+      completed_checks: [ { "name" => "knip", "provenance" => { "version" => "5.0" } } ],
+      incomplete_checks: contain_exactly(
+        { "name" => "agent_report", "reason" => "parse_failure" },
+        { "name" => "exhale_dry", "reason" => "invalid_result_json" }
+      )
+    )
   end
 
   it "is idempotent for an already-finished run" do

@@ -6,7 +6,7 @@ module MaintenanceReports
   # One transactional persistence boundary for maintenance evidence. Tool and
   # agent adapters supply structured facts; this service does no semantic
   # classification and therefore keeps that judgment in agent_harness.
-  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-023 MAINT-024 MAINT-025 MAINT-026 MAINT-027 MAINT-029
+  # @spec MAINT-020 MAINT-021 MAINT-022 MAINT-023 MAINT-024 MAINT-025 MAINT-026 MAINT-027 MAINT-029 MAINT-043
   class Persist
     def self.call(...) = new(...).call
 
@@ -78,9 +78,10 @@ module MaintenanceReports
     end
 
     def occurrence_attributes(attributes, canonical)
-      attributes.slice(:category, :claim, :symbols, :locations, :supporting_evidence, :contrary_evidence, :analyzer_provenance,
+      attributes.slice(:category, :claim, :symbols, :locations, :supporting_evidence, :contrary_evidence, :evidence_source, :analyzer_provenance,
         :raw_tool_confidence, :agent_assessment, :proposed_action, :validation_plan, :verification_disposition).merge(
-          account: run.project.account, observed_status: canonical.status, analyzer_provenance: attributes[:analyzer_provenance] || {},
+          account: run.project.account, observed_status: canonical.status,
+          analyzer_provenance: attributes.fetch(:analyzer_provenance),
           supporting_evidence: attributes[:supporting_evidence] || [], contrary_evidence: attributes[:contrary_evidence] || []
         )
     end

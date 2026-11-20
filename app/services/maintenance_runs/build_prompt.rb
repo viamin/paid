@@ -77,7 +77,7 @@ module MaintenanceRuns
         - The requested scope bounds your recommendations, not your access to supporting evidence. You may inspect callers, tests, framework entry points, and design documents anywhere in the repository to validate a claim.
         - Explain any recommendation that requires changes beyond the requested scope; expanding the repair scope requires explicit authorization from the requester.
         - Record the resolved scope you actually investigated and any exclusions in the report.
-        - For each finding, report its category, the affected locations or symbols, the claim, supporting evidence, known counterevidence, and a proposed action. Similarity alone does not establish that code should be shared; absence of static references does not establish that code can be deleted.
+        - For each finding, report its category, the affected locations or symbols, the claim, supporting evidence, known counterevidence, evidence_source (`tool` when analyzer output supports the finding, otherwise `agent`), analyzer name/version/configuration when tool evidence was used, and a proposed action. Similarity alone does not establish that code should be shared; absence of static references does not establish that code can be deleted.
         - If evidence is missing or an analysis could not be completed, say so explicitly as an unresolved candidate or coverage limitation. Never present an incomplete scan as a clean result.
         - Retain deliberate repository exceptions in evidence.repository_exceptions with intent references, rationale, and your current or stale assessment. Report stale exceptions explicitly; an exception is reviewable intent, not permission to hide a finding.
       CONTRACT
@@ -85,7 +85,7 @@ module MaintenanceRuns
 
     def structured_report
       <<~REPORT.chomp
-        End your final response with exactly one JSON report between these markers. Disclose at least one completed or incomplete check; empty coverage cannot establish a clean investigation. Use empty arrays or objects when another field has no entries. Each finding must include category, claim, symbols, locations, supporting_evidence, contrary_evidence, analyzer_provenance, raw_tool_confidence, agent_assessment, proposed_action, validation_plan, and verification_disposition. raw_tool_confidence must be null or a number between 0 and 1.
+        End your final response with exactly one JSON report between these markers. Disclose at least one completed or incomplete check; empty coverage cannot establish a clean investigation. Use empty arrays or objects when another field has no entries. Each finding must include category, claim, symbols, locations, supporting_evidence, contrary_evidence, evidence_source, analyzer_provenance, raw_tool_confidence, agent_assessment, proposed_action, validation_plan, and verification_disposition. raw_tool_confidence must be null or a number between 0 and 1.
 
         <!-- maintenance-report-start -->
         {"resolved_scope":"scope actually investigated","exclusions":[],"completed_checks":[],"incomplete_checks":[],"evidence":{},"findings":[]}

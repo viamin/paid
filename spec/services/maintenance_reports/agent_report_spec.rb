@@ -9,7 +9,8 @@ RSpec.describe MaintenanceReports::AgentReport do
       resolved_scope: "app/services", exclusions: [], completed_checks: [ { name: "debride" } ],
       incomplete_checks: [], evidence: { revision: "abc123" },
       findings: [ { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
-        locations: [ { path: "app/legacy.rb", line: 4 } ], verification_disposition: "unverified" } ]
+        locations: [ { path: "app/legacy.rb", line: 4 } ], evidence_source: "agent", analyzer_provenance: {},
+        verification_disposition: "unverified" } ]
     }
     output = "Summary\n<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->"
 
@@ -30,7 +31,7 @@ RSpec.describe MaintenanceReports::AgentReport do
     template = { exclusions: [], completed_checks: [], incomplete_checks: [], evidence: {}, findings: [] }
     final = template.merge(completed_checks: [ { "name" => "debride" } ],
       findings: [ { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
-        locations: [], verification_disposition: "unverified" } ])
+        locations: [], evidence_source: "agent", analyzer_provenance: {}, verification_disposition: "unverified" } ])
     output = [ report_block(template), report_block(final) ].join("\n")
 
     report = described_class.parse(output)
@@ -43,7 +44,7 @@ RSpec.describe MaintenanceReports::AgentReport do
     payload = {
       exclusions: [], completed_checks: [], incomplete_checks: [], evidence: {},
       findings: [ { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
-        locations: [], agent_assessment: "certain", verification_disposition: "maybe" } ]
+        locations: [], evidence_source: "agent", analyzer_provenance: {}, agent_assessment: "certain", verification_disposition: "maybe" } ]
     }
     output = "<!-- maintenance-report-start -->\n#{JSON.generate(payload)}\n<!-- maintenance-report-end -->"
 
@@ -53,7 +54,8 @@ RSpec.describe MaintenanceReports::AgentReport do
   # @spec MAINT-022 MAINT-025
   it "rejects finding values that exceed persistence bounds" do
     finding = { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
-      locations: [], raw_tool_confidence: 1.01, verification_disposition: "unverified" }
+      locations: [], evidence_source: "agent", analyzer_provenance: {}, raw_tool_confidence: 1.01,
+      verification_disposition: "unverified" }
 
     expect { parse(finding:) }.to raise_error(described_class::InvalidReport, /between 0 and 1/)
     expect { parse(finding: finding.merge(raw_tool_confidence: -0.01)) }
@@ -64,6 +66,33 @@ RSpec.describe MaintenanceReports::AgentReport do
       .to raise_error(described_class::InvalidReport, /at most 100 characters/)
     expect { parse(finding: finding.merge(claim: { text: "Legacy has no callers" }, raw_tool_confidence: 0.85)) }
       .to raise_error(described_class::InvalidReport, /claim must be a string/)
+  end
+
+  # @spec MAINT-043
+  it "rejects a finding that omits analyzer provenance" do
+    finding = { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
+      locations: [], evidence_source: "agent", verification_disposition: "unverified" }
+
+    expect { parse(finding:) }.to raise_error(described_class::InvalidReport, /analyzer_provenance/)
+  end
+
+  # @spec MAINT-043
+  it "requires complete provenance when a finding explicitly uses tool evidence" do
+    finding = { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
+      locations: [], evidence_source: "tool", analyzer_provenance: {}, raw_tool_confidence: nil,
+      verification_disposition: "unverified" }
+
+    expect { parse(finding:) }.to raise_error(described_class::InvalidReport, /must not be empty/)
+    expect { parse(finding: finding.merge(analyzer_provenance: { "name" => "debride" })) }
+      .to raise_error(described_class::InvalidReport, /version, configuration/)
+  end
+
+  # @spec MAINT-043
+  it "rejects an unknown finding evidence source" do
+    finding = { category: "unused_code", claim: "Legacy has no callers", symbols: [ "Legacy" ],
+      locations: [], evidence_source: "guess", analyzer_provenance: {}, verification_disposition: "unverified" }
+
+    expect { parse(finding:) }.to raise_error(described_class::InvalidReport, /evidence source/)
   end
 
   def parse(finding:)

@@ -60,13 +60,14 @@ RSpec.describe Tools::GetAgentRun do
       )
     end
 
-    # @spec MAINT-016 MAINT-025
-    it "includes analyzer provenance for maintenance findings" do
+    # @spec MAINT-016 MAINT-025 MAINT-043
+    it "includes tool evidence source and analyzer provenance for maintenance findings" do
       run = create(:agent_run, project: create(:project, account: account), goal: "maintenance",
         issue: nil, custom_prompt: "Audit workflow A", maintenance_guidance: "Audit workflow A")
       MaintenanceReports::Persist.call(run:, findings: [ {
         category: "obsolete_behavior", claim: "WorkflowA uses a retired callback", symbols: [ "WorkflowA" ], locations: [],
-        analyzer_provenance: { name: "debride", version: "1.14.0" }, verification_disposition: "unverified"
+        evidence_source: "tool", analyzer_provenance: { name: "debride", version: "1.14.0", configuration: "default" },
+        verification_disposition: "unverified"
       } ])
 
       run.maintenance_report.finding_occurrences.sole.maintenance_finding.dismiss!(reason: "Intentional compatibility callback")
@@ -74,9 +75,10 @@ RSpec.describe Tools::GetAgentRun do
       result = tool.call(agent_run_id: run.id)
 
       expect(result.dig(:maintenance, :report, :findings, 0, :analyzer_provenance))
-        .to eq("name" => "debride", "version" => "1.14.0")
+        .to eq("name" => "debride", "version" => "1.14.0", "configuration" => "default")
       expect(result.dig(:maintenance, :report, :findings, 0)).to include(
-        observed_status: "open", status: "dismissed", dismissal_reason: "Intentional compatibility callback"
+        evidence_source: "tool", observed_status: "open", status: "dismissed",
+        dismissal_reason: "Intentional compatibility callback"
       )
     end
 

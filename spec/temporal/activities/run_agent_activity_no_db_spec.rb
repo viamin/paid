@@ -5,9 +5,14 @@ require "rails_helper"
 RSpec.describe Activities::RunAgentActivity, :no_db do
   describe "#base_prompt_for" do
     let(:activity) { described_class.new }
+    let(:agent_run_class) do
+      Struct.new(:custom_prompt, :base_prompt, keyword_init: true) do
+        def maintenance_goal? = false
+      end
+    end
 
     it "uses the public base_prompt interface when no custom prompt is set" do
-      agent_run = Struct.new(:custom_prompt, :base_prompt, keyword_init: true).new(
+      agent_run = agent_run_class.new(
         custom_prompt: nil,
         base_prompt: "Base prompt"
       )
@@ -16,7 +21,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     end
 
     it "prefers the custom prompt when present" do
-      agent_run = Struct.new(:custom_prompt, :base_prompt, keyword_init: true).new(
+      agent_run = agent_run_class.new(
         custom_prompt: "Custom prompt",
         base_prompt: "Base prompt"
       )

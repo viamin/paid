@@ -10,9 +10,12 @@ module MaintenanceReports
 
     REPORT_PATTERN = /<!--\s*maintenance-report-start\s*-->\n?(.*?)\n?<!--\s*maintenance-report-end\s*-->/m.freeze
     ARRAY_FIELDS = %w[exclusions completed_checks incomplete_checks findings].freeze
-    REQUIRED_FINDING_FIELDS = %w[category claim symbols locations verification_disposition].freeze
+    REQUIRED_FINDING_FIELDS = %w[
+      category claim symbols locations evidence_source analyzer_provenance verification_disposition
+    ].freeze
     DISPOSITIONS = MaintenanceFindingOccurrence::DISPOSITIONS
     ASSESSMENTS = MaintenanceFindingOccurrence::ASSESSMENTS
+    EVIDENCE_SOURCES = MaintenanceFindingOccurrence::EVIDENCE_SOURCES
 
     def self.parse(output) = new(output).parse
 
@@ -73,13 +76,27 @@ module MaintenanceReports
 
         require_type!(finding, field, Array)
       end
-      require_type!(finding, "analyzer_provenance", Hash) if finding.key?("analyzer_provenance")
+      validate_analyzer_provenance!(finding)
       return if finding["agent_assessment"].nil? || ASSESSMENTS.include?(finding["agent_assessment"])
 
       raise InvalidReport, "finding agent assessment is invalid"
     end
 
+    def validate_analyzer_provenance!(finding)
+      require_type!(finding, "analyzer_provenance", Hash)
+      provenance = finding.fetch("analyzer_provenance")
+      return if finding["evidence_source"] == "agent" && provenance.empty?
+
+      raise InvalidReport, "tool-derived finding analyzer_provenance must not be empty" if provenance.empty?
+
+      missing = %w[name version configuration].reject { |field| provenance[field].present? }
+      raise InvalidReport, "finding analyzer_provenance is missing: #{missing.join(', ')}" if missing.any?
+    end
+
     def validate_persistence_bounds!(finding)
+      unless EVIDENCE_SOURCES.include?(finding["evidence_source"])
+        raise InvalidReport, "finding evidence source is invalid"
+      end
       confidence = finding["raw_tool_confidence"]
       unless confidence.nil? || (confidence.is_a?(Numeric) && confidence.between?(0, 1))
         raise InvalidReport, "finding raw_tool_confidence must be a number between 0 and 1"
