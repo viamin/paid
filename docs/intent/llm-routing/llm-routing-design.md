@@ -37,6 +37,14 @@ runner's materialized credentials through the existing container credential
 path and invokes the harness with tools disabled. A `tools: none` option alone
 is not evidence that a driver disables its tools; the container boundary is
 therefore required even when the driver advertises tool control.
+Each standalone container has a 1 GiB memory limit and the same combined
+memory-and-swap limit, so requests cannot consume additional swap. CPU and
+process limits remain enforced. The private `/home/agent` tmpfs is bounded at
+256 MiB (mode 0700, uid/gid 1000), while `/tmp` remains bounded at 64 MiB
+(#5211). Actual tmpfs consumption counts toward the container memory limit.
+The memory allowance accommodates configured
+CLI startup and structured acceptance prompts within the isolated boundary;
+exhausting it never establishes a successful assessment.
 Standalone application requests identify themselves to the harness as text
 operations so provider-owned transport selection can use the API-key text
 contract without changing coding-agent or subscription execution.
