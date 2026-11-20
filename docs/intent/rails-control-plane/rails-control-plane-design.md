@@ -52,8 +52,12 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
-Development runs GoodJob in the web process to avoid the memory overhead of an
-additional Rails process. A small shell wrapper restarts the web process after
+The devcontainer runs GoodJob in the dedicated `bin/jobs` process so bounded
+maintenance, metrics, and dashboard work cannot consume Puma request slots
+needed by isolated-container credential bootstrap or health checks. Its web
+process uses five Puma threads with a pool of ten database connections; after
+the bounded three-request control-plane workload, two request slots remain for
+the broker and health probes. A small shell wrapper restarts the web process after
 exit 137, which commonly indicates a memory kill. It backs off and stops after
 three restarts within five minutes; other exits surface to Overmind normally.
 The existing development supervisor records lightweight process RSS and host
@@ -190,6 +194,7 @@ establish which process caused an out-of-memory kill.
 | Use PgHero's supported interval capture | Supplies the dashboard's native query history with bounded capture size. | Custom cumulative snapshots avoid resets but require new counter-delta and reset-detection behavior. |
 | Retain 14 days and prune unused query text | Provides recent incident context with bounded historical duration. | Unlimited retention accumulates diagnostic data indefinitely. |
 | Enable development planning measurements with an operator opt-out | Makes expensive planning observable without changing production policy. | Execution-only measurement leaves nested-query planning costs unmeasured. |
+| Run devcontainer GoodJob externally with five web threads | Keeps the credential broker and health checks serviceable during bounded control-plane work while retaining finite worker concurrency and the existing ten-connection per-process pool. | In-process GoodJob shares the three-thread Puma process and can delay the broker behind control-plane work. |
 
 ## Deferred Work
 
