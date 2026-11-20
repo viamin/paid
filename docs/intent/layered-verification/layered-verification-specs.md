@@ -136,7 +136,7 @@
   *Code:* `LayeredVerification::Plans::Build` (#4433)
 
 - [x] **LAYERED-VERIFY-022** — When a project declares a TLA+ model, an audit
-  SHALL be able to run `tlc -config <Module>.cfg <Module>.tla` inside the
+  SHALL be able to run `tlc -metadir <container-temp-directory> -config <Module>.cfg <Module>.tla` inside the
   existing isolated execution environment as a `formal_verification`
   producer, parsing `Model checking completed.` into `execution_state:
   completed`, a reported invariant violation into `execution_state:
@@ -145,7 +145,8 @@
   `execution_state: execution_error`. A missing `tlc` binary, a missing
   config pair, or no declared model SHALL be recorded as
   `execution_state: non_applicable` with a stated `limitations` reason, never
-  silently skipped and never reported as a pass. A project without a
+  silently skipped and never reported as a pass. Each check SHALL use a unique
+  writable metadata directory outside the read-only checkout. A project without a
   declared model SHALL still be auditable through specs, scenarios, and tests
   without this producer.
   *Tests:* `spec/services/layered_verification/checks/tlc_runner_spec.rb`
@@ -155,7 +156,9 @@
 
 - [x] **LAYERED-VERIFY-024** — A `layered_verification_audit` run SHALL
   execute the checks its verification plan selected
-  (`LAYERED-VERIFY-021`). The audit prompt SHALL supply each selected obligation's
+  (`LAYERED-VERIFY-021`). Its checkout SHALL fetch and use the metadata's pinned
+  target revision before branch creation, including when the shallow clone lacks
+  that commit; a missing or unavailable pin SHALL stop execution. The audit prompt SHALL supply each selected obligation's
   canonical source path, external revision, framework and approval state, and each
   correspondence claim's source/target references, abstraction boundaries and
   assumptions as untrusted assessment inputs. Obligation and source records,
@@ -182,7 +185,8 @@
   weakening, removing, or re-prompting the detecting check in a later plan;
   only fresh supporting evidence recorded against a current revision SHALL
   resolve it.
-  *Tests:* `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`,
+  *Tests:* `spec/services/containers/git_operations_spec.rb`,
+  `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`,
   `spec/temporal/activities/complete_layered_verification_audit_activity_spec.rb`,
   `spec/requests/projects/layered_verification_audits_spec.rb`
   *Code:* `LayeredVerification::Audits::SynthesizeCoverage`,
@@ -196,9 +200,15 @@
   canonical intent, models, specs, tests, or production code; its only writes
   SHALL be `LayeredVerificationObligation`/`*CorrespondenceClaim`/
   `*CheckResult`/`*Finding` rows, `ArtifactStorage` evidence, and
-  human-reviewed draft proposals. An audit run SHALL be able to complete with
+  human-reviewed draft proposals. Paid SHALL seal the audit workspace read-only
+  after its own clone/hooks/analysis setup, before the agent or checks execute,
+  while preserving Git and source read access scoped to that workspace path,
+  including files initially readable only by the agent;
+  generated checker state SHALL use writable container-local temporary storage.
+  An audit run SHALL be able to complete with
   findings and SHALL NOT start a repair run on its own completion.
-  *Tests:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  *Tests:* `spec/temporal/activities/clone_repo_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
   `spec/policies/project_policy_spec.rb`,
   `spec/requests/projects/layered_verification_audits_spec.rb`
   *Code:* `app/temporal/workflows/agent_execution_workflow.rb`,

@@ -467,17 +467,20 @@ module Containers
     # executes as the unprivileged `agent` user, so root ownership prevents it
     # from restoring write access even though the workspace volume was mounted
     # writable to allow Paid to clone and prepare the checkout.
-    # @spec MAINT-020
+    # @spec MAINT-020 LAYERED-VERIFY-010
     def make_workspace_read_only!
       workspace_mount = Shellwords.escape(options[:workspace_mount])
-      _stdout, stderr, status = backend.exec_in_container(
-        container,
-        [ "sh", "-lc", "chown -R root:root #{workspace_mount} && chmod -R a-w #{workspace_mount}" ],
-        user: "root"
-      )
-      return if status.to_i.zero?
-
-      raise ProvisionError, "Could not seal report-only workspace: #{Array(stderr).join.strip}"
+      commands = [
+        [ [ "git", "config", "--global", "--add", "safe.directory", options[:workspace_mount] ], options[:user] ],
+        [ [ "sh", "-lc", "chown -R root:agent #{workspace_mount} && chmod -R g+rX,a-w #{workspace_mount}" ], "root" ]
+      ]
+      commands.each do |command, user|
+        _stdout, stderr, status = backend.exec_in_container(container, command, user:)
+        unless status == 0
+          raise ProvisionError, "Could not seal report-only workspace: #{Array(stderr).join.strip}"
+        end
+      end
+      nil
     rescue Docker::Error::DockerError => e
       raise ProvisionError, "Could not seal report-only workspace: #{e.message}"
     end

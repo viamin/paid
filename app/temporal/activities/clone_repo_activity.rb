@@ -46,8 +46,10 @@ module Activities
         # The checkout has to be writable while Paid clones it and installs its
         # own hooks. Seal it only after that setup so the report-only runner
         # cannot alter source or Git metadata.
-        # @spec MAINT-020
-        container_service.make_workspace_read_only! if agent_run.maintenance_goal?
+        # @spec MAINT-020 LAYERED-VERIFY-010
+        if agent_run.maintenance_goal? || agent_run.layered_verification_audit_goal?
+          container_service.make_workspace_read_only!
+        end
 
         create_worktree_record(agent_run)
 
