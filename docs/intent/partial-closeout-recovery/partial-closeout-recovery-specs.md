@@ -299,6 +299,8 @@
 
 - [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
+      pin a native check to the source run's produced revision when available,
+      using its base revision only when no produced revision exists; SHALL
       inspect compatible execution hosts through the existing backend scheduler
       rather than infer availability from the operator workspace; SHALL refuse
       unchanged retries by recording an exact setup or scoped-rollout approval

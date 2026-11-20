@@ -4,10 +4,10 @@ require "rails_helper"
 
 RSpec.describe TechnicalPrerequisites::StartValidation do
   # @spec PARTIAL-CLOSEOUT-032
-  it "queues a fresh pinned run from an enabled reviewed recipe" do
+  it "uses the pinned base when the source run produced no revision" do
     project = create(:project)
     actor = project.created_by
-    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40, result_commit_sha: nil)
     requirement = create(:pre_commit_requirement, project:, account: project.account, command: "bin/audit --quick")
 
     result = described_class.call(source_run:, requirement:, actor:)
@@ -20,6 +20,19 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.agent_run.external_metadata.dig("technical_prerequisite_validation", "command"))
       .to eq("bin/audit --quick")
     expect(TechnicalPrerequisiteValidationJob).to have_been_enqueued.with(result.agent_run.id)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-032
+  it "pins native validation to the produced revision rather than the pre-change base" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:,
+      base_commit_sha: "a" * 40, result_commit_sha: "b" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account)
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by)
+
+    expect(result).to be_success
+    expect(result.agent_run.base_commit_sha).to eq("b" * 40)
   end
 
   # @spec PARTIAL-CLOSEOUT-050
@@ -49,7 +62,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     result = described_class.call(source_run:, requirement:, actor:)
 
     expect(result).to be_success
-    expect(result.agent_run.base_commit_sha).to eq("a" * 40)
+    expect(result.agent_run.base_commit_sha).to eq(source_run.result_commit_sha)
   end
 
   # @spec PARTIAL-CLOSEOUT-032

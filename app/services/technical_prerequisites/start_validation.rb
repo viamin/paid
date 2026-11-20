@@ -159,11 +159,11 @@ module TechnicalPrerequisites
       )&.last_scanned_head_sha
     end
 
-    # A performance validation re-checks out the produced revision as its
-    # current side, so its clone must start from that revision rather than the
-    # pre-change base.
+    # A post-implementation check must include the produced changes. Runs
+    # without a produced revision retain their explicitly pinned checkout.
+    # @spec PARTIAL-CLOSEOUT-032
     def validation_base_commit_sha
-      performance_requirement? ? current_commit_sha : source_run.base_commit_sha
+      current_commit_sha.presence || source_run.base_commit_sha
     end
 
     def existing_run

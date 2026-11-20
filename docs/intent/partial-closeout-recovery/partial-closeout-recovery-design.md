@@ -42,6 +42,9 @@ carry an authorization identity and cannot be satisfied by technical evidence.
 
 Technical validation records its pinned checkout, reviewed recipe, selected
 environment/image/tool identity, criterion, result, and cleanup provenance.
+Native validation uses the source run's produced revision when available,
+falling back to its pinned base only when no produced revision exists. This
+ensures a post-implementation check includes the changes being validated.
 Completed, failed, unavailable, and stale records all remain part of the source
 evidence generation, so a non-cancelled terminal result offers the normal
 deduplicated report-only acceptance audit. That audit may reassess current
