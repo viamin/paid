@@ -148,6 +148,14 @@ RSpec.describe AutoPickEligibilitySweepJob do
     expect(calls).not_to include(hash_including(project: have_attributes(id: added_during_cycle.id), page_size: 100))
     expect(continuations).to be_empty
     expect(first_project.id).to be < second_project.id
+
+    calls.clear
+    3.times { described_class.perform_now(**(continuations.shift || {})) }
+
+    expect(calls.map { |arguments| arguments.fetch(:project).id }).to eq(
+      [ first_project.id, second_project.id, added_during_cycle.id ]
+    )
+    expect(continuations).to be_empty
   end
 
   # @spec EAGER-QUEUE-017
