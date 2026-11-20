@@ -299,6 +299,7 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       held_work_query = queries.find { |query| query.include?("WITH excluded_issues AS MATERIALIZED") }
 
       expect(held_work_query).to include("WITH excluded_issues AS MATERIALIZED")
+      expect(held_work_query.scan("WITH excluded_issues AS MATERIALIZED").size).to eq(1)
       expect(held_work_query.scan("FROM excluded_issues").size).to eq(6)
     end
 
