@@ -86,7 +86,10 @@ gem "aws-sdk-s3", require: false
 # actionable provider diagnostics (fixes #4546).
 # 0.44.36 routes isolated Codex API-key text requests over HTTPS
 # (viamin/agent-harness#537; fixes #5091).
-gem "agent-harness", "0.44.39"
+# Verified upstream correction preserves OpenCode provider maps (#5205,
+# viamin/agent-harness#548). Remove the ref when a containing release is available.
+gem "agent-harness", "0.44.39", git: "https://github.com/viamin/agent-harness.git",
+  ref: "52e54bb1bf11482e21fd9414da284c17085c554b"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.

@@ -21,7 +21,7 @@ module Containers
     STANDALONE_TEXT_MAX_LIFETIME = 10.minutes
     DEFAULTS = {
       image: Containers::ImageResolver::BASE_IMAGE,
-      memory_bytes: 512 * 1024 * 1024,
+      memory_bytes: 1024 * 1024 * 1024,
       cpu_quota: 100_000,
       pids_limit: 100
     }.freeze
