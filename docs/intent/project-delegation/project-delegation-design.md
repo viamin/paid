@@ -73,7 +73,12 @@ and the RDR-078 bounded authorization for the admitted lineage.
 It requires the evidence tuple and same-work lineage for each of the five
 delegated classes, rejects product/release/settings/hold/scope expansion, and
 records an immutable `project_delegation.action_evaluated` audit receipt for
-both permits and focused-decision stops. Follow-up ownership records are
+both permits and focused-decision stops. Each receipt preserves the supplied
+intent/acceptance/evidence revision values and action-specific decision inputs,
+including selected alternatives and rationale or recovery/closeout evidence, so
+the decision can be reconstructed independently of later mutable caller data.
+Only the declared common and action-specific input fields are retained.
+Follow-up ownership records are
 explicitly non-executing; the follow-up remains a separate admission.
 
 Recording a follow-up permits the finding, affected scope, evidence, owner,

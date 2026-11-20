@@ -36,6 +36,32 @@ RSpec.describe ProjectDelegation::ActionPlan do
     )
   end
 
+  it "retains reconstructable decision evidence without unrelated caller values" do
+    decision_inputs = common.merge(
+      "alternatives" => [ "reuse existing service", "add a service" ],
+      "selected_option" => "reuse existing service", "rationale" => "The existing boundary supports this scope.",
+      "tests" => [ "receipt:checks-17" ], "review_evidence" => [ "review:29" ]
+    )
+    result = described_class.call(project:, work_item: issue, actor: user,
+      action: "bounded_implementation_choice", evidence: decision_inputs.merge("unrelated_private_value" => "exclude-me"))
+
+    expect(result).to be_permitted
+    expect(result.audit_event.reload.metadata.fetch("decision_inputs")).to eq(decision_inputs)
+    expect(result.audit_event.metadata.to_json).not_to include("exclude-me")
+  end
+
+  it "retains the actual failed evidence tuple on a blocked decision" do
+    inputs = common.merge("policy_signature" => "stale-policy",
+      "failure_classification" => "timeout", "attempted_recovery" => "restart the same check",
+      "current_checks" => [ "receipt:checks-19" ], "budget_evidence" => "budget:4")
+    result = described_class.call(project:, work_item: issue, actor: user,
+      action: "technical_stop_recovery", evidence: inputs)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include("policy_changed")
+    expect(result.audit_event.reload.metadata.fetch("decision_inputs")).to eq(inputs)
+  end
+
   it "blocks reserved product and release decisions and records the routed decision" do
     result = described_class.call(project:, work_item: issue, actor: user,
       action: "release", evidence: common)
