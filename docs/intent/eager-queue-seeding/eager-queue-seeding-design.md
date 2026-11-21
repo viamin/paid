@@ -84,7 +84,10 @@ while pending projects finish, so completed projects are not swept twice. The
 confidence-delivery and planning-hold reconcilers run only on the first issue
 page for a project; later issue pages perform only bounded eligibility work.
 Every page logs project and candidate counts, newly-enqueued runs, duration,
-object allocations, and peak RSS for operational capacity review.
+object allocations, and peak RSS for operational capacity review. On Linux, peak
+RSS is the numeric `VmHWM` value in KiB, excluding its trailing `kB` unit;
+when `/proc/self/status` is unavailable the metric remains explicitly absent
+(#5217), rather than reporting a fabricated zero.
 
 ## Dequeue-time eligibility recheck
 
