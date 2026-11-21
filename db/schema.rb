@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_040817) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_125317) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3582,6 +3582,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_040817) do
     t.index ["token_digest"], name: "index_personal_access_tokens_on_token_digest", unique: true
     t.index ["user_id", "name"], name: "index_personal_access_tokens_on_user_id_and_name", unique: true
     t.index ["user_id"], name: "index_personal_access_tokens_on_user_id"
+  end
+
+  create_table "pghero_overview_findings", comment: "Development PgHero Overview scan state; system-wide, not tenant-owned.", force: :cascade do |t|
+    t.integer "consecutive_observations", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.text "database", null: false
+    t.text "finding_key", null: false
+    t.text "finding_type", null: false
+    t.datetime "first_seen_at", null: false
+    t.bigint "github_issue_number"
+    t.datetime "issue_last_updated_at"
+    t.datetime "last_seen_at", null: false
+    t.datetime "resolved_at"
+    t.datetime "updated_at", null: false
+    t.index ["database", "finding_key"], name: "index_pghero_overview_findings_on_database_and_finding_key", unique: true
   end
 
   create_table "pghero_queries", comment: "Normalized SQL for development database diagnostics; system-wide, not tenant-owned.", force: :cascade do |t|

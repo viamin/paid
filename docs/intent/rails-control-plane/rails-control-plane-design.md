@@ -189,7 +189,7 @@ display or persist planning counters separately; SQL against
 Neither PgHero history nor planning counters measure peak process memory or
 establish which process caused an out-of-memory kill.
 
-### Decisions and alternatives
+### History decisions and alternatives
 
 | Decision | Rationale | Alternative considered |
 | --- | --- | --- |
@@ -198,6 +198,100 @@ establish which process caused an out-of-memory kill.
 | Retain 14 days and prune unused query text | Provides recent incident context with bounded historical duration. | Unlimited retention accumulates diagnostic data indefinitely. |
 | Enable development planning measurements with an operator opt-out | Makes expensive planning observable without changing production policy. | Execution-only measurement leaves nested-query planning costs unmeasured. |
 | Run devcontainer GoodJob externally with a default of five web threads | Keeps the credential broker and health checks serviceable during bounded control-plane work while retaining finite worker concurrency and the existing ten-connection per-process pool. | In-process GoodJob shares the three-thread Puma process and can delay the broker behind control-plane work. |
+
+## Development PgHero Overview finding issues
+
+A development-only scanner turns the warnings PgHero's Overview (including its
+extended view) would show a developer into tracked GitHub issues in the
+tenant's self repository, so database problems do not depend on someone
+happening to open `/pghero`. The scanner reads PgHero's Ruby methods — the
+same methods the Overview controller calls with the same thresholds — and
+never scrapes the dashboard HTML. Collection, persistence state, and issue
+filing run through one path shared by the scheduled GoodJob job and the
+manual `bin/rails development:pg_hero_overview_scan` invocation. The job,
+schedule, and collector are development-only: the cron entry lives in the
+same development-gated block as the history capture jobs, and the job
+returns early outside development before referencing PgHero.
+
+### Finding inventory and policy
+
+Every Overview warning category is inventoried. Each becomes either an
+actionable finding (an issue is filed), a persistence-gated finding (an
+issue is filed only after the finding is observed on consecutive scans), or
+an informational exclusion with a recorded reason.
+
+| Overview category | Policy | Stable identity |
+| --- | --- | --- |
+| Slow queries | Actionable. PgHero's own window aggregation (3-hour history plus current counters, average ≥ `slow_query_ms` over ≥ `slow_query_calls` calls) is the minimum-impact gate that keeps cumulative `pg_stat_statements` totals and per-minute capture resets from flooding: a query must repeatedly be slow inside the window, not once since server start. | database + `slow_query` + query hash |
+| Suggested indexes | Actionable. Overview thresholds (average ≥ 20 ms, ≥ 50 calls) are the minimum impact. Framed as an investigation lead, never a schema-change instruction. | database + `suggested_index` + table + columns |
+| Invalid indexes | Actionable. A structurally broken index never self-heals. | database + `invalid_index` + schema + index name |
+| Invalid constraints | Actionable. | database + `invalid_constraint` + schema + constraint name |
+| Duplicate indexes | Actionable. | database + `duplicate_index` + unneeded index name |
+| Unused indexes (extended view) | Actionable at ≥ `unused_index_bytes`. | database + `unused_index` + schema + index name |
+| Sequence danger (≥ 90% of max) | Actionable. | database + `sequence_danger` + table + column |
+| Unreadable sequences | Actionable as an investigation lead (capacity monitoring is blind there). | database + `unreadable_sequence` + table + column |
+| Transaction ID danger | Actionable at the Overview threshold. | database + `xid_danger` + schema + table |
+| Inactive replication slots | Actionable where present (retained WAL). | database + `replication_slot` + slot name |
+| Long-running queries | Persistence-gated (2 consecutive scans): a single ≥ 60 s query is usually deliberate maintenance or a one-off; only a recurring one is tracked. Autovacuum workers are excluded as expected maintenance. | database + `long_running_query` + literal-filtered query fingerprint |
+| Total connections at/above threshold | Persistence-gated (2 consecutive scans): transient dev bursts are normal. | database + `connection_pressure` |
+| Idle-in-transaction connections (≥ 100) | Persistence-gated (2 consecutive scans). | database + `idle_in_transaction` |
+| Cache hit rate below threshold (extended view) | Persistence-gated (2 consecutive scans): the underlying counters are cumulative since reset, so one reading can just reflect a cold start. A nil rate (no reads yet) is skipped as insufficient data. | database + `cache_hit_rate` + table/index kind |
+| Query stats unavailable | Actionable coverage finding (the fix — installing the extension — is real work) and marks the scan incomplete rather than clean. | database + `query_stats_unavailable` |
+| Replication lag | Informational exclusion: the development database is a primary, so the Overview's replica-only lag check does not apply. | — |
+| Autovacuum workers shown with long-running queries | Informational exclusion: expected maintenance activity. | — |
+
+### Issue lifecycle
+
+Findings are deduplicated by the stable identities above. Each actionable
+finding owns at most one GitHub issue labeled `pghero-overview`; the issue
+body embeds a hidden marker with the finding identity so issues can be
+adopted even if local state is lost. A persisted `pghero_overview_findings`
+row (system infrastructure in the primary database, not tenant data) tracks
+first/last observation, consecutive observations, and the linked issue
+number. On subsequent scans the existing issue body is refreshed when the
+evidence changed; when the finding disappears the issue is closed with a
+comment recording when it was last observed; if the finding recurs after
+closure the issue is reopened. A per-run cap defers new-issue creation
+beyond the first few findings — deferred findings keep their accumulated
+state and are filed by the next scan, so nothing is dropped.
+
+Issue bodies carry the finding type, observed values against their
+thresholds, observation time, database, a PgHero dashboard link, and a
+concrete investigation prompt (run `EXPLAIN`, inspect the relation, check
+pool configuration) that stops short of instructing a schema change.
+Long-running and slow query text is passed through the same literal
+filtering used for stored history before it reaches an issue body; no
+credentials or connection URLs are included.
+
+### Coverage semantics
+
+A scan is complete only when every category could be collected. Collection
+statement timeouts (the same LockWaitTimeout/QueryCanceled cases the
+Overview rescues), unavailable query stats, and GitHub lookup or write
+failures each yield a failed or explicitly incomplete scan — never an
+apparent all-clear — and categories that could not be observed are excluded
+from disappearance decisions so a timed-out catalog read cannot close a
+still-open issue. GitHub failures never file or close anything: the open
+issue list is read first, and a lookup failure aborts the scan before any
+write, so duplicates cannot be created by a failed lookup. Database errors
+propagate so GoodJob records the failure.
+
+### Scheduling and concurrency
+
+The scan runs hourly at a staggered minute, only in development, on the
+maintenance queue. GoodJob concurrency control (total limit 1) prevents
+concurrent performs; the state rows are also updated transactionally per
+finding so a retried scan after partial filing resumes from the issues it
+already created instead of duplicating them.
+
+### Decisions and alternatives
+
+| Decision | Rationale | Alternative considered |
+| --- | --- | --- |
+| One issue per finding identity instead of one consolidated issue | Individual findings close independently when fixed; a consolidated issue cannot represent per-finding lifecycles without comment bookkeeping. | A single rolling issue is quieter but hides which findings are resolved. |
+| Persist scan state in the primary database | Persistence gating and recurrence need observation history that survives process restarts; the table is system infrastructure like the PgHero history tables. | Rails.cache avoids a migration but loses state on cache clears, breaking persistence gating. |
+| Trust PgHero's windowed query stats for slow-query gating | The 3-hour aggregated window with the calls threshold already absorbs counter resets and cumulative totals. | Custom delta tracking duplicates PgHero's combining logic. |
+| Cap new issues per run and defer the rest | Bounds GitHub write volume per scan while the next scan retries deferred findings from persisted state. | Filing everything in one run can burst the API and the Inbox. |
 
 ## Deferred Work
 
