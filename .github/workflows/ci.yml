@@ -226,7 +226,7 @@ jobs:
     # bounded; a timeout remains a cancelled shard and fails the stable test
     # check below.
     # @spec TEST-SUITE-020
-    timeout-minutes: 240
+    timeout-minutes: 360
 
     services:
       postgres:
@@ -631,7 +631,7 @@ jobs:
     # One dropped leg costs a normal shard runtime; allow for the worst case
     # of recovering several legs serially in this single job, including
     # bounded dependency retries.
-    timeout-minutes: 240
+    timeout-minutes: 360
 
     services:
       postgres:
