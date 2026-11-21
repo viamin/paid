@@ -4531,7 +4531,7 @@ expect(container_service).to receive(:execute).with(
           agent_run.reload
           expect(agent_run.status).to eq("rate_limited")
           expect(agent_run.error_message).to include("subscription usage limit")
-          expect(agent_run.rate_limited_until).to be_within(2.seconds).of(described_class::SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now)
+          expect(agent_run.rate_limited_until).to eq(described_class::SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now)
         end
       end
 
