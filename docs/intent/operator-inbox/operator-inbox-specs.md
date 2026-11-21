@@ -561,7 +561,8 @@
   equivalent, keyboard-accessible affordance in a sticky action area directly
   below the detail header. Contextual reference links SHALL remain in the
   detail body and SHALL NOT be projected into the action area. The action area
-  SHALL remain available while the detail pane scrolls, wrap without
+  SHALL remain available while the desktop detail pane or mobile document
+  scrolls, wrap without
   horizontal clipping on narrow viewports, including unbroken declaration
   URLs in the projected action and its original form control. A projected form action SHALL
   activate the original control, and a projected navigational action SHALL

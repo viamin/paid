@@ -31,8 +31,9 @@ module MasterDetailLayoutHelper
   # Shared chrome applied to both the list pane card and the detail pane
   # card so the two halves of the surface read as one unit. `rounded-xl`
   # matches the existing inbox pane chrome; chat's container switches from
-  # `rounded-lg bg-white shadow` to this shared chrome.
-  MASTER_DETAIL_PANE_CLASSES = "min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm".freeze
+  # `rounded-lg bg-white shadow` to this shared chrome. Clip without creating
+  # a mobile scrolling ancestor; allow grid items to shrink below min-content.
+  MASTER_DETAIL_PANE_CLASSES = "min-h-0 min-w-0 overflow-clip rounded-xl border border-gray-200 bg-white shadow-sm".freeze
 
   # Empty-state card rendered in the detail pane slot when there is no
   # selection. Both Inbox ("Inbox clear") and Chat ("No conversation
