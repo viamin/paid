@@ -79,11 +79,13 @@
 - [x] **RAILS-CONTROL-PLANE-020** — When the devcontainer serves isolated
   container credential bootstrap under bounded concurrent control-plane work,
   it SHALL run GoodJob in the existing external worker process and configure
-  five Puma request threads so two request slots remain after three concurrent
+  a default of five Puma request threads at web startup without requiring a
+  devcontainer rebuild, honoring explicit thread-budget overrides, so two
+  request slots remain at the default after three concurrent
   control-plane requests; credential selection, tenant identity, expiry, and
   finite client deadlines SHALL remain unchanged.
-  *Tests:* `spec/system/worker_pool_load_spec.rb`.
-  *Code:* `.devcontainer/devcontainer.json`, `Procfile.dev`, `bin/jobs`,
+  *Tests:* `spec/lib/dev_script_spec.rb`.
+  *Code:* `.devcontainer/devcontainer.json`, `Procfile.dev`, `bin/dev-web`, `bin/jobs`,
   `config/puma.rb`.
 
 - [x] **RAILS-CONTROL-PLANE-014** — When the development web process exits 137,

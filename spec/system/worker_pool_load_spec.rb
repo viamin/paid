@@ -137,19 +137,6 @@ RSpec.describe "Worker pool load behavior" do
     end
   end
 
-  describe "devcontainer credential broker capacity" do
-    # @spec RAILS-CONTROL-PLANE-020
-    it "keeps two Puma slots for credential bootstrap after bounded control-plane load" do
-      devcontainer = Rails.root.join(".devcontainer/devcontainer.json").read
-      web_threads = devcontainer.match(/"RAILS_MAX_THREADS": "(\d+)"/)[1].to_i
-      bounded_control_plane_requests = 3
-
-      expect(devcontainer).to include('"GOOD_JOB_EXECUTION_MODE": "external"')
-      expect(Rails.root.join("Procfile.dev").read).to include("jobs: bin/jobs")
-      expect(web_threads - bounded_control_plane_requests).to be >= 2
-    end
-  end
-
   describe "GoodJob concurrency controls" do
     # Jobs with global singleton concurrency (only one instance system-wide)
     [

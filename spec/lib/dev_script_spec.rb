@@ -243,7 +243,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "keeps GoodJob in the web process without enabling unconditional Overmind restarts" do # @spec RAILS-CONTROL-PLANE-014
+  it "runs separate jobs without enabling unconditional Overmind restarts" do # @spec RAILS-CONTROL-PLANE-014 RAILS-CONTROL-PLANE-020
     Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
       env = { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "SKIP_DEV_CLEANUP" => "1" }
@@ -254,8 +254,18 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
       expect(overmind_invocation_log(dir)).not_to include("--auto-restart")
       procfile = File.read(File.expand_path("../../Procfile.dev", __dir__))
       expect(procfile).to include("web: bin/dev-web")
-      expect(procfile).not_to include("jobs:")
+      expect(procfile).to include("jobs: bin/jobs")
     end
+  end
+
+  # @spec RAILS-CONTROL-PLANE-020
+  it "starts web with external jobs and default capacity without rebuilt container environment" do
+    expect(captured_web_environment).to eq("external:5")
+  end
+
+  # @spec RAILS-CONTROL-PLANE-020
+  it "preserves an explicit web thread budget while keeping jobs out of the web process" do
+    expect(captured_web_environment(thread_limit: "4", job_mode: "async_server")).to eq("external:4")
   end
 
   it "stops after repeated exit 137" do # @spec RAILS-CONTROL-PLANE-014
@@ -524,6 +534,21 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
+  end
+
+  def captured_web_environment(thread_limit: nil, job_mode: nil)
+    with_dev_web do |dir|
+      write_executable(File.join(dir, "bin", "rails"), <<~BASH)
+        #!/usr/bin/env bash
+        echo "${GOOD_JOB_EXECUTION_MODE:-unset}:${RAILS_MAX_THREADS:-unset}" > web-env
+      BASH
+      _stdout, stderr, status = Open3.capture3(
+        { "GOOD_JOB_EXECUTION_MODE" => job_mode, "RAILS_MAX_THREADS" => thread_limit },
+        File.join(dir, "bin", "dev-web"), chdir: dir
+      )
+      expect(status.success?).to be(true), stderr
+      File.read(File.join(dir, "web-env")).strip
+    end
   end
 
   def with_dev_web
