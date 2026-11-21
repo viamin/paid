@@ -105,8 +105,9 @@ admission paths land.
   *Verified by:* `spec/services/automation/delegated_action_admission_spec.rb`
   (semantic-triggered visible pause and persisted reasons) and
   `spec/services/automation/resolve_bounded_reassessment_spec.rb` (authorized
-  stop, revalidation-required unchanged-scope resume, immutable pinned scope,
-  and audit evidence).
+  stop, unchanged-scope resume only when derived revalidation of expiry,
+  revisions, policy signature, phase policy, and lineage passes, immutable
+  pinned scope, and audit evidence).
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-006** — When semantic correspondence is
   evaluated, the system SHALL use `agent_harness` with bounded evidence and a

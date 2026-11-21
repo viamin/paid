@@ -143,8 +143,11 @@ into this record.
    `agent_harness` correspondence, including fail-closed output handling. The
    delivered `Automation::AssessBoundedScope` has a 12KB evidence bound and a
    strict three-state response schema; `Automation::ResolveBoundedReassessment`
-   allows only authorized stop or revalidated unchanged-scope resume. These
-   transitions share the authorization lock and immutable admission evidence.
+   allows only authorized stop or unchanged-scope resume whose revalidation is
+   derived under the authorization lock from current facts (expiry, intent and
+   acceptance revisions, policy signature, phase policy, lineage) rather than
+   a caller assertion. These transitions share the authorization lock and
+   immutable admission evidence.
 3. **#4999 (`-007`–`-009`)** adds consent-surface parity, fresh-review gates,
    terminal races, completion/reopening, and no implicit release, deployment,
    child-work, or setting-enable authority.
