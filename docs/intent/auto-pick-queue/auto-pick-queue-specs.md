@@ -204,6 +204,32 @@
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`,
   `docs/api/openapi.yaml` (`DependencyCycleIssue`, `DependencyCycleParent`).
 
+- [ ] **AUTO-PICK-QUEUE-025** — When cycle detection reconciles a persisted
+  dependency cycle and the effective project policy of EVERY project
+  represented by that occurrence delegates the bounded `repair` action under a
+  current, non-legacy effective-policy decision, Paid SHALL schedule exactly
+  one automatic cycle-analysis run against that current graph occurrence,
+  attributed to one identified actor holding run and issue-mutation authority
+  for every represented project. Paid SHALL NOT start automatically when any
+  represented project's policy does not delegate (consent is never inferred
+  from one project's setting), when no single authorized actor exists, or
+  while any analysis run for the occurrence already exists — including failed,
+  cancelled, or completed runs. Automatic attempts per cycle fingerprint
+  SHALL be bounded so a recurring or flapping graph cannot drive unbounded
+  analysis cost, and a cycle that cannot be repaired without a human decision
+  is not analyzed again while its occurrence is unchanged. Automatic runs
+  SHALL reuse the same Start/Analyze/AutomaticRepair/Confirm path, safeguards,
+  and Inbox presentation as operator-started runs, and manual start SHALL
+  remain available whenever policy does not delegate it.
+  *Tests:* `spec/services/cycle_analyses/auto_start_spec.rb`,
+  `spec/services/cycle_analyses/start_spec.rb`,
+  `spec/jobs/dependency_cycle_reconciliation_job_spec.rb`,
+  `spec/services/issues/parse_dependencies_spec.rb`,
+  `spec/jobs/cycle_analysis_job_spec.rb`.
+  *Code:* `CycleAnalyses::AutoStart`, `CycleAnalyses::Start`,
+  `CycleAnalyses::AutomaticRepair`, `DependencyCycleReconciliationJob`,
+  `Activities::FetchIssuesActivity`, `Issues::ParseDependencies`.
+
 - [x] **AUTO-PICK-QUEUE-021** — When an authorized operator requests a
   reviewed cycle repair, Paid SHALL require issue-mutation authority for every
   declaration-owning project, reject a changed persisted graph before any

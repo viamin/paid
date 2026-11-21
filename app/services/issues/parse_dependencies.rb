@@ -195,8 +195,10 @@ module Issues
 
     # Reconciliation reads the same persisted effective graph as admission.
     # It never edits a declaration: repair remains an explicit GitHub action.
+    # A newly detected cycle is offered to the policy-gated automatic start.
     def reconcile_dependency_cycles
-      Issues::DependencyCycles.call(account: issue.project.account)
+      cycles = Issues::DependencyCycles.call(account: issue.project.account)
+      CycleAnalyses::AutoStart.call(cycles:)
       Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
     end
 
