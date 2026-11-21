@@ -315,6 +315,20 @@ its absolute expiry; expiration changes the source revision once, invalidating
 a cached acceptance verdict without clock-driven churn on already-stale
 history.
 
+Native stdout and stderr use the executor's 20,000-byte bound per stream,
+rather than the independent 2,000-byte trusted-measurement result bound. Up to
+eight records therefore contribute at most 320,000 native-output bytes before
+JSON escaping (at most 1,920,000 bytes for escaped ASCII control characters).
+The existing record, command, error, and measurement bounds remain independent.
+Complete retained native output passes through unchanged; a digest or success
+summary cannot replace missing primary evidence. Capture records an explicit
+output-truncation boolean before clipping, and projection propagates it into
+incomplete audit coverage. Historical output without that marker is treated as
+potentially clipped when either stream reaches the executor bound. UTF-8 cuts
+are repaired without exceeding the byte bound. This projection changes the
+normal evidence revision without modifying historical receipts, mappings,
+allowances, or substantive verdicts (#5238).
+
 `CloseoutVerifications::Execute` schedules the normal
 `PartialCloseouts::AutoAudit` report-only path once a newly terminal, current
 result is persisted, mirroring `TechnicalPrerequisiteValidationJob#finish!`:
