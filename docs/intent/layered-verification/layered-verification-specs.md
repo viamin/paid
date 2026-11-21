@@ -183,6 +183,8 @@
   (`supported` \| `contradicted` \| `unresolved`) from its contributing check
   results and SHALL synthesize a per-obligation coverage view; the run SHALL
   NOT complete without one synthesized coverage view per in-scope obligation.
+  The result recorder SHALL persist that coverage exactly once; completion
+  SHALL validate and capture the persisted view without re-synthesizing it.
   An empty or unavailable admitted scope SHALL block completion. When the agent
   fails or times out, available outcomes and missing-check gaps SHALL still be
   recorded and synthesized while the run retains its failure status. Audit

@@ -316,6 +316,12 @@ named, recording each outcome as a new `LayeredVerificationCheckResult`
 (`not_run`/`incomplete`/`non_applicable` plus a stated limitation) rather
 than silently dropped.
 
+Audit result recording is separate from completion: the recorder ingests and
+synthesizes the per-obligation coverage once, then completion validates that
+persisted view and captures its review package. This keeps retried completion
+from adding duplicate observations to contradicted findings while allowing a
+completion history that predates recording to synthesize coverage as a fallback.
+
 ## Agent-run goals
 
 An audit prompt supplies each selected obligation's canonical source path,
