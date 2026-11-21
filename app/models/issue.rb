@@ -1515,6 +1515,25 @@ class Issue < ApplicationRecord
     auto_pick_failure_streak.last
   end
 
+  # The failed auto-picked create_pr run that holds a fresh implementation
+  # attempt out of ordinary issue admission, or nil when admission may mint
+  # one. Mirrors the shared AgentRuns::AutoPickCreatePrRetryPolicy refusals
+  # — produced implementation work and owned in-place rate-limit recovery —
+  # so a sweep, delayed re-enqueue, or sync-driven seeding cannot route
+  # around a shared decision the failure callback already refused (#4989
+  # acceptance bypass). Failures created before the authorized operator
+  # reset window no longer hold admission, matching #auto_pick_failure_streak.
+  # @spec EAGER-QUEUE-018 AGENT-RETRY-017
+  def auto_pick_create_pr_admission_hold
+    run = current_failed_auto_pick_create_pr_run
+    return nil unless run
+    return nil if runner_retry_failure_window_reset_at.present? && run.created_at < runner_retry_failure_window_reset_at
+    return run if run.recoverable_rate_limited?
+    return run if run.implementation_work_produced?
+
+    nil
+  end
+
   # @spec EAGER-QUEUE-010
   def auto_pick_failure_streak
     scope = agent_runs

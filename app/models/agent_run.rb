@@ -2209,6 +2209,15 @@ class AgentRun < ApplicationRecord
     !observable_main_agent_work? && pull_request_number.blank? && created_issue_number.blank?
   end
 
+  # @spec AGENT-RETRY-017 EAGER-QUEUE-018
+  # The failed-attempt side-effect guard shared by the auto-pick create_pr
+  # retry policy and ordinary issue admission: a run that pushed a revision,
+  # opened a PR or issue, or executed observable main-agent work has already
+  # spent implementation effort that a blind replacement would duplicate.
+  def implementation_work_produced?
+    result_commit_sha.present? || !no_observable_work?
+  end
+
   # Successful and timed-out main runner commands preserve their output in the
   # attempt record. Smoke preflight uses a distinct error type, and maintenance
   # commands do not create runner attempts.
