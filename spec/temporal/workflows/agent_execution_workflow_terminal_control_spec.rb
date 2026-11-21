@@ -131,6 +131,26 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  # @spec TEMPORAL-ORCHESTRATION-015 @spec TEMPORAL-ORCHESTRATION-016
+  it "schedules owned-resource cleanup despite cancellation when ownership is persisted" do
+    cancellation = Temporalio::Error::CanceledError.new("cancelled")
+    allow(workflow).to receive(:run_activity).with(Activities::RunAcceptanceAuditActivity, anything, any_args).and_raise(cancellation)
+    owned = { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
+    allow(workflow).to receive(:run_cleanup_activity) do |activity, data, **options|
+      calls << { activity:, data:, options: }
+      activity == Activities::ResolveCleanupOwnershipActivity ? owned : {}
+    end
+
+    expect { workflow.execute(input) }.to raise_error(cancellation)
+    expect(failure_publication).to be_nil
+    # A cancelled workflow token must not turn persisted ownership into a skipped
+    # cleanup: resolve_cleanup_ownership's detached boundary keeps the resolver
+    # schedulable, and the owned-resource cleanup it authorizes must still run.
+    cleanup_activities.each do |activity|
+      expect(workflow).to have_received(:run_cleanup_activity).with(activity, { agent_run_id: 42 }, any_args)
+    end
+  end
+
   # @spec TEMPORAL-ORCHESTRATION-016
   it "cleans resources reported as owned by a resumed acceptance audit" do
     allow(workflow).to receive(:run_activity) do |activity, data, **options|
