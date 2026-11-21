@@ -4,6 +4,19 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-057** — When a current partial-closeout assessment
+  identifies one source-retained agent-owned gap and its normal continuation
+  prerequisites permit work, Paid SHALL use the effective bounded-delivery
+  policy to record the agent's bounded technical choice and queue at most one
+  implementation continuation for that gap's source and intent revision. It
+  SHALL preserve the normal scoped continuation admission and dequeue guards,
+  retain the prior evidence and remaining-work scope, and require one focused
+  human decision for unavailable delegation or a changed revision. A prior
+  closed owner SHALL not satisfy the criterion.
+  *Code:* `app/services/partial_closeouts/advance.rb`,
+  `app/services/issues/request_continuation.rb`.
+  *Test:* `spec/services/partial_closeouts/advance_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-056** — When a report-only acceptance-audit execution
   attempt under one logical audit identity — the issue plus the closeout-evidence
   source revision — fails transiently because transport or infrastructure was

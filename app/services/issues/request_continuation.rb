@@ -29,13 +29,14 @@ module Issues
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, actor:, reason:, origin: :operator, goal: "create_pr", continuation_mode: "implementation")
+    def initialize(issue:, actor:, reason:, origin: :operator, goal: "create_pr", continuation_mode: "implementation", evidence_context: {})
       @issue = issue
       @actor = actor
       @reason = reason.to_s.strip
       @origin = origin.to_sym
       @goal = goal
       @continuation_mode = continuation_mode
+      @evidence_context = evidence_context.is_a?(Hash) ? evidence_context.deep_stringify_keys : {}
     end
 
     def call
@@ -71,7 +72,7 @@ module Issues
 
     private
 
-    attr_reader :actor, :continuation_mode, :goal, :issue, :origin, :reason
+    attr_reader :actor, :continuation_mode, :evidence_context, :goal, :issue, :origin, :reason
 
     # The one-open-request-per-issue dedup only spans the same operation: an
     # open implementation continuation is not an acceptance-audit request and
@@ -169,7 +170,7 @@ module Issues
       request = nil
       run = nil
       ActiveRecord::Base.transaction do
-        evidence = evidence_snapshot(status).merge("continuation_mode" => continuation_mode)
+        evidence = evidence_snapshot(status).merge("continuation_mode" => continuation_mode).merge(evidence_context)
         request = IssueContinuationRequest.create!(
           issue: issue,
           project: issue.project,

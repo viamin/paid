@@ -22,6 +22,7 @@ module Automation
     SOURCES = %i[legacy_policy manual_action continuation_grant project_defaults].freeze
     REASONS = %i[phase_disabled phase_enabled posture_restricted bounded_phase_stop].freeze
     ACTION_CLASS_BY_DELEGATED_ACTION = {
+      "bounded_implementation_choice" => "bounded_implementation_choice",
       "review" => "technical_stop_recovery",
       "repair" => "cycle_analysis_and_repair",
       "merge" => "evidence_gated_issue_closure",

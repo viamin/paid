@@ -568,6 +568,16 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
+For one source-retained agent gap, `PartialCloseouts::Advance` may use the
+project's current `bounded_delivery` policy to record a bounded technical
+choice and request one automatic implementation continuation. The identity is
+the assessed gap plus its source and intent revisions; a prior request for that
+identity suppresses replay even after its run is terminal. The continuation
+still enters only through `Issues::RequestContinuation`, so its scoped lift,
+active-run, dependency, trust, budget, pause, scanner, feature/design-release,
+manual-review, and dequeue guards remain authoritative. Any changed revision,
+unsupported scope, or unavailable delegation remains a focused human decision.
+
 Human prerequisites carry structured policy and evidence references with stable
 keys and revisions. The prerequisite publisher derives a durable identity from
 that structured record. When a later assessment changes the referenced identity

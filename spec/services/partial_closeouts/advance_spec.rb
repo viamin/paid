@@ -38,6 +38,73 @@ RSpec.describe PartialCloseouts::Advance do
     expect(issue.reload.agent_runs.where.not(id: run.id)).to be_empty
   end
 
+  # @spec PARTIAL-CLOSEOUT-057
+  it "queues one delegated implementation continuation for a current source-retained gap" do
+    FeatureFlags.enable!(:automation_phases, project: project)
+    FeatureFlags.enable!(:project_delegation, project: project)
+    create(:project_delegation_posture, project: project, level: "bounded_delivery", selected_by: owner)
+    assessment = { "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue), "gaps" => [
+      { "criterion" => "dispatch", "kind" => "agent", "retain_on_source" => true, "body" => "Wire dispatch." }
+    ] }
+
+    first = described_class.call(agent_run: run, assessment: assessment)
+    second = described_class.call(agent_run: run, assessment: assessment)
+
+    expect(first.scheduled?).to be(true)
+    expect(first.agent_run.goal).to eq("create_pr")
+    expect(first.agent_run.continuation_request.evidence).to include("remaining_work" => hash_including("criterion" => "dispatch"))
+    expect(first.agent_run.continuation_request.evidence.dig("technical_choice", "effective_policy")).to include("permitted" => true)
+    expect(run.reload.reconciliation.dig("advance", "inbox_decision_avoided")).to be(true)
+    expect(second.code).to eq(:unchanged_gap)
+    expect(IssueContinuationRequest.where(issue: issue).count).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "keeps a stale source or intent revision visible for one focused decision" do
+    FeatureFlags.enable!(:automation_phases, project: project)
+    FeatureFlags.enable!(:project_delegation, project: project)
+    create(:project_delegation_posture, project: project, level: "bounded_delivery", selected_by: owner)
+    assessment = { "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue), "gaps" => [
+        { "criterion" => "dispatch", "kind" => "agent", "retain_on_source" => true, "body" => "Wire dispatch." }
+      ] }
+    issue.update!(title: "Updated acceptance intent")
+
+    result = described_class.call(agent_run: run, assessment: assessment)
+
+    expect(result.code).to eq(:human_decision_required)
+    expect(IssueContinuationRequest.where(issue: issue)).to be_empty
+    expect(run.reload.reconciliation.dig("advance", "inbox_decision_avoided")).to be(false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "does not continue when the effective coding policy is disabled" do
+    FeatureFlags.enable!(:automation_phases, project: project)
+    FeatureFlags.enable!(:project_delegation, project: project)
+    create(:project_delegation_posture, project: project, level: "bounded_delivery", selected_by: owner)
+    project.update!(automation_phase_settings: { "phases" => { "coding" => false } })
+    assessment = { "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue),
+      "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue), "gaps" => [
+        { "criterion" => "dispatch", "kind" => "agent", "retain_on_source" => true, "body" => "Wire dispatch." }
+      ] }
+
+    result = described_class.call(agent_run: run, assessment: assessment)
+
+    expect(result.code).to eq(:human_decision_required)
+    expect(IssueContinuationRequest.where(issue: issue)).to be_empty
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "keeps a source-retained gap in Inbox when delegation is not explicitly enabled" do
+    result = described_class.call(agent_run: run, assessment: { "gaps" => [
+      { "criterion" => "dispatch", "kind" => "agent", "retain_on_source" => true }
+    ] })
+
+    expect(result.code).to eq(:human_decision_required)
+    expect(IssueContinuationRequest.where(issue: issue)).to be_empty
+  end
+
   # @spec PARTIAL-CLOSEOUT-024
   it "waits until the source run is terminal before requesting an audit" do
     run.update!(status: "running", completed_at: nil)
