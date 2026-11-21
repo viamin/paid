@@ -83,9 +83,10 @@ separate rollout are complete.
 Structural checks compare project, tenant, work identity, lineage, phase,
 endpoint, lifecycle, policy signature, and deterministic guards. Scope meaning
 is assessed by a dedicated `agent_harness` request that receives the pinned
-intent/acceptance evidence and proposed repair evidence and returns a bounded
-schema: `in_scope`, `out_of_scope`, or `unknown`, with evidence references.
-Unavailable or malformed output is `unknown` and fails closed.
+intent/acceptance evidence and proposed repair evidence at queue and dequeue
+boundaries and returns a bounded schema: `in_scope`, `out_of_scope`, or
+`unknown`, with evidence references. Unavailable or malformed output is
+`unknown` and fails closed.
 
 An intent digest change, acceptance expansion, permission/policy change, new
 risk, or `unknown`/`out_of_scope` correspondence transitions the authorization

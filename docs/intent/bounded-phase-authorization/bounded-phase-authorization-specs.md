@@ -110,14 +110,18 @@ admission paths land.
   pinned scope, and audit evidence).
 
 - [x] **BOUNDED-PHASE-AUTHORIZATION-006** — When semantic correspondence is
-  evaluated, the system SHALL use `agent_harness` with bounded evidence and a
-  structured outcome, SHALL fail closed on unavailable or malformed output, and
-  SHALL NOT let that outcome waive deterministic policy.
+  evaluated, the system SHALL use `agent_harness` with bounded pinned and
+  proposed repair evidence at every repair admission boundary and a structured
+  outcome, SHALL fail closed on unavailable or malformed output, and SHALL NOT
+  let that outcome waive deterministic policy.
   *Verified by:* `spec/services/automation/assess_bounded_scope_spec.rb`
   (bounded structured `agent_harness` request and unavailable/malformed
   fail-closed outcomes) and
-  `spec/services/automation/delegated_action_admission_spec.rb` (unknown
-  correspondence pauses admission rather than waiving deterministic checks).
+  `spec/services/automation/delegated_action_admission_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_spec.rb`, and
+  `spec/jobs/process_run_queue_job_spec.rb` (unknown correspondence pauses
+  admission rather than waiving deterministic checks, with proposed repair
+  evidence preserved at queue and dequeue boundaries).
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-007** — When coding is selected, the
   system SHALL stop at merge-ready and SHALL NOT merge; when merge is selected,
