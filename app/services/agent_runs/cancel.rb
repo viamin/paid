@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
+require "temporalio/error"
+
 module AgentRuns
+  # @spec CONTAINER-RUNTIME-053
   class Cancel
     def self.call(...)
       new(...).call
@@ -15,6 +18,7 @@ module AgentRuns
     def call
       cancel_temporal_workflow
       cleanup_container
+      agent_run.reload unless skip_status_update
       agent_run.cancel!(error: error) unless skip_status_update
     end
 

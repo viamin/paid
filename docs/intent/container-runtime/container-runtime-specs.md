@@ -898,3 +898,13 @@
   *Tests:* `spec/services/containers/service_provisioner_spec.rb`,
   `spec/services/containers/postgres_application_role_spec.rb`.
   *Code:* `Containers::ServiceProvisioner`, `Containers::PostgresApplicationRole`.
+
+- [x] **CONTAINER-RUNTIME-053** — When cancellation tears down an execution
+  environment that clears persisted execution references, Paid SHALL reload the
+  run before applying its normal terminal cancellation transition, so cleanup
+  evidence and concurrent persisted state are retained and cancellation is not
+  stranded by dirty in-memory attributes. A clean or already-terminal run SHALL
+  remain idempotent, and callers using `skip_status_update` SHALL perform only
+  workflow/environment cleanup without a second lifecycle transition.
+  *Tests:* `spec/services/agent_runs/cancel_spec.rb`.
+  *Code:* `AgentRuns::Cancel`, `AgentRun#cleanup_execution_environment`.

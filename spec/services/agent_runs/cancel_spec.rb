@@ -46,6 +46,36 @@ RSpec.describe AgentRuns::Cancel do
       }.not_to change { agent_run.reload.updated_at }
     end
 
+    # @spec CONTAINER-RUNTIME-053
+    it "completes cancellation after real cleanup clears execution references" do
+      agent_run.update!(container_id: "container-123", container_host: "local")
+      allow(Containers::PoolManager).to receive(:cleanup_claimed_container).and_return(true)
+
+      expect(agent_run).to receive(:cancel!).once.and_call_original
+
+      described_class.call(agent_run: agent_run)
+
+      expect(agent_run.reload).to have_attributes(status: "cancelled", container_id: nil, container_host: nil)
+    end
+
+    # @spec CONTAINER-RUNTIME-053
+    it "is idempotent for an already-clean cancelled run" do
+      agent_run.cancel!
+
+      expect { described_class.call(agent_run: agent_run) }
+        .not_to change { agent_run.reload.attributes.slice("status", "completed_at", "error_message") }
+    end
+
+    # @spec CONTAINER-RUNTIME-053
+    it "cleans up without changing status when skip_status_update is true" do
+      agent_run.update!(container_id: "container-123", container_host: "local")
+      allow(Containers::PoolManager).to receive(:cleanup_claimed_container).and_return(true)
+
+      described_class.call(agent_run: agent_run, skip_status_update: true)
+
+      expect(agent_run.reload).to have_attributes(status: "running", container_id: nil, container_host: nil)
+    end
+
     it "cleans up the container when present" do
       agent_run.update!(container_id: "container-123")
       allow(agent_run).to receive(:cleanup_execution_environment)

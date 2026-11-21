@@ -70,6 +70,14 @@ that rule: before a real container records ownership, per-host admission and
 workspace-volume cleanup both route by the planned host metadata instead of
 charging blank rows to the local backend.
 
+Cancellation first asks Temporal to stop the workflow and then tears down its
+execution environment. Because teardown clears persisted execution references
+without taking over the lifecycle transition, `AgentRuns::Cancel` reloads the
+run before it records cancellation. This keeps the terminal write compatible
+with cleanup's in-memory assignments and observes any concurrent persisted
+state; normal cancellation remains idempotent, and callers that already made a
+terminal lifecycle decision may request cleanup without another status update.
+
 ### Service-container orchestration
 
 PostgreSQL service bootstrap credentials remain with provisioning. Agent
