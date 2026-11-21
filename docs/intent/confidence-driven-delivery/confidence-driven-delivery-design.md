@@ -171,14 +171,19 @@ cannot be interpreted as a passing result, and projection failures must be
 visible in Inbox/GitHub context. Do not let a ready-looking issue remain
 silently blocked by a second, unexplained feature gate.
 
-Direct agent label writes use a stricter ownership boundary because GitHub's
-add-label endpoint is idempotent. The proxy reads the issue before adding
+Capture covers issue creation with labels, adding labels, and replacing issue
+labels through an issue update. A successful creation binds the receipt to
+GitHub's returned issue number; it cannot query that new issue before creation.
+Updates to existing issues use a stricter ownership boundary because GitHub's
+label writes are idempotent. The proxy reads the issue before adding
 `planning`; only an observed absence plus a complete durable contract grants
 Paid removal authority. A pre-existing label remains operator-owned or unknown
 even when the authenticated run supplies a complete contract. If persistence
 fails after GitHub accepts the write, the proxy surfaces a retryable failure;
 the retry observes the existing label and records review work rather than
-claiming it.
+claiming it. Issue creation is not an idempotent label update: a capture failure
+after creation retains the run's recorded issue identity when available and
+warns the caller to inspect that issue instead of repeating issue creation.
 
 ## Baseline and review dispatch
 
