@@ -39,6 +39,10 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+Native analyzer adapters require machine-readable stdout. Package-manager status
+messages must be suppressed at invocation; diagnostic stderr remains available in retained
+report evidence and must not turn a valid exit-1 findings result into a parse failure.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new

@@ -45,6 +45,16 @@ RSpec.describe MaintenanceRuns::ToolEvidence do
     )
   end
 
+  # @spec MAINT-040 MAINT-043
+  it "suppresses Yarn status output for machine-readable Knip findings" do
+    stub_analyzer_results
+
+    evidence = described_class.call(run:)
+
+    expect_execution("frontend", %w[yarn --silent knip --reporter json], timeout: 120)
+    expect(evidence.fetch(:completed_checks)).to include(include("name" => "knip", "exit_code" => 1))
+  end
+
   # @spec MAINT-040 MAINT-042
   it "discovers package scopes after execution output normalization" do
     discovery = normalized_discovery_output

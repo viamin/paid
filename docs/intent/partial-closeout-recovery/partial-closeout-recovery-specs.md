@@ -214,7 +214,9 @@
   SHALL be excluded and visibly counted; a closed issue alone SHALL never be
   represented as acceptance evidence. Rendering SHALL use persisted local
   graph, blocker, eligibility, and assessment state only and SHALL make no
-  GitHub or LLM calls or change priorities or dependencies.
+  GitHub or LLM calls or change priorities or dependencies. Graph issue rows SHALL
+  preload shared project records separately rather than repeat project audit
+  history in each joined issue row.
   *Code:* `app/services/issues/root_prerequisite_ranking.rb`,
   `app/controllers/inbox_controller.rb`,
   `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
@@ -307,7 +309,12 @@
       action when no compatible host or required `marketplace_tool_sidecars`
       authorization exists; and, when runnable, SHALL execute only the reviewed
       analyzer recipe command through the isolated AgentRun environment on the
-      inspected host, SHALL restore the pinned commit into the shallow clone
+      inspected host, SHALL provision explicitly configured project services
+      through the selected runner before container startup and use its private
+      per-run database/environment, SHALL release those resources after stopping
+      execution on success, failure, cancellation or deleted-run cleanup while
+      preserving other runs/previews and excluding credentials from evidence
+      (#5219), SHALL restore the pinned commit into the shallow clone
       before executing it, SHALL retain bounded stdout, stderr, exit status,
       pinned checkout/image/tool identity, sidecar endpoint, and cleanup
       evidence, and SHALL report `unavailable`, `failed`, or `completed`
@@ -335,11 +342,15 @@
       `app/services/llm/analyze_partial_closeout.rb`,
       `app/services/technical_prerequisites/start_validation.rb`,
       `app/services/technical_prerequisites/validate_execution.rb`,
+      `app/services/containers/service_provisioner.rb`,
+      `app/services/execution_runners/local_docker_runner.rb`,
       `app/jobs/technical_prerequisite_validation_job.rb`,
       `app/controllers/projects/agent_runs_controller.rb`,
       `app/models/agent_run.rb`,
       `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
       *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+      `spec/services/containers/service_provisioner_spec.rb`,
+      `spec/services/execution_runners/local_docker_runner_spec.rb`,
       `spec/services/technical_prerequisites/start_validation_spec.rb`,
       `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
       `spec/requests/projects/technical_prerequisite_validations_spec.rb`,

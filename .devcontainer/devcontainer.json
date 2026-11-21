@@ -32,6 +32,12 @@
     // Keep devcontainer worker concurrency conservative to avoid OOM-killing
     // Overmind when Rails, GoodJob, Temporal, and asset watchers are all live.
     "DB_POOL": "10",
+    // Keep Puma available for container credential materialization while
+    // GoodJob performs maintenance, metrics, and dashboard work in its own
+    // process. Five web threads leave two broker/health slots after the three
+    // bounded concurrent control-plane requests exercised by the dev workload.
+    "RAILS_MAX_THREADS": "5",
+    "GOOD_JOB_EXECUTION_MODE": "external",
     "TEMPORAL_ADDRESS": "temporal:7233",
     "TEMPORAL_WORKFLOW_SLOTS": "4",
     "TEMPORAL_ACTIVITY_SLOTS": "4",

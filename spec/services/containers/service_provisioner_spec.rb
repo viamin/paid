@@ -1296,6 +1296,37 @@ RSpec.describe Containers::ServiceProvisioner do
       create(:project_service_container, project: project, service_container: service_container)
     end
 
+    # @spec CONTAINER-RUNTIME-004 PARTIAL-CLOSEOUT-032
+    it "releases services while the owning validation run is still running" do
+      agent_run = create(:agent_run, :running, project:, issue:,
+        service_container_ids: [ service_container.id ])
+      docker_container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive_messages(exec: [ [], [], 0 ], stop: nil, delete: nil)
+
+      provisioner.cleanup(agent_run)
+
+      expect(service_container.reload.status).to eq("stopped")
+      expect(agent_run.reload.service_container_ids).to eq([])
+    end
+
+    # @spec CONTAINER-RUNTIME-004 PARTIAL-CLOSEOUT-032
+    it "cleans a deleted run's owned resources without updating its row" do
+      agent_run = create(:agent_run, :completed, project:, issue:,
+        service_container_ids: [ service_container.id ])
+      docker_container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive_messages(exec: [ [], [], 0 ], stop: nil, delete: nil)
+      agent_run.delete
+
+      expect { provisioner.cleanup(agent_run, persist: false) }.not_to raise_error
+
+      expect(service_container.reload.status).to eq("stopped")
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+    end
+
     it "drops per-run database and stops containers with no active runs" do
       agent_run = create(:agent_run, :completed, project: project, issue: issue,
         service_container_ids: [ service_container.id ])
@@ -1439,6 +1470,25 @@ RSpec.describe Containers::ServiceProvisioner do
 
     before do
       create(:project_service_container, project: project, service_container: service_container)
+    end
+
+    # @spec CONTAINER-RUNTIME-004 PARTIAL-CLOSEOUT-032
+    it "retains the active main run's service during transient preview cleanup" do
+      previous_db = provisioner.send(:per_run_db_name, agent_run, stale_requeue_count: 0)
+      current_db = provisioner.send(:per_run_db_name, agent_run, stale_requeue_count: 1)
+      agent_run.update!(status: "running", service_container_ids: [ service_container.id ],
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{current_db}" })
+      docker_container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive_messages(exec: [ [], [], 0 ], stop: nil, delete: nil)
+
+      provisioner.cleanup_service_containers([ service_container.id ], agent_run:,
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{previous_db}" }, stale_requeue_count: 0)
+
+      expect(service_container.reload.status).to eq("running")
+      expect(docker_container).not_to have_received(:delete)
+      expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
     end
 
     it "drops the per-run database resolved from the supplied environment and stops idle containers" do

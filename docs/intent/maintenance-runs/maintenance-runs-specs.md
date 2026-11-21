@@ -156,6 +156,7 @@
 - [x] **MAINT-040**: The system shall invoke native CLI analyzers through
       `AgentRun#execute_in_execution_environment` against the run's pinned
       checkout, without provisioning a `tool_sidecar` for that analyzer,
+      suppressing package-manager status output when parsing machine-readable stdout,
       using the live execution-environment path validated in
       [#4604](https://github.com/viamin/paid/issues/4604). Before selecting
       an additional analyzer, the recipe shall verify that analyzer's

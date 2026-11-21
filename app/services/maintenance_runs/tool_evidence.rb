@@ -39,7 +39,7 @@ module MaintenanceRuns
         "node -e 'const p = require(\"./package.json\"); const d = {...p.dependencies, ...p.devDependencies}; process.exit(d.knip && require(\"fs\").existsSync(\"yarn.lock\") ? 0 : 1)'" ],
         %w[yarn install --frozen-lockfile --ignore-scripts --silent],
         %w[yarn knip --version], [
-        Analysis.new("knip", %w[yarn knip --reporter json], "issues")
+        Analysis.new("knip", %w[yarn --silent knip --reporter json], "issues")
       ], %w[knip.json knip.jsonc knip.ts knip.js package.json])
     ].freeze
     ACTIVITY_TIMEOUT = DISCOVERY_TIMEOUT + (MAX_PACKAGE_SCOPES * ADAPTERS.sum do |adapter|

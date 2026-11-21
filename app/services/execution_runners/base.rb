@@ -205,7 +205,8 @@ module ExecutionRunners
     # @param stale_requeue_count [Integer, nil] override for per-run resource naming
     # @return [void]
     # @spec CONTAINER-RUNTIME-032
-    def cleanup_services(agent_run:, stale_requeue_count: nil)
+    # +persist: false+ supports cleanup after the owning run was deleted.
+    def cleanup_services(agent_run:, stale_requeue_count: nil, persist: true)
       raise NotImplementedError, "#{self.class} must implement ##{__method__}"
     end
 

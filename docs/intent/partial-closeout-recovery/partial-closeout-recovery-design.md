@@ -910,6 +910,16 @@ outcome, and then tears down both resources. Commands do not receive host
 shell access or a Docker socket; existing image allowlists, network policy,
 hardening profiles, and resource budgets remain authoritative.
 
+For configured project services, validation uses the selected runner's normal
+service provisioner before starting the execution container (#5219). This
+reuses its private database per run and persisted service environment; it never
+borrows the control-plane database. Evidence records service IDs and environment
+key names, never credentials or URLs. Cleanup stops the execution environment
+before releasing its service references and private database, including partial
+setup, cancellation and a deleted run. Other running users and transient preview
+references retain their shared services. No configured services means no service
+startup or auto-detection during validation.
+
 The validation run is report-only. It carries its own goal, so it never
 inherits the implementation-admission gate of an implementation goal — a
 stalled issue whose feature intent is not released can still collect evidence
@@ -1057,7 +1067,9 @@ visible rather than being implied away. Current closeout-assessment freshness
 is shown on each path, and stale assessment never establishes acceptance.
 
 Traversal is account-scoped, limited to visible current lane membership, and
-bounded by node, ranked-row, and path limits. Canonical auto-pick admission is
+bounded by node, ranked-row, and path limits. Graph issue rows join projects for
+account filtering but preload shared project records separately, so project
+audit history is not repeated for every graph node. Canonical auto-pick admission is
 evaluated only for roots in the bounded ranked result, so projects whose roots
 cannot be displayed do not add admission work to an Inbox render. Persisted
 cycles, unresolved external edges, and human-decision prerequisites are
