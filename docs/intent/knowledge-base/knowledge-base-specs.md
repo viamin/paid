@@ -62,14 +62,20 @@
   perform, persist a stable relative-path cursor only after the shard's
   artifacts are stored, and resume idempotently from that cursor until all
   files are covered. They SHALL stream bounded shard artifacts to persistence
-  without materializing repository-wide matches or artifact arrays.
+  without materializing repository-wide matches or artifact arrays. Unexpected
+  parser errors, timeouts, and malformed parser output SHALL fail a paged
+  collector without advancing its checkpoint or permitting finalization. Only
+  the exact no-matches exit status SHALL count as an empty successful shard.
   *Code:* `app/jobs/run_collector_batch_job.rb`,
   `app/jobs/run_collector_continuation_job.rb`,
   `app/services/knowledge/collector_runner.rb`,
-  `app/services/knowledge/artifact_store.rb`.
+  `app/services/knowledge/artifact_store.rb`,
+  `app/services/knowledge/collectors/concerns/ast_grep_runner.rb`.
   *Test:* `spec/jobs/run_collector_batch_job_spec.rb`,
   `spec/services/knowledge/collector_runner_spec.rb`,
-  `spec/services/knowledge/artifact_store_spec.rb`.
+  `spec/services/knowledge/artifact_store_spec.rb`,
+  `spec/services/knowledge/collector_runner_shard_failures_spec.rb`,
+  `spec/services/knowledge/collectors/concerns/ast_grep_runner_spec.rb`.
 
 - [x] **KNOWLEDGE-CREDENTIAL-001** — When a knowledge owner selects a saved
   credential for embeddings, Paid SHALL persist a binding

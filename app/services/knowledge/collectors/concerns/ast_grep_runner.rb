@@ -22,7 +22,7 @@ module Knowledge
           ]
 
           output = execute_ast_grep(cmd)
-          return [] if output.empty?
+          return [] if output.nil? || (output.empty? && !options[:partial_collection])
 
           JSON.parse(output)
         rescue JSON::ParserError => e
@@ -32,6 +32,8 @@ module Knowledge
             pattern: pattern,
             language: language
           )
+          raise if options[:partial_collection]
+
           []
         end
 
@@ -48,12 +50,18 @@ module Knowledge
               stderr: stderr.truncate(500),
               exit_code: status.exitstatus
             )
+            raise "ast-grep failed with exit #{status.exitstatus}" if options[:partial_collection]
+
             return ""
           end
+
+          return nil if status.exitstatus == 1
 
           stdout
         rescue Errno::ENOENT
           Rails.logger.warn(message: "#{ast_grep_log_component}.tool_not_found", command: cmd.first)
+          raise if options[:partial_collection]
+
           ""
         end
 
@@ -61,12 +69,14 @@ module Knowledge
           run_command(*cmd, timeout: 60)
         rescue RuntimeError, Knowledge::ContainerizedRunner::ContainerError => e
           # ast-grep returns exit 1 when no matches found — not an error.
-          return "" if e.message.include?("exit 1")
+          return nil if e.message.match?(/\ACommand failed \(exit 1\)(?::|\z)/)
 
           Rails.logger.warn(
             message: "#{ast_grep_log_component}.command_error",
             error: e.message.truncate(500)
           )
+          raise if options[:partial_collection]
+
           ""
         end
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_040817) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -375,6 +375,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
     t.jsonb "mcp_provisioned_servers", default: {}, null: false, comment: "Materialized MCP server specs (stdio_servers + url_servers) produced by provisioning"
     t.jsonb "mcp_server_snapshot", default: [], null: false
     t.jsonb "mcp_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of MCP sidecar containers provisioned for this run"
+    t.datetime "operator_priority_requested_at", comment: "Explicit operator scheduling request for an existing audit; original execution authority remains unchanged."
     t.bigint "originating_audit_run_id"
     t.string "parent_workflow_id", limit: 255
     t.datetime "paused_at"
@@ -3645,6 +3646,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
     t.jsonb "log_data"
     t.jsonb "measurement_recipe"
     t.string "name", limit: 255, null: false
+    t.integer "native_timeout_seconds", default: 300, null: false, comment: "Reviewed isolated native validation deadline; ordinary pre-commit and LLM deadlines are independent."
     t.integer "position", default: 0, null: false
     t.bigint "project_id"
     t.datetime "updated_at", null: false
@@ -3659,6 +3661,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
     t.index ["user_id", "position"], name: "idx_pre_commit_requirements_user_position", where: "(user_id IS NOT NULL)"
     t.index ["user_id"], name: "index_pre_commit_requirements_on_user_id"
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
+    t.check_constraint "native_timeout_seconds >= 1 AND native_timeout_seconds <= 900", name: "pre_commit_requirements_native_timeout_bounds"
   end
 
   create_table "preview_provision_states", comment: "Shared baseline snapshots for overlapping preview/screenshot provisioning on the same agent run.", force: :cascade do |t|

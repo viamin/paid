@@ -71,3 +71,20 @@
   *Code:* `ScanPaidPrsActivity` (scan gating), `Issue.auto_continue_active`,
   `QueueAgentRunActivity#find_existing_run`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
+## Explicit operator audit priority
+
+- [x] **QUEUE-TIER-007** — When an authorized operator joins an existing
+  unclaimed queued acceptance audit, Paid SHALL preserve its request/run,
+  trigger, admission evidence and retry identity while recording one durable
+  operator scheduling request and actor audit event. Queue SQL and its Ruby
+  badge SHALL place that audit in the operator tier without changing execution
+  authority, fairness, capacity or dequeue guards. Automatic joins,
+  implementation work and already claimed/running/terminal runs SHALL NOT
+  receive a new priority request; repeated operator joins SHALL be idempotent.
+  Tracked by [#5235](https://github.com/viamin/paid/issues/5235).
+  *Code:* `AgentRuns::PrioritizeAudit`, `Issues::RequestContinuation`,
+  `AgentRun::QUEUE_PRIORITY_CASE_SQL`, `AgentRun#queue_priority_tier`.
+  *Test:* `spec/services/agent_runs/prioritize_audit_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`,
+  `spec/models/agent_run_spec.rb`.

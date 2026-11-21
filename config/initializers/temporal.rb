@@ -112,4 +112,5 @@ module Paid
   # Resolved at load time so workflow code can reference it as a constant
   # without breaking Temporal's deterministic replay requirement.
   AGENT_TASK_QUEUE = agent_task_queue
+  POLL_TASK_QUEUE = poll_task_queue
 end

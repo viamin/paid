@@ -20,6 +20,18 @@ RSpec.describe "Source-closure recovery" do
   end
 
   # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
+  it "shows recovery guidance when job enqueueing is aborted" do
+    sign_in user
+    allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id).and_return(false)
+
+    post retry_source_closure_project_agent_run_path(project, run)
+
+    expect(response).to redirect_to(project_agent_run_path(project, run))
+    expect(flash[:alert]).to include("could not be queued")
+    expect(run.reload.status).to eq("waiting_recovery")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
   it "shows waiting diagnostics and the manual recovery action" do
     sign_in user
     run.update!(reconciliation: { "source_closure_recovery" => {

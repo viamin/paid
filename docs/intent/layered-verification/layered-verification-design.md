@@ -316,6 +316,12 @@ named, recording each outcome as a new `LayeredVerificationCheckResult`
 (`not_run`/`incomplete`/`non_applicable` plus a stated limitation) rather
 than silently dropped.
 
+Audit result recording is separate from completion: the recorder ingests and
+synthesizes the per-obligation coverage once, then completion validates that
+persisted view and captures its review package. This keeps retried completion
+from adding duplicate observations to contradicted findings while allowing a
+completion history that predates recording to synthesize coverage as a fallback.
+
 ## Agent-run goals
 
 An audit prompt supplies each selected obligation's canonical source path,
@@ -366,6 +372,19 @@ prevents the agent from restoring writes.
 TLC writes its generated state into unique per-check container-local temporary storage through
 its [documented `-metadir` option](https://github.com/tlaplus/tlaplus/blob/master/general/docs/current-tools.md), outside the canonical checkout. Repair runs
 retain their separately authorized writable checkout.
+
+Audit execution bypasses coding pre-commit requirements and automatic commits.
+Its selected verification producers govern assessment work. On an agent failure
+or timeout, the workflow records available structured outcomes and explicit
+missing-check gaps, synthesizes coverage and retains discrepancies while keeping
+the run failed. Recording evidence never grants completion or repair authority.
+Completion requires coverage for every admitted obligation and a nonempty scope.
+The recorder preserves log-record boundaries when normalizing structured agent
+output, including records stored without trailing newlines, while retaining
+byte-continuous chunks that split within an output envelope. It preserves
+reported evidence lists and references, and compares code
+and obligation-source revisions by their named fields. Only Paid assigns
+recorder-verified facts.
 
 A **manual audit** can be created without a GitHub issue (RDR-076's "Manual
 audit... create an audit run without requiring a GitHub issue"), the one
@@ -445,6 +464,12 @@ semantic-audit/implementation-conformance check that detects the discrepancy
 `(claim_type, cause_signature)` pair attaches a new observation (timestamp,
 `LayeredVerificationCheckResult` reference) to the existing unresolved
 `LayeredVerificationFinding` row rather than creating a second Inbox entry.
+An observation is identified by its audit run and set of immutable check-result
+IDs. Re-delivery of that same evidence is a no-op under the finding row lock:
+it cannot append history, overwrite retained evidence, or reopen a resolved
+finding. Distinct check results still create a new observation and may reopen
+the finding. This applies to direct recording retries as well as completion
+replays; a completion-activity cache alone is not the recording boundary.
 Textual similarity between two findings' descriptions is never, by itself,
 grounds to merge them — only a matching `cause_signature` from the detecting
 check does (per RDR-076 §2's explicit "distinct conflicts remain distinct;
@@ -642,6 +667,15 @@ surface in the Inbox (`LAYERED-VERIFY-015`, `LAYERED-VERIFY-032`). A
 scheduled dispatch never creates a repair run and never enqueues follow-up
 work (`LAYERED-VERIFY-010`/`-011`; `MAINT-073`'s no-repair-as-scan-side-effect
 rule holds for the audit objective too).
+
+Selected finding detail uses `Api::V1::InboxEntrySerializer` for both the
+scoped bearer-token REST API and the authenticated in-app MCP reader. The
+projection has explicit bounded source passages, limitations, consequences,
+and contributing check-result records, all constrained to the selected
+finding's obligation. It exposes named obligation and audit revision fields,
+observed behavior, check outcome/freshness, and the persisted supported
+decision options rather than serializing record objects or full agent/recorder
+metadata. List rows remain list-safe and do not fetch this detail evidence.
 
 **Dependency boundary.** These contracts are finalized now, but
 scheduled-audit runtime remains explicitly dependent on RDR-075's scheduling

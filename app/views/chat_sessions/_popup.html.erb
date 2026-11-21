@@ -104,6 +104,6 @@
     <%= render "conversation",
                chat_session:,
                chat_messages:,
-               has_older_messages: %>
+               has_older_messages:, leading_tool_history: local_assigns[:leading_tool_history] %>
   </div>
 </section>

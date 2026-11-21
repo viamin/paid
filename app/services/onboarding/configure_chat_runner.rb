@@ -4,7 +4,7 @@ module Onboarding
   # Creates the minimum credential, runner, and conversation needed to start
   # chat-led onboarding. All records are committed together so a failed chat
   # bootstrap leaves the user on the API-key step with nothing partial saved.
-  # @spec ONBOARD-CHAT-002 ONBOARD-CHAT-003
+  # @spec ONBOARD-CHAT-002 ONBOARD-CHAT-003 ONBOARD-CHAT-014 MODEL-AVAILABILITY-008
   class ConfigureChatRunner
     InvalidApiKeyError = Class.new(ArgumentError)
     Result = Data.define(:provider_api_key, :runner, :chat_session)
@@ -26,7 +26,7 @@ module Onboarding
     def call
       validate_proxy_health_checkable_key!
 
-      result = ActiveRecord::Base.transaction do
+      result = Models::CatalogSnapshot.consistent_read do
         provider_api_key = create_provider_api_key
         runner = create_runner(provider_api_key)
         chat_session = create_chat_session(runner)
@@ -94,6 +94,7 @@ module Onboarding
     end
 
     def create_chat_session(runner)
+      validate_free_chat_catalog!(runner)
       ChatSessions::Create.call(
         account: account,
         user: user,
@@ -101,6 +102,14 @@ module Onboarding
         title: WELCOME_TITLE,
         metadata: { "onboarding" => true }
       )
+    end
+
+    def validate_free_chat_catalog!(runner)
+      return unless runner.free_model_policy?
+
+      FreeModels::SelectChatModel.call(runner:)
+    rescue ChatSessions::LlmClientConfigurationError
+      raise ChatSessions::ModelUnavailableError.new(runner:, rejection_reasons: [ :free_model_unavailable ])
     end
 
     def complete_onboarding_step(provider_api_key, runner)
@@ -160,7 +169,11 @@ module Onboarding
 
     def chat_model_id
       LlmModel.active.by_provider(api_service_type).by_capability.first&.model_id ||
-        raise(ArgumentError, "No chat model is available for #{RunnerSupport.api_service_type_label(api_service_type)}")
+        raise(ChatSessions::ModelUnavailableError.new(
+          runner: nil,
+          provider_name: RunnerSupport.api_service_type_label(api_service_type),
+          rejection_reasons: [ :catalog_empty ]
+        ))
     end
   end
 end

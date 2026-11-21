@@ -137,8 +137,17 @@ module ChatSessionsHelper
   end
 
   # @spec CHAT-API-024
-  def chat_tool_run?(segment)
-    segment.size > 1 && segment.all? { |message| chat_tool_groupable?(message) }
+  def chat_tool_run?(segment, history: nil)
+    (segment.size > 1 || history.present?) && segment.all? { |message| chat_tool_groupable?(message) }
+  end
+
+  # @spec CHAT-API-024 CHAT-API-027
+  def chat_tool_history_for(segment, history)
+    history if history && segment.first&.id == history[:before_id]
+  end
+
+  def chat_tool_history_frame_id(history)
+    "chat_tool_history_#{history.fetch(:chat_session_id)}_#{history.fetch(:anchor_id)}_#{history.fetch(:before_id)}"
   end
 
   # @spec CHAT-API-024

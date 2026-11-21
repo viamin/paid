@@ -84,7 +84,7 @@ replaces.
 | List pane width | `22rem` | same on both |
 | Inter-pane gap | `gap-6` | `gap-6` (inbox) vs. `gap-4 lg:gap-6` (chat) |
 | Grid template | `grid lg:grid-cols-[22rem_minmax(0,1fr)]` | same on both |
-| Pane card chrome | `min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm` | `rounded-xl border ... shadow-sm` (inbox) vs. `rounded-lg bg-white shadow` (chat) |
+| Pane card chrome | `min-h-0 min-w-0 overflow-clip rounded-xl border border-gray-200 bg-white shadow-sm` | `rounded-xl border ... shadow-sm` (inbox) vs. `rounded-lg bg-white shadow` (chat) |
 | Desktop pane scrolling | viewport-constrained grid with independently scrolling inner list and detail regions | document scroll moves both panes together |
 | Active row treatment | `bg-indigo-50 ring-1 ring-inset ring-indigo-200` | `bg-indigo-50` (inbox) vs. `border-sky-400 bg-sky-50 shadow-md` (chat) |
 | Empty state | `rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center shadow-sm` | per-screen |
@@ -106,8 +106,8 @@ card; the unification is the point.
 - **Selected row treatment is a single class set, not a feature color.**
   Both pages already had "selected" rows; the shared rule is what those
   selected rows look like, not whether they exist.
-- **Pane card chrome is one shared class.** `min-h-0 rounded-xl border
-  border-gray-200 bg-white shadow-sm overflow-hidden` matches Inbox's
+- **Pane card chrome is one shared class.** `min-h-0 min-w-0 rounded-xl border
+  border-gray-200 bg-white shadow-sm overflow-clip` matches Inbox's
   current chrome. Chat's container switches from `rounded-lg bg-white
   shadow` to the shared chrome; the difference is a small visual tightening
   that brings the chat conversation card into line with the rest of the
@@ -117,7 +117,9 @@ card; the unification is the point.
   region. The card continues to own clipping and chrome; the inner wrapper
   owns scrolling. This keeps page controls above the panes and makes Inbox
   selection safe for a list scrolled far from its top. Below `lg`, the shell
-  remains naturally sized so each feature keeps its mobile flow.
+  remains naturally sized so each feature keeps its mobile flow. Card clipping
+  uses `overflow-clip`, which does not establish a scrolling ancestor that
+  would capture a sticky action bar during mobile document scrolling.
 - **No new shared Stimulus controller.** The mobile master-detail flow on
   Inbox (`inbox-master-detail`) and the mobile drawer on Chat
   (`chat-session-list`) are genuinely different behaviors with different

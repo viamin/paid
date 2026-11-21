@@ -5,6 +5,7 @@
     <div>
       <h3 class="text-sm font-medium text-gray-900"><%= requirement.name %></h3>
       <p class="mt-1 text-xs text-gray-500">Type: <%= requirement.check_type %></p>
+      <p class="mt-1 text-xs text-gray-500">Native validation limit: <%= requirement.native_timeout_seconds %> seconds</p>
     </div>
     <div class="flex items-center gap-x-2">
       <% if requirement.enabled? %>

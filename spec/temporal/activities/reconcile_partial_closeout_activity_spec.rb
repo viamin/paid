@@ -17,6 +17,24 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
   end
 
   describe "#execute" do
+    # @spec PARTIAL-CLOSEOUT-034 PARTIAL-CLOSEOUT-058
+    it "bounds typed diagnostics without persisting arbitrary response metadata" do
+      failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new("Invalid assessment",
+        category: "invalid_assessment", provider: "p" * 200, model: { private: "response-canary" },
+        response: "response-canary", invalid_fields: 20.times.map {
+          { path: "x" * 200, expected: "object", actual: "string", raw: "response-canary" }
+        })
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(Llm::AnalyzePartialCloseout::AssessmentFailure)
+
+      diagnostic = run.reload.reconciliation.fetch("assessment_failure")
+      expect(diagnostic).to include("provider" => "p" * 120, "model" => "Hash")
+      expect(diagnostic.fetch("invalid_fields").size).to eq(10)
+      expect(diagnostic.fetch("invalid_fields").first.fetch("path").length).to eq(120)
+      expect(diagnostic.to_json).not_to include("response-canary")
+    end
+
     # @spec NO-OUTPUT-ISSUE-007
     it "skips reconciliation for issue-less PR runs instead of failing them" do
       allow(Llm::AnalyzePartialCloseout).to receive(:call)

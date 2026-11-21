@@ -12,7 +12,11 @@
   `get_inbox_entry`, the system SHALL re-resolve the stable ID with
   `Inbox::FindEntry` and render its current detail with
   `Api::V1::InboxEntrySerializer`; an unavailable or unauthorized ID SHALL
-  return the identical safe `{ found: false }` result.
+  return the identical safe `{ found: false }` result. The shared serializer
+  SHALL declare an explicit detail contract for every `Inbox::Queue::KINDS`
+  kind; a `layered_verification_finding` detail SHALL retain only bounded,
+  finding-authorized obligation/revision/evidence/check facts and supported
+  decision context, never raw model or unrestricted agent/recorder metadata.
   *Code:* `app/mcp/tools/get_inbox_entry.rb`.
   *Test:* `spec/mcp/tools/get_inbox_entry_spec.rb`.
 

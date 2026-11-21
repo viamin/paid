@@ -53,4 +53,22 @@ RSpec.describe SourceClosureRecoveryJob do
     expect { described_class.perform_now(run.id) }.to raise_error(ActiveRecord::ConnectionNotEstablished)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
   end
+
+  # @spec PARTIAL-CLOSEOUT-045
+  it "does not steal an expired lease from a still-running durable workflow" do
+    handle = instance_double(Temporalio::Client::WorkflowHandle)
+    description = instance_double(Temporalio::Client::WorkflowExecution::Description,
+      status: Temporalio::Client::WorkflowExecutionStatus::RUNNING)
+    allow(client).to receive(:start_workflow)
+    allow(client).to receive(:workflow_handle).with("source-closure-recovery-#{run.id}-1").and_return(handle)
+    allow(handle).to receive(:describe).and_return(description)
+    described_class.perform_now(run.id)
+
+    travel 11.minutes do
+      described_class.perform_now(run.id)
+    end
+
+    expect(client).to have_received(:start_workflow).once
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")).to eq(1)
+  end
 end

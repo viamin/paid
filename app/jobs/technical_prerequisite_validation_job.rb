@@ -13,7 +13,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
     return handoff_terminal_validation(agent_run) unless start_result == :started
 
     result = TechnicalPrerequisites::ValidateExecution.call(
-      agent_run:, native_command: recipe(agent_run).fetch("command")
+      agent_run:, native_command: recipe(agent_run).fetch("command"), **native_execution_options(agent_run)
     )
     finish!(agent_run, result)
   rescue ActiveRecord::RecordNotFound
@@ -28,6 +28,12 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
   end
 
   private
+
+  # @spec PARTIAL-CLOSEOUT-059
+  def native_execution_options(agent_run)
+    limit = recipe(agent_run).fetch("native_timeout_seconds", PreCommitRequirement::DEFAULT_NATIVE_TIMEOUT_SECONDS)
+    limit.eql?(PreCommitRequirement::DEFAULT_NATIVE_TIMEOUT_SECONDS) ? {} : { native_timeout_seconds: limit }
+  end
 
   # A validation run is claimed by this job alone: it is synthetic, so the
   # agent run queue never dispatches it. The run starts queued, moves to

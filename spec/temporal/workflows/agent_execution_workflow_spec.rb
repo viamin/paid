@@ -656,6 +656,59 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
 
     # @spec LAYERED-VERIFY-024
+    it "records partial audit evidence before preserving the original agent failure" do
+      allow(workflow).to receive(:run_activity).with(Activities::RunAgentActivity, anything, any_args)
+        .and_raise("audit timed out")
+
+      expect { workflow.execute(input) }.to raise_error(RuntimeError, "audit timed out")
+
+      expect(workflow).to have_received(:run_activity).with(Activities::RecordLayeredVerificationResultsActivity,
+        { agent_run_id: 42 }, timeout: 30, retry_policy: described_class::NO_RETRY).ordered
+      expect(workflow).to have_received(:run_activity).with(Activities::MarkAgentRunFailedActivity,
+        hash_including(agent_run_id: 42, error: "audit timed out"), timeout: 30).ordered
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CompleteLayeredVerificationAuditActivity, anything, any_args)
+    end
+
+    # @spec LAYERED-VERIFY-024
+    it "preserves the agent failure when recording its partial evidence also fails" do
+      allow(workflow).to receive(:run_activity).with(Activities::RunAgentActivity, anything, any_args)
+        .and_raise("audit timed out")
+      allow(workflow).to receive(:run_activity).with(Activities::RecordLayeredVerificationResultsActivity, anything, any_args)
+        .and_raise("recording failed")
+
+      expect { workflow.execute(input) }.to raise_error(RuntimeError, "audit timed out")
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordLayeredVerificationResultsActivity, anything, any_args)
+    end
+
+    # @spec LAYERED-VERIFY-024
+    it "honors cancellation while retaining partial results" do
+      allow(workflow).to receive(:run_activity).with(Activities::RunAgentActivity, anything, any_args)
+        .and_raise("audit timed out")
+      allow(workflow).to receive(:run_activity).with(Activities::RecordLayeredVerificationResultsActivity, anything, any_args)
+        .and_raise(Temporalio::Error::CanceledError.new("cancelled"))
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity, anything, any_args)
+    end
+
+    # @spec LAYERED-VERIFY-024
+    it "retains the prior failure history when partial recording is not patched" do
+      allow(Temporalio::Workflow).to receive(:patched).with("layered-verification-partial-outcomes-v1").and_return(false)
+      allow(workflow).to receive(:run_activity).with(Activities::RunAgentActivity, anything, any_args)
+        .and_raise("audit timed out")
+
+      expect { workflow.execute(input) }.to raise_error(RuntimeError, "audit timed out")
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordLayeredVerificationResultsActivity, anything, any_args)
+    end
+
+    # @spec LAYERED-VERIFY-024
     it "gives formal checks only the audit budget remaining after the agent" do
       allow(Temporalio::Workflow).to receive(:now).and_return(Time.zone.at(100), Time.zone.at(145))
 
@@ -2228,7 +2281,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::CheckProxyHealthActivity, { agent_run_id: 42 },
               start_to_close_timeout: 30,
               schedule_to_close_timeout: described_class::PROXY_HEALTH_TIMEOUT,
-              retry_policy: described_class::PROXY_HEALTH_RETRY_POLICY)
+              retry_policy: described_class::PROXY_HEALTH_RETRY_POLICY,
+              task_queue: Paid::POLL_TASK_QUEUE)
     end
 
     it "skips health check for create_issue goal without source PR" do
@@ -2301,7 +2355,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     let(:workflow) { described_class.new }
 
     before do
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: false)
     end
 
     def timeout_activity_error

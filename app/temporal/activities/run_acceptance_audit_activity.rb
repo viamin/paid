@@ -8,7 +8,6 @@ module Activities
   class RunAcceptanceAuditActivity < BaseActivity
     activity_name "RunAcceptanceAudit"
     MAX_ASSESSMENT_TIMEOUT = 300
-    MAX_DIAGNOSTIC_VALUE_LENGTH = 120
 
     def execute(input) # @spec PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
@@ -63,22 +62,7 @@ module Activities
     end
 
     def failure_diagnostic(error)
-      diagnostic = error.diagnostic.stringify_keys.slice("category", "provider", "model", "request_id", "attempt_id")
-        .transform_values { |value| bounded_diagnostic_value(value) }
-      diagnostic["invalid_fields"] = Array(error.diagnostic[:invalid_fields]).first(10).filter_map do |field|
-        next unless field.respond_to?(:slice)
-
-        field.stringify_keys.slice("path", "expected", "actual").transform_values { |value| bounded_diagnostic_value(value) }
-      end
-      diagnostic["category"] ||= "transport_error"
-      diagnostic["at"] = Time.current.iso8601
-      diagnostic
-    end
-
-    def bounded_diagnostic_value(value)
-      return value.to_s.first(MAX_DIAGNOSTIC_VALUE_LENGTH) if value.is_a?(String) || value.is_a?(Numeric) || value.is_a?(Symbol)
-
-      value.class.name.first(MAX_DIAGNOSTIC_VALUE_LENGTH)
+      PartialCloseouts::AcceptanceAuditFailure.safe_diagnostic(error.diagnostic).merge("at" => Time.current.iso8601)
     end
   end
 end

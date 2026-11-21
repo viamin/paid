@@ -76,11 +76,22 @@
   *Tests:* `spec/config/good_job_configuration_spec.rb`.
   *Code:* `Paid::GoodJobConfig`, `config/initializers/good_job.rb`.
 
+- [x] **RAILS-CONTROL-PLANE-024** — When the devcontainer serves isolated
+  container credential bootstrap under bounded concurrent control-plane work,
+  it SHALL run GoodJob in the existing external worker process and configure
+  a default of five Puma request threads at web startup without requiring a
+  devcontainer rebuild, honoring explicit thread-budget overrides, so two
+  request slots remain at the default after three concurrent
+  control-plane requests; credential selection, tenant identity, expiry, and
+  finite client deadlines SHALL remain unchanged.
+  *Tests:* `spec/lib/dev_script_spec.rb`.
+  *Code:* `.devcontainer/devcontainer.json`, `Procfile.dev`, `bin/dev-web`, `bin/jobs`,
+  `config/puma.rb`.
+
 - [x] **RAILS-CONTROL-PLANE-014** — When the development web process exits 137,
   its wrapper SHALL restart it with bounded backoff without stopping the
   Temporal workers. Other exit codes and repeated exit 137 SHALL surface as
-  failures. Development SHALL keep GoodJob in the web process to avoid the
-  memory overhead of another Rails boot.
+  failures.
   *Tests:* `spec/lib/dev_script_spec.rb`.
   *Code:* `Procfile.dev`, `bin/dev-web`.
 

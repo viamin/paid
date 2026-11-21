@@ -127,7 +127,7 @@ module ChatSessions
       lines.each do |line|
         packet = JSON.parse(line)
         case packet.fetch("type")
-        when EVENT_TYPE then @observer&.call(packet.fetch("payload").deep_symbolize_keys)
+        when EVENT_TYPE then @observer&.call(normalize_event(packet.fetch("payload")))
         when RESULT_TYPE then @result = packet.fetch("payload")
         end
       rescue JSON::ParserError
@@ -135,9 +135,18 @@ module ChatSessions
       end
     end
 
+    def normalize_event(payload)
+      payload.deep_symbolize_keys.tap do |event|
+        event[:type] = event[:type].to_sym if event[:type].respond_to?(:to_sym)
+      end
+    end
+
     def normalize_response(response)
       response.deep_symbolize_keys.tap do |normalized|
         normalized[:status] = normalized[:status].to_sym if normalized[:status].respond_to?(:to_sym)
+        Array(normalized[:tool_calls]).each do |tool_call|
+          tool_call[:status] = tool_call[:status].to_sym if tool_call[:status].respond_to?(:to_sym)
+        end
         normalized[:error]&.tap do |error|
           error[:category] = error[:category].to_sym if error[:category].respond_to?(:to_sym)
           error[:code] = error[:code].to_sym if error[:code].respond_to?(:to_sym)

@@ -374,7 +374,11 @@ module PartialCloseouts
       # mislink (#4191 review).
       reconciliation = agent_run.reconciliation
       reconciliation = reconciliation.except("assessment") if reconciliation["gaps"].blank?
-      failure = error.respond_to?(:diagnostic) ? { "assessment_failure" => error.diagnostic.stringify_keys } : {}
+      failure = if error.respond_to?(:diagnostic)
+        { "assessment_failure" => AcceptanceAuditFailure.safe_diagnostic(error.diagnostic) }
+      else
+        {}
+      end
       agent_run.update!(
         reconciliation: reconciliation.merge(
           "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601

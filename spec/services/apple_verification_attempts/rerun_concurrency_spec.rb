@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "timeout"
 
 RSpec.describe AppleVerificationAttempts::Rerun do
   self.use_transactional_tests = false
@@ -25,13 +26,15 @@ RSpec.describe AppleVerificationAttempts::Rerun do
     threads = 2.times.map do
       Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          ready << true
-          start.pop
-          described_class.call(attempt: AppleVerificationAttempt.find(attempt.id))
+          TenantContext.with(attempt.account) do
+            ready << true
+            start.pop
+            described_class.call(attempt: AppleVerificationAttempt.find(attempt.id))
+          end
         end
       end
     end
-    2.times { ready.pop }
+    Timeout.timeout(10) { 2.times { ready.pop } }
     2.times { start << true }
     threads.map do |thread|
       raise "Concurrent Apple verification retry timed out" unless thread.join(10)

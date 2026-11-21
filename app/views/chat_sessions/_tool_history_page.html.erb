@@ -1,0 +1,11 @@
+<%# @spec CHAT-API-024 CHAT-API-027 %>
+<%= turbo_frame_tag frame_id do %>
+  <% if has_more && messages.any? %>
+    <%= render "chat_sessions/tool_history_link", history: {
+      chat_session_id: chat_session.id, anchor_id: anchor_id, before_id: messages.first.id
+    } %>
+  <% end %>
+  <% messages.each do |message| %>
+    <%= render "chat_messages/message", message: message %>
+  <% end %>
+<% end %>

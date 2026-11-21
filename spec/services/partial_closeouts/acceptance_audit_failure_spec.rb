@@ -27,6 +27,18 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
     expect(described_class).not_to be_transient(run)
   end
 
+  # @spec PARTIAL-CLOSEOUT-058
+  it "projects a post-PR failure timestamp from reconciliation metadata" do
+    run.update!(reconciliation: {
+      "assessment_failure" => { "category" => "invalid_assessment", "provider" => "opencode" },
+      "failed_at" => "2026-11-21T12:34:56Z"
+    })
+
+    expect(described_class.diagnostic_for(run)).to include(
+      "category" => "invalid_assessment", "provider" => "opencode", "at" => "2026-11-21T12:34:56Z"
+    )
+  end
+
   it "classifies cancellation, budget exhaustion, and rate-limit recovery as non-transient" do
     expect(described_class.classify(failing_run(status: "cancelled"))).to eq(:cancelled)
     expect(described_class.classify(failing_run(status: "token_budget_exceeded"))).to eq(:budget_exhausted)

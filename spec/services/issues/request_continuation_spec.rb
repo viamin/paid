@@ -113,6 +113,41 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
   end
 
   describe "idempotency across double-clicks, replay, and concurrent requests" do
+    # @spec QUEUE-TIER-007
+    it "gives an operator join scheduling priority without replacing an automatic audit" do
+      merged_partial_pr(number: 12)
+      project.update!(auto_pick_enabled: true)
+      automatic = Issues::RequestAcceptanceAudit.call(issue:, actor: user, origin: :automatic)
+      expect(automatic).to be_success
+      original = automatic.agent_run.attributes.slice("trigger_type", "auto_pick", "runner_id", "external_metadata")
+      evidence = automatic.request.evidence.deep_dup
+
+      result = Issues::RequestAcceptanceAudit.call(issue:, actor: user)
+
+      expect(result).to be_success
+      expect(result.request.id).to eq(automatic.request.id)
+      expect(result.agent_run.id).to eq(automatic.agent_run.id)
+      expect(result.agent_run.reload.queue_priority_tier).to eq(:manual)
+      expect(result.agent_run.queue_priority_label).to eq("1 - Operator-requested audit")
+      expect(result.agent_run.attributes.slice(*original.keys)).to eq(original)
+      expect(result.request.reload.evidence).to eq(evidence)
+      expect(issue.agent_runs.count).to eq(1)
+    end
+
+    # @spec QUEUE-TIER-007
+    it "keeps an automatic join at its existing audit priority" do
+      merged_partial_pr(number: 12)
+      project.update!(auto_pick_enabled: true)
+      first = Issues::RequestAcceptanceAudit.call(issue:, actor: user, origin: :automatic)
+      expect(first).to be_success
+
+      result = Issues::RequestAcceptanceAudit.call(issue:, actor: user, origin: :automatic)
+
+      expect(result.agent_run.id).to eq(first.agent_run.id)
+      expect(result.agent_run.queue_priority_tier).to eq(:auto_pick)
+      expect(issue.agent_runs.count).to eq(1)
+    end
+
     it "returns the existing open request without queueing a second run" do
       merged_partial_pr(number: 12)
       first = request_continuation

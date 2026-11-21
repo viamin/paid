@@ -1368,8 +1368,9 @@ RSpec.describe "ChatSessions" do
         get older_messages_chat_session_path(chat_session), params: { before: newest_message.id }
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include("51 tool actions")
-        expect(response.body).not_to include("50 tool actions")
+        expect(response.body).to include("50 tool actions shown")
+        expect(response.body).to include("Load earlier tool actions")
+        expect(Nokogiri::HTML(response.body).css("[data-chat-tool-card]").size).to eq(50)
       end
     end
   end

@@ -12,15 +12,19 @@
   that request in a disposable text container, and Rails SHALL NOT call a
   provider API or `AgentHarness::Api::ChatTransport` for interactive inference
   in its own process. It SHALL NOT call RubyLLM or a provider API
-  directly, and a harness result SHALL NOT be granted authority to execute or
-  approve an application tool. Each turn receives a Paid-owned durable request
+  directly. The container JSON boundary SHALL restore normalized streaming
+  event types and tool-call statuses so completed tool calls remain available
+  to Paid's loop and text deltas reach streaming clients. A harness result
+  SHALL NOT be granted authority to execute or approve an application tool.
+  Each turn receives a Paid-owned durable request
   identity and one effective retry owner wired through by
   API-CONVERSATION-DELEGATION-003 below, while runner switching and workflow
   recovery remain owned entirely by `ChatSessions::FallbackLoop` at the Paid
   layer. A normalized result with neither usable text nor callable tools is a
   Paid-owned `empty_response` failed-turn outcome, not a provider-specific
   refusal inference or a successful assistant transcript row.
-  *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`.
+  *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`,
+  `spec/services/chat_sessions/isolated_transport_spec.rb`.
   *Code:* `ChatSessions::BuildLlmClient::HttpClient#call`,
   `ChatSessions::BuildLlmClient::HttpClient#build_request`,
   `ChatSessions::BuildLlmClient::HttpClient#translate_result`.

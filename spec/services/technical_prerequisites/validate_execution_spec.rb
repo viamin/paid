@@ -14,7 +14,8 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
   let(:execution_runner) do
     instance_double(ExecutionRunners::Base,
-      provision_mcp_servers: {}, cleanup_mcp_servers: nil, provision_browser_container: nil)
+      provision_mcp_servers: {}, cleanup_mcp_servers: nil, provision_browser_container: nil,
+      provision_services: {}, cleanup_services: nil)
   end
   let(:execution_environment) { instance_double(Containers::Provision) }
   let(:git_operations) do
@@ -26,6 +27,156 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(Containers::Provision).to receive(:reconnect).and_return(execution_environment)
     allow(Containers::GitOperations).to receive(:new).and_return(git_operations)
     allow(agent_run).to receive(:tool_sidecar_endpoints).and_return(sidecar_endpoints)
+  end
+
+  context "with a reviewed execution limit" do
+    before do
+      stub_compatible_host
+      stub_provisioning
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    it "applies and records the reviewed limit for the isolated command" do
+      allow(agent_run).to receive(:execute_in_execution_environment)
+        .and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ],
+        execution_runner:, native_timeout_seconds: 600)
+
+      expect(agent_run).to have_received(:execute_in_execution_environment)
+        .with([ "analyzer", "--version" ], timeout: 600, stream: false, env: anything)
+      expect(result.evidence["native_timeout_seconds"]).to eq(600)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    it "rejects an unbounded persisted limit before provisioning" do
+      expect do
+        described_class.call(agent_run:, native_command: "true", execution_runner:, native_timeout_seconds: 901)
+      end.to raise_error(ArgumentError, /native.*limit/i)
+
+      expect(agent_run).not_to have_received(:provision_execution_environment)
+    end
+  end
+
+  [
+    [ "complete exact-bound output", "x" * 20_000, false ],
+    [ "a split multibyte character", "€" * 6_667, true ],
+    [ "invalid encoded output", "\xFF".dup.force_encoding(Encoding::UTF_8), true ]
+  ].each do |description, stdout, truncated|
+    # @spec PARTIAL-CLOSEOUT-057
+    it "records honest native capture metadata for #{description}" do
+      stub_compatible_host
+      stub_provisioning
+      stub_command_execution(stdout:)
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+      native = result.evidence.fetch("native")
+      expect(native.fetch("output_truncated")).to eq(truncated)
+      expect(native.fetch("stdout").bytesize).to be <= 20_000
+      expect(native.fetch("stdout").valid_encoding?).to be(true)
+    end
+  end
+
+  context "with configured project services" do
+    let(:service) { create(:service_container, account: project.account) }
+    let(:service_environment) { { "DATABASE_URL" => "postgres://fixture:fixture-secret@database/private_run" } }
+
+    before do
+      create(:project_service_container, project:, service_container: service)
+      stub_compatible_host
+      stub_provisioning
+      stub_command_execution
+      allow(execution_runner).to receive(:provision_services) do
+        agent_run.update!(service_container_ids: [ service.id ], service_environment:)
+        service_environment
+      end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "makes the private service environment available before execution startup" do
+      allow(agent_run).to receive(:provision_execution_environment) do
+        expect(agent_run.reload.service_environment).to eq(service_environment)
+      end
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+      expect(result).to be_success
+      expect(result.evidence.fetch("services")).to include("environment_keys" => [ "DATABASE_URL" ])
+      expect(result.evidence.to_s).not_to include("fixture-secret")
+      expect(execution_runner).to have_received(:cleanup_services).with(agent_run:, persist: true)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "cleans partial service setup without exposing the failure contents" do
+      allow(execution_runner).to receive(:provision_services).and_raise(Containers::ServiceProvisioner::Error, "fixture-secret")
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+      expect(result.status).to eq("failed")
+      expect(result.evidence.to_s).not_to include("fixture-secret")
+      expect(agent_run).not_to have_received(:provision_execution_environment)
+      expect(execution_runner).to have_received(:cleanup_services).with(agent_run:, persist: true)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "stops after cancellation during service setup and releases services" do
+      allow(execution_runner).to receive(:provision_services) { agent_run.update!(status: "cancelled") }
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+      expect(result.status).to eq("cancelled")
+      expect(agent_run).not_to have_received(:provision_execution_environment)
+      expect(execution_runner).to have_received(:cleanup_services).with(agent_run:, persist: true)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "releases services without persistence when the run disappears during setup" do
+      allow(agent_run).to receive(:provision_execution_environment) do
+        AgentRun.where(id: agent_run.id).delete_all
+        raise ExecutionRunners::Error, "setup failed after concurrent deletion"
+      end
+
+      expect do
+        described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+      end.to raise_error(ActiveRecord::RecordNotFound)
+
+      expect(execution_runner).to have_received(:cleanup_services).with(agent_run:, persist: false)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "records cleanup failure without leaking service credentials" do
+      allow(execution_runner).to receive(:cleanup_services).and_raise(Containers::ServiceProvisioner::Error, "fixture-secret")
+
+      described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+      record = agent_run.reload.verification_result.fetch("technical_prerequisite_validation")
+      expect(record.fetch("cleanup")).to include("completed" => false)
+      expect(record.to_s).not_to include("fixture-secret")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "stops execution before releasing services after a failed command" do
+      stub_command_execution(exit_code: 1)
+      expect(agent_run).to receive(:cleanup_execution_environment).with(force: true, persist: true).ordered
+      expect(execution_runner).to receive(:cleanup_services).with(agent_run:, persist: true).ordered
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+      expect(result.status).to eq("failed")
+    end
+  end
+
+  # @spec PARTIAL-CLOSEOUT-032
+  it "does not auto-detect or start undeclared project services" do
+    stub_compatible_host
+    stub_provisioning
+    stub_command_execution
+
+    described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+    expect(execution_runner).not_to have_received(:provision_services)
+    expect(execution_runner).not_to have_received(:cleanup_services)
   end
 
   # @spec PARTIAL-CLOSEOUT-032
@@ -86,6 +237,23 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run.reload.container_id).to be_nil
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "environment"))
       .to include("container_id" => "fixture-container", "container_host" => "remote")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "keeps a larger native limit inside the independent measurement budget" do
+    configure_performance_measurement(samples: 1)
+    stub_compatible_host
+    stub_provisioning
+    limits = []
+    allow(agent_run).to receive(:execute_in_execution_environment) do |*, timeout:, **|
+      limits << timeout
+      { stdout: '{"wall_ms":12}', stderr: "", exit_code: 0 }
+    end
+
+    described_class.call(agent_run:, native_command: "bin/measure", execution_runner:, native_timeout_seconds: 900)
+
+    expect(limits.size).to eq(2)
+    expect(limits).to all(be <= 60)
   end
 
   # @spec PARTIAL-CLOSEOUT-042

@@ -32,7 +32,7 @@ RSpec.describe MasterDetailLayoutHelper do
     # @spec LIST-DETAIL-002 @spec LIST-DETAIL-004
     it "exposes a single pane-card chrome so the list and detail halves read as one card" do
       expect(helper.master_detail_pane_classes).to eq(
-        "min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+        "min-h-0 min-w-0 overflow-clip rounded-xl border border-gray-200 bg-white shadow-sm"
       )
     end
 

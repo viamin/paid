@@ -760,7 +760,7 @@ module Projects
       end
 
       job = SourceClosureRecoveryJob.perform_later(@agent_run.id)
-      unless job.successfully_enqueued?
+      unless job && job.successfully_enqueued?
         redirect_to project_agent_run_path(@project, @agent_run), alert: "Source-closure recovery could not be queued. Please try again."
         return
       end

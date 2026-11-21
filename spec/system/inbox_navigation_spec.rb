@@ -203,6 +203,43 @@ RSpec.describe "Inbox member navigation", system_driver: :paid_cuprite, type: :s
     expect(action_area[:class]).to include("sticky")
   end
 
+  def scroll_detail_and_measure_actions
+    page.evaluate_script(<<~JS)
+      (() => {
+        const bar = document.querySelector('[data-inbox-actions-target=bar]');
+        const source = document.querySelector('[data-inbox-actions-target=source]');
+        const spacer = document.createElement('div');
+        spacer.style.height = '2500px';
+        source.append(spacer);
+        let scroller = bar.parentElement;
+        while (scroller && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) &&
+            scroller.scrollHeight > scroller.clientHeight)) scroller = scroller.parentElement;
+        scroller ||= document.scrollingElement;
+        scroller.scrollTop = 500;
+        const rect = bar.getBoundingClientRect();
+        return { scrollTop: scroller.scrollTop, top: rect.top, bottom: rect.bottom,
+          viewportHeight: innerHeight, overflow: bar.scrollWidth - bar.clientWidth };
+      })()
+    JS
+  end
+
+  # @spec OPERATOR-INBOX-027 @spec LIST-DETAIL-007
+  [ 1440, 390 ].each do |width|
+    it "keeps the action bar visible while scrolling a long item at #{width}px" do
+      page.current_window.resize_to(width, 844)
+      visit member_path(first_issue)
+
+      action_area = find("[data-inbox-actions-target='bar']:not([hidden])")
+      expect(action_area).to have_button("Submit Answers")
+      measurement = scroll_detail_and_measure_actions
+
+      expect(measurement['scrollTop']).to be >= 400
+      expect(measurement['top']).to be >= 0
+      expect(measurement['bottom']).to be <= measurement['viewportHeight']
+      expect(measurement['overflow']).to be <= 1
+    end
+  end
+
   # @spec OPERATOR-INBOX-026 @spec OPERATOR-INBOX-027
   it "presents decision context and a visible next action across the four closeout lanes while switching projects" do
     page.current_window.resize_to(390, 844)

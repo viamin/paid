@@ -47,6 +47,11 @@ FactoryBot.define do
       category { "coding" }
     end
 
+    trait :chat_capable do
+      supports_tools { true }
+      metadata { { "architecture" => { "output_modalities" => [ "text" ] } } }
+    end
+
     trait :below_quality_bar do
       metadata { { "below_quality_bar" => true } }
     end

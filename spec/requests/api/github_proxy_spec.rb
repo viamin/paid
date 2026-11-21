@@ -79,6 +79,62 @@ RSpec.describe "Api::GithubProxy" do
     end
 
     context "with valid agent run" do
+      # @spec CONFIDENCE-DELIVERY-018
+      it "captures a planning hold attached during issue creation" do
+        stub_request(:post, target_url)
+          .to_return(status: 201, body: JSON.parse(issue_response_body).merge("labels" => [ { "name" => "planning" } ]).to_json,
+                     headers: { "Content-Type" => "application/json" })
+
+        expect {
+          post "/api/proxy/github/repos/testowner/testrepo/issues",
+            params: { title: "Held issue", labels: [ "planning" ] }.to_json, headers: valid_headers
+        }.to change(AgentPlanningHold, :count).by(1)
+
+        expect(response).to have_http_status(:created)
+        expect(AgentPlanningHold.last).to have_attributes(agent_run:, remote_issue_number: 42, status: "held")
+        expect(AgentPlanningHold.last.release_condition).to eq("kind" => "agent_run_finished", "agent_run_id" => agent_run.id)
+      end
+
+      # @spec CONFIDENCE-DELIVERY-018
+      it "surfaces a missing creation identity rather than silently losing a planning receipt" do
+        stub_request(:post, target_url)
+          .to_return(status: 201, body: { title: "Held issue" }.to_json,
+                     headers: { "Content-Type" => "application/json" })
+
+        expect {
+          post "/api/proxy/github/repos/testowner/testrepo/issues",
+            params: { title: "Held issue", labels: [ "planning" ] }.to_json, headers: valid_headers
+        }.not_to change(AgentPlanningHold, :count)
+
+        expect(response).to have_http_status(:service_unavailable)
+      end
+
+      # @spec CONFIDENCE-DELIVERY-018
+      it "does not capture a rejected issue creation" do
+        stub_request(:post, target_url)
+          .to_return(status: 422, body: { message: "Rejected" }.to_json,
+                     headers: { "Content-Type" => "application/json" })
+
+        expect {
+          post "/api/proxy/github/repos/testowner/testrepo/issues",
+            params: { title: "Held issue", labels: [ "planning" ] }.to_json, headers: valid_headers
+        }.not_to change(AgentPlanningHold, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+
+      # @spec CONFIDENCE-DELIVERY-018
+      it "retains the created issue identity and warns against duplicating it when capture fails" do
+        allow(AgentPlanningHolds::Capture).to receive(:call).and_raise(ActiveRecord::StatementInvalid, "unavailable")
+
+        post "/api/proxy/github/repos/testowner/testrepo/issues",
+          params: { title: "Held issue", labels: [ "planning" ] }.to_json, headers: valid_headers
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body.fetch("error")).to include("Do not repeat issue creation")
+        expect(agent_run.reload.created_issue_number).to eq(42)
+      end
+
       it "proxies the request to GitHub and returns the response" do
         post "/api/proxy/github/repos/testowner/testrepo/issues",
           params: { title: "New issue", body: "Description" }.to_json,
@@ -118,6 +174,63 @@ RSpec.describe "Api::GithubProxy" do
             headers: valid_headers
         }.to change { github_token.reload.last_used_at }
       end
+    end
+  end
+
+  describe "planning labels in issue updates" do
+    let(:target_url) { "https://api.github.com/repos/testowner/testrepo/issues/42" }
+
+    before do
+      stub_request(:patch, target_url)
+        .to_return(status: 200, body: issue_response_body, headers: { "Content-Type" => "application/json" })
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "captures a newly added planning label through an issue update" do
+      stub_request(:get, target_url)
+        .to_return(status: 200, body: { labels: [] }.to_json, headers: { "Content-Type" => "application/json" })
+
+      expect {
+        patch "/api/proxy/github/repos/testowner/testrepo/issues/42",
+          params: { labels: [ "planning" ] }.to_json, headers: valid_headers
+      }.to change(AgentPlanningHold, :count).by(1)
+
+      expect(response).to have_http_status(:ok)
+      expect(AgentPlanningHold.last).to have_attributes(agent_run:, remote_issue_number: 42, status: "held")
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "preserves existing planning label ownership through an issue update" do
+      stub_request(:get, target_url)
+        .to_return(status: 200, body: { labels: [ { name: "planning" } ] }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      patch "/api/proxy/github/repos/testowner/testrepo/issues/42",
+        params: { labels: [ "planning" ] }.to_json, headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(AgentPlanningHold.last).to have_attributes(status: "needs_review", task_kind: nil)
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "does not update labels when their prior ownership cannot be read" do
+      stub_request(:get, target_url).to_return(status: 503)
+
+      patch "/api/proxy/github/repos/testowner/testrepo/issues/42",
+        params: { labels: [ "planning" ] }.to_json, headers: valid_headers
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(WebMock).not_to have_requested(:patch, target_url)
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "does not read label ownership for an unrelated issue update" do
+      patch "/api/proxy/github/repos/testowner/testrepo/issues/42",
+        params: { title: "New title" }.to_json, headers: valid_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).not_to have_requested(:get, target_url)
+      expect(AgentPlanningHold.count).to eq(0)
     end
   end
 

@@ -236,6 +236,41 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-006
+  it "provides bounded CLI memory without additional swap or unbounded processes" do
+    captured_payload
+    stub_text_exec { [ [], [], 0 ] }
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(hash_including(
+      "HostConfig" => hash_including(
+        "Memory" => 1024 * 1024 * 1024,
+        "MemorySwap" => 1024 * 1024 * 1024,
+        "PidsLimit" => 100,
+        "CpuQuota" => 100_000
+      )
+    ))
+  end
+
+  # @spec LLM-ROUTING-006
+  it "bounds private CLI home storage separately from temporary storage" do
+    captured_payload
+    stub_text_exec { [ [], [], 0 ] }
+
+    described_class.new(account: account, runner: runner, timeout: 30).execute([ "codex", "exec", "hello" ])
+
+    expect(backend).to have_received(:create_container).with(hash_including(
+      "ReadonlyRootfs" => true,
+      "HostConfig" => hash_including(
+        "Tmpfs" => {
+          "/tmp" => "exec,size=#{64 * 1024 * 1024},mode=1777",
+          "/home/agent" => "size=#{256 * 1024 * 1024},mode=0700,uid=1000,gid=1000"
+        }
+      )
+    ))
+  end
+
+  # @spec LLM-ROUTING-006
   it "honors the caller timeout above two minutes" do
     captured_payload
     stub_text_exec { [ [], [], 0 ] }

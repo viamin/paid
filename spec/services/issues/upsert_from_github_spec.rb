@@ -44,10 +44,13 @@ RSpec.describe Issues::UpsertFromGithub do
     it "delays repository reconciliation so a burst of PR syncs can share a sweep" do
       freeze_time do
         allow(ActiveRecord).to receive(:after_all_transactions_commit).and_yield
+        scheduled_job = instance_double(ActiveJob::ConfiguredJob)
+        allow(FeatureIntents::ReconcileDesignArtifactsJob).to receive(:set)
+          .with(wait: 30.seconds).and_return(scheduled_job)
 
-        expect { described_class.call(project:, github_issue:) }
-          .to have_enqueued_job(FeatureIntents::ReconcileDesignArtifactsJob)
-          .with(project.id).at(30.seconds.from_now)
+        expect(scheduled_job).to receive(:perform_later).with(project.id)
+
+        described_class.call(project:, github_issue:)
       end
     end
 

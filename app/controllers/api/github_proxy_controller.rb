@@ -89,7 +89,7 @@ module Api
 
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
-        track_agent_planning_hold(path, label_preexisting: planning_label_preexisting)
+        track_agent_planning_hold(path, response, label_preexisting: planning_label_preexisting)
         track_review_creation(path, response)
         track_tdd_return_to_test_review(path, response)
       elsif response.status >= 400
@@ -115,7 +115,12 @@ module Api
       render json: { error: "Upstream request failed" }, status: :bad_gateway
     rescue PlanningHoldCaptureError => e
       log_error("github_proxy.track_agent_planning_hold_failed", e.message)
-      render json: { error: "Planning hold tracking failed; retry the request" }, status: :service_unavailable
+      message = if request.post? && %r{\Arepos/[^/]+/[^/]+/issues\z}.match?(path)
+        "Planning hold tracking failed after issue creation; inspect the created issue. Do not repeat issue creation."
+      else
+        "Planning hold tracking failed; retry the request"
+      end
+      render json: { error: message }, status: :service_unavailable
     end
 
     private
@@ -358,18 +363,16 @@ module Api
     # optional structured header supplies the release contract. Without it, the
     # authenticated run and issue supply a durable run-completion contract.
     # @spec CONFIDENCE-DELIVERY-018
-    def track_agent_planning_hold(path, label_preexisting:)
-      return unless @agent_run
-      return unless request.method == "POST"
+    def track_agent_planning_hold(path, response, label_preexisting:)
+      return unless agent_planning_label_request?(path)
 
-      match = %r{\Arepos/[^/]+/[^/]+/issues/(?<number>\d+)/labels\z}.match(path)
-      return unless match
-      return unless parse_request_body(request.raw_post).fetch("labels", []).map(&:to_s).include?("planning")
+      match = %r{\Arepos/[^/]+/[^/]+/issues/(?<number>\d+)(?:/labels)?\z}.match(path)
+      number = match ? match[:number].to_i : created_planning_issue_number(response)
 
       AgentPlanningHolds::Capture.call(
         project: authenticated_project,
         agent_run: @agent_run,
-        issue_number: match[:number].to_i,
+        issue_number: number,
         contract: planning_hold_contract,
         contract_supplied: planning_hold_contract_supplied?,
         label_preexisting:
@@ -378,8 +381,17 @@ module Api
       raise PlanningHoldCaptureError, e.message
     end
 
+    def created_planning_issue_number(response)
+      body = parse_response_body(response.body)
+      number = body["number"] if body.is_a?(Hash)
+      return number if number.is_a?(Integer) && number.positive?
+
+      raise PlanningHoldCaptureError, "GitHub issue creation response lacks a valid issue number"
+    end
+
     def planning_label_preexisting?(path, authorization_token)
       return false unless agent_planning_label_request?(path)
+      return false if %r{\Arepos/[^/]+/[^/]+/issues\z}.match?(path)
 
       issue_path = path.delete_suffix("/labels")
       response = github_get(issue_path, authorization_token)
@@ -395,9 +407,12 @@ module Api
     end
 
     def agent_planning_label_request?(path)
-      @agent_run && request.post? &&
-        %r{\Arepos/[^/]+/[^/]+/issues/\d+/labels\z}.match?(path) &&
-        parse_request_body(request.raw_post).fetch("labels", []).map(&:to_s).include?("planning")
+      label_write = (request.post? && %r{\Arepos/[^/]+/[^/]+/issues(?:/\d+/labels)?\z}.match?(path)) ||
+        (request.patch? && %r{\Arepos/[^/]+/[^/]+/issues/\d+\z}.match?(path))
+      return false unless @agent_run && label_write
+
+      labels = parse_request_body(request.raw_post)["labels"]
+      labels.is_a?(Array) && labels.include?("planning")
     end
 
     def github_get(path, authorization_token)

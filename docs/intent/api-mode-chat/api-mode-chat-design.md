@@ -89,6 +89,9 @@ desktop retains Turbo's visibility-based lazy loading.
 
 A personal full-page chat draft is a visible conversation created by a user
 with no user message and no title. At most one such draft may exist per user.
+Concurrency checks publish account/user fixtures before starting workers and
+establish normal tenant context on each worker connection. Readiness waits are
+bounded so fixture or tenant failures cannot leave a test waiting forever.
 The database owns that invariant through a partial unique index, so concurrent
 page loads cannot create duplicates. The migration that establishes the index
 releases discarded drafts' workspace resources before deleting them. Archived
@@ -135,9 +138,16 @@ id DESC)` matches the account-scoped, non-archived ordering and cursor scan;
 the archived path remains bounded by its page limit rather than adding an
 index for a less frequent filter.
 
-The transcript continues to use `latest_messages`: it loads a fixed recent
-slice and extends only across a leading groupable tool run, while older
-messages and reconnect recovery remain their existing demand-driven paths.
+Initial and older transcript pages materialize at most the fixed message page
+size. If a page begins inside a tool run, one maximal disclosure retains that
+run's identity while earlier tool cards load in bounded pages inside it through
+an explicit Load earlier tool actions link. Its summary counts loaded cards and
+labels that count as shown while more remain. Outer transcript pagination moves
+before the whole leading run, so it cannot duplicate that disclosure; every
+omitted tool card remains reachable through its inner history link. Boundary
+metadata uses scoped aggregate queries rather than hydrating omitted messages.
+History reads apply the same session authorization, notice and pending-card
+boundaries as transcript reads. Reconnect recovery keeps its bounded cursor.
 
 ## Current State
 
@@ -280,9 +290,9 @@ What ships today:
   transcript disclosure so multi-step tool activity is skimmable; expanding it
   preserves the existing muted left-railed individual cards. Pending
   confirmations never join a group and retain their amber approval treatment
-  as the transcript's strongest signal. Pagination extends its message slice
-  across a leading tool-run boundary so a persisted run is always rendered in
-  one maximal disclosure, including when older transcript frames load lazily
+  as the transcript's strongest signal. A leading run remains one maximal
+  disclosure across pagination while its earlier cards load inside it on demand;
+  neither initial rendering nor a history page hydrates an entire long run
 - MiniMax chat uses its OpenAI-compatible `/v1` endpoint; CLI runners retain
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back

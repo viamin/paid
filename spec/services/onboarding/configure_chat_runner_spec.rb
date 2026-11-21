@@ -10,6 +10,7 @@ RSpec.describe Onboarding::ConfigureChatRunner do
     Onboarding::StartOnboarding.call(account: account)
     Onboarding::CompleteStep.call(account: account, step: "account_profile")
     allow(AgentHarness).to receive(:check_provider).and_return({ status: "ok" })
+    create(:llm_model, :free, :chat_capable, catalog_source: "openrouter_sync")
     RunnerSupport::API_SERVICE_TYPES.keys.excluding("openrouter").each do |service_type|
       create(:llm_model, provider: service_type, model_id: onboarding_model_id(service_type), tier: "low", supports_tools: true)
     end

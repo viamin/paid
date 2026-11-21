@@ -18,6 +18,8 @@ class LayeredVerificationFinding < ApplicationRecord
 
   def add_observation!(obligation:, agent_run:, check_result_ids:, evidence:)
     with_lock do
+      next true if observation_recorded?(agent_run, check_result_ids)
+
       update!(
         obligation:, agent_run:,
         status: status == "resolved" ? "open" : status,
@@ -32,6 +34,14 @@ class LayeredVerificationFinding < ApplicationRecord
   end
 
   private
+
+  def observation_recorded?(agent_run, check_result_ids)
+    result_ids = Array(check_result_ids).map(&:to_s).uniq.sort
+    observations.any? do |observation|
+      observation.is_a?(Hash) && observation["agent_run_id"].to_s == agent_run.id.to_s &&
+        Array(observation["check_result_ids"]).map(&:to_s).uniq.sort == result_ids
+    end
+  end
 
   def copy_obligation_external_identity
     self.obligation_external_identity = obligation.external_identity if obligation

@@ -54,14 +54,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -225,7 +225,7 @@ jobs:
     # normal runtime. Keep the allowance bounded; a timeout remains a cancelled
     # shard and fails the stable test check below.
     # @spec TEST-SUITE-020
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     services:
       postgres:
@@ -314,14 +314,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -716,14 +716,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1045,14 +1045,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1145,14 +1145,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1301,14 +1301,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1497,14 +1497,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1537,14 +1537,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false
@@ -1635,14 +1635,14 @@ jobs:
       - name: Set up Ruby
         id: setup_ruby
         continue-on-error: true
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Recover Ruby dependencies after cache failure
         if: steps.setup_ruby.outcome == 'failure'
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18
         with:
           ruby-version: .tool-versions
           bundler-cache: false

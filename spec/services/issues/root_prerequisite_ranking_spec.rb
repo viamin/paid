@@ -297,6 +297,25 @@ RSpec.describe Issues::RootPrerequisiteRanking do
   end
 
   # @spec PARTIAL-CLOSEOUT-048
+  it "preloads shared projects without repeating their audit history across graph rows" do
+    root = issue(1)
+    blocked = issue(2)
+    depends(blocked, root)
+    project.update!(log_data: { "audit_history" => "x" * 100_000 })
+    queries = []
+    subscriber = ->(*args) { queries << args.last[:sql] }
+
+    result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.call(account:, queue_issue_ids: [ blocked.id ])
+    end
+
+    issue_queries = queries.select { |sql| sql.include?('FROM "issues"') }
+    expect(issue_queries).to be_present
+    issue_queries.each { |sql| expect(sql).not_to include('"projects"."log_data"') }
+    expect(result.sole.paths.sole.issues.map { |node| node.project.object_id }.uniq.size).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-048
   it "batches persisted assessment reads across the bounded graph" do
     root = issue(1)
     blocked = issue(2)

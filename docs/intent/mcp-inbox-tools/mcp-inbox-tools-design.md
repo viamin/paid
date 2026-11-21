@@ -34,6 +34,15 @@ eligibility behavior. Detail follows the REST API's all-scope lookup semantics:
 a currently authorized entry remains inspectable even when it is outside the
 default actionable list because it is removed or in a disabled phase.
 
+The shared detail serializer declares one explicit detail contract for every
+`Inbox::Queue::KINDS` value. In particular, a selected
+`layered_verification_finding` exposes bounded retained obligation, source and
+audit revisions, source passages, observed behavior, limitations, contributing
+check-result outcomes/freshness, and supported decision actions. It projects
+only these named fields, not raw Active Record objects or unbounded agent and
+recorder metadata; contributing records are constrained to the finding's own
+obligation.
+
 ## Boundaries
 
 These tools are read-only and do not dismiss, close, approve, or start work.

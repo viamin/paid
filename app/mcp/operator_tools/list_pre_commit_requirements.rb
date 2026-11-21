@@ -10,7 +10,7 @@ module OperatorTools
     def self.resource_label = "pre-commit requirement"
     def self.attributes = %i[
       id name check_type command failure_behavior enabled position account_id project_id user_id fix_command
-      created_at updated_at
+      native_timeout_seconds created_at updated_at
     ]
     def self.order_clause = { updated_at: :desc }
   end

@@ -118,6 +118,17 @@ That record carries only the failed step, branch, pinned pushed commit, attempt
 count, sanitized category, and next retry time. It is a work-slot hold, not an
 execution failure, and cleanup releases the prior container.
 
+A claim's ten-minute lease permits recovery after a job dies before starting
+Temporal; it does not authorize overlapping durable executions. Before claiming
+a successor attempt, the job checks the prior attempt's workflow with a bounded
+RPC. A running execution retains ownership even after the lease expires or a
+start response is lost. A terminal or authoritatively absent execution permits
+the ordinary locked claim. Unavailable execution status defers the job without
+releasing another attempt's claim or starting a successor.
+The status answer is bound to the attempt observed before the RPC: the locked
+claim rejects it if another attempt has since taken ownership. The RPC runs
+outside the database lock.
+
 A delayed job and an authorized run-detail retry claim the record under the
 run lock and start a narrow recovery workflow. That workflow provisions only a
 fresh isolated assessment environment when required, runs the assessment, and
@@ -126,6 +137,13 @@ or push activities. Cancellation wins over recovery; duplicate/replayed claims
 are no-ops. A branch or source-policy mismatch stays fail-closed and returns to
 visible recovery state; PR creation remains impossible without a successful
 current assessment.
+
+The confirmed `retry_source_closure` chat/MCP tool queues the same recovery job
+as run detail, under the same run policy and tenant scope. It requires an
+existing waiting run and never creates a replacement AgentRun. The authorized
+run-detail tool exposes only the recovery step, pinned branch and commit,
+attempt counts, category, and retry/claim timestamps; arbitrary reconciliation
+payloads are not exposed. Enqueue refusal remains actionable on both surfaces.
 
 Closeout assessment uses the run's effective configured runner through
 `Llm::Request` and `agent_harness`, with its tier model resolved through
@@ -163,6 +181,20 @@ attempt through ordinary admission. Each attempt records its successor lineage
 and terminal reason. A valid assessment with unmet or unknown criteria remains
 substantive and is never retried to seek a different verdict. This path is
 report-only and cannot authorize implementation, repair, or issue closure.
+
+Report-only audits, pre-publication source assessment, post-PR reconciliation,
+and legacy reconciliation persist the same bounded diagnostic projection.
+Source assessment retains diagnostics before raising its existing Temporal
+failure; its failure details, category, retryability and source disposition
+remain unchanged. Its locked metadata merge preserves concurrent operator
+updates; configuration failures record only the known category and timestamp.
+Legacy persistence retains its existing retry gate and gap
+state. Run detail and `get_agent_run` expose that projection
+to authorized operators. The projection allowlists provenance, correlation,
+category, timestamp, and field/type diagnostics; it discards unknown payloads
+and tolerates malformed historical values. Run detail escapes every value and
+keeps correlation identifiers in a disclosure below the actionable fields.
+Rendering and tool reads do not execute a retry or contact a provider.
 
 The existing criterion-level partial-closeout assessment is the sole authority
 for publishing a source issue's closing reference. Before a new source PR is
@@ -314,6 +346,20 @@ completion timestamp within the reviewed freshness period. The packet exposes
 its absolute expiry; expiration changes the source revision once, invalidating
 a cached acceptance verdict without clock-driven churn on already-stale
 history.
+
+Native stdout and stderr use the executor's 20,000-byte bound per stream,
+rather than the independent 2,000-byte trusted-measurement result bound. Up to
+eight records therefore contribute at most 320,000 native-output bytes before
+JSON escaping (at most 1,920,000 bytes for escaped ASCII control characters).
+The existing record, command, error, and measurement bounds remain independent.
+Complete retained native output passes through unchanged; a digest or success
+summary cannot replace missing primary evidence. Capture records an explicit
+output-truncation boolean before clipping, and projection propagates it into
+incomplete audit coverage. Historical output without that marker is treated as
+potentially clipped when either stream reaches the executor bound. UTF-8 cuts
+are repaired without exceeding the byte bound. This projection changes the
+normal evidence revision without modifying historical receipts, mappings,
+allowances, or substantive verdicts (#5238).
 
 `CloseoutVerifications::Execute` schedules the normal
 `PartialCloseouts::AutoAudit` report-only path once a newly terminal, current
@@ -910,6 +956,28 @@ outcome, and then tears down both resources. Commands do not receive host
 shell access or a Docker socket; existing image allowlists, network policy,
 hardening profiles, and resource budgets remain authoritative.
 
+For configured project services, validation uses the selected runner's normal
+service provisioner before starting the execution container (#5219). This
+reuses its private database per run and persisted service environment; it never
+borrows the control-plane database. Evidence records service IDs and environment
+key names, never credentials or URLs. Cleanup stops the execution environment
+before releasing its service references and private database, including partial
+setup, cancellation and a deleted run. Other running users and transient preview
+references retain their shared services. No configured services means no service
+startup or auto-detection during validation.
+
+Each reviewed requirement carries a native execution limit, defaulting to 300
+seconds and bounded to 1–900 seconds. Operators may review a larger finite
+limit for a cold dependency installation and its check; ordinary pre-commit
+execution and application LLM deadlines retain their existing policy. Manual
+technical validations snapshot this value with their command. Staged mappings
+bind nondefault limits into the reviewed target digest, preserving existing
+default-limit digests, and reject a changed target before execution. Invalid
+persisted limits fail before provisioning. Evidence records the applied limit;
+performance comparisons also retain their independent total measurement budget.
+The 900-second maximum leaves time within the 20-minute job deadline for checkout
+and deterministic cleanup.
+
 The validation run is report-only. It carries its own goal, so it never
 inherits the implementation-admission gate of an implementation goal — a
 stalled issue whose feature intent is not released can still collect evidence
@@ -973,6 +1041,9 @@ records a classification (`awaiting_final_audit`, `blocked_implementation`,
 `missing_measured_results`, or `coordination_epic`) and a supported next action
 that explains when open ownership makes another run duplicate work. A fresh
 semantic assessment remains a bounded explicit `agent_harness` operation.
+An `awaiting_final_audit` classification is not completion evidence: until the
+final audit establishes acceptance, its source issue remains dependency-blocking
+even when its non-closing source PR is still open or draft.
 
 ### Report-only acceptance audits (#4595)
 
@@ -1002,6 +1073,14 @@ operation: a request that would authorize a different operation is refused with
 the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
+
+An explicit operator audit request that joins an existing automatic audit can
+request its operator scheduling priority through `AgentRuns::PrioritizeAudit`.
+The run keeps its trigger, admission evidence, policy signature and retry
+identity. The queue-priority segment owns the timestamp, actor audit and
+SQL/badge parity contract (QUEUE-TIER-007); automatic joins and already claimed
+work keep their ordering. Scheduling intent grants no new execution or closure
+authority, and the existing dequeue checks remain authoritative.
 
 ### Stale prerequisite-audit recovery (#5057)
 
@@ -1057,7 +1136,9 @@ visible rather than being implied away. Current closeout-assessment freshness
 is shown on each path, and stale assessment never establishes acceptance.
 
 Traversal is account-scoped, limited to visible current lane membership, and
-bounded by node, ranked-row, and path limits. Canonical auto-pick admission is
+bounded by node, ranked-row, and path limits. Graph issue rows join projects for
+account filtering but preload shared project records separately, so project
+audit history is not repeated for every graph node. Canonical auto-pick admission is
 evaluated only for roots in the bounded ranked result, so projects whose roots
 cannot be displayed do not add admission work to an Inbox render. Persisted
 cycles, unresolved external edges, and human-decision prerequisites are

@@ -30,7 +30,7 @@ RSpec.describe "AccountPreCommitRequirements" do
       {
         pre_commit_requirement: {
           name: "lint", command: "bin/lint", check_type: "shell_command",
-          failure_behavior: "block", position: 0
+          failure_behavior: "block", position: 0, native_timeout_seconds: 600
         }
       }
     end
@@ -56,7 +56,7 @@ RSpec.describe "AccountPreCommitRequirements" do
         expect(response).to redirect_to(account_pre_commit_requirements_path)
         req = PreCommitRequirement.last
         expect(req.name).to eq("lint")
-        expect(req.account).to eq(account)
+        expect(req).to have_attributes(account:, native_timeout_seconds: 600)
         expect(req).to be_account_level
       end
     end

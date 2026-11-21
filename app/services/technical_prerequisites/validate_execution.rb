@@ -12,7 +12,7 @@ module TechnicalPrerequisites
   # attached tool is exercised by provisioning it and publishing its endpoint
   # to the analyzer. The run's verification_result is the durable,
   # revision-bound evidence record consumed by closeout assessment.
-  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050 STAGED-CLOSEOUT-ADOPTION-011
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050 PARTIAL-CLOSEOUT-057 STAGED-CLOSEOUT-ADOPTION-011
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
     COMMAND_TIMEOUT = 5.minutes
@@ -22,9 +22,10 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, native_command:, execution_runner: nil)
+    def initialize(agent_run:, native_command:, execution_runner: nil, native_timeout_seconds: COMMAND_TIMEOUT.to_i)
       @agent_run = agent_run
       @native_command = validate_command!(native_command)
+      @native_timeout_seconds = validate_native_timeout!(native_timeout_seconds)
       @execution_runner = execution_runner
       @evidence = {}
     end
@@ -34,6 +35,10 @@ module TechnicalPrerequisites
       return persist_unavailable(inspection) unless inspection.runnable?
 
       execute_validation(inspection)
+    rescue Containers::ServiceProvisioner::Error => error
+      return cancelled_result if cancelled?
+
+      persist_terminal("failed", error: "Project services unavailable (#{error.class.name}); restore configured services before retrying.")
     rescue Containers::Provision::Error, Containers::GitOperations::Error,
       ExecutionRunners::Error, Containers::McpProvisioner::Error,
       AgentRuns::Verification::Error => error
@@ -47,7 +52,15 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :agent_run, :evidence, :native_command
+    attr_reader :agent_run, :evidence, :native_command, :native_timeout_seconds
+
+    # @spec PARTIAL-CLOSEOUT-059
+    def validate_native_timeout!(limit)
+      unless limit.is_a?(Integer) && limit.between?(1, PreCommitRequirement::MAX_NATIVE_TIMEOUT_SECONDS)
+        raise ArgumentError, "Native execution limit must be an integer from 1 through #{PreCommitRequirement::MAX_NATIVE_TIMEOUT_SECONDS} seconds."
+      end
+      limit
+    end
 
     def execute_validation(inspection)
       persist_planned_host(inspection.host)
@@ -57,6 +70,9 @@ module TechnicalPrerequisites
       # identifier is persisted. Mark cleanup required first so its safety-net
       # volume removal runs even if provisioning raises partway through.
       @environment_provisioned = true
+      provision_project_services
+      return cancelled_result if cancelled?
+
       agent_run.provision_execution_environment(container_host: inspection.host)
       capture_environment_identity
       return cancelled_result if cancelled?
@@ -73,6 +89,21 @@ module TechnicalPrerequisites
 
       native = capture(native_command, env: command_environment)
       persist_terminal(status_for(native), native:)
+    end
+
+    def provision_project_services
+      return unless agent_run.project.service_containers.exists?
+
+      @services_provisioned = true
+      execution_runner.provision_services(agent_run:,
+        network: Containers::Provision.network_for(agent_run:))
+    ensure
+      if @services_provisioned
+        evidence["services"] = {
+          "container_ids" => agent_run.service_container_ids,
+          "environment_keys" => agent_run.service_environment.to_h.keys.sort
+        }
+      end
     end
 
     def cancelled? = agent_run.reload.status == "cancelled"
@@ -190,7 +221,7 @@ module TechnicalPrerequisites
       end
     end
 
-    def sample_timeout = [ budget_remaining.seconds, COMMAND_TIMEOUT ].min
+    def sample_timeout = [ budget_remaining.seconds, native_timeout_seconds ].min
 
     def budget_remaining = @measurement_deadline - monotonic_now
 
@@ -271,7 +302,7 @@ module TechnicalPrerequisites
       @execution_runner ||= ExecutionRunners.resolve_for(agent_run)
     end
 
-    def capture(command, env:, timeout: COMMAND_TIMEOUT)
+    def capture(command, env:, timeout: native_timeout_seconds)
       result = agent_run.execute_in_execution_environment(command, timeout:, stream: false, env:)
       output(result[:stdout], result[:stderr], result[:exit_code])
     rescue Containers::Provision::ExecutionError => error
@@ -282,14 +313,15 @@ module TechnicalPrerequisites
       {
         "stdout" => bounded(stdout),
         "stderr" => bounded(stderr),
-        "exit_code" => exit_code
+        "exit_code" => exit_code,
+        "output_truncated" => [ stdout, stderr ].any? { |text| text.to_s.bytesize > MAX_OUTPUT_BYTES || !text.to_s.valid_encoding? }
       }
     end
 
     # Bounds captured output by bytes and repairs the cut so a multi-byte
     # character split by the boundary cannot make the evidence unencodable.
     def bounded(text)
-      text.to_s.byteslice(0, MAX_OUTPUT_BYTES).to_s.scrub
+      text.to_s.byteslice(0, MAX_OUTPUT_BYTES).to_s.scrub("")
     end
 
     def status_for(native)
@@ -313,6 +345,7 @@ module TechnicalPrerequisites
     def base_evidence
       {
         "recorded_at" => Time.current.iso8601,
+        "native_timeout_seconds" => native_timeout_seconds,
         **runtime_image_evidence,
         "requested_checkout" => agent_run.base_commit_sha,
         "criterion" => agent_run.external_metadata.dig(RECIPE_KEY, "criterion"),
@@ -349,10 +382,13 @@ module TechnicalPrerequisites
     def cleanup_errors
       [
         -> { execution_runner.cleanup_mcp_servers(agent_run:, persist: run_available?) },
-        -> { agent_run.cleanup_execution_environment(force: true, persist: run_available?) }
+        -> { agent_run.cleanup_execution_environment(force: true, persist: run_available?) },
+        -> { execution_runner.cleanup_services(agent_run:, persist: run_available?) if @services_provisioned }
       ].filter_map do |cleanup_step|
         cleanup_step.call
         nil
+      rescue Containers::ServiceProvisioner::Error => error
+        { "class" => error.class.name, "message" => "Project service cleanup failed; restore configured services before retrying." }
       rescue Containers::Provision::Error, ExecutionRunners::Error, Containers::McpProvisioner::Error => error
         { "class" => error.class.name, "message" => error.message }
       end

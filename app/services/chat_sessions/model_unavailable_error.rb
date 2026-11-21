@@ -6,15 +6,18 @@ module ChatSessions
   class ModelUnavailableError < ArgumentError
     attr_reader :rejection_reasons
 
-    def initialize(runner:, rejection_reasons:)
+    def initialize(runner:, rejection_reasons:, provider_name: nil)
       @rejection_reasons = rejection_reasons.map(&:to_sym).freeze
-      super("No compatible chat model is available for #{runner.display_name}. #{guidance}")
+      name = provider_name.presence || runner.display_name
+      super("No compatible chat model is available for #{name}. #{guidance}")
     end
 
     private
 
     def guidance
       case rejection_reasons.first
+      when :free_model_unavailable
+        "No eligible OpenRouter free chat model is available. Refresh the daily catalog or review model restrictions and rate limits."
       when :catalog_empty then "The provider catalog is empty; refresh the catalog or contact your administrator."
       when :runner_incompatible then "Available catalog models are not compatible with this runner's authentication mode or installed CLI."
       when :capability_mismatch then "Available catalog models do not support chat tools."

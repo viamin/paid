@@ -259,8 +259,9 @@ module Containers
     # Only stops containers with no in-flight capacity runs still using them.
     #
     # @param agent_run [AgentRun] The agent run to clean up services for
+    # @param persist [Boolean] clear run associations unless the row was deleted
     # @spec CONTAINER-RUNTIME-004
-    def cleanup(agent_run, stale_requeue_count: nil)
+    def cleanup(agent_run, stale_requeue_count: nil, persist: true)
       container_ids = agent_run.service_container_ids
       return if container_ids.blank?
 
@@ -269,11 +270,11 @@ module Containers
           cleanup_service_container(sc,
             agent_run: agent_run,
             service_environment: agent_run.service_environment,
-            stale_requeue_count: stale_requeue_count)
+            stale_requeue_count: stale_requeue_count, excluding: agent_run)
         end
       end
 
-      agent_run.update_columns(service_container_ids: [])
+      agent_run.update_columns(service_container_ids: []) if persist
     end
 
     # Cleans up service containers provisioned outside the normal agent-run
@@ -502,7 +503,7 @@ module Containers
     # Drops the per-run database (for postgres services) before stopping the
     # container so isolated databases are not left behind, and only stops
     # containers that no other in-flight run still needs.
-    def cleanup_service_container(service_container, agent_run:, service_environment:, stale_requeue_count:)
+    def cleanup_service_container(service_container, agent_run:, service_environment:, stale_requeue_count:, excluding: nil)
       if service_container.image.include?("postgres")
         db_name = database_name_for(agent_run, service_environment, stale_requeue_count: stale_requeue_count)
         if droppable_per_run_database?(agent_run, service_container, db_name) &&
@@ -511,7 +512,7 @@ module Containers
         end
       end
 
-      stop_container!(service_container) if service_container.capacity_inflight_agent_run_count.zero?
+      stop_container!(service_container) if service_container.capacity_inflight_agent_run_count(excluding:).zero?
     end
 
     def cleanup_failed_container(docker_container, service_container)

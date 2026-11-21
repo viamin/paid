@@ -38,6 +38,7 @@ RSpec.describe Activities::RunLayeredVerificationChecksActivity do
       obligation_coverage: "contradicted", cause_signature: "tlc-invariant-violation",
       evidence_ref: evidence_key
     )
+    expect(obligation.check_results.sole.input_revision).to include("code" => "code123", "external_revision" => "intent123")
   end
 
   it "bounds the inline TLC evidence summary" do

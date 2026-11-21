@@ -150,7 +150,7 @@ class AutoPickEligibilitySweepJob < ApplicationJob
 
   def peak_rss_kb
     File.foreach("/proc/self/status") do |line|
-      return line.split.last.to_i if line.start_with?("VmHWM:")
+      return line.split[1].to_i if line.start_with?("VmHWM:")
     end
     nil
   rescue Errno::ENOENT

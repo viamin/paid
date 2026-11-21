@@ -1250,6 +1250,8 @@ class AgentRun < ApplicationRecord
   # RDR-047 for the rationale: labeling a fresh issue P1 must not let it
   # leapfrog a ready, unlabeled PR follow-up.
   #
+  # Explicit operator audit requests share the manual scheduling tier while
+  # preserving the run's original trigger and execution authorization.
   # The manual tier does not split by category — a manual PR-continuation
   # run and a manual fresh-issue run both land in tier 0. IN_PROGRESS_SQL
   # in QUEUE_ORDER breaks that tie (PR continuation first); every other
@@ -1287,8 +1289,8 @@ class AgentRun < ApplicationRecord
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
   QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning create_feature].freeze
 
-  def queue_priority_tier # @spec QUEUE-TIER-002
-    return :manual if manual?
+  def queue_priority_tier # @spec QUEUE-TIER-002 QUEUE-TIER-007
+    return :manual if manual? || operator_audit_priority?
 
     category = existing_pr? ? "pr" : "issue"
     case label_priority_tier
@@ -1297,6 +1299,11 @@ class AgentRun < ApplicationRecord
     when "P3" then :"#{category}_p3"
     else category == "pr" ? :pr_continue : :auto_pick
     end
+  end
+
+  # @spec QUEUE-TIER-007
+  def operator_audit_priority?
+    operator_priority_requested_at.present? && goal == "analyze_issue" && continuation_request_id.present?
   end
 
   # Returns "P1"/"P2"/"P3" if the run's issue or source PR carries one of
@@ -1412,6 +1419,8 @@ class AgentRun < ApplicationRecord
   end
 
   def queue_priority_label
+    return "1 - Operator-requested audit" if !manual? && operator_audit_priority?
+
     priority = QUEUE_PRIORITIES.fetch(queue_priority_tier) { UNKNOWN_PRIORITY }
     indicator = priority[:indicator]
     indicator ? "#{indicator} - #{priority[:label]}" : priority[:label]
@@ -1497,7 +1506,10 @@ class AgentRun < ApplicationRecord
   # the second WHEN is already known to be automatic.
   QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001
     CASE
-      WHEN trigger_type = 'manual' THEN 0
+      WHEN trigger_type = 'manual' OR (
+        agent_runs.operator_priority_requested_at IS NOT NULL
+        AND agent_runs.goal = 'analyze_issue' AND agent_runs.continuation_request_id IS NOT NULL
+      ) THEN 0
       WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL})
       ELSE (#{LABEL_RANK_CASE_SQL}) + 4
     END
@@ -4101,7 +4113,9 @@ class AgentRun < ApplicationRecord
       obligation_id, selected_check, producer, execution_state, obligation_coverage, input_revision,
       evidence_summary, limitations, and, for contradicted coverage, a stable kebab-case cause_signature
       describing the underlying discrepancy rather than an artifact path. Include correspondence_claim_id,
-      evidence_ref, agent_reported, recorder_verified, and cost when available.
+      evidence_ref, agent_reported, and cost when available.
+      Use an object for evidence_summary, strings for evidence_ref and limitations (multiple entries may use newlines),
+      and objects for input_revision, agent_reported and cost. Paid assigns recorder_verified; do not claim recorder facts.
 
       Obligations and plans:
       #{scope}

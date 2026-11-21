@@ -1021,7 +1021,7 @@ components:
         type: string
         maxLength: 40
         format: inbox-entry-id
-        pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
+        pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap|layered_verification_finding):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
         description: Opaque `kind:id` queue identifier.
         example: clarifying_questions:4241
     InboxKind:
@@ -1029,7 +1029,7 @@ components:
       in: query
       schema:
         type: string
-        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending, traceability_gap, dependency_cycle]
+        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending, traceability_gap, layered_verification_finding, dependency_cycle]
     InboxSort:
       name: sort
       in: query
@@ -1064,7 +1064,7 @@ components:
         type: string
         maxLength: 40
         format: inbox-entry-id
-        pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
+        pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap|layered_verification_finding):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
   schemas:
     MaintenanceRun:
       type: object
@@ -1096,7 +1096,7 @@ components:
       type: string
       maxLength: 40
       format: inbox-entry-id
-      pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
+      pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap|layered_verification_finding):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
       description: Opaque `kind:id` queue identifier.
       example: clarifying_questions:4241
     ErrorEnvelope:
@@ -1501,6 +1501,47 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [layered_verification_finding]}
+            obligation:
+              type: object
+              properties:
+                external_identity: {type: string}
+                framework: {type: string}
+                scope_description: {type: string}
+                approval_state: {type: string}
+                source_revision: {type: string, nullable: true}
+                approved_revision_reference: {type: string, nullable: true}
+                canonical_source_path: {type: string, nullable: true}
+            audit:
+              type: object
+              properties:
+                id: {type: integer}
+                target_revision: {type: string, nullable: true}
+            source_passages: {type: array, maxItems: 20, items: {}}
+            observed_behavior: {}
+            check_limitations: {type: array, maxItems: 20, items: {}}
+            decision:
+              type: object
+              properties:
+                question: {type: string, nullable: true}
+                consequences: {type: array, maxItems: 20, items: {}}
+            supported_actions:
+              type: array
+              items: {type: string, enum: [request_repair, approve_clarification, defer]}
+            contributing_check_results:
+              type: array
+              maxItems: 20
+              items:
+                type: object
+                properties:
+                  id: {type: integer}
+                  producer: {type: string}
+                  execution_state: {type: string}
+                  obligation_coverage: {type: string}
+                  input_revision: {type: object}
+                  freshness: {type: string, enum: [matches_audit_revision, does_not_match_audit_revision]}
+                  limitations: {type: string}
+                  evidence_ref: {type: string, nullable: true}
+                  evidence_summary: {}
     DependencyCycleEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'

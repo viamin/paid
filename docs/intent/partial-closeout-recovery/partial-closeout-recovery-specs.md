@@ -59,14 +59,34 @@
   This recovery SHALL preserve runner authorization, credentials, privacy,
   budgets, isolation, and report-only admission and SHALL NOT authorize repair
   or implementation work.
+  Authorized run detail and `get_agent_run` SHALL expose the same bounded,
+  allowlisted diagnostic projection, omit arbitrary payloads, and tolerate
+  malformed historical values. HTML SHALL escape diagnostic text and keep
+  request/attempt identifiers in a disclosure. Reading diagnostics SHALL NOT
+  contact providers or initiate recovery.
+  Pre-publication source assessment and legacy reconciliation SHALL persist
+  that same bounded diagnostic projection without changing their existing
+  failure categories, Temporal details, retry gates, gap state or source
+  disposition. Unavailable diagnostics SHALL NOT become acceptance evidence.
   *Code:* `app/services/llm/request.rb`,
   `app/services/llm/analyze_partial_closeout.rb`,
   `app/temporal/activities/run_acceptance_audit_activity.rb`,
-  `app/services/partial_closeouts/acceptance_audit_failure.rb`.
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`,
+  `app/views/agent_runs/_assessment_diagnostics.html.erb`,
+  `app/mcp/tools/get_agent_run.rb`.
   *Test:* `spec/services/llm/request_spec.rb`,
   `spec/services/llm/analyze_partial_closeout_spec.rb`,
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
-  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`.
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,
+  `spec/temporal/activities/assess_source_closure_activity_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
+  `spec/requests/projects/acceptance_audit_diagnostics_spec.rb`,
+  `spec/mcp/tools/get_agent_run_audit_diagnostics_spec.rb`,
+  `spec/system/acceptance_audit_diagnostics_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-057** — When Paid builds the criterion-level
   acceptance-audit packet and source revision for an issue, it SHALL include
@@ -77,7 +97,13 @@
   mismatched criterion/scope, and changed or unavailable underlying recipes
   SHALL make the result stale. Omitted or truncated verification input SHALL
   mark audit coverage incomplete, and omitted records SHALL still affect the
-  source revision. Evidence SHALL expire at the host-recorded completion time
+  source revision. Complete native stdout and stderr up to 20,000 bytes each
+  SHALL pass through unchanged within the eight-record bound; the independent
+  trusted-measurement result bound SHALL remain 2,000 bytes. Capture SHALL
+  explicitly record output clipping before a UTF-8-safe byte cut, and the
+  packet SHALL preserve that incomplete status even when retained output is
+  shorter than its bound. Historical streams without capture metadata that
+  reach the capture bound SHALL remain conservatively incomplete (#5238). Evidence SHALL expire at the host-recorded completion time
   plus the reviewed freshness period; a missing or future completion time SHALL leave it
   stale. The packet SHALL expose the expiry, and expiration SHALL change the
   source revision so a cached verdict cannot authorize closure.
@@ -214,7 +240,9 @@
   SHALL be excluded and visibly counted; a closed issue alone SHALL never be
   represented as acceptance evidence. Rendering SHALL use persisted local
   graph, blocker, eligibility, and assessment state only and SHALL make no
-  GitHub or LLM calls or change priorities or dependencies.
+  GitHub or LLM calls or change priorities or dependencies. Graph issue rows SHALL
+  preload shared project records separately rather than repeat project audit
+  history in each joined issue row.
   *Code:* `app/services/issues/root_prerequisite_ranking.rb`,
   `app/controllers/inbox_controller.rb`,
   `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
@@ -246,18 +274,32 @@
   replayed claims SHALL not rerun coding or duplicate PR publication. A claim
   SHALL remain outside fresh Auto-Pick implementation retry admission once the
   run has recorded that pushed revision or other implementation work. A claim
-  that outlives its bounded lease SHALL be reclaimable, and successful recovery
+  that outlives its bounded lease SHALL be reclaimable only after the prior
+  execution terminates or is authoritatively absent. Lease expiry or
+  an ambiguous start response SHALL require a bounded authoritative status
+  check before another claim. Unavailable status SHALL defer recovery without
+  clearing the prior claim or starting a successor. A claim SHALL be rejected
+  if ownership changed since its status check. Successful recovery
   SHALL run the same best-effort screenshot, decision-record, and applicable
   LID-planning post-publication steps as the primary workflow. A branch mismatch
   SHALL remain visibly parked for authorized manual retry without scheduling
   automatic retries or provisioning additional assessment environments.
+  Authorized chat/MCP clients SHALL inspect bounded recovery diagnostics through
+  `get_agent_run` and request the same recovery job through confirmed
+  `retry_source_closure`. The tool SHALL reject foreign-tenant, unauthorized,
+  non-waiting, and unconfirmed requests without creating a replacement run;
+  enqueue refusal SHALL be reported rather than claimed as queued.
   *Code:* `app/jobs/source_closure_recovery_job.rb`,
   `app/temporal/workflows/source_closure_recovery_workflow.rb`,
   `app/controllers/projects/agent_runs_controller.rb`.
+  *Tool:* `app/mcp/tools/retry_source_closure.rb`,
+  `app/mcp/tools/get_agent_run.rb`.
   *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/jobs/source_closure_recovery_job_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_ownership_spec.rb`,
   `spec/requests/projects/source_closure_recovery_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
+  *Tool test:* `spec/mcp/tools/retry_source_closure_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted
@@ -307,7 +349,12 @@
       action when no compatible host or required `marketplace_tool_sidecars`
       authorization exists; and, when runnable, SHALL execute only the reviewed
       analyzer recipe command through the isolated AgentRun environment on the
-      inspected host, SHALL restore the pinned commit into the shallow clone
+      inspected host, SHALL provision explicitly configured project services
+      through the selected runner before container startup and use its private
+      per-run database/environment, SHALL release those resources after stopping
+      execution on success, failure, cancellation or deleted-run cleanup while
+      preserving other runs/previews and excluding credentials from evidence
+      (#5219), SHALL restore the pinned commit into the shallow clone
       before executing it, SHALL retain bounded stdout, stderr, exit status,
       pinned checkout/image/tool identity, sidecar endpoint, and cleanup
       evidence, and SHALL report `unavailable`, `failed`, or `completed`
@@ -335,11 +382,15 @@
       `app/services/llm/analyze_partial_closeout.rb`,
       `app/services/technical_prerequisites/start_validation.rb`,
       `app/services/technical_prerequisites/validate_execution.rb`,
+      `app/services/containers/service_provisioner.rb`,
+      `app/services/execution_runners/local_docker_runner.rb`,
       `app/jobs/technical_prerequisite_validation_job.rb`,
       `app/controllers/projects/agent_runs_controller.rb`,
       `app/models/agent_run.rb`,
       `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
       *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+      `spec/services/containers/service_provisioner_spec.rb`,
+      `spec/services/execution_runners/local_docker_runner_spec.rb`,
       `spec/services/technical_prerequisites/start_validation_spec.rb`,
       `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
       `spec/requests/projects/technical_prerequisite_validations_spec.rb`,
@@ -1296,3 +1347,27 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/services/partial_closeouts/confirm_sync_spec.rb`,
   `spec/models/notification_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-059** — When an authorized operator reviews a native
+  technical or staged-closeout recipe, Paid SHALL persist an integer execution
+  limit from 1 through 900 seconds, defaulting to 300 seconds, and expose the limit
+  through existing authorized recipe editing and operator representations.
+  Manual validation SHALL snapshot the reviewed limit with its command; an
+  older admission without that field SHALL retain 300 seconds. Staged target
+  identity SHALL bind nondefault limits while preserving unchanged legacy
+  default digests, and a changed limit SHALL invalidate the reviewed target.
+  The isolated executor SHALL reject invalid persisted limits before
+  provisioning, apply the admitted limit, and record it in evidence. Performance
+  measurement SHALL retain its independent total budget, and ordinary pre-commit
+  and application LLM deadlines SHALL retain their existing policy. Cancellation,
+  physical cleanup, authorization, trust, cost and finite retry guards SHALL
+  remain authoritative. Issue #5225 owns implementation and operating acceptance.
+  *Code:* `PreCommitRequirement`, `TechnicalPrerequisites::StartValidation`,
+  `TechnicalPrerequisites::ValidateExecution`, `TechnicalPrerequisiteValidationJob`,
+  `StagedCloseoutAdoption::Mappings`, `CloseoutVerifications::Execute`.
+  *Test:* `spec/models/pre_commit_requirement_spec.rb`,
+  `spec/services/technical_prerequisites/start_validation_spec.rb`,
+  `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+  `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/services/staged_closeout_adoption/mappings_spec.rb`,
+  `spec/services/closeout_verifications/execute_spec.rb`.
