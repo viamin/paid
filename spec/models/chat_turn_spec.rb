@@ -153,6 +153,23 @@ RSpec.describe ChatTurn do
       expect(turn).to have_attributes(status: "failed", failure_classification: "empty_response")
       expect(turn.chat_session.messages.last).to be_chat_turn_failure_notice
     end
+
+    # @spec CHAT-TURN-RECOVERY-008
+    it "withdraws Retry when the final empty-response recovery attempt fails" do
+      turn = described_class.start!(chat_session: chat_session, user_message: user_message)
+      error = ChatSessions::AgentLoop::EmptyResponseError.new(tokens_input: 0, tokens_output: 0, model: "model")
+      turn.fail!(error: error)
+      notice = turn.chat_session.messages.last
+      turn.update!(status: "streaming", failure_classification: nil,
+        recovery_attempts: described_class::MAX_RECOVERY_ATTEMPTS)
+
+      turn.fail!(error: error)
+
+      expect(turn.chat_session.messages.last).to eq(notice)
+      notice.reload
+      expect(notice.content).to include("attempts are exhausted")
+      expect(notice.metadata).to include("retry_available" => false)
+    end
   end
 
   describe "#claim_recovery!" do

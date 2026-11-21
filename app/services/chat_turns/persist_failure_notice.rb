@@ -5,6 +5,7 @@ module ChatTurns
   class PersistFailureNotice
     CONTENT = "The assistant could not finish this response. Any tool actions shown above may have completed."
     EMPTY_RESPONSE_CONTENT = "The assistant returned no usable response. You can retry this turn; completed tool actions will not be repeated."
+    EMPTY_RESPONSE_EXHAUSTED_CONTENT = "The assistant returned no usable response. Recovery attempts are exhausted; send a new message to continue."
 
     def self.call(chat_turn:)
       message = latest_notice(chat_turn) || chat_turn.chat_session.messages.build(role: "system")
@@ -19,6 +20,7 @@ module ChatTurns
     end
 
     def self.notice_content(chat_turn)
+      return EMPTY_RESPONSE_EXHAUSTED_CONTENT if chat_turn.failure_classification == "empty_response" && chat_turn.recovery_exhausted?
       return EMPTY_RESPONSE_CONTENT if chat_turn.failure_classification == "empty_response"
 
       CONTENT
@@ -37,7 +39,7 @@ module ChatTurns
       {
         "chat_turn_failure_notice" => true,
         "chat_turn_id" => chat_turn.id,
-        "retry_available" => chat_turn.failure_classification == "empty_response"
+        "retry_available" => chat_turn.failure_classification == "empty_response" && !chat_turn.recovery_exhausted?
       }
     end
 
