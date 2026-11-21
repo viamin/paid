@@ -10,7 +10,7 @@ class ChatTurn < ApplicationRecord
 
   STATUSES = %w[pending streaming completed failed stalled abandoned].freeze
   ACTIVE_STATUSES = %w[pending streaming].freeze
-  FAILURE_CLASSIFICATIONS = %w[rate_limited provider_error budget_exhausted validation_error unsupported_configuration unexpected_error].freeze
+  FAILURE_CLASSIFICATIONS = %w[rate_limited provider_error budget_exhausted validation_error unsupported_configuration empty_response unexpected_error].freeze
   AUTOMATIC_RECOVERY_CLASSIFICATIONS = %w[infrastructure_failure].freeze
 
   # Automatic (unconfirmed) recovery is only attempted for a turn that never
@@ -136,17 +136,21 @@ class ChatTurn < ApplicationRecord
     ChatTurns::Lifecycle.record(event_name: "chat_turn.abandoned", chat_turn: self)
   end
 
-  # Atomically transitions this turn from `stalled` to `streaming`, so a
+  # Atomically transitions this turn from `stalled` (or a user-confirmed
+  # empty-response failure) to `streaming`, so a
   # concurrent sweep tick and a concurrent manual Resume click cannot both
   # start recovery for the same turn (#4680 AC6). Only the caller whose
   # UPDATE actually matches the `stalled` WHERE clause wins the race; the
   # loser's statement matches zero rows. Mirrors
   # ChatSessions::ResolveToolCall#claim_resolution!.
+  # @spec CHAT-TURN-RECOVERY-006 @spec CHAT-TURN-RECOVERY-008
   def claim_recovery!(triggered_by:, actor: nil)
+    return false if triggered_by != "manual" && empty_response_failure?
     return reject_recovery!(triggered_by:, actor:) if abandon_if_recovery_exhausted!
 
-    rows = self.class.where(id: id, status: "stalled").update_all(
+    rows = recovery_claim_scope(triggered_by).update_all(
       status: "streaming",
+      failure_classification: nil,
       recovery_locked_at: Time.current,
       recovery_attempts: recovery_attempts + 1,
       last_activity_at: Time.current,
@@ -200,7 +204,7 @@ class ChatTurn < ApplicationRecord
   end
 
   def abandon_if_recovery_exhausted!
-    rows = self.class.where(id: id, status: "stalled")
+    rows = recovery_claim_scope("manual")
       .where("recovery_attempts >= ?", MAX_RECOVERY_ATTEMPTS)
       .update_all(status: "abandoned", completed_at: Time.current)
     return false unless rows.positive?
@@ -220,6 +224,17 @@ class ChatTurn < ApplicationRecord
     false
   end
 
+  def recovery_claim_scope(triggered_by)
+    scope = self.class.where(id: id)
+    return scope.where(status: "stalled") unless triggered_by == "manual"
+
+    scope.where("status = ? OR (status = ? AND failure_classification = ?)", "stalled", "failed", "empty_response")
+  end
+
+  def empty_response_failure?
+    status == "failed" && failure_classification == "empty_response"
+  end
+
   def write_tool_message?(message)
     message.role == "assistant" && message.tool_name.present? && Tools::Registry.write_tool?(message.tool_name)
   end
@@ -229,6 +244,7 @@ class ChatTurn < ApplicationRecord
     when AgentHarness::RateLimitError then "rate_limited"
     when AgentHarness::Error then "provider_error"
     when ChatSessions::TokenLimitExceededError then "budget_exhausted"
+    when ChatSessions::AgentLoop::EmptyResponseError then "empty_response"
     when ArgumentError then "validation_error"
     when NotImplementedError then "unsupported_configuration"
     else "unexpected_error"

@@ -158,7 +158,10 @@ drafts SHALL NOT participate in the one-draft invariant;
 - [x] **CHAT-API-002** — When an API-mode chat turn is sent through JSON, SSE,
   or ActionCable, the system SHALL persist the user/assistant conversation,
   stream start/chunk/tool/completion events, and return a paused status instead
-  of an error when the loop stops for a write-tool confirmation.
+  of an error when the loop stops for a write-tool confirmation. A result with
+  neither usable text nor callable tools SHALL instead persist the shared
+  failed-turn system notice and its Retry affordance; it SHALL NOT be exposed
+  as an assistant answer on any transport surface.
   *Tests:* `spec/requests/chat_messages_spec.rb`,
   `spec/channels/chat_channel_spec.rb`,
   `spec/jobs/chat_sessions/process_message_job_spec.rb`,

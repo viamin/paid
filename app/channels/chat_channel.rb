@@ -81,7 +81,7 @@ class ChatChannel < ApplicationCable::Channel
     transmit_event("error", { message: "An unexpected error occurred" })
   end
 
-  # @spec CHAT-TURN-RECOVERY-005 @spec CHAT-TURN-RECOVERY-006
+  # @spec CHAT-TURN-RECOVERY-005 @spec CHAT-TURN-RECOVERY-006 @spec CHAT-TURN-RECOVERY-008
   def recover_stalled_turn(data)
     return unless @chat_session
 
