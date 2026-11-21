@@ -11,11 +11,12 @@ module PartialCloseouts
     def self.claim!(...) = new(...).claim!
     def self.release_claim!(...) = new(...).release_claim!
 
-    def initialize(agent_run:, category: nil, attempts: nil, now: Time.current)
+    def initialize(agent_run:, category: nil, attempts: nil, now: Time.current, expected_recovery_attempt: nil)
       @agent_run = agent_run
       @category = category
       @attempts = attempts
       @now = now
+      @expected_recovery_attempt = expected_recovery_attempt
     end
 
     def park!
@@ -38,6 +39,7 @@ module PartialCloseouts
       agent_run.with_lock do
         agent_run.reload
         return false unless agent_run.waiting_recovery? && claim_available?
+        return false if @expected_recovery_attempt && state.fetch("recovery_attempt", 0).to_i != @expected_recovery_attempt
 
         agent_run.update!(reconciliation: agent_run.reconciliation.merge(KEY => state.merge(
           "claimed_at" => now.iso8601,

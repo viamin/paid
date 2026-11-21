@@ -248,7 +248,12 @@
   replayed claims SHALL not rerun coding or duplicate PR publication. A claim
   SHALL remain outside fresh Auto-Pick implementation retry admission once the
   run has recorded that pushed revision or other implementation work. A claim
-  that outlives its bounded lease SHALL be reclaimable, and successful recovery
+  that outlives its bounded lease SHALL be reclaimable only after the prior
+  execution terminates or is authoritatively absent. Lease expiry or
+  an ambiguous start response SHALL require a bounded authoritative status
+  check before another claim. Unavailable status SHALL defer recovery without
+  clearing the prior claim or starting a successor. A claim SHALL be rejected
+  if ownership changed since its status check. Successful recovery
   SHALL run the same best-effort screenshot, decision-record, and applicable
   LID-planning post-publication steps as the primary workflow. A branch mismatch
   SHALL remain visibly parked for authorized manual retry without scheduling
@@ -258,6 +263,7 @@
   `app/controllers/projects/agent_runs_controller.rb`.
   *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/jobs/source_closure_recovery_job_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_ownership_spec.rb`,
   `spec/requests/projects/source_closure_recovery_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
