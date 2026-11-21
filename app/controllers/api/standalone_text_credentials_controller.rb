@@ -24,22 +24,32 @@ module Api
       render json: { env: identity.fetch(:env_keys, []).index_with { secret }, files: {} }
     end
 
-    def render_subscription # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
-      credential = account.runner_credentials.active.for_runner(runner.runner_key)
-        .order(created_at: :desc, id: :desc).first
+    def render_subscription # @spec LLM-ROUTING-005 LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-005 SUBSCRIPTION-RUNNER-AUTH-006
+      credential = Runners::ManagedCredentialLifecycle.credential_for(account:, runner_key: runner.runner_key)
       return render json: { error: "Managed subscription credential is unavailable" }, status: :service_unavailable unless credential
 
-      # Same pre-run lifecycle as Containers::Provision: refresh a near-expiry
-      # rotating credential under its per-credential lease before the disposable
-      # container receives the token, so the request cannot fail mid-run on a
-      # stale access token. A failed refresh falls back to the stored token.
-      Runners::ManagedCredentialLifecycle.refresh_if_near_expiry!(credential,
-        runner_key: runner.runner_key, provision: true)
+      return render_unready_subscription unless refresh_managed_credential!(credential)
+
       materialization = Runners::SubscriptionAuthProviders.for_runner(runner.runner_key)&.materialize(secret: credential.token)
       return render json: { error: "Managed subscription credential cannot be materialized" }, status: :unprocessable_entity unless materialization&.supported?
 
       credential.update_column(:last_used_at, Time.current)
       render json: { env: materialization.env, files: materialization.files }
+    end
+
+    def refresh_managed_credential!(credential)
+      readiness = Runners::ManagedCredentialLifecycle.readiness(credential, runner_key: runner.runner_key)
+      return true if readiness == :fresh
+      return false unless readiness == :refreshable
+
+      outcome = Runners::ManagedCredentialLifecycle.refresh_if_near_expiry!(credential, runner_key: runner.runner_key, provision: true)
+      return true if outcome == :refreshed
+
+      Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: runner.runner_key) == :fresh
+    end
+
+    def render_unready_subscription
+      render json: { error: "Managed subscription credential requires reconnecting" }, status: :service_unavailable
     end
 
     def with_tenant_context

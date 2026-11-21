@@ -73,7 +73,7 @@ module Knowledge
       end
     end
 
-    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-008 LLM-ROUTING-010
+    # @spec ISSUE-ANALYSIS-003 ISSUE-ANALYSIS-014 ISSUE-ANALYSIS-019 LLM-ROUTING-005 LLM-ROUTING-008 LLM-ROUTING-010 LLM-ROUTING-011
     def standalone_chat_runners
       user_setting.user.runners.kept_only.for_chat.ordered.select do |runner|
         isolated_text_capable?(runner)
@@ -142,7 +142,7 @@ module Knowledge
     end
 
     def managed_credential_available?(runner)
-      user_setting.user.account.runner_credentials.active.for_runner(runner.runner_key).exists?
+      Runners::ManagedCredentialLifecycle.credential_for(account: user_setting.user.account, runner_key: runner.runner_key).present?
     end
 
     def warn_on_embedding_fallback(candidates)

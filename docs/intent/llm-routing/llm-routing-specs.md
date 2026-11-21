@@ -57,3 +57,19 @@
   its disposable container. An uncredentialed subscription SHALL report
   `missing_credential`, be excluded from isolated-text candidates, and never
   trigger host CLI execution or API-key billing substitution.
+
+- [x] **LLM-ROUTING-011** — Before excluding a rotating managed subscription
+  credential from isolated text routing, the system SHALL distinguish an expired
+  but refreshable unrevoked credential from missing or revoked authentication.
+  The former SHALL reach the provider-owned serialized refresh lifecycle at
+  every isolated-text routing and readiness surface; only
+  a fresh result may be materialized. A Test Runner result using host-forwarded
+  authentication SHALL identify that source and SHALL NOT imply standalone
+  managed-audit readiness.
+  A newer expired credential that cannot refresh SHALL NOT shadow an older fresh
+  credential at those surfaces.
+  *Tests:* `spec/services/llm/request_spec.rb`,
+  `spec/requests/api/standalone_text_credentials_spec.rb`,
+  `spec/services/runners/managed_credential_lifecycle_spec.rb`.
+  *Code:* `Llm::Request`, `Runners::ManagedCredentialLifecycle`,
+  `Api::StandaloneTextCredentialsController`.

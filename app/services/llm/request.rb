@@ -162,8 +162,9 @@ module Llm
       runner.present? && !runner.discarded? && runner.user_id == @user&.id && permitted_usage?(runner)
     end
 
+    # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
     def managed_credential_available?(runner)
-      runner.user.account.runner_credentials.active.for_runner(runner.runner_key).exists?
+      Runners::ManagedCredentialLifecycle.credential_for(account: runner.user.account, runner_key: runner.runner_key).present?
     end
 
     def perform_request(runner, timeout:)

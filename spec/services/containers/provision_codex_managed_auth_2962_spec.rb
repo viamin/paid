@@ -57,6 +57,15 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
   end
 
   describe "managed materialization without a host bind mount (AC1)" do
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006
+    it "selects an expired unrevoked Codex credential for the existing refresh lifecycle" do
+      credential = create_codex_credential(token: valid_codex_auth, expires_at: 1.minute.ago)
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:codex).and_return(true)
+      svc = build_service
+
+      expect(svc.send(:codex_managed_runner_credential)).to eq(credential)
+    end
+
     it "writes auth.json into the container from the managed RunnerCredential" do
       credential = create_codex_credential(token: valid_codex_auth)
       svc = build_service(credential: credential)

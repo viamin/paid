@@ -3471,10 +3471,12 @@ module Containers
       scope
     end
 
-    # OpenCode and OMP can refresh an expired short-lived credential before
-    # materialization, so their managed lookup must exclude only revoked rows.
-    def latest_non_revoked_managed_subscription_credential_for(runner_key)
-      managed_subscription_credential_scope_for(runner_key)&.where(revoked_at: nil)&.order(created_at: :desc, id: :desc)&.first
+    # Rotating runners may recover an expired record, but an unusable newer
+    # expiry must not shadow an older fresh credential.
+    def managed_rotating_runner_credential_for(runner_key)
+      return nil unless project.is_a?(Project)
+
+      Runners::ManagedCredentialLifecycle.credential_for(account: project.account, runner_key:)
     end
 
     def managed_subscription_runner_auth_enabled?
@@ -3645,7 +3647,8 @@ module Containers
       credential = codex_managed_runner_credential
       return false unless credential
 
-      refresh_codex_managed_credential!(provision: true)
+      refreshed = refresh_codex_managed_credential!(provision: true)
+      return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "codex") == :fresh
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_codex_managed_caches
@@ -3674,7 +3677,8 @@ module Containers
       credential = opencode_managed_runner_credential
       return false unless credential
 
-      refresh_opencode_managed_credential!(provision: true)
+      refreshed = refresh_opencode_managed_credential!(provision: true)
+      return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "opencode") == :fresh
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_opencode_managed_caches
@@ -3709,7 +3713,8 @@ module Containers
       credential = omp_managed_runner_credential
       return false unless credential
 
-      refresh_omp_managed_credential!(provision: true)
+      refreshed = refresh_omp_managed_credential!(provision: true)
+      return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "omp") == :fresh
 
       reset_omp_managed_caches
       materialization = omp_managed_materialization
@@ -3851,20 +3856,19 @@ module Containers
     def codex_managed_runner_credential
       return @codex_managed_runner_credential if defined?(@codex_managed_runner_credential)
 
-      @codex_managed_runner_credential = managed_subscription_credential_scope_for("codex")&.active
-        &.order(created_at: :desc, id: :desc)&.first
+      @codex_managed_runner_credential = managed_rotating_runner_credential_for("codex")
     end
 
     def opencode_managed_runner_credential
       return @opencode_managed_runner_credential if defined?(@opencode_managed_runner_credential)
 
-      @opencode_managed_runner_credential = latest_non_revoked_managed_subscription_credential_for("opencode")
+      @opencode_managed_runner_credential = managed_rotating_runner_credential_for("opencode")
     end
 
     def omp_managed_runner_credential
       return @omp_managed_runner_credential if defined?(@omp_managed_runner_credential)
 
-      @omp_managed_runner_credential = latest_non_revoked_managed_subscription_credential_for("omp")
+      @omp_managed_runner_credential = managed_rotating_runner_credential_for("omp")
     end
 
     def codex_managed_materialization
