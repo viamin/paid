@@ -33,6 +33,7 @@ module Tools
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",
+      "Tools::RetrySourceClosure",
       "Tools::ManageFeatureIntent",
       "Tools::PublishHeldIssue",
       "Tools::CloneProject",

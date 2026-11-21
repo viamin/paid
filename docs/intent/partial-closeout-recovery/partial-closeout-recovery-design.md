@@ -138,6 +138,13 @@ are no-ops. A branch or source-policy mismatch stays fail-closed and returns to
 visible recovery state; PR creation remains impossible without a successful
 current assessment.
 
+The confirmed `retry_source_closure` chat/MCP tool queues the same recovery job
+as run detail, under the same run policy and tenant scope. It requires an
+existing waiting run and never creates a replacement AgentRun. The authorized
+run-detail tool exposes only the recovery step, pinned branch and commit,
+attempt counts, category, and retry/claim timestamps; arbitrary reconciliation
+payloads are not exposed. Enqueue refusal remains actionable on both surfaces.
+
 Closeout assessment uses the run's effective configured runner through
 `Llm::Request` and `agent_harness`, with its tier model resolved through
 the existing runner model policy and its credentials in the isolated execution

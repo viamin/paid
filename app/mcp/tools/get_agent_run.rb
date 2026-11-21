@@ -43,10 +43,21 @@ module Tools
         started_at: run.started_at,
         completed_at: run.completed_at,
         created_at: run.created_at
-      }.merge(maintenance_fields(run))
+      }.merge(maintenance_fields(run)).merge(source_closure_fields(run))
     end
 
     private
+
+    # @spec PARTIAL-CLOSEOUT-045
+    def source_closure_fields(run)
+      recovery = run.reconciliation.to_h["source_closure_recovery"]
+      return {} unless recovery.is_a?(Hash)
+
+      { source_closure_recovery: recovery.slice(
+        "failed_step", "branch_name", "commit_sha", "attempts", "failure_category",
+        "next_retry_at", "claimed_at", "recovery_attempt"
+      ) }
+    end
 
     # @spec MAINT-016 — maintenance context is inspectable through the same
     # authorized surface regardless of the rollout guard.
