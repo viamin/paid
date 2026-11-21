@@ -4406,7 +4406,8 @@ module Containers
         credential_id: credential.id,
         note: "refresh response rejected: #{e.reason || 'unusable'}; credential unchanged")
       false
-    rescue AgentHarness::Error, JSON::ParserError, SystemCallError => e
+    rescue AgentHarness::Error, CodexLoginSessions::OAuthClient::ConfigurationError,
+           JSON::ParserError, SystemCallError => e
       log_system("container.codex_auth_refresh_failed", error: e.message, credential_id: credential.id)
       false
     end

@@ -121,7 +121,7 @@ module Runners
           end
         end
       rescue AgentHarness::AuthenticationError, AgentHarness::Error, Error, ArgumentError,
-             JSON::ParserError, SystemCallError => e
+             CodexLoginSessions::OAuthClient::ConfigurationError, JSON::ParserError, SystemCallError => e
         Rails.logger.warn(message: "runners.managed_credential_lifecycle.refresh_failed",
           runner_key: runner_key, credential_id: credential&.id, error_class: e.class.name)
         :refresh_failed

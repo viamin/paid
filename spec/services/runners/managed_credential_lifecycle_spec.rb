@@ -163,6 +163,21 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       expect(credential.reload.token).to eq(valid_codex_auth)
     end
 
+    it "reports refresh_failed when the Codex OAuth client is not configured" do
+      credential = create_credential(runner_key: "codex", token: valid_codex_auth,
+        expires_at: 1.minute.from_now)
+      stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
+      client = instance_double(CodexLoginSessions::OAuthClient)
+      allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
+      allow(client).to receive(:refresh_token)
+        .and_raise(CodexLoginSessions::OAuthClient::ConfigurationError, "Codex OAuth is not configured")
+
+      outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
+
+      expect(outcome).to eq(:refresh_failed)
+      expect(credential.reload.token).to eq(valid_codex_auth)
+    end
+
     it "serializes OMP exchanges across different credentials" do
       first_credential = create_omp_credential(account: account, fixture: "claude_credentials_valid.json")
       second_credential = create_omp_credential(account: create(:account), fixture: "claude_credentials_expired.json")
