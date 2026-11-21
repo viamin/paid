@@ -97,7 +97,11 @@
   prefix and matching the id — queue re-resolution, not a parallel
   per-lane lookup — so resolution doubles as the authorization check the
   web's `authoritative_entry` precedent sets. An id absent from the
-  caller's current queue SHALL return `404` with error code `not_found`.
+  caller's current queue SHALL return `404` with error code `not_found`. The
+  shared detail serializer SHALL declare a contract for every queue kind; the
+  `layered_verification_finding` contract SHALL project bounded retained
+  obligation/revision/evidence/check facts and supported decision context
+  without raw model or unrestricted agent/recorder metadata.
   *Tests:* `spec/services/inbox/find_entry_spec.rb`,
   `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Inbox::FindEntry`, `Api::V1::InboxController#show`.

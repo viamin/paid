@@ -668,6 +668,15 @@ scheduled dispatch never creates a repair run and never enqueues follow-up
 work (`LAYERED-VERIFY-010`/`-011`; `MAINT-073`'s no-repair-as-scan-side-effect
 rule holds for the audit objective too).
 
+Selected finding detail uses `Api::V1::InboxEntrySerializer` for both the
+scoped bearer-token REST API and the authenticated in-app MCP reader. The
+projection has explicit bounded source passages, limitations, consequences,
+and contributing check-result records, all constrained to the selected
+finding's obligation. It exposes named obligation and audit revision fields,
+observed behavior, check outcome/freshness, and the persisted supported
+decision options rather than serializing record objects or full agent/recorder
+metadata. List rows remain list-safe and do not fetch this detail evidence.
+
 **Dependency boundary.** These contracts are finalized now, but
 scheduled-audit runtime remains explicitly dependent on RDR-075's scheduling
 milestone ([#4332](https://github.com/viamin/paid/issues/4332)). RDR-075 is
