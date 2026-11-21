@@ -143,7 +143,10 @@
   histories. A schedule-to-start failure SHALL report unavailable worker
   execution rather than an observed endpoint outage; execution timeout and
   exhausted recovery SHALL remain distinct, and an observed unhealthy endpoint
-  SHALL be identified only by its actual failure cause. Configuration errors
+  SHALL be identified only by its actual SDK-decoded failure cause. A zero
+  final start-event ID alone SHALL NOT establish that earlier retries never
+  executed; unobserved schedule-to-close exhaustion SHALL remain unknown
+  recovery exhaustion. Configuration errors
   and cancellations SHALL not be converted into proxy-outage evidence. After
   successful agent execution, these control failures SHALL select the existing
   finite container-retention/recovery path; before successful execution they

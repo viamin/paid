@@ -1088,8 +1088,6 @@ module Workflows
         [ "ProxyHealthExecutionTimedOut", "Proxy health activity did not complete; endpoint availability is unknown" ]
       elsif proxy_reported_unhealthy?(error)
         [ "ProxyHealthUnhealthy", "Proxy health recovery exhausted after an observed unhealthy endpoint" ]
-      elsif error.started_event_id.zero?
-        [ "ProxyHealthSchedulingUnavailable", "Proxy health check did not obtain worker execution before its recovery deadline" ]
       else
         [ "ProxyHealthRecoveryExhausted", "Proxy health recovery exhausted without an observed endpoint verdict" ]
       end
