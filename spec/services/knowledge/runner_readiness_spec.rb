@@ -35,4 +35,18 @@ RSpec.describe Knowledge::RunnerReadiness do
     expect(readiness.status).to eq("isolation_required")
     expect(readiness.credential_service).to eq("subscription")
   end
+
+  # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+  it "uses an older fresh credential when a newer credential cannot refresh" do
+    selected = create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+    create(:runner_credential, runner: selected, account: owner.account,
+      token: file_fixture("codex_auth_valid.json").read, expires_at: 1.hour.from_now)
+    expired = JSON.parse(file_fixture("codex_auth_valid.json").read).tap { |payload| payload["tokens"].delete("refresh_token") }
+    create(:runner_credential, runner: selected, account: owner.account,
+      token: JSON.generate(expired), expires_at: 1.minute.ago)
+
+    readiness = described_class.call(owner: owner, operation: :chat, runner: selected.routing_key)
+
+    expect(readiness.status).to eq("isolation_required")
+  end
 end

@@ -105,5 +105,17 @@ RSpec.describe Knowledge::RunnerSelector do
 
       expect(described_class.standalone_chat_runners(user_setting: setting)).to include(runner)
     end
+
+    # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+    it "keeps a runner eligible when an older credential is fresh" do
+      runner = create(:runner, user: user, runner_key: "codex", enabled_for_chat: true)
+      create(:runner_credential, account: user.account, runner: runner,
+        token: file_fixture("codex_auth_valid.json").read, expires_at: 1.hour.from_now)
+      expired = JSON.parse(file_fixture("codex_auth_valid.json").read).tap { |payload| payload["tokens"].delete("refresh_token") }
+      create(:runner_credential, account: user.account, runner: runner,
+        token: JSON.generate(expired), expires_at: 1.minute.ago)
+
+      expect(described_class.standalone_chat_runners(user_setting: setting)).to include(runner)
+    end
   end
 end

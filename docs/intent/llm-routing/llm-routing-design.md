@@ -31,6 +31,8 @@ reported as requiring reconnection. Host-forwarded agent authentication is a
 separate source and never proves isolated managed-audit readiness or imports a
 host credential. When no usable alternative exists, routing reports the
 credential configuration error immediately.
+When concurrent managed records exist, an unusable newer expiry does not shadow
+an older fresh credential at any isolated-text routing or readiness surface.
 
 Text operations accept subscription and API-key runners. The existing chat-runner setting accepts owned runner identifiers, allowing
 multiple configurations behind the same CLI to remain distinguishable. API credentials

@@ -142,9 +142,7 @@ module Knowledge
     end
 
     def managed_credential_available?(runner)
-      credential = user_setting.user.account.runner_credentials.where(revoked_at: nil).for_runner(runner.runner_key)
-        .order(created_at: :desc, id: :desc).first
-      Runners::ManagedCredentialLifecycle.readiness(credential, runner_key: runner.runner_key).in?(%i[fresh refreshable])
+      Runners::ManagedCredentialLifecycle.credential_for(account: user_setting.user.account, runner_key: runner.runner_key).present?
     end
 
     def warn_on_embedding_fallback(candidates)

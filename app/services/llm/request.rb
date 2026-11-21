@@ -164,9 +164,7 @@ module Llm
 
     # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
     def managed_credential_available?(runner)
-      credential = runner.user.account.runner_credentials.where(revoked_at: nil).for_runner(runner.runner_key)
-        .order(created_at: :desc, id: :desc).first
-      Runners::ManagedCredentialLifecycle.readiness(credential, runner_key: runner.runner_key).in?(%i[fresh refreshable])
+      Runners::ManagedCredentialLifecycle.credential_for(account: runner.user.account, runner_key: runner.runner_key).present?
     end
 
     def perform_request(runner, timeout:)

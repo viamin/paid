@@ -60,6 +60,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     # @spec SUBSCRIPTION-RUNNER-AUTH-006
     it "selects an expired unrevoked Codex credential for the existing refresh lifecycle" do
       credential = create_codex_credential(token: valid_codex_auth, expires_at: 1.minute.ago)
+      stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
       svc = build_service
 
       expect(svc.send(:codex_managed_runner_credential)).to eq(credential)

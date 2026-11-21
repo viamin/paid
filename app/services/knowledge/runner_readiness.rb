@@ -35,10 +35,8 @@ module Knowledge
       return unsupported unless selected&.enabled_for_chat? && !selected.discarded?
 
       if selected.subscription?
-        credential = owner.account.runner_credentials.where(revoked_at: nil).for_runner(selected.runner_key)
-          .order(created_at: :desc, id: :desc).first
-        readiness = Runners::ManagedCredentialLifecycle.readiness(credential, runner_key: selected.runner_key)
-        return missing_credential("subscription") unless readiness.in?(%i[fresh refreshable])
+        credential = Runners::ManagedCredentialLifecycle.credential_for(account: owner.account, runner_key: selected.runner_key)
+        return missing_credential("subscription") unless credential
 
         return Result.new(status: "isolation_required", credential_source: "subscription", credential_service: "subscription",
           credential_name: "Configured subscription", validated_with_provider: false)

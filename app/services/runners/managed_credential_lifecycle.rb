@@ -80,6 +80,18 @@ module Runners
         :refreshable
       end
 
+      # Returns the newest fresh credential, then the newest recoverable expiry.
+      # A newer expired record without a usable refresh path must not shadow an
+      # older credential that can materialize immediately.
+      # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+      def credential_for(account:, runner_key:)
+        credential_scope(account:, runner_key:).active.find do |credential|
+          readiness(credential, runner_key:) == :fresh
+        end || credential_scope(account:, runner_key:).find do |credential|
+          readiness(credential, runner_key:) == :refreshable
+        end
+      end
+
       def near_expiry?(credential, runner_key:)
         return false unless credential
 
@@ -211,6 +223,11 @@ module Runners
       end
 
       private
+
+      def credential_scope(account:, runner_key:)
+        account.runner_credentials.where(revoked_at: nil).for_runner(runner_key)
+          .order(created_at: :desc, id: :desc)
+      end
 
       def parsed_secret(credential, runner_key:)
         token = credential.token.to_s

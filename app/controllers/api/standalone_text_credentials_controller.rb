@@ -25,8 +25,7 @@ module Api
     end
 
     def render_subscription # @spec LLM-ROUTING-005 LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-005 SUBSCRIPTION-RUNNER-AUTH-006
-      credential = account.runner_credentials.where(revoked_at: nil).for_runner(runner.runner_key)
-        .order(created_at: :desc, id: :desc).first
+      credential = Runners::ManagedCredentialLifecycle.credential_for(account:, runner_key: runner.runner_key)
       return render json: { error: "Managed subscription credential is unavailable" }, status: :service_unavailable unless credential
 
       return render_unready_subscription unless refresh_managed_credential!(credential)

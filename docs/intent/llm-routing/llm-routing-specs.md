@@ -66,6 +66,8 @@
   a fresh result may be materialized. A Test Runner result using host-forwarded
   authentication SHALL identify that source and SHALL NOT imply standalone
   managed-audit readiness.
+  A newer expired credential that cannot refresh SHALL NOT shadow an older fresh
+  credential at those surfaces.
   *Tests:* `spec/services/llm/request_spec.rb`,
   `spec/requests/api/standalone_text_credentials_spec.rb`,
   `spec/services/runners/managed_credential_lifecycle_spec.rb`.

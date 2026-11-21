@@ -102,6 +102,23 @@ RSpec.describe "Standalone text credentials" do
     expect(provider).not_to have_received(:materialize)
   end
 
+  # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+  it "uses an older fresh credential when the newest expired credential cannot refresh" do
+    fresh = create(:runner_credential, account: account, runner: runner, token: valid_codex_auth,
+      expires_at: 1.hour.from_now)
+    expired = JSON.parse(valid_codex_auth).tap { |payload| payload["tokens"].delete("refresh_token") }
+    create(:runner_credential, account: account, runner: runner, token: JSON.generate(expired), expires_at: 1.minute.ago)
+    provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
+    allow(provider).to receive(:materialize).and_return(materialization_double)
+    allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
+    identity = Containers::StandaloneTextCredential.issue(account: account, runner: runner, expires_in: 30)
+
+    post "/api/proxy/standalone-text-credential", headers: { "Authorization" => "Bearer #{identity}" }
+
+    expect(response).to have_http_status(:ok)
+    expect(provider).to have_received(:materialize).with(hash_including(secret: fresh.token))
+  end
+
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
   it "materializes an API key only under the signed identity's requested environment names" do
     api_key = create(:runner_api_key, user: user, api_service_type: "openai", api_key: "selected-secret")

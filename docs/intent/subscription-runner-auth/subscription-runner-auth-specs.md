@@ -74,6 +74,9 @@
   attempt before rejecting it. A revoked credential, missing refresh material,
   unsupported exchange, or unsuccessful exchange SHALL not materialize the
   expired token; it SHALL report the managed source as requiring reconnection.
+  When concurrent credentials exist, a newer expired credential that cannot
+  refresh SHALL NOT shadow an older fresh credential for readiness, routing,
+  materialization, or rotation harvest.
   Host-forwarded credentials remain a distinct source and SHALL NOT be imported
   into the managed record by this recovery path.
   *Tests:* `spec/services/runners/managed_credential_lifecycle_spec.rb`,
