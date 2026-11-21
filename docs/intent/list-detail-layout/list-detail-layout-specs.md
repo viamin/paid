@@ -21,7 +21,7 @@
 
 - [x] **LIST-DETAIL-002** — The two-pane shell SHALL render the list pane
   and the detail pane inside cards that share the same chrome
-  (`min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm`)
+  (`min-h-0 min-w-0 overflow-clip rounded-xl border border-gray-200 bg-white shadow-sm`)
   so the two halves of the surface read as one unit. The empty state for an
   no-selection visit SHALL render in the detail pane slot as
   `rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12
@@ -102,6 +102,8 @@
   separate inner `overflow-y-auto` regions. The page-level heading and
   controls SHALL remain outside those regions. Below `1024px`, the shell SHALL
   leave pane height and scrolling to the feature's existing mobile layout.
+  Card clipping SHALL NOT establish a scroll container that prevents sticky
+  item actions from following the mobile document scroll.
   *Code:* `app/helpers/master_detail_layout_helper.rb`,
   `app/views/shared/_list_detail_shell.html.erb`,
   `app/views/inbox/index.html.erb`.
