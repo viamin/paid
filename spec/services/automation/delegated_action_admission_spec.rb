@@ -307,6 +307,22 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(result.reasons).to include(:authorization_lifecycle)
   end
 
+  it "does not admit a repair under an authorization superseded during scope assessment" do # @spec BOUNDED-PHASE-AUTHORIZATION-004 BOUNDED-PHASE-AUTHORIZATION-006
+    authorization = authorize(action: "repair")
+    superseding_authorization = nil
+    allow(Automation::AssessBoundedScope).to receive(:call) do
+      superseding_authorization = authorize(action: "repair")
+      Automation::AssessBoundedScope::Result.new(status: "in_scope", explanation: "repair matches", evidence_refs: [])
+    end
+
+    result = recheck(goal: "layered_verification_repair", boundary: :repair)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:authorization_changed)
+    expect(authorization.reload).to be_active
+    expect(superseding_authorization).to be_active
+  end
+
   it "blocks when the repository-control channel is inactive" do # @spec PROJECT-DELEGATION-004
     authorize(action: "review")
     project.github_installation.update!(revoked_at: Time.current)
