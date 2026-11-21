@@ -43,6 +43,16 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(workflow.fetch("jobs").fetch("test-shards").fetch("timeout-minutes")).to eq(180)
   end
 
+  # @spec TEST-SUITE-020
+  it "allows dependency installation twenty minutes per attempt in shard jobs" do
+    %w[test-shards shard-recovery].each do |job_name|
+      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+        .find { |step| step["name"] == "Install JavaScript dependencies" }
+
+      expect(install_step.fetch("run")).to include("  20m \\")
+    end
+  end
+
   # @spec TEST-SUITE-006
   it "fails the stable test check when any shard fails or is cancelled" do
     job = workflow.fetch("jobs").fetch("test")
