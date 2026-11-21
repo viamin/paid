@@ -344,10 +344,10 @@
   PR's repository-qualified URL and has a persisted, gap-free
   `awaiting_final_audit` source-closure assessment with a current intent
   revision, only satisfied or unknown criteria, and at least one
-  unknown criterion: in that case it SHALL keep
-  the source issue completed while the source PR is open and leave PR review
-  and merge to the existing PR pipeline, including releasing a prior
-  sync-created manual-review hold for that same PR. A changed issue intent SHALL
+  unknown criterion: in that case it SHALL move the source issue to `analyzed`,
+  which remains blocking to dependencies while leaving PR review and merge to
+  the existing PR pipeline, including releasing a prior sync-created
+  manual-review hold for that same PR. A changed issue intent SHALL
   remain in manual review with that change named in the reason; changed
   closeout evidence SHALL remain eligible for the post-merge acceptance audit.
   For a merged non-closing

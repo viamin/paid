@@ -983,6 +983,9 @@ records a classification (`awaiting_final_audit`, `blocked_implementation`,
 `missing_measured_results`, or `coordination_epic`) and a supported next action
 that explains when open ownership makes another run duplicate work. A fresh
 semantic assessment remains a bounded explicit `agent_harness` operation.
+An `awaiting_final_audit` classification is not completion evidence: until the
+final audit establishes acceptance, its source issue remains dependency-blocking
+even when its non-closing source PR is still open or draft.
 
 ### Report-only acceptance audits (#4595)
 
