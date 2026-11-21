@@ -70,6 +70,21 @@ value read fresh from `git fetch` immediately before the push.
 ## Publish flow
 
 ```
+
+## Parked producer review handoff
+
+The branch ownership record normally prevents a second run from checking out a
+branch owned by an unfinished run. A `waiting_recovery` producer is exceptional:
+its post-push source-closeout work is bookkeeping, not coding, and it can remain
+parked after its container and workflow references are gone. A review run does
+not bypass the ownership guard. After it has checked out the open PR and
+captured its own immutable remote-head SHA, it may reclaim that record only when
+the producer is a `create_pr` run on the same branch, has no execution,
+container, runner, or active source-closure claim, and its published result SHA
+equals the captured review head. The reassignment is metadata cleanup only:
+it neither cancels nor marks successful the producer, changes source closure,
+nor gives the review run write authority. Any live writer, active recovery,
+unpublished result, or concurrent head change remains a normal conflict.
 push_existing_pr_branch
   expected = expected_remote_head_for_publish
   push --force-with-lease=branch:expected
@@ -142,6 +157,7 @@ gets pushed next.
 | Recovery depth for `push_existing_pr_branch` | One rebase-and-retry attempt; a second rejection raises | An unbounded retry loop until the lease succeeds | The acceptance criteria explicitly rule out an unbounded retry loop. A second rejection means a second concurrent writer raced the first recovery; surfacing it (rather than looping) keeps the failure visible and keeps token/compute spend bounded. The run's commits are not discarded, so a subsequent Temporal retry or manual replay can still resolve it. |
 | Recovery depth for `push_force_with_lease` | None added; a stale-info rejection raises `PushError` as before | Add the same rebase-and-retry recovery as `push_existing_pr_branch` | This path already runs after an explicit rebase onto a *different* branch (the sibling run's branch, for conflict resolution) chosen by its caller. There is no well-defined "rebase onto the newer tip of my own branch" step to insert without redesigning `Conflicts::Resolve`'s rebase target, and the caller already converts the raised error into an actionable `manual` hold. Only the lease's expected-SHA source needed to change to close the lost-update gap on this route. |
 | Runs without either trustworthy head identity | Hold publication and retain the exact local result for fresh-run reconciliation | Fetch the current head and use it as a force-push lease | A real isolated Git acceptance case showed the fallback overwriting a concurrent contributor commit while reporting success. Missing admission identity cannot grant overwrite authority; preserving both results takes precedence over silent publication. |
+| Parked-producer review handoff | Reclaim only a no-resource, unclaimed `waiting_recovery` producer record after a review checkout captures the same published SHA | Skip ownership checks for reviews; cancel/complete the producer; keep the record until all recovery retries end | The record is a branch metadata lease, not proof of a live writer. Exact-head verification and row locking make the handoff safe without rewriting producer lifecycle history or granting review push authority. |
 
 ## Open Questions & Future Decisions
 
