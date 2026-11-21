@@ -19,7 +19,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
   before do
     allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     allow(workflow).to receive_messages(current_workflow_id: "terminal-control-test",
-      check_quality_gate: { allowed: true }, run_cleanup_activity: {})
+      check_quality_gate: { allowed: true })
     allow(workflow).to receive(:run_activity) do |activity, data, **options|
       calls << { activity:, data:, options: }
       case activity.name
@@ -30,6 +30,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       else
         {}
       end
+    end
+    # Tracked like run_activity above (rather than a bare `receive_messages`
+    # stub) so tests can assert exactly which activities were scheduled
+    # through the detached-cancellation boundary, including
+    # ResolveCleanupOwnershipActivity itself (@spec TEMPORAL-ORCHESTRATION-016).
+    allow(workflow).to receive(:run_cleanup_activity) do |activity, data, **options|
+      calls << { activity:, data:, options: }
+      {}
     end
   end
 
@@ -57,8 +65,11 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     )
     audit = calls.find { |call| call[:activity] == Activities::RunAcceptanceAuditActivity }
     expect(audit[:options]).not_to have_key(:task_queue)
-    expect(calls.map { |call| call[:activity] }).to include(Activities::ResolveCleanupOwnershipActivity)
-    expect(workflow).not_to have_received(:run_cleanup_activity).with(anything, anything, any_args)
+    ownership_call = calls.find { |call| call[:activity] == Activities::ResolveCleanupOwnershipActivity }
+    expect(ownership_call[:options]).to include(task_queue: Paid.poll_task_queue)
+    cleanup_activities.each do |activity|
+      expect(workflow).not_to have_received(:run_cleanup_activity).with(activity, anything, any_args)
+    end
   end
 
   # @spec TEMPORAL-ORCHESTRATION-015
@@ -87,7 +98,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
 
     expect { workflow.execute(input) }.to raise_error(primary_error)
     expect(Rails.logger).to have_received(:warn).with(hash_including(message: "agent_execution.failure_bookkeeping_unavailable", agent_run_id: 42))
-    expect(workflow).not_to have_received(:run_cleanup_activity).with(anything, anything, any_args)
+    cleanup_activities.each do |activity|
+      expect(workflow).not_to have_received(:run_cleanup_activity).with(activity, anything, any_args)
+    end
   end
 
   # @spec TEMPORAL-ORCHESTRATION-015
@@ -101,14 +114,21 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     expect { workflow.execute(input) }.to raise_error(bookkeeping_error)
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-015
-  it "propagates cancellation without publishing a fabricated failed status" do
+  # @spec TEMPORAL-ORCHESTRATION-015 @spec TEMPORAL-ORCHESTRATION-016
+  it "propagates cancellation without publishing a fabricated failed status, still resolving ownership through the detached cancellation boundary" do
     cancellation = Temporalio::Error::CanceledError.new("cancelled")
     allow(workflow).to receive(:run_activity).with(Activities::RunAcceptanceAuditActivity, anything, any_args).and_raise(cancellation)
 
     expect { workflow.execute(input) }.to raise_error(cancellation)
     expect(failure_publication).to be_nil
-    expect(workflow).not_to have_received(:run_cleanup_activity).with(anything, anything, any_args)
+    # resolve_cleanup_ownership must use the detached-cancellation boundary
+    # (run_cleanup_activity), not plain run_activity: the latter inherits the
+    # already-cancelled workflow token and would raise before this call is
+    # even scheduled, skipping owned-resource cleanup below it.
+    expect(workflow).to have_received(:run_cleanup_activity).with(Activities::ResolveCleanupOwnershipActivity, { agent_run_id: 42 }, any_args)
+    cleanup_activities.each do |activity|
+      expect(workflow).not_to have_received(:run_cleanup_activity).with(activity, anything, any_args)
+    end
   end
 
   # @spec TEMPORAL-ORCHESTRATION-016
@@ -118,9 +138,15 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       case activity.name
       when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
       when "Activities::RunAcceptanceAuditActivity" then { agent_run_id: 42 }
-      when "Activities::ResolveCleanupOwnershipActivity"
-        { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
       else {}
+      end
+    end
+    allow(workflow).to receive(:run_cleanup_activity) do |activity, data, **options|
+      calls << { activity:, data:, options: }
+      if activity == Activities::ResolveCleanupOwnershipActivity
+        { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
+      else
+        {}
       end
     end
 
@@ -141,9 +167,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       case activity.name
       when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
       when "Activities::RunAcceptanceAuditActivity" then { agent_run_id: 42 }
-      when "Activities::ResolveCleanupOwnershipActivity" then raise ownership_error
       else {}
       end
+    end
+    allow(workflow).to receive(:run_cleanup_activity) do |activity, data, **options|
+      calls << { activity:, data:, options: }
+      raise ownership_error if activity == Activities::ResolveCleanupOwnershipActivity
+
+      {}
     end
 
     expect(workflow.execute(input)).to include(success: true, acceptance_audit: true)
@@ -151,5 +182,22 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     cleanup_activities.each do |activity|
       expect(workflow).to have_received(:run_cleanup_activity).with(activity, { agent_run_id: 42 }, any_args)
     end
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-016
+  it "routes ownership resolution to bounded poll/control capacity instead of the saturated agent queue" do
+    allow(workflow).to receive(:run_activity) do |activity, data, **options|
+      calls << { activity:, data:, options: }
+      case activity.name
+      when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
+      when "Activities::RunAcceptanceAuditActivity" then { agent_run_id: 42 }
+      else {}
+      end
+    end
+
+    expect(workflow.execute(input)).to include(success: true, acceptance_audit: true)
+
+    ownership_call = calls.find { |call| call[:activity] == Activities::ResolveCleanupOwnershipActivity }
+    expect(ownership_call[:options]).to include(task_queue: Paid.poll_task_queue)
   end
 end

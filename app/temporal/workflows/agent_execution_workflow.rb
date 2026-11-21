@@ -837,10 +837,17 @@ module Workflows
     def resolve_cleanup_ownership(agent_run_id)
       return legacy_cleanup_ownership unless Temporalio::Workflow.patched("cleanup-owned-resources-v1")
 
-      run_activity(Activities::ResolveCleanupOwnershipActivity, { agent_run_id: agent_run_id },
-        start_to_close_timeout: 10, schedule_to_close_timeout: 30, retry_policy: NO_RETRY)
+      # This runs at the start of the ensure block, so the workflow token may
+      # already be cancelled. run_cleanup_activity's detached cancellation
+      # keeps the resolver schedulable in that case instead of inheriting the
+      # cancelled token and raising before any owned-resource cleanup below
+      # runs. Routed to the bounded poll/control queue because it is a cheap
+      # metadata read, not the expensive cleanup/AI work that stays on the
+      # agent queue.
+      run_cleanup_activity(Activities::ResolveCleanupOwnershipActivity, { agent_run_id: agent_run_id },
+        start_to_close_timeout: 10, schedule_to_close_timeout: 30, retry_policy: NO_RETRY,
+        task_queue: Paid::POLL_TASK_QUEUE)
     rescue => error
-      raise_if_canceled!(error)
       Temporalio::Workflow.logger.warn(
         message: "agent_execution.cleanup_ownership_unavailable",
         agent_run_id: agent_run_id,
