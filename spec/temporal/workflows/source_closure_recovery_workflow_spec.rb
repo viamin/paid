@@ -117,7 +117,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow.execute(input)).to include(waiting: true)
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
-      { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+      { agent_run_id: 42, category: "timeout", attempts: 3, auto_retry: true }, timeout: 30
     )
   end
 
@@ -138,7 +138,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow.execute(input)).to include(waiting: true)
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
-      { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+      { agent_run_id: 42, category: "timeout", attempts: 3, auto_retry: true }, timeout: 30
     )
     expect(workflow).not_to have_received(:run_cleanup_activity).with(Activities::MarkAgentRunFailedActivity, anything, timeout: 30)
   end
@@ -179,7 +179,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow.execute(input)).to include(waiting: true)
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
-      { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30
+      { agent_run_id: 42, category: "unsuccessful_response", attempts: 3, auto_retry: true }, timeout: 30
     )
     expect(workflow).not_to have_received(:run_activity).with(Activities::CreatePullRequestActivity, any_args)
   end

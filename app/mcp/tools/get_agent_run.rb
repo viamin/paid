@@ -49,14 +49,15 @@ module Tools
 
     private
 
-    # @spec PARTIAL-CLOSEOUT-045
+    # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-059 PARTIAL-CLOSEOUT-060
     def source_closure_fields(run)
       recovery = run.reconciliation.to_h["source_closure_recovery"]
       return {} unless recovery.is_a?(Hash)
 
       { source_closure_recovery: recovery.slice(
         "failed_step", "branch_name", "commit_sha", "attempts", "failure_category",
-        "next_retry_at", "claimed_at", "recovery_attempt"
+        "next_retry_at", "claimed_at", "recovery_attempt", "automatic_recovery_attempt",
+        "operator_recovery_attempt", "assessment_request_count", "last_assessment_request_at", "stop_reason"
       ) }
     end
 

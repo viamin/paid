@@ -21,7 +21,7 @@ RSpec.describe SourceClosureRecoveryJob do
     expect(client).to have_received(:start_workflow).with(
       Workflows::SourceClosureRecoveryWorkflow,
       { agent_run_id: run.id, project_id: run.project_id, recovery_attempt: 1, goal: run.goal,
-        commit_sha: "a" * 40 },
+        commit_sha: "a" * 40, operator_authorized: false },
       id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
     )
   end
@@ -70,5 +70,40 @@ RSpec.describe SourceClosureRecoveryJob do
 
     expect(client).to have_received(:start_workflow).once
     expect(run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "does not start a fourth automatic workflow after repeated recovery epochs" do
+    allow(client).to receive(:start_workflow)
+    handle = instance_double(Temporalio::Client::WorkflowHandle)
+    description = instance_double(Temporalio::Client::WorkflowExecution::Description,
+      status: Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    allow(client).to receive(:workflow_handle).and_return(handle)
+    allow(handle).to receive(:describe).and_return(description)
+    3.times do
+      described_class.perform_now(run.id)
+      PartialCloseouts::SourceClosureRecovery.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    end
+
+    described_class.perform_now(run.id)
+
+    expect(client).to have_received(:start_workflow).exactly(3).times
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "stop_reason"))
+      .to eq("automatic_recovery_budget_exhausted")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
+  it "records an operator-requested workflow separately from automatic recovery" do
+    allow(client).to receive(:start_workflow)
+
+    described_class.perform_now(run.id, operator_authorized: true)
+
+    expect(client).to have_received(:start_workflow).with(
+      Workflows::SourceClosureRecoveryWorkflow,
+      hash_including(agent_run_id: run.id, operator_authorized: true),
+      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
+    )
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "operator_recovery_attempt")).to eq(1)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to be_nil
   end
 end

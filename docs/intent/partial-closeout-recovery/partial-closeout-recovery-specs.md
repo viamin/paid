@@ -301,6 +301,38 @@
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
   *Tool test:* `spec/mcp/tools/retry_source_closure_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-059** — When recoverable source-closure assessment
+  failures re-park the same original run, pushed commit, failed step, and
+  lineage across workflow epochs or process restarts, Paid SHALL admit no more
+  than three automatic recovery claims. It SHALL preserve prior claim history,
+  failure category, branch, and commit, retain a visible
+  `automatic_recovery_budget_exhausted` stop, and schedule no successor after
+  exhaustion. Assessment request provenance and actual request count SHALL be
+  retained separately from claim counts. Delayed duplicate jobs, stale leases,
+  and unavailable ownership RPCs retain the existing ownership guard and SHALL
+  not mint a claim or an assessment environment.
+  *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/jobs/source_closure_recovery_job.rb`,
+  `app/temporal/activities/park_source_closure_recovery_activity.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_spec.rb`,
+  `spec/jobs/source_closure_recovery_job_ownership_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-060** — When an authorized operator explicitly
+  requests source-closure recovery through the existing run-detail or confirmed
+  MCP boundary, Paid SHALL consume at most one separately recorded operator
+  recovery claim without resetting automatic claims or creating a replacement
+  run. The recovery SHALL remain assessment-only and retain the original
+  commit, branch, failure evidence, and publication checks.
+  *Code:* `app/mcp/tools/retry_source_closure.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/jobs/source_closure_recovery_job.rb`,
+  `app/services/partial_closeouts/source_closure_recovery.rb`.
+  *Test:* `spec/mcp/tools/retry_source_closure_spec.rb`,
+  `spec/requests/projects/source_closure_recovery_spec.rb`,
+  `spec/services/partial_closeouts/source_closure_recovery_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted
   tier model, and configured credentials through `agent_harness`,

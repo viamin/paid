@@ -24,14 +24,14 @@ module Tools
       }
     end
 
-    # @spec PARTIAL-CLOSEOUT-045
+    # @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-060
     def perform(agent_run_id:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to retry source closure" unless confirmed
 
       run = run_for(agent_run_id).reload
       raise ArgumentError, "This run is not waiting for source-closure recovery" unless run.waiting_recovery?
 
-      job = SourceClosureRecoveryJob.perform_later(run.id)
+      job = SourceClosureRecoveryJob.perform_later(run.id, operator_authorized: true)
       unless job && job.successfully_enqueued?
         raise ArgumentError, "Source-closure recovery could not be queued. Please try again."
       end

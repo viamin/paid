@@ -60,4 +60,45 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
     expect(described_class.release_claim!(agent_run: run, attempts: 1)).to be(true)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
   end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "stops automatic recovery across repeated workflow epochs without resetting its lineage" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    3.times do
+      expect(described_class.claim!(agent_run: run.reload)).to be(true)
+      described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    end
+
+    expect(described_class.claim!(agent_run: run.reload)).to be(false)
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("recovery_attempt" => 3, "automatic_recovery_attempt" => 3,
+      "stop_reason" => "automatic_recovery_budget_exhausted", "commit_sha" => "a" * 40)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "records actual assessment requests separately from recovery claims" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+    described_class.claim!(agent_run: run)
+
+    described_class.record_assessment_request!(agent_run: run)
+
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "assessment_request_count")).to eq(1)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
+  it "allows one explicit operator recovery without renewing automatic spending authority" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+    3.times do
+      described_class.claim!(agent_run: run.reload)
+      described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    end
+
+    expect(described_class.claim!(agent_run: run.reload, operator_authorized: true)).to be(true)
+    expect(described_class.claim!(agent_run: run.reload, operator_authorized: true)).to be(false)
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("automatic_recovery_attempt" => 3, "operator_recovery_attempt" => 1,
+      "recovery_attempt" => 4)
+  end
 end

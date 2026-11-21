@@ -13,7 +13,7 @@ RSpec.describe "Source-closure recovery" do
 
     expect {
       post retry_source_closure_project_agent_run_path(project, run)
-    }.to have_enqueued_job(SourceClosureRecoveryJob).with(run.id)
+    }.to have_enqueued_job(SourceClosureRecoveryJob).with(run.id, operator_authorized: true)
 
     expect(response).to redirect_to(project_agent_run_path(project, run))
     expect(flash[:notice]).to include("without rerunning coding")
@@ -22,7 +22,7 @@ RSpec.describe "Source-closure recovery" do
   # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
   it "shows recovery guidance when job enqueueing is aborted" do
     sign_in user
-    allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id).and_return(false)
+    allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id, operator_authorized: true).and_return(false)
 
     post retry_source_closure_project_agent_run_path(project, run)
 

@@ -138,6 +138,19 @@ are no-ops. A branch or source-policy mismatch stays fail-closed and returns to
 visible recovery state; PR creation remains impossible without a successful
 current assessment.
 
+Automatic source-closure recovery has a lineage-wide budget of three recovery
+claims in addition to each workflow's bounded activity retry policy. The
+durable recovery record owns this counter, so re-parking, restarts, lease
+expiry, and delayed duplicate jobs cannot create a fresh budget. Exhaustion
+retains the original run, pinned branch and commit, failure category, claim
+history, and a visible stop reason; it neither reruns coding nor changes
+publication authority. The record separately counts assessment requests from
+claims because a claim is ownership evidence, not proof that a model request
+started. An authorized operator may consume one separately recorded recovery
+claim through the existing confirmed retry boundary. This does not reset the
+automatic budget or mint a new run, and repeated clicks stop visibly after that
+finite operator allowance.
+
 The confirmed `retry_source_closure` chat/MCP tool queues the same recovery job
 as run detail, under the same run policy and tenant scope. It requires an
 existing waiting run and never creates a replacement AgentRun. The authorized

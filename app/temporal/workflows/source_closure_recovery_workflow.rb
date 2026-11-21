@@ -7,12 +7,12 @@ module Workflows
       initial_interval: 15, max_interval: 2.minutes, backoff_coefficient: 2, max_attempts: 3
     )
 
-    def execute(input) # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
+    def execute(input) # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-059 PARTIAL-CLOSEOUT-060
       agent_run_id = input.fetch(:agent_run_id)
       project_id = input.fetch(:project_id)
       goal = input.fetch(:goal, "create_pr")
       run_activity(Activities::ProvisionContainerActivity, { agent_run_id: }, timeout: 60)
-      return { agent_run_id:, waiting: true } unless assess_source_closure_or_park(agent_run_id)
+      return { agent_run_id:, waiting: true } unless assess_source_closure_or_park(agent_run_id, input[:operator_authorized])
 
       pr_input = { agent_run_id: }
       if Temporalio::Workflow.patched("source-closure-recovery-pinned-revision-v1")
@@ -45,7 +45,7 @@ module Workflows
       { agent_run_id:, waiting: true }
     end
 
-    def assess_source_closure_or_park(agent_run_id)
+    def assess_source_closure_or_park(agent_run_id, operator_authorized)
       run_activity(Activities::AssessSourceClosureActivity, { agent_run_id: }, timeout: 120,
         retry_policy: ASSESSMENT_RETRY_POLICY)
       true
@@ -62,7 +62,8 @@ module Workflows
       end
 
       run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts }, timeout: 30)
+        { agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts,
+          auto_retry: !operator_authorized }, timeout: 30)
       false
     end
 

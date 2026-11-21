@@ -21,7 +21,7 @@ RSpec.describe Tools::RetrySourceClosure do
 
   it "queues only post-processing for the same run" do
     expect { tool.call(agent_run_id: run.id, confirmed: true) }
-      .to have_enqueued_job(SourceClosureRecoveryJob).with(run.id)
+      .to have_enqueued_job(SourceClosureRecoveryJob).with(run.id, operator_authorized: true)
     expect(run.reload.status).to eq("waiting_recovery")
     expect(project.agent_runs.count).to eq(1)
   end
@@ -52,12 +52,12 @@ RSpec.describe Tools::RetrySourceClosure do
 
   it "reports enqueue refusal" do
     job = instance_double(SourceClosureRecoveryJob, successfully_enqueued?: false)
-    allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id).and_return(job)
+    allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id, operator_authorized: true).and_return(job)
     expect { tool.call(agent_run_id: run.id, confirmed: true) }.to raise_error(ArgumentError, /could not be queued/)
   end
 
   it "reports an aborted enqueue" do
-    allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id).and_return(false)
+    allow(SourceClosureRecoveryJob).to receive(:perform_later).with(run.id, operator_authorized: true).and_return(false)
     expect { tool.call(agent_run_id: run.id, confirmed: true) }.to raise_error(ArgumentError, /could not be queued/)
   end
 
