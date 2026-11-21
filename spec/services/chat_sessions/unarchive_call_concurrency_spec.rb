@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "timeout"
 
 RSpec.describe ChatSessions::Unarchive, ".call" do
   self.use_transactional_tests = false
@@ -29,21 +30,25 @@ RSpec.describe ChatSessions::Unarchive, ".call" do
     threads = [
       Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          ready << true
-          start.pop
-          described_class.call(chat_session: ChatSession.find(archived.id)).id
+          TenantContext.with(account) do
+            ready << true
+            start.pop
+            described_class.call(chat_session: ChatSession.find(archived.id)).id
+          end
         end
       end,
       Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          ready << true
-          start.pop
-          ChatSessions::Create.call(account: Account.find(account.id), user: User.find(user.id)).id
+          TenantContext.with(account) do
+            ready << true
+            start.pop
+            ChatSessions::Create.call(account: Account.find(account.id), user: User.find(user.id)).id
+          end
         end
       end
     ]
 
-    2.times { ready.pop }
+    Timeout.timeout(10) { 2.times { ready.pop } }
     2.times { start << true }
     threads.each { |thread| raise "Concurrent chat lifecycle request timed out" unless thread.join(10) }
 

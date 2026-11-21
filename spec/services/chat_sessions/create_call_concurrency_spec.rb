@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "timeout"
 
 RSpec.describe ChatSessions::Create, ".call" do
   self.use_transactional_tests = false
@@ -8,6 +9,7 @@ RSpec.describe ChatSessions::Create, ".call" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
 
+  before { user }
   after { account.destroy! }
 
   # @spec CHAT-API-030
@@ -17,14 +19,16 @@ RSpec.describe ChatSessions::Create, ".call" do
     threads = 2.times.map do
       Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          ready << true
-          start.pop
-          described_class.call(account: Account.find(account.id), user: User.find(user.id)).id
+          TenantContext.with(account) do
+            ready << true
+            start.pop
+            described_class.call(account: Account.find(account.id), user: User.find(user.id)).id
+          end
         end
       end
     end
 
-    2.times { ready.pop }
+    Timeout.timeout(10) { 2.times { ready.pop } }
     2.times { start << true }
     threads.each { |thread| raise "Concurrent chat creation timed out" unless thread.join(10) }
 
