@@ -70,9 +70,16 @@ each ships.
   compatible model, it SHALL roll back bootstrap records and report a
   structured actionable rejection reason that distinguishes runner
   incompatibility from missing chat-tool support rather than treating the
-  transient or genuine condition as a successful setup.
-  *Code:* `Models::CatalogSnapshot`, `ChatSessions::CuratedModelOptions`,
-  `ChatSessions::ModelUnavailableError`, `Onboarding::ConfigureChatRunner`.
+  transient or genuine condition as a successful setup. This includes the
+  pre-runner direct-provider lookup; a genuinely empty provider SHALL return
+  `catalog_empty` with recovery guidance without leaving bootstrap records,
+  including when its caller handles rejection inside another transaction.
+  OpenRouter free-policy bootstrap SHALL require an eligible free chat
+  candidate or report `free_model_unavailable` and roll back; a usable
+  candidate SHALL leave the welcome session model unset for first-use free
+  selection without substituting a paid model.
+  *Code:* `Onboarding::ConfigureChatRunner`, `Models::CatalogSnapshot`,
+  `ChatSessions::CuratedModelOptions`, `ChatSessions::ModelUnavailableError`.
 
 - [x] **ONBOARD-CHAT-015** — When a new API-key onboarding runner resolves
   its initial Low-tier chat model, Paid SHALL apply only fresh unavailable
@@ -80,3 +87,10 @@ each ships.
   evidence for another authentication mode SHALL remain diagnostic; the
   runner/auth compatibility contract continues to reject globally incompatible
   models before availability filtering.
+
+ONBOARD-CHAT-014 transition/empty-provider regressions:
+`spec/services/onboarding/configure_chat_runner_catalog_transition_spec.rb`,
+`spec/services/onboarding/configure_chat_runner_empty_catalog_spec.rb`.
+
+OpenRouter free-policy bootstrap regressions:
+`spec/services/onboarding/configure_chat_runner_free_catalog_spec.rb`.

@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe Onboarding::ValidateChatApiKeyJob do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
-  let(:free_model) { create(:llm_model, :free) }
+  let!(:free_model) { create(:llm_model, :free, :chat_capable, catalog_source: "openrouter_sync") }
 
   before do
     Onboarding::StartOnboarding.call(account: account)
