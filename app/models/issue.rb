@@ -94,6 +94,9 @@ class Issue < ApplicationRecord
 
   belongs_to :project
   belongs_to :parent_issue, class_name: "Issue", optional: true
+  # @spec UNIFIED-WORK-ITEMS-007
+  has_one :migrated_work_item, class_name: "WorkItem", foreign_key: :legacy_issue_id,
+    dependent: :restrict_with_exception, inverse_of: :legacy_issue
 
   has_many :sub_issues, class_name: "Issue", foreign_key: :parent_issue_id,
                         inverse_of: :parent_issue, dependent: :nullify
