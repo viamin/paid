@@ -445,6 +445,12 @@ semantic-audit/implementation-conformance check that detects the discrepancy
 `(claim_type, cause_signature)` pair attaches a new observation (timestamp,
 `LayeredVerificationCheckResult` reference) to the existing unresolved
 `LayeredVerificationFinding` row rather than creating a second Inbox entry.
+An observation is identified by its audit run and set of immutable check-result
+IDs. Re-delivery of that same evidence is a no-op under the finding row lock:
+it cannot append history, overwrite retained evidence, or reopen a resolved
+finding. Distinct check results still create a new observation and may reopen
+the finding. This applies to direct recording retries as well as completion
+replays; a completion-activity cache alone is not the recording boundary.
 Textual similarity between two findings' descriptions is never, by itself,
 grounds to merge them — only a matching `cause_signature` from the detecting
 check does (per RDR-076 §2's explicit "distinct conflicts remain distinct;

@@ -316,9 +316,13 @@
   `(project_id, obligation_external_identity, correspondence_claim_type,
   cause_signature)`; a repeated audit reproducing the same identity SHALL
   attach a new observation to the existing unresolved finding rather than
-  creating a second Inbox entry. Two findings SHALL NOT be merged on textual
-  similarity alone.
+  creating a second Inbox entry. Replaying the same audit run and set of
+  immutable check-result IDs SHALL NOT append another observation, overwrite
+  retained evidence, or reopen a resolved finding, including concurrent
+  deliveries. A distinct observation SHALL still reopen a resolved finding.
+  Two findings SHALL NOT be merged on textual similarity alone.
   *Tests:* `spec/models/layered_verification_finding_spec.rb`,
+  `spec/models/layered_verification_finding_concurrency_spec.rb`,
   `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`
   *Code:* `app/models/layered_verification_finding.rb`,
   `app/services/layered_verification/audits/synthesize_coverage.rb` (#4433, #4434)
