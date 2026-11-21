@@ -118,6 +118,17 @@ That record carries only the failed step, branch, pinned pushed commit, attempt
 count, sanitized category, and next retry time. It is a work-slot hold, not an
 execution failure, and cleanup releases the prior container.
 
+A claim's ten-minute lease permits recovery after a job dies before starting
+Temporal; it does not authorize overlapping durable executions. Before claiming
+a successor attempt, the job checks the prior attempt's workflow with a bounded
+RPC. A running execution retains ownership even after the lease expires or a
+start response is lost. A terminal or authoritatively absent execution permits
+the ordinary locked claim. Unavailable execution status defers the job without
+releasing another attempt's claim or starting a successor.
+The status answer is bound to the attempt observed before the RPC: the locked
+claim rejects it if another attempt has since taken ownership. The RPC runs
+outside the database lock.
+
 A delayed job and an authorized run-detail retry claim the record under the
 run lock and start a narrow recovery workflow. That workflow provisions only a
 fresh isolated assessment environment when required, runs the assessment, and
