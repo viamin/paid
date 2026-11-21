@@ -34,6 +34,14 @@ module Issues
       end
 
       goal = seeded_goal
+      if goal == "create_pr"
+        hold = issue.auto_pick_create_pr_admission_hold
+        if hold
+          log_implementation_work_held(hold)
+          return nil
+        end
+      end
+
       intended_agent_type = RunnerSupport.intended_agent_type(
         preferred_agent_type: project.model_preferences["preferred_agent_type"]
       )
@@ -102,6 +110,16 @@ module Issues
 
     def blocking_runs(goal)
       AgentRun.where(status: AgentRun::AUTO_PICK_BLOCKING_STATUSES, goal: goal)
+    end
+
+    # @spec EAGER-QUEUE-018 AGENT-RETRY-017
+    # Canonical admission honors the shared produced-work / rate-limit
+    # refusal recorded for the issue's failed auto-picked create_pr source,
+    # so no seeding path can mint a blind replacement implementation attempt.
+    def log_implementation_work_held(hold)
+      reason = hold.recoverable_rate_limited? ? "rate_limit_recovery_owned" : "implementation_work_produced"
+      Rails.logger.info(log_context("enqueue_eligible.implementation_work_held",
+        agent_run_id: hold.id, hold_reason: reason))
     end
 
     def log_created(run)

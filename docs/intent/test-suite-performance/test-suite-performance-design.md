@@ -30,15 +30,16 @@ expected distinct coverage reports exist, then collates them with the original
 Rails filters and enforces the existing 80% minimum. Missing reports, failing
 shards, or insufficient combined coverage fail the final check. Separate query
 performance specs run once, and the system-test workflow remains unchanged.
-Allow each shard 180 minutes at the GitHub job boundary. This remains a bounded
-failure window while leaving headroom for hosted-runner contention beyond the
-normal shard duration; reaching the boundary still cancels the shard and fails
+Allow each shard and dropped-shard recovery execution path 360 minutes at the
+GitHub job boundary. This remains a bounded failure window while leaving
+headroom for hosted-runner contention beyond the normal shard duration and the
+bounded setup retries; reaching the boundary still cancels the shard and fails
 the stable final check.
 
 The shard matrix and dropped-shard recovery retry JavaScript dependency setup
-at most five times, bounding each attempt to ten minutes with increasing
+at most five times, bounding each attempt to twenty minutes with increasing
 delays. This absorbs transient registry and hosted-runner stalls without
-skipping setup or relaxing the shard's 120-minute job boundary.
+skipping setup or relaxing the shard's 360-minute job boundary.
 
 ## Platform-dropped shard recovery
 

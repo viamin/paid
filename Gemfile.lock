@@ -423,7 +423,7 @@ GEM
       net-ssh (>= 5.0.0, < 9.0.0)
     net-smtp (0.5.2)
       net-protocol
-    net-ssh (7.3.8)
+    net-ssh (7.3.10)
       logger
     nio4r (2.7.5)
     nokogiri (1.19.7-aarch64-linux-gnu)
@@ -1061,7 +1061,7 @@ CHECKSUMS
   net-scp (4.1.3) sha256=df0cade5eff6cc8631bed2797f21b483585d156bdbfb5a10345705fc2ae928ff
   net-sftp (4.0.2) sha256=83cc067fb2875e593f956af0c2a819e565f4fdd503cc2387104f920d3833f85b
   net-smtp (0.5.2) sha256=35103cc04d6b2d94632f9928ede07483c24b70b9c0db1f231fea43909b678f3c
-  net-ssh (7.3.8) sha256=16bb1fccc4d9a580decdeea8ddb98e8544df29b7e6ac8cb94d4b379cfe4bee9f
+  net-ssh (7.3.10) sha256=8b54591acc8f9dbb63cd906add66a816c302f950cf92137b14155e809abea472
   nio4r (2.7.5) sha256=6c90168e48fb5f8e768419c93abb94ba2b892a1d0602cb06eef16d8b7df1dca1
   nokogiri (1.19.7-aarch64-linux-gnu) sha256=8f5e15d299602456406e1f03a9f3456cceb33a0722811e818d2ee2214eb4c84a
   nokogiri (1.19.7-aarch64-linux-musl) sha256=efe0c3602e6e54521bc21c681930ce5568e2d11203de17400710b2b3ca2e4cb4

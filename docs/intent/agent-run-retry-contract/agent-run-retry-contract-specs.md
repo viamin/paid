@@ -198,11 +198,21 @@
   partial-closeout follow-up work SHALL not be converted into a fresh
   implementation attempt. Repeated callbacks or delayed-job delivery SHALL
   claim at most one successor and record an inspectable reason for every
-  applied or refused decision.
+  applied or refused decision. Canonical issue admission
+  (`Issues::EnqueueEligible` — sweeps, delayed re-enqueues, sync-driven
+  seeding) SHALL honor the same produced-work and rate-limit-recovery
+  refusals recorded for the issue's latest failed auto-picked `create_pr`
+  run within the current authorized reset window, so no admission path can
+  route around a refused shared decision (#4989 acceptance bypass). A
+  retryable partial-closeout reconciliation that retained assessment gaps
+  SHALL instead return to normal eligibility, which verifies the current
+  assessment before admitting its continuation.
   *Code:* `AgentRuns::AutoPickCreatePrRetryPolicy`,
-  `RetryFailedAutoPickCreatePrJob`, `RetryableAttempts::RetryAttempt`.
+  `RetryFailedAutoPickCreatePrJob`, `RetryableAttempts::RetryAttempt`,
+  `Issue#auto_pick_create_pr_admission_hold`, `Issues::EnqueueEligible`.
   *Test:* `spec/services/agent_runs/auto_pick_create_pr_retry_policy_spec.rb`,
-  `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`.
+  `spec/jobs/retry_failed_auto_pick_create_pr_job_spec.rb`,
+  `spec/services/issues/enqueue_eligible_admission_hold_spec.rb`.
 
 - [x] **AGENT-RETRY-018** — Apple verification retries SHALL use the shared
   row-lock, reassessment, and successor-claim mechanics without requiring an
