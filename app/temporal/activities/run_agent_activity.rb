@@ -407,7 +407,11 @@ module Activities
             bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", runner) do
               # Evaluate pre-commit requirements against the working directory
               # before committing, so blocking failures prevent commits.
-              if agent_run.repo_cloned? && !agent_run.enhance_issue_goal?
+              # Read-only audits use their selected verification plan rather
+              # than coding delivery hooks, which can consume the audit budget
+              # after its assessment has already returned.
+              # @spec LAYERED-VERIFY-010 LAYERED-VERIFY-024
+              if agent_run.repo_cloned? && !agent_run.enhance_issue_goal? && !agent_run.layered_verification_audit_goal?
                 record_verification_result(
                   agent_run,
                   fallback_result: runner_result[:verification_fallback_result]

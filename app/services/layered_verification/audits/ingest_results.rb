@@ -97,26 +97,30 @@ module LayeredVerification
           obligation:, correspondence_claim: claim_for(obligation, attributes), agent_run:, producer:,
           execution_state: state, obligation_coverage: coverage,
           input_revision: hash_value(attributes["input_revision"]),
-          evidence_ref: attributes["evidence_ref"], evidence_summary: hash_value(attributes["evidence_summary"]),
+          evidence_ref: text_value(attributes["evidence_ref"]), evidence_summary: evidence_summary(attributes["evidence_summary"]),
           cause_signature: attributes["cause_signature"],
           agent_reported: hash_value(attributes["agent_reported"]).merge("selected_check" => selected_check),
           recorder_verified: { "structured_output" => true }, cost: hash_value(attributes["cost"]),
-          limitations: attributes["limitations"].to_s
+          limitations: text_value(attributes["limitations"]).to_s
         }
         revisions_match?(obligation, result[:input_revision]) ? result : stale_attributes(result)
       end
 
       def revisions_match?(obligation, input_revision)
-        reported = input_revision.values.map(&:to_s).select(&:present?)
-        expected_revisions(obligation).all? { |revision| reported.include?(revision) }
-      end
-
-      def expected_revisions(obligation)
-        [ audit_metadata["target_revision"], obligation.external_revision ].map(&:to_s).select(&:present?).uniq
+        input_revision["code"].present? && input_revision["code"] == audit_metadata["target_revision"] &&
+          (obligation.external_revision.blank? || input_revision["external_revision"] == obligation.external_revision)
       end
 
       def hash_value(value)
         value.is_a?(Hash) ? value : {}
+      end
+
+      def evidence_summary(value)
+        value.is_a?(Array) ? { "observations" => value } : hash_value(value)
+      end
+
+      def text_value(value)
+        value.is_a?(Array) ? value.join("\n") : value
       end
 
       def stale_attributes(attributes)
@@ -145,7 +149,9 @@ module LayeredVerification
       def missing_attributes(obligation, selected_check)
         {
           obligation:, agent_run:, producer: producer_for(selected_check), execution_state: "not_run",
-          obligation_coverage: "unresolved", input_revision: { "target_revision" => audit_metadata["target_revision"] },
+          obligation_coverage: "unresolved",
+          input_revision: { "target_revision" => audit_metadata["target_revision"],
+            "code" => audit_metadata["target_revision"], "external_revision" => obligation.external_revision },
           agent_reported: { "selected_check" => selected_check }, recorder_verified: { "structured_output" => false },
           limitations: MISSING_LIMITATION
         }

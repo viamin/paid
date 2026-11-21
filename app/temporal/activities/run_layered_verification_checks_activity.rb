@@ -89,7 +89,8 @@ module Activities
     end
 
     def input_revision(obligation)
-      { "target_revision" => audit_metadata["target_revision"], "external_revision" => obligation.external_revision }.compact
+      { "target_revision" => audit_metadata["target_revision"], "code" => audit_metadata["target_revision"],
+        "external_revision" => obligation.external_revision }.compact
     end
   end
 end
