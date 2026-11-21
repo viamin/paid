@@ -726,6 +726,32 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
     # record, so the next invocation would immediately re-invoke the LLM
     # instead of honoring the one-day retry gate in
     # `legacy_reconciliation_already_done?` (#4191 review).
+    # @spec PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-020
+    it "bounds legacy rejection diagnostics without reopening its retry gate" do
+      merged_pr(number: 30, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 30)
+      fields = Array.new(12) { { path: "p" * 200, expected: "object", actual: "string", response: "raw-private-payload" } }
+      failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new("assessment rejected",
+        category: "invalid_assessment", provider: "opencode", model: "glm-5.3", request_id: "r" * 200,
+        invalid_fields: fields, provider_response: "raw-private-payload")
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.retryable_failure).to eq(1)
+      diagnostic = run.reload.reconciliation.fetch("assessment_failure")
+      expect(diagnostic).to include("category" => "invalid_assessment", "provider" => "opencode",
+        "model" => "glm-5.3", "request_id" => "r" * 120,
+        "invalid_fields" => Array.new(10) { { "path" => "p" * 120, "expected" => "object", "actual" => "string" } })
+      expect(run.reconciliation.to_json).not_to include("raw-private-payload")
+      expect(run.reconciliation).to include("status" => "retryable_failure", "failed_at" => be_present)
+      expect(run.status).to eq("completed")
+      expect(parent.reload.github_state).to eq("open")
+      described_class.call(account_id: account.id)
+      expect(Llm::AnalyzePartialCloseout).to have_received(:call).with(agent_run: run).once
+    end
+
+    # @spec PARTIAL-CLOSEOUT-020
     it "persists a retryable failure when the assessment LLM call fails" do
       merged_pr(number: 30, parent_issue: parent)
       run = legacy_run(issue: parent, pull_request_number: 30)
