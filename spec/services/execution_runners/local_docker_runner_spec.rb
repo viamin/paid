@@ -1647,7 +1647,7 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
       it "delegates to Containers::ServiceProvisioner#cleanup" do
         provisioner = instance_double(Containers::ServiceProvisioner)
         allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
-        expect(provisioner).to receive(:cleanup).with(agent_run, stale_requeue_count: 2, persist: true)
+        expect(provisioner).to receive(:cleanup).with(agent_run, stale_requeue_count: 2)
 
         runner.cleanup_services(agent_run: agent_run, stale_requeue_count: 2)
       end

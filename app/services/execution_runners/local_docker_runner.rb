@@ -314,7 +314,9 @@ module ExecutionRunners
 
     # @spec CONTAINER-RUNTIME-032
     def cleanup_services(agent_run:, stale_requeue_count: nil, persist: true)
-      Containers::ServiceProvisioner.new.cleanup(agent_run, stale_requeue_count: stale_requeue_count, persist:)
+      cleanup_options = { stale_requeue_count: }
+      cleanup_options[:persist] = false unless persist
+      Containers::ServiceProvisioner.new.cleanup(agent_run, **cleanup_options)
     end
 
     # @spec CONTAINER-RUNTIME-033
