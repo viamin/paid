@@ -25,7 +25,50 @@ RSpec.describe Api::V1::InboxEntrySerializer do
     )
   end
 
+  def layered_verification_detail
+    audit = create(:agent_run, project:, goal: "layered_verification_audit",
+      external_metadata: { "layered_verification" => { "target_revision" => "audit-revision" } })
+    obligation = create(:layered_verification_obligation, project:, framework: "lid", external_identity: "PAYMENTS-42",
+      external_revision: "source-revision", canonical_source_path: "docs/intent/payments/specs.md",
+      scope_description: "Keep charge settlement idempotent.", approved_revision_reference: "https://github.com/acme/widgets/pull/42")
+    contributing = create(:layered_verification_check_result, obligation:, agent_run: audit,
+      producer: "implementation_conformance", execution_state: "failed_assertion", obligation_coverage: "contradicted",
+      input_revision: { "intent" => "audit-revision" }, limitations: "Only the submitted patch was observed.",
+      evidence_ref: "audit://checks/42", evidence_summary: { "passage" => "settlement retries twice" }, cause_signature: "duplicate-settlement")
+    unrelated = create(:layered_verification_check_result, obligation:, agent_run: audit,
+      producer: "formal_verification", execution_state: "completed", obligation_coverage: "supported")
+    finding = create(:layered_verification_finding, project:, obligation:, agent_run: audit,
+      source_passages: [ { "source" => "spec", "text" => "one settlement per charge" } ],
+      observed_behavior: { "behavior" => "the worker can settle twice", "check_results" => [ contributing.id ] },
+      check_limitations: [ "The production retry schedule was not exercised." ],
+      decision: { "question" => "How should this discrepancy be handled?", "options" => %w[request_repair approve_clarification defer],
+                  "consequences" => [ "Repair requires separate authorization." ] })
+    { audit:, obligation:, contributing:, unrelated:, finding: }
+  end
+
+  def expected_layered_verification_payload(detail)
+    {
+      obligation: { external_identity: "PAYMENTS-42", framework: "lid", scope_description: "Keep charge settlement idempotent.",
+                    approval_state: "proposed", source_revision: "source-revision",
+                    approved_revision_reference: "https://github.com/acme/widgets/pull/42",
+                    canonical_source_path: "docs/intent/payments/specs.md" },
+      audit: { id: detail[:audit].id, target_revision: "audit-revision" },
+      source_passages: [ { "source" => "spec", "text" => "one settlement per charge" } ],
+      observed_behavior: { "behavior" => "the worker can settle twice", "check_results" => [ detail[:contributing].id ] },
+      check_limitations: [ "The production retry schedule was not exercised." ],
+      decision: include(question: "How should this discrepancy be handled?", consequences: [ "Repair requires separate authorization." ]),
+      supported_actions: %w[request_repair approve_clarification defer]
+    }
+  end
+
   describe "#render" do
+    # @spec MOBILE-API-006 MCP-INBOX-TOOLS-002
+    it "declares a detail contract for every queue kind" do
+      expect(described_class::KIND_DETAIL_CONTRACT.keys).to match_array(Inbox::Queue::KINDS)
+      expect(described_class::KIND_DETAIL_CONTRACT.fetch(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND))
+        .to eq(:verification_evidence)
+    end
+
     it "serializes clarifying_questions with its questions" do
       issue = create(:issue, project: project)
       entry = build_entry(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
@@ -241,6 +284,23 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       payload = described_class.render(entry)
 
       expect(payload).to include(tasks: [ "CI is required." ])
+    end
+
+    # @spec LAYERED-VERIFY-015 MCP-INBOX-TOOLS-002 MOBILE-API-008
+    it "serializes bounded layered-verification evidence and supported decision context" do
+      detail = layered_verification_detail
+      payload = described_class.render(build_entry(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, record: detail[:finding]))
+
+      expect(payload).to include(expected_layered_verification_payload(detail))
+      expect(payload.fetch(:contributing_check_results)).to eq([
+        {
+          id: detail[:contributing].id, producer: "implementation_conformance", execution_state: "failed_assertion",
+          obligation_coverage: "contradicted", input_revision: { "intent" => "audit-revision" },
+          freshness: "matches_audit_revision", limitations: "Only the submitted patch was observed.",
+          evidence_ref: "audit://checks/42", evidence_summary: { "passage" => "settlement retries twice" }
+        }
+      ])
+      expect(payload.fetch(:contributing_check_results).map { |result| result.fetch(:id) }).not_to include(detail[:unrelated].id)
     end
 
     # @spec DESIGN-RECONCILIATION-001

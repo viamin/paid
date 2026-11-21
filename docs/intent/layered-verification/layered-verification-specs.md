@@ -313,13 +313,20 @@
   `auto_pick_enabled`. Its detail pane SHALL show the obligation's scope and
   source reference, conflicting source/model/spec claims, observed
   implementation behavior, check outcomes with freshness, why a decision is
-  needed, and the possible resolutions with consequences. A clean audit
+  needed, and the possible resolutions with consequences. The shared REST and
+  in-app MCP detail serializer SHALL expose the same bounded retained
+  obligation, source/audit revision, evidence, and contributing-check facts,
+  scoped to the finding's own obligation without raw model or unrestricted
+  agent/recorder metadata. A clean audit
   report (every in-scope obligation `supported`) SHALL NOT create an Inbox
   entry.
   *Tests:* `spec/requests/inbox_spec.rb`,
-  `spec/requests/projects/layered_verification_audits_spec.rb`
+  `spec/requests/projects/layered_verification_audits_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/mcp/tools/get_inbox_entry_spec.rb`
   *Code:* `app/services/inbox/queue.rb`,
-  `app/views/dashboard/_inbox_detail_layered_verification_finding.html.erb` (#4433)
+  `app/views/dashboard/_inbox_detail_layered_verification_finding.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb` (#4433)
 
 - [x] **LAYERED-VERIFY-016** — Chat discussion, acknowledgment, and deferral
   of a `LayeredVerificationFinding` SHALL NOT resolve it or approve any

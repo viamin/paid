@@ -85,6 +85,17 @@ CHAT-API-* claim, the mobile spec references that claim instead of restating
 it — `api-mode-chat` is the ancestor; this segment extends it, never
 replaces it.
 
+## Inbox detail projection
+
+`Api::V1::InboxEntrySerializer` is the one REST detail projection and is also
+consumed unchanged by the in-app MCP Inbox reader. It declares a detail
+contract for every `Inbox::Queue::KINDS` value so adding a queue kind cannot
+silently become an empty selected-detail response. A layered-verification
+finding projects bounded retained obligation and audit revisions, evidence,
+observed behavior, limitations, check outcomes/freshness, and supported
+decision actions. It selects named scalar and JSON fields only; it does not
+serialize raw models, credentials, or unrestricted agent/recorder metadata.
+
 ## Auth Boundary: Personal Access Tokens
 
 ### Token model

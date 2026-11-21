@@ -8,6 +8,26 @@ module Api
     # splitting them into per-kind classes would scatter the `oneOf`
     # dispatch this spec requires across a dozen single-method files.
     class InboxEntrySerializer
+      FINDING_EVIDENCE_LIMIT = 20
+      KIND_DETAIL_CONTRACT = {
+        Inbox::Queue::CLARIFYING_QUESTIONS_KIND => :questions,
+        Inbox::Queue::PLAN_REVIEW_KIND => :tasks,
+        Inbox::Queue::MERGE_APPROVAL_KIND => :guidance,
+        Inbox::Queue::ACTION_REQUIRED_KIND => :remediation_steps,
+        Inbox::Queue::ESCALATED_PR_KIND => :escalation,
+        Inbox::Queue::MANUAL_REVIEW_KIND => :manual_review,
+        Inbox::Queue::INTENT_CONFORMANCE_KIND => :intent_conformance,
+        Inbox::Queue::FEATURE_DECISION_KIND => :feature_decision,
+        Inbox::Queue::RETRY_LIMITED_KIND => :retry_status,
+        Inbox::Queue::CHANGE_INTENT_DRAFT_KIND => :change_intent,
+        Inbox::Queue::PARTIAL_CLOSEOUT_KIND => :unresolved_prerequisites,
+        Inbox::Queue::TEST_REVIEW_PENDING_KIND => :common_fields_only,
+        Inbox::Queue::PROJECT_SETUP_PENDING_KIND => :tasks,
+        Inbox::Queue::TRACEABILITY_GAP_KIND => :traceability_evidence,
+        Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND => :verification_evidence,
+        Inbox::Queue::DEPENDENCY_CYCLE_KIND => :dependency_cycle
+      }.freeze
+
       def self.render(entry, user: nil, history_limit: nil, history_cursor: nil)
         new(entry, user:, history_limit:, history_cursor:).render
       end
@@ -119,7 +139,7 @@ module Api
         when Inbox::Queue::TEST_REVIEW_PENDING_KIND then {}
         when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
         when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
-        when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then {}
+        when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then layered_verification_finding_payload
         when Inbox::Queue::DEPENDENCY_CYCLE_KIND then dependency_cycle_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
@@ -129,6 +149,74 @@ module Api
       # @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-020
       def dependency_cycle_payload
         dependency_cycle_list_payload.merge(analysis_run: cycle_analysis_run_payload(entry.record))
+      end
+
+      # @spec LAYERED-VERIFY-015 MCP-INBOX-TOOLS-002 MOBILE-API-008
+      # The selected-detail projection intentionally exposes only retained,
+      # bounded review evidence. It never serializes the finding, obligation,
+      # check-result models, or their recorder/agent metadata wholesale.
+      def layered_verification_finding_payload
+        finding = entry.record
+        {
+          obligation: layered_verification_obligation_payload(finding.obligation),
+          audit: layered_verification_audit_payload(finding),
+          source_passages: Array(finding.source_passages).first(FINDING_EVIDENCE_LIMIT),
+          observed_behavior: finding.observed_behavior,
+          check_limitations: Array(finding.check_limitations).first(FINDING_EVIDENCE_LIMIT),
+          decision: layered_verification_decision_payload(finding),
+          supported_actions: layered_verification_supported_actions(finding),
+          contributing_check_results: layered_verification_check_results(finding)
+        }
+      end
+
+      def layered_verification_obligation_payload(obligation)
+        {
+          external_identity: obligation.external_identity, framework: obligation.framework,
+          scope_description: obligation.scope_description, approval_state: obligation.approval_state,
+          source_revision: obligation.external_revision,
+          approved_revision_reference: obligation.approved_revision_reference,
+          canonical_source_path: obligation.canonical_source_path
+        }
+      end
+
+      def layered_verification_audit_payload(finding)
+        { id: finding.agent_run_id,
+          target_revision: finding.agent_run.external_metadata.dig("layered_verification", "target_revision") }
+      end
+
+      def layered_verification_decision_payload(finding)
+        decision = finding.decision
+        { question: decision["question"], consequences: Array(decision["consequences"]).first(FINDING_EVIDENCE_LIMIT) }
+      end
+
+      def layered_verification_supported_actions(finding)
+        Array(finding.decision["options"]).intersection(Inbox::DecideLayeredVerificationFinding::ACTIONS)
+      end
+
+      def layered_verification_check_results(finding)
+        LayeredVerificationCheckResult.where(id: layered_verification_check_result_ids(finding), obligation: finding.obligation)
+          .order(:id).limit(FINDING_EVIDENCE_LIMIT).map { |result| layered_verification_check_result_payload(result, finding) }
+      end
+
+      def layered_verification_check_result_ids(finding)
+        observation_ids = Array(finding.observations).flat_map { |observation| Array(observation["check_result_ids"]) }
+        observed_ids = finding.observed_behavior.is_a?(Hash) ? Array(finding.observed_behavior["check_results"]) : []
+        observation_ids + observed_ids
+      end
+
+      def layered_verification_check_result_payload(result, finding)
+        {
+          id: result.id, producer: result.producer, execution_state: result.execution_state,
+          obligation_coverage: result.obligation_coverage, input_revision: result.input_revision,
+          freshness: layered_verification_freshness(result, finding), limitations: result.limitations,
+          evidence_ref: result.evidence_ref, evidence_summary: result.evidence_summary
+        }
+      end
+
+      def layered_verification_freshness(result, finding)
+        revisions = result.input_revision.values.map(&:to_s)
+        revisions.include?(finding.agent_run.external_metadata.dig("layered_verification", "target_revision").to_s) ?
+          "matches_audit_revision" : "does_not_match_audit_revision"
       end
 
       def dependency_cycle_list_payload

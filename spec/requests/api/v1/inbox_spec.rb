@@ -27,6 +27,22 @@ RSpec.describe "Mobile inbox API" do
   let(:headers) { token; { "Authorization" => "Bearer #{plaintext}" } }
   let(:issue) { create(:issue, :needs_input, project:, needs_input_questions: [ "What should happen?" ]) }
 
+  def layered_verification_finding
+    audit = create(:agent_run, project:, goal: "layered_verification_audit",
+      external_metadata: { "layered_verification" => { "target_revision" => "audit-revision" } })
+    obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-42",
+      external_revision: "source-revision", scope_description: "Keep charge settlement idempotent.")
+    result = create(:layered_verification_check_result, obligation:, agent_run: audit,
+      obligation_coverage: "contradicted", execution_state: "failed_assertion",
+      input_revision: { "intent" => "audit-revision" }, limitations: "Only the patch was observed.", cause_signature: "duplicate-settlement")
+    finding = create(:layered_verification_finding, project:, obligation:, agent_run: audit,
+      source_passages: [ "The spec requires one settlement." ],
+      observed_behavior: { "check_results" => [ result.id ], "behavior" => "two settlements were observed" },
+      check_limitations: [ "No production traffic." ],
+      decision: { "question" => "How should this discrepancy be handled?", "options" => [ "defer" ] })
+    { audit:, result:, finding: }
+  end
+
   # @spec MOBILE-API-006 MOBILE-API-010
   it "lists filtered entries and conditionally returns not modified" do
     issue
@@ -81,6 +97,23 @@ RSpec.describe "Mobile inbox API" do
       "decision" => "Which cache should exports use?", "recommendation" => "Redis",
       "primary_action" => "Answer the question"
     )
+  end
+
+  # @spec LAYERED-VERIFY-015 MOBILE-API-008 MCP-INBOX-TOOLS-002
+  it "renders bounded layered-verification detail through the shared Inbox projection" do
+    detail = layered_verification_finding
+
+    get "/api/v1/inbox/entries/layered_verification_finding:#{detail[:finding].id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "obligation")).to include(
+      "external_identity" => "PAYMENTS-42", "source_revision" => "source-revision"
+    )
+    expect(response.parsed_body.dig("entry", "audit")).to eq("id" => detail[:audit].id, "target_revision" => "audit-revision")
+    expect(response.parsed_body.dig("entry", "contributing_check_results")).to include(
+      a_hash_including("id" => detail[:result].id, "freshness" => "matches_audit_revision")
+    )
+    expect(response.parsed_body.dig("entry", "supported_actions")).to eq([ "defer" ])
   end
 
   # @spec AUTO-PICK-QUEUE-015 MOBILE-API-006
