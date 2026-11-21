@@ -27,6 +27,14 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      # Returns a safe observation of the filesystem backing this execution
+      # backend, or a named reason why that observation is unavailable. A
+      # backend must never substitute the control-plane filesystem for a
+      # daemon it cannot prove shares that storage.
+      def backing_storage_observation(now: Time.current)
+        { reason: "backing_storage_unsupported" }
+      end
+
       def capacity_snapshot_list_container_options
         {}
       end

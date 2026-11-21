@@ -97,9 +97,12 @@ RSpec.describe ProcessRunQueueJob do
   end
 
   def build_host_registry(fallback_policy: "first_healthy")
-    local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true)
-    elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true)
-    aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ], remote?: true, ping: true)
+    local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true,
+      backing_storage_observation: { reason: "backing_storage_probe_unconfigured" })
+    elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true,
+      backing_storage_observation: { reason: "backing_storage_unsupported" })
+    aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ], remote?: true, ping: true,
+      backing_storage_observation: { reason: "backing_storage_unsupported" })
     registry = Containers::HostRegistry::Registry.new(
       default_host: "local",
       fallback_policy: fallback_policy,

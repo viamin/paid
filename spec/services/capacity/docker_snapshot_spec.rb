@@ -57,7 +57,8 @@ RSpec.describe Capacity::DockerSnapshot do
     allow(backend).to receive_messages(
       capacity_snapshot_list_container_options: {},
       system_info: system_info,
-      list_containers: containers
+      list_containers: containers,
+      backing_storage_observation: { reason: "backing_storage_probe_unconfigured" }
     )
   end
 
@@ -128,6 +129,45 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.backend_shared).to be(true)
       expect(snapshot).to be_remote
       expect(snapshot).to be_shared
+      expect(snapshot.to_run_admission_h(now: now)).to include(
+        backing_storage_available: false,
+        backing_storage_reason: "backing_storage_unsupported"
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "keeps fresh physical backing-store evidence separate from Docker memory" do
+      allow(backend).to receive(:backing_storage_observation).with(now: now).and_return(
+        scope: "configured_docker_backing_store_probe",
+        available_bytes: 6.gigabytes,
+        observed_at: now
+      )
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot.to_run_admission_h(now: now)).to include(
+        backing_storage_available: true,
+        backing_storage_scope: "configured_docker_backing_store_probe",
+        backing_storage_available_bytes: 6.gigabytes,
+        backing_storage_observed_at: now,
+        backing_storage_reason: nil
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "marks an old backing-store reading stale without treating it as known headroom" do
+      allow(backend).to receive(:backing_storage_observation).with(now: now).and_return(
+        scope: "configured_docker_backing_store_probe",
+        available_bytes: 1.gigabyte,
+        observed_at: now - described_class::BACKING_STORAGE_STALE_AFTER - 1.second
+      )
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot.to_run_admission_h).to include(
+        backing_storage_available: false,
+        backing_storage_reason: "backing_storage_stale"
+      )
     end
 
     it "tags the swarm backend as backend_kind 'swarm'" do
@@ -498,7 +538,8 @@ RSpec.describe Capacity::DockerSnapshot do
     allow(backend_double).to receive_messages(
       capacity_snapshot_list_container_options: {},
       system_info: system_info,
-      list_containers: containers
+      list_containers: containers,
+      backing_storage_observation: { reason: "backing_storage_unsupported" }
     )
     backend_double
   end

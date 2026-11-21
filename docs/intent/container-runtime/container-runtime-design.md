@@ -182,6 +182,32 @@ budget when confidence is good, but degraded or missing snapshot paths fall
 back conservatively, and sampling-budget exhaustion fails closed for that
 admission pass.
 
+### Backing-storage pressure
+
+Docker-requested disk ceilings do not account for the daemon's image, build,
+volume, WAL, or unrelated-workload consumption. Each execution backend may
+therefore expose a bounded `backing_storage_observation` capability. A known
+observation contains only its scope, available bytes, and observation time.
+It never exposes daemon paths, mounts, credentials, or workload names.
+
+The local Docker backend supports the capability only when an operator has
+mounted a probe from the Docker backing filesystem and configured
+`PAID_DOCKER_BACKING_STORE_PROBE_PATH`. It measures that explicit probe's
+filesystem; it MUST NOT treat the control-plane container's root filesystem as
+the Docker daemon's backing store. Remote and unsupported backends report an
+explicit unavailable/unsupported reason rather than inspecting local disk.
+Missing, malformed, or stale observations remain distinguishable from known
+headroom and do not claim capacity.
+
+Normal run admission applies a 5 GiB backing-storage reserve to every mode,
+including provisioning and build consumers. A fresh known observation at or
+below the reserve denies new execution with a one-minute bounded recheck and
+an operator action to reclaim or expand the measured backing store. This does
+not alter requested-resource ceilings, increase concurrency, or grant cleanup
+authority. Existing runs, cancellation, and cleanup stay runnable. Operators
+can inspect the safe scope, available bytes, timestamp, reason, and action in
+the Docker-host capacity diagnostics.
+
 ## Accepted Divergence
 
 RDR-005's host-side "one git worktree per agent run" model is superseded for

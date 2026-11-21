@@ -52,6 +52,30 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     end
   end
 
+  describe "backing-storage evidence" do
+    # @spec CONTAINER-RUNTIME-050
+    it "measures only an explicitly configured backing-store probe" do
+      allow(ENV).to receive(:[]).with("PAID_DOCKER_BACKING_STORE_PROBE_PATH").and_return("/docker-backing-store-probe")
+      allow(File).to receive(:directory?).with("/docker-backing-store-probe").and_return(true)
+      allow(Open3).to receive(:capture3).with("df", "-Pk", "--", "/docker-backing-store-probe")
+        .and_return([ "Filesystem 1024-blocks Used Available Capacity Mounted on\nprobe 100 90 10 90% /docker-backing-store-probe\n", "", instance_double(Process::Status, success?: true) ])
+
+      expect(backend.backing_storage_observation(now: Time.zone.parse("2026-11-21 18:28:00 UTC"))).to eq(
+        scope: "configured_docker_backing_store_probe",
+        available_bytes: 10_240,
+        observed_at: Time.zone.parse("2026-11-21 18:28:00 UTC")
+      )
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "does not substitute the application container filesystem when no probe is configured" do
+      allow(ENV).to receive(:[]).with("PAID_DOCKER_BACKING_STORE_PROBE_PATH").and_return(nil)
+
+      expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unconfigured")
+      expect(Open3).not_to receive(:capture3)
+    end
+  end
+
   it "reports the local backend identifier" do
     expect(backend.identifier).to eq("local")
   end

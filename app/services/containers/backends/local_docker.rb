@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "open3"
+require "timeout"
 
 module Containers
   module Backends
@@ -28,6 +30,24 @@ module Containers
         return info unless total_kb && available_kb && total_kb.positive? && total_kb * 1024 == info["MemTotal"]
 
         info.merge("PaidHostMemAvailable" => available_kb * 1024)
+      end
+
+      # @spec CONTAINER-RUNTIME-050
+      def backing_storage_observation(now: Time.current)
+        probe_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"].presence
+        return { reason: "backing_storage_probe_unconfigured" } unless probe_path
+        return { reason: "backing_storage_probe_invalid" } unless File.directory?(probe_path)
+
+        available_bytes = backing_store_available_bytes(probe_path)
+        return { reason: "backing_storage_probe_unavailable" } unless available_bytes
+
+        {
+          scope: "configured_docker_backing_store_probe",
+          available_bytes: available_bytes,
+          observed_at: now
+        }
+      rescue SystemCallError, IOError
+        { reason: "backing_storage_probe_unavailable" }
       end
 
       def container_host_for(_container)
@@ -123,6 +143,18 @@ module Containers
       def host_memory
         File.read("/proc/meminfo")
       rescue SystemCallError, IOError
+        nil
+      end
+
+      def backing_store_available_bytes(probe_path)
+        stdout, _stderr, status = Timeout.timeout(2) { Open3.capture3("df", "-Pk", "--", probe_path) }
+        return unless status.success?
+
+        available_blocks = stdout.lines.last.to_s.split.fetch(3, nil)&.to_i
+        return unless available_blocks
+
+        available_blocks * 1024
+      rescue Timeout::Error, IndexError
         nil
       end
 

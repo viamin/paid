@@ -85,6 +85,25 @@
   `spec/jobs/process_run_queue_job_spec.rb`
   *Code:* `Capacity::RunAdmission`
 
+- [x] **CONTAINER-RUNTIME-050** — When a supported execution backend supplies
+  a fresh, bounded physical backing-storage observation at or below the
+  documented 5 GiB reserve, normal execution admission (including provisioning
+  and image-build consumers) SHALL defer new work with the named
+  `backing_storage_reserve_exhausted` reason, a one-minute recheck, safe scope,
+  available-byte and timestamp evidence, and an operator action. The local
+  backend SHALL measure only an explicitly configured probe mounted from the
+  Docker backing filesystem; remote, unavailable, and stale observations SHALL
+  remain explicitly distinguishable and SHALL NOT be mistaken for local
+  control-plane disk capacity. The guard SHALL not change requested-resource
+  ceilings or cleanup authority, and SHALL leave cancellation and cleanup
+  admission paths available.
+  *Tests:* `spec/services/containers/backends/local_docker_spec.rb`,
+  `spec/services/capacity/docker_snapshot_spec.rb`,
+  `spec/services/capacity/run_admission_spec.rb`.
+  *Code:* `Containers::Backends::Base#backing_storage_observation`,
+  `Containers::Backends::LocalDocker#backing_storage_observation`,
+  `Capacity::DockerSnapshot`, `Capacity::RunAdmission`.
+
 - [x] **CONTAINER-RUNTIME-007** — The system SHALL define a provider-neutral
   runner interface (`ExecutionRunners::Base`: `provision`, `start`, `running?`,
   `reconnect`, `status`, `cancel`, `cleanup`, `compatible?`, `ping`) whose method names and
