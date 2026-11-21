@@ -45,7 +45,10 @@ continuation. Their stable relative-path cursor is persisted on the unique
 collector run for a project version and collector type only after that shard's
 artifacts are stored, so retries resume idempotently even if job arguments are
 lost. Each shard streams artifacts to the store instead of accumulating the
-repository's matches or artifacts in Puma. A collector run completes only
+repository's matches or artifacts in Puma. A paged parser timeout, unexpected
+exit status, or malformed output fails the collector and retains its last
+persisted checkpoint; it cannot authorize stale-artifact finalization. The
+exact ast-grep no-matches status remains a valid empty shard. A collector run completes only
 after its final page; direct full collection retains its existing single-call
 behavior. The final continuation checks every collector's
 persisted status before marking older artifacts stale and the project ready;
