@@ -158,6 +158,23 @@
   `spec/temporal/activities/check_proxy_health_activity_spec.rb`.
   *Code:* `Workflows::AgentExecutionWorkflow#ensure_proxy_healthy`.
 
+- [x] **TEMPORAL-ORCHESTRATION-015** — When a new agent workflow must publish
+  a quality-gate, startup or execution failure, it SHALL schedule the existing
+  locked `MarkAgentRunFailed` activity on existing poll/control capacity with
+  its unchanged 30-second execution and three-attempt retry bounds, and a
+  120-second total scheduling/recovery bound. Unpatched histories SHALL retain
+  their original routing, options and secondary-error behavior. New histories
+  SHALL preserve the original execution failure if bounded bookkeeping fails,
+  report the unavailable operation and retain normal cleanup/janitor handling.
+  Cancellation SHALL not become a fabricated failure, late failure publication
+  SHALL not overwrite a successful/cancelled terminal state, and long AI work,
+  authority, retry allowances and resource capacity SHALL remain unchanged
+  (#5248).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_terminal_control_spec.rb`,
+  `spec/temporal/activities/mark_agent_run_failed_activity_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#execute`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.

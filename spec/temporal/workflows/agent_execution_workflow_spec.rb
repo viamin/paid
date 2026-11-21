@@ -285,7 +285,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::MarkAgentRunFailedActivity,
           hash_including(agent_run_id: 42,
             error: "Agent already attempted and failed to create the GitHub issue; refusing fallback issue creation"),
-          timeout: 30)
+          timeout: 30, task_queue: Paid.poll_task_queue, schedule_to_close_timeout: 120)
     end
 
     it "runs CreateMultipleIssuesActivity with the parsed plan revision when a multi-issue plan is detected" do # @spec ISSUE-TREE-003
@@ -507,7 +507,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
             error: "wrong number of arguments (given 0, expected 1)",
             failure_type: "ArgumentError"
           ),
-          timeout: 30)
+          timeout: 30, task_queue: Paid.poll_task_queue, schedule_to_close_timeout: 120)
     end
   end
 
@@ -655,7 +655,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::CreatePullRequestActivity, anything, any_args)
     end
 
-    # @spec LAYERED-VERIFY-024
+    # @spec LAYERED-VERIFY-024 TEMPORAL-ORCHESTRATION-015
     it "records partial audit evidence before preserving the original agent failure" do
       allow(workflow).to receive(:run_activity).with(Activities::RunAgentActivity, anything, any_args)
         .and_raise("audit timed out")
@@ -665,7 +665,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).to have_received(:run_activity).with(Activities::RecordLayeredVerificationResultsActivity,
         { agent_run_id: 42 }, timeout: 30, retry_policy: described_class::NO_RETRY).ordered
       expect(workflow).to have_received(:run_activity).with(Activities::MarkAgentRunFailedActivity,
-        hash_including(agent_run_id: 42, error: "audit timed out"), timeout: 30).ordered
+        hash_including(agent_run_id: 42, error: "audit timed out"),
+        timeout: 30, schedule_to_close_timeout: 120, task_queue: Paid.poll_task_queue).ordered
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::CompleteLayeredVerificationAuditActivity, anything, any_args)
     end
@@ -749,7 +750,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).to have_received(:run_activity)
         .with(Activities::MarkAgentRunFailedActivity,
           { agent_run_id: 42, error: "Quality gate blocked this run: composite_score" },
-          timeout: 30)
+          timeout: 30, task_queue: Paid.poll_task_queue, schedule_to_close_timeout: 120)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ProvisionContainerActivity, anything, any_args)
       expect(workflow).not_to have_received(:run_activity)
@@ -2768,7 +2769,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
             agent_run_id: 42,
             error: "Cannot start create_pr for issue #9 while it awaits clarifying answers"
           ),
-          timeout: 30)
+          timeout: 30, task_queue: Paid.poll_task_queue, schedule_to_close_timeout: 120)
     end
 
     it "still runs the cleanup block when startup CreateAgentRunActivity fails" do

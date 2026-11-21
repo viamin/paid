@@ -19,6 +19,8 @@ workflows:
   Workflows::AgentExecutionWorkflow:
     proxy-health-control-routing-v1:
       introduced_on: "2026-11-21"
+    failure-bookkeeping-control-v1:
+      introduced_on: "2026-11-21"
     source-closure-timeout-cause-v1:
       introduced_on: "2026-11-16"
     agent-execution-provision-browser-container-v1:

@@ -35,6 +35,11 @@ failure window while leaving headroom for hosted-runner contention beyond the
 normal shard duration; reaching the boundary still cancels the shard and fails
 the stable final check.
 
+The shard matrix and dropped-shard recovery retry JavaScript dependency setup
+at most five times, bounding each attempt to ten minutes with increasing
+delays. This absorbs transient registry and hosted-runner stalls without
+skipping setup or relaxing the shard's 120-minute job boundary.
+
 ## Platform-dropped shard recovery
 
 GitHub Actions occasionally drops a matrix leg (or another job) entirely during
