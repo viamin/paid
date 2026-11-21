@@ -39,8 +39,10 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-020
-  it "allows hosted test shards 180 minutes before cancelling them" do
-    expect(workflow.fetch("jobs").fetch("test-shards").fetch("timeout-minutes")).to eq(180)
+  it "allows full shard execution paths 240 minutes before cancelling them" do
+    %w[test-shards shard-recovery].each do |job_name|
+      expect(workflow.fetch("jobs").fetch(job_name).fetch("timeout-minutes")).to eq(240)
+    end
   end
 
   # @spec TEST-SUITE-020
