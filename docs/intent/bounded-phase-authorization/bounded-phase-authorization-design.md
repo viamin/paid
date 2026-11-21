@@ -140,7 +140,11 @@ into this record.
    defaults and ordinary continuation grants while surviving terminal
    lifecycle states.
 2. **#4998 (`-005`–`-006`)** adds reassessment resolution and bounded
-   `agent_harness` correspondence, including fail-closed output handling.
+   `agent_harness` correspondence, including fail-closed output handling. The
+   delivered `Automation::AssessBoundedScope` has a 12KB evidence bound and a
+   strict three-state response schema; `Automation::ResolveBoundedReassessment`
+   allows only authorized stop or revalidated unchanged-scope resume. These
+   transitions share the authorization lock and immutable admission evidence.
 3. **#4999 (`-007`–`-009`)** adds consent-surface parity, fresh-review gates,
    terminal races, completion/reopening, and no implicit release, deployment,
    child-work, or setting-enable authority.

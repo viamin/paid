@@ -28,6 +28,9 @@ RSpec.describe Automation::DelegatedActionAdmission do
         assessment_run, { "criteria" => [], "gaps" => [] }
       ) })
     end
+    allow(Automation::AssessBoundedScope).to receive(:call).and_return(
+      Automation::AssessBoundedScope::Result.new(status: "in_scope", explanation: "test correspondence", evidence_refs: [])
+    )
   end
 
   def authorize(action:, work_item: issue, stop_before_phase: "merge")
@@ -268,6 +271,20 @@ RSpec.describe Automation::DelegatedActionAdmission do
 
     expect(result).to be_blocked
     expect(result.reasons).to include(:budget)
+  end
+
+  it "pauses and requires reassessment when repair correspondence is unknown" do # @spec BOUNDED-PHASE-AUTHORIZATION-005 BOUNDED-PHASE-AUTHORIZATION-006
+    authorization = authorize(action: "repair")
+    allow(Automation::AssessBoundedScope).to receive(:call).and_return(
+      Automation::AssessBoundedScope::Result.new(status: "unknown", explanation: "ambiguous", evidence_refs: [])
+    )
+
+    result = recheck(goal: "layered_verification_repair", boundary: :repair)
+
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:scope_correspondence)
+    expect(authorization.reload).to be_reassessment_required
+    expect(authorization.reassessment_reasons).to include("scope_correspondence")
   end
 
   it "blocks when the repository-control channel is inactive" do # @spec PROJECT-DELEGATION-004

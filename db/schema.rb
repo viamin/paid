@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_040817) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_124244) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -775,6 +775,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_040817) do
     t.datetime "expires_at", null: false
     t.bigint "issue_id", null: false
     t.bigint "project_id", null: false
+    t.jsonb "reassessment_reasons", default: [], null: false
+    t.datetime "reassessment_required_at"
     t.datetime "revoked_at"
     t.bigint "revoked_by_id"
     t.string "status", default: "active", null: false
@@ -784,6 +786,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_040817) do
     t.index ["issue_id"], name: "index_bounded_delegated_actions_on_issue_id"
     t.index ["project_id", "issue_id", "action"], name: "index_bounded_actions_on_project_issue_action"
     t.index ["project_id"], name: "index_bounded_delegated_actions_on_project_id"
+    t.index ["reassessment_required_at"], name: "index_bounded_delegated_actions_on_reassessment_required_at"
     t.index ["revoked_by_id"], name: "index_bounded_delegated_actions_on_revoked_by_id"
     t.index ["status", "expires_at"], name: "index_bounded_actions_on_status_and_expiry"
   end
@@ -7035,12 +7038,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_040817) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL

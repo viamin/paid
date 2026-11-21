@@ -17,6 +17,7 @@ module Automation
   #
   # @spec PROJECT-DELEGATION-004 @spec PROJECT-DELEGATION-006
   # @spec BOUNDED-PHASE-AUTHORIZATION-001 @spec BOUNDED-PHASE-AUTHORIZATION-004
+  # @spec BOUNDED-PHASE-AUTHORIZATION-005 @spec BOUNDED-PHASE-AUTHORIZATION-006
   class DelegatedActionAdmission
     # Run goals whose delegated action class is bounded by a
     # BoundedDelegatedAction. Goals absent here (create_pr, enhance_issue,
@@ -255,7 +256,7 @@ module Automation
         repository_controls: project.github_installation&.active? == true,
         assessment_available: !current_assessment.stale?,
         explicit_hold: work_item.held_for_review?
-      }
+      }.merge(scope_snapshot)
     end
 
     # The work item whose pinned revisions the boundary recheck compares
@@ -279,6 +280,13 @@ module Automation
       return true unless FeatureFlags.enabled?(:project_delegation_expansion, project:)
 
       nil
+    end
+
+    def scope_snapshot
+      return { scope_correspondence: true, new_risk: false } unless action == "repair"
+
+      assessment = AssessBoundedScope.call(authorization:, proposed_evidence: normalized_action_evidence)
+      { scope_correspondence: assessment.in_scope?, new_risk: normalized_action_evidence["new_risk"] == true }
     end
   end
 end

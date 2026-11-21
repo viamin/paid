@@ -95,23 +95,28 @@ admission paths land.
   and dequeue boundaries — retry-minted runs pass through the same dequeue
   recheck), and `spec/services/automation/focused_decision_spec.rb`.
 
-- [ ] **BOUNDED-PHASE-AUTHORIZATION-005** — When pinned intent/acceptance
+- [x] **BOUNDED-PHASE-AUTHORIZATION-005** — When pinned intent/acceptance
   expands, policy or permissions change, a new risk appears, or repair-to-scope
   correspondence is unknown or out of scope, the system SHALL visibly require
   reassessment and SHALL not continue until an authorized actor stops the
   authorization, supersedes it with newly consented scope, or resumes only the
   unchanged authorization; a resume SHALL NOT broaden scope and SHALL be
   re-evaluated when the triggering condition recurs.
-  *Planned tests:* invalidation and reassessment specs, including resumption of
-  an unchanged authorization after a triggering condition resolves without
-  scope expansion (for example a policy change that is restored).
-  *Planned delivery:* #4998.
+  *Verified by:* `spec/services/automation/delegated_action_admission_spec.rb`
+  (semantic-triggered visible pause and persisted reasons) and
+  `spec/services/automation/resolve_bounded_reassessment_spec.rb` (authorized
+  stop, revalidation-required unchanged-scope resume, immutable pinned scope,
+  and audit evidence).
 
-- [ ] **BOUNDED-PHASE-AUTHORIZATION-006** — When semantic correspondence is
+- [x] **BOUNDED-PHASE-AUTHORIZATION-006** — When semantic correspondence is
   evaluated, the system SHALL use `agent_harness` with bounded evidence and a
   structured outcome, SHALL fail closed on unavailable or malformed output, and
   SHALL NOT let that outcome waive deterministic policy.
-  *Planned delivery:* #4998. *Planned tests:* scope-assessment specs.
+  *Verified by:* `spec/services/automation/assess_bounded_scope_spec.rb`
+  (bounded structured `agent_harness` request and unavailable/malformed
+  fail-closed outcomes) and
+  `spec/services/automation/delegated_action_admission_spec.rb` (unknown
+  correspondence pauses admission rather than waiving deterministic checks).
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-007** — When coding is selected, the
   system SHALL stop at merge-ready and SHALL NOT merge; when merge is selected,

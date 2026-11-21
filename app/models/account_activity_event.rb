@@ -7,6 +7,8 @@ class AccountActivityEvent < ApplicationRecord
     bounded_action.authorized
     bounded_action.revoked
     bounded_action.completed
+    bounded_action.reassessment_required
+    bounded_action.reassessment_resumed
     project_delegation.action_evaluated
   ].freeze
 
@@ -69,6 +71,8 @@ class AccountActivityEvent < ApplicationRecord
     "bounded_action.authorized" => "approval",
     "bounded_action.revoked" => "approval",
     "bounded_action.completed" => "approval",
+    "bounded_action.reassessment_required" => "approval",
+    "bounded_action.reassessment_resumed" => "approval",
     "project_delegation.posture_selected" => "project",
     "project_delegation.rollback" => "project",
     "project_delegation.action_evaluated" => "project",
