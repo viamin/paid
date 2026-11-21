@@ -4732,6 +4732,17 @@ RSpec.describe AgentRun do
   end
 
   describe "#queue_priority_tier" do # @spec QUEUE-TIER-002
+    # @spec QUEUE-TIER-007
+    it "ignores an operator audit timestamp on unrelated work in Ruby and SQL ordering" do
+      project = create(:project)
+      unrelated = create(:agent_run, project:, trigger_type: "automatic", goal: "create_pr",
+        operator_priority_requested_at: Time.current)
+      pr_followup = create(:agent_run, project:, trigger_type: "automatic", source_pull_request_number: 42)
+
+      expect(unrelated.queue_priority_tier).to eq(:auto_pick)
+      expect(described_class.next_queued_run).to eq(pr_followup)
+    end
+
     it "returns :manual for manual trigger type" do
       run = create(:agent_run, trigger_type: "manual")
 
