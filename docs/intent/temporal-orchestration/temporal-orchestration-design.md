@@ -48,7 +48,10 @@ control route (#5240).
 A health activity that never obtained worker execution is a scheduling failure,
 not evidence of a proxy outage. New histories distinguish schedule-to-start,
 execution timeout, an exhausted recovery with an observed `ProxyUnhealthy`
-cause, and exhausted recovery without that observation. Messages contain only
+cause, and exhausted recovery without that observation. A zero final attempt's
+start-event ID does not prove that earlier retry attempts never executed;
+schedule-to-close exhaustion without a supported endpoint observation remains
+unknown recovery exhaustion. Messages contain only
 bounded fixed categories and deadlines. Configuration errors and cancellations
 retain their existing paths. These control failures leave a successful agent's
 work eligible for the existing container-retention/recovery path and its finite

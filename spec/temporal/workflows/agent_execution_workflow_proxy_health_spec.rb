@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "temporalio/converters/failure_converter"
+require "paid/temporal_data_converter"
 
 RSpec.describe Workflows::AgentExecutionWorkflow do
   let(:workflow) { described_class.new }
@@ -10,24 +12,21 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     allow(workflow).to receive(:run_activity).and_return(healthy: true)
   end
 
-  def timed_out_activity(type:, started_event_id: 0, observed_unhealthy: false)
-    timeout = Temporalio::Error::TimeoutError.new("test timeout", type:, last_heartbeat_details: [])
-    if observed_unhealthy
-      unhealthy = Temporalio::Error::ApplicationError.new("test unavailable", type: "ProxyUnhealthy", non_retryable: false)
-      begin
-        raise timeout, cause: unhealthy
-      rescue Temporalio::Error::TimeoutError => error
-        timeout = error
-      end
+  def timed_out_activity(type:, started_event_id: 0, observed_unhealthy: false, application_type: nil)
+    application_type ||= "ProxyUnhealthy" if observed_unhealthy
+    cause = if application_type
+      Temporalio::Api::Failure::V1::Failure.new(message: "test attempt failed",
+        application_failure_info: Temporalio::Api::Failure::V1::ApplicationFailureInfo.new(type: application_type))
     end
-    activity = Temporalio::Error::ActivityError.new("test activity", scheduled_event_id: 1,
-      started_event_id:, identity: "", activity_type: "CheckProxyHealth", activity_id: "1",
-      retry_state: Temporalio::Error::RetryState::TIMEOUT)
-    begin
-      raise activity, cause: timeout
-    rescue Temporalio::Error::ActivityError => error
-      error
-    end
+    timeout = Temporalio::Api::Failure::V1::Failure.new(message: "test timeout", cause:,
+      timeout_failure_info: Temporalio::Api::Failure::V1::TimeoutFailureInfo.new(timeout_type: type))
+    failure = Temporalio::Api::Failure::V1::Failure.new(message: "test activity", cause: timeout,
+      activity_failure_info: Temporalio::Api::Failure::V1::ActivityFailureInfo.new(
+        scheduled_event_id: 1, started_event_id:, identity: "",
+        activity_type: Temporalio::Api::Common::V1::ActivityType.new(name: "CheckProxyHealth"),
+        activity_id: "1", retry_state: Temporalio::Error::RetryState::TIMEOUT
+      ))
+    Temporalio::Converters::FailureConverter.default.from_failure(failure, Paid::TemporalDataConverter.new)
   end
 
   # @spec TEMPORAL-ORCHESTRATION-014
@@ -57,9 +56,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
   [
     [ :SCHEDULE_TO_START, 0, false, "ProxyHealthSchedulingUnavailable" ],
     [ :START_TO_CLOSE, 2, false, "ProxyHealthExecutionTimedOut" ],
-    [ :SCHEDULE_TO_CLOSE, 0, false, "ProxyHealthSchedulingUnavailable" ],
+    [ :SCHEDULE_TO_CLOSE, 0, false, "ProxyHealthRecoveryExhausted" ],
     [ :SCHEDULE_TO_CLOSE, 2, false, "ProxyHealthRecoveryExhausted" ],
-    [ :SCHEDULE_TO_CLOSE, 2, true, "ProxyHealthUnhealthy" ]
+    [ :SCHEDULE_TO_CLOSE, 0, true, "ProxyHealthUnhealthy" ]
   ].each do |timeout_type, started_event_id, observed_unhealthy, expected_type|
     # @spec TEMPORAL-ORCHESTRATION-014
     it "classifies #{timeout_type}/#{started_event_id}/#{observed_unhealthy} without discarding completed work" do
@@ -75,6 +74,16 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
           expect(workflow.send(:should_retain_container?, false, error)).to be(false)
         end
     end
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-014
+  it "does not infer no worker execution from a zero final start ID after an earlier infrastructure failure" do
+    failure = timed_out_activity(type: Temporalio::Error::TimeoutError::TimeoutType::SCHEDULE_TO_CLOSE,
+      application_type: "ActiveRecord::ConnectionTimeoutError")
+    allow(workflow).to receive(:run_activity).and_raise(failure)
+
+    expect { workflow.send(:ensure_proxy_healthy, 42) }
+      .to raise_error(Temporalio::Error::ApplicationError) { |error| expect(error.type).to eq("ProxyHealthRecoveryExhausted") }
   end
 
   # @spec TEMPORAL-ORCHESTRATION-014
