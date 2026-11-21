@@ -61,7 +61,8 @@
 - [x] **LLM-ROUTING-011** — Before excluding a rotating managed subscription
   credential from isolated text routing, the system SHALL distinguish an expired
   but refreshable unrevoked credential from missing or revoked authentication.
-  The former SHALL reach the provider-owned serialized refresh lifecycle; only
+  The former SHALL reach the provider-owned serialized refresh lifecycle at
+  every isolated-text routing and readiness surface; only
   a fresh result may be materialized. A Test Runner result using host-forwarded
   authentication SHALL identify that source and SHALL NOT imply standalone
   managed-audit readiness.

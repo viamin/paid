@@ -15,6 +15,15 @@ RSpec.describe "Standalone text credentials" do
     )
   end
 
+  def stub_codex_refresh(tokens:)
+    stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
+    client = instance_double(CodexLoginSessions::OAuthClient)
+    allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
+    allow(client).to receive(:refresh_token).and_return(
+      CodexLoginSessions::OAuthClient::TokenResponse.new(status: :success, tokens: tokens, error: nil)
+    )
+  end
+
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
   it "materializes only the credential selected by a scoped proxy identity" do
     credential = create(:runner_credential, account: account, runner: runner)
@@ -35,8 +44,7 @@ RSpec.describe "Standalone text credentials" do
       token: valid_codex_auth, expires_at: 1.minute.from_now)
     refreshed = JSON.parse(valid_codex_auth)
     refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
-    allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true, exchange_refresh_token: refreshed)
+    stub_codex_refresh(tokens: refreshed.fetch("tokens"))
     provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
     allow(provider).to receive(:materialize).and_return(materialization_double(secret: "fresh"))
     allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
@@ -57,8 +65,7 @@ RSpec.describe "Standalone text credentials" do
     refreshed = JSON.parse(valid_codex_auth)
     refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
     refreshed["tokens"]["expires_at"] = 1.hour.from_now.utc.iso8601
-    allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true, exchange_refresh_token: refreshed)
+    stub_codex_refresh(tokens: refreshed.fetch("tokens"))
     provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
     allow(provider).to receive(:materialize).and_return(materialization_double(secret: "fresh"))
     allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)
@@ -76,9 +83,12 @@ RSpec.describe "Standalone text credentials" do
   it "rejects an expired credential when the pre-run refresh exchange fails" do
     credential = create(:runner_credential, account: account, runner: runner,
       token: valid_codex_auth, expires_at: 1.minute.from_now)
-    allow(AgentHarness::Authentication).to receive_messages(
-      exchange_refresh_token_supported?: true,
-      exchange_refresh_token: { "error" => "invalid_grant" })
+    stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
+    client = instance_double(CodexLoginSessions::OAuthClient)
+    allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
+    allow(client).to receive(:refresh_token).and_return(
+      CodexLoginSessions::OAuthClient::TokenResponse.new(status: :error, tokens: nil, error: "invalid_grant")
+    )
     provider = instance_double(Runners::SubscriptionAuthProviders::Codex)
     allow(provider).to receive(:materialize)
     allow(Runners::SubscriptionAuthProviders).to receive(:for_runner).with("codex").and_return(provider)

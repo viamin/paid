@@ -57,6 +57,8 @@ module Runners
       end
 
       def refresh_supported?(runner_key)
+        return CodexLoginSessions::OAuthConfig.load.configured? if %w[codex opencode].include?(runner_key.to_s)
+
         exchange_key = runner_key.to_s == "omp" ? :claude : runner_key.to_s.to_sym
         AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
           AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
@@ -120,7 +122,7 @@ module Runners
       def exchange_refresh_token!(credential, runner_key:)
         payload = case runner_key.to_s
         when "codex", "opencode"
-          AgentHarness::Authentication.exchange_refresh_token(runner_key.to_sym).to_h
+          exchange_codex_refresh_token(credential)
         when "omp"
           exchange_omp_refresh_token(credential)
         else
@@ -233,6 +235,16 @@ module Runners
           end
           refreshed_payload
         end
+      end
+
+      def exchange_codex_refresh_token(credential)
+        parsed = parsed_secret(credential, runner_key: "codex")
+        response = CodexLoginSessions::OAuthClient.new.refresh_token(parsed&.refresh_token)
+        raise InvalidRefreshResponse, "Codex refresh exchange failed" unless response.status == :success
+
+        payload = JSON.parse(credential.token.to_s)
+        payload["tokens"] = parsed.tokens.merge(response.tokens.compact)
+        JSON.generate(payload)
       end
 
       def with_env(key, value)

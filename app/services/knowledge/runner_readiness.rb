@@ -30,13 +30,15 @@ module Knowledge
 
     attr_reader :account, :owner, :operation, :runner
 
-    def text_runner_readiness # @spec LLM-ROUTING-010
+    def text_runner_readiness # @spec LLM-ROUTING-010 LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
       selected = Runner.for_identifier(owner, runner)
       return unsupported unless selected&.enabled_for_chat? && !selected.discarded?
 
       if selected.subscription?
-        managed = owner.account.runner_credentials.active.for_runner(selected.runner_key).exists?
-        return missing_credential("subscription") unless managed
+        credential = owner.account.runner_credentials.where(revoked_at: nil).for_runner(selected.runner_key)
+          .order(created_at: :desc, id: :desc).first
+        readiness = Runners::ManagedCredentialLifecycle.readiness(credential, runner_key: selected.runner_key)
+        return missing_credential("subscription") unless readiness.in?(%i[fresh refreshable])
 
         return Result.new(status: "isolation_required", credential_source: "subscription", credential_service: "subscription",
           credential_name: "Configured subscription", validated_with_provider: false)

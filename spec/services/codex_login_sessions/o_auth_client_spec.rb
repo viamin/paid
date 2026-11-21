@@ -91,4 +91,25 @@ RSpec.describe CodexLoginSessions::OAuthClient, :no_db do
       expect(response.status).to eq(:denied)
     end
   end
+
+  describe "#refresh_token" do
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "exchanges a Codex refresh token through the configured OAuth client" do
+      transport = lambda do |url, params|
+        expect(url).to eq("https://auth.example/token")
+        expect(params).to eq(
+          "grant_type" => "refresh_token",
+          "client_id" => "test-client-id",
+          "refresh_token" => "refresh-1"
+        )
+        JSON.generate("access_token" => "access-2", "refresh_token" => "refresh-2")
+      end
+      client = described_class.new(config: config, transport: transport)
+
+      response = client.refresh_token("refresh-1")
+
+      expect(response.status).to eq(:success)
+      expect(response.tokens).to include("access_token" => "access-2", "refresh_token" => "refresh-2")
+    end
+  end
 end

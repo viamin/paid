@@ -78,10 +78,13 @@ harvests the broker's rotated OAuth state back into the canonical
 Credential readiness is shared by agent provisioning and isolated text
 execution. It classifies fresh access, refreshable expiry, revoked state,
 missing refresh material, and unsupported refresh without inspecting or
-logging token contents. An expired Codex credential is selected only while its
-canonical unrevoked auth state can reach the existing provider-owned exchange;
-the same row and lease serialize refresh and later rotation harvest. If that
+logging token contents. An expired Codex or OpenCode credential is selected
+only while its canonical unrevoked auth state can reach the configured
+provider-owned OpenAI OAuth client; OMP uses the agent-harness Claude exchange.
+The same row and lease serialize refresh and later rotation harvest. If that
 exchange cannot make the record fresh, no expired native file is materialized.
+All isolated-text routing and dashboard readiness surfaces use this shared
+classification, so a recoverable expiry is not reported as missing.
 Host-forwarded rotation remains intentionally separate: it is not imported
 into a managed record unless an existing authorized identity/writeback boundary
 already establishes equivalence.

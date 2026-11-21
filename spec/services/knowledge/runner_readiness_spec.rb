@@ -24,14 +24,15 @@ RSpec.describe Knowledge::RunnerReadiness do
     expect(readiness.status).to eq("isolation_required")
   end
 
-  # @spec LLM-ROUTING-010
-  it "reports an expired subscription credential as missing" do
-    selected = owner.runners.find_by!(runner_key: "claude")
-    create(:runner_credential, runner: selected, account: owner.account, expires_at: 1.minute.ago)
+  # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+  it "reports an expired refreshable subscription credential as requiring isolation" do
+    selected = create(:runner, user: owner, runner_key: "omp", enabled_for_chat: true)
+    create(:runner_credential, runner: selected, account: owner.account,
+      token: file_fixture("claude_credentials_expired.json").read, expires_at: 1.minute.ago)
 
     readiness = described_class.call(owner: owner, operation: :chat, runner: selected.routing_key)
 
-    expect(readiness.status).to eq("missing_credential")
+    expect(readiness.status).to eq("isolation_required")
     expect(readiness.credential_service).to eq("subscription")
   end
 end

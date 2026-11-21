@@ -78,8 +78,13 @@
   into the managed record by this recovery path.
   *Tests:* `spec/services/runners/managed_credential_lifecycle_spec.rb`,
   `spec/requests/api/standalone_text_credentials_spec.rb`,
-  `spec/services/llm/request_spec.rb`.
-  *Code:* `Runners::ManagedCredentialLifecycle`, `Llm::Request`,
+  `spec/services/llm/request_spec.rb`,
+  `spec/services/codex_login_sessions/o_auth_client_spec.rb`,
+  `spec/services/knowledge/runner_selector_spec.rb`,
+  `spec/services/knowledge/runner_readiness_spec.rb`.
+  *Code:* `CodexLoginSessions::OAuthClient`,
+  `Runners::ManagedCredentialLifecycle`, `Knowledge::RunnerSelector`,
+  `Knowledge::RunnerReadiness`, `Llm::Request`,
   `Api::StandaloneTextCredentialsController`, `Containers::Provision`.
 
 - [x] **RUNNER-LOGIN-NAV-001** — The application-wide Operations menu

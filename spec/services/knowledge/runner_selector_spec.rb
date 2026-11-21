@@ -95,4 +95,15 @@ RSpec.describe Knowledge::RunnerSelector do
       expect(state.reload.circuit_state).to eq("half_open")
     end
   end
+
+  describe ".standalone_chat_runners" do
+    # @spec LLM-ROUTING-011 SUBSCRIPTION-RUNNER-AUTH-006
+    it "keeps an expired refreshable subscription runner eligible for isolated text" do
+      runner = create(:runner, user: user, runner_key: "omp", enabled_for_chat: true)
+      create(:runner_credential, account: user.account, runner: runner,
+        token: file_fixture("claude_credentials_expired.json").read, expires_at: 1.minute.ago)
+
+      expect(described_class.standalone_chat_runners(user_setting: setting)).to include(runner)
+    end
+  end
 end
