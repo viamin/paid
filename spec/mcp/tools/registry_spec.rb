@@ -21,6 +21,7 @@ RSpec.describe Tools::Registry do
       start_maintenance_run
       trigger_readiness_bootstrap
       cancel_agent_run
+      retry_source_closure
       request_issue_continuation
       request_acceptance_audit
       request_layered_verification_audit

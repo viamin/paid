@@ -276,14 +276,22 @@
   LID-planning post-publication steps as the primary workflow. A branch mismatch
   SHALL remain visibly parked for authorized manual retry without scheduling
   automatic retries or provisioning additional assessment environments.
+  Authorized chat/MCP clients SHALL inspect bounded recovery diagnostics through
+  `get_agent_run` and request the same recovery job through confirmed
+  `retry_source_closure`. The tool SHALL reject foreign-tenant, unauthorized,
+  non-waiting, and unconfirmed requests without creating a replacement run;
+  enqueue refusal SHALL be reported rather than claimed as queued.
   *Code:* `app/jobs/source_closure_recovery_job.rb`,
   `app/temporal/workflows/source_closure_recovery_workflow.rb`,
   `app/controllers/projects/agent_runs_controller.rb`.
+  *Tool:* `app/mcp/tools/retry_source_closure.rb`,
+  `app/mcp/tools/get_agent_run.rb`.
   *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/jobs/source_closure_recovery_job_spec.rb`,
   `spec/jobs/source_closure_recovery_job_ownership_spec.rb`,
   `spec/requests/projects/source_closure_recovery_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
+  *Tool test:* `spec/mcp/tools/retry_source_closure_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted
