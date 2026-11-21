@@ -3677,7 +3677,8 @@ module Containers
       credential = opencode_managed_runner_credential
       return false unless credential
 
-      refresh_opencode_managed_credential!(provision: true)
+      refreshed = refresh_opencode_managed_credential!(provision: true)
+      return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "opencode") == :fresh
 
       # Re-resolve materialization after a refresh may have rotated the token.
       reset_opencode_managed_caches
@@ -3712,7 +3713,8 @@ module Containers
       credential = omp_managed_runner_credential
       return false unless credential
 
-      refresh_omp_managed_credential!(provision: true)
+      refreshed = refresh_omp_managed_credential!(provision: true)
+      return false unless refreshed || Runners::ManagedCredentialLifecycle.readiness(credential.reload, runner_key: "omp") == :fresh
 
       reset_omp_managed_caches
       materialization = omp_managed_materialization
