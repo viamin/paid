@@ -10,14 +10,18 @@ RSpec.describe Tools::GetAgentRun do
   let(:tool) { described_class.new(user:, session:) }
 
   it "exposes post-PR assessment diagnostics through the same read contract" do
-    run = create(:agent_run, project:, reconciliation: { "assessment_failure" => {
-      "category" => "authentication_unavailable", "provider" => "codex", "request_id" => "request-5184",
-      "raw_output" => "private"
-    } })
+    run = create(:agent_run, project:, reconciliation: {
+      "assessment_failure" => {
+        "category" => "authentication_unavailable", "provider" => "codex", "request_id" => "request-5184",
+        "raw_output" => "private"
+      },
+      "failed_at" => "2026-11-21T12:34:56Z"
+    })
 
     diagnostic = tool.call(agent_run_id: run.id).fetch(:assessment_diagnostics)
 
-    expect(diagnostic).to include("category" => "authentication_unavailable", "provider" => "codex", "request_id" => "request-5184")
+    expect(diagnostic).to include("category" => "authentication_unavailable", "provider" => "codex",
+      "request_id" => "request-5184", "at" => "2026-11-21T12:34:56Z")
     expect(diagnostic).not_to have_key("raw_output")
   end
 

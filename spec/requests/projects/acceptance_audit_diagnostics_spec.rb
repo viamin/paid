@@ -46,12 +46,12 @@ RSpec.describe "Acceptance audit diagnostics" do
   end
 
   it "shows the same bounded diagnostics from post-PR reconciliation" do
-    run.update!(reconciliation: { "assessment_failure" => diagnostic })
+    run.update!(reconciliation: { "assessment_failure" => diagnostic, "failed_at" => "2026-11-21T12:34:56Z" })
 
     get project_agent_run_path(project, run)
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Assessment diagnostics", "criteria[0].state", "glm-5.3")
+    expect(response.body).to include("Assessment diagnostics", "criteria[0].state", "glm-5.3", "2026-11-21T12:34:56Z")
     expect(response.body).not_to include("private-response-5184")
   end
 

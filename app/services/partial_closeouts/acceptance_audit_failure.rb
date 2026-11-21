@@ -25,8 +25,10 @@ module PartialCloseouts
 
     class << self
       def diagnostic_for(agent_run)
-        diagnostic = agent_run.reconciliation.to_h.values_at("acceptance_audit_failure", "assessment_failure")
+        reconciliation = agent_run.reconciliation.to_h
+        diagnostic = reconciliation.values_at("acceptance_audit_failure", "assessment_failure")
           .find { |value| value.is_a?(Hash) && value.present? }
+        diagnostic = diagnostic.stringify_keys.tap { |value| value["at"] ||= reconciliation["failed_at"] } if diagnostic
         safe_diagnostic(diagnostic) if diagnostic
       end
 
