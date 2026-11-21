@@ -64,10 +64,16 @@
   malformed historical values. HTML SHALL escape diagnostic text and keep
   request/attempt identifiers in a disclosure. Reading diagnostics SHALL NOT
   contact providers or initiate recovery.
+  Pre-publication source assessment and legacy reconciliation SHALL persist
+  that same bounded diagnostic projection without changing their existing
+  failure categories, Temporal details, retry gates, gap state or source
+  disposition. Unavailable diagnostics SHALL NOT become acceptance evidence.
   *Code:* `app/services/llm/request.rb`,
   `app/services/llm/analyze_partial_closeout.rb`,
   `app/temporal/activities/run_acceptance_audit_activity.rb`,
   `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`,
   `app/services/partial_closeouts/acceptance_audit_failure.rb`,
   `app/views/agent_runs/_assessment_diagnostics.html.erb`,
   `app/mcp/tools/get_agent_run.rb`.
@@ -76,6 +82,8 @@
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
   `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`,
   `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,
+  `spec/temporal/activities/assess_source_closure_activity_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/requests/projects/acceptance_audit_diagnostics_spec.rb`,
   `spec/mcp/tools/get_agent_run_audit_diagnostics_spec.rb`,
   `spec/system/acceptance_audit_diagnostics_spec.rb`.

@@ -6,6 +6,55 @@ RSpec.describe Activities::AssessSourceClosureActivity do
   let(:project) { create(:project) }
   let(:run) { create(:agent_run, project:, issue: create(:issue, project:)) }
 
+  # @spec PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-044
+  it "retains bounded rejection diagnostics while preserving the Temporal failure contract" do
+    failure = oversized_assessment_failure
+    allow(Llm::AnalyzePartialCloseout).to receive(:call) do
+      concurrent = AgentRun.find(run.id)
+      concurrent.update!(reconciliation: concurrent.reconciliation.merge("operator_note" => "retained"))
+      raise failure
+    end
+
+    expect { described_class.new.execute(agent_run_id: run.id) }
+      .to raise_error(Temporalio::Error::ApplicationError) do |error|
+        expect(error.details).to eq([ { "category" => "invalid_assessment" } ])
+        expect(error).not_to be_retryable
+      end
+
+    diagnostic = run.reload.reconciliation.fetch("assessment_failure")
+    expect(diagnostic).to include("category" => "invalid_assessment", "provider" => "opencode",
+      "model" => "glm-5.3", "request_id" => "r" * 120,
+      "invalid_fields" => Array.new(10) { { "path" => "p" * 120, "expected" => "object", "actual" => "string" } })
+    expect(diagnostic.fetch("at")).to be_present
+    expect(run.reconciliation.to_json).not_to include("raw-private-payload")
+    expect(run.reconciliation).not_to have_key("assessment")
+    expect(run.reconciliation.fetch("operator_note")).to eq("retained")
+    expect(run.issue.reload.github_state).to eq("open")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-044
+  it "retains the known configuration category without inventing provider output" do
+    allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(AgentHarness::ConfigurationError, "missing setup")
+
+    expect { described_class.new.execute(agent_run_id: run.id) }
+      .to raise_error(Temporalio::Error::ApplicationError) do |error|
+        expect(error.details).to eq([ { "category" => "configuration_unavailable" } ])
+        expect(error).not_to be_retryable
+      end
+
+    diagnostic = run.reload.reconciliation.fetch("assessment_failure")
+    expect(diagnostic).to include("category" => "configuration_unavailable", "at" => be_present)
+    expect(diagnostic).not_to have_key("provider")
+    expect(run.reconciliation).not_to have_key("assessment")
+  end
+
+  def oversized_assessment_failure
+    fields = Array.new(12) { { path: "p" * 200, expected: "object", actual: "string", response: "raw-private-payload" } }
+    Llm::AnalyzePartialCloseout::AssessmentFailure.new("assessment rejected",
+      category: "invalid_assessment", provider: "opencode", model: "glm-5.3", request_id: "r" * 200,
+      invalid_fields: fields, provider_response: "raw-private-payload")
+  end
+
   # @spec LLM-ROUTING-008
   it "tries the owner's enabled fallback before parking a pushed run" do
     owner = project.effective_owner

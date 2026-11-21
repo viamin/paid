@@ -182,8 +182,14 @@ and terminal reason. A valid assessment with unmet or unknown criteria remains
 substantive and is never retried to seek a different verdict. This path is
 report-only and cannot authorize implementation, repair, or issue closure.
 
-Report-only and post-PR reconciliation persist the same bounded diagnostic
-projection. Run detail and `get_agent_run` expose that projection
+Report-only audits, pre-publication source assessment, post-PR reconciliation,
+and legacy reconciliation persist the same bounded diagnostic projection.
+Source assessment retains diagnostics before raising its existing Temporal
+failure; its failure details, category, retryability and source disposition
+remain unchanged. Its locked metadata merge preserves concurrent operator
+updates; configuration failures record only the known category and timestamp.
+Legacy persistence retains its existing retry gate and gap
+state. Run detail and `get_agent_run` expose that projection
 to authorized operators. The projection allowlists provenance, correlation,
 category, timestamp, and field/type diagnostics; it discards unknown payloads
 and tolerates malformed historical values. Run detail escapes every value and
