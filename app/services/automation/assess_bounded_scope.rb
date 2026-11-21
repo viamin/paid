@@ -10,6 +10,7 @@ module Automation
     TIMEOUT = 30
     MAX_EVIDENCE_BYTES = 12_000
     MAX_REFERENCES = 20
+    MAX_EXPLANATION_BYTES = 1_000
     Result = Data.define(:status, :explanation, :evidence_refs) do
       def in_scope? = status == "in_scope"
     end
@@ -67,7 +68,10 @@ module Automation
       references = payload["evidence_refs"]
       return unless references.is_a?(Array) && references.size <= MAX_REFERENCES && references.all? { |ref| ref.is_a?(String) && ref.bytesize <= 500 }
 
-      Result.new(status: payload["status"], explanation: payload["explanation"].to_s.byteslice(0, 1_000), evidence_refs: references.uniq)
+      explanation = payload["explanation"]
+      return unless explanation.is_a?(String) && explanation.bytesize <= MAX_EXPLANATION_BYTES
+
+      Result.new(status: payload["status"], explanation:, evidence_refs: references.uniq)
     rescue JSON::ParserError
       nil
     end
