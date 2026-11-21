@@ -270,6 +270,7 @@ module Api
 
       def list_kind_payload
         return manual_review_list_payload if entry.manual_review?
+        return {} if entry.layered_verification_finding?
         return dependency_cycle_list_payload if entry.kind == Inbox::Queue::DEPENDENCY_CYCLE_KIND
 
         kind_payload

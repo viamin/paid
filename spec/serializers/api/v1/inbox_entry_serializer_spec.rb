@@ -61,6 +61,14 @@ RSpec.describe Api::V1::InboxEntrySerializer do
     }
   end
 
+  def sql_queries
+    queries = []
+    callback = ->(_name, _started, _finished, _id, payload) { queries << payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+    queries
+  end
+
   describe "#render" do
     # @spec MOBILE-API-006 MCP-INBOX-TOOLS-002
     it "declares a detail contract for every queue kind" do
@@ -374,6 +382,21 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
       expect(payload).to include(questions: [ "Still open?" ])
       expect(payload).not_to have_key(:comment_url)
+    end
+
+    # @spec LAYERED-VERIFY-015 MCP-INBOX-TOOLS-001 MCP-INBOX-TOOLS-002 MOBILE-API-008
+    it "keeps layered-verification evidence on the detail projection" do
+      detail = layered_verification_detail
+      entry = build_entry(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, record: detail[:finding])
+
+      payload = nil
+      queries = sql_queries { payload = described_class.render_list(entry) }
+
+      expect(payload).not_to include(
+        :obligation, :audit, :source_passages, :observed_behavior, :check_limitations,
+        :decision, :supported_actions, :contributing_check_results
+      )
+      expect(queries).not_to include(a_string_matching(/FROM "layered_verification_check_results"/))
     end
   end
 
