@@ -146,7 +146,7 @@ module Llm
 
     private
 
-    attr_reader :agent_run
+    attr_reader :agent_run, :request_trace
 
     # Mirrors the full PartialCloseouts::Reconcile#validate! contract so an
     # assessment that parses but violates the reconciler's per-gap rules is
@@ -389,10 +389,6 @@ module Llm
 
     def provenance
       @provenance || selected_attempt&.slice(:provider, :model).compact || {}
-    end
-
-    def request_trace
-      @request_trace
     end
 
     def selected_attempt
