@@ -977,6 +977,29 @@ RSpec.describe "Runners" do
       expect(user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")).to be_zero_data_retention
     end
 
+    # @spec RUNNER-MODEL-OPTIONS-008 DIRECT-OUTBOUND-CATALOG-011
+    it "saves a verified ZDR model under its upstream vendor" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      model = create(:llm_model, :free, model_id: "google/acceptance-synced:free",
+        provider: "google", catalog_source: "openrouter_sync")
+      create(:openrouter_zdr_model, model_id: model.model_id)
+      OpenrouterZdrCatalog.current.update!(last_successful_at: Time.current)
+
+      post runners_path, params: {
+        runner: flagged_model_form_runner_params(
+          api_key_id: api_key.id,
+          model_selection_choice: model.model_id
+        ).merge(zero_data_retention: true)
+      }
+
+      expect(response).to redirect_to(runners_path)
+      saved = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(saved).to be_zero_data_retention
+      expect(saved.opencode_model_id).to eq(model.model_id)
+      expect(model.reload.provider).to eq("google")
+    end
+
     it "rejects hidden pseudo-runners when the runner model policy form flag is enabled" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       enable_runner_model_policy_form_for(user)
