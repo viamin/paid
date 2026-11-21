@@ -3,10 +3,16 @@
 module Llm
   # Routes application text through owned, configured runners and credentials.
   class Request
+    MAX_ATTEMPTS = 5
+
     def self.call(...) = new(...).call
 
+    def self.attempt_trace_for(subject)
+      subject.instance_variable_get(:@llm_request_attempt_trace) if subject
+    end
+
     def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil,
-      fallback_runner_identifiers: [], per_runner_timeout: nil, response_validator: nil)
+      fallback_runner_identifiers: [], per_runner_timeout: nil, response_validator: nil, request_id: nil, attempt_id: nil)
       @runner_identifier = runner
       @model = model
       @agent_run = agent_run
@@ -24,9 +30,12 @@ module Llm
       @invalid_response = nil
       @eligible_route = false
       @missing_managed_credential = false
+      @request_id = request_id
+      @attempt_id = attempt_id
+      @attempts = []
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 LLM-ROUTING-009 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 LLM-ROUTING-009 LLM-ROUTING-012 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -43,6 +52,7 @@ module Llm
           # The overall budget is spent: no later candidate can be attempted.
           # The timeout is recorded rather than raised so an earlier permanent
           # failure still outranks it (#5002 review).
+          skipped_attempt(runner, allocated_ms: 0, reason: "deadline_exhausted")
           record_failure(AgentHarness::TimeoutError.new("LLM request timeout exhausted"))
           break
         end
@@ -73,49 +83,67 @@ module Llm
     # candidate produced no usable answer; every failure is recorded for the
     # final outcome.
     def attempt_runner(runner, remaining:)
+      timeout = @per_runner_timeout ? [ remaining, @per_runner_timeout ].min : remaining
+      attempt = start_attempt(runner, allocated_ms: timeout * 1000)
       candidate_required_zdr = @required_zdr || runner.zero_data_retention?
       policy = runner.effective_privacy_policy(project: @project, required_zdr: candidate_required_zdr)
-      return unless policy.eligible
+      return skipped(attempt, "privacy_policy") unless policy.eligible
 
       @eligible_route = true
       @required_zdr = candidate_required_zdr
       # A candidate that cannot serve this request at all is skipped, not
       # failed: it must never mask another runner's failure (#5002 review).
-      return unless runner_available?(runner)
+      return skipped(attempt, "unavailable") unless runner_available?(runner)
       unless runner.api_key? || managed_credential_available?(runner)
         @missing_managed_credential = true
-        return
+        return skipped(attempt, "missing_managed_credential")
       end
 
-      response = perform_request(runner, timeout: @per_runner_timeout ? [ remaining, @per_runner_timeout ].min : remaining)
+      response = perform_request(runner, timeout:, attempt:)
       if !response.respond_to?(:success?) || response.success?
-        return response if valid_response?(response)
+        if valid_response?(response)
+          finish_attempt(attempt, "success")
+          return attach_trace(response, attempt_trace)
+        end
 
         # A transport-successful response can still be unusable for a caller's
         # public response contract. Keep only the response object in memory so
         # the caller can safely classify it after all authorized candidates
         # have been exhausted; never log or persist its output here.
         @invalid_response = response
+        @invalid_attempt = attempt
+        finish_attempt(attempt, "invalid_response")
         return
       end
 
       @unsuccessful_response ||= response
+      @unsuccessful_attempt ||= attempt
+      finish_attempt(attempt, "unsuccessful_response")
       nil
     rescue AgentHarness::Error => failure
       Rails.logger.warn(message: "llm.request_runner_failed", runner_id: runner.id,
         project_id: @project&.id, agent_run_id: agent_run&.id, error_class: failure.class.name)
-      record_failure(failure)
+      finish_attempt(attempt, normalized_outcome(failure))
+      record_failure(failure, attempt:)
       nil
+    ensure
+      finish_attempt(attempt, "unknown") if attempt && attempt[:outcome].nil?
     end
 
     # A permanent failure — an expired credential or a violated model policy —
     # is tracked apart from a transport failure so that it can outrank it
     # (#5002 review).
-    def record_failure(failure)
+    def record_failure(failure, attempt: nil)
       if retryable_failure?(failure)
-        @transient_failure ||= failure
+        # The final eligible transport attempt is the terminal transient route.
+        # Keep an earlier permanent failure separately; it still wins below.
+        @transient_failure = failure
+        @transient_attempt = attempt
       else
-        @permanent_failure ||= failure
+        unless @permanent_failure
+          @permanent_failure = failure
+          @permanent_attempt = attempt
+        end
       end
     end
 
@@ -124,14 +152,14 @@ module Llm
     # reconnects a credential or fixes the model policy, so a later transient
     # failure must not hide it (#5002 review).
     def resolve_outcome
-      raise @permanent_failure if @permanent_failure
+      raise attach_trace(@permanent_failure, attempt_trace(selected_attempt: @permanent_attempt)) if @permanent_failure
       # A later transport-successful response rejected by the caller contract
       # is more actionable than an earlier transport interruption. Return it
       # so the caller can retain its bounded structural diagnostics; a valid
       # later response would already have returned from the routing loop.
-      return @invalid_response if @invalid_response
-      raise @transient_failure if @transient_failure
-      return @unsuccessful_response if @unsuccessful_response
+      return attach_trace(@invalid_response, attempt_trace(selected_attempt: @invalid_attempt)) if @invalid_response
+      raise attach_trace(@transient_failure, attempt_trace(selected_attempt: @transient_attempt)) if @transient_failure
+      return attach_trace(@unsuccessful_response, attempt_trace(selected_attempt: @unsuccessful_attempt)) if @unsuccessful_response
       if @missing_managed_credential
         raise AgentHarness::ConfigurationError, "No managed subscription credential is available for isolated text requests"
       end
@@ -167,7 +195,7 @@ module Llm
       Runners::ManagedCredentialLifecycle.credential_for(account: runner.user.account, runner_key: runner.runner_key).present?
     end
 
-    def perform_request(runner, timeout:)
+    def perform_request(runner, timeout:, attempt:)
       if runner.api_key? && runner.effective_api_secret.blank?
         raise AgentHarness::ConfigurationError, "Selected runner is missing its API credential"
       end
@@ -178,14 +206,76 @@ module Llm
       provider = AgentHarness.provider_class(key).new(config: config, executor: executor)
       runtime = runtime_for(runner)
       runtime = subscription_runtime(provider, runtime) unless runner.api_key?
+      attempt[:provider] = runtime.api_provider.presence || runner.runner_key
+      attempt[:model] = runtime.model
       validate_model_policy!(runner, @policy_model_id || runtime.model)
-      provider.send_message(prompt: @prompt, timeout: timeout, mode: :text, tools: :none, dangerous_mode: false,
+      response = provider.send_message(prompt: @prompt, timeout: timeout, mode: :text, tools: :none, dangerous_mode: false,
         mcp_servers: [], provider_runtime: runtime)
+      attempt[:provider] = response.provider.to_s if response.respond_to?(:provider) && response.provider.present?
+      attempt[:model] = response.model if response.respond_to?(:model) && response.model.present?
+      response
     ensure
       executor&.close
     end
 
     attr_reader :agent_run
+
+    def start_attempt(runner, allocated_ms:)
+      attempt = {
+        ordinal: @attempts.size + 1,
+        runner_id: runner.id,
+        runner: runner.routing_key,
+        allocated_ms: allocated_ms,
+        phase: "unknown",
+        started_at: Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      }
+      @attempts << attempt
+      attempt
+    end
+
+    def skipped_attempt(runner, allocated_ms:, reason:)
+      attempt = start_attempt(runner, allocated_ms:)
+      finish_attempt(attempt, "skipped", skip_reason: reason)
+      attempt
+    end
+
+    def skipped(attempt, reason)
+      finish_attempt(attempt, "skipped", skip_reason: reason)
+      nil
+    end
+
+    def finish_attempt(attempt, outcome, skip_reason: nil)
+      return if attempt[:outcome]
+
+      attempt[:outcome] = outcome
+      attempt[:skip_reason] = skip_reason if skip_reason
+      started_at = attempt.delete(:started_at)
+      attempt[:elapsed_ms] = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round if started_at
+    end
+
+    def normalized_outcome(failure)
+      return "timeout" if failure.is_a?(AgentHarness::TimeoutError)
+      return "authentication_unavailable" if failure.is_a?(AgentHarness::AuthenticationError)
+      return "configuration_error" if failure.is_a?(AgentHarness::ConfigurationError)
+
+      "transport_error"
+    end
+
+    def attempt_trace(selected_attempt: nil)
+      {
+        request_id: @request_id,
+        attempt_id: @attempt_id,
+        selected_attempt_ordinal: selected_attempt&.fetch(:ordinal),
+        attempts: @attempts.first(MAX_ATTEMPTS).map { |attempt| attempt.except(:started_at).compact }
+      }.compact
+    end
+
+    def attach_trace(subject, trace)
+      subject.instance_variable_set(:@llm_request_attempt_trace, trace) if subject
+      subject
+    rescue FrozenError
+      subject
+    end
 
     def validate_model_policy!(runner, model_id)
       return unless @project

@@ -119,7 +119,7 @@ module Llm
       @timeout = timeout
     end
 
-    def call # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-034 PARTIAL-CLOSEOUT-058
+    def call # @spec PARTIAL-CLOSEOUT-030 PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-034 PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059
       @request_id = SecureRandom.uuid
       @attempt_id = SecureRandom.uuid
       parsed = parse_response
@@ -323,7 +323,7 @@ module Llm
     def parse_response # @spec PARTIAL-CLOSEOUT-031
       response = Request.call(agent_run: agent_run, prompt: prompt, timeout: @timeout,
         per_runner_timeout: TIMEOUT, fallback_runner_identifiers: @fallback_runner_identifiers,
-        response_validator: method(:response_contract_valid?))
+        response_validator: method(:response_contract_valid?), request_id:, attempt_id:)
       retain_provenance(response)
       if response.respond_to?(:success?) && !response.success?
         raise assessment_failure("unsuccessful_response")
@@ -334,6 +334,9 @@ module Llm
     rescue JSON::ParserError
       # Parser messages can quote untrusted response content, including secrets.
       raise assessment_failure("invalid_json"), cause: nil
+    rescue AgentHarness::Error => error
+      @request_trace = Request.attempt_trace_for(error)
+      raise
     end
 
     # Request owns eligible-runner routing. Supplying the local structural
@@ -362,20 +365,44 @@ module Llm
       else
         "Partial closeout assessment transport failed. Retry after runner recovery."
       end
-      diagnostic = { category: category, **provenance, request_id: request_id, attempt_id: attempt_id }
+      diagnostic = {
+        category: category,
+        **provenance,
+        configured_primary_provider: configured_provider,
+        configured_primary_model: configured_model,
+        request_id: request_id,
+        attempt_id: attempt_id,
+        attempt_trace: request_trace
+      }.compact
       diagnostic[:invalid_fields] = invalid_fields if invalid_fields.any?
       AssessmentFailure.new(message, **diagnostic)
     end
 
     def retain_provenance(response)
+      @request_trace = Request.attempt_trace_for(response)
+      selected = selected_attempt
       @provenance = {
-        provider: response.respond_to?(:provider) ? response.provider.to_s : configured_provider,
-        model: response.respond_to?(:model) ? response.model : configured_model
+        provider: (response.provider.to_s if response.respond_to?(:provider) && response.provider.present?) || selected&.dig(:provider),
+        model: (response.model if response.respond_to?(:model) && response.model.present?) || selected&.dig(:model)
       }.compact
     end
 
     def provenance
-      @provenance || { provider: configured_provider, model: configured_model }.compact
+      @provenance || selected_attempt&.slice(:provider, :model).compact || {}
+    end
+
+    def request_trace
+      @request_trace
+    end
+
+    def selected_attempt
+      trace = request_trace
+      return unless trace.is_a?(Hash)
+
+      ordinal = trace[:selected_attempt_ordinal] || trace["selected_attempt_ordinal"]
+      Array(trace[:attempts] || trace["attempts"]).find do |attempt|
+        attempt[:ordinal] == ordinal || attempt["ordinal"] == ordinal
+      end&.symbolize_keys
     end
 
     def configured_provider

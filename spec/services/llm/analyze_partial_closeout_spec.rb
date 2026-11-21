@@ -519,6 +519,23 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         end
     end
 
+    # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+    it "persists actual fallback failure provenance instead of configured-primary provenance" do
+      fallback = create(:runner, user: project.effective_owner, runner_key: "gemini",
+        tier_models: { "mid" => { "model_id" => "gemini-actual", "provider_id" => 17 } })
+      create(:runner_credential, runner: fallback, account: project.account)
+      allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+      allow(provider).to receive(:subscription_unset_vars).and_return([])
+      failures = [ AgentHarness::TimeoutError.new("primary timeout"), AgentHarness::TimeoutError.new("fallback timeout") ]
+      allow(provider).to receive(:send_message) { raise failures.shift }
+
+      expect { described_class.call(agent_run:, fallback_runner_identifiers: [ fallback.routing_key ]) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic).to include(category: "timeout", provider: "gemini", model: "gemini-actual")
+          expect(error.diagnostic.dig(:attempt_trace, :selected_attempt_ordinal)).to eq(2)
+        end
+    end
+
     it "caps the gaps array at the reconciler's bound in the response schema" do
       expect(described_class::MAX_GAPS).to eq(PartialCloseouts::Reconcile::MAX_GAPS)
       expect(described_class::RESPONSE_SCHEMA.dig(:properties, :gaps, :maxItems)).to eq(described_class::MAX_GAPS)

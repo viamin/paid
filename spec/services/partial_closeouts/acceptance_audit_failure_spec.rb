@@ -39,6 +39,27 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
     )
   end
 
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "projects only the bounded allowlisted attempt trace for legacy-safe diagnostics" do
+    run.update!(reconciliation: {
+      "acceptance_audit_failure" => {
+        "category" => "timeout", "provider" => "gemini", "attempt_trace" => {
+          "selected_attempt_ordinal" => 2,
+          "attempts" => [ { "ordinal" => 1, "runner_id" => 1, "provider" => "codex", "model" => "primary",
+            "outcome" => "timeout", "elapsed_ms" => 12, "allocated_ms" => 60_000, "phase" => "unknown", "secret" => "nope" } ]
+        }
+      }
+    })
+
+    diagnostic = described_class.diagnostic_for(run)
+
+    expect(diagnostic.dig("attempt_trace", "selected_attempt_ordinal")).to eq("2")
+    expect(diagnostic.dig("attempt_trace", "attempts", 0)).to eq(
+      "ordinal" => "1", "runner_id" => "1", "provider" => "codex", "model" => "primary",
+      "outcome" => "timeout", "elapsed_ms" => "12", "allocated_ms" => "60000", "phase" => "unknown"
+    )
+  end
+
   it "classifies cancellation, budget exhaustion, and rate-limit recovery as non-transient" do
     expect(described_class.classify(failing_run(status: "cancelled"))).to eq(:cancelled)
     expect(described_class.classify(failing_run(status: "token_budget_exceeded"))).to eq(:budget_exhausted)
