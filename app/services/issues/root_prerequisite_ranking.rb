@@ -94,7 +94,7 @@ module Issues
     end
 
     def blocking_issue_scope
-      Issue.joins(:project).where(projects: { account_id: account.id }).includes(:project)
+      Issue.joins(:project).where(projects: { account_id: account.id }).preload(:project)
     end
 
     def dependency_edges_from(issue_ids)
