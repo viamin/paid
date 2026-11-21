@@ -224,7 +224,7 @@ module Runners
       private
 
       def credential_scope(account:, runner_key:)
-        account.runner_credentials.where(revoked_at: nil).for_runner(runner_key)
+        account.runner_credentials.where(revoked_at: nil, auth_kind: "oauth_token").for_runner(runner_key)
           .order(created_at: :desc, id: :desc)
       end
 

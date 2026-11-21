@@ -176,6 +176,17 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
 
       expect(credential).to eq(fresh)
     end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "ignores a newer non-OAuth credential for the same runner key" do
+      managed = create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 1.hour.from_now)
+      create(:runner_credential, account: account, created_by: user, runner_key: "codex",
+        auth_kind: "api_key", token: "sk-newer-codex-api-key", created_at: 1.minute.from_now)
+
+      credential = described_class.credential_for(account:, runner_key: "codex")
+
+      expect(credential).to eq(managed)
+    end
   end
 
   describe ".harvest" do
