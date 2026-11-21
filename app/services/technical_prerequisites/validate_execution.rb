@@ -34,6 +34,10 @@ module TechnicalPrerequisites
       return persist_unavailable(inspection) unless inspection.runnable?
 
       execute_validation(inspection)
+    rescue Containers::ServiceProvisioner::Error => error
+      return cancelled_result if cancelled?
+
+      persist_terminal("failed", error: "Project services unavailable (#{error.class.name}); restore configured services before retrying.")
     rescue Containers::Provision::Error, Containers::GitOperations::Error,
       ExecutionRunners::Error, Containers::McpProvisioner::Error,
       AgentRuns::Verification::Error => error
@@ -57,6 +61,9 @@ module TechnicalPrerequisites
       # identifier is persisted. Mark cleanup required first so its safety-net
       # volume removal runs even if provisioning raises partway through.
       @environment_provisioned = true
+      provision_project_services
+      return cancelled_result if cancelled?
+
       agent_run.provision_execution_environment(container_host: inspection.host)
       capture_environment_identity
       return cancelled_result if cancelled?
@@ -73,6 +80,21 @@ module TechnicalPrerequisites
 
       native = capture(native_command, env: command_environment)
       persist_terminal(status_for(native), native:)
+    end
+
+    def provision_project_services
+      return unless agent_run.project.service_containers.exists?
+
+      @services_provisioned = true
+      execution_runner.provision_services(agent_run:,
+        network: Containers::Provision.network_for(agent_run:))
+    ensure
+      if @services_provisioned
+        evidence["services"] = {
+          "container_ids" => agent_run.service_container_ids,
+          "environment_keys" => agent_run.service_environment.to_h.keys.sort
+        }
+      end
     end
 
     def cancelled? = agent_run.reload.status == "cancelled"
@@ -349,10 +371,13 @@ module TechnicalPrerequisites
     def cleanup_errors
       [
         -> { execution_runner.cleanup_mcp_servers(agent_run:, persist: run_available?) },
-        -> { agent_run.cleanup_execution_environment(force: true, persist: run_available?) }
+        -> { agent_run.cleanup_execution_environment(force: true, persist: run_available?) },
+        -> { execution_runner.cleanup_services(agent_run:, persist: run_available?) if @services_provisioned }
       ].filter_map do |cleanup_step|
         cleanup_step.call
         nil
+      rescue Containers::ServiceProvisioner::Error => error
+        { "class" => error.class.name, "message" => "Project service cleanup failed; restore configured services before retrying." }
       rescue Containers::Provision::Error, ExecutionRunners::Error, Containers::McpProvisioner::Error => error
         { "class" => error.class.name, "message" => error.message }
       end
