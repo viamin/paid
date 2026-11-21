@@ -115,7 +115,7 @@
   `spec/services/layered_verification/audits/ingest_results_spec.rb`
   *Code:* `app/models/layered_verification_check_result.rb` (#4432, #4433)
 
-- [ ] **LAYERED-VERIFY-009** — An audit's linkage-freshness producer SHALL
+- [x] **LAYERED-VERIFY-009** — An audit's linkage-freshness producer SHALL
   report, as a `LayeredVerificationCheckResult`, any source/spec/code material
   within declared scope that has no `LayeredVerificationCorrespondenceClaim`
   referencing it at all, combining mechanical structural diffing with a
@@ -368,7 +368,7 @@
 
 ## Change impact, interruption, and cancellation
 
-- [ ] **LAYERED-VERIFY-019** — A change to an obligation's source, its
+- [x] **LAYERED-VERIFY-019** — A change to an obligation's source, its
   declared model, or a check's execution environment SHALL invalidate every
   `LayeredVerificationCheckResult` whose `input_revision` no longer matches;
   evidence with established non-overlapping scope SHALL be retained, and
@@ -378,7 +378,7 @@
   *Tests:* `spec/services/layered_verification/invalidation_spec.rb`
   *Code:* `LayeredVerification::Invalidation` (#4435)
 
-- [ ] **LAYERED-VERIFY-020** — An interrupted (cancelled, infrastructure
+- [x] **LAYERED-VERIFY-020** — An interrupted (cancelled, infrastructure
   failure, or budget-exhausted) `layered_verification_audit` or
   `layered_verification_repair` run SHALL, on retry, revalidate the freshness
   of recorded `LayeredVerificationCheckResult` rows, the obligation's current
