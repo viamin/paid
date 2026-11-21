@@ -225,7 +225,7 @@ jobs:
     # normal runtime. Keep the allowance bounded; a timeout remains a cancelled
     # shard and fails the stable test check below.
     # @spec TEST-SUITE-020
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     services:
       postgres:
