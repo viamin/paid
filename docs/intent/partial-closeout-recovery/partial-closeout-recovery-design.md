@@ -1025,6 +1025,14 @@ the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
 
+An explicit operator audit request that joins an existing automatic audit can
+request its operator scheduling priority through `AgentRuns::PrioritizeAudit`.
+The run keeps its trigger, admission evidence, policy signature and retry
+identity. The queue-priority segment owns the timestamp, actor audit and
+SQL/badge parity contract (QUEUE-TIER-007); automatic joins and already claimed
+work keep their ordering. Scheduling intent grants no new execution or closure
+authority, and the existing dequeue checks remain authoritative.
+
 ### Stale prerequisite-audit recovery (#5057)
 
 An active partial-closeout notification continues to block implementation,

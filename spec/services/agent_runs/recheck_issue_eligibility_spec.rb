@@ -395,6 +395,21 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
     before { FeatureFlags.enable!(:automation_phases, project:) }
 
+    # @spec QUEUE-TIER-007
+    it "enforces automatic phase authorization for an operator-prioritized audit" do
+      issue = create(:issue, project:, github_state: "open")
+      request = create(:issue_continuation_request, project:, issue:, requested_by: project.effective_owner,
+        evidence: { "continuation_mode" => "acceptance_audit" })
+      run = create(:agent_run, project:, issue:, continuation_request: request, goal: "analyze_issue",
+        trigger_type: "automatic", operator_priority_requested_at: Time.current)
+      configure_phases({ "issue_preparation" => false })
+
+      expect(run.queue_priority_tier).to eq(:manual)
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.error_message).to include("Authorization for analyze_issue was withdrawn")
+    end
+
     it "cancels queued automatic work whose phase is now disabled" do
       issue = create(:issue, project: project, github_state: "open")
       run = queued_auto_pick_run(issue: issue)

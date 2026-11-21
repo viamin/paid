@@ -30,7 +30,7 @@ capacity gating.
 
 | Tier | Indicator | When |
 |---|---|---|
-| `manual` | 1 | `trigger_type = 'manual'` (unconditional pre-emption) |
+| `manual` | 1 | Manual launch or an explicitly requested operator priority for a queued acceptance audit |
 | `pr_p1` | 2 | PR-continuation run carrying the configured P1 label |
 | `pr_p2` | 3 | PR-continuation run carrying the configured P2 label |
 | `pr_p3` | 4 | PR-continuation run carrying the configured P3 label |
@@ -52,6 +52,26 @@ indicator 3) dequeues ahead of a P1-labeled, not-yet-started fresh issue
 categories.
 
 ## Ruby mirror and badges
+
+### Explicit operator acceptance requests
+
+An operator joining an existing automatic acceptance audit requests its place in
+the operator tier through `AgentRuns::PrioritizeAudit`. The service authorizes
+the actor, locks the run, and records `operator_priority_requested_at` only for
+an unclaimed queued report-only audit. It records the actor and original
+request/run identity through the account activity audit. Repeated requests keep
+the first timestamp and audit event. Automatic joins do not request priority.
+
+The timestamp is scheduling state. The original trigger, continuation evidence,
+policy signature, runner and retry lineage retain their original values, and
+dequeue still applies automatic authorization, trust, pause, budget and capacity
+checks. Claimed, running, terminal and implementation work keep their current
+ordering. The badge identifies an operator-requested audit while its trigger
+remains automatic. Cross-project and cross-user fairness retain precedence.
+
+| Decision | Rationale | Alternatives considered |
+| --- | --- | --- |
+| Store one timestamp on the existing run and use the existing actor audit. | Queue SQL and badges can read the request without another identity or admission. | Rewriting the trigger would change authority; recreating the run would discard identity/lineage; changing concurrency would alter capacity policy. |
 
 `AgentRun#queue_priority_tier` mirrors the SQL for rendering: `manual` wins
 unconditionally, then the run's category (`existing_pr?` → `pr` else

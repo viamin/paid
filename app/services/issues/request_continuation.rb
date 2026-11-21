@@ -79,7 +79,11 @@ module Issues
     # reported as the requested operation (#4597 review).
     # @spec PARTIAL-CLOSEOUT-027
     def dedupe_or_refuse(existing)
-      return success(existing, existing.agent_runs.first) if authorizes_requested_operation?(existing)
+      if authorizes_requested_operation?(existing)
+        run = existing.agent_runs.first
+        AgentRuns::PrioritizeAudit.call(agent_run: run, actor:) if origin == :operator && acceptance_audit? && run
+        return success(existing, run)
+      end
 
       failure(:conflicting_open_request, conflict_message(existing))
     end
