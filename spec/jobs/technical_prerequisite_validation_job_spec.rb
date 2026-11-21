@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe TechnicalPrerequisiteValidationJob do
-  let(:project) { create(:project) }
+  # @spec PARTIAL-CLOSEOUT-059
   let(:agent_run) do
     create(:agent_run, :queued, project:, base_commit_sha: "a" * 40, synthetic: true,
       external_metadata: {
@@ -12,6 +12,30 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
         }
       })
   end
+  let(:project) { create(:project) }
+
+  it "executes the snapshotted limit rather than the executor default" do
+    metadata = agent_run.external_metadata.deep_dup
+    metadata.fetch(TechnicalPrerequisites::RECIPE_KEY)["native_timeout_seconds"] = 600
+    agent_run.update!(external_metadata: metadata)
+    expect(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+      .with(agent_run:, native_command: "bin/audit", native_timeout_seconds: 600)
+      .and_return(validation_result("completed"))
+
+    described_class.perform_now(agent_run.id)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "rejects a floating-point persisted default before host inspection" do
+    metadata = agent_run.external_metadata.deep_dup
+    metadata.fetch(TechnicalPrerequisites::RECIPE_KEY)["native_timeout_seconds"] = 300.0
+    agent_run.update!(external_metadata: metadata)
+    expect(Containers::BackendScheduler).not_to receive(:call)
+
+    expect { described_class.perform_now(agent_run.id) }.to raise_error(ArgumentError, /native execution limit/i)
+    expect(agent_run.reload.status).to eq("failed")
+  end
+
 
   def validation_result(status, evidence = {})
     TechnicalPrerequisites::ValidateExecution::Result.new(status:, evidence:, setup_action: nil)

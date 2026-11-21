@@ -3,14 +3,15 @@
 require "rails_helper"
 
 RSpec.describe StagedCloseoutAdoption::Mappings do
-  let(:project) { create(:project) }
-  let(:maintainer) { create(:user, :owner, account: project.account) }
-  let(:issue) { create(:issue, project:) }
-  let!(:recipe) { create(:pre_commit_requirement, project:, account: project.account, enabled: true) }
+  # @spec PARTIAL-CLOSEOUT-059
   let(:attributes) do
     { criterion_key: "The report renders", stage: "pre_merge", phase: "coding", target_shape: "source_pr_head",
       execution_path: "technical_prerequisite", target_key: recipe.id, freshness_seconds: 3600, retry_policy: { "max_attempts" => 1 } }
   end
+  let!(:recipe) { create(:pre_commit_requirement, project:, account: project.account, enabled: true) }
+  let(:issue) { create(:issue, project:) }
+  let(:maintainer) { create(:user, :owner, account: project.account) }
+  let(:project) { create(:project) }
 
   before do
     StagedCloseoutAdoption::Enroll.call(project:, actor: maintainer, enabled: true)
@@ -20,6 +21,22 @@ RSpec.describe StagedCloseoutAdoption::Mappings do
       "criteria" => [ { "criterion" => "The report renders", "state" => "unmet" } ], "gaps" => []
     } })
   end
+
+  it "preserves the legacy digest for the unchanged default native limit" do
+    mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+
+    expect(mapping.target_digest).to eq(Digest::SHA256.hexdigest([ recipe.id, recipe.command, recipe.check_type ].join("\0")))
+  end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "binds a reviewed limit even if a write preserves the target timestamp" do
+    mapping = described_class.approve(project:, actor: maintainer, issue:, attributes:)
+    recipe.update_column(:native_timeout_seconds, 600)
+
+    expect(described_class.target_current?(mapping:, project:)).to be(false)
+  end
+
+
 
   # @spec STAGED-CLOSEOUT-ADOPTION-002 STAGED-CLOSEOUT-ADOPTION-003
   it "pins an authorized reviewed recipe and preserves the superseded revision" do

@@ -30,7 +30,7 @@ RSpec.describe "UserPreCommitRequirements" do
       {
         pre_commit_requirement: {
           name: "my-lint", command: "bin/lint", check_type: "shell_command",
-          failure_behavior: "block", position: 0
+          failure_behavior: "block", position: 0, native_timeout_seconds: 600
         }
       }
     end
@@ -59,7 +59,7 @@ RSpec.describe "UserPreCommitRequirements" do
         req = PreCommitRequirement.last
         expect(req.name).to eq("my-lint")
         expect(req.user).to eq(member)
-        expect(req.account).to eq(account)
+        expect(req).to have_attributes(account:, native_timeout_seconds: 600)
         expect(req).to be_user_level
       end
     end

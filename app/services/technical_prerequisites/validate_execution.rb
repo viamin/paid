@@ -22,9 +22,10 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, native_command:, execution_runner: nil)
+    def initialize(agent_run:, native_command:, execution_runner: nil, native_timeout_seconds: COMMAND_TIMEOUT.to_i)
       @agent_run = agent_run
       @native_command = validate_command!(native_command)
+      @native_timeout_seconds = validate_native_timeout!(native_timeout_seconds)
       @execution_runner = execution_runner
       @evidence = {}
     end
@@ -51,7 +52,15 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :agent_run, :evidence, :native_command
+    attr_reader :agent_run, :evidence, :native_command, :native_timeout_seconds
+
+    # @spec PARTIAL-CLOSEOUT-059
+    def validate_native_timeout!(limit)
+      unless limit.is_a?(Integer) && limit.between?(1, PreCommitRequirement::MAX_NATIVE_TIMEOUT_SECONDS)
+        raise ArgumentError, "Native execution limit must be an integer from 1 through #{PreCommitRequirement::MAX_NATIVE_TIMEOUT_SECONDS} seconds."
+      end
+      limit
+    end
 
     def execute_validation(inspection)
       persist_planned_host(inspection.host)
@@ -212,7 +221,7 @@ module TechnicalPrerequisites
       end
     end
 
-    def sample_timeout = [ budget_remaining.seconds, COMMAND_TIMEOUT ].min
+    def sample_timeout = [ budget_remaining.seconds, native_timeout_seconds ].min
 
     def budget_remaining = @measurement_deadline - monotonic_now
 
@@ -293,7 +302,7 @@ module TechnicalPrerequisites
       @execution_runner ||= ExecutionRunners.resolve_for(agent_run)
     end
 
-    def capture(command, env:, timeout: COMMAND_TIMEOUT)
+    def capture(command, env:, timeout: native_timeout_seconds)
       result = agent_run.execute_in_execution_environment(command, timeout:, stream: false, env:)
       output(result[:stdout], result[:stderr], result[:exit_code])
     rescue Containers::Provision::ExecutionError => error
@@ -335,6 +344,7 @@ module TechnicalPrerequisites
     def base_evidence
       {
         "recorded_at" => Time.current.iso8601,
+        "native_timeout_seconds" => native_timeout_seconds,
         **runtime_image_evidence,
         "requested_checkout" => agent_run.base_commit_sha,
         "criterion" => agent_run.external_metadata.dig(RECIPE_KEY, "criterion"),

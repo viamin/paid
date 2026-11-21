@@ -3,6 +3,19 @@
 require "rails_helper"
 
 RSpec.describe TechnicalPrerequisites::StartValidation do
+  # @spec PARTIAL-CLOSEOUT-059
+  it "snapshots a reviewed native limit independently of later recipe edits" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account, native_timeout_seconds: 600)
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by)
+    requirement.update!(native_timeout_seconds: 900)
+
+    expect(result.agent_run.external_metadata.dig(TechnicalPrerequisites::RECIPE_KEY, "native_timeout_seconds"))
+      .to eq(600)
+  end
+
   # @spec PARTIAL-CLOSEOUT-032
   it "uses the pinned base when the source run produced no revision" do
     project = create(:project)
@@ -229,6 +242,19 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
         "budget_seconds" => 60, "artifact_contract" => [ "raw_samples", "comparison" ]
       })
     [ project, source_run, requirement ]
+  end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "starts a new measurement when only its native limit changes" do
+    project, source_run, requirement = performance_identity_context
+    original = described_class.call(source_run:, requirement:, actor: project.created_by)
+    original.agent_run.update!(status: "completed")
+    requirement.update!(native_timeout_seconds: 600)
+
+    fresh = described_class.call(source_run:, requirement:, actor: project.created_by)
+
+    expect(fresh).to be_success
+    expect(fresh.agent_run.id).not_to eq(original.agent_run.id)
   end
 
   %i[changed_command different_requirement].each do |change|

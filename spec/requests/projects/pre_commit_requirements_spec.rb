@@ -8,6 +8,35 @@ RSpec.describe "Projects::PreCommitRequirements" do
   let(:github_token) { create(:github_token, account: account) }
   let(:project) { create(:project, account: account, github_token: github_token) }
 
+  describe "reviewed native execution limits" do
+    before do
+      user.add_role(:admin, account)
+      sign_in user
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    it "persists and returns an authorized finite limit" do
+      post project_pre_commit_requirements_path(project), params: { pre_commit_requirement: {
+        name: "cold Rails check", command: "bundle exec rspec", check_type: "test_suite", native_timeout_seconds: 600
+      } }
+
+      requirement = project.pre_commit_requirements.find_by!(name: "cold Rails check")
+      get project_pre_commit_requirement_path(project, requirement, format: :json)
+
+      expect(response.parsed_body.fetch("native_timeout_seconds")).to eq(600)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    it "refuses an execution limit beyond the cleanup headroom" do
+      post project_pre_commit_requirements_path(project), params: { pre_commit_requirement: {
+        name: "unbounded check", command: "true", check_type: "test_suite", native_timeout_seconds: 901
+      } }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(project.pre_commit_requirements.find_by(name: "unbounded check")).to be_nil
+    end
+  end
+
   describe "GET /projects/:project_id/pre_commit_requirements" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

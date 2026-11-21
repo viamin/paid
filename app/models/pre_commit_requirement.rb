@@ -3,6 +3,8 @@
 class PreCommitRequirement < ApplicationRecord
   has_logidze
   CHECK_TYPES = %w[shell_command test_suite coverage security_scan mutation_test performance_measurement].freeze
+  DEFAULT_NATIVE_TIMEOUT_SECONDS = 300
+  MAX_NATIVE_TIMEOUT_SECONDS = 900
   MUTATION_TEST_DEFAULT_COMMAND = "bundle exec mutant run --results-dir .mutant/results --since HEAD~1 --use rspec --jobs 1".freeze
   WARDEN_DEFAULT_COMMAND = "warden-scan".freeze
   FAILURE_BEHAVIORS = %w[block warn auto_fix].freeze
@@ -22,6 +24,10 @@ class PreCommitRequirement < ApplicationRecord
   validates :name, uniqueness: { scope: [ :user_id ] },
     if: -> { user_id.present? && project_id.nil? }
   validates :command, presence: true
+  # @spec PARTIAL-CLOSEOUT-059
+  validates :native_timeout_seconds, numericality: {
+    only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_NATIVE_TIMEOUT_SECONDS
+  }
   validates :check_type, presence: true, inclusion: { in: CHECK_TYPES }
   validates :failure_behavior, presence: true, inclusion: { in: FAILURE_BEHAVIORS }
   validates :position, presence: true, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
