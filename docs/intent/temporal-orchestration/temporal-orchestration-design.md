@@ -56,6 +56,20 @@ TTL; a failure before successful agent execution does not retain an otherwise
 unused execution environment. A failed health check does not authorize push,
 mark the run successful, replay coding work, or bypass the health gate.
 
+Failure publication also needs short control capacity (#5248). New histories
+route only `MarkAgentRunFailed` through the existing poll pool, retaining its
+30-second execution bound and three-attempt retry policy, with a 120-second
+total scheduling/recovery bound. The `failure-bookkeeping-control-v1` patch
+preserves legacy routing and options. Long-running analysis and coding, normal
+cleanup ownership and resource limits do not move into the control pool.
+
+The activity retains its existing locked terminal-state guard: a late failure
+cannot replace an already completed or cancelled run. Workflow cancellation
+does not publish a fabricated failure. If bounded failure publication itself
+fails, new histories preserve the original workflow failure, log the unavailable
+bookkeeping operation and continue normal cleanup/janitor handling; they do not
+invent a terminal database write, assessment or renewed retry allowance.
+
 Worker shutdown signals request cancellation and remove the readiness marker
 from a normal Ruby thread. A watchdog starts before cancellation so a blocked
 callback cannot prevent the forced exit. A repeated signal removes readiness

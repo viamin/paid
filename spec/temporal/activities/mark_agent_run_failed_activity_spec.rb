@@ -689,12 +689,14 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       it "schedules one bounded delayed retry through the shared retry mechanism" do
         _issue, agent_run = audit_issue_with_run
 
-        expect {
-          activity.execute(agent_run_id: agent_run.id,
-            error: "Partial closeout assessment transport failed. Retry after runner recovery.")
-        }.to have_enqueued_job(AcceptanceAuditRetryJob)
-          .with(agent_run.id, 2)
-          .at(a_value_within(1.second).of(AcceptanceAuditRetryJob.retry_delay(2).from_now))
+        freeze_time do
+          expect {
+            activity.execute(agent_run_id: agent_run.id,
+              error: "Partial closeout assessment transport failed. Retry after runner recovery.")
+          }.to have_enqueued_job(AcceptanceAuditRetryJob)
+            .with(agent_run.id, 2)
+            .at(AcceptanceAuditRetryJob.retry_delay(2).from_now)
+        end
       end
 
       it "does not schedule an acceptance-audit retry for an ordinary issue run" do

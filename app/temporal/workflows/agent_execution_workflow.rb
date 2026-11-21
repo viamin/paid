@@ -166,8 +166,7 @@ module Workflows
           source_pull_request_number: source_pull_request_number
         )
         unless gate_result.fetch(:allowed, true)
-          run_activity(Activities::MarkAgentRunFailedActivity,
-            { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
+          mark_run_failed({ agent_run_id: agent_run_id, error: quality_gate_error(gate_result) })
 
           return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
         end
@@ -660,12 +659,12 @@ module Workflows
         # Temporal wraps activity errors in ActivityError — unwrap to get the
         # actual error message from our ApplicationError. Without this, every
         # failure is recorded as the opaque "Activity task failed".
-        run_activity(Activities::MarkAgentRunFailedActivity,
+        mark_run_failed(
           {
             agent_run_id: agent_run_id,
             error: unwrap_error_message(e),
             failure_type: unwrap_error_type(e)
-          }, timeout: 30)
+          }, preserve_error: true)
 
         raise
 
@@ -1029,6 +1028,22 @@ module Workflows
         current = current.cause
       end
       false
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-015
+    def mark_run_failed(input, preserve_error: false)
+      control_route = Temporalio::Workflow.patched("failure-bookkeeping-control-v1")
+      routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
+      run_activity(Activities::MarkAgentRunFailedActivity, input, timeout: 30, **routing)
+    rescue Temporalio::Error::ActivityError, Temporalio::Error::CanceledError => error
+      raise unless control_route && preserve_error
+
+      raise_if_canceled!(error)
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.failure_bookkeeping_unavailable",
+        agent_run_id: input[:agent_run_id],
+        error_class: error.class.name
+      )
     end
 
     # Design: The activity performs a single health check per invocation and
