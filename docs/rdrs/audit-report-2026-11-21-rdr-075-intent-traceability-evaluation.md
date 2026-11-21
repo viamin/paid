@@ -51,13 +51,11 @@ duplicate task even though the native tree is incomplete.
 | [#4714](https://github.com/viamin/paid/issues/4714) | Open | Existing terminal evidence audit. |
 
 **Useful finding:** RDR-063's tree is partial, because #4711, #4712, #4713,
-and #4714 remain open. The bounded handoff is to link or inspect the existing
-#4708 tree; do not file duplicate work.
+and #4714 remain open. The bounded handoff is to link or inspect the existing #4708 tree; do not file duplicate work.
 
-**Counterevidence:** RDR-063 names #4708 as canonical, explicitly preserves
-#4713 as a separate post-shadow decision, and records superseded duplicate
-trees. Therefore neither the incomplete native children nor the two closed
-children establishes missing work, duplicate work, or an ownership conflict.
+**Counterevidence:** RDR-063 names #4708 as canonical, explicitly preserves #4713 as a separate post-shadow decision, and records superseded duplicate trees.
+Therefore neither the incomplete native children nor the two closed children
+establishes missing work, duplicate work, or an ownership conflict.
 
 **Semantic verdict:** unknown. `AssessDesignArtifactCandidates` is the
 `agent_harness` boundary for deciding whether an open issue semantically covers
@@ -99,3 +97,22 @@ tree after an authorized reconciliation snapshot and `agent_harness`
 assessment are available. It does not authorize repair, filing, metadata
 changes, rollout, recurrence, or policy changes. #4340 remains open pending
 the actual cross-repository pilot evidence.
+
+## Continuation access check — 2026-11-21T02:16:15Z
+
+The authorized continuation rechecked the missing admission inputs without
+creating a Project, syncing issues, or making any GitHub write. The supplied
+PostgreSQL endpoint (`paid-svc-a3-s1-postgres:5432`) rejected the connection
+used by `bin/rails db:prepare`; consequently no tenant context, persisted
+reconciliation inventory, or maintenance-run admission was available. A
+read-only request to the configured GitHub proxy for Paid's issue inventory
+returned HTTP 403. The proxy denial means this continuation could not refresh
+the previously recorded GitHub observations or pin a newer Paid revision.
+
+Forager's repository identity, authenticated access route, and revisions are
+still absent. These access failures leave the requested cross-repository
+evaluation **unverifiable**. They neither invalidate the prior pinned
+counterevidence for RDR-063's existing #4708 tree nor establish a new useful
+finding, false positive, ownership conflict, or clean result. Runtime and
+investigation cost remain not measured because no `agent_harness` assessment
+was authorized or executed.
