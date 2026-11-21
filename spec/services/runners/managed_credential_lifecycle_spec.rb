@@ -99,6 +99,27 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     end
 
     # @spec SUBSCRIPTION-RUNNER-AUTH-006
+    it "persists an OAuth expiry for a refreshed opaque Codex access token" do
+      credential = create_credential(runner_key: "codex", token: valid_codex_auth,
+        expires_at: 1.minute.ago)
+      client = stub_exchange_supported
+      expires_at = 1.hour.from_now.utc.iso8601
+      allow(client).to receive(:refresh_token).and_return(
+        CodexLoginSessions::OAuthClient::TokenResponse.new(
+          status: :success,
+          tokens: { "access_token" => "opaque-access", "expires_at" => expires_at },
+          error: nil
+        )
+      )
+
+      expect(described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)).to eq(:refreshed)
+
+      refreshed = credential.reload
+      expect(refreshed.expires_at).to be_within(1.second).of(Time.iso8601(expires_at))
+      expect(described_class.readiness(refreshed, runner_key: "codex")).to eq(:fresh)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006
     it "refreshes an OpenCode credential stored as canonical Codex auth json" do
       credential = create_credential(runner_key: "opencode", token: valid_codex_auth,
         expires_at: 1.minute.from_now)

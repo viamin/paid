@@ -111,5 +111,15 @@ RSpec.describe CodexLoginSessions::OAuthClient, :no_db do
       expect(response.status).to eq(:success)
       expect(response.tokens).to include("access_token" => "access-2", "refresh_token" => "refresh-2")
     end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006
+    it "translates expires_in for an opaque access token into canonical expiry" do
+      travel_to Time.utc(2026, 11, 21, 12, 0, 0) do
+        response = client_with([ JSON.generate("access_token" => "opaque-access", "expires_in" => 3600) ])
+          .refresh_token("refresh-1")
+
+        expect(response.tokens).to include("expires_at" => "2026-11-21T13:00:00Z")
+      end
+    end
   end
 end

@@ -71,7 +71,9 @@
   access token is expired but its canonical, unrevoked native auth state has
   refresh material and the provider-owned exchange is supported, provisioning
   and isolated text execution SHALL keep it eligible for one serialized refresh
-  attempt before rejecting it. A revoked credential, missing refresh material,
+  attempt before rejecting it. When a successful OpenAI OAuth refresh response
+  provides `expires_in`, Paid SHALL translate it into the canonical credential
+  expiry so the refreshed credential is classified fresh. A revoked credential, missing refresh material,
   unsupported exchange, or unsuccessful exchange SHALL not materialize the
   expired token; it SHALL report the managed source as requiring reconnection.
   When concurrent credentials exist, a newer expired credential that cannot

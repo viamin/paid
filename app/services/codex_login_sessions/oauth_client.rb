@@ -99,8 +99,14 @@ module CodexLoginSessions
         "id_token" => payload["id_token"],
         "access_token" => payload["access_token"],
         "refresh_token" => payload["refresh_token"],
-        "account_id" => payload["account_id"]
+        "account_id" => payload["account_id"],
+        "expires_at" => expires_at(payload)
       }.compact
+    end
+
+    def expires_at(payload)
+      expires_in = payload["expires_in"].to_i
+      expires_in.seconds.from_now.utc.iso8601 if expires_in.positive?
     end
 
     # Default timeouts for blocking OAuth HTTP calls. Puma threads call these
