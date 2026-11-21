@@ -787,10 +787,12 @@ module Workflows
         # For retained containers the janitor respects the retention TTL.
         begin
           if agent_run_id.present?
+            control_route = Temporalio::Workflow.patched("enqueue-janitor-control-routing-v1")
+            routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
             run_cleanup_activity(Activities::EnqueueJanitorActivity,
               { agent_run_id: agent_run_id },
               start_to_close_timeout: 10,
-              retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1))
+              retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1), **routing)
           end
         rescue => e
           Temporalio::Workflow.logger.warn(
@@ -867,9 +869,21 @@ module Workflows
         raise unless Temporalio::Workflow.patched("source-closure-unsuccessful-response-recovery-v1")
       end
 
-      run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: agent_run_id, category: category, attempts: SOURCE_CLOSURE_RETRY_POLICY.max_attempts }, timeout: 30)
+      park_source_closure_recovery(
+        agent_run_id: agent_run_id, category: category, attempts: SOURCE_CLOSURE_RETRY_POLICY.max_attempts
+      )
       { waiting: true }
+    end
+
+    # Keep the short, durable state publication schedulable while long-running
+    # assessment workers are saturated. The patch preserves commands already
+    # recorded on the agent queue; the activity itself keeps its existing retry
+    # policy and 30-second execution timeout.
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+    def park_source_closure_recovery(input)
+      control_route = Temporalio::Workflow.patched("source-closure-recovery-control-routing-v1")
+      routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
+      run_activity(Activities::ParkSourceClosureRecoveryActivity, input, timeout: 30, **routing)
     end
 
     def pre_runner_infra_error?(error_message)

@@ -41,6 +41,10 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
   end
 
   describe "source-closure assessment recovery" do
+    before do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(true)
+    end
+
     def source_closure_activity_error(cause, retry_state:)
       begin
         begin
@@ -75,14 +79,55 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT)
       allow(workflow).to receive(:run_activity).and_raise(error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30,
+          task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120)
         .and_return({})
 
       expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
       expect(workflow).to have_received(:run_activity).with(
         Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30,
+        task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
       )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+    it "keeps long assessment work on its queue while parking on bounded control capacity" do
+      timeout = Temporalio::Error::TimeoutError.new(
+        "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("source-closure-recovery-control-routing-v1").and_return(true)
+      allow(workflow).to receive(:run_activity).and_raise(error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything,
+          timeout: 30, task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120).and_return({})
+
+      workflow.send(:assess_source_closure_or_park, 42)
+
+      expect(workflow).to have_received(:run_activity).with(Activities::AssessSourceClosureActivity,
+        { agent_run_id: 42 }, timeout: 120, retry_policy: described_class::SOURCE_CLOSURE_RETRY_POLICY)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+    it "preserves legacy park routing and bounds for an unpatched history" do
+      timeout = Temporalio::Error::TimeoutError.new(
+        "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
+        last_heartbeat_details: []
+      )
+      error = source_closure_activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("source-closure-recovery-control-routing-v1").and_return(false)
+      allow(workflow).to receive(:run_activity).and_raise(error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30).and_return({})
+
+      workflow.send(:assess_source_closure_or_park, 42)
+
+      expect(workflow).to have_received(:run_activity).with(Activities::ParkSourceClosureRecoveryActivity,
+        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30)
     end
 
     # @spec PARTIAL-CLOSEOUT-044
@@ -95,12 +140,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       allow(Temporalio::Workflow).to receive(:patched).with("source-closure-timeout-cause-v1").and_return(true)
       allow(workflow).to receive(:run_activity).and_raise(error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30).and_return({})
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30,
+          task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120).and_return({})
 
       expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
       expect(workflow).to have_received(:run_activity).with(
         Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+        { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30,
+        task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
       )
     end
 
@@ -124,13 +171,15 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with("source-closure-unsuccessful-response-recovery-v1").and_return(true)
       allow(workflow).to receive(:run_activity).and_raise(unsuccessful_source_closure_error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30)
+        .with(Activities::ParkSourceClosureRecoveryActivity, anything, timeout: 30,
+          task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120)
         .and_return({})
 
       expect(workflow.send(:assess_source_closure_or_park, 42)).to eq(waiting: true)
       expect(workflow).to have_received(:run_activity).with(
         Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30
+        { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30,
+        task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
       )
     end
 
@@ -1984,7 +2033,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
               timeout: 300,
               cancellation: an_instance_of(Temporalio::Cancellation),
               start_to_close_timeout: 10,
-              retry_policy: an_instance_of(Temporalio::RetryPolicy))
+              retry_policy: an_instance_of(Temporalio::RetryPolicy),
+              task_queue: Paid::POLL_TASK_QUEUE,
+              schedule_to_close_timeout: 120)
     end
 
     it "invokes cleanup activities with CLEANUP_RETRY_POLICY and schedule_to_close_timeout" do
