@@ -54,16 +54,25 @@ module LayeredVerification
       end
 
       def structured_payload
-        raw = stdout
-        match = delimited_payload(raw) || delimited_payload(agent_run.normalized_agent_output(raw, succeeded: true))
-        JSON.parse(match || "{}")
-      rescue JSON::ParserError
+        stdout_candidates.each do |raw|
+          payload = parse_payload(raw)
+          return payload if payload.is_a?(Hash)
+        end
         {}
       end
 
-      def stdout
+      def parse_payload(raw)
+        match = delimited_payload(raw) || delimited_payload(agent_run.normalized_agent_output(raw, succeeded: true))
+        JSON.parse(match || "null")
+      rescue JSON::ParserError
+        nil
+      end
+
+      def stdout_candidates
         records = agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse
-        records.join
+        # Chunks may split continuous output, or contain complete events stored
+        # without a trailing newline. Preserve both forms for the normalizer.
+        [ records.join, records.join("\n") ].uniq
       end
 
       def delimited_payload(output)

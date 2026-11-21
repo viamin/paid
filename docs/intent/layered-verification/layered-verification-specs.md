@@ -187,7 +187,9 @@
   SHALL validate and capture the persisted view without re-synthesizing it.
   An empty or unavailable admitted scope SHALL block completion. When the agent
   fails or times out, available outcomes and missing-check gaps SHALL still be
-  recorded and synthesized while the run retains its failure status. Audit
+  recorded and synthesized while the run retains its failure status. Stored
+  stdout records SHALL retain their record boundaries during normalization,
+  including records without trailing newlines. Audit
   execution SHALL bypass coding pre-commit requirements and automatic commits.
   A `contradicted` verdict — including a cross-representation discrepancy
   detected while each representation's own local checks pass — SHALL produce
