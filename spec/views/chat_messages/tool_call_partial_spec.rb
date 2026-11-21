@@ -81,7 +81,7 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
 
     expect(rendered).to include('data-chat-tool-group')
     expect(rendered).to include("2 tool actions")
-    expect(rendered).to include('<details class="group max-w-3xl" data-chat-tool-group>')
+    expect(Nokogiri::HTML.fragment(rendered).at_css("details.group.max-w-3xl[data-chat-tool-group]")).to be_present
     expect(rendered).not_to match(/<details class="group max-w-3xl[^>]*border-l/)
     expect(rendered.scan('data-chat-tool-card').size).to eq(2)
     expect(rendered).not_to match(/<details[^>]*data-chat-tool-group[^>]*open/)

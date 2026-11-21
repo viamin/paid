@@ -1,0 +1,8 @@
+<%# @spec CHAT-API-024 CHAT-API-027 %>
+<% history_frame_id = chat_tool_history_frame_id(history) %>
+<%= turbo_frame_tag history_frame_id do %>
+  <%= link_to "Load earlier tool actions",
+        tool_history_chat_session_path(history.fetch(:chat_session_id), anchor_id: history.fetch(:anchor_id), before: history.fetch(:before_id)),
+        class: "inline-flex rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500",
+        data: { chat_tool_history_more: true, turbo_frame: history_frame_id, turbo_prefetch: false } %>
+<% end %>

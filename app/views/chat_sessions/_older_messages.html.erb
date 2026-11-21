@@ -1,15 +1,17 @@
+<% leading_tool_history = local_assigns[:leading_tool_history] %>
 <% frame_id = local_assigns.fetch(:frame_id, "older_messages") %>
 <%= turbo_frame_tag frame_id do %>
   <% if has_more && messages.any? %>
     <%= turbo_frame_tag "#{frame_id}_next",
-          src: older_messages_chat_session_path(chat_session, before: messages.first.id),
+          src: older_messages_chat_session_path(chat_session, before: leading_tool_history&.fetch(:first_id) || messages.first.id),
           loading: :lazy do %>
       <p class="py-2 text-center text-xs text-gray-400">Loading older messages...</p>
     <% end %>
   <% end %>
   <% each_chat_transcript_segment(messages) do |segment| %>
-    <% if chat_tool_run?(segment) %>
-      <%= render "chat_messages/tool_call_group", messages: segment %>
+    <% history = chat_tool_history_for(segment, leading_tool_history) %>
+    <% if chat_tool_run?(segment, history: history) %>
+      <%= render "chat_messages/tool_call_group", messages: segment, history: history %>
     <% else %>
       <%= render "chat_messages/message", message: segment.first %>
     <% end %>

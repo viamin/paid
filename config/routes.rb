@@ -602,6 +602,7 @@ Rails.application.routes.draw do
     end
     member do
       get :older_messages
+      get :tool_history
       get :recent_messages
     end
     resources :chat_messages, path: "messages", only: %i[index create] do

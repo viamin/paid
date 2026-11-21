@@ -643,10 +643,14 @@ drafts SHALL NOT participate in the one-draft invariant;
   a non-tool row, or a token-limit, rate-limit, provider-error, or pending-
   confirmation notice SHALL end the run; pending confirmation cards SHALL
   remain standalone, open, and retain their amber Approve/Deny treatment. A
-  paginated persisted transcript SHALL extend a page across its leading
-  groupable-tool boundary, so lazy older-message loading renders every
-  consecutive run in one maximal disclosure rather than splitting it between
-  frames. A
+  paginated persisted transcript SHALL retain one maximal disclosure for a
+  leading tool run without hydrating beyond the fixed message page size.
+  Earlier cards SHALL load in authorized, bounded pages inside that disclosure
+  on explicit request; the summary SHALL label its loaded count as shown while
+  more remain. Outer pagination SHALL move before the whole leading run without
+  omitting any card from inner history. Pending cards and notices SHALL remain
+  run boundaries in both paths. Live append, resolution, fallback cleanup and
+  history insertion SHALL keep the loaded-card summary accurate. A
   runner-fallback cleanup SHALL remove an emptied live disclosure together with
   its stale cards. Grouping SHALL NOT make tool cards eligible as "Jump to
   latest" response anchors. When a user resolves a pending confirmation that
@@ -654,7 +658,9 @@ drafts SHALL NOT participate in the one-draft invariant;
   the preceding group (or wrap with a preceding single non-pending tool card)
   so the live view matches the persisted, maximal-disclosure rendering after
   a reload (#4270).
-  *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`,
+  *Tests:* `spec/requests/chat_tool_history_spec.rb`,
+  `spec/system/chat_tool_history_spec.rb`,
+  `spec/views/chat_messages/tool_call_partial_spec.rb`,
   `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/older_messages`),
   `spec/lib/chat_controller_node_harness_spec.rb`
   (`testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt`,
@@ -662,7 +668,8 @@ drafts SHALL NOT participate in the one-draft invariant;
   `testResolvedToolCardMergesWithPrecedingSingleCard`),
   `spec/lib/chat_controller_node_harness_spec.rb` (existing
   `lastAssistantTextResponse` anchor tests).
-  *Code:* `ChatSessionsHelper#each_chat_transcript_segment`,
+  *Code:* `ChatSessions::LoadToolHistory`, `ChatSessionsController#tool_history`,
+  `ChatSessionsHelper#each_chat_transcript_segment`,
   `#chat_tool_run?`, `app/views/chat_sessions/_conversation.html.erb`,
   `app/views/chat_sessions/_older_messages.html.erb`,
   `app/views/chat_messages/_tool_call_group.html.erb`,
@@ -671,6 +678,10 @@ drafts SHALL NOT participate in the one-draft invariant;
 
 - [x] **CHAT-API-027** — When rendering the full HTML chat page, the system
   SHALL return the selected session's bounded transcript and composer without
+  materializing more than the fixed message page size, including when its first
+  visible segment belongs to a longer tool run. Earlier tool-history reads
+  SHALL enforce that same limit and session authorization. The system SHALL
+  return that transcript without
   synchronously loading sidebar history or new-session setup. It SHALL load
   those sidebar concerns in a lazy, independently authorized frame while
   preserving active-session pinning, active/archived pagination, and the
@@ -686,8 +697,11 @@ drafts SHALL NOT participate in the one-draft invariant;
   reflected by the next sidebar response.
   *Tests:* `spec/requests/chat_sessions_spec.rb`,
   `spec/helpers/chat_sessions_helper_spec.rb`,
-  `spec/lib/chat_session_list_controller_node_harness_spec.rb`.
-  *Code:* `ChatSessionsController#show`, `#sidebar_page`,
+  `spec/lib/chat_session_list_controller_node_harness_spec.rb`,
+  `spec/requests/chat_tool_history_spec.rb`,
+  `spec/system/chat_tool_history_spec.rb`.
+  *Code:* `ChatSessionsController#show`, `#sidebar_page`, `#tool_history`,
+  `ChatSessions::LoadToolHistory`,
   `#load_sidebar_data`, `ChatSession.with_preview_content`,
   `app/views/chat_sessions/_sidebar.html.erb`,
   `app/views/chat_sessions/_sidebar_content.html.erb`.

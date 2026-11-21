@@ -2337,6 +2337,17 @@ class ChatControllerNodeHarness
       try {
         controller.navigate(event);
 
+        const historyEvent = {
+          button: 0,
+          target: {
+            closest() {
+              return { dataset: { chatToolHistoryMore: "true" }, getAttribute() { return "/chat/42/tool_history"; } };
+            }
+          },
+          preventDefault() { throw new Error("Tool-history navigation must remain with its Turbo frame"); }
+        };
+        controller.navigate(historyEvent);
+
         const malformedEvent = {
           button: 0,
           target: {
