@@ -34,6 +34,7 @@ module Tools
         pull_request_url: run.pull_request_url,
         pull_request_number: run.pull_request_number,
         error_message: run.error_message,
+        assessment_diagnostics: PartialCloseouts::AcceptanceAuditFailure.diagnostic_for(run),
         iterations: run.iterations,
         duration_seconds: run.duration_seconds,
         tokens_input: run.tokens_input,

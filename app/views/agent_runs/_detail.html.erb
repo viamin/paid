@@ -49,6 +49,7 @@
   </div>
 
   <%= render "agent_runs/criterion_evidence", agent_run: agent_run %>
+  <%= render "agent_runs/assessment_diagnostics", diagnostic: PartialCloseouts::AcceptanceAuditFailure.diagnostic_for(agent_run) %>
 
   <% if (recovery = agent_run.reconciliation.to_h["source_closure_recovery"]).present? %>
     <% recovery_state = if agent_run.waiting_recovery?
