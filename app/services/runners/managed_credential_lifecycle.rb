@@ -22,7 +22,7 @@ module Runners
   # co-located in one service because their storage formats differ while the
   # refresh/lease/harvest protocol is shared; splitting them would multiply the
   # call sites this extraction exists to unify.
-  # @spec SUBSCRIPTION-RUNNER-AUTH-002 SUBSCRIPTION-RUNNER-AUTH-005 LLM-ROUTING-005
+  # @spec SUBSCRIPTION-RUNNER-AUTH-002 SUBSCRIPTION-RUNNER-AUTH-005 SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-005
   class ManagedCredentialLifecycle
     ROTATING_RUNNER_KEYS = %w[codex opencode omp].freeze
     REFRESH_WINDOW_SECONDS = 600
@@ -240,7 +240,9 @@ module Runners
       def exchange_codex_refresh_token(credential)
         parsed = parsed_secret(credential, runner_key: "codex")
         response = CodexLoginSessions::OAuthClient.new.refresh_token(parsed&.refresh_token)
-        raise InvalidRefreshResponse, "Codex refresh exchange failed" unless response.status == :success
+        unless response.status == :success && response.tokens.is_a?(Hash) && response.tokens["access_token"].present?
+          raise InvalidRefreshResponse, "Codex refresh exchange failed"
+        end
 
         payload = JSON.parse(credential.token.to_s)
         payload["tokens"] = parsed.tokens.merge(response.tokens.compact)
@@ -257,8 +259,7 @@ module Runners
 
       def apply_refresh_result!(credential, runner_key:, payload:)
         case runner_key.to_s
-        when "codex" then apply_codex_refresh_result!(credential, payload)
-        when "opencode" then apply_opencode_refresh_result!(credential, payload)
+        when "codex", "opencode" then apply_codex_refresh_result!(credential, payload)
         when "omp" then apply_omp_refresh_result!(credential, payload)
         else
           raise ArgumentError, "Unsupported managed refresh runner: #{runner_key}"
@@ -279,28 +280,6 @@ module Runners
 
         credential.assign_attributes(
           token: token.to_s,
-          expires_at: parsed.expires_at || credential.expires_at,
-          revoked_at: nil,
-          metadata: credential.metadata.to_h.merge(
-            "source" => "server_refresh",
-            "storage_format" => "codex_auth_json",
-            "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
-          ).compact
-        )
-        credential.save!
-      end
-
-      def apply_opencode_refresh_result!(credential, payload)
-        token = payload.is_a?(Hash) ? payload.dig(:token) || JSON.generate(payload) : payload.to_s
-        parsed = OpencodeCredentials::Secret.parse(token.to_s)
-        canonical_auth = parsed.codex_auth_json
-        unless parsed.opencode_auth? && parsed.access_token.present? && canonical_auth.present?
-          raise InvalidRefreshResponse.new("OpenCode refresh response is not a usable auth.json",
-            reason: parsed.opencode_auth? ? "missing_access_token" : "not_opencode_auth")
-        end
-
-        credential.assign_attributes(
-          token: canonical_auth,
           expires_at: parsed.expires_at || credential.expires_at,
           revoked_at: nil,
           metadata: credential.metadata.to_h.merge(

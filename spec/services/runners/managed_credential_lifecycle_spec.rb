@@ -98,6 +98,18 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
     end
 
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006
+    it "refreshes an OpenCode credential stored as canonical Codex auth json" do
+      credential = create_credential(runner_key: "opencode", token: valid_codex_auth,
+        expires_at: 1.minute.from_now)
+      stub_exchange_supported
+
+      outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "opencode", provision: true)
+
+      expect(outcome).to eq(:refreshed)
+      expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
+    end
+
     it "skips when the credential is not near expiry" do
       credential = create_credential(runner_key: "codex", token: valid_codex_auth,
         expires_at: 8.hours.from_now)
@@ -106,7 +118,7 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
 
       expect(outcome).to eq(:not_needed)
-      expect(AgentHarness::Authentication).not_to have_received(:exchange_refresh_token)
+      expect(CodexLoginSessions::OAuthClient).not_to have_received(:new)
     end
 
     it "does not touch non-rotating runners" do
@@ -116,7 +128,7 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "claude", provision: true)
 
       expect(outcome).to eq(:not_rotating)
-      expect(AgentHarness::Authentication).not_to have_received(:exchange_refresh_token)
+      expect(CodexLoginSessions::OAuthClient).not_to have_received(:new)
     end
 
     it "leaves the credential unchanged when the exchange returns an unusable payload" do
