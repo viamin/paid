@@ -134,3 +134,26 @@ account-scoped unavailable evidence may remove a catalog candidate. A global
 availability result is periodic runner-contract evidence rather than proof
 about the new key; `Runners::ModelCompatibility` remains the gate for global
 runner/auth incompatibility.
+
+## Consistent bootstrap catalog errors
+
+After the bounded key health check, `ConfigureChatRunner` holds the shared
+catalog snapshot through its entire atomic key/runner/chat/step transaction.
+This includes the early direct-provider model lookup, before a runner exists,
+so first publication of a provider catalog cannot look genuinely empty while
+sync is still reconciling availability. A genuinely empty direct-provider
+catalog raises the shared structured `catalog_empty` error with provider
+context and recovery guidance, and rolls back all bootstrap records (#4668).
+The snapshot supplies a nested transaction/savepoint, so a caller that catches
+a model rejection inside its own transaction cannot commit a partial key or
+runner. The shared error accepts provider context when no runner exists yet.
+The preferred Low/Medium/High fallback policy remains unchanged.
+
+OpenRouter's free-policy bootstrap checks `FreeModels::SelectChatModel` inside
+that snapshot before marking the step complete. A missing or ineligible free
+catalog returns the structured `free_model_unavailable` recovery reason and
+rolls back the key/runner/session. A usable candidate does not pin the welcome
+session model: its model remains unset, preserving free selection at first
+use without substituting a paid route. Eligibility is a catalog check, not
+proof of live provider/key availability; existing asynchronous key validation
+remains authoritative for providers without a bounded proxy health check.

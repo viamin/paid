@@ -61,8 +61,10 @@
   SHALL hold a shared snapshot while evaluating catalog, availability,
   verified-model, and policy filters, so they cannot observe a partially
   refreshed provider catalog or be blocked by an upstream registry fetch.
+  Onboarding SHALL acquire that snapshot before its early direct-provider
+  lookup, retaining it through atomic bootstrap.
   *Code:* `Models::CatalogSnapshot`, `ModelsSyncJob`,
-  `ChatSessions::CuratedModelOptions`.
+  `ChatSessions::CuratedModelOptions`, `Onboarding::ConfigureChatRunner`.
 
 - [x] **MODEL-AVAILABILITY-009** — When model eligibility is resolved for a
   runner with API-key authentication, a fresh global unavailable availability

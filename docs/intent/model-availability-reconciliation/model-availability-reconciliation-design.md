@@ -121,7 +121,9 @@ to publish catalog and availability changes as one observable generation.
 exclusive lock, then holds that lock only while it seeds from the prepared
 snapshot and reconciles availability;
 catalog readers that make eligibility decisions hold a shared lock for their
-entire read. This coordinates the catalog rows and availability evidence
+entire read. Onboarding takes that shared snapshot before creating its API
+key and choosing a direct-provider model, retaining it through atomic chat
+bootstrap; the bounded external key health check runs before the lock. This coordinates the catalog rows and availability evidence
 without making a genuine empty or policy-ineligible provider appear usable.
 
 ### `Models::SeedKnownModels` change

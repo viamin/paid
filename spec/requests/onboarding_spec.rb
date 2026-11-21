@@ -105,8 +105,25 @@ RSpec.describe "Onboarding" do
     context "with chat_api_key step" do
       before { Onboarding::CompleteStep.call(account: account, step: "account_profile") }
 
+      { "deepseek" => "refresh the catalog or contact your administrator", "openrouter" => "daily catalog" }.each do |provider, guidance|
+        # @spec ONBOARD-CHAT-014 ONBOARD-CHAT-003
+        it "shows #{provider} empty-catalog recovery without echoing the submitted credential" do
+          patch onboarding_path, params: {
+            step: "chat_api_key",
+            chat_api_key: { api_service_type: provider, api_key: "private-fixture-only" }
+          }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.body).to include(guidance)
+          expect(response.body).not_to include("private-fixture-only")
+          expect(user.provider_api_keys.reload).to be_empty
+          expect(account.onboarding_steps.find_by!(step: "chat_api_key")).to be_in_progress
+        end
+      end
+
       # @spec ONBOARD-CHAT-001 ONBOARD-CHAT-002
       it "creates a chat-ready runner and redirects into the welcome chat" do
+        create(:llm_model, :free, :chat_capable, catalog_source: "openrouter_sync")
         expect {
           patch onboarding_path, params: {
             step: "chat_api_key",
