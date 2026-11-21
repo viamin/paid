@@ -8,11 +8,12 @@ module PartialCloseouts
   # input coverage — is a substantive assessment, never a retry candidate,
   # and changed evidence is a fresh logical audit through ordinary
   # admission, not a re-run of a stale attempt.
-  # @spec PARTIAL-CLOSEOUT-056 PARTIAL-CLOSEOUT-058 AGENT-RETRY-016
+  # @spec PARTIAL-CLOSEOUT-056 PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059 AGENT-RETRY-016
   class AcceptanceAuditFailure
     MAX_DIAGNOSTIC_VALUE_LENGTH = 120
     MAX_DIAGNOSTIC_FIELDS = 10
-    DIAGNOSTIC_KEYS = %w[category provider model request_id attempt_id at].freeze
+    DIAGNOSTIC_KEYS = %w[category provider model configured_primary_provider configured_primary_model request_id attempt_id at].freeze
+    ATTEMPT_TRACE_KEYS = %w[ordinal runner_id runner provider model outcome elapsed_ms allocated_ms phase skip_reason].freeze
     TRANSIENT_CATEGORIES = %w[transport_error timeout unsuccessful_response invalid_json invalid_assessment].freeze
     AUTHENTICATION_CATEGORIES = %w[authentication_unavailable].freeze
     TRANSIENT_MESSAGES = [
@@ -44,6 +45,7 @@ module PartialCloseouts
           field.stringify_keys.slice("path", "expected", "actual").compact
             .transform_values { |value| bounded_diagnostic_value(value) }
         end
+        result["attempt_trace"] = safe_attempt_trace(source["attempt_trace"] || source[:attempt_trace]) if (source["attempt_trace"] || source[:attempt_trace]).is_a?(Hash)
         result
       end
 
@@ -71,6 +73,20 @@ module PartialCloseouts
         return value.to_s.first(MAX_DIAGNOSTIC_VALUE_LENGTH) if value.is_a?(String) || value.is_a?(Numeric) || value.is_a?(Symbol)
 
         value.class.name.first(MAX_DIAGNOSTIC_VALUE_LENGTH)
+      end
+
+      def safe_attempt_trace(trace)
+        source = trace.stringify_keys
+        attempts = source["attempts"].is_a?(Array) ? source["attempts"].first(5) : []
+        {
+          "selected_attempt_ordinal" => bounded_diagnostic_value(source["selected_attempt_ordinal"]),
+          "attempts" => attempts.filter_map do |attempt|
+            next unless attempt.is_a?(Hash)
+
+            attempt.stringify_keys.slice(*ATTEMPT_TRACE_KEYS).compact
+              .transform_values { |value| bounded_diagnostic_value(value) }
+          end
+        }.compact
       end
 
       # A "retried" run keeps the failure signature that justified its retry,

@@ -182,6 +182,14 @@ and terminal reason. A valid assessment with unmet or unknown criteria remains
 substantive and is never retried to seek a different verdict. This path is
 report-only and cannot authorize implementation, repair, or issue closure.
 
+The same diagnostic carries a bounded route trace for a raised request. It
+contains only the owned candidate identity, resolved provider/model when known,
+ordinal, allocated and elapsed time, phase, normalized outcome, and correlation
+identifiers. A skipped candidate did not execute. The selected terminal failure
+points to the actual producing entry; configured-primary routing remains
+separate context, never observed fallback provenance. Legacy rows may have no
+trace and remain readable.
+
 Report-only audits, pre-publication source assessment, post-PR reconciliation,
 and legacy reconciliation persist the same bounded diagnostic projection.
 Source assessment retains diagnostics before raising its existing Temporal

@@ -267,10 +267,75 @@ RSpec.describe Llm::Request do
       .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
   end
 
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches the selected fallback timeout and every attempted route to the raised failure" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    failures = [ AgentHarness::TimeoutError.new("primary timeout"), AgentHarness::TimeoutError.new("fallback timeout") ]
+    allow(provider).to receive(:send_message) { raise failures.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError, "fallback timeout") do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:selected_attempt_ordinal)).to eq(2)
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(ordinal: 1, runner_id: runner.id, provider: "codex", model: "runner-mid", outcome: "timeout"),
+          a_hash_including(ordinal: 2, runner_id: fallback.id, provider: "gemini", model: "gemini-mid", outcome: "timeout")
+        )
+      end
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "retains the earlier permanent failure as selected when a fallback times out" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    failures = [ AgentHarness::AuthenticationError.new("primary authentication"), AgentHarness::TimeoutError.new("fallback timeout") ]
+    allow(provider).to receive(:send_message) { raise failures.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::AuthenticationError, "primary authentication") do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:selected_attempt_ordinal)).to eq(1)
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(ordinal: 1, outcome: "authentication_unavailable"),
+          a_hash_including(ordinal: 2, outcome: "timeout")
+        )
+      end
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "records an unavailable fallback as skipped without claiming it executed" do
+    fallback = create(:runner, user: owner, runner_key: "gemini", enabled_for_agent_runs: false)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    allow(provider).to receive(:send_message).and_raise(AgentHarness::TimeoutError, "primary timeout")
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(runner_id: fallback.id, outcome: "skipped", skip_reason: "unavailable")
+        )
+      end
+    expect(Containers::StandaloneTextExecutor).to have_received(:new).once
+  end
+
   # @spec PARTIAL-CLOSEOUT-049
   it "fails with a timeout when the overall budget leaves no time for a candidate" do
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 0) }
-      .to raise_error(AgentHarness::TimeoutError, /timeout exhausted/)
+      .to raise_error(AgentHarness::TimeoutError, /timeout exhausted/) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace.fetch(:attempts)).to include(a_hash_including(outcome: "skipped", skip_reason: "deadline_exhausted"))
+        expect(trace[:selected_attempt_ordinal]).to be_nil
+      end
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
