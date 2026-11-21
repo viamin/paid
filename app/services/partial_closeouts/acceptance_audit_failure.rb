@@ -10,6 +10,9 @@ module PartialCloseouts
   # admission, not a re-run of a stale attempt.
   # @spec PARTIAL-CLOSEOUT-056 PARTIAL-CLOSEOUT-058 AGENT-RETRY-016
   class AcceptanceAuditFailure
+    MAX_DIAGNOSTIC_VALUE_LENGTH = 120
+    MAX_DIAGNOSTIC_FIELDS = 10
+    DIAGNOSTIC_KEYS = %w[category provider model request_id attempt_id at].freeze
     TRANSIENT_CATEGORIES = %w[transport_error timeout unsuccessful_response invalid_json invalid_assessment].freeze
     AUTHENTICATION_CATEGORIES = %w[authentication_unavailable].freeze
     TRANSIENT_MESSAGES = [
@@ -21,6 +24,27 @@ module PartialCloseouts
     SIGNATURE_STATUSES = %w[failed retried].freeze
 
     class << self
+      def diagnostic_for(agent_run)
+        diagnostic = agent_run.reconciliation.to_h.values_at("acceptance_audit_failure", "assessment_failure")
+          .find { |value| value.is_a?(Hash) && value.present? }
+        safe_diagnostic(diagnostic) if diagnostic
+      end
+
+      # @spec PARTIAL-CLOSEOUT-058
+      def safe_diagnostic(diagnostic)
+        source = diagnostic.stringify_keys
+        result = source.slice(*DIAGNOSTIC_KEYS).compact.transform_values { |value| bounded_diagnostic_value(value) }
+        result["category"] ||= "transport_error"
+        fields = source["invalid_fields"].is_a?(Array) ? source["invalid_fields"] : []
+        result["invalid_fields"] = fields.first(MAX_DIAGNOSTIC_FIELDS).filter_map do |field|
+          next unless field.is_a?(Hash)
+
+          field.stringify_keys.slice("path", "expected", "actual").compact
+            .transform_values { |value| bounded_diagnostic_value(value) }
+        end
+        result
+      end
+
       def classify(agent_run)
         return failure_signature(agent_run) if agent_run.status.in?(SIGNATURE_STATUSES)
 
@@ -40,6 +64,12 @@ module PartialCloseouts
       end
 
       private
+
+      def bounded_diagnostic_value(value)
+        return value.to_s.first(MAX_DIAGNOSTIC_VALUE_LENGTH) if value.is_a?(String) || value.is_a?(Numeric) || value.is_a?(Symbol)
+
+        value.class.name.first(MAX_DIAGNOSTIC_VALUE_LENGTH)
+      end
 
       # A "retried" run keeps the failure signature that justified its retry,
       # so the sweep can still distinguish a superseded transient attempt

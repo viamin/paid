@@ -23,7 +23,8 @@ module Activities
     rescue Llm::AnalyzePartialCloseout::AssessmentFailure => e
       agent_run&.update!(reconciliation: agent_run.reconciliation.merge(
         "status" => "retryable_failure", "error" => e.message,
-        "assessment_failure" => e.diagnostic.stringify_keys, "failed_at" => Time.current.iso8601
+        "assessment_failure" => PartialCloseouts::AcceptanceAuditFailure.safe_diagnostic(e.diagnostic),
+        "failed_at" => Time.current.iso8601
       ))
       raise
     rescue StandardError => e

@@ -59,14 +59,26 @@
   This recovery SHALL preserve runner authorization, credentials, privacy,
   budgets, isolation, and report-only admission and SHALL NOT authorize repair
   or implementation work.
+  Authorized run detail and `get_agent_run` SHALL expose the same bounded,
+  allowlisted diagnostic projection, omit arbitrary payloads, and tolerate
+  malformed historical values. HTML SHALL escape diagnostic text and keep
+  request/attempt identifiers in a disclosure. Reading diagnostics SHALL NOT
+  contact providers or initiate recovery.
   *Code:* `app/services/llm/request.rb`,
   `app/services/llm/analyze_partial_closeout.rb`,
   `app/temporal/activities/run_acceptance_audit_activity.rb`,
-  `app/services/partial_closeouts/acceptance_audit_failure.rb`.
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`,
+  `app/views/agent_runs/_assessment_diagnostics.html.erb`,
+  `app/mcp/tools/get_agent_run.rb`.
   *Test:* `spec/services/llm/request_spec.rb`,
   `spec/services/llm/analyze_partial_closeout_spec.rb`,
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
-  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`.
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,
+  `spec/requests/projects/acceptance_audit_diagnostics_spec.rb`,
+  `spec/mcp/tools/get_agent_run_audit_diagnostics_spec.rb`,
+  `spec/system/acceptance_audit_diagnostics_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-057** — When Paid builds the criterion-level
   acceptance-audit packet and source revision for an issue, it SHALL include

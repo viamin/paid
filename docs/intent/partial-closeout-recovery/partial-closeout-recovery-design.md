@@ -175,6 +175,14 @@ and terminal reason. A valid assessment with unmet or unknown criteria remains
 substantive and is never retried to seek a different verdict. This path is
 report-only and cannot authorize implementation, repair, or issue closure.
 
+Report-only and post-PR reconciliation persist the same bounded diagnostic
+projection. Run detail and `get_agent_run` expose that projection
+to authorized operators. The projection allowlists provenance, correlation,
+category, timestamp, and field/type diagnostics; it discards unknown payloads
+and tolerates malformed historical values. Run detail escapes every value and
+keeps correlation identifiers in a disclosure below the actionable fields.
+Rendering and tool reads do not execute a retry or contact a provider.
+
 The existing criterion-level partial-closeout assessment is the sole authority
 for publishing a source issue's closing reference. Before a new source PR is
 published, Paid obtains the assessment through `agent_harness`, snapshots the
