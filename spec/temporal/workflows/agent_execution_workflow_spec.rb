@@ -2281,7 +2281,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::CheckProxyHealthActivity, { agent_run_id: 42 },
               start_to_close_timeout: 30,
               schedule_to_close_timeout: described_class::PROXY_HEALTH_TIMEOUT,
-              retry_policy: described_class::PROXY_HEALTH_RETRY_POLICY)
+              retry_policy: described_class::PROXY_HEALTH_RETRY_POLICY,
+              task_queue: Paid::POLL_TASK_QUEUE)
     end
 
     it "skips health check for create_issue goal without source PR" do
@@ -2354,7 +2355,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     let(:workflow) { described_class.new }
 
     before do
-      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: false)
     end
 
     def timeout_activity_error

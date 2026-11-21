@@ -53,7 +53,7 @@ module Activities
         # Retryable error — Temporal's retry policy will handle backoff.
         # When retries are exhausted (schedule_to_close_timeout exceeded),
         # Temporal will surface this as a timeout failure which the workflow
-        # catches and converts to ProxyUnavailable.
+        # classifies according to its recorded routing/version contract.
         raise Temporalio::Error::ApplicationError.new(
           "Credential proxy unavailable",
           type: "ProxyUnhealthy",

@@ -134,6 +134,30 @@
   `spec/temporal/activities/queue_agent_run_activity_concurrency_spec.rb`.
   *Code:* `Activities::QueueAgentRunActivity#execute`.
 
+- [x] **TEMPORAL-ORCHESTRATION-014** — When a new agent workflow needs a
+  proxy-health check before clone or push, it SHALL schedule the existing
+  `CheckProxyHealth` activity on the existing poll queue without increasing
+  worker capacity, changing tenant context, or changing its 30-second execution
+  bound, 600-second recovery deadline or retry backoff. A Temporal patch SHALL
+  preserve the original queue and timeout conversion when replaying unpatched
+  histories. A schedule-to-start failure SHALL report unavailable worker
+  execution rather than an observed endpoint outage; execution timeout and
+  exhausted recovery SHALL remain distinct, and an observed unhealthy endpoint
+  SHALL be identified only by its actual SDK-decoded failure cause. A zero
+  final start-event ID alone SHALL NOT establish that earlier retries never
+  executed; unobserved schedule-to-close exhaustion SHALL remain unknown
+  recovery exhaustion. Configuration errors
+  and cancellations SHALL not be converted into proxy-outage evidence. After
+  successful agent execution, these control failures SHALL select the existing
+  finite container-retention/recovery path; before successful execution they
+  SHALL retain ordinary cleanup. Neither path SHALL skip health checks, push
+  without authorization, report success or fabricate a result commit (#5240).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_proxy_health_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`,
+  `spec/temporal/activities/check_proxy_health_activity_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#ensure_proxy_healthy`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.
