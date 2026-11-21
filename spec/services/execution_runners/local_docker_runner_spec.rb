@@ -1635,6 +1635,15 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     describe "#cleanup_services" do
+      # @spec CONTAINER-RUNTIME-032 PARTIAL-CLOSEOUT-032
+      it "delegates deleted-run cleanup without requiring persistence" do
+        provisioner = instance_double(Containers::ServiceProvisioner)
+        allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+        expect(provisioner).to receive(:cleanup).with(agent_run, stale_requeue_count: nil, persist: false)
+
+        runner.cleanup_services(agent_run:, persist: false)
+      end
+
       it "delegates to Containers::ServiceProvisioner#cleanup" do
         provisioner = instance_double(Containers::ServiceProvisioner)
         allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
