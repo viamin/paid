@@ -379,7 +379,10 @@ or timeout, the workflow records available structured outcomes and explicit
 missing-check gaps, synthesizes coverage and retains discrepancies while keeping
 the run failed. Recording evidence never grants completion or repair authority.
 Completion requires coverage for every admitted obligation and a nonempty scope.
-The recorder preserves reported evidence lists and references, and compares code
+The recorder preserves log-record boundaries when normalizing structured agent
+output, including records stored without trailing newlines, while retaining
+byte-continuous chunks that split within an output envelope. It preserves
+reported evidence lists and references, and compares code
 and obligation-source revisions by their named fields. Only Paid assigns
 recorder-verified facts.
 
