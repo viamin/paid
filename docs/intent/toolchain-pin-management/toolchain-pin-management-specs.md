@@ -182,6 +182,15 @@
   *Code:* `scripts/lib/agent_contract_versions.rb`, `bin/update`,
   `.devcontainer/install-oh-my-pi.sh`.
 
+- [x] **TOOLCHAIN-PIN-035** — When Paid adopts an `agent-harness` release for
+  managed credential recovery, it SHALL verify the installed public provider
+  capabilities and Codex credential metadata contract using synthetic native
+  credentials, while preserving Claude and unsupported-provider capability
+  behavior. Paid SHALL consume that public contract without adding provider
+  HTTP or response-parsing wrappers.
+  *Tests:* `spec/lib/agent_harness/authentication_release_contract_spec.rb`.
+  *Code:* `Gemfile`, `Runners::ManagedCredentialLifecycle`.
+
 ## Report-Only Toolchain
 
 - [x] **TOOLCHAIN-PIN-040** — `bin/update` SHALL report the latest available

@@ -87,8 +87,10 @@ gem "aws-sdk-s3", require: false
 # 0.44.36 routes isolated Codex API-key text requests over HTTPS
 # (viamin/agent-harness#537; fixes #5091).
 # 0.44.40 preserves OpenCode provider configuration maps (#5205,
-# viamin/agent-harness#548).
-gem "agent-harness", "0.44.40"
+# viamin/agent-harness#548). 0.46.1 adds managed Codex refresh exchange
+# metadata (viamin/agent-harness#559) and the OpenRouter privacy routing
+# correction (#560).
+gem "agent-harness", "0.46.1"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.

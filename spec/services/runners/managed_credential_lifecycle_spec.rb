@@ -157,6 +157,13 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
 
       expect(described_class.readiness(credential, runner_key: "codex")).to eq(:fresh)
     end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "marks active near-expiry Codex credentials refreshable when the harness supports recovery" do
+      credential = create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 5.minutes.from_now)
+
+      expect(described_class.readiness(credential, runner_key: "codex")).to eq(:refreshable)
+    end
   end
 
   describe ".credential_for" do
