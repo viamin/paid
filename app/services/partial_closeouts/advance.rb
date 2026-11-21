@@ -67,6 +67,7 @@ module PartialCloseouts
         issue: agent_run.issue, actor: agent_run.project.effective_owner, origin: :automatic,
         reason: "Complete the remaining accepted criterion: #{gap.fetch("criterion")}. #{gap["body"].to_s.strip}",
         evidence_context: { "partial_closeout_gap_identity" => identity, "remaining_work" => gap,
+          "prior_closeout_evidence" => prior_closeout_evidence,
           "technical_choice" => { "selected_option" => "implement the focused source-retained gap",
             "audit_event_id" => decision.audit_event.id, "effective_policy" => policy.to_h } }
       )
@@ -102,6 +103,11 @@ module PartialCloseouts
       @current_assessment ||= PartialCloseouts::Assessment.call(agent_run.issue)
     end
 
+    def prior_closeout_evidence
+      { "agent_run_id" => agent_run.id, "pull_request_number" => agent_run.pull_request_number,
+        "pull_request_url" => agent_run.pull_request_url, "result_commit_sha" => agent_run.result_commit_sha }.compact
+    end
+
     def project_gate_open?
       Issues::AutoPickProjectGate.call(agent_run.project)
     end
@@ -116,6 +122,7 @@ module PartialCloseouts
             "inbox_decision_avoided" => source_retained_agent_gap? &&
               (result.scheduled? || agent_run.reconciliation.dig("advance", "inbox_decision_avoided") == true),
             "continuation_request_id" => result.agent_run&.continuation_request_id,
+            "completion_outcome" => result.scheduled? ? "continuation_queued" : result.code&.to_s,
             "at" => Time.current.iso8601
           }.compact
         )
