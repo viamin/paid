@@ -1348,6 +1348,22 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `spec/services/partial_closeouts/confirm_sync_spec.rb`,
   `spec/models/notification_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-060** — When the semantic acceptance assessor proposes
+  the specialized `facet_confidence_closeout_evaluation` human workflow, it
+  SHALL add it only when the current source intent explicitly owns that exact
+  acceptance criterion and a supplied, revision-bound policy or evaluation
+  target applies. The returned gap SHALL cite both source-intent and
+  policy/evaluation-target provenance. Full-LID wording, unrelated open work,
+  an AI-producing run, merged PR prose, or the workflow option itself SHALL
+  not create that criterion. Deterministic code SHALL validate this typed
+  provenance boundary without deciding textual applicability; an unsupported
+  addition is rejected while substantive criterion verdicts and real human
+  policy prerequisites remain intact. Unknown ownership and stale-policy
+  selection remain explicit bounded states and SHALL not silently substitute
+  solo review for team review.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-059** — When an authorized operator reviews a native
   technical or staged-closeout recipe, Paid SHALL persist an integer execution
   limit from 1 through 900 seconds, defaulting to 300 seconds, and expose the limit
