@@ -73,6 +73,18 @@ fails, new histories preserve the original workflow failure, log the unavailable
 bookkeeping operation and continue normal cleanup/janitor handling; they do not
 invent a terminal database write, assessment or renewed retry allowance.
 
+Report-only acceptance audits do not provision a coding container, MCP server,
+service container, or worktree. New histories resolve cleanup ownership from
+the persisted run and execution-resource ledger behind the
+`cleanup-owned-resources-v1` Temporal patch before scheduling cleanup. Empty
+ownership skips all cleanup and janitor commands; a persisted container/runner
+handle or active ledger entry, MCP/tool-sidecar ID, service-container ID, or
+active worktree retains the corresponding existing cleanup and finite janitor
+path. The resolver's bounded failure fails safe to the legacy cleanup set.
+Unpatched histories retain their recorded cleanup commands. This is an
+agent-queue metadata read, not a transfer of expensive cleanup to the poll
+pool (#5266).
+
 Worker shutdown signals request cancellation and remove the readiness marker
 from a normal Ruby thread. A watchdog starts before cancellation so a blocked
 callback cannot prevent the forced exit. A repeated signal removes readiness

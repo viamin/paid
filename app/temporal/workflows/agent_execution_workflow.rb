@@ -700,6 +700,7 @@ module Workflows
         # Skip cleanup activities when agent_run_id is not present — calling
         # AgentRun.find(nil) would raise and waste retry budget on a known no-op.
         if agent_run_id.present?
+          cleanup_ownership = resolve_cleanup_ownership(agent_run_id)
           retain = should_retain_container?(agent_step_succeeded, workflow_error)
 
           if retain
@@ -722,7 +723,7 @@ module Workflows
             end
           end
 
-          unless retain
+          if cleanup_ownership[:container] && !retain
             begin
               run_cleanup_activity(Activities::CleanupContainerActivity,
                 { agent_run_id: agent_run_id },
@@ -738,46 +739,52 @@ module Workflows
             end
           end
 
-          begin
-            run_cleanup_activity(Activities::CleanupMcpServersActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_mcp_servers_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          if cleanup_ownership[:mcp_servers]
+            begin
+              run_cleanup_activity(Activities::CleanupMcpServersActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_mcp_servers_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
 
-          begin
-            run_cleanup_activity(Activities::CleanupServicesActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_services_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          if cleanup_ownership[:services]
+            begin
+              run_cleanup_activity(Activities::CleanupServicesActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_services_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
 
-          begin
-            run_cleanup_activity(Activities::CleanupWorktreeActivity,
-              { agent_run_id: agent_run_id },
-              start_to_close_timeout: 120, schedule_to_close_timeout: 300,
-              retry_policy: CLEANUP_RETRY_POLICY)
-          rescue => e
-            Temporalio::Workflow.logger.warn(
-              message: "agent_execution.cleanup_worktree_failed",
-              agent_run_id: agent_run_id,
-              error_class: e.class.name,
-              error: e.message
-            )
+          if cleanup_ownership[:worktree]
+            begin
+              run_cleanup_activity(Activities::CleanupWorktreeActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 120, schedule_to_close_timeout: 300,
+                retry_policy: CLEANUP_RETRY_POLICY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.cleanup_worktree_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
           end
         end
 
@@ -786,7 +793,7 @@ module Workflows
         # failed the janitor provides another attempt at cleanup outside the workflow.
         # For retained containers the janitor respects the retention TTL.
         begin
-          if agent_run_id.present?
+          if agent_run_id.present? && cleanup_ownership[:janitor]
             run_cleanup_activity(Activities::EnqueueJanitorActivity,
               { agent_run_id: agent_run_id },
               start_to_close_timeout: 10,
@@ -824,6 +831,27 @@ module Workflows
           end
         end
       end
+    end
+
+    # @spec TEMPORAL-ORCHESTRATION-016
+    def resolve_cleanup_ownership(agent_run_id)
+      return legacy_cleanup_ownership unless Temporalio::Workflow.patched("cleanup-owned-resources-v1")
+
+      run_activity(Activities::ResolveCleanupOwnershipActivity, { agent_run_id: agent_run_id },
+        start_to_close_timeout: 10, schedule_to_close_timeout: 30, retry_policy: NO_RETRY)
+    rescue => error
+      raise_if_canceled!(error)
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.cleanup_ownership_unavailable",
+        agent_run_id: agent_run_id,
+        error_class: error.class.name,
+        error: error.message
+      )
+      legacy_cleanup_ownership
+    end
+
+    def legacy_cleanup_ownership
+      { container: true, mcp_servers: true, services: true, worktree: true, janitor: true }
     end
 
     def queue_refactor_followup_if_needed(goal:, tdd_phase:, tdd_returned_to_test_review:, project_id:, issue_id:, source_pull_request_number:, focus:, runner_id:, initiating_user_id:)
