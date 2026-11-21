@@ -150,8 +150,9 @@ module Automation
     def call
       return nil if authorization.nil?
 
+      scope_assessment = assess_scope
       authorization.with_lock do
-        boundary_decision = DelegatedWorkBoundary.call(authorization:, boundary:, snapshot:)
+        boundary_decision = DelegatedWorkBoundary.call(authorization:, boundary:, snapshot: scope_snapshot(scope_assessment:))
         return boundary_decision if boundary_decision.blocked?
 
         action_decision
@@ -238,7 +239,7 @@ module Automation
       authorization.stop_before_phase.to_s == STOP_BEFORE_PHASES.fetch(action)
     end
 
-    def snapshot
+    def scope_snapshot(scope_assessment:)
       current_assessment = assessment
       {
         account_id: project.account_id,
@@ -256,7 +257,7 @@ module Automation
         repository_controls: project.github_installation&.active? == true,
         assessment_available: !current_assessment.stale?,
         explicit_hold: work_item.held_for_review?
-      }.merge(scope_snapshot)
+      }.merge(scope_assessment_snapshot(scope_assessment:))
     end
 
     # The work item whose pinned revisions the boundary recheck compares
@@ -282,11 +283,20 @@ module Automation
       nil
     end
 
-    def scope_snapshot
+    # Semantic assessment is intentionally completed before the authorization
+    # lock. The locked snapshot below re-derives every deterministic admission
+    # fact, so a revoke or any other lifecycle change during the remote request
+    # still blocks admission.
+    def assess_scope
+      return unless action == "repair"
+
+      AssessBoundedScope.call(authorization:, proposed_evidence: normalized_action_evidence)
+    end
+
+    def scope_assessment_snapshot(scope_assessment:)
       return { scope_correspondence: true, new_risk: false } unless action == "repair"
 
-      assessment = AssessBoundedScope.call(authorization:, proposed_evidence: normalized_action_evidence)
-      { scope_correspondence: assessment.in_scope?, new_risk: normalized_action_evidence["new_risk"] == true }
+      { scope_correspondence: scope_assessment.in_scope?, new_risk: normalized_action_evidence["new_risk"] == true }
     end
   end
 end

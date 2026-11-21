@@ -113,7 +113,9 @@ admission paths land.
   evaluated, the system SHALL use `agent_harness` with bounded pinned and
   proposed repair evidence at every repair admission boundary and a structured
   outcome, SHALL fail closed on unavailable or malformed output, and SHALL NOT
-  let that outcome waive deterministic policy.
+let that outcome waive deterministic policy. The remote assessment SHALL occur
+outside the authorization lifecycle lock, after which admission SHALL lock and
+re-derive deterministic boundary facts before work begins.
   *Verified by:* `spec/services/automation/assess_bounded_scope_spec.rb`
   (bounded structured `agent_harness` request and unavailable/malformed
   fail-closed outcomes) and

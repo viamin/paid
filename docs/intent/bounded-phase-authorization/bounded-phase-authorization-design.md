@@ -104,11 +104,14 @@ semantic result bypasses deterministic enforcement.
 ## Admission and concurrency
 
 The shared admission service is called when an action is created, dequeued,
-retried, and scheduled as a review/repair follow-up. It locks the authorization
-or uses a conditional state transition that includes its lifecycle version.
-Completion/revocation/reassessment take the same lock. A worker that loses the
-race records a blocked outcome and starts no new action. Running work is not
-force-killed, but its next externally visible or queued action rechecks.
+retried, and scheduled as a review/repair follow-up. It captures the immutable
+repair evidence and performs the remote semantic assessment before locking the
+authorization. It then locks the authorization or uses a conditional state
+transition that includes its lifecycle version and re-derives every
+deterministic boundary fact before admitting work. Completion, revocation, and
+reassessment take the same lock. A worker that loses the race records a blocked
+outcome and starts no new action. Running work is not force-killed, but its next
+externally visible or queued action rechecks.
 
 ## Consent and surface parity
 

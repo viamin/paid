@@ -287,6 +287,26 @@ RSpec.describe Automation::DelegatedActionAdmission do
     expect(authorization.reassessment_reasons).to include("scope_correspondence")
   end
 
+  it "assesses repair scope outside the lifecycle lock and rechecks the current authorization" do # @spec BOUNDED-PHASE-AUTHORIZATION-004 BOUNDED-PHASE-AUTHORIZATION-006
+    authorization = authorize(action: "repair")
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"status":"in_scope","explanation":"repair matches","evidence_refs":[]}')
+    transaction_depth = ActiveRecord::Base.connection.open_transactions
+    assessment_transaction_depth = nil
+    allow(Automation::AssessBoundedScope).to receive(:call).and_call_original
+    allow(Llm::Request).to receive(:call) do
+      assessment_transaction_depth = ActiveRecord::Base.connection.open_transactions
+      authorization.update!(status: "revoked")
+      response
+    end
+
+    result = recheck(goal: "layered_verification_repair", boundary: :repair)
+
+    expect(assessment_transaction_depth).to eq(transaction_depth)
+    expect(result).to be_blocked
+    expect(result.reasons).to include(:authorization_lifecycle)
+  end
+
   it "blocks when the repository-control channel is inactive" do # @spec PROJECT-DELEGATION-004
     authorize(action: "review")
     project.github_installation.update!(revoked_at: Time.current)
