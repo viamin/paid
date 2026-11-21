@@ -54,8 +54,12 @@ RSpec.describe PartialCloseouts::Advance do
     expect(first.scheduled?).to be(true)
     expect(first.agent_run.goal).to eq("create_pr")
     expect(first.agent_run.continuation_request.evidence).to include("remaining_work" => hash_including("criterion" => "dispatch"))
+    expect(first.agent_run.continuation_request.evidence).to include(
+      "prior_closeout_evidence" => hash_including("agent_run_id" => run.id, "pull_request_number" => 12)
+    )
     expect(first.agent_run.continuation_request.evidence.dig("technical_choice", "effective_policy")).to include("permitted" => true)
     expect(run.reload.reconciliation.dig("advance", "inbox_decision_avoided")).to be(true)
+    expect(run.reconciliation.dig("advance", "completion_outcome")).to eq("continuation_queued")
     expect(second.code).to eq(:unchanged_gap)
     expect(IssueContinuationRequest.where(issue: issue).count).to eq(1)
   end

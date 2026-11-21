@@ -122,7 +122,8 @@ module PartialCloseouts
             "inbox_decision_avoided" => source_retained_agent_gap? &&
               (result.scheduled? || agent_run.reconciliation.dig("advance", "inbox_decision_avoided") == true),
             "continuation_request_id" => result.agent_run&.continuation_request_id,
-            "completion_outcome" => result.scheduled? ? "continuation_queued" : result.code&.to_s,
+            "completion_outcome" => result.scheduled? ? "continuation_queued" :
+              agent_run.reconciliation.dig("advance", "completion_outcome") || result.code&.to_s,
             "at" => Time.current.iso8601
           }.compact
         )
