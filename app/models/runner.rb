@@ -1673,8 +1673,10 @@ class Runner < ApplicationRecord
   # are NOT rejected here — the before_save hook
   # +ensure_manual_direct_outbound_catalog_entry+ registers a manual catalog row
   # so downstream selection has something to resolve. Provider-mismatched
-  # existing rows still fail so a user can't repoint an Anthropic-catalog model
-  # at a different provider.
+  # existing rows still fail, except OpenRouter-synced rows whose provider
+  # retains the upstream vendor. That exception matches the model picker; it
+  # does not authorize an arbitrary foreign-vendor row for another key.
+  # @spec DIRECT-OUTBOUND-CATALOG-011
   def direct_outbound_config_models_must_exist_in_catalog
     return unless direct_outbound_capable_runner?
 
@@ -1686,6 +1688,7 @@ class Runner < ApplicationRecord
 
     expected_provider = direct_outbound_llm_model_provider
     return if expected_provider.blank? || model.provider == expected_provider
+    return if expected_provider == OPENROUTER_FREE_MODEL_PROVIDER && model.catalog_source == "openrouter_sync"
 
     errors.add(:config, "#{direct_outbound_runner_label} model belongs to the #{RunnerSupport.api_service_type_label(model.provider)} catalog but expected #{RunnerSupport.api_service_type_label(expected_provider)}")
   end

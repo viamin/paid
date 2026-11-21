@@ -80,6 +80,16 @@ a stricter rule that belongs to the free-model rotation path, not to option
 listing (below-quality-bar models remain manually selectable, matching the
 existing tier-mapping UI copy).
 
+## Setup/save parity
+
+The OpenRouter option union also governs provider validation during save:
+`openrouter_sync` rows retain their upstream vendor without being rejected
+as foreign-provider selections. This does not admit arbitrary manual vendor
+rows, weaken other API-key providers, or bypass ZDR endpoint validation.
+The exact save boundary is DIRECT-OUTBOUND-CATALOG-011; keyboard selection,
+mobile edit/save round trips and stale-catalog blocking are exercised in
+`spec/system/runners/zdr_model_selection_spec.rb` (#4706).
+
 ## What this is not
 
 - **Not the form.** Rendering the dropdown, optgroups, custom reveal, and the
