@@ -35,6 +35,27 @@ Paid runs separate Temporal task queues for polling and agent workloads. Poll
 work is isolated from long-running agent execution so time-sensitive repository
 polling does not compete with broader execution throughput.
 
+The poll queue also carries the bounded `CheckProxyHealth` control activity.
+Both worker modes already register that activity. Health checks retain their
+30-second execution bound, 600-second recovery window and existing retry
+backoff; they do not occupy a long-running agent activity slot while waiting
+for the proxy. No activity-slot count or worker process is added. Other agent
+activities retain their existing routing. The
+`proxy-health-control-routing-v1` Temporal patch keeps recorded legacy health
+commands on their original queue and failure behavior; new histories use the
+control route (#5240).
+
+A health activity that never obtained worker execution is a scheduling failure,
+not evidence of a proxy outage. New histories distinguish schedule-to-start,
+execution timeout, an exhausted recovery with an observed `ProxyUnhealthy`
+cause, and exhausted recovery without that observation. Messages contain only
+bounded fixed categories and deadlines. Configuration errors and cancellations
+retain their existing paths. These control failures leave a successful agent's
+work eligible for the existing container-retention/recovery path and its finite
+TTL; a failure before successful agent execution does not retain an otherwise
+unused execution environment. A failed health check does not authorize push,
+mark the run successful, replay coding work, or bypass the health gate.
+
 Worker shutdown signals request cancellation and remove the readiness marker
 from a normal Ruby thread. A watchdog starts before cancellation so a blocked
 callback cannot prevent the forced exit. A repeated signal removes readiness
@@ -107,6 +128,14 @@ Temporal worker configuration derives the minimum Active Record pool size from
 the selected worker mode and activity-slot counts. Regular activities can
 consume an additional database connection through heartbeat helper threads, so
 pool sizing must account for both activity slots and heartbeat threads.
+
+## Health control routing alternatives
+
+| Choice | Decision | Rationale |
+| --- | --- | --- |
+| Existing poll worker for the bounded health activity | Selected | Its activity registration and capacity already exist independently of long agent work. |
+| New worker process or larger agent slot count | Rejected | Adds capacity and deployment complexity without isolating the observed control dependency. |
+| Longer health deadline on the agent queue | Rejected | A queued check still supplies no endpoint observation and can discard completed work. |
 
 ## Deferred Work
 

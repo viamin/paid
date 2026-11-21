@@ -1035,22 +1035,58 @@ module Workflows
     # raises a retryable ProxyUnhealthy error when the proxy is down. Temporal
     # manages backoff/retry via PROXY_HEALTH_RETRY_POLICY (5s → 30s cap),
     # keeping the activity worker thread free between attempts. When the
-    # schedule_to_close_timeout expires, Temporal surfaces a TimeoutError
-    # which this method converts to a non-retryable ProxyUnavailable.
+    # schedule_to_close_timeout expires, classify the recorded observation.
+    # New histories use control capacity; unpatched histories preserve their
+    # original routing and ProxyUnavailable conversion.
+    # @spec TEMPORAL-ORCHESTRATION-014
     def ensure_proxy_healthy(agent_run_id)
+      control_route = Temporalio::Workflow.patched("proxy-health-control-routing-v1")
+      routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE } : {}
       run_activity(Activities::CheckProxyHealthActivity,
         { agent_run_id: agent_run_id },
         start_to_close_timeout: 30,
         schedule_to_close_timeout: PROXY_HEALTH_TIMEOUT,
-        retry_policy: PROXY_HEALTH_RETRY_POLICY)
-    rescue Temporalio::Error::ActivityError => e
-      raise unless e.cause.is_a?(Temporalio::Error::TimeoutError)
+        retry_policy: PROXY_HEALTH_RETRY_POLICY, **routing)
+    rescue Temporalio::Error::ActivityError => error
+      raise unless error.cause.is_a?(Temporalio::Error::TimeoutError)
+
+      if control_route
+        type, explanation = proxy_health_timeout_details(error)
+        raise Temporalio::Error::ApplicationError.new(
+          "#{explanation} within #{PROXY_HEALTH_TIMEOUT}s",
+          type:, non_retryable: true)
+      end
 
       raise Temporalio::Error::ApplicationError.new(
         "Credential proxy unavailable after #{PROXY_HEALTH_TIMEOUT}s",
         type: "ProxyUnavailable",
         non_retryable: true
       )
+    end
+
+    def proxy_health_timeout_details(error)
+      timeout_type = error.cause.type
+      types = Temporalio::Error::TimeoutError::TimeoutType
+      if timeout_type == types::SCHEDULE_TO_START
+        [ "ProxyHealthSchedulingUnavailable", "Proxy health check could not obtain worker execution" ]
+      elsif timeout_type == types::START_TO_CLOSE || timeout_type == types::HEARTBEAT
+        [ "ProxyHealthExecutionTimedOut", "Proxy health activity did not complete; endpoint availability is unknown" ]
+      elsif proxy_reported_unhealthy?(error)
+        [ "ProxyHealthUnhealthy", "Proxy health recovery exhausted after an observed unhealthy endpoint" ]
+      elsif error.started_event_id.zero?
+        [ "ProxyHealthSchedulingUnavailable", "Proxy health check did not obtain worker execution before its recovery deadline" ]
+      else
+        [ "ProxyHealthRecoveryExhausted", "Proxy health recovery exhausted without an observed endpoint verdict" ]
+      end
+    end
+
+    def proxy_reported_unhealthy?(error)
+      while error
+        return true if error.is_a?(Temporalio::Error::ApplicationError) && error.type == "ProxyUnhealthy"
+
+        error = error.respond_to?(:cause) ? error.cause : nil
+      end
+      false
     end
 
     # Creates a cross-repo upstream/downstream issue pair:

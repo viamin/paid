@@ -10,6 +10,7 @@ module CloseoutVerifications
     MAX_RECORDS = 8
     MAX_ERROR = 2_000
     MAX_OUTPUT_BYTES = 2_000
+    MAX_NATIVE_OUTPUT_BYTES = TechnicalPrerequisites::ValidateExecution::MAX_OUTPUT_BYTES
     MAX_COMMAND_BYTES = 1_000
 
     Row = Data.define(:id, :issue_id, :pr_number, :base_sha, :criterion_key,
@@ -121,8 +122,8 @@ module CloseoutVerifications
       end
       strings = { "error" => [ evidence["error"].to_s, MAX_ERROR ],
         "command" => [ evidence["command"].to_s, MAX_COMMAND_BYTES ],
-        "stdout" => [ native["stdout"].to_s, MAX_OUTPUT_BYTES ],
-        "stderr" => [ native["stderr"].to_s, MAX_OUTPUT_BYTES ] }
+        "stdout" => [ native["stdout"].to_s, MAX_NATIVE_OUTPUT_BYTES ],
+        "stderr" => [ native["stderr"].to_s, MAX_NATIVE_OUTPUT_BYTES ] }
       record = {
         "verification_run_id" => row.id, "mapping_id" => row.mapping_id, "generation" => row.generation,
         "source_issue_id" => issue.id, "project_id" => issue.project_id,
@@ -138,7 +139,7 @@ module CloseoutVerifications
         "environment" => evidence["environment"].to_h.slice("container_id", "container_host", "mapping_environment_class")
           .transform_values { |value| value.nil? ? nil : bounded(value.to_s, 250) },
         "cleanup_completed" => technical.dig("cleanup", "completed"),
-        "evidence_truncated" => strings.values.any? { |value, limit| value.bytesize > limit },
+        "evidence_truncated" => native_output_truncated?(native) || strings.values.any? { |value, limit| value.bytesize > limit },
         "receipt_digest" => Digest::SHA256.hexdigest(JSON.generate(evidence.except("recorded_at"))),
         "current" => reasons.empty?,
         "stale_reasons" => reasons
@@ -147,6 +148,13 @@ module CloseoutVerifications
       record
     end
     private_class_method :present
+
+    def self.native_output_truncated?(native)
+      return native["output_truncated"] != false if native.key?("output_truncated")
+
+      %w[stdout stderr].any? { |stream| native[stream].to_s.bytesize >= MAX_NATIVE_OUTPUT_BYTES }
+    end
+    private_class_method :native_output_truncated?
 
     def self.bounded(value, limit)
       value.byteslice(0, limit).to_s.scrub("")
