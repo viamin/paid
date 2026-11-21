@@ -29,6 +29,35 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(agent_run).to receive(:tool_sidecar_endpoints).and_return(sidecar_endpoints)
   end
 
+  context "with a reviewed execution limit" do
+    before do
+      stub_compatible_host
+      stub_provisioning
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    it "applies and records the reviewed limit for the isolated command" do
+      allow(agent_run).to receive(:execute_in_execution_environment)
+        .and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ],
+        execution_runner:, native_timeout_seconds: 600)
+
+      expect(agent_run).to have_received(:execute_in_execution_environment)
+        .with([ "analyzer", "--version" ], timeout: 600, stream: false, env: anything)
+      expect(result.evidence["native_timeout_seconds"]).to eq(600)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    it "rejects an unbounded persisted limit before provisioning" do
+      expect do
+        described_class.call(agent_run:, native_command: "true", execution_runner:, native_timeout_seconds: 901)
+      end.to raise_error(ArgumentError, /native.*limit/i)
+
+      expect(agent_run).not_to have_received(:provision_execution_environment)
+    end
+  end
+
   context "with configured project services" do
     let(:service) { create(:service_container, account: project.account) }
     let(:service_environment) { { "DATABASE_URL" => "postgres://fixture:fixture-secret@database/private_run" } }
@@ -188,6 +217,23 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run.reload.container_id).to be_nil
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "environment"))
       .to include("container_id" => "fixture-container", "container_host" => "remote")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-059
+  it "keeps a larger native limit inside the independent measurement budget" do
+    configure_performance_measurement(samples: 1)
+    stub_compatible_host
+    stub_provisioning
+    limits = []
+    allow(agent_run).to receive(:execute_in_execution_environment) do |*, timeout:, **|
+      limits << timeout
+      { stdout: '{"wall_ms":12}', stderr: "", exit_code: 0 }
+    end
+
+    described_class.call(agent_run:, native_command: "bin/measure", execution_runner:, native_timeout_seconds: 900)
+
+    expect(limits.size).to eq(2)
+    expect(limits).to all(be <= 60)
   end
 
   # @spec PARTIAL-CLOSEOUT-042

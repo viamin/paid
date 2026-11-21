@@ -920,6 +920,18 @@ setup, cancellation and a deleted run. Other running users and transient preview
 references retain their shared services. No configured services means no service
 startup or auto-detection during validation.
 
+Each reviewed requirement carries a native execution limit, defaulting to 300
+seconds and bounded to 1–900 seconds. Operators may review a larger finite
+limit for a cold dependency installation and its check; ordinary pre-commit
+execution and application LLM deadlines retain their existing policy. Manual
+technical validations snapshot this value with their command. Staged mappings
+bind nondefault limits into the reviewed target digest, preserving existing
+default-limit digests, and reject a changed target before execution. Invalid
+persisted limits fail before provisioning. Evidence records the applied limit;
+performance comparisons also retain their independent total measurement budget.
+The 900-second maximum leaves time within the 20-minute job deadline for checkout
+and deterministic cleanup.
+
 The validation run is report-only. It carries its own goal, so it never
 inherits the implementation-admission gate of an implementation goal — a
 stalled issue whose feature intent is not released can still collect evidence

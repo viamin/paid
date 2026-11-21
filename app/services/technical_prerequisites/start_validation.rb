@@ -99,6 +99,7 @@ module TechnicalPrerequisites
           "requirement_id" => requirement.id,
           "requirement_name" => requirement.name,
           "command" => reviewed_command,
+          "native_timeout_seconds" => requirement.native_timeout_seconds,
           "criterion" => criterion,
           "tool_name" => tool_name,
           "technical_authorization_id" => authorization_id,
@@ -174,6 +175,7 @@ module TechnicalPrerequisites
           run.status.in?(%w[queued running completed]) &&
             run.external_metadata.dig(RECIPE_KEY, "requirement_id") == requirement.id &&
             run.external_metadata.dig(RECIPE_KEY, "command") == reviewed_command &&
+            same_native_timeout?(run) &&
             run.external_metadata.dig(RECIPE_KEY, "criterion") == criterion &&
             run.external_metadata.dig(RECIPE_KEY, "performance_measurement") == performance_recipe.recipe
         end
@@ -181,6 +183,12 @@ module TechnicalPrerequisites
 
     def failure(message)
       Result.new(status: :invalid, agent_run: nil, message:)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    def same_native_timeout?(run)
+      limit = run.external_metadata.fetch(RECIPE_KEY).fetch("native_timeout_seconds", PreCommitRequirement::DEFAULT_NATIVE_TIMEOUT_SECONDS)
+      limit.eql?(requirement.native_timeout_seconds)
     end
 
     def active_validation_id

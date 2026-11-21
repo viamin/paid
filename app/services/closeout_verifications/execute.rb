@@ -32,7 +32,7 @@ module CloseoutVerifications
       claim = claim!
       return unless claim
 
-      result = validation_executor.call(agent_run:, native_command: claim.command)
+      result = validation_executor.call(agent_run:, native_command: claim.command, **native_execution_options(claim))
       schedule_audit_if_new_evidence(finish!(result, command: claim.command))
     end
 
@@ -43,6 +43,12 @@ module CloseoutVerifications
     private
 
     attr_reader :agent_run, :validation_executor
+
+    # @spec PARTIAL-CLOSEOUT-059
+    def native_execution_options(requirement)
+      limit = requirement.native_timeout_seconds
+      limit == PreCommitRequirement::DEFAULT_NATIVE_TIMEOUT_SECONDS ? {} : { native_timeout_seconds: limit }
+    end
 
     def claim!
       agent_run.with_lock do

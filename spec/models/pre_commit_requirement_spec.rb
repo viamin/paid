@@ -3,6 +3,21 @@
 require "rails_helper"
 
 RSpec.describe PreCommitRequirement do # @spec QUALITY-LOOPS-001
+  describe "native execution limit" do
+    # @spec PARTIAL-CLOSEOUT-059
+    it "retains a five-minute default" do
+      expect(build(:pre_commit_requirement).native_timeout_seconds).to eq(300)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    it "accepts only integer limits within the finite job headroom" do
+      [ 0, 901, 1.5, nil ].each do |limit|
+        expect(build(:pre_commit_requirement, native_timeout_seconds: limit)).not_to be_valid
+      end
+      expect(build(:pre_commit_requirement, native_timeout_seconds: 900)).to be_valid
+    end
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:project).optional }

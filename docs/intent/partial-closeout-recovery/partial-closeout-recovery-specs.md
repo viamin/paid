@@ -1305,3 +1305,27 @@ merged PR evidence is omitted, or source issue text or a PR description changes 
   `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/services/partial_closeouts/confirm_sync_spec.rb`,
   `spec/models/notification_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-059** — When an authorized operator reviews a native
+  technical or staged-closeout recipe, Paid SHALL persist an integer execution
+  limit from 1 through 900 seconds, defaulting to 300 seconds, and expose the limit
+  through existing authorized recipe editing and operator representations.
+  Manual validation SHALL snapshot the reviewed limit with its command; an
+  older admission without that field SHALL retain 300 seconds. Staged target
+  identity SHALL bind nondefault limits while preserving unchanged legacy
+  default digests, and a changed limit SHALL invalidate the reviewed target.
+  The isolated executor SHALL reject invalid persisted limits before
+  provisioning, apply the admitted limit, and record it in evidence. Performance
+  measurement SHALL retain its independent total budget, and ordinary pre-commit
+  and application LLM deadlines SHALL retain their existing policy. Cancellation,
+  physical cleanup, authorization, trust, cost and finite retry guards SHALL
+  remain authoritative. Issue #5225 owns implementation and operating acceptance.
+  *Code:* `PreCommitRequirement`, `TechnicalPrerequisites::StartValidation`,
+  `TechnicalPrerequisites::ValidateExecution`, `TechnicalPrerequisiteValidationJob`,
+  `StagedCloseoutAdoption::Mappings`, `CloseoutVerifications::Execute`.
+  *Test:* `spec/models/pre_commit_requirement_spec.rb`,
+  `spec/services/technical_prerequisites/start_validation_spec.rb`,
+  `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+  `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
+  `spec/services/staged_closeout_adoption/mappings_spec.rb`,
+  `spec/services/closeout_verifications/execute_spec.rb`.

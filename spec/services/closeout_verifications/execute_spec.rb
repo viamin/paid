@@ -3,18 +3,19 @@
 require "rails_helper"
 
 RSpec.describe CloseoutVerifications::Execute do
-  let(:project) { create(:project) }
-  let(:maintainer) { create(:user, :owner, account: project.account) }
-  let(:issue) { create(:issue, project:) }
-  let(:source_pr) { create(:issue, :pull_request, project:, github_number: 42, pr_review_phase: "merged", merged_commit_sha: "a" * 40) }
-  let(:recipe) { create(:pre_commit_requirement, project:, account: project.account, enabled: true, command: "bin/fixture-check") }
-  let(:mapping) { approve_mapping }
+  # @spec PARTIAL-CLOSEOUT-059
   let(:agent_run) do
     create(:agent_run, :queued, project:, issue:, agent_type: "internal_agent", goal: AgentRun::CLOSEOUT_VERIFICATION_GOAL,
       synthetic: true, source_pull_request_number: source_pr.github_number, base_commit_sha: source_pr.merged_commit_sha,
       closeout_mapping_id: mapping.id, closeout_criterion_key: mapping.criterion_key,
       closeout_recipe_version: mapping.target_version, closeout_recipe_digest: mapping.target_digest)
   end
+  let(:mapping) { approve_mapping }
+  let(:recipe) { create(:pre_commit_requirement, project:, account: project.account, enabled: true, command: "bin/fixture-check") }
+  let(:source_pr) { create(:issue, :pull_request, project:, github_number: 42, pr_review_phase: "merged", merged_commit_sha: "a" * 40) }
+  let(:issue) { create(:issue, project:) }
+  let(:maintainer) { create(:user, :owner, account: project.account) }
+  let(:project) { create(:project) }
 
   before do
     FeatureFlags.enable!(:automation_phases, project:)
@@ -26,6 +27,17 @@ RSpec.describe CloseoutVerifications::Execute do
       "criteria" => [ { "criterion" => "Merged evidence", "state" => "unmet" } ], "gaps" => []
     } })
   end
+
+  it "uses the limit bound into the reviewed staged target" do
+    recipe.update!(native_timeout_seconds: 600)
+    expect(TechnicalPrerequisites::ValidateExecution).to receive(:call)
+      .with(agent_run:, native_command: recipe.command, native_timeout_seconds: 600)
+      .and_return(validation_result("completed"))
+
+    described_class.call(agent_run:)
+  end
+
+
 
   def approve_mapping
     StagedCloseoutAdoption::Mappings.approve(project:, actor: maintainer, issue:, attributes: {

@@ -176,7 +176,7 @@ module StagedCloseoutAdoption
       when "technical_prerequisite"
         requirement = PreCommitRequirement.resolve(project:, user: actor).find { |candidate| candidate.id == attributes.fetch("target_key").to_i }
         raise Error, "recipe is unavailable or unauthorized" unless requirement && !requirement.user_level?
-        { key: requirement.id.to_s, version: requirement.updated_at.utc.iso8601, digest: Digest::SHA256.hexdigest([ requirement.id, requirement.command, requirement.check_type ].join("\0")) }
+        { key: requirement.id.to_s, version: requirement.updated_at.utc.iso8601, digest: native_recipe_digest(requirement) }
       when "trusted_measurement"
         key = attributes.fetch("target_key")
         check = TrustedMeasurements.check_class(key)
@@ -186,6 +186,15 @@ module StagedCloseoutAdoption
       end
     rescue TrustedMeasurements::UnknownCheckError
       raise Error, "check is unavailable or unauthorized"
+    end
+
+    # @spec PARTIAL-CLOSEOUT-059
+    def native_recipe_digest(requirement)
+      identity = [ requirement.id, requirement.command, requirement.check_type ]
+      if requirement.native_timeout_seconds != PreCommitRequirement::DEFAULT_NATIVE_TIMEOUT_SECONDS
+        identity.concat([ "native_timeout_seconds", requirement.native_timeout_seconds ])
+      end
+      Digest::SHA256.hexdigest(identity.join("\0"))
     end
 
     def mapping_attributes(target, revision)

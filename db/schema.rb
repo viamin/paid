@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_21_015335) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3645,6 +3645,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
     t.jsonb "log_data"
     t.jsonb "measurement_recipe"
     t.string "name", limit: 255, null: false
+    t.integer "native_timeout_seconds", default: 300, null: false, comment: "Reviewed isolated native validation deadline; ordinary pre-commit and LLM deadlines are independent."
     t.integer "position", default: 0, null: false
     t.bigint "project_id"
     t.datetime "updated_at", null: false
@@ -3659,6 +3660,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
     t.index ["user_id", "position"], name: "idx_pre_commit_requirements_user_position", where: "(user_id IS NOT NULL)"
     t.index ["user_id"], name: "index_pre_commit_requirements_on_user_id"
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
+    t.check_constraint "native_timeout_seconds >= 1 AND native_timeout_seconds <= 900", name: "pre_commit_requirements_native_timeout_bounds"
   end
 
   create_table "preview_provision_states", comment: "Shared baseline snapshots for overlapping preview/screenshot provisioning on the same agent run.", force: :cascade do |t|
@@ -7032,12 +7034,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_19_212901) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
