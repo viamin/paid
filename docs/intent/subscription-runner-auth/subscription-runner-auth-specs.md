@@ -71,11 +71,11 @@
   access token is expired but its canonical, unrevoked native auth state has
   refresh material and the provider-owned exchange is supported, provisioning
   and isolated text execution SHALL keep it eligible for one serialized refresh
-  attempt before rejecting it. When a successful OpenAI OAuth refresh response
-  provides `expires_in`, Paid SHALL translate it into the canonical credential
-  expiry so the refreshed credential is classified fresh. A revoked credential, missing refresh material,
+  attempt before rejecting it. A revoked credential, missing refresh material,
   unsupported exchange, or unsuccessful exchange SHALL not materialize the
   expired token; it SHALL report the managed source as requiring reconnection.
+  An active credential that cannot use the serialized refresh path SHALL remain
+  eligible until it expires.
   When concurrent credentials exist, a newer expired credential that cannot
   refresh SHALL NOT shadow an older fresh credential for readiness, routing,
   materialization, or rotation harvest.
@@ -84,11 +84,9 @@
   *Tests:* `spec/services/runners/managed_credential_lifecycle_spec.rb`,
   `spec/requests/api/standalone_text_credentials_spec.rb`,
   `spec/services/llm/request_spec.rb`,
-  `spec/services/codex_login_sessions/o_auth_client_spec.rb`,
   `spec/services/knowledge/runner_selector_spec.rb`,
   `spec/services/knowledge/runner_readiness_spec.rb`.
-  *Code:* `CodexLoginSessions::OAuthClient`,
-  `Runners::ManagedCredentialLifecycle`, `Knowledge::RunnerSelector`,
+  *Code:* `Runners::ManagedCredentialLifecycle`, `Knowledge::RunnerSelector`,
   `Knowledge::RunnerReadiness`, `Llm::Request`,
   `Api::StandaloneTextCredentialsController`, `Containers::Provision`.
 

@@ -4380,11 +4380,11 @@ module Containers
     # auth.json back into the canonical RunnerCredential. The exchange and
     # persist step are owned by Runners::ManagedCredentialLifecycle (shared
     # with standalone text execution); this wrapper owns provisioner logging
-    # and its configured-provider exchange gate.
+    # and the unsupported-exchange gate (viamin/agent-harness#265).
     def exchange_codex_refresh_token!(credential)
       unless codex_refresh_exchange_supported?
         log_system("container.codex_auth_refresh.unsupported",
-          note: "configured Codex OAuth refresh is unavailable; skipping server-side exchange")
+          note: "agent-harness codex refresh not yet available; skipping server-side exchange")
         return false
       end
 
@@ -4406,8 +4406,7 @@ module Containers
         credential_id: credential.id,
         note: "refresh response rejected: #{e.reason || 'unusable'}; credential unchanged")
       false
-    rescue AgentHarness::Error, CodexLoginSessions::OAuthClient::ConfigurationError,
-           JSON::ParserError, SystemCallError => e
+    rescue AgentHarness::Error, JSON::ParserError, SystemCallError => e
       log_system("container.codex_auth_refresh_failed", error: e.message, credential_id: credential.id)
       false
     end

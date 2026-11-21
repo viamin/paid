@@ -56,18 +56,11 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     svc
   end
 
-  def stub_codex_refresh(response)
-    stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
-    client = instance_double(CodexLoginSessions::OAuthClient)
-    allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
-    allow(client).to receive(:refresh_token).and_return(response)
-  end
-
   describe "managed materialization without a host bind mount (AC1)" do
     # @spec SUBSCRIPTION-RUNNER-AUTH-006
     it "selects an expired unrevoked Codex credential for the existing refresh lifecycle" do
       credential = create_codex_credential(token: valid_codex_auth, expires_at: 1.minute.ago)
-      stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:codex).and_return(true)
       svc = build_service
 
       expect(svc.send(:codex_managed_runner_credential)).to eq(credential)
@@ -278,7 +271,7 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
     end
   end
 
-  describe "refresh-before-run (server-side, gated on configured Codex OAuth)" do
+  describe "refresh-before-run (server-side, gated on agent-harness)" do
     let(:credential) { create_codex_credential(token: valid_codex_auth, expires_at: 1.minute.from_now) }
 
     it "records a refresh telemetry row and skips when the upstream exchange is unsupported" do
@@ -295,15 +288,13 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
 
     it "persists a refreshed token when the exchange returns new state" do
       svc = build_service(credential: credential)
+      allow(svc).to receive_messages(
+        codex_managed_runner_credential: credential,
+        codex_refresh_exchange_supported?: true
+      )
       refreshed = JSON.parse(valid_codex_auth)
       refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
-      stub_codex_refresh(
-        CodexLoginSessions::OAuthClient::TokenResponse.new(
-          status: :success,
-          tokens: refreshed.fetch("tokens"),
-          error: nil
-        )
-      )
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token).and_return(refreshed)
 
       svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
 
@@ -313,11 +304,14 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
 
     it "does not brick the credential when the refresh response is not a Codex auth" do
       svc = build_service(credential: credential)
+      allow(svc).to receive_messages(
+        codex_managed_runner_credential: credential,
+        codex_refresh_exchange_supported?: true
+      )
       credential.update!(revoked_at: 1.hour.ago)
       original_token = credential.token
-      stub_codex_refresh(
-        CodexLoginSessions::OAuthClient::TokenResponse.new(status: :error, tokens: nil, error: "invalid_grant")
-      )
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+        .and_return({ "error" => "invalid_grant", "error_description" => "bad refresh token" })
 
       svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
 
@@ -330,34 +324,18 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
 
     it "rejects a refresh response that carries no access token" do
       svc = build_service(credential: credential)
+      allow(svc).to receive_messages(
+        codex_managed_runner_credential: credential,
+        codex_refresh_exchange_supported?: true
+      )
       original_token = credential.token
       refresh_only = JSON.parse(valid_codex_auth)
       refresh_only["tokens"].delete("access_token")
-      stub_codex_refresh(
-        CodexLoginSessions::OAuthClient::TokenResponse.new(
-          status: :success,
-          tokens: refresh_only.fetch("tokens"),
-          error: nil
-        )
-      )
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token).and_return(refresh_only)
 
       svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
 
       expect(credential.reload.token).to eq(original_token)
-      attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "refresh").last
-      expect(attempt.result).to eq("refresh_failed")
-    end
-
-    it "records a failed refresh when the OAuth client loses its configuration" do
-      svc = build_service(credential: credential)
-      stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
-      client = instance_double(CodexLoginSessions::OAuthClient)
-      allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
-      allow(client).to receive(:refresh_token)
-        .and_raise(CodexLoginSessions::OAuthClient::ConfigurationError, "Codex OAuth is not configured")
-
-      expect { svc.send(:refresh_codex_managed_credential_if_needed!, provision: true) }.not_to raise_error
-
       attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "refresh").last
       expect(attempt.result).to eq("refresh_failed")
     end

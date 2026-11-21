@@ -13,12 +13,6 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       auth_kind: "oauth_token", token: token, expires_at: expires_at, revoked_at: revoked_at)
   end
 
-  def refreshed_codex_auth
-    payload = JSON.parse(valid_codex_auth)
-    payload["tokens"]["access_token"] = "eyJserver-refreshed-access"
-    payload
-  end
-
   def rotated_codex_auth
     payload = JSON.parse(valid_codex_auth)
     payload["tokens"]["access_token"] = "eyJrotated-access-token"
@@ -26,18 +20,11 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     JSON.generate(payload)
   end
 
-  def stub_exchange_supported
-    stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
-    client = instance_double(CodexLoginSessions::OAuthClient)
-    allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
-    allow(client).to receive(:refresh_token).and_return(
-      CodexLoginSessions::OAuthClient::TokenResponse.new(
-        status: :success,
-        tokens: refreshed_codex_auth.fetch("tokens"),
-        error: nil
-      )
+  def stub_codex_harness_exchange(payload)
+    allow(AgentHarness::Authentication).to receive_messages(
+      exchange_refresh_token_supported?: true,
+      exchange_refresh_token: payload
     )
-    client
   end
 
   def create_omp_credential(account:, fixture:)
@@ -87,45 +74,14 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
   end
 
   describe ".refresh_if_near_expiry!" do
-    it "refreshes a near-expiry credential under the row lease" do
+    it "refreshes a near-expiry Codex credential through agent-harness" do
       credential = create_credential(runner_key: "codex", token: valid_codex_auth,
         expires_at: 1.minute.from_now)
-      stub_exchange_supported
+      refreshed = JSON.parse(valid_codex_auth)
+      refreshed["tokens"]["access_token"] = "eyJserver-refreshed-access"
+      stub_codex_harness_exchange(refreshed)
 
       outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
-
-      expect(outcome).to eq(:refreshed)
-      expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
-    end
-
-    # @spec SUBSCRIPTION-RUNNER-AUTH-006
-    it "persists an OAuth expiry for a refreshed opaque Codex access token" do
-      credential = create_credential(runner_key: "codex", token: valid_codex_auth,
-        expires_at: 1.minute.ago)
-      client = stub_exchange_supported
-      expires_at = 1.hour.from_now.utc.iso8601
-      allow(client).to receive(:refresh_token).and_return(
-        CodexLoginSessions::OAuthClient::TokenResponse.new(
-          status: :success,
-          tokens: { "access_token" => "opaque-access", "expires_at" => expires_at },
-          error: nil
-        )
-      )
-
-      expect(described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)).to eq(:refreshed)
-
-      refreshed = credential.reload
-      expect(refreshed.expires_at).to be_within(1.second).of(Time.iso8601(expires_at))
-      expect(described_class.readiness(refreshed, runner_key: "codex")).to eq(:fresh)
-    end
-
-    # @spec SUBSCRIPTION-RUNNER-AUTH-006
-    it "refreshes an OpenCode credential stored as canonical Codex auth json" do
-      credential = create_credential(runner_key: "opencode", token: valid_codex_auth,
-        expires_at: 1.minute.from_now)
-      stub_exchange_supported
-
-      outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "opencode", provision: true)
 
       expect(outcome).to eq(:refreshed)
       expect(JSON.parse(credential.reload.token)["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
@@ -134,69 +90,16 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     it "skips when the credential is not near expiry" do
       credential = create_credential(runner_key: "codex", token: valid_codex_auth,
         expires_at: 8.hours.from_now)
-      stub_exchange_supported
-
       outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
 
       expect(outcome).to eq(:not_needed)
-      expect(CodexLoginSessions::OAuthClient).not_to have_received(:new)
     end
 
     it "does not touch non-rotating runners" do
       credential = create_credential(runner_key: "claude", token: "opaque")
-      stub_exchange_supported
-
       outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "claude", provision: true)
 
       expect(outcome).to eq(:not_rotating)
-      expect(CodexLoginSessions::OAuthClient).not_to have_received(:new)
-    end
-
-    it "leaves the credential unchanged when the exchange returns an unusable payload" do
-      credential = create_credential(runner_key: "codex", token: valid_codex_auth,
-        expires_at: 1.minute.from_now)
-      stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
-      client = instance_double(CodexLoginSessions::OAuthClient)
-      allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
-      allow(client).to receive(:refresh_token).and_return(
-        CodexLoginSessions::OAuthClient::TokenResponse.new(status: :success, tokens: {}, error: nil)
-      )
-
-      outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
-
-      expect(outcome).to eq(:refresh_failed)
-      expect(credential.reload.token).to eq(valid_codex_auth)
-    end
-
-    it "reports refresh_failed when the Codex OAuth exchange fails" do
-      credential = create_credential(runner_key: "codex", token: valid_codex_auth,
-        expires_at: 1.minute.from_now)
-      stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
-      client = instance_double(CodexLoginSessions::OAuthClient)
-      allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
-      allow(client).to receive(:refresh_token).and_return(
-        CodexLoginSessions::OAuthClient::TokenResponse.new(status: :error, tokens: nil, error: "invalid_grant")
-      )
-
-      outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
-
-      expect(outcome).to eq(:refresh_failed)
-      expect(credential.reload.token).to eq(valid_codex_auth)
-    end
-
-    it "reports refresh_failed when the Codex OAuth client is not configured" do
-      credential = create_credential(runner_key: "codex", token: valid_codex_auth,
-        expires_at: 1.minute.from_now)
-      stub_const("ENV", ENV.to_hash.merge("CODEX_OAUTH_CLIENT_ID" => "test-client-id"))
-      client = instance_double(CodexLoginSessions::OAuthClient)
-      allow(CodexLoginSessions::OAuthClient).to receive(:new).and_return(client)
-      allow(client).to receive(:refresh_token)
-        .and_raise(CodexLoginSessions::OAuthClient::ConfigurationError, "Codex OAuth is not configured")
-
-      outcome = described_class.refresh_if_near_expiry!(credential, runner_key: "codex", provision: true)
-
-      expect(outcome).to eq(:refresh_failed)
-      expect(credential.reload.token).to eq(valid_codex_auth)
     end
 
     it "serializes OMP exchanges across different credentials" do
@@ -229,9 +132,8 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     it "keeps an expired unrevoked Codex credential with a refresh token eligible for recovery" do
       credential = create_credential(runner_key: "codex", token: valid_codex_auth,
         expires_at: 1.minute.ago)
-      stub_exchange_supported
+      stub_codex_harness_exchange(JSON.parse(valid_codex_auth))
 
-      expect(AgentHarness::Authentication.exchange_refresh_token_supported?(:codex)).to be(false)
       expect(described_class.readiness(credential, runner_key: "codex")).to eq(:refreshable)
     end
 
@@ -242,10 +144,24 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       missing_refresh = JSON.parse(valid_codex_auth).tap { |payload| payload["tokens"].delete("refresh_token") }
       expired = create_credential(runner_key: "codex", token: JSON.generate(missing_refresh),
         expires_at: 1.minute.ago)
-      stub_exchange_supported
+      stub_codex_harness_exchange(JSON.parse(valid_codex_auth))
 
       expect(described_class.readiness(revoked, runner_key: "codex")).to eq(:revoked)
       expect(described_class.readiness(expired, runner_key: "codex")).to eq(:missing_refresh_material)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "keeps active credentials eligible when their runner cannot refresh" do
+      credential = create_credential(runner_key: "claude", token: "opaque", expires_at: 5.minutes.from_now)
+
+      expect(described_class.readiness(credential, runner_key: "claude")).to eq(:fresh)
+    end
+
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
+    it "keeps active Codex credentials eligible until the harness supports refresh" do
+      credential = create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 5.minutes.from_now)
+
+      expect(described_class.readiness(credential, runner_key: "codex")).to eq(:fresh)
     end
   end
 
@@ -255,8 +171,7 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
       fresh = create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 1.hour.from_now)
       missing_refresh = JSON.parse(valid_codex_auth).tap { |payload| payload["tokens"].delete("refresh_token") }
       create_credential(runner_key: "codex", token: JSON.generate(missing_refresh), expires_at: 1.minute.ago)
-      stub_exchange_supported
-
+      stub_codex_harness_exchange(JSON.parse(valid_codex_auth))
       credential = described_class.credential_for(account:, runner_key: "codex")
 
       expect(credential).to eq(fresh)

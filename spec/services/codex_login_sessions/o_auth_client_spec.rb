@@ -91,35 +91,4 @@ RSpec.describe CodexLoginSessions::OAuthClient, :no_db do
       expect(response.status).to eq(:denied)
     end
   end
-
-  describe "#refresh_token" do
-    # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
-    it "exchanges a Codex refresh token through the configured OAuth client" do
-      transport = lambda do |url, params|
-        expect(url).to eq("https://auth.example/token")
-        expect(params).to eq(
-          "grant_type" => "refresh_token",
-          "client_id" => "test-client-id",
-          "refresh_token" => "refresh-1"
-        )
-        JSON.generate("access_token" => "access-2", "refresh_token" => "refresh-2")
-      end
-      client = described_class.new(config: config, transport: transport)
-
-      response = client.refresh_token("refresh-1")
-
-      expect(response.status).to eq(:success)
-      expect(response.tokens).to include("access_token" => "access-2", "refresh_token" => "refresh-2")
-    end
-
-    # @spec SUBSCRIPTION-RUNNER-AUTH-006
-    it "translates expires_in for an opaque access token into canonical expiry" do
-      travel_to Time.utc(2026, 11, 21, 12, 0, 0) do
-        response = client_with([ JSON.generate("access_token" => "opaque-access", "expires_in" => 3600) ])
-          .refresh_token("refresh-1")
-
-        expect(response.tokens).to include("expires_at" => "2026-11-21T13:00:00Z")
-      end
-    end
-  end
 end

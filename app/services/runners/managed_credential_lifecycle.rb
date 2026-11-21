@@ -57,8 +57,6 @@ module Runners
       end
 
       def refresh_supported?(runner_key)
-        return CodexLoginSessions::OAuthConfig.load.configured? if %w[codex opencode].include?(runner_key.to_s)
-
         exchange_key = runner_key.to_s == "omp" ? :claude : runner_key.to_s.to_sym
         AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
           AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
@@ -74,6 +72,7 @@ module Runners
         return :missing unless credential
         return :revoked if credential.revoked?
         return :fresh unless near_expiry?(credential, runner_key: runner_key)
+        return :fresh if credential.active? && !refreshable?(credential, runner_key: runner_key)
         return :unsupported_refresh unless rotating?(runner_key) && refresh_supported?(runner_key)
         return :missing_refresh_material unless parsed_secret(credential, runner_key: runner_key)&.refreshable?
 
@@ -121,7 +120,7 @@ module Runners
           end
         end
       rescue AgentHarness::AuthenticationError, AgentHarness::Error, Error, ArgumentError,
-             CodexLoginSessions::OAuthClient::ConfigurationError, JSON::ParserError, SystemCallError => e
+             JSON::ParserError, SystemCallError => e
         Rails.logger.warn(message: "runners.managed_credential_lifecycle.refresh_failed",
           runner_key: runner_key, credential_id: credential&.id, error_class: e.class.name)
         :refresh_failed
@@ -134,7 +133,7 @@ module Runners
       def exchange_refresh_token!(credential, runner_key:)
         payload = case runner_key.to_s
         when "codex", "opencode"
-          exchange_codex_refresh_token(credential)
+          AgentHarness::Authentication.exchange_refresh_token(runner_key.to_sym).to_h
         when "omp"
           exchange_omp_refresh_token(credential)
         else
@@ -239,6 +238,11 @@ module Runners
         end
       end
 
+      def refreshable?(credential, runner_key:)
+        rotating?(runner_key) && refresh_supported?(runner_key) &&
+          parsed_secret(credential, runner_key: runner_key)&.refreshable?
+      end
+
       def exchange_omp_refresh_token(credential)
         OMP_REFRESH_MUTEX.synchronize do
           refreshed_payload = nil
@@ -254,18 +258,6 @@ module Runners
         end
       end
 
-      def exchange_codex_refresh_token(credential)
-        parsed = parsed_secret(credential, runner_key: "codex")
-        response = CodexLoginSessions::OAuthClient.new.refresh_token(parsed&.refresh_token)
-        unless response.status == :success && response.tokens.is_a?(Hash) && response.tokens["access_token"].present?
-          raise InvalidRefreshResponse, "Codex refresh exchange failed"
-        end
-
-        payload = JSON.parse(credential.token.to_s)
-        payload["tokens"] = parsed.tokens.merge(response.tokens.compact)
-        JSON.generate(payload)
-      end
-
       def with_env(key, value)
         previous = ENV[key]
         ENV[key] = value
@@ -276,7 +268,8 @@ module Runners
 
       def apply_refresh_result!(credential, runner_key:, payload:)
         case runner_key.to_s
-        when "codex", "opencode" then apply_codex_refresh_result!(credential, payload)
+        when "codex" then apply_codex_refresh_result!(credential, payload)
+        when "opencode" then apply_opencode_refresh_result!(credential, payload)
         when "omp" then apply_omp_refresh_result!(credential, payload)
         else
           raise ArgumentError, "Unsupported managed refresh runner: #{runner_key}"
@@ -297,6 +290,28 @@ module Runners
 
         credential.assign_attributes(
           token: token.to_s,
+          expires_at: parsed.expires_at || credential.expires_at,
+          revoked_at: nil,
+          metadata: credential.metadata.to_h.merge(
+            "source" => "server_refresh",
+            "storage_format" => "codex_auth_json",
+            "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
+          ).compact
+        )
+        credential.save!
+      end
+
+      def apply_opencode_refresh_result!(credential, payload)
+        token = payload.is_a?(Hash) ? payload.dig(:token) || JSON.generate(payload) : payload.to_s
+        parsed = OpencodeCredentials::Secret.parse(token.to_s)
+        canonical_auth = parsed.codex_auth_json
+        unless parsed.opencode_auth? && parsed.access_token.present? && canonical_auth.present?
+          raise InvalidRefreshResponse.new("OpenCode refresh response is not a usable auth.json",
+            reason: parsed.opencode_auth? ? "missing_access_token" : "not_opencode_auth")
+        end
+
+        credential.assign_attributes(
+          token: canonical_auth,
           expires_at: parsed.expires_at || credential.expires_at,
           revoked_at: nil,
           metadata: credential.metadata.to_h.merge(

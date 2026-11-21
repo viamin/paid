@@ -52,23 +52,6 @@ module CodexLoginSessions
       TokenResponse.new(status: :error, tokens: nil, error: "token_request_failed: #{e.message}")
     end
 
-    # Exchanges the rotating refresh token captured by Connect Codex for a
-    # current OAuth session. This shares the configured provider OAuth boundary
-    # with device-code login rather than treating agent-harness's Claude-only
-    # exchange as a Codex capability.
-    def refresh_token(refresh_token)
-      raise ConfigurationError, "Connect Codex OAuth is not configured (set CODEX_OAUTH_CLIENT_ID)" unless @config.configured?
-
-      payload = post(@config.token_url,
-        "grant_type" => "refresh_token",
-        "client_id" => @config.client_id,
-        "refresh_token" => refresh_token)
-
-      TokenResponse.new(status: token_status(payload), tokens: success_tokens(payload), error: payload["error"])
-    rescue Net::HTTPError, Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNREFUSED => e
-      TokenResponse.new(status: :error, tokens: nil, error: "token_request_failed: #{e.message}")
-    end
-
     class ConfigurationError < StandardError; end
     class DeviceRequestError < StandardError; end
 
@@ -99,14 +82,8 @@ module CodexLoginSessions
         "id_token" => payload["id_token"],
         "access_token" => payload["access_token"],
         "refresh_token" => payload["refresh_token"],
-        "account_id" => payload["account_id"],
-        "expires_at" => expires_at(payload)
+        "account_id" => payload["account_id"]
       }.compact
-    end
-
-    def expires_at(payload)
-      expires_in = payload["expires_in"].to_i
-      expires_in.seconds.from_now.utc.iso8601 if expires_in.positive?
     end
 
     # Default timeouts for blocking OAuth HTTP calls. Puma threads call these
