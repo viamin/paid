@@ -71,12 +71,14 @@
   *Tests:* `spec/services/work_items/lifecycle/`
   *Code:* `WorkItemLifecycleMapping`, `WorkItems::Lifecycle`
 
-- [ ] **UNIFIED-WORK-ITEMS-007** — The GitHub migration SHALL run offline and
+- [x] **UNIFIED-WORK-ITEMS-007** — The GitHub migration SHALL run offline and
   idempotently, preserve GitHub identity, metadata, comments, Paid state,
   assignments, agent-run history, relationships, provenance, and the existing
   trusted-GitHub-user configuration; it SHALL reconcile issues created during
   the maintenance window and keep existing GitHub issue workflows operational
   through the unified model.
+  *Tests:* `spec/services/work_items/migrate_github_issues_spec.rb`
+  *Code:* `WorkItems::MigrateGithubIssues`, `work_items:migrate_github_issues`
 
 - [ ] **UNIFIED-WORK-ITEMS-008** — Pull requests SHALL remain separate review
   artifacts, with discoverable relationships for Paid-created PRs where

@@ -5179,6 +5179,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.datetime "created_at", null: false
     t.string "external_id", null: false
     t.datetime "last_synced_at", null: false
+    t.bigint "legacy_issue_id", comment: "Legacy Paid issue aggregate retained as immutable migration provenance."
     t.string "lifecycle_sync_source", comment: "Which side last wrote the lifecycle state (provider or paid), used to prevent synchronization loops."
     t.datetime "lifecycle_synced_at"
     t.string "native_project_id", comment: "Provider-native project identifier (e.g. a Linear project) used to resolve mapping-driven assignment."
@@ -5197,6 +5198,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.string "url"
     t.index ["account_id", "provider", "resource_type", "external_id"], name: "index_work_items_on_provider_identity", unique: true
     t.index ["account_id"], name: "index_work_items_on_account_id"
+    t.index ["legacy_issue_id"], name: "index_work_items_on_legacy_issue_id", unique: true, where: "(legacy_issue_id IS NOT NULL)"
     t.index ["native_project_id"], name: "index_work_items_on_native_project_id"
     t.index ["tracker_configuration_id"], name: "index_work_items_on_tracker_configuration_id"
   end
@@ -5786,6 +5788,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
   add_foreign_key "work_item_project_mappings", "tracker_configurations"
   add_foreign_key "work_item_project_mappings", "users", column: "created_by_id"
   add_foreign_key "work_items", "accounts"
+  add_foreign_key "work_items", "issues", column: "legacy_issue_id"
   add_foreign_key "work_items", "tracker_configurations"
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify

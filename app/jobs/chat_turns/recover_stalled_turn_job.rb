@@ -66,6 +66,7 @@ module ChatTurns
       })
       notice = ChatTurns::PersistStallNotice.refresh_after_recovery_success!(chat_turn: chat_turn)
       broadcast_persisted_message(stream_name, notice) if notice
+      ChatTurns::PersistFailureNotice.resolve_after_recovery_success!(chat_turn: chat_turn)
 
       Rails.logger.info(
         message: "chat_turns.recovered",

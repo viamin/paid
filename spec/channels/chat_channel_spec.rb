@@ -236,6 +236,18 @@ RSpec.describe ChatChannel do
       expect(transmissions.last).to include("type" => "error", "message" => "This turn is already being recovered")
     end
 
+    # @spec CHAT-TURN-RECOVERY-008
+    it "retries an empty-response failure only once under double submission" do
+      chat_turn.update!(status: "failed", failure_classification: "empty_response")
+      allow(ChatTurns::RecoverStalledTurnJob).to receive(:perform_later)
+
+      perform :recover_stalled_turn, chat_turn_id: chat_turn.id
+      perform :recover_stalled_turn, chat_turn_id: chat_turn.id
+
+      expect(ChatTurns::RecoverStalledTurnJob).to have_received(:perform_later).once
+      expect(chat_turn.reload.status).to eq("streaming")
+    end
+
     it "rejects users who cannot send chat messages" do
       viewer = create(:user, :viewer, account: account)
       stub_connection current_user: viewer

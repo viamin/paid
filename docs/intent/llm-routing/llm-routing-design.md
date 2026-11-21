@@ -22,9 +22,17 @@ Post-push source-closure assessments use the owner's enabled fallback order
 when the run's pinned runner cannot complete an isolated text request. The
 fallback budget stays below the assessment activity deadline; disabled
 fallbacks do not authorize another runner or billing mode.
-An isolated text request skips a subscription runner with no active managed
-credential before provisioning a container. When no usable alternative exists,
-it reports the credential configuration error immediately.
+An isolated text request skips a subscription runner with no managed credential
+that is fresh or eligible for provider-owned refresh before provisioning a
+container. An expired, unrevoked rotating credential with supported refresh
+material remains a managed candidate until its serialized refresh attempt has
+completed; failed, unsupported, revoked, or refresh-token-less credentials are
+reported as requiring reconnection. Host-forwarded agent authentication is a
+separate source and never proves isolated managed-audit readiness or imports a
+host credential. When no usable alternative exists, routing reports the
+credential configuration error immediately.
+When concurrent managed records exist, an unusable newer expiry does not shadow
+an older fresh credential at any isolated-text routing or readiness surface.
 
 Text operations accept subscription and API-key runners. The existing chat-runner setting accepts owned runner identifiers, allowing
 multiple configurations behind the same CLI to remain distinguishable. API credentials
