@@ -89,6 +89,9 @@ desktop retains Turbo's visibility-based lazy loading.
 
 A personal full-page chat draft is a visible conversation created by a user
 with no user message and no title. At most one such draft may exist per user.
+Concurrency checks publish account/user fixtures before starting workers and
+establish normal tenant context on each worker connection. Readiness waits are
+bounded so fixture or tenant failures cannot leave a test waiting forever.
 The database owns that invariant through a partial unique index, so concurrent
 page loads cannot create duplicates. The migration that establishes the index
 releases discarded drafts' workspace resources before deleting them. Archived
