@@ -288,6 +288,19 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include("for attempt in 1 2 3 4 5")
   end
 
+  # @spec TEST-SUITE-023
+  it "retries transient JavaScript setup failures across shard execution paths" do
+    %w[test-shards shard-recovery].each do |job_name|
+      install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
+        .find { |step| step["name"] == "Install JavaScript dependencies" }
+      run = install_step.fetch("run")
+
+      expect(run).to include("for attempt in 1 2 3 4 5")
+      expect(run).to include("10m")
+      expect(run).to include('bash -lc \'yarn install --frozen-lockfile && bin/yarn-postinstall\'')
+    end
+  end
+
   # @spec TEST-SUITE-003
   it "falls back to an uncached Ruby setup when the Bundler cache service fails" do
     workflow.fetch("jobs").except("test").each_value do |job|

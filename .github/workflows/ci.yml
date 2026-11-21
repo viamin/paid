@@ -347,11 +347,11 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
@@ -749,11 +749,11 @@ jobs:
             local warning_message="$2"
             shift 2
             local attempt
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5; do
               if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
-              echo "::warning::${warning_message} (attempt $attempt/3); retrying"
+              echo "::warning::${warning_message} (attempt $attempt/5); retrying"
               sleep "$((attempt * 10))"
             done
             return 1
