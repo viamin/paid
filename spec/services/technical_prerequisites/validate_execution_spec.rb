@@ -58,6 +58,26 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     end
   end
 
+  [
+    [ "complete exact-bound output", "x" * 20_000, false ],
+    [ "a split multibyte character", "€" * 6_667, true ],
+    [ "invalid encoded output", "\xFF".dup.force_encoding(Encoding::UTF_8), true ]
+  ].each do |description, stdout, truncated|
+    # @spec PARTIAL-CLOSEOUT-057
+    it "records honest native capture metadata for #{description}" do
+      stub_compatible_host
+      stub_provisioning
+      stub_command_execution(stdout:)
+
+      result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+      native = result.evidence.fetch("native")
+      expect(native.fetch("output_truncated")).to eq(truncated)
+      expect(native.fetch("stdout").bytesize).to be <= 20_000
+      expect(native.fetch("stdout").valid_encoding?).to be(true)
+    end
+  end
+
   context "with configured project services" do
     let(:service) { create(:service_container, account: project.account) }
     let(:service_environment) { { "DATABASE_URL" => "postgres://fixture:fixture-secret@database/private_run" } }

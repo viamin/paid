@@ -382,4 +382,46 @@ RSpec.describe CloseoutVerifications::Evidence do
     expect(record).to include("current" => false)
     expect(record.fetch("stale_reasons")).to include("verification_time_in_future")
   end
+
+  [
+    [ "complete exact-bound capture", "x" * 20_000, false, false ],
+    [ "legacy capture at the bound", "x" * 20_000, nil, true ],
+    [ "explicit capture truncation below the bound", "x" * 19_999, true, true ],
+    [ "multibyte projection overflow", "€" * 6_667, false, true ]
+  ].each do |description, stdout, capture_truncated, incomplete|
+    # @spec PARTIAL-CLOSEOUT-057
+    it "preserves honest coverage for #{description}" do
+      persist_assessment!
+      mapping = approve_mapping
+      run = create_verification_run(mapping:)
+      native = { "stdout" => stdout, "stderr" => "", "exit_code" => 0 }
+      native["output_truncated"] = capture_truncated unless capture_truncated.nil?
+      receipt = run.verification_result.fetch("closeout_verification").merge("technical_evidence" => { "native" => native })
+      run.update!(verification_result: { "closeout_verification" => receipt })
+
+      record = described_class.records_for(source_issue).first
+
+      expect(record.fetch("evidence_truncated")).to eq(incomplete)
+      expect(record.dig("native", "stdout").bytesize).to be <= 20_000
+      expect(record.dig("native", "stdout").valid_encoding?).to be(true)
+      expect(described_class.audit_ready_records?([ record ])).to eq(!incomplete)
+    end
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "keeps the trusted measurement result bound independent of native output" do
+    persist_assessment!(criterion_keys: [ "Live evidence" ])
+    mapping = approve_live_mapping
+    run = create_live_verification_run(mapping:, target_revision: "live-revision-a")
+    result = { "details" => "x" * 2_001 }
+    run.closeout_measurement_attempt.update!(result:)
+    receipt = run.verification_result.fetch("closeout_verification").merge("measurement_result" => result)
+    run.update!(verification_result: { "closeout_verification" => receipt })
+
+    with_env("PAID_DEPLOYED_REVISION" => "live-revision-a") do
+      record = described_class.records_for(source_issue).sole
+      expect(record.fetch("measurement_result").bytesize).to be <= 2_000
+      expect(record.fetch("evidence_truncated")).to be(true)
+    end
+  end
 end

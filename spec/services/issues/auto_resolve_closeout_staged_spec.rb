@@ -198,9 +198,35 @@ RSpec.describe Issues::AutoResolveCloseout do
     it "does not accept a receipt with incomplete bounded output" do
       run = receipt
       result = run.verification_result.deep_dup
-      result["closeout_verification"]["technical_evidence"]["native"]["stdout"] = "x" * 2_001
+      result["closeout_verification"]["technical_evidence"]["native"]["stdout"] = "x" * (CloseoutVerifications::Evidence::MAX_NATIVE_OUTPUT_BYTES + 1)
       run.update!(verification_result: result)
       assessment("satisfied")
+      expect(closeout).not_to eq(:closed)
+      expect(client).not_to have_received(:update_issue)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-057 STAGED-CLOSEOUT-ADOPTION-013
+    it "accepts complete native output above the independent measurement bound" do
+      run = receipt
+      result = run.verification_result.deep_dup
+      result["closeout_verification"]["technical_evidence"]["native"].merge!(
+        "stdout" => "x" * 8_000, "output_truncated" => false)
+      run.update!(verification_result: result)
+      assessment("satisfied")
+
+      expect(closeout).to eq(:closed)
+      expect(client).to have_received(:update_issue).once
+    end
+
+    # @spec PARTIAL-CLOSEOUT-057 STAGED-CLOSEOUT-ADOPTION-013
+    it "rejects capture clipping even when retained output fits the packet" do
+      run = receipt
+      result = run.verification_result.deep_dup
+      result["closeout_verification"]["technical_evidence"]["native"].merge!(
+        "stdout" => "x" * 1_999, "output_truncated" => true)
+      run.update!(verification_result: result)
+      assessment("satisfied")
+
       expect(closeout).not_to eq(:closed)
       expect(client).not_to have_received(:update_issue)
     end

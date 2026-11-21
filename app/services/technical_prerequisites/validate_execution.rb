@@ -12,7 +12,7 @@ module TechnicalPrerequisites
   # attached tool is exercised by provisioning it and publishing its endpoint
   # to the analyzer. The run's verification_result is the durable,
   # revision-bound evidence record consumed by closeout assessment.
-  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050 STAGED-CLOSEOUT-ADOPTION-011
+  # @spec PARTIAL-CLOSEOUT-032 PARTIAL-CLOSEOUT-050 PARTIAL-CLOSEOUT-057 STAGED-CLOSEOUT-ADOPTION-011
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
     COMMAND_TIMEOUT = 5.minutes
@@ -313,14 +313,15 @@ module TechnicalPrerequisites
       {
         "stdout" => bounded(stdout),
         "stderr" => bounded(stderr),
-        "exit_code" => exit_code
+        "exit_code" => exit_code,
+        "output_truncated" => [ stdout, stderr ].any? { |text| text.to_s.bytesize > MAX_OUTPUT_BYTES || !text.to_s.valid_encoding? }
       }
     end
 
     # Bounds captured output by bytes and repairs the cut so a multi-byte
     # character split by the boundary cannot make the evidence unencodable.
     def bounded(text)
-      text.to_s.byteslice(0, MAX_OUTPUT_BYTES).to_s.scrub
+      text.to_s.byteslice(0, MAX_OUTPUT_BYTES).to_s.scrub("")
     end
 
     def status_for(native)

@@ -77,7 +77,13 @@
   mismatched criterion/scope, and changed or unavailable underlying recipes
   SHALL make the result stale. Omitted or truncated verification input SHALL
   mark audit coverage incomplete, and omitted records SHALL still affect the
-  source revision. Evidence SHALL expire at the host-recorded completion time
+  source revision. Complete native stdout and stderr up to 20,000 bytes each
+  SHALL pass through unchanged within the eight-record bound; the independent
+  trusted-measurement result bound SHALL remain 2,000 bytes. Capture SHALL
+  explicitly record output clipping before a UTF-8-safe byte cut, and the
+  packet SHALL preserve that incomplete status even when retained output is
+  shorter than its bound. Historical streams without capture metadata that
+  reach the capture bound SHALL remain conservatively incomplete (#5238). Evidence SHALL expire at the host-recorded completion time
   plus the reviewed freshness period; a missing or future completion time SHALL leave it
   stale. The packet SHALL expose the expiry, and expiration SHALL change the
   source revision so a cached verdict cannot authorize closure.

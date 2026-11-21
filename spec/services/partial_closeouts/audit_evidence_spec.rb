@@ -146,7 +146,31 @@ RSpec.describe PartialCloseouts::AuditEvidence do
     builder = described_class.new(issue:, agent_run:)
     packet = JSON.parse(builder.call)
 
-    expect(packet.fetch("closeout_verifications").first.dig("native", "stdout").bytesize).to be <= 2_000
+    expect(packet.fetch("closeout_verifications").first.dig("native", "stdout").bytesize).to be <= 20_000
     expect(builder.coverage).to include("complete" => false)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-057
+  it "carries complete retained native output beyond the measurement bound without changing the receipt" do
+    persist_assessment!
+    mapping = approve_mapping
+    run = create_verification_run(mapping:)
+    receipt = run.verification_result.fetch("closeout_verification").merge("technical_evidence" => {
+      "native" => { "stdout" => "322 examples, 0 failures", "stderr" => "warning\n" * 1_000, "exit_code" => 0 }
+    })
+    run.update!(verification_result: { "closeout_verification" => receipt })
+    builder = described_class.new(issue:, agent_run:)
+    old_records = CloseoutVerifications::Evidence.records_for(issue)
+    old_records.first["native"]["stderr"] = receipt.dig("technical_evidence", "native", "stderr").byteslice(0, 2_000)
+    old_records.first["evidence_truncated"] = true
+    old_revision = PartialCloseouts::Assessment.source_revision_for(issue, closeout_verification_evidence: old_records)
+
+    record = JSON.parse(builder.call).fetch("closeout_verifications").first
+
+    expect(record.fetch("native")).to eq(receipt.dig("technical_evidence", "native"))
+    expect(record.fetch("evidence_truncated")).to be(false)
+    expect(builder.coverage.fetch("complete")).to be(true)
+    expect(builder.source_revision).not_to eq(old_revision)
+    expect(run.reload.verification_result.fetch("closeout_verification")).to eq(receipt)
   end
 end
