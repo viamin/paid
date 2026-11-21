@@ -41,6 +41,8 @@ workflows:
       introduced_on: "2026-10-27"
     layered-verification-formal-checks-v1:
       introduced_on: "2026-10-27"
+    layered-verification-partial-outcomes-v1:
+      introduced_on: "2026-11-21"
     agent-execution-maintenance-tool-evidence-v1:
       introduced_on: "2026-11-19"
   Workflows::SourceClosureRecoveryWorkflow:
