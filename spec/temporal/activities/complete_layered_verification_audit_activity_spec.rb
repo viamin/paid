@@ -3,6 +3,16 @@
 require "rails_helper"
 
 RSpec.describe Activities::CompleteLayeredVerificationAuditActivity do
+  # @spec LAYERED-VERIFY-024
+  it "refuses completion when an admitted obligation is unavailable" do
+    audit = create(:agent_run, goal: "layered_verification_audit", status: "running")
+    audit.update!(external_metadata: { "layered_verification" => { "obligation_ids" => [ -1 ] } })
+
+    expect { described_class.new.execute(agent_run_id: audit.id) }.to raise_error(StandardError, /scope|coverage/i)
+
+    expect(audit.reload.status).to eq("running")
+  end
+
   # @spec LAYERED-VERIFY-010 LAYERED-VERIFY-024
   it "synthesizes scoped coverage and completes the assessment-only run" do
     audit = create(:agent_run, goal: "layered_verification_audit", status: "running")
@@ -39,7 +49,7 @@ RSpec.describe Activities::CompleteLayeredVerificationAuditActivity do
     })
     audit.log!("stdout", <<~OUTPUT)
       paid-layered-verification-output
-      {"check_results":[{"obligation_id":#{obligation.id},"selected_check":"semantic_audit","producer":"semantic_audit","execution_state":"completed","obligation_coverage":"supported","input_revision":{"code":"abc123"},"evidence_summary":{"source_passages":["PAYMENTS-001"]},"limitations":"Bounded to the selected obligation."}]}
+      {"check_results":[{"obligation_id":#{obligation.id},"selected_check":"semantic_audit","producer":"semantic_audit","execution_state":"completed","obligation_coverage":"supported","input_revision":{"code":"abc123","external_revision":"abc123"},"evidence_summary":{"source_passages":["PAYMENTS-001"]},"limitations":"Bounded to the selected obligation."}]}
       paid-layered-verification-output
     OUTPUT
 

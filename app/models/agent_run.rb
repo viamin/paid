@@ -4113,7 +4113,9 @@ class AgentRun < ApplicationRecord
       obligation_id, selected_check, producer, execution_state, obligation_coverage, input_revision,
       evidence_summary, limitations, and, for contradicted coverage, a stable kebab-case cause_signature
       describing the underlying discrepancy rather than an artifact path. Include correspondence_claim_id,
-      evidence_ref, agent_reported, recorder_verified, and cost when available.
+      evidence_ref, agent_reported, and cost when available.
+      Use an object for evidence_summary, strings for evidence_ref and limitations (multiple entries may use newlines),
+      and objects for input_revision, agent_reported and cost. Paid assigns recorder_verified; do not claim recorder facts.
 
       Obligations and plans:
       #{scope}

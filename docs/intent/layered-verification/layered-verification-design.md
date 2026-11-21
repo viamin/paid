@@ -367,6 +367,16 @@ TLC writes its generated state into unique per-check container-local temporary s
 its [documented `-metadir` option](https://github.com/tlaplus/tlaplus/blob/master/general/docs/current-tools.md), outside the canonical checkout. Repair runs
 retain their separately authorized writable checkout.
 
+Audit execution bypasses coding pre-commit requirements and automatic commits.
+Its selected verification producers govern assessment work. On an agent failure
+or timeout, the workflow records available structured outcomes and explicit
+missing-check gaps, synthesizes coverage and retains discrepancies while keeping
+the run failed. Recording evidence never grants completion or repair authority.
+Completion requires coverage for every admitted obligation and a nonempty scope.
+The recorder preserves reported evidence lists and references, and compares code
+and obligation-source revisions by their named fields. Only Paid assigns
+recorder-verified facts.
+
 A **manual audit** can be created without a GitHub issue (RDR-076's "Manual
 audit... create an audit run without requiring a GitHub issue"), the one
 documented exception to the normal issue-driven run-creation path; the run
