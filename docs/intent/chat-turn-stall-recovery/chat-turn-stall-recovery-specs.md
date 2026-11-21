@@ -49,8 +49,10 @@
   the same turn from its durable checkpoint until
   `ChatTurn::MAX_RECOVERY_ATTEMPTS` has been reached. After the final failed
   retry, the refreshed notice SHALL withdraw Retry and direct the user to send
-  a new message. Retry SHALL use the existing compare-and-swap recovery claim
-  and SHALL NOT replay completed tools or approve a pending write. The
+  a new message. After a successful retry, the refreshed notice SHALL withdraw
+  Retry and state that recovery completed. Retry SHALL use the existing
+  compare-and-swap recovery claim and SHALL NOT replay completed tools or
+  approve a pending write. The
   original error SHALL remain in server logs, without exposing its internal
   details in the notice.
   *Code:* `ChatTurn#fail!`, `ChatTurns::PersistFailureNotice`,

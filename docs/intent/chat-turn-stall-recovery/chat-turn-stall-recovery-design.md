@@ -63,7 +63,9 @@ distinguishable from a successful one in the transcript and in the database.
 An empty provider result with neither usable text nor callable tools is a
 classified `empty_response` failure, not an assistant-authored answer. Its
 durable system notice offers manual Retry through the same checkpoint-resume
-path as stalled-turn recovery. The recovery claim accepts only this explicit
+path as stalled-turn recovery. When that retry succeeds, the durable notice is
+rewritten to record the successful recovery and no longer instructs the user
+to retry. The recovery claim accepts only this explicit
 failed classification in addition to stalled turns, remains compare-and-swap
 protected, and never auto-retries it. Therefore completed tool rows remain in
 the reconstructed history, pending writes retain their existing confirmation

@@ -6,6 +6,7 @@ module ChatTurns
     CONTENT = "The assistant could not finish this response. Any tool actions shown above may have completed."
     EMPTY_RESPONSE_CONTENT = "The assistant returned no usable response. You can retry this turn; completed tool actions will not be repeated."
     EMPTY_RESPONSE_EXHAUSTED_CONTENT = "The assistant returned no usable response. Recovery attempts are exhausted; send a new message to continue."
+    EMPTY_RESPONSE_RECOVERED_CONTENT = "The assistant response was recovered successfully."
 
     def self.call(chat_turn:)
       message = latest_notice(chat_turn) || chat_turn.chat_session.messages.build(role: "system")
@@ -26,11 +27,14 @@ module ChatTurns
       CONTENT
     end
 
-    def self.retire_retry!(chat_turn:)
+    def self.resolve_after_recovery_success!(chat_turn:)
       message = latest_notice(chat_turn)
       return unless message&.metadata&.fetch("retry_available", false)
 
-      message.update!(metadata: message.metadata.merge("retry_available" => false))
+      message.update!(
+        content: EMPTY_RESPONSE_RECOVERED_CONTENT,
+        metadata: message.metadata.merge("retry_available" => false)
+      )
       broadcast(chat_turn, message)
       message
     end

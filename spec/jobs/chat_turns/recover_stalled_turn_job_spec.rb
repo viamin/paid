@@ -61,6 +61,26 @@ RSpec.describe ChatTurns::RecoverStalledTurnJob do
       expect(rendered_notice(notice)).not_to include("Resume")
     end
 
+    # @spec CHAT-TURN-RECOVERY-008
+    it "replaces an empty-response retry notice after a successful retry" do
+      chat_turn.update!(status: "streaming", failure_classification: "empty_response", recovery_attempts: 1)
+      notice = ChatTurns::PersistFailureNotice.call(chat_turn: chat_turn)
+
+      expect {
+        described_class.perform_now(chat_turn_id: chat_turn.id, triggered_by: "manual", actor_id: user.id)
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(
+          message_id: notice.id,
+          html: include(ChatTurns::PersistFailureNotice::EMPTY_RESPONSE_RECOVERED_CONTENT)
+        ))
+
+      expect(notice.reload).to have_attributes(
+        content: ChatTurns::PersistFailureNotice::EMPTY_RESPONSE_RECOVERED_CONTENT,
+        metadata: include("retry_available" => false)
+      )
+      expect(rendered_notice(notice)).not_to include("Retry")
+    end
+
     # @spec CHAT-TURN-RECOVERY-005
     it "settles and broadcasts a manual recovery denied after the actor loses access" do
       user.add_role(:member, account)
