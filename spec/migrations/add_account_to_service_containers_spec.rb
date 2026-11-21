@@ -38,6 +38,19 @@ RSpec.describe AddAccountToServiceContainers, :aggregate_failures do
 
   include MigrationSpecHelpers
 
+  # @spec POSTGRESQL-PERSISTENCE-012
+  # Historical teardown also removes later helper-backed policies. Rollback
+  # restores the complete original catalog, including groups unknown here.
+  around do |example|
+    ActiveRecord::Base.transaction(requires_new: true) do
+      example.run
+      raise ActiveRecord::Rollback
+    end
+  ensure
+    OrchestrationDecision.reset_column_information
+    ServiceContainer.reset_column_information
+  end
+
   before do
     truncate_migration_test_data
 
