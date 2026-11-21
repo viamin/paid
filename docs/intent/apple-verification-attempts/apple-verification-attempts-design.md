@@ -219,6 +219,10 @@ credentials, and stop scheduling. An operator repairs or replaces the worker
 and explicitly returns it to service only after the isolation smoke test
 passes.
 
+Concurrency validation uses committed fixture rows and establishes normal tenant
+context on each worker connection before loading its source attempt. Readiness
+waits are bounded so a setup failure cannot leave the suite waiting indefinitely.
+
 ## Decisions & Alternatives
 
 | Decision | Rationale | Alternative rejected |
