@@ -144,7 +144,11 @@ in-place rate-limit recovery (`#recoverable_rate_limited?`),
 `enqueue_eligible.implementation_work_held`. The hold is bounded by the same
 authorized operator reset window as the failure streak: a failure created
 before `runner_retry_failure_window_reset_at` no longer holds admission, so
-clearing retry abandonment re-arms ordinary admission cleanly. Explicitly
+clearing retry abandonment re-arms ordinary admission cleanly. A failed
+reconciliation that retains an assessment with gaps is a partial-closeout
+re-audit, not a blind implementation retry: it bypasses this hold and returns
+to normal eligibility, which verifies the assessment is current before a
+continuation can be admitted. Explicitly
 authorized continuations (`Issues::RequestContinuation`) mint their run
 outside `Issues::EnqueueEligible` and are unaffected, `no_output` sources
 and `analyze_issue` goals keep their existing paths, and manual runs never

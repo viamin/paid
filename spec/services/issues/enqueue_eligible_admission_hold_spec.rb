@@ -56,6 +56,21 @@ RSpec.describe Issues::EnqueueEligible do
         )
       )
     end
+
+    it "defers a retryable partial-closeout reconciliation to normal eligibility" do
+      issue = create(:issue, project: project, paid_state: "failed", github_state: "open")
+      run = failed_create_pr_run(
+        issue: issue,
+        pull_request_number: 42,
+        reconciliation: {
+          "status" => "retryable_failure",
+          "assessment" => { "gaps" => [ { "criterion" => "dispatch" } ] }
+        }
+      )
+
+      expect(issue.auto_pick_create_pr_admission_hold).to be_nil
+      expect(run.implementation_work_produced?).to be(true)
+    end
   end
 
   describe "periodic sweep admission" do

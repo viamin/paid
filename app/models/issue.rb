@@ -1529,6 +1529,7 @@ class Issue < ApplicationRecord
     return nil unless run
     return nil if runner_retry_failure_window_reset_at.present? && run.created_at < runner_retry_failure_window_reset_at
     return run if run.recoverable_rate_limited?
+    return nil if run.partial_closeout_reaudit_failure?
     return run if run.implementation_work_produced?
 
     nil

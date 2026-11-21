@@ -203,7 +203,10 @@
   seeding) SHALL honor the same produced-work and rate-limit-recovery
   refusals recorded for the issue's latest failed auto-picked `create_pr`
   run within the current authorized reset window, so no admission path can
-  route around a refused shared decision (#4989 acceptance bypass).
+  route around a refused shared decision (#4989 acceptance bypass). A
+  retryable partial-closeout reconciliation that retained assessment gaps
+  SHALL instead return to normal eligibility, which verifies the current
+  assessment before admitting its continuation.
   *Code:* `AgentRuns::AutoPickCreatePrRetryPolicy`,
   `RetryFailedAutoPickCreatePrJob`, `RetryableAttempts::RetryAttempt`,
   `Issue#auto_pick_create_pr_admission_hold`, `Issues::EnqueueEligible`.

@@ -2218,6 +2218,16 @@ class AgentRun < ApplicationRecord
     result_commit_sha.present? || !no_observable_work?
   end
 
+  # A reconciliation that failed after recording gaps preserves the partial
+  # closeout's latest PR-producing outcome. Normal eligibility still validates
+  # that assessment before it can admit a continuation.
+  # @spec EAGER-QUEUE-018 AGENT-RETRY-017
+  def partial_closeout_reaudit_failure?
+    data = reconciliation.to_h
+    data.fetch("status", nil) == "retryable_failure" &&
+      data.dig("assessment", "gaps").is_a?(Array) && data.dig("assessment", "gaps").any?
+  end
+
   # Successful and timed-out main runner commands preserve their output in the
   # attempt record. Smoke preflight uses a distinct error type, and maintenance
   # commands do not create runner attempts.

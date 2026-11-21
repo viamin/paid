@@ -118,7 +118,9 @@
   produced-work and rate-limit-recovery refusals the shared policy records
   for the issue's latest failed auto-picked `create_pr` run: it SHALL NOT
   mint a fresh implementation attempt while that refusal stands (#4989
-  acceptance bypass). Failures created before the authorized operator reset
+  acceptance bypass). A retryable partial-closeout reconciliation with
+  recorded gaps SHALL defer to normal eligibility, which verifies its current
+  assessment before admitting a continuation. Failures created before the authorized operator reset
   window (`runner_retry_failure_window_reset_at`) SHALL NOT hold admission,
   and explicitly authorized continuations (`Issues::RequestContinuation`)
   remain outside this guard. A `no_output`-status source or an
