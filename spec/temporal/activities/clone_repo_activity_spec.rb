@@ -356,6 +356,45 @@ RSpec.describe Activities::CloneRepoActivity do
         end
       end
 
+      # @spec PR-BRANCH-PUBLISH-013 PR-BRANCH-PUBLISH-014
+      it "hands a verified parked producer's branch lease to a review without changing producer recovery" do
+        delivery_sha = "d" * 40
+        producer = create(:agent_run, project:, status: "waiting_recovery", goal: "create_pr",
+          branch_name: "existing-feature-branch", result_commit_sha: delivery_sha,
+          reconciliation: { "source_closure_recovery" => { "commit_sha" => delivery_sha } })
+        create(:worktree, :active, project:, agent_run: producer, branch_name: "existing-feature-branch", pushed: true)
+        agent_run.update!(goal: "review", source_pull_request_number: 135, expected_remote_head_sha: delivery_sha)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(Worktree.find_by(project:, branch_name: "existing-feature-branch").agent_run).to eq(agent_run)
+        expect(producer.reload).to have_attributes(status: "waiting_recovery", result_commit_sha: delivery_sha)
+        expect(producer.reconciliation.dig("source_closure_recovery", "commit_sha")).to eq(delivery_sha)
+      end
+
+      # @spec PR-BRANCH-PUBLISH-013
+      it "does not reclaim a parked producer with a live recovery claim" do
+        producer = create(:agent_run, project:, status: "waiting_recovery", goal: "create_pr",
+          branch_name: "existing-feature-branch", result_commit_sha: "d" * 40,
+          reconciliation: { "source_closure_recovery" => { "claimed_at" => Time.current.iso8601 } })
+        create(:worktree, :active, project:, agent_run: producer, branch_name: "existing-feature-branch")
+        agent_run.update!(goal: "review", source_pull_request_number: 135, expected_remote_head_sha: "d" * 40)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /active worktree from agent run/)
+      end
+
+      # @spec PR-BRANCH-PUBLISH-014
+      it "does not reclaim an unverified or changed producer delivery" do
+        producer = create(:agent_run, project:, status: "waiting_recovery", goal: "create_pr",
+          branch_name: "existing-feature-branch", result_commit_sha: "d" * 40)
+        create(:worktree, :active, project:, agent_run: producer, branch_name: "existing-feature-branch")
+        agent_run.update!(goal: "review", source_pull_request_number: 135, expected_remote_head_sha: "e" * 40)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /active worktree from agent run/)
+      end
+
       it "raises WorktreeConflict when an active worktree belongs to a different running agent_run" do
         other_agent_run = create(:agent_run, :running, project: project)
         create(:worktree, :active, project: project, agent_run: other_agent_run, branch_name: "existing-feature-branch")
