@@ -200,7 +200,7 @@ export default class extends Controller {
     if (event.defaultPrevented || !this.isPrimaryNavigation(event)) return null
 
     const element = event.target.closest("[data-chat-navigate-url], a[href]")
-    if (!element || element.target === "_blank") return null
+    if (!element || element.target === "_blank" || element.dataset.chatToolHistoryMore != null) return null
 
     const href = element.dataset.chatNavigateUrl || element.getAttribute("href")
     try {
@@ -685,7 +685,14 @@ export default class extends Controller {
 
   updateToolGroupSummary(group) {
     const count = group.querySelectorAll("[data-chat-tool-card]").length
-    group.querySelector("[data-chat-tool-group-summary]").textContent = `${count} tool action${count === 1 ? "" : "s"}`
+    const summary = group.querySelector("[data-chat-tool-group-summary]")
+    const shown = group.querySelector("[data-chat-tool-history-more]") ? " shown" : ""
+    if (summary) summary.textContent = `${count} tool action${count === 1 ? "" : "s"}${shown}`
+  }
+
+  // @spec CHAT-API-024 CHAT-API-027
+  refreshToolGroupSummary(event) {
+    this.updateToolGroupSummary(event.currentTarget)
   }
 
   handleMessageToolConfirmation(data) {
@@ -935,7 +942,10 @@ export default class extends Controller {
   removeToolCard(card) {
     const group = card.closest?.("[data-chat-tool-group]")
     card.remove()
-    if (group && !group.querySelector("[data-chat-tool-card]")) group.remove()
+    if (group) {
+      if (!group.querySelector("[data-chat-tool-card]")) group.remove()
+      else this.updateToolGroupSummary(group)
+    }
   }
 
   // On a runner fallback the partial answer from the failed runner is discarded

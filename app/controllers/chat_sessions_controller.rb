@@ -14,7 +14,7 @@ class ChatSessionsController < ApplicationController
   SIDEBAR_PAGE_SIZE = 50
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
-  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages recent_messages]
+  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages recent_messages tool_history]
   before_action :reject_archived_chat_session, only: %i[update destroy archive clone_project]
   before_action :enforce_create_rate_limit, only: :create
   before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
@@ -60,10 +60,34 @@ class ChatSessionsController < ApplicationController
       @chat_session.messages.chronological.includes(chat_diagram: { comments: :actor }).where("chat_messages.id < ?", before_id)
     )
 
-    has_more = @chat_session.messages.where("chat_messages.id < ?", messages.first&.id).exists? if messages.any?
+    has_more = @chat_session.messages.where("chat_messages.id < ?", @transcript_before_id).exists? if messages.any?
 
     render partial: "chat_sessions/older_messages",
-      locals: { messages: messages, chat_session: @chat_session, has_more: has_more, frame_id: frame_id }
+      locals: { messages: messages, chat_session: @chat_session, has_more: has_more, frame_id: frame_id,
+        leading_tool_history: @leading_tool_history }
+  end
+
+  # @spec CHAT-API-024 CHAT-API-027
+  def tool_history
+    authorize @chat_session, :show?
+    anchor_id = Integer(params[:anchor_id], exception: false)
+    before_id = Integer(params[:before], exception: false)
+    return head :bad_request unless anchor_id&.positive? && before_id&.positive? && before_id <= anchor_id
+
+    page = ChatSessions::LoadToolHistory.call(chat_session: @chat_session, anchor_id:, before_id:,
+      limit: MESSAGE_PAGE_SIZE)
+    respond_to do |format|
+      format.html do
+        render partial: "chat_sessions/tool_history_page", locals: {
+          messages: page.messages, chat_session: @chat_session, anchor_id: page.anchor_id,
+          has_more: page.has_more, frame_id: request.headers["Turbo-Frame"].presence || "tool_history"
+        }
+      end
+      format.json do
+        render json: { messages: page.messages.map { |message| message_json(message) },
+          has_more: page.has_more, next_before: page.has_more ? page.messages.first.id : nil }
+      end
+    end
   end
 
   # @spec CHAT-API-023 — Recovers messages the client missed during an
@@ -169,7 +193,7 @@ class ChatSessionsController < ApplicationController
           render partial: "chat_sessions/popup", locals: {
             chat_session: @chat_session,
             chat_messages: @chat_messages,
-            has_older_messages: @has_older_messages
+            has_older_messages: @has_older_messages, leading_tool_history: @leading_tool_history
           }
         else
           load_chat_panel_data
@@ -598,17 +622,9 @@ class ChatSessionsController < ApplicationController
   # @spec CHAT-API-024
   def latest_messages(scope, limit: MESSAGE_PAGE_SIZE)
     messages = scope.reorder(created_at: :desc, id: :desc).limit(limit).reverse
-    return messages unless messages.first&.groupable_tool?
-
-    leading_tool_run(scope, messages)
-  end
-
-  def leading_tool_run(scope, messages)
-    preceding = scope.where("chat_messages.id < ?", messages.first.id)
-    boundary = preceding.where.not(id: preceding.groupable_tools.select(:id)).reorder(created_at: :desc, id: :desc).first
-    tool_run = boundary ? preceding.where("chat_messages.id > ?", boundary.id) : preceding
-
-    tool_run.groupable_tools.to_a + messages
+    @leading_tool_history = ChatSessions::LoadToolHistory.leading(scope:, messages:)
+    @transcript_before_id = @leading_tool_history&.fetch(:first_id) || messages.first&.id
+    messages
   end
 
   def create_rate_limited?
@@ -699,7 +715,7 @@ class ChatSessionsController < ApplicationController
   def load_chat_messages
     scope = @chat_session.messages.chronological.includes(chat_diagram: { comments: :actor })
     @chat_messages = latest_messages(scope)
-    @has_older_messages = scope.where("chat_messages.id < ?", @chat_messages.first.id).exists? if @chat_messages.any?
+    @has_older_messages = scope.where("chat_messages.id < ?", @transcript_before_id).exists? if @chat_messages.any?
   end
 
   def popup_request?
@@ -717,6 +733,7 @@ class ChatSessionsController < ApplicationController
       chat_session: @chat_session,
       chat_messages: @chat_messages,
       has_older_messages: @has_older_messages,
+      leading_tool_history: @leading_tool_history,
       can_update_chat_session: policy(@chat_session).update? && !archived_chat_session,
       can_archive_chat_session: policy(@chat_session).archive? && !archived_chat_session,
       can_unarchive_chat_session: policy(@chat_session).unarchive? && archived_chat_session,
