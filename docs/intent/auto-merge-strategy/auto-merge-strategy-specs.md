@@ -144,13 +144,28 @@
   `spec/temporal/activities/evaluate_dependabot_auto_merge_activity_spec.rb`,
   `spec/jobs/dependabot_auto_merge_job_spec.rb`.
 
-- [x] **AUTO-MERGE-009** — When an agent-created pull request needs human
-  judgment before merging, the run-facing prompt SHALL instruct the agent to
-  apply the structured `paid-hold-review` label. The label SHALL block
+- [x] **AUTO-MERGE-009** — When an agent-created or materially changed pull
+  request has a specific unresolved human-only decision that ordinary
+  delegated checks cannot settle — including an explicit design or intent
+  approval gate, a material scope or authority change, or another decision
+  automation is not authorized to make — the run-facing prompt SHALL instruct
+  the agent to apply the structured `paid-hold-review` label. When effective
+  policy delegates auto-merge, the prompt SHALL NOT direct a hold solely for a
+  user-facing change, a request for screenshots or review, normal CI or bot
+  review, missing verification evidence, or general caution; those conditions
+  SHALL follow their ordinary verification or blocker path. The prompt SHALL
+  scope a discretionary hold to the pull request the run creates or materially
+  changes unless the assigned task explicitly requires reviewing or holding
+  another pull request. When applying a hold, the prompt SHALL require a
+  durable operator-visible record of the concrete unresolved decision, why
+  delegated checks cannot settle it, and the PR, run, and issue evidence; the
+  label, not prose, SHALL remain the merge blocker. The label SHALL block
   scan-time auto-merge eligibility and the last-mile merge activity, SHALL
   create an actionable `merge_approval` Inbox entry with a human-review
   summary, and SHALL require a human to remove it before automatic merging can
-  resume. PR prose SHALL NOT be parsed as a merge-control signal.
+  resume, including when `auto_merge_mode` is `all`. Existing labels SHALL NOT
+  be automatically removed when policy settings change. PR prose SHALL NOT be
+  parsed as a merge-control signal.
   *Code:* `app/services/automation/strategies/auto_merge.rb`,
   `app/temporal/activities/merge_pull_request_activity.rb`,
   `app/services/inbox/merge_approval.rb`,
