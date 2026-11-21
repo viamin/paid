@@ -37,6 +37,23 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("failed")
     end
 
+    # @spec ISSUE-ENHANCEMENT-021
+    it "parks a transient automatic enhancement failure with durable technical provenance" do
+      issue = create(:issue, :in_progress, project: project, github_updated_at: Time.current.change(usec: 0))
+      agent_run = create(:agent_run, :running, :automatic, :enhance_issue_goal, project: project, issue: issue)
+
+      allow(IssueEnhancements::StopForManualReview).to receive(:call)
+      allow(RecoverTechnicalEnhancementStopJob).to receive(:set).and_return(double(perform_later: true))
+
+      activity.execute(agent_run_id: agent_run.id, error: AgentRun::ACTIVITY_TIMEOUT_MESSAGE)
+
+      expect(agent_run.reload.external_metadata.dig("technical_stop_recovery", "classification")).to eq("transport")
+      expect(IssueEnhancements::StopForManualReview).to have_received(:call).with(
+        project: project, issue: issue,
+        reason: "Paid could not complete the enhancement run because its provider connection was interrupted."
+      )
+    end
+
     # @spec ISSUE-ANALYSIS-010
     it "records an issue-level analyze_issue backoff for automatic provider exhaustion failures" do
       issue = create(:issue, :in_progress, project: project)

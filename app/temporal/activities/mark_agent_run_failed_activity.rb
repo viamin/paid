@@ -33,6 +33,7 @@ module Activities
       # @spec FOCUSED-RUN-006
       record_draft_review_round_if_needed(agent_run)
       record_unexpected_issue_analysis_failure!(agent_run, failure_type)
+      record_technical_enhancement_stop!(agent_run)
 
       # Always trigger queue processing so remaining queued runs get claimed.
       # This is safe because ProcessRunQueueJob is idempotent (advisory lock +
@@ -100,6 +101,7 @@ module Activities
       schedule_manual_run_retry_if_eligible(agent_run)
       # @spec PARTIAL-CLOSEOUT-056
       schedule_acceptance_audit_retry_if_eligible(agent_run)
+      schedule_technical_enhancement_recovery_if_eligible(agent_run)
 
       logger.info(
         message: "agent_execution.failed",
@@ -128,6 +130,42 @@ module Activities
         agent_run.analyze_issue_goal? &&
         agent_run.status == "failed" &&
         (agent_run.provider_unavailable? || agent_run.unexpected_issue_analysis_application_error?)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-021
+    def record_technical_enhancement_stop!(agent_run)
+      classification = IssueEnhancements::TechnicalStopRecovery.classification(agent_run.error_message)
+      return unless classification && agent_run.automatic? && agent_run.enhance_issue_goal? && agent_run.issue
+
+      previous = agent_run.external_metadata.fetch(IssueEnhancements::TechnicalStopRecovery::METADATA_KEY, {})
+      agent_run.update!(external_metadata: agent_run.external_metadata.merge(
+        IssueEnhancements::TechnicalStopRecovery::METADATA_KEY => {
+          "classification" => classification,
+          "issue_revision" => agent_run.issue.github_updated_at&.iso8601,
+          "attempt" => previous.fetch("attempt", 0),
+          "root_run_id" => previous.fetch("root_run_id", agent_run.id)
+        }
+      ))
+      return if agent_run.issue.paid_state == "manual_review"
+
+      IssueEnhancements::StopForManualReview.call(
+        project: agent_run.project, issue: agent_run.issue,
+        reason: technical_enhancement_stop_reason(classification)
+      )
+    end
+
+    def technical_enhancement_stop_reason(classification)
+      return "Paid could not validate the enhancement agent's structured output." if classification == "parser"
+
+      "Paid could not complete the enhancement run because its provider connection was interrupted."
+    end
+
+    # @spec ISSUE-ENHANCEMENT-021
+    def schedule_technical_enhancement_recovery_if_eligible(agent_run)
+      metadata = agent_run.external_metadata[IssueEnhancements::TechnicalStopRecovery::METADATA_KEY]
+      return unless metadata
+
+      RecoverTechnicalEnhancementStopJob.set(wait: 5.minutes).perform_later(agent_run.id)
     end
 
     # Preserve unexpected application failures as their own terminal category.
