@@ -250,8 +250,9 @@ the project issue lifecycle use the same state-neutral scope, so
 open dependencies, explicit label controls, pauses, and the durable
 no-code-required / merged-PR safeguards remain separate guards.
 `analyzed` is deliberately absent from the non-blocking dependency and
-subissue states: a closeout audit pending from a merged non-closing source PR
-cannot satisfy downstream work solely because sync repaired its bookkeeping.
+subissue states: a closeout audit pending from an open, draft, or merged
+non-closing source PR cannot satisfy downstream work solely because sync
+repaired its bookkeeping.
 
 The project issue list displays each issue's Paid state beside its lifecycle
 badge. The dashboard's eligibility breakdown continues to report the actual

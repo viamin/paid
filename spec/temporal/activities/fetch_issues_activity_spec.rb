@@ -440,7 +440,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
 
     # @spec GITHUB-SYNC-016
-    it "waits for an open source PR when Paid recorded a gap-free final audit" do
+    it "keeps an open source PR dependency-blocking when its final audit is pending" do
       issue = create(:issue, :completed, project: project, github_number: 3490, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3590,
         pull_request_url: "https://github.com/#{project.full_name}/pull/3590",
@@ -450,13 +450,13 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
-      expect(changed).to be false
-      expect(issue.reload.paid_state).to eq("completed")
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("analyzed")
       expect(issue.manual_review_reason).to be_nil
     end
 
     # @spec GITHUB-SYNC-016
-    it "releases an existing sync-created manual review while its audit-pending PR is open" do
+    it "releases an existing sync-created manual review to the blocking audit lane while its PR is open" do
       issue = create(:issue, :completed, project: project, github_number: 3491, github_state: "open")
       issue.update!(paid_state: "manual_review",
         manual_review_reason: "Paid closeout is waiting on its source pull request: #3591 is draft. Review and merge the PR before final acceptance can be audited.")
@@ -469,12 +469,29 @@ RSpec.describe Activities::FetchIssuesActivity do
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
-      expect(issue.reload.paid_state).to eq("completed")
+      expect(issue.reload.paid_state).to eq("analyzed")
       expect(issue.manual_review_reason).to be_nil
     end
 
+    # @spec GITHUB-SYNC-016 AUTO-PICK-QUEUE-008
+    it "does not release a dependent when an audit-pending non-closing source PR is draft" do
+      source_issue = create(:issue, :completed, project: project, github_number: 3495, github_state: "open")
+      dependent_issue = create(:issue, project: project, github_number: 3496, github_state: "open")
+      dependent_issue.issue_dependencies.create!(depends_on_issue: source_issue)
+      create(:agent_run, :completed, project: project, issue: source_issue, goal: "create_pr", pull_request_number: 3595,
+        pull_request_url: "https://github.com/#{project.full_name}/pull/3595",
+        reconciliation: audit_pending_reconciliation(source_issue))
+      create(:issue, :pull_request, project: project, github_number: 3595,
+        body: "Tracks #3495", pr_review_phase: "draft")
+
+      activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(source_issue.reload.paid_state).to eq("analyzed")
+      expect(dependent_issue.blocking_issues).to contain_exactly(source_issue)
+    end
+
     # @spec GITHUB-SYNC-016
-    it "routes the audit-pending source issue to acceptance audit after its PR merges" do
+    it "leaves an audit-pending source issue in the dependency-blocking audit lane after its PR merges" do
       issue = create(:issue, :completed, project: project, github_number: 3492, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3592,
         pull_request_url: "https://github.com/#{project.full_name}/pull/3592",
@@ -486,7 +503,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       pull_request.update!(github_state: "closed", pr_review_phase: "merged")
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
-      expect(changed).to be true
+      expect(changed).to be false
       expect(issue.reload.paid_state).to eq("analyzed")
       expect(issue.manual_review_reason).to be_nil
     end
@@ -567,8 +584,8 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
-      expect(changed).to be false
-      expect(issue.reload.paid_state).to eq("completed")
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("analyzed")
     end
 
     # @spec GITHUB-SYNC-016
