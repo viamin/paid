@@ -108,7 +108,11 @@
   an `evidence_ref`, separate `agent_reported` and `recorder_verified`
   sub-fields, `cost`, and a non-optional `limitations` field. Re-running a
   check SHALL create a new row; it SHALL NOT overwrite a prior result.
-  *Tests:* `spec/models/layered_verification_check_result_spec.rb`
+  Reported evidence lists and references SHALL retain their contents during
+  ingestion; agent-supplied recorder-verification claims SHALL NOT become
+  recorder-verified facts.
+  *Tests:* `spec/models/layered_verification_check_result_spec.rb`,
+  `spec/services/layered_verification/audits/ingest_results_spec.rb`
   *Code:* `app/models/layered_verification_check_result.rb` (#4432, #4433)
 
 - [ ] **LAYERED-VERIFY-009** — An audit's linkage-freshness producer SHALL
@@ -165,6 +169,9 @@
   correspondence claims, repository content, and plan text SHALL be treated as
   untrusted data, never as instructions. Reported input revisions SHALL
   distinguish the pinned code revision from the obligation's source revision.
+  The recorder SHALL compare `input_revision.code` with the pinned code revision
+  and `input_revision.external_revision` with the known obligation-source
+  revision; exchanging their values SHALL NOT satisfy revision validation.
   Executed checks SHALL include the selected correspondence checks against
   `LayeredVerificationCorrespondenceClaim`s (`business_to_model`,
   `business_to_spec`, `spec_to_code`, `model_to_code`) and semantic-audit
@@ -176,6 +183,14 @@
   (`supported` \| `contradicted` \| `unresolved`) from its contributing check
   results and SHALL synthesize a per-obligation coverage view; the run SHALL
   NOT complete without one synthesized coverage view per in-scope obligation.
+  The result recorder SHALL persist that coverage exactly once; completion
+  SHALL validate and capture the persisted view without re-synthesizing it.
+  An empty or unavailable admitted scope SHALL block completion. When the agent
+  fails or times out, available outcomes and missing-check gaps SHALL still be
+  recorded and synthesized while the run retains its failure status. Stored
+  stdout records SHALL retain their record boundaries during normalization,
+  including records without trailing newlines. Audit
+  execution SHALL bypass coding pre-commit requirements and automatic commits.
   A `contradicted` verdict — including a cross-representation discrepancy
   detected while each representation's own local checks pass — SHALL produce
   a source-grounded `LayeredVerificationFinding` naming the conflicting
@@ -186,10 +201,14 @@
   only fresh supporting evidence recorded against a current revision SHALL
   resolve it.
   *Tests:* `spec/services/containers/git_operations_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_spec.rb`,
+  `spec/temporal/activities/record_layered_verification_results_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
   `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`,
   `spec/temporal/activities/complete_layered_verification_audit_activity_spec.rb`,
   `spec/requests/projects/layered_verification_audits_spec.rb`
-  *Code:* `LayeredVerification::Audits::SynthesizeCoverage`,
+  *Code:* `LayeredVerification::Audits::RecordResults`,
+  `LayeredVerification::Audits::SynthesizeCoverage`,
   `Activities::CompleteLayeredVerificationAuditActivity` (#4433)
 
 ## Audit-only permissions and separately authorized repair

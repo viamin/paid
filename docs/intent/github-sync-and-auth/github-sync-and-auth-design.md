@@ -227,20 +227,22 @@ GitHub closing reference on that source PR remains distinct closure evidence.
 Without one, the PR's lifecycle determines the next action rather than a
 completion verdict. An open or draft PR whose producing run recorded its exact
 repository-qualified URL and a gap-free `awaiting_final_audit`
-assessment stays in `completed` while the PR review and merge pipeline runs.
+assessment enters `analyzed` while the PR review and merge pipeline runs.
 This assessment must have only satisfied or unknown criteria, with at least one
 unknown criterion pending audit and an intent revision matching the current
 source issue. Changes to closeout evidence remain for the post-merge audit to
 reassess. The source issue has no separate human action
 and must not enter the Inbox merely because Paid deliberately published
-`Tracks`. Other open or draft non-closing PRs are parked in `manual_review`
+`Tracks`, but `analyzed` remains dependency-blocking until final acceptance is
+established. Other open or draft non-closing PRs are parked in `manual_review`
 with their linked PR and review-or-merge action. A merged non-closing PR enters
 the evidence-backed partial-closeout lane (`paid_state: "analyzed"`).
 That state remains blocking to dependencies and is eligible for the bounded,
 report-only acceptance-audit sweep; it is not a recommendation to close.
 
-The same repair releases a prior sync-created `manual_review` hold when the
-recorded audit-pending decision is now available. It does not clear a hold
+The same repair releases a prior sync-created `manual_review` hold to the
+dependency-blocking `analyzed` lane when the recorded audit-pending decision is
+now available. It does not clear a hold
 with a different producer or reason. If the source issue's intent changed after
 the recorded assessment, the Inbox reason names that change and asks for
 review against the current requirements. Changes to technical or closeout

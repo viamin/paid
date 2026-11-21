@@ -316,6 +316,12 @@ named, recording each outcome as a new `LayeredVerificationCheckResult`
 (`not_run`/`incomplete`/`non_applicable` plus a stated limitation) rather
 than silently dropped.
 
+Audit result recording is separate from completion: the recorder ingests and
+synthesizes the per-obligation coverage once, then completion validates that
+persisted view and captures its review package. This keeps retried completion
+from adding duplicate observations to contradicted findings while allowing a
+completion history that predates recording to synthesize coverage as a fallback.
+
 ## Agent-run goals
 
 An audit prompt supplies each selected obligation's canonical source path,
@@ -366,6 +372,19 @@ prevents the agent from restoring writes.
 TLC writes its generated state into unique per-check container-local temporary storage through
 its [documented `-metadir` option](https://github.com/tlaplus/tlaplus/blob/master/general/docs/current-tools.md), outside the canonical checkout. Repair runs
 retain their separately authorized writable checkout.
+
+Audit execution bypasses coding pre-commit requirements and automatic commits.
+Its selected verification producers govern assessment work. On an agent failure
+or timeout, the workflow records available structured outcomes and explicit
+missing-check gaps, synthesizes coverage and retains discrepancies while keeping
+the run failed. Recording evidence never grants completion or repair authority.
+Completion requires coverage for every admitted obligation and a nonempty scope.
+The recorder preserves log-record boundaries when normalizing structured agent
+output, including records stored without trailing newlines, while retaining
+byte-continuous chunks that split within an output envelope. It preserves
+reported evidence lists and references, and compares code
+and obligation-source revisions by their named fields. Only Paid assigns
+recorder-verified facts.
 
 A **manual audit** can be created without a GitHub issue (RDR-076's "Manual
 audit... create an audit run without requiring a GitHub issue"), the one

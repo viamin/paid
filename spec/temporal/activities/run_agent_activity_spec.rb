@@ -3020,6 +3020,24 @@ expect(container_service).to receive(:execute).with(
         expect(git_ops).not_to have_received(:has_changes_since?)
       end
 
+      context "when the run is a layered-verification audit" do
+        # @spec LAYERED-VERIFY-010 LAYERED-VERIFY-024
+        it "returns the assessment without coding pre-commit requirements or automatic commits" do
+          obligation = create(:layered_verification_obligation, project:)
+          agent_run.update!(goal: "layered_verification_audit", issue: nil, external_metadata: {
+            "layered_verification" => { "obligation_ids" => [ obligation.id ], "target_revision" => "a" * 40,
+              "budget" => { "max_minutes" => 5 }, "plan" => {} }
+          })
+          allow(git_ops).to receive(:has_changes_since?).and_return(false)
+          expect(activity).not_to receive(:evaluate_pre_commit_requirements)
+          expect(git_ops).not_to receive(:commit_uncommitted_changes)
+
+          result = activity.execute(agent_run_id: agent_run.id)
+
+          expect(result).to include(success: true, has_changes: false)
+        end
+      end
+
     context "when the run is for maintenance" do
         let(:agent_run) do
           create(:agent_run, :with_git_context, project: project, issue: nil,
@@ -4495,24 +4513,26 @@ expect(container_service).to receive(:execute).with(
 
       # @spec RUNNER-FALLBACK-013
       it "parks a Token Plan-limited run using the bounded subscription retry window when no reset is supplied" do
-        api_key = create(:runner_api_key, user: user, api_service_type: "minimax")
-        minimax_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
-          provider_api_key: api_key, config: { "opencode" => { "model" => "MiniMax-M3", "api_provider" => "minimax" } })
-        agent_run.update!(agent_type: "opencode", runner: minimax_runner)
-        allow(activity).to receive(:run_agent_with_runner).and_raise(
-          described_class::ProviderRateLimitError.new(
-            "Subscription usage limit reached for opencode",
-            limit_kind: :subscription_usage
+        freeze_time do
+          api_key = create(:runner_api_key, user: user, api_service_type: "minimax")
+          minimax_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+            provider_api_key: api_key, config: { "opencode" => { "model" => "MiniMax-M3", "api_provider" => "minimax" } })
+          agent_run.update!(agent_type: "opencode", runner: minimax_runner)
+          allow(activity).to receive(:run_agent_with_runner).and_raise(
+            described_class::ProviderRateLimitError.new(
+              "Subscription usage limit reached for opencode",
+              limit_kind: :subscription_usage
+            )
           )
-        )
 
-        expect { activity.execute(agent_run_id: agent_run.id) }
-          .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
 
-        agent_run.reload
-        expect(agent_run.status).to eq("rate_limited")
-        expect(agent_run.error_message).to include("subscription usage limit")
-        expect(agent_run.rate_limited_until).to be_within(2.seconds).of(described_class::SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now)
+          agent_run.reload
+          expect(agent_run.status).to eq("rate_limited")
+          expect(agent_run.error_message).to include("subscription usage limit")
+          expect(agent_run.rate_limited_until).to eq(described_class::SUBSCRIPTION_USAGE_LIMIT_BACKOFF.from_now)
+        end
       end
 
       # @spec RUNNER-FALLBACK-013

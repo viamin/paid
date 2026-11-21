@@ -1132,7 +1132,7 @@ module Activities
         .order(:relationships_parsed_at, :github_updated_at, :id)
     end
 
-    # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-037
+    # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-037 AUTO-PICK-QUEUE-008
     def repair_completed_open_issues(project, client)
       return false if upstream_issue_write_skipped?(project, "add_recommend_close_label")
 
@@ -1183,7 +1183,7 @@ module Activities
 
     def completed_open_issue_repair_candidates(project)
       open_issues = project.issues.where(github_state: "open", is_pull_request: false)
-      stale_states = open_issues.where(paid_state: %w[completed recommend_close])
+      stale_states = open_issues.where(paid_state: %w[completed recommend_close analyzed])
       review_holds = open_issues.where(paid_state: "manual_review")
         .where("manual_review_reason LIKE ?", "#{non_closing_pr_review_reason_prefix}%")
       stale_states.or(review_holds).to_a
@@ -1198,7 +1198,7 @@ module Activities
       elsif source_pull_requests.any? { |pull_request| pull_request.github_state == "open" &&
           pull_request.github_url == source_run.pull_request_url } &&
           awaiting_source_pr_audit?(issue, source_run)
-        { paid_state: "completed", manual_review_reason: nil }
+        { paid_state: "analyzed", manual_review_reason: nil }
       else
         reason = non_closing_pr_review_reason(source_pull_requests, [ source_run.pull_request_number ])
         reason += " The source issue changed since Paid assessed this PR; review the current requirements before merge." if source_intent_changed?(issue, source_run)
@@ -1209,7 +1209,7 @@ module Activities
       issue.update!(attributes)
       next_action = if merged
         "acceptance_audit"
-      elsif attributes[:paid_state] == "completed"
+      elsif attributes[:paid_state] == "analyzed"
         "await_source_pr"
       else
         "review_or_merge"

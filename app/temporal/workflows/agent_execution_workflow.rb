@@ -655,6 +655,20 @@ module Workflows
         raise_if_canceled!(e)
         request_project_resync(project_id) if stale_pull_request_error?(e)
 
+        # Preserve actual observations without turning a failed audit into a
+        # successful run. Version this additional activity for history replay.
+        # @spec LAYERED-VERIFY-024
+        if agent_run_id && goal == "layered_verification_audit" &&
+            Temporalio::Workflow.patched("layered-verification-partial-outcomes-v1")
+          begin
+            run_activity(Activities::RecordLayeredVerificationResultsActivity,
+              { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+          rescue => recording_error
+            raise_if_canceled!(recording_error)
+            Temporalio::Workflow.logger.warn("Could not retain partial audit results: #{recording_error.class.name}")
+          end
+        end
+
         # Mark agent run as failed.
         # Temporal wraps activity errors in ActivityError — unwrap to get the
         # actual error message from our ApplicationError. Without this, every
