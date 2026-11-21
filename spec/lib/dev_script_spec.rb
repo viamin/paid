@@ -243,7 +243,7 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "runs separate jobs without enabling unconditional Overmind restarts" do # @spec RAILS-CONTROL-PLANE-014 RAILS-CONTROL-PLANE-020
+  it "runs separate jobs without enabling unconditional Overmind restarts" do # @spec RAILS-CONTROL-PLANE-014 RAILS-CONTROL-PLANE-024
     Dir.mktmpdir("dev-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
       env = { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}", "SKIP_DEV_CLEANUP" => "1" }
@@ -258,12 +258,12 @@ RSpec.describe "bin/dev" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  # @spec RAILS-CONTROL-PLANE-020
+  # @spec RAILS-CONTROL-PLANE-024
   it "starts web with external jobs and default capacity without rebuilt container environment" do
     expect(captured_web_environment).to eq("external:5")
   end
 
-  # @spec RAILS-CONTROL-PLANE-020
+  # @spec RAILS-CONTROL-PLANE-024
   it "preserves an explicit web thread budget while keeping jobs out of the web process" do
     expect(captured_web_environment(thread_limit: "4", job_mode: "async_server")).to eq("external:4")
   end
