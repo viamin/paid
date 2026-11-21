@@ -214,7 +214,9 @@
   SHALL be excluded and visibly counted; a closed issue alone SHALL never be
   represented as acceptance evidence. Rendering SHALL use persisted local
   graph, blocker, eligibility, and assessment state only and SHALL make no
-  GitHub or LLM calls or change priorities or dependencies.
+  GitHub or LLM calls or change priorities or dependencies. Graph issue rows SHALL
+  preload shared project records separately rather than repeat project audit
+  history in each joined issue row.
   *Code:* `app/services/issues/root_prerequisite_ranking.rb`,
   `app/controllers/inbox_controller.rb`,
   `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.

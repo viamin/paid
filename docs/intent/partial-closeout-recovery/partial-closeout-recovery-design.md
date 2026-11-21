@@ -1067,7 +1067,9 @@ visible rather than being implied away. Current closeout-assessment freshness
 is shown on each path, and stale assessment never establishes acceptance.
 
 Traversal is account-scoped, limited to visible current lane membership, and
-bounded by node, ranked-row, and path limits. Canonical auto-pick admission is
+bounded by node, ranked-row, and path limits. Graph issue rows join projects for
+account filtering but preload shared project records separately, so project
+audit history is not repeated for every graph node. Canonical auto-pick admission is
 evaluated only for roots in the bounded ranked result, so projects whose roots
 cannot be displayed do not add admission work to an Inbox render. Persisted
 cycles, unresolved external edges, and human-decision prerequisites are
