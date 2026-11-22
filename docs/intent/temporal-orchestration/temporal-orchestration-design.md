@@ -73,6 +73,24 @@ fails, new histories preserve the original workflow failure, log the unavailable
 bookkeeping operation and continue normal cleanup/janitor handling; they do not
 invent a terminal database write, assessment or renewed retry allowance.
 
+Report-only acceptance audits do not provision a coding container, MCP server,
+service container, or worktree. New histories resolve cleanup ownership from
+the persisted run and execution-resource ledger behind the
+`cleanup-owned-resources-v1` Temporal patch before scheduling cleanup, through
+the same detached-cancellation boundary the cleanup commands below it use
+(`run_cleanup_activity`) and routed to bounded poll/control capacity. Both
+properties matter: the detached boundary keeps the resolver schedulable when
+the workflow token is already cancelled, so cancellation cannot skip
+owned-resource cleanup; the poll/control routing keeps this cheap metadata
+read off the agent queue, so a saturated agent pool cannot stall it either.
+Empty ownership skips all cleanup and janitor commands; a persisted
+container/runner handle or active ledger entry, MCP/tool-sidecar ID,
+service-container ID, or active worktree retains the corresponding existing
+cleanup and finite janitor path. The resolver's bounded failure fails safe to
+the legacy cleanup set. Unpatched histories retain their recorded cleanup
+commands. Only this metadata read moves to control capacity; expensive
+cleanup commands and long-running AI work remain on the agent queue (#5266).
+
 Post-push source-closure parking is also short control-plane state publication
 (#5268). New `AgentExecutionWorkflow` and `SourceClosureRecoveryWorkflow`
 histories route only `ParkSourceClosureRecovery` to the existing poll queue,

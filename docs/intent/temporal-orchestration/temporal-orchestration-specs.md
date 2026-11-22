@@ -175,6 +175,29 @@
   `spec/temporal/workflow_replay_fixtures_spec.rb`.
   *Code:* `Workflows::AgentExecutionWorkflow#execute`.
 
+- [x] **TEMPORAL-ORCHESTRATION-016** — When a new report-only acceptance-audit
+  workflow reaches terminal success, failure, or cancellation, Paid SHALL
+  resolve cleanup ownership through a cancellation-detached activity on
+  bounded poll/control capacity before scheduling cleanup, so an
+  already-cancelled workflow token cannot skip owned-resource cleanup and the
+  resolver is never queued behind a saturated agent pool. It SHALL skip
+  container, MCP/tool-sidecar, service, worktree, and janitor commands only
+  when their durable run references and execution-resource ledger show no
+  owned resource. Persisted references and active ledger/worktree records,
+  including resources from a resumed run, SHALL retain the matching existing
+  cleanup, cancellation behavior, finite retention, and janitor path. A
+  resolver failure SHALL retain legacy cleanup; it SHALL not move expensive
+  cleanup to the poll queue, alter terminal failure publication, mint a retry,
+  or alter closeout authority. The `cleanup-owned-resources-v1` Temporal patch
+  SHALL preserve cleanup commands for unpatched histories (#5266).
+  *Tests:* `spec/temporal/workflows/agent_execution_workflow_terminal_control_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_cleanup_ownership_spec.rb`,
+  `spec/temporal/workflows/base_workflow_spec.rb`,
+  `spec/temporal/activities/resolve_cleanup_ownership_activity_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.
+  *Code:* `Workflows::AgentExecutionWorkflow#resolve_cleanup_ownership`,
+  `Activities::ResolveCleanupOwnershipActivity`, `AgentRuns::CleanupOwnership`.
+
 - [x] **TEMPORAL-ORCHESTRATION-017** — When a post-push source-closure
   assessment needs to publish waiting recovery state, both the original agent
   workflow and the narrow recovery workflow SHALL schedule only the existing
