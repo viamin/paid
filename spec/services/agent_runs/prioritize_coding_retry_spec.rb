@@ -72,6 +72,20 @@ RSpec.describe AgentRuns::PrioritizeCodingRetry do # @spec QUEUE-TIER-008
     expect(agent_run.reload.operator_coding_priority_requested_at).to be_nil
   end
 
+  it "prioritizes a bounded automatic root retry without inventing source or continuation lineage" do # @spec QUEUE-TIER-008
+    create(:agent_run, :failed, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+      completed_at: 1.minute.ago)
+    agent_run.update!(continuation_request: nil, source_pull_request_number: nil)
+    request.destroy!
+    original = agent_run.attributes.slice("trigger_type", "execution_origin", "external_metadata",
+      "continuation_request_id", "source_pull_request_number", "runner_id")
+
+    expect(prioritize).to be(true)
+
+    expect(agent_run.reload.attributes.slice(*original.keys)).to eq(original)
+    expect(agent_run.operator_coding_priority_requested_at).to be_present
+  end
+
   it "keeps an expired backoff timestamp while allowing the same retry to be prioritized" do
     agent_run.update!(rate_limited_until: 1.minute.ago)
 

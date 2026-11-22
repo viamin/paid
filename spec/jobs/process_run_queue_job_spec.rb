@@ -809,6 +809,23 @@ RSpec.describe ProcessRunQueueJob do
       job.perform
     end
 
+    it "selects an explicit prerequisite before an ordinary PR in the same fair-share cohort" do # @spec QUEUE-TIER-009
+      project = create(:project, auto_pick_enabled: true)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      prerequisite_issue = create(:issue, project:, github_state: "open")
+      ordinary_issue = create(:issue, project:, github_state: "open")
+      prerequisite = create(:agent_run, :queued, :automatic, project:, issue: prerequisite_issue,
+        goal: "create_pr", auto_pick: true, operator_coding_priority_requested_at: Time.current)
+      ordinary_pr = create(:agent_run, :queued, :automatic, :existing_pr, project:, issue: ordinary_issue,
+        goal: "create_pr", created_at: 1.minute.ago)
+
+      job.perform
+
+      expect(prerequisite.reload).to have_attributes(status: "running")
+      expect(prerequisite.temporal_workflow_id).to be_present
+      expect(ordinary_pr.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+    end
+
     it "keeps the account id as the Temporal fairness key for strict-priority accounts" do
       queued_run = create(:agent_run, :queued)
       queued_run.project.account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")

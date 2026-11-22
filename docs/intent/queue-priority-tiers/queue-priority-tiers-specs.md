@@ -91,8 +91,9 @@
   `spec/models/agent_run_spec.rb`.
 
 - [x] **QUEUE-TIER-008** — When an authorized operator explicitly prioritizes
-  one existing unclaimed automatic `create_pr` retry that is a PR continuation
-  or implementation continuation, Paid SHALL lock and recheck that same run,
+  one existing unclaimed automatic `create_pr` retry that is a PR continuation,
+  an implementation continuation, or a bounded automatic root retry evidenced
+  by its issue's retained failure history, Paid SHALL lock and recheck that same run,
   preserve its trigger, execution origin, policy snapshots, admission evidence,
   retry lineage, source identity, backoff, and remaining allowance, and record
   exactly one durable priority timestamp and actor audit event. The action
@@ -107,7 +108,8 @@
   `spec/mcp/tools/prioritize_coding_retry_spec.rb`.
 
 - [x] **QUEUE-TIER-009** — An operator-prioritized coding retry SHALL rank
-  after every automatic PR-continuation tier and before fresh-issue tiers in
+  after manual and operator-prioritized audit work but before ordinary automatic
+  PR-continuation and fresh-issue tiers in
   both dequeue SQL and the Ruby badge mirror. Fair-share project/user keys,
   automatic scheduler eligibility, trust, dependency, phase, pause, cost,
   capacity, and finite-retry guards SHALL retain precedence over this ordering

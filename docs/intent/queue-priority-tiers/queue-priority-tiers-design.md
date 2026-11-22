@@ -31,11 +31,11 @@ capacity gating.
 | Tier | Indicator | When |
 |---|---|---|
 | `manual` | 1 | Manual launch or an explicitly requested operator priority for a queued acceptance audit |
-| `pr_p1` | 2 | PR-continuation run carrying the configured P1 label |
-| `pr_p2` | 3 | PR-continuation run carrying the configured P2 label |
-| `pr_p3` | 4 | PR-continuation run carrying the configured P3 label |
-| `pr_continue` | 5 | PR-continuation run with no priority label |
-| `operator_coding` | 6 | Explicitly prioritized existing automatic coding retry |
+| `operator_coding` | 2 | Explicitly prioritized existing automatic coding retry |
+| `pr_p1` | 3 | PR-continuation run carrying the configured P1 label |
+| `pr_p2` | 4 | PR-continuation run carrying the configured P2 label |
+| `pr_p3` | 5 | PR-continuation run carrying the configured P3 label |
+| `pr_continue` | 6 | PR-continuation run with no priority label |
 | `issue_p1` | 7 | Fresh-issue run carrying the configured P1 label |
 | `issue_p2` | 8 | Fresh-issue run carrying the configured P2 label |
 | `issue_p3` | 9 | Fresh-issue run carrying the configured P3 label |
@@ -48,7 +48,7 @@ label-rank `CASE` (`LABEL_RANK_CASE_SQL`) is defined once and interpolated
 into both category branches so PR and issue sides rank labels identically.
 
 The defining worked example: a P2-labeled, ready PR follow-up (tier `pr_p2`,
-indicator 3) dequeues ahead of a P1-labeled, not-yet-started fresh issue
+indicator 4) dequeues ahead of a P1-labeled, not-yet-started fresh issue
 (tier `issue_p1`, indicator 7), because category beats label *across*
 categories.
 
@@ -61,14 +61,15 @@ and one actor audit event, then wakes the scheduler. The request is available
 from the queued PR action and the confirmation-gated MCP tool; sweeps, issue
 text, comments, and automatic retry code cannot set it.
 
-Only automatic coding work that is either a PR continuation or an
-implementation continuation request is eligible. Manual, audit-only,
+Only automatic coding work that is a PR continuation, an implementation
+continuation request, or a bounded root retry evidenced by retained issue
+failure history is eligible. Manual, audit-only,
 untrusted-originated, claimed, running, terminal, and rate-limited work is
 refused. Repeated and concurrent requests converge on the first timestamp and
-audit event. The marker ranks after every PR-continuation tier and before
-fresh-issue label tiers, retaining category-first ordering and allowing a
-selected implementation retry to advance without globally pre-empting repair
-continuations.
+audit event. The marker ranks after manual and operator-prioritized audit work
+and before ordinary PR-continuation and fresh-issue tiers. Project/user
+fair-share keys remain earlier scheduler sort keys, so the request advances
+the retry only inside its existing fairness cohort.
 
 The marker is scheduling state only. It never creates, cancels, restarts, or
 claims a run and never changes trigger, execution origin, runner/model/privacy
@@ -103,7 +104,7 @@ remains automatic. Cross-project and cross-user fairness retain precedence.
 
 `AgentRun#queue_priority_tier` mirrors the SQL for rendering: manual and
 operator-requested audits win unconditionally; an operator-requested coding
-retry follows all PR-continuation tiers and precedes fresh issues; then the
+retry precedes ordinary automatic PR continuations and fresh issues; then the
 run's category (`existing_pr?` → `pr` else `issue`) is combined with
 `label_priority_tier` to pick `pr_p1`..`pr_p3` / `pr_continue` or
 `issue_p1`..`issue_p3` / `auto_pick`. `queue_priority_label`

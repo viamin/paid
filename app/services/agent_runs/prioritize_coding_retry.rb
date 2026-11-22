@@ -42,13 +42,21 @@ module AgentRuns
       return false if agent_run.operator_coding_priority_requested_at.present?
       return false if agent_run.rate_limited_until&.future?
 
-      agent_run.source_pull_request_number.present? || implementation_continuation?
+      agent_run.source_pull_request_number.present? || implementation_continuation? || automatic_root_retry?
     end
 
     def implementation_continuation?
       request = agent_run.continuation_request
       request&.open? && request.project_id == agent_run.project_id && request.issue_id == agent_run.issue_id &&
         request.evidence["continuation_mode"] == "implementation"
+    end
+
+    def automatic_root_retry?
+      return false unless agent_run.auto_pick? && agent_run.issue
+
+      failures = agent_run.issue.consecutive_auto_pick_failure_count
+      cap = agent_run.project.effective_max_issue_runner_failures
+      failures.positive? && (!cap&.positive? || failures < cap)
     end
   end
 end

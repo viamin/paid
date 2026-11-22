@@ -1277,11 +1277,11 @@ class AgentRun < ApplicationRecord
   # created_at, with id as a stable tiebreaker.
   QUEUE_PRIORITIES = { # @spec QUEUE-TIER-001
     manual: { label: "Manual", indicator: 1 },
-    pr_p1: { label: "PR · P1", indicator: 2 },
-    pr_p2: { label: "PR · P2", indicator: 3 },
-    pr_p3: { label: "PR · P3", indicator: 4 },
-    pr_continue: { label: "Auto-continue", indicator: 5 },
-    operator_coding: { label: "Operator-requested coding retry", indicator: 6 },
+    operator_coding: { label: "Operator-requested coding retry", indicator: 2 },
+    pr_p1: { label: "PR · P1", indicator: 3 },
+    pr_p2: { label: "PR · P2", indicator: 4 },
+    pr_p3: { label: "PR · P3", indicator: 5 },
+    pr_continue: { label: "Auto-continue", indicator: 6 },
     issue_p1: { label: "P1", indicator: 7 },
     issue_p2: { label: "P2", indicator: 8 },
     issue_p3: { label: "P3", indicator: 9 },
@@ -1517,9 +1517,9 @@ class AgentRun < ApplicationRecord
         agent_runs.operator_priority_requested_at IS NOT NULL
         AND agent_runs.goal = 'analyze_issue' AND agent_runs.continuation_request_id IS NOT NULL
       ) THEN 0
-      WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL})
       WHEN agent_runs.operator_coding_priority_requested_at IS NOT NULL
-        AND agent_runs.trigger_type = 'automatic' AND agent_runs.goal = 'create_pr' THEN 5
+        AND agent_runs.trigger_type = 'automatic' AND agent_runs.goal = 'create_pr' THEN 1
+      WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL}) + 1
       ELSE (#{LABEL_RANK_CASE_SQL}) + 5
     END
   SQL
