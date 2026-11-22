@@ -3,7 +3,7 @@
 require "rails_helper"
 require "warden/test/helpers"
 
-# @spec PARTIAL-CLOSEOUT-058
+# @spec PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059
 RSpec.describe "Acceptance audit diagnostic layout", :js, system_driver: :paid_cuprite, type: :system do
   include Warden::Test::Helpers
 
@@ -14,6 +14,10 @@ RSpec.describe "Acceptance audit diagnostic layout", :js, system_driver: :paid_c
       "category" => "invalid_assessment", "provider" => "p" * 200, "model" => "glm-5.3",
       "request_id" => "request-5184", "attempt_id" => "attempt-5184",
       "invalid_fields" => [ { "path" => "criteria[0].#{'x' * 200}", "expected" => "e" * 200, "actual" => "string" } ],
+      "attempt_trace" => { "selected_attempt_ordinal" => 2, "attempts" => [
+        { "ordinal" => 1, "provider" => "codex", "model" => "primary", "outcome" => "timeout" },
+        { "ordinal" => 2, "provider" => "gemini", "model" => "fallback", "outcome" => "timeout" }
+      ] },
       "raw_output" => "private-response-5184"
     } })
   end
@@ -32,6 +36,7 @@ RSpec.describe "Acceptance audit diagnostic layout", :js, system_driver: :paid_c
       visit project_agent_run_path(project, run)
       within("section[aria-label='Assessment diagnostics']") do
         expect(page).to have_content("glm-5.3")
+        expect(page).to have_content("Attempt 2: Timeout (gemini / fallback)")
         expect(page).to have_no_content("private-response-5184")
         expect(page).to have_no_content("request-5184")
         # Cuprite's element send_keys clicks first, which would toggle the

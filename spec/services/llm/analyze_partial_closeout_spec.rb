@@ -328,6 +328,20 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         end
     end
 
+    # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+    it "converts skipped-only configuration exhaustion into a safe assessment failure" do
+      allow(Runners::ManagedCredentialLifecycle).to receive(:credential_for).and_return(nil)
+
+      expect { described_class.call(agent_run:) }
+        .to raise_error(described_class::AssessmentFailure, /eligible configured runner/) do |error|
+          expect(error.diagnostic).to include(category: "configuration_error")
+          expect(error.diagnostic.dig(:attempt_trace, :selected_attempt_ordinal)).to be_nil
+          expect(error.diagnostic.dig(:attempt_trace, :attempts)).to include(
+            a_hash_including(outcome: "skipped", skip_reason: "missing_managed_credential")
+          )
+        end
+    end
+
     # @spec LLM-ROUTING-003 PARTIAL-CLOSEOUT-031
     it "uses the effective Codex runner and its configured model in the container" do
       stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "unrelated-key"))
@@ -373,12 +387,17 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       ))
     end
 
-    # @spec PARTIAL-CLOSEOUT-031
+    # @spec PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-059
     it "refuses a runner disabled for agent work" do
       runner.update_column(:enabled_for_agent_runs, false)
 
       expect { described_class.call(agent_run: agent_run) }
-        .to raise_error(AgentHarness::ConfigurationError, /No eligible configured runner/)
+        .to raise_error(described_class::AssessmentFailure, /eligible configured runner/) do |error|
+          expect(error.diagnostic).to include(category: "configuration_error")
+          expect(error.diagnostic.dig(:attempt_trace, :attempts)).to include(
+            a_hash_including(outcome: "skipped", skip_reason: "unavailable")
+          )
+        end
       expect(provider).not_to have_received(:send_message)
     end
 
@@ -516,6 +535,23 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         .to raise_error(described_class::AssessmentFailure, /configured runner/) do |error|
           expect(error.diagnostic).to include(category: "authentication_unavailable", provider: "codex")
           expect(error.diagnostic).not_to have_key(:response)
+        end
+    end
+
+    # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+    it "persists actual fallback failure provenance instead of configured-primary provenance" do
+      fallback = create(:runner, user: project.effective_owner, runner_key: "gemini",
+        tier_models: { "mid" => { "model_id" => "gemini-actual", "provider_id" => 17 } })
+      create(:runner_credential, runner: fallback, account: project.account)
+      allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+      allow(provider).to receive(:subscription_unset_vars).and_return([])
+      failures = [ AgentHarness::TimeoutError.new("primary timeout"), AgentHarness::TimeoutError.new("fallback timeout") ]
+      allow(provider).to receive(:send_message) { raise failures.shift }
+
+      expect { described_class.call(agent_run:, fallback_runner_identifiers: [ fallback.routing_key ]) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic).to include(category: "timeout", provider: "gemini", model: "gemini-actual")
+          expect(error.diagnostic.dig(:attempt_trace, :selected_attempt_ordinal)).to eq(2)
         end
     end
 
