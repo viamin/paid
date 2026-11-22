@@ -358,10 +358,13 @@ jobs:
             done
             return 1
           }
+          # Keep a slow registry response inside the bounded setup attempt;
+          # Yarn's shorter default request timeout exhausts retries before
+          # the shard can reach the test suite on contended hosted runners.
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --network-timeout 600000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
@@ -762,10 +765,12 @@ jobs:
             done
             return 1
           }
+          # Match matrix shards so a recovered leg has the same bounded
+          # tolerance for a slow registry response.
           retry_with_backoff \
             20m \
             "JavaScript dependency install timed out or failed" \
-            bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
+            bash -lc 'yarn install --frozen-lockfile --network-timeout 600000 && bin/yarn-postinstall'
 
       - name: Install ast-grep
         run: |
