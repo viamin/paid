@@ -42,6 +42,9 @@ module Paid
       "GIT_COMMON_DIR" => nil,
       "GIT_INDEX_FILE" => nil
     }.freeze
+    @activity_count = 0
+    @activity_count_lock = Mutex.new
+    @boot_revisions = {}
 
     module_function
 
@@ -69,8 +72,10 @@ module Paid
     # Write the ready flag. Safe to call repeatedly (overwrites).
     def mark_ready!(env = ENV)
       path = file_path(env)
+      revision = boot_revision(env)
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, ready_payload(env))
+      @activity_count_lock.synchronize { @boot_revisions[path] = revision }
+      write_payload(path, ready_payload(env, revision:))
     rescue StandardError => error
       warn "Failed to write worker readiness file: #{error.class}: #{error.message}"
     end
@@ -88,9 +93,42 @@ module Paid
       File.exist?(file_path(env))
     end
 
+    # The updater takes this lock exclusively before stopping workers. Each
+    # activity holds shared ownership for its entire execution, making idle
+    # observation and admission closure one atomic boundary.
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    def admission_lock_path(env = ENV)
+      "#{file_path(env)}.admission.lock"
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    def with_activity(env = ENV)
+      FileUtils.mkdir_p(File.dirname(admission_lock_path(env)))
+      File.open(admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
+        lock.flock(File::LOCK_SH)
+        activity_started!(env)
+        yield
+      ensure
+        activity_finished!(env)
+      end
+    end
+
+    # Activity counts are deliberately coarse, process-local readiness metadata:
+    # the updater needs only to know whether stopping this worker would interrupt
+    # an owner. It never contains activity inputs or customer data.
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    def activity_started!(env = ENV)
+      update_activity_count!(env, 1)
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    def activity_finished!(env = ENV)
+      update_activity_count!(env, -1)
+    end
+
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
-    def ready_payload(env = ENV)
-      { pid: Process.pid, ready_at: Time.now.utc.iso8601, revision: boot_revision(env) }.to_json
+    def ready_payload(env = ENV, revision: boot_revision(env))
+      { pid: Process.pid, ready_at: Time.now.utc.iso8601, revision:, active_activities: @activity_count }.to_json
     end
 
     # The revision identity of the code this worker process booted from:
@@ -113,6 +151,27 @@ module Paid
       status.success? ? output.strip : nil
     rescue Errno::ENOENT, Errno::EACCES
       nil
+    end
+
+    def update_activity_count!(env, change)
+      path = file_path(env)
+      return unless File.exist?(path)
+
+      @activity_count_lock.synchronize do
+        @activity_count = [ @activity_count + change, 0 ].max
+        revision = @boot_revisions.fetch(path) { boot_revision(env) }
+        write_payload(path, ready_payload(env, revision:))
+      end
+    rescue StandardError => error
+      warn "Failed to update worker readiness activity count: #{error.class}: #{error.message}"
+    end
+
+    def write_payload(path, payload)
+      temporary_path = "#{path}.#{Process.pid}.tmp"
+      File.write(temporary_path, payload)
+      File.rename(temporary_path, path)
+    ensure
+      File.delete(temporary_path) if defined?(temporary_path) && File.exist?(temporary_path)
     end
   end
 end

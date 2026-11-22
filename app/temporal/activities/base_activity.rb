@@ -29,8 +29,10 @@ module Activities
 
         with_rails_executor do
           with_connection_cleanup do
-            with_tenant_context(normalized_input) do
-              super(normalized_input)
+            with_worker_activity_readiness do
+              with_tenant_context(normalized_input) do
+                super(normalized_input)
+              end
             end
           end
         end
@@ -43,6 +45,11 @@ module Activities
         return TenantContext.with(account, &block) if account
 
         TenantContext.with_system_access(&block)
+      end
+
+      # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+      def with_worker_activity_readiness
+        Paid::WorkerReadiness.with_activity { yield }
       end
 
       def tenant_account_from(input)

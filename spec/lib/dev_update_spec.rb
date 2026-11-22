@@ -31,7 +31,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       # Worker adoption verification polls the readiness flag files; the stub
       # workers write them immediately, and stale-revision tests rely on the
       # bounded budget expiring quickly (~0.5s).
-      "DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT" => "25"
+      "DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT" => "25",
+      "DEV_UPDATE_WORKER_DRAIN_POLL_COUNT" => "25"
     }
   end
 
@@ -561,6 +562,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(calls.count("overmind quit")).to eq(1)
       expect(calls.count("dev")).to eq(1)
       expect(calls.count("setup --skip-server")).to eq(1)
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
 
       updater_log = read_updater_log(dir)
       expect(updater_log).to include("Worker adoption verified: poll and agent workers report revision post-pull-sha.")
@@ -568,6 +570,37 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       # The readiness metadata proves the running workers booted the updated
       # checkout, using revision identity only (no process arguments/env).
       expect_worker_readiness_revision("post-pull-sha")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "defers a full update before stopping the supervisor while a worker owns an activity" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true,
+        worker_active_activities: 1)
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Worker drain did not complete; deferring worker adoption without stopping Overmind.")
+      expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "closes admission on an idle role while the other role drains" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      status, poll_admitted, stderr = run_cross_role_arrival(dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(poll_admitted).to be(false)
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to include("overmind quit")
     end
   end
 
@@ -1100,7 +1133,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     %w[poll agent].each do |mode|
       payload = worker_readiness_payload(mode)
       expect(payload["revision"]).to eq(revision)
-      expect(payload.keys).to match_array(%w[pid ready_at revision])
+      expect(payload.keys).to match_array(%w[pid ready_at revision active_activities])
     end
   end
 
@@ -1115,6 +1148,54 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
       "DEV_UPDATE_CHANGED_FILES" => changed_files)
     Open3.capture3(env, script_path, "--lightweight", chdir: dir)
+  end
+
+  def run_cross_role_arrival(dir)
+    script_path = prepare_script_fixture(dir,
+      pull_diff_files: %w[app/services/llm/request.rb],
+      start_overmind_running: true)
+    create_stale_socket(dir)
+    agent_readiness = worker_readiness_path("agent")
+    agent_payload = JSON.parse(File.read(agent_readiness)).merge("active_activities" => 1)
+    File.write(agent_readiness, agent_payload.to_json)
+
+    File.open("#{agent_readiness}.admission.lock", File::RDWR | File::CREAT, 0o644) do |agent_lock|
+      agent_lock.flock(File::LOCK_SH)
+      run_update_during_agent_activity(dir, script_path, agent_readiness, agent_payload, agent_lock)
+    end
+  end
+
+  def run_update_during_agent_activity(dir, script_path, agent_readiness, agent_payload, agent_lock)
+    env = trigger_context_env(dir,
+      "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+      "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb")
+    Open3.popen3(env, script_path, "--lightweight", chdir: dir) do |stdin, stdout, stderr, wait_thread|
+      stdin.close
+      stdout_reader = Thread.new { stdout.read }
+      stderr_reader = Thread.new { stderr.read }
+      wait_for_poll_admission_to_close(dir)
+      poll_admitted = poll_arrival_admitted?
+      File.write(agent_readiness, agent_payload.merge("active_activities" => 0).to_json)
+      agent_lock.flock(File::LOCK_UN)
+      [ wait_thread.value, poll_admitted, stderr_reader.value ]
+    ensure
+      Process.kill("TERM", wait_thread.pid) if wait_thread&.alive?
+      stdout_reader&.join
+      stderr_reader&.join
+    end
+  end
+
+  def wait_for_poll_admission_to_close(dir)
+    Timeout.timeout(5) do
+      Thread.pass until File.exist?(File.join(dir, "log", "dev-update", "dev-update.log")) &&
+        read_updater_log(dir).include?("Worker (poll) activity admission is closed")
+    end
+  end
+
+  def poll_arrival_admitted?
+    File.open("#{worker_readiness_path('poll')}.admission.lock", File::RDWR | File::CREAT, 0o644) do |lock|
+      lock.flock(File::LOCK_SH | File::LOCK_NB) != false
+    end
   end
 
   def expect_calls(dir, expected)
@@ -1227,7 +1308,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     status_successes_after_start: nil,
     tmux: nil,
     worker_readiness_revision: nil,
-    unknown_checkout_head: false
+    unknown_checkout_head: false,
+    worker_active_activities: 0
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -1235,6 +1317,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
+    if start_overmind_running
+      %w[poll agent].each do |mode|
+        File.write(
+          worker_readiness_path(mode),
+          { pid: 12_345, ready_at: Time.now.utc.iso8601, revision: "pre-pull-sha", active_activities: worker_active_activities }.to_json
+        )
+      end
+    end
     FileUtils.touch(File.join(dir, "pre-existing-stash")) if pre_existing_stash
     # Model refs/stash: a pre-existing stash occupies the ref until a push
     # creates a new entry or a successful pop consumes it.
@@ -1261,7 +1351,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         for mode in poll agent; do
           file="${TMPDIR:-/tmp}/paid-worker-ready-temporal_worker-${mode}"
           mkdir -p "$(dirname "$file")"
-          printf '{"pid":%s,"ready_at":"%s","revision":"%s"}\\n' "$$" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${revision}" > "$file"
+          printf '{"pid":%s,"ready_at":"%s","revision":"%s","active_activities":%s}\\n' "$$" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${revision}" "#{worker_active_activities}" > "$file"
         done
       BASH
     )
@@ -1455,6 +1545,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             exit 0
             ;;
           quit)
+            barriers_held=1
+            for mode in poll agent; do
+              lock="${TMPDIR:-/tmp}/paid-worker-ready-temporal_worker-${mode}.admission.lock"
+              exec 8<>"$lock"
+              flock -n 8 && barriers_held=0
+              exec 8>&-
+            done
+            if [ "$barriers_held" -eq 1 ]; then
+              touch "#{dir}/worker-admission-barriers-held-at-stop"
+            fi
             printf 'overmind quit\\n' >> "#{dir}/calls.log"
             touch "#{dir}/overmind-quit-ran"
             rm -f "#{dir}/overmind-running"
