@@ -53,7 +53,10 @@ module PullRequests
       target_project = tracked_project(owner:, repo:)
       return false unless target_project
 
-      collector_for(target_project).dependency_resolved?(number:)
+      external_collector = collector_for(target_project)
+      return false unless external_collector
+
+      external_collector.dependency_resolved?(number:)
     end
 
     def tracked_project(owner:, repo:)
@@ -72,6 +75,8 @@ module PullRequests
       return @collector if target_project.id == @project.id
 
       client = target_project.client
+      return unless client
+
       Automation::Signals::PullRequestCollector.new(
         providers: Automation::Signals::ProviderContext.for(target_project, client:),
         client:,

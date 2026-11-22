@@ -185,6 +185,20 @@ RSpec.describe PullRequests::DependenciesResolved do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
+    it "fails closed when the tracked source has no available client" do
+      source = create(
+        :project,
+        :with_github_installation,
+        account: project.account,
+        owner: "viamin",
+        repo: "agent-harness"
+      )
+      source.github_installation.update!(revoked_at: Time.current)
+
+      expect(call).to be(false)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-010, AUTO-MERGE-010
     it "re-verifies the tracked external source on every scan" do
       tracked_project
       external_collector = resolve_external(result: true)
