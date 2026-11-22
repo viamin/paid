@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_22_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1149,6 +1149,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
     t.index ["account_id"], name: "index_configuration_experiments_on_account_id"
     t.index ["config_key"], name: "index_global_config_experiments_one_running_per_key", unique: true, where: "(((status)::text = 'running'::text) AND (account_id IS NULL))"
     t.index ["winner_variant_id"], name: "index_configuration_experiments_on_winner_variant_id"
+  end
+
+  create_table "conflict_repair_scope_evidences", comment: "Immutable, provider-head-bound scope decisions for existing conflict-repair artifacts.", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.jsonb "base_imported_paths", default: [], null: false
+    t.datetime "created_at", null: false
+    t.text "explanation", null: false
+    t.string "integration_base_sha", null: false
+    t.bigint "issue_id", null: false
+    t.string "pre_run_sha", null: false
+    t.bigint "project_id", null: false
+    t.string "provider_head_sha", null: false
+    t.jsonb "repair_authored_paths", default: [], null: false
+    t.bigint "requested_by_id"
+    t.string "result_sha", null: false
+    t.string "status", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "pre_run_sha", "integration_base_sha", "result_sha", "provider_head_sha"], name: "index_conflict_repair_scope_evidence_binding", unique: true
+    t.index ["agent_run_id"], name: "index_conflict_repair_scope_evidences_on_agent_run_id"
+    t.index ["issue_id"], name: "index_conflict_repair_scope_evidences_on_issue_id"
+    t.index ["project_id"], name: "index_conflict_repair_scope_evidences_on_project_id"
+    t.index ["requested_by_id"], name: "index_conflict_repair_scope_evidences_on_requested_by_id"
   end
 
   create_table "container_metrics", force: :cascade do |t|
@@ -5370,6 +5392,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
   add_foreign_key "configuration_experiment_variants", "configuration_experiments", on_delete: :cascade
   add_foreign_key "configuration_experiments", "accounts", on_delete: :cascade
   add_foreign_key "configuration_experiments", "configuration_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "conflict_repair_scope_evidences", "agent_runs"
+  add_foreign_key "conflict_repair_scope_evidences", "issues"
+  add_foreign_key "conflict_repair_scope_evidences", "projects"
+  add_foreign_key "conflict_repair_scope_evidences", "users", column: "requested_by_id"
   add_foreign_key "container_metrics", "agent_runs", on_delete: :cascade
   add_foreign_key "container_pool_entries", "agent_runs", on_delete: :nullify
   add_foreign_key "container_pool_entries", "projects", on_delete: :cascade
@@ -7038,12 +7064,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_21_125026) do
       CREATE TRIGGER logidze_on_pre_commit_requirements BEFORE INSERT OR UPDATE ON public.pre_commit_requirements FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
-  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
-  SQL
-
   create_trigger :prevent_project_delegation_intent_settlement_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_project_delegation_intent_settlement_update BEFORE UPDATE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
+  SQL
+
+  create_trigger :prevent_project_delegation_intent_settlement_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_project_delegation_intent_settlement_delete BEFORE DELETE ON public.project_delegation_intent_settlements FOR EACH ROW EXECUTE FUNCTION prevent_project_delegation_intent_settlement_mutation()
   SQL
 
   create_trigger :logidze_on_project_memberships, sql_definition: <<-SQL
