@@ -72,6 +72,21 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(backend.get_container("abc123")).to eq(container)
   end
 
+  # @spec LLM-ROUTING-013
+  it "uses a scoped Docker transport deadline when creating a container" do
+    connection = instance_double(Docker::Connection, url: "unix:///var/run/docker.sock", options: { read_timeout: 60 })
+    timed_connection = instance_double(Docker::Connection)
+    allow(Docker).to receive(:connection).and_return(connection)
+    allow(Docker::Connection).to receive(:new)
+      .with("unix:///var/run/docker.sock", { read_timeout: 60, timeout: 0.1 })
+      .and_return(timed_connection)
+    allow(Docker::Container).to receive(:create).and_return(container)
+
+    backend.create_container({ "Image" => "paid-agent:latest" }, deadline: 0.1)
+
+    expect(Docker::Container).to have_received(:create).with({ "Image" => "paid-agent:latest" }, timed_connection)
+  end
+
   it "routes upgraded stdin exec to the selected container" do
     input = StringIO.new("hello")
     allow(Containers::DockerExecWithStdin).to receive(:call).and_return([ [ "hello" ], [], 0 ])

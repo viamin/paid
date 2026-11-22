@@ -46,23 +46,26 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def create_container(_config)
+      # `deadline` is an operation-level, monotonic remaining-time budget. Docker
+      # implementations must apply it to their client transport rather than
+      # relying on callers to asynchronously interrupt a request.
+      def create_container(_config = nil, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def start_container(_container)
+      def start_container(_container, deadline: nil)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def stop_container(_container, **)
+      def stop_container(_container, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def delete_container(_container, **)
+      def delete_container(_container, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
-      def exec_in_container(_container, _command, **)
+      def exec_in_container(_container, _command, deadline: nil, **)
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 

@@ -22,7 +22,8 @@ RSpec.describe Containers::StandaloneTextExecutor do
     allow(backend).to receive_messages(create_container: container, start_container: true,
       stop_container: true, delete_container: true)
     allow(backend).to receive(:exec_in_container).with(container,
-      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ],
+      hash_including(user: "root"))
       .and_return([ [ agent_owner ], [], 0 ])
     allow(backend).to receive(:exec_in_container_with_stdin) do |_selected, _command, **options|
       captured_inputs << options.fetch(:stdin).string
@@ -132,23 +133,19 @@ RSpec.describe Containers::StandaloneTextExecutor do
   end
 
   # @spec LLM-ROUTING-013
-  it "interrupts blocked container startup at the candidate deadline" do
+  it "passes the candidate's remaining deadline to every setup operation" do
     now = 100.0
-    release_startup = Queue.new
-    allow(backend).to receive(:start_container) do
-      now = 101.0
-      release_startup.pop
-    end
-    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 100.1,
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 107.0,
       clock: ->(_) { now })
+    allow(backend).to receive(:start_container) { now = 101.0 }
+    stub_text_exec { [ [], [], 0 ] }
 
-    expect do
-      Timeout.timeout(0.5) { executor.execute([ "codex", "exec", "hello" ]) }
-    end.to raise_error(AgentHarness::TimeoutError)
+    executor.execute([ "codex", "exec", "hello" ])
 
-    expect(backend).not_to have_received(:exec_in_container_with_stdin)
-  ensure
-    release_startup << true if release_startup
+    expect(backend).to have_received(:create_container).with(anything, deadline: 7.0)
+    expect(backend).to have_received(:start_container).with(container, deadline: 7.0)
+    expect(backend).to have_received(:exec_in_container).with(container, anything,
+      user: "root", deadline: 6.0)
   end
 
   # @spec LLM-ROUTING-013
@@ -158,17 +155,16 @@ RSpec.describe Containers::StandaloneTextExecutor do
       clock: ->(_) { now })
     executor.execute([ "codex", "exec", "hello" ])
     now = 105.9
-    release_cleanup = Queue.new
     allow(backend).to receive(:stop_container) do
       now = 107.0
-      release_cleanup.pop
+      raise Docker::Error::TimeoutError, "deadline reached"
     end
 
-    expect { Timeout.timeout(0.5) { executor.close } }.not_to raise_error
+    expect { executor.close }.not_to raise_error
 
+    expect(backend).to have_received(:stop_container).with(container,
+      hash_including(timeout: 0, deadline: be_within(0.001).of(0.1)))
     expect(backend).not_to have_received(:delete_container)
-  ensure
-    release_cleanup << true if release_cleanup
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
@@ -592,22 +588,21 @@ RSpec.describe Containers::StandaloneTextExecutor do
         clock: ->(_) { now })
       executor.execute([ "codex", "exec", "hello" ])
       now = 105.9
-      release_harvest = Queue.new
       allow(backend).to receive(:exec_in_container) do |_selected, command, options = {}, &_stream|
         next [ [ agent_owner ], [], 0 ] if options[:user] == "root"
 
         if command.include?("base64 -w0 /home/agent/.codex/auth.json")
           now = 106.0
-          release_harvest.pop
+          raise Docker::Error::TimeoutError, "deadline reached"
         end
         [ [], [], 0 ]
       end
 
-      expect { Timeout.timeout(0.5) { executor.close } }.not_to raise_error
+      expect { executor.close }.not_to raise_error
 
+      expect(backend).to have_received(:exec_in_container).with(container, anything,
+        hash_including(user: "agent", deadline: be_within(0.001).of(0.1)))
       expect(backend).not_to have_received(:delete_container)
-    ensure
-      release_harvest << true if release_harvest
     end
 
     # @spec LLM-ROUTING-013

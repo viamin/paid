@@ -38,24 +38,27 @@ module Containers
         Docker::Container.get(id)
       end
 
-      def create_container(config)
-        Docker::Container.create(config)
+      def create_container(config = nil, deadline: nil, **keyword_config)
+        config ||= keyword_config
+        return Docker::Container.create(config) unless deadline
+
+        Docker::Container.create(config, connection_with_deadline(Docker.connection, deadline))
       end
 
-      def start_container(container)
-        container.start
+      def start_container(container, deadline: nil)
+        with_deadline(container, deadline) { container.start }
       end
 
-      def stop_container(container, **options)
-        container.stop(**options)
+      def stop_container(container, deadline: nil, **options)
+        with_deadline(container, deadline) { container.stop(**options) }
       end
 
-      def delete_container(container, **options)
-        container.delete(**options)
+      def delete_container(container, deadline: nil, **options)
+        with_deadline(container, deadline) { container.delete(**options) }
       end
 
-      def exec_in_container(container, command, **options, &block)
-        container.exec(command, **options, &block)
+      def exec_in_container(container, command, deadline: nil, **options, &block)
+        with_deadline(container, deadline) { container.exec(command, **options, &block) }
       end
 
       def exec_in_container_with_stdin(container, command, stdin:, wait:, **options, &block)
@@ -119,6 +122,20 @@ module Containers
       end
 
       private
+
+      def with_deadline(container, deadline)
+        original_connection = container.connection
+        container.connection = connection_with_deadline(original_connection, deadline)
+        yield
+      ensure
+        container.connection = original_connection if original_connection
+      end
+
+      def connection_with_deadline(connection, deadline)
+        return connection unless deadline
+
+        Docker::Connection.new(connection.url, connection.options.merge(timeout: deadline))
+      end
 
       def host_memory
         File.read("/proc/meminfo")
