@@ -69,6 +69,20 @@ RSpec.describe PullRequests::DependenciesResolved do
     end
   end
 
+  context "when the PR body describes #4707's comma-attributed external prerequisite" do
+    let(:issue) { create(:issue, :pull_request, project: project, github_number: 5236, body: body) }
+    let(:body) do
+      "This setup/save correction does not prove request-level privacy enforcement: the separate verified configuration-loss gap remains #4707, blocked by viamin/agent-harness#557."
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-005, DEPENDENCY-DECLARATIONS-009
+    it "does not apply the other issue's unresolved external gate" do
+      expect(collector).not_to receive(:dependency_resolved?)
+
+      expect(call).to be(true)
+    end
+  end
+
   context "when a same-repo dependency is resolved" do
     let(:body) { "Depends on #41" }
 

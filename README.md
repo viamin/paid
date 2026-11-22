@@ -99,6 +99,12 @@ Depends on #101, #102
 Blocked by #103
 ```
 
+Write a prerequisite for the current item as a clear declaration, preferably
+under `## Dependencies`. Keep related-work context separate. For example,
+`The configuration-loss gap remains #4707, blocked by owner/repo#557` describes
+that issue's prerequisite; it does not declare one for the issue or PR carrying the
+sentence. Use `Blocked by owner/repo#557` when the current item is blocked.
+
 ## Quick Start
 
 ### Option 1: Docker Compose (recommended)
