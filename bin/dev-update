@@ -606,16 +606,19 @@ worker_reports_revision() {
 # loaded. Each Temporal worker publishes its booted checkout revision in its
 # readiness flag payload (see lib/paid/worker_readiness.rb); a completed
 # restart requires both the poll and agent workers to report the post-update
-# HEAD revision within a bounded poll budget. This rides the existing
-# graceful Overmind stop/start path — it never force-restarts active
+# HEAD revision within a bounded poll budget. When the expected revision
+# itself cannot be resolved, verification fails closed — an unverifiable
+# adoption is not a successful one. This rides the existing graceful
+# Overmind stop/start path — it never force-restarts active
 # workflow/activity owners or resets failed runs.
 # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
 verify_worker_adoption() {
   local expected_revision
   expected_revision="$(git rev-parse HEAD 2>/dev/null || true)"
   if [ -z "$expected_revision" ]; then
-    log "Warning: cannot determine checkout revision; skipping worker adoption verification."
-    return 0
+    log "Warning: git rev-parse HEAD failed; the expected worker revision is unknown."
+    log "ERROR: Worker adoption cannot be verified without the checkout revision; update cannot be considered complete. Resolve the Git checkout state and rerun bin/dev-update --full."
+    return 1
   fi
 
   local mode

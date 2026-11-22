@@ -72,11 +72,15 @@ process arguments.
 
 After a restart becomes Overmind-healthy, the updater waits (bounded polling)
 for both Temporal worker readiness files (`poll` and `agent` modes under the
-system tmpdir) to report the post-update `git rev-parse HEAD`. When a worker
-fails to report, reports an unknown revision, or reports a stale revision
-within the budget, the updater fails loudly instead of declaring the update
-complete — a silent "Rails will autoload changes" claim is exactly the gap this
-closes. The restart itself stays on the existing graceful Overmind path
+system tmpdir) to report the post-update `git rev-parse HEAD`. When the
+updater's own `git rev-parse HEAD` fails after the restart, there is no
+expected revision to compare against, so verification fails closed with an
+actionable error rather than being skipped — an unverifiable adoption is not
+a successful one. When a worker fails to report, reports an unknown
+revision, or reports a stale revision within the budget, the updater fails
+loudly instead of declaring the update complete — a silent "Rails will
+autoload changes" claim is exactly the gap this closes. The restart itself
+stays on the existing graceful Overmind path
 (stop → setup → start), preserving active workflow/activity ownership, replay
 compatibility, retained results, bounded retry/budget policies, and
 control-queue routing; the updater never force-kills active owners to speed
@@ -90,7 +94,7 @@ adoption.
 | Stash ownership detection | Compare `refs/stash` before and after the push | Trust the push exit status alone | Exit 0 can mean "No local changes to save" when the tree is cleaned concurrently; only a moved ref proves this invocation created an entry. |
 | Git lock handling | Surface the Git failure for operator resolution | Remove lock files automatically | The updater cannot determine whether a lock belongs to a live Git process. |
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
-| Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout | Trust Overmind health alone; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code; process arguments/env risk exposing secrets and are not a stable contract. |
+| Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
 
 ## References

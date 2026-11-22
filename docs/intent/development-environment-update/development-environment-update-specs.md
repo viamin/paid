@@ -34,8 +34,10 @@
   Overmind-healthy environment, the updater SHALL verify effective worker
   adoption by waiting, within a bounded poll budget, for the `poll` and
   `agent` Temporal worker readiness files to report the post-update
-  `git rev-parse HEAD` revision, and SHALL fail the update loudly when a
-  worker is missing, reports an unknown revision, or reports a stale revision.
+  `git rev-parse HEAD` revision, and SHALL fail the update loudly when the
+  expected checkout revision itself cannot be determined, or when a worker
+  is missing, reports an unknown revision, or reports a stale revision; the
+  updater SHALL NOT log successful update completion in any of those cases.
   Worker readiness payloads SHALL publish the booted checkout revision
   (development HEAD SHA, or `PAID_DEPLOYED_REVISION` when set) and SHALL NOT
   include secret-bearing process arguments, environment, or credential

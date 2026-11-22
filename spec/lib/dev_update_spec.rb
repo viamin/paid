@@ -590,6 +590,29 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+  it "fails the update without claiming completion when the checkout revision is unknown" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true,
+        unknown_checkout_head: true)
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      # The restarted environment came up; the failure is the fail-closed
+      # adoption check, not a crash before start.
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("git rev-parse HEAD failed; the expected worker revision is unknown.")
+      expect(updater_log).to include("update cannot be considered complete. Resolve the Git checkout state and rerun bin/dev-update --full.")
+      expect(updater_log).not_to include("Worker adoption verified")
+      expect(updater_log).not_to include("adopted revision")
+      expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
   it "runs migrations before restarting when trigger context includes migration files" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, start_overmind_running: true)
@@ -1203,7 +1226,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     rails_sync_exit_status: 0,
     status_successes_after_start: nil,
     tmux: nil,
-    worker_readiness_revision: nil
+    worker_readiness_revision: nil,
+    unknown_checkout_head: false
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -1242,6 +1266,12 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       BASH
     )
     write_worker_readiness_line = %("#{dir}/write-worker-readiness" "#{worker_readiness_revision || ''}")
+
+    # Models a checkout whose HEAD can no longer be resolved once the workers
+    # boot (for example a corrupted .git between the pull and verification):
+    # the stub git fails `rev-parse HEAD` from then on, so bin/dev-update
+    # cannot determine the expected worker revision.
+    unknown_head_line = unknown_checkout_head ? %(touch "#{dir}/head-unknown") : ""
 
     dev_start_line = dev_starts_overmind ? %(touch "#{dir}/overmind-running") : ""
     capture_port_line = capture_port_in_dev ? %(printf '%s\n' "${PORT:-}" > "#{dir}/dev-port.log") : ""
@@ -1309,6 +1339,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         #{capture_port_line}
         #{capture_kill_all_line}
         #{capture_dev_bundler_line}
+        #{unknown_head_line}
         #{write_worker_readiness_line}
         #{dev_start_line}
         echo "bin/dev booted"
@@ -1336,6 +1367,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
                 fi
                 ;;
               *)
+                if [ -e "#{dir}/head-unknown" ]; then
+                  echo "fatal: unknown revision" >&2
+                  exit 128
+                fi
                 if [ -f "#{dir}/pull-ran" ]; then
                   echo "post-pull-sha"
                 else
@@ -1427,6 +1462,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             ;;
           restart)
             touch "#{dir}/overmind-restart-ran"
+            #{unknown_head_line}
             #{write_worker_readiness_line}
             echo "overmind restarted processes"
             exit 0
