@@ -53,13 +53,13 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
   end
 
   describe "backing-storage evidence" do
-    def with_backing_store_probe(script, daemon_root: "/var/lib/docker")
+    def with_backing_store_probe(script, daemon_root: "/var/lib/docker", probe_directory_name: "probe")
       original_path = ENV.fetch("PATH")
       original_probe_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
       original_daemon_root = ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"]
 
       Dir.mktmpdir do |directory|
-        probe_path = File.join(directory, "probe")
+        probe_path = File.join(directory, probe_directory_name)
         command_path = File.join(directory, "df")
         Dir.mkdir(probe_path)
         File.write(command_path, script)
@@ -89,6 +89,33 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
           scope: "verified_docker_backing_store_probe",
           available_bytes: be_a(Integer),
           observed_at: now
+        )
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "decodes an octal-escaped daemon root in kernel mount metadata" do
+      with_backing_store_probe(
+        "#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n",
+        daemon_root: "/var/lib/docker root"
+      ) do
+        expect(backend.backing_storage_observation).to include(
+          scope: "verified_docker_backing_store_probe",
+          available_bytes: be_a(Integer)
+        )
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "decodes an octal-escaped target for a probe path that actually contains a space" do
+      with_backing_store_probe(
+        "#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n",
+        probe_directory_name: "probe path"
+      ) do |probe_path|
+        expect(probe_path).to include(" ")
+        expect(backend.backing_storage_observation).to include(
+          scope: "verified_docker_backing_store_probe",
+          available_bytes: be_a(Integer)
         )
       end
     end
@@ -180,7 +207,11 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     end
 
     def mountinfo_for(root:, target:)
-      "42 35 0:42 #{root} #{target} ro - ext4 /dev/test ro\n"
+      "42 35 0:42 #{escape_mountinfo_path(root)} #{escape_mountinfo_path(target)} ro - ext4 /dev/test ro\n"
+    end
+
+    def escape_mountinfo_path(path)
+      path.gsub(" ") { "\\040" }
     end
   end
 

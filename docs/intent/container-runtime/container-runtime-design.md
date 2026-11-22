@@ -209,7 +209,9 @@ created an empty `.paid-capacity-probe` directory inside the selected daemon's
 the configured root with `Docker.info["DockerRootDir"]` from its selected Unix
 socket daemon and verifies the probe mount metadata identifies that root's
 `.paid-capacity-probe` child as the source for the configured probe path. The
-supported devcontainer uses that verified root to mount only
+backend decodes kernel mountinfo octal path escapes before comparing either
+source or target, so daemon roots and probe paths containing spaces remain
+verifiable. The supported devcontainer uses that verified root to mount only
 `.paid-capacity-probe` at `/mnt/paid-docker-backing-store`; it never mounts the
 daemon data-root tree. Missing daemon root evidence, a root mismatch, a remote
 endpoint, an invalid source, or unverifiable mount provenance is an explicit

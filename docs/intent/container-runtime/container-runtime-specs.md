@@ -101,7 +101,9 @@
   backend SHALL measure only an explicitly configured probe whose supported
   mount metadata identifies the selected daemon root's empty measurement child
   as the source for that probe path, after matching its configured daemon root
-  to that daemon's `DockerRootDir`; supported local deployment configuration
+  to that daemon's `DockerRootDir`. It SHALL decode single-backslash octal path
+  escapes from kernel mountinfo before matching the source or target; supported
+  local deployment configuration
   SHALL mount only that child directory read-only, not the Docker data-root
   tree, and configure the probe to use it. Absent, unverified,
   wrong-filesystem, remote-mismatched, unavailable, and stale observations SHALL

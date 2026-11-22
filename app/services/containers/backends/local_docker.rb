@@ -183,7 +183,7 @@ module Containers
       end
 
       def decode_mountinfo_path(path)
-        path.gsub(/\\\\([0-7]{3})/) { Regexp.last_match(1).to_i(8).chr }
+        path.gsub(/\\([0-7]{3})/) { Regexp.last_match(1).to_i(8).chr }
       end
 
       def backing_store_available_bytes(probe_path)
