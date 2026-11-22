@@ -138,7 +138,7 @@
   *Test:* `spec/models/project_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
 
-- [x] **FOCUSED-RUN-010** — When an existing pull-request follow-up pushes a
+- [x] **FOCUSED-RUN-011** — When an existing pull-request follow-up pushes a
   changed or rebase-only head, or reports no changes, Paid SHALL NOT resolve a
   captured review thread merely because the run completed, pushed, or reports
   that the feedback was already addressed. A thread remains actionable until a

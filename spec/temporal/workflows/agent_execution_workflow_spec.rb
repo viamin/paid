@@ -1402,7 +1402,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::DraftDecisionRecordActivity, any_args)
     end
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "resolves a repaired captured thread after an evidence-backed assessment" do
       stub_existing_pr_followup(pr_review_phase: "ready")
       allow(workflow).to receive(:run_activity)
@@ -1423,7 +1423,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     # thread_ids Array's String elements are untouched. A validator that looked up
     # rationales by the original String thread_id would find nil for every genuine
     # assessment and never reach the public resolution call.
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "resolves a repaired finding once BaseWorkflow#run_activity symbolizes the rationale map's keys" do
       allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _input, **_opts|
         case activity_class.name
@@ -1625,7 +1625,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::RequestReviewActivity, any_args)
     end
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "resolves a supported no-code disposition after assessment" do
       stub_no_changes_followup_with_marker
       allow(workflow).to receive(:run_activity)
@@ -1668,7 +1668,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
     end
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "replays the pre-#5288 no-change resolution command when the compatibility guard is absent" do
       allow(Temporalio::Workflow).to receive(:patched).and_return(false)
       stub_no_changes_followup_with_marker
@@ -1682,7 +1682,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
     end
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "does not replay the legacy resolution when the agent did not report the feedback addressed" do
       allow(Temporalio::Workflow).to receive(:patched).and_return(false)
       stub_no_changes_followup
@@ -1713,7 +1713,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
           timeout: 30)
     end
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "keeps captured review threads open after a rebase-only head update" do
       stub_rebase_only_followup
 

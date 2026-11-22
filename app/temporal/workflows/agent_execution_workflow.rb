@@ -606,7 +606,7 @@ module Workflows
           # recorded command in its recorded position; new executions never
           # trust a bare agent assertion and instead run the evidence-backed
           # assessment after completion (below). A single execution does
-          # exactly one of the two. # @spec FOCUSED-RUN-010
+          # exactly one of the two. # @spec FOCUSED-RUN-011
           evidence_backed_followup = Temporalio::Workflow.patched("evidence-backed-followup-review-resolution-v1")
           unless evidence_backed_followup
             replay_legacy_no_change_review_resolution(agent_run_id, source_pull_request_number,
@@ -995,7 +995,7 @@ module Workflows
       )
     end
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     def resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, prompt_result)
       return unless pr_run_without_prompt && prompt_result[:review_thread_ids].present?
 
@@ -1004,7 +1004,7 @@ module Workflows
 
     # New-position evidence-backed resolution for no-change existing-PR
     # follow-ups. The caller runs this only under the patch; old histories took
-    # the legacy compatibility branch instead. # @spec FOCUSED-RUN-010
+    # the legacy compatibility branch instead. # @spec FOCUSED-RUN-011
     def assess_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, prompt_result)
       return unless pr_run_without_prompt && prompt_result[:review_thread_ids].present?
 
@@ -1015,7 +1015,7 @@ module Workflows
     # command the old no-change path recorded before MarkAgentRunCompleteActivity
     # so an old history replays deterministically. The caller gates this on the
     # absence of the evidence-backed patch, so new executions never reach it.
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     def replay_legacy_no_change_review_resolution(agent_run_id, source_pull_request_number, pr_run_without_prompt, prompt_result, agent_result)
       return unless source_pull_request_number && pr_run_without_prompt &&
         prompt_result[:includes_review_threads] &&

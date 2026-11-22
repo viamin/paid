@@ -5,7 +5,7 @@ require "json"
 module Activities
   # Assesses prompt-captured findings against the exact current PR head before
   # allowing the public GitHub thread-resolution mutation.
-  # @spec FOCUSED-RUN-010
+  # @spec FOCUSED-RUN-011
   class AssessFollowupReviewThreadsActivity < BaseActivity
     include Llm::OutputNormalizer
 
@@ -84,7 +84,10 @@ module Activities
     end
 
     def parse(output, head_sha, captured_ids)
-      payload = JSON.parse(strip_markdown_fence(output.to_s)).deep_stringify_keys
+      payload = JSON.parse(strip_markdown_fence(output.to_s))
+      return unless payload.is_a?(Hash)
+
+      payload = payload.deep_stringify_keys
       return unless payload.keys.sort == %w[head_sha resolutions] && payload["head_sha"] == head_sha
 
       resolutions = payload["resolutions"]

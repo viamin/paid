@@ -24,7 +24,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     allow(Llm::Request).to receive(:call).and_return(response)
   end
 
-  # @spec FOCUSED-RUN-010
+  # @spec FOCUSED-RUN-011
   it "authorizes only captured threads with current-head rationale" do
     result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
 
@@ -36,7 +36,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     )
   end
 
-  # @spec FOCUSED-RUN-010
+  # @spec FOCUSED-RUN-011
   it "binds evidence to the assessed head's immutable commit range" do
     described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
 
@@ -63,6 +63,50 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
     expect(described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])).to include(authorized: false)
   end
 
+  it "fails closed when the response is valid JSON but not an object" do
+    allow(response).to receive(:output).and_return([ { thread_id: "thread_1", disposition: "repaired", rationale: "A reason" } ].to_json)
+
+    expect(described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])).to include(authorized: false)
+  end
+
+  context "when a repeated follow-up has an earlier follow-up that already resolved one captured thread" do
+    let(:second_comment) { { body: "Guard the nil case", author: "viamin" } }
+    let(:threads) do
+      [
+        { id: "thread_1", is_resolved: true, comments: [ trusted_comment ] },
+        { id: "thread_2", is_resolved: false, comments: [ second_comment ] }
+      ]
+    end
+    let(:output) do
+      { head_sha: "current-head", resolutions: [ { thread_id: "thread_2", disposition: "repaired", rationale: "The current head guards the nil case." } ] }.to_json
+    end
+
+    before do
+      allow(github_client).to receive(:review_threads).with(project.full_name, 42).and_return(threads)
+    end
+
+    it "reassesses only the still-unresolved captured thread" do
+      result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: %w[thread_1 thread_2])
+
+      expect(result).to include(authorized: true, thread_ids: [ "thread_2" ])
+      expect(Llm::Request).to have_received(:call) do |prompt:, **|
+        expect(prompt).to include("thread_2")
+        expect(prompt).not_to include("thread_1")
+      end
+    end
+  end
+
+  context "when a repeated follow-up finds every captured thread already resolved" do
+    let(:thread) { { id: "thread_1", is_resolved: true, comments: [ trusted_comment ] } }
+
+    it "returns unauthorized without calling the LLM" do
+      result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
+
+      expect(result).to include(authorized: false)
+      expect(Llm::Request).not_to have_received(:call)
+    end
+  end
+
   context "when a captured thread gains an untrusted appended reply" do
     let(:thread) do
       {
@@ -75,7 +119,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
       }
     end
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "excludes the untrusted comment body from the LLM prompt" do
       described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
 
@@ -90,7 +134,7 @@ RSpec.describe Activities::AssessFollowupReviewThreadsActivity do
   context "when the captured thread's only evidence is from a now-untrusted author" do
     let(:trusted_comment) { { body: "Validate input", author: "revoked-user" } }
 
-    # @spec FOCUSED-RUN-010
+    # @spec FOCUSED-RUN-011
     it "excludes the thread and never calls the LLM" do
       result = described_class.new.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ])
 

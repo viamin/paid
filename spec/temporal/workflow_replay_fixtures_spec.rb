@@ -92,7 +92,7 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
   # must reproduce that exact sequence, proving the compatibility branch keeps
   # #5288 replay-safe. Regenerate with
   # script/temporal/export_review_followup_histories.rb.
-  # @spec FOCUSED-RUN-010, TEMPORAL-ORCHESTRATION-010
+  # @spec FOCUSED-RUN-011, TEMPORAL-ORCHESTRATION-010
   describe "legacy follow-up review-resolution replay" do
     let(:legacy_fixture_dir) { Rails.root.join("spec/fixtures/temporal/review_followup_replay_histories") }
 
