@@ -54,7 +54,7 @@ RSpec.describe AgentHarness::Authentication, :no_db do
     codex = described_class.auth_capabilities(:codex)
     metadata = described_class.credential_metadata(:codex, credential_path: auth_path.path)
 
-    expect(AgentHarness::VERSION).to eq("0.46.1")
+    expect(AgentHarness::VERSION).to eq("0.46.2")
     expect(codex).to include(exchange: true, managed_oauth_recovery: true)
     expect(metadata).to include(
       provider: :codex,
