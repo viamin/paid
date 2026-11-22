@@ -12,7 +12,7 @@ module TrustedMeasurements
     # namespace, or inspecting process arguments, environment, or credentials.
     # @spec TRUSTED-MEASUREMENTS-008
     class WorkerAdoption
-      VERSION = 3
+      VERSION = 4
       ROLES = %w[poll agent].freeze
       MAX_AGE = 5.minutes
       FUTURE_SKEW = 30.seconds
@@ -33,15 +33,16 @@ module TrustedMeasurements
       end
 
       def call
-        records = ROLES.to_h { |role| [ role, observations.for_role(role) ] }
+        records = ROLES.to_h { |role| [ role, observations.for_role(role).to_a ] }
         deployment_revision = DeploymentSignal.current
+        observed_at = clock.call
         Result.new(
           environment: environment.to_s,
           deployment_revision:,
           project_scope: "project:#{project.id}:#{project.full_name}",
-          workers: records.transform_values { |record| worker_result(record) },
+          workers: records.transform_values { |role_records| role_records.map { |record| worker_result(record) } },
           failure_reason: ROLES.lazy.map do |role|
-            invalid_reason(role, records[role], deployment_revision)
+            invalid_reason(role, records[role], deployment_revision, observed_at)
           end.find(&:present?)
         )
       end
@@ -50,12 +51,22 @@ module TrustedMeasurements
 
       attr_reader :clock, :environment, :observations, :project
 
-      def invalid_reason(role, record, deployment_revision)
-        return "missing_#{role}_readiness" unless record
-        return "malformed_#{role}_readiness" unless usable?(record)
-        return "#{role}_readiness_identity_mismatch" unless coherent?(record)
-        return "stale_#{role}_readiness" unless fresh?(record.heartbeat_at)
-        "#{role}_revision_mismatch" unless adopted_revision?(record, deployment_revision)
+      def invalid_reason(role, records, deployment_revision, observed_at)
+        return "missing_#{role}_readiness" if records.empty?
+        return "malformed_#{role}_readiness" unless records.all? { |instance| instance.heartbeat_at.present? }
+        return "stale_#{role}_readiness" if records.any? { |instance| future_heartbeat?(instance, observed_at) }
+
+        live_instances = records.select { |instance| fresh?(instance.heartbeat_at, observed_at) }
+        return "stale_#{role}_readiness" if live_instances.empty?
+        return "malformed_#{role}_readiness" unless live_instances.all? { |instance| usable?(instance) }
+        return "#{role}_readiness_identity_mismatch" unless live_instances.all? { |instance| coherent?(instance) }
+        "#{role}_revision_mismatch" unless live_instances.all? do |instance|
+          adopted_revision?(instance, deployment_revision)
+        end
+      end
+
+      def future_heartbeat?(record, observed_at)
+        record.heartbeat_at > observed_at + FUTURE_SKEW
       end
 
       def usable?(record)
@@ -73,8 +84,8 @@ module TrustedMeasurements
       # receipt: a healthy worker keeps beating for its whole lifetime, and a
       # dead or stuck worker stops, so long-lived workers stay current while
       # interrupted adoption fails closed.
-      def fresh?(heartbeat_at)
-        heartbeat_at <= clock.call + FUTURE_SKEW && heartbeat_at >= clock.call - MAX_AGE
+      def fresh?(heartbeat_at, observed_at)
+        heartbeat_at >= observed_at - MAX_AGE
       end
 
       def adopted_revision?(record, deployment_revision)
@@ -82,8 +93,6 @@ module TrustedMeasurements
       end
 
       def worker_result(record)
-        return { "status" => "missing" } unless record
-
         {
           "pid" => record.pid,
           "ready_at" => record.ready_at&.utc&.iso8601,

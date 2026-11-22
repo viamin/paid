@@ -73,12 +73,14 @@
   implementation/version, and collection time through the normal allowlisted
   measurement path; it SHALL read only the durable `poll` and `agent`
   readiness observations the owning Temporal worker roles publish about
-  themselves into the shared application database — each role's PID,
+  themselves into the shared application database — each instance's PID,
   readiness time, raw boot revision, boot-time deployment identity, and latest
-  heartbeat. Both roles' observations
+  heartbeat. Concurrent process boots for a role SHALL remain independently
+  observable; every fresh instance of both roles
   SHALL be complete, timestamp-coherent, refreshed by the live worker's own
   heartbeat within the freshness window, and equal to the current deployment
-  revision before the result is successful. In development, both the persisted
+  revision before the result is successful, while stale superseded instances
+  SHALL NOT block adoption. In development, both the persisted
   deployment identity and worker comparison SHALL retain the checkout-content
   fingerprint; a same-HEAD source change after worker boot SHALL remain unknown.
   The Temporal worker SHALL snapshot that complete identity before Rails loads

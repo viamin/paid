@@ -90,11 +90,12 @@ The same readiness contract has one read-only recorder consumer: the
 allowlisted worker-adoption measurement. Worker processes publish their own
 readiness identity — PID, boot time, raw boot revision, boot-time deployment
 identity, and a periodic
-heartbeat — as durable per-role observations in the shared application
-database, and the measurement reads only those fixed `poll`/`agent`
-role observations and their typed fields. It does not accept a host path, run
-a host command, or inspect process arguments, environment, or credentials,
-and it never reads another role's filesystem or PID namespace. Its persisted
+heartbeat — as durable per-process-boot observations in the shared application
+database. This preserves overlapping old and new instances during a rolling
+deploy, and the measurement requires every fresh instance of the fixed
+`poll`/`agent` roles to carry the current deployment identity. It does not
+accept a host path, run a host command, or inspect process arguments,
+environment, or credentials, and it never reads another role's filesystem or PID namespace. Its persisted
 collection receipt is owned by the trusted-measurements boundary. The raw boot
 revision remains the updater's commit-adoption contract; the recorder uses the
 separate complete boot-time deployment identity so later same-HEAD source drift

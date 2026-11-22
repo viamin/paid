@@ -50,13 +50,17 @@ role is an independent container. Each Temporal worker role therefore
 publishes its own readiness identity — PID, boot time, raw boot revision,
 boot-time deployment identity, and a periodic heartbeat timestamp — into a
 fixed system-wide `poll`/`agent`
-observation table through the shared application database, and the check reads
-only those durable, role-authored observations. It retains only each role's
+observation table through the shared application database. A process boot is
+identified by role, PID, and readiness time, so old and new containers remain
+independently visible while a rolling deploy overlaps them. The check reads
+only those durable, role-authored observations. It retains only each instance's
 PID, boot time, raw boot revision, boot-time deployment identity, and latest
 beat. The check requires both
 roles' observations to exist, carry a complete typed identity, be internally
 coherent, carry a heartbeat the live worker itself refreshed within the
-freshness window, and equal the current deployment identity. Freshness is the
+freshness window, and requires every fresh instance to equal the current
+deployment identity. A stale superseded instance no longer blocks adoption,
+but a fresh superseded instance does. Freshness is the
 heartbeat, not the static boot receipt: a healthy worker keeps beating for its
 whole lifetime, while a dead or interrupted worker stops, so long-lived
 workers stay current and missing adoption fails closed. It returns unknown

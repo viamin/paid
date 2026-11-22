@@ -37,11 +37,10 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     result = collect
 
     expect(result).to be_passing
-    expect(result.workers).to include(
-      "poll" => include("pid" => 101, "revision" => "revision-1", "status" => "observed",
-        "heartbeat_at" => (now - 20.seconds).iso8601),
-      "agent" => include("pid" => 102, "revision" => "revision-1", "status" => "observed")
-    )
+    expect(result.workers.fetch("poll").sole).to include("pid" => 101, "revision" => "revision-1",
+      "status" => "observed", "heartbeat_at" => (now - 20.seconds).iso8601)
+    expect(result.workers.fetch("agent").sole).to include("pid" => 102, "revision" => "revision-1",
+      "status" => "observed")
     expect(result.project_scope).to eq("project:#{project.id}:#{project.full_name}")
     expect(result.environment).to eq(Rails.env.to_s)
   end
@@ -116,7 +115,7 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     record_role("poll", pid: 101, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds, revision: "old-revision")
     expect(collect).to have_attributes(failure_reason: "poll_revision_mismatch")
 
-    record_role("poll", pid: 101, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds,
+    record_role("poll", pid: 201, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds,
       revision: nil, deployment_revision: "revision-1")
     expect(collect).to have_attributes(failure_reason: "malformed_poll_readiness")
   end
@@ -126,7 +125,40 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
     expect(collect).to have_attributes(failure_reason: "poll_revision_mismatch")
 
-    record_role("poll", pid: 900, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
+    restarted_at = now + 6.minutes
+    record_role("poll", pid: 900, ready_at: restarted_at - 10.seconds, heartbeat_at: restarted_at - 5.seconds)
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: restarted_at - 30.seconds)
+
+    expect(collect(at: restarted_at)).to be_passing
+  end
+
+  it "keeps adoption unknown while a fresh superseded instance is still polling" do
+    record_role("poll", pid: 101, ready_at: now - 2.minutes, heartbeat_at: now - 20.seconds,
+      revision: "old-revision")
+    record_role("poll", pid: 201, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
+
+    result = collect
+
+    expect(result).to have_attributes(failure_reason: "poll_revision_mismatch")
+    expect(result.workers.fetch("poll").pluck("pid")).to contain_exactly(101, 201)
+  end
+
+  it "passes after the superseded instance becomes stale" do
+    record_role("poll", pid: 101, ready_at: now - 10.minutes, heartbeat_at: now - 6.minutes,
+      revision: "old-revision")
+    record_role("poll", pid: 201, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
+
+    expect(collect).to be_passing
+  end
+
+  it "ignores malformed identity fields on a superseded stale instance" do
+    record_role("poll", pid: 101, ready_at: now - 10.minutes, heartbeat_at: now - 6.minutes,
+      revision: nil, deployment_revision: nil)
+    record_role("poll", pid: 201, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
+
     expect(collect).to be_passing
   end
 
@@ -139,14 +171,15 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     record_role("poll", pid: 101, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
 
     expect(collect).to be_passing
-    expect(collect.workers.fetch("poll")).to include("pid" => 101, "ready_at" => (now - 10.seconds).iso8601)
+    expect(collect.workers.fetch("poll").last).to include("pid" => 101,
+      "ready_at" => (now - 10.seconds).iso8601)
   end
 
   it "keeps corrupted or incoherent observations unknown" do
     record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
     record_role("poll", pid: 101, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
 
-    poll = WorkerReadinessObservation.for_role("poll")
+    poll = WorkerReadinessObservation.for_role("poll").sole
     poll.update_column(:pid, 0)
     expect(collect).to have_attributes(failure_reason: "malformed_poll_readiness")
 

@@ -14,35 +14,34 @@ RSpec.describe WorkerReadinessObservation, type: :model do
   it "publishes and reads back a role's typed readiness identity" do
     record("poll")
 
-    observation = described_class.for_role("poll")
+    observation = described_class.for_role("poll").sole
 
     expect(observation).to have_attributes(pid: 4242, revision: "revision-1",
       deployment_revision: "revision-1", ready_at: booted_at, heartbeat_at: booted_at + 30)
   end
 
-  it "keeps one row per role and replaces the identity when the role restarts" do
+  it "keeps overlapping role instances distinct during a rolling restart" do
     record("agent", pid: 111, ready_at: booted_at, revision: "old-revision",
       deployment_revision: "old-deployment", heartbeat_at: booted_at + 1)
     record("agent", pid: 222, ready_at: booted_at + 10.minutes, revision: "revision-1",
       heartbeat_at: booted_at + 10.minutes + 30)
 
-    expect(described_class.count).to eq(1)
-    expect(described_class.for_role("agent")).to have_attributes(pid: 222, revision: "revision-1",
-      deployment_revision: "revision-1")
+    expect(described_class.count).to eq(2)
+    expect(described_class.for_role("agent").pluck(:pid)).to contain_exactly(111, 222)
   end
 
   it "keeps the poll and agent roles independent" do
     record("poll", pid: 101)
     record("agent", pid: 102)
 
-    expect(described_class.for_role("poll").pid).to eq(101)
-    expect(described_class.for_role("agent").pid).to eq(102)
+    expect(described_class.for_role("poll").sole.pid).to eq(101)
+    expect(described_class.for_role("agent").sole.pid).to eq(102)
   end
 
   it "stores a null revision when the worker could not determine one" do
     record("poll", revision: nil)
 
-    expect(described_class.for_role("poll")).to have_attributes(revision: nil)
+    expect(described_class.for_role("poll").sole).to have_attributes(revision: nil)
   end
 
   it "rejects roles outside the fixed Temporal pair and malformed identities" do
