@@ -70,6 +70,9 @@ HEAD and workspace-content digest, so same-HEAD source drift remains unknown
 until the workers restart from that source. A worker snapshots that complete
 identity before Rails loads application code and verifies the snapshot again
 after routes, activities, workflows, and worker registrations are constructed.
+The early identity capture uses only Ruby standard-library behavior because
+Rails and Active Support are not loaded at that boundary in either development
+or production.
 If source changes across that startup boundary, the worker refuses to publish
 readiness or begin polling; a post-load snapshot must not attest source newer
 than the code already loaded into the process. The normal

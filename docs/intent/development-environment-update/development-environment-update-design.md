@@ -100,7 +100,9 @@ revision remains the updater's commit-adoption contract; the recorder uses the
 separate complete boot-time deployment identity so later same-HEAD source drift
 cannot be accepted. The Temporal worker captures that complete identity before
 Rails loads application code and compares it with a second snapshot after its
-routes, activities, workflows, and worker registrations are constructed. It
+routes, activities, workflows, and worker registrations are constructed. The
+first snapshot uses only Ruby standard-library behavior because Rails and
+Active Support are not loaded yet in development or production. It
 refuses startup before readiness publication or polling when the snapshots
 differ, so a source edit during boot cannot be represented as loaded worker
 code. The readiness facts remain evidence about worker adoption

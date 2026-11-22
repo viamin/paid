@@ -59,6 +59,8 @@
   before Rails loads application code and verify it after routes, activities,
   workflows, and worker registrations are constructed; it SHALL refuse to
   publish readiness or poll when source changed across that startup boundary.
+  The real development and production worker entrypoints SHALL capture the
+  initial identity before Rails or Active Support is loaded.
   *Code:* `app/models/worker_readiness_observation.rb`,
   `lib/paid/worker_readiness/heartbeat.rb`,
   `lib/paid/worker_readiness/startup_identity.rb`,

@@ -85,6 +85,8 @@
   application code and verify it after routes, activities, workflows, and
   worker registrations are constructed; when those snapshots differ, it SHALL
   refuse startup before publishing readiness or polling.
+  Development and production identity capture SHALL work from the real worker
+  entrypoint before Rails or Active Support is loaded.
   The updater-facing raw boot SHA contract SHALL remain unchanged.
   Missing, malformed, stale,
   incoherent, interrupted, restarted, unauthorized, cross-scope, or

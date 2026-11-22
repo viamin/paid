@@ -2,6 +2,8 @@
 
 require "rails_helper"
 require "paid/worker_readiness/startup_identity"
+require "open3"
+require "rbconfig"
 require "tmpdir"
 
 # @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-004
@@ -53,5 +55,43 @@ RSpec.describe Paid::WorkerReadiness::StartupIdentity do
     expect(verify).to be > source.index("workers = case worker_mode")
     expect(verify).to be < readiness
     expect(verify).to be < polling
+  end
+
+  it "captures a development identity from the real executable before Rails boots" do
+    status, output = run_until_rails_boot("RAILS_ENV" => "development", "PAID_DEPLOYED_REVISION" => nil)
+
+    expect(status).to be_success
+    expect(output).to include("reached Rails boot")
+  end
+
+  it "captures a production identity from the real executable before Rails boots" do
+    status, output = run_until_rails_boot(
+      "RAILS_ENV" => "production", "PAID_DEPLOYED_REVISION" => "release-123"
+    )
+
+    expect(status).to be_success
+    expect(output).to include("reached Rails boot")
+  end
+
+  def run_until_rails_boot(environment)
+    Dir.mktmpdir do |directory|
+      prelude = File.join(directory, "stop_before_rails.rb")
+      File.write(prelude, <<~RUBY)
+        module Kernel
+          def require_relative(path)
+            if path == "../config/environment"
+              puts "reached Rails boot"
+              exit 0
+            end
+
+            location = caller_locations(1, 1).first.absolute_path
+            require File.expand_path(path, File.dirname(location))
+          end
+        end
+      RUBY
+      command = [ RbConfig.ruby, "-r#{prelude}", Rails.root.join("bin/temporal_worker").to_s ]
+      output, error, status = Open3.capture3(environment, *command, chdir: Rails.root.to_s)
+      [ status, output + error ]
+    end
   end
 end

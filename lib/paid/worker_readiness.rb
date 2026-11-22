@@ -106,7 +106,10 @@ module Paid
     # revision cannot be determined; callers treat that as unknown, never
     # as a verified adoption.
     def boot_revision(env = ENV, root: nil)
-      env[REVISION_ENV_KEY].presence || git_head_revision(root || default_revision_root)
+      revision = env[REVISION_ENV_KEY]
+      return revision unless revision.to_s.strip.empty?
+
+      git_head_revision(root || default_revision_root)
     end
 
     # Rails.root when running under Rails; the process working directory for
