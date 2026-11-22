@@ -151,8 +151,9 @@ RSpec.describe Runners::ManagedCredentialLifecycle do # @spec SUBSCRIPTION-RUNNE
     end
 
     # @spec SUBSCRIPTION-RUNNER-AUTH-006 LLM-ROUTING-011
-    it "keeps active Codex credentials eligible until the harness supports refresh" do
+    it "keeps active Codex credentials eligible when the harness cannot refresh" do
       credential = create_credential(runner_key: "codex", token: valid_codex_auth, expires_at: 5.minutes.from_now)
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:codex).and_return(false)
 
       expect(described_class.readiness(credential, runner_key: "codex")).to eq(:fresh)
     end

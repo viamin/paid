@@ -274,8 +274,10 @@ RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
   describe "refresh-before-run (server-side, gated on agent-harness)" do
     let(:credential) { create_codex_credential(token: valid_codex_auth, expires_at: 1.minute.from_now) }
 
+    # @spec SUBSCRIPTION-RUNNER-AUTH-006
     it "records a refresh telemetry row and skips when the upstream exchange is unsupported" do
       svc = build_service(credential: credential)
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?).with(:codex).and_return(false)
 
       outcome = svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
 
