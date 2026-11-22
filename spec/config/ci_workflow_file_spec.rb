@@ -46,15 +46,13 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-023
-  it "bounds and cleans up dependency installation attempts in shard jobs" do
+  it "uses the process-group supervisor for dependency installation in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
       install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
         .find { |step| step["name"] == "Install JavaScript dependencies" }
       run = install_step.fetch("run")
 
-      expect(run).to include("  20m \\")
-      expect(run).to include("setsid bash -c")
-      expect(run).to include("kill -TERM -- -$$")
+      expect(run).to include("bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile && bin/yarn-postinstall'")
     end
   end
 
@@ -310,10 +308,7 @@ RSpec.describe CiWorkflowFile, :no_db do
         .find { |step| step["name"] == "Install JavaScript dependencies" }
       run = install_step.fetch("run")
 
-      expect(run).to include("for attempt in 1 2 3 4 5")
-      expect(run).to include("20m")
-      expect(run).to include("setsid bash -c")
-      expect(run).to include("yarn install --frozen-lockfile && bin/yarn-postinstall")
+      expect(run).to include("bin/retry-with-process-group bash -c 'yarn install --frozen-lockfile && bin/yarn-postinstall'")
     end
   end
 
