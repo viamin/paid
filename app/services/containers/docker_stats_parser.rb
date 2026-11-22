@@ -48,7 +48,7 @@ module Containers
 
     def parse_memory_limit(raw)
       memory_stats = required_section(raw, "memory_stats")
-      required_number(memory_stats, "limit", parent: "memory_stats").to_i
+      optional_number(memory_stats, "limit", parent: "memory_stats").to_i
     end
 
     def parse_memory_percent(raw)
@@ -82,6 +82,12 @@ module Containers
       return number(section[key], "#{parent}.#{key}") if section.key?(key)
 
       raise InvalidStatsError, "docker stats #{parent}.#{key} must be numeric"
+    end
+
+    def optional_number(section, key, parent:)
+      return nil unless section.key?(key)
+
+      number(section[key], "#{parent}.#{key}")
     end
 
     def number(value, name)
