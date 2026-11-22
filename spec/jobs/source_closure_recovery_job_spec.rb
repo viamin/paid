@@ -25,7 +25,8 @@ RSpec.describe SourceClosureRecoveryJob do
       Workflows::SourceClosureRecoveryWorkflow,
       { agent_run_id: run.id, project_id: run.project_id, recovery_attempt: 1, goal: run.goal,
         commit_sha: "a" * 40, operator_authorized: false },
-      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
+      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue,
+      execution_timeout: Workflows::SourceClosureRecoveryWorkflow::EXECUTION_TIMEOUT
     )
   end
 
@@ -125,7 +126,8 @@ RSpec.describe SourceClosureRecoveryJob do
     expect(client).to have_received(:start_workflow).with(
       Workflows::SourceClosureRecoveryWorkflow,
       hash_including(agent_run_id: run.id, operator_authorized: true),
-      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue
+      id: "source-closure-recovery-#{run.id}-1", task_queue: Paid.agent_task_queue,
+      execution_timeout: Workflows::SourceClosureRecoveryWorkflow::EXECUTION_TIMEOUT
     )
     expect(run.reload.reconciliation.dig("source_closure_recovery", "operator_recovery_attempt")).to eq(1)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(0)

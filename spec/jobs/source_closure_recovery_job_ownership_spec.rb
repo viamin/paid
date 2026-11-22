@@ -38,7 +38,8 @@ RSpec.describe SourceClosureRecoveryJob do
     described_class.perform_now(run.id)
 
     expect(client).to have_received(:start_workflow).with(anything, anything,
-      id: "source-closure-recovery-#{run.id}-2", task_queue: Paid.agent_task_queue)
+      id: "source-closure-recovery-#{run.id}-2", task_queue: Paid.agent_task_queue,
+      execution_timeout: Workflows::SourceClosureRecoveryWorkflow::EXECUTION_TIMEOUT)
   end
 
   it "permits recovery after a crash before the previous workflow started" do

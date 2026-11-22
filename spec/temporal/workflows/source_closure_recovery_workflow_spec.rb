@@ -20,7 +20,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
   end
 
   before do
-    allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: false)
     allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-post-pr-v1").and_return(true)
     allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-pinned-revision-v1").and_return(true)
     allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-auto-retry-v1").and_return(true)
@@ -39,6 +39,15 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     rescue => error
       error
     end
+  end
+
+  def expect_assessment_activity_deadline
+    expect(workflow).to have_received(:run_activity).with(
+      Activities::AssessSourceClosureActivity,
+      { agent_run_id: 42 }, timeout: 120,
+      schedule_to_close_timeout: described_class::ASSESSMENT_SCHEDULE_TO_CLOSE_TIMEOUT,
+      retry_policy: described_class::ASSESSMENT_RETRY_POLICY
+    )
   end
 
   # @spec PARTIAL-CLOSEOUT-045
@@ -119,10 +128,36 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
 
   # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
   it "parks an assessment whose Temporal activity retries time out" do
+    allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-deadline-v1").and_return(true)
     timeout = Temporalio::Error::TimeoutError.new(
       "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
       last_heartbeat_details: []
     )
+    allow(workflow).to receive(:run_activity) do |activity, _input, **_options|
+      raise activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT) if activity == Activities::AssessSourceClosureActivity
+
+      {}
+    end
+    allow(workflow).to receive(:run_cleanup_activity)
+
+    expect(workflow.execute(input)).to include(waiting: true)
+    expect(workflow).to have_received(:run_activity).with(
+      Activities::ParkSourceClosureRecoveryActivity,
+      { agent_run_id: 42, category: "timeout", attempts: 3, auto_retry: true }, timeout: 30
+    )
+    expect_assessment_activity_deadline
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "continues the automatic retry chain after an operator recovery epoch parks" do
+    input[:operator_authorized] = true
+    allow(Temporalio::Workflow).to receive(:patched)
+      .with("source-closure-recovery-operator-auto-retry-v1").and_return(true)
+    timeout = Temporalio::Error::TimeoutError.new(
+      "schedule to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::SCHEDULE_TO_CLOSE,
+      last_heartbeat_details: []
+    )
+    allow(Temporalio::Workflow).to receive(:patched).with("source-closure-timeout-cause-v1").and_return(true)
     allow(workflow).to receive(:run_activity) do |activity, _input, **_options|
       raise activity_error(timeout, retry_state: Temporalio::Error::RetryState::TIMEOUT) if activity == Activities::AssessSourceClosureActivity
 

@@ -318,15 +318,22 @@
   issue trust, project and issue pause state, and project cost budget through
   the existing policy and budget contracts. A denial SHALL retain the original
   run, branch, commit and counters, make its actionable reason visible, and
-  start neither an environment nor an assessment request.
+  start neither an environment nor an assessment request. Each recovery
+  workflow SHALL have a finite total execution deadline, and its assessment
+  activity SHALL have a shorter finite schedule-to-close deadline covering
+  queue delay and retries; expiry SHALL return through the ordinary parked
+  recovery and cleanup path without replacing the original record or renewing
+  exhausted capacity.
   *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
   `app/services/partial_closeouts/source_closure_recovery_admission.rb`,
   `app/jobs/source_closure_recovery_job.rb`,
   `app/temporal/activities/park_source_closure_recovery_activity.rb`,
-  `app/temporal/activities/assess_source_closure_activity.rb`.
+  `app/temporal/activities/assess_source_closure_activity.rb`,
+  `app/temporal/workflows/source_closure_recovery_workflow.rb`.
   *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/jobs/source_closure_recovery_job_spec.rb`,
-  `spec/jobs/source_closure_recovery_job_ownership_spec.rb`.
+  `spec/jobs/source_closure_recovery_job_ownership_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-060** — When an authorized operator explicitly
   requests source-closure recovery through the existing run-detail or confirmed
@@ -338,15 +345,20 @@
   consume either claim counter. Operator allowance exhaustion SHALL remain
   visible as `operator_recovery_budget_exhausted`. The recovery SHALL remain
   assessment-only and retain the original commit, branch, failure evidence,
-  and publication checks.
+  and publication checks. When an operator recovery parks after a recoverable
+  assessment failure, the independently-budgeted automatic retry chain SHALL
+  remain scheduled while automatic capacity remains; `next_retry_at` SHALL be
+  nil whenever no automatic retry is scheduled.
   *Code:* `app/mcp/tools/retry_source_closure.rb`,
   `app/controllers/projects/agent_runs_controller.rb`,
   `app/jobs/source_closure_recovery_job.rb`,
   `app/services/partial_closeouts/source_closure_recovery.rb`,
-  `app/services/partial_closeouts/source_closure_recovery_admission.rb`.
+  `app/services/partial_closeouts/source_closure_recovery_admission.rb`,
+  `app/temporal/workflows/source_closure_recovery_workflow.rb`.
   *Test:* `spec/mcp/tools/retry_source_closure_spec.rb`,
   `spec/requests/projects/source_closure_recovery_spec.rb`,
-  `spec/services/partial_closeouts/source_closure_recovery_spec.rb`.
+  `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
+  `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
   run, it SHALL use that run's effective configured runner, policy-permitted

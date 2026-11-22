@@ -27,7 +27,8 @@ class SourceClosureRecoveryJob < ApplicationJob
       { agent_run_id: agent_run.id, project_id: agent_run.project_id,
         recovery_attempt: recovery_attempt, goal: agent_run.goal, commit_sha: commit_sha,
         operator_authorized: operator_id.present? },
-      id: "source-closure-recovery-#{agent_run.id}-#{recovery_attempt}", task_queue: Paid.agent_task_queue)
+      id: "source-closure-recovery-#{agent_run.id}-#{recovery_attempt}", task_queue: Paid.agent_task_queue,
+      execution_timeout: Workflows::SourceClosureRecoveryWorkflow::EXECUTION_TIMEOUT)
   rescue Temporalio::Error::WorkflowAlreadyStartedError
     # A replayed job observes the already-running recovery workflow.
   rescue StandardError

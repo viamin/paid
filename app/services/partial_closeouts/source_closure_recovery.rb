@@ -16,13 +16,14 @@ module PartialCloseouts
     def self.record_assessment_request!(...) = new(...).record_assessment_request!
 
     def initialize(agent_run:, category: nil, attempts: nil, now: Time.current, expected_recovery_attempt: nil,
-      operator: AUTOMATIC_CLAIM)
+      operator: AUTOMATIC_CLAIM, auto_retry: true)
       @agent_run = agent_run
       @category = category
       @attempts = attempts
       @now = now
       @expected_recovery_attempt = expected_recovery_attempt
       @operator = operator
+      @auto_retry = auto_retry
     end
 
     def park!
@@ -115,7 +116,7 @@ module PartialCloseouts
     end
 
     def next_retry_at
-      return nil if automatic_attempts >= MAX_AUTOMATIC_RECOVERY_ATTEMPTS
+      return nil unless @auto_retry && automatic_attempts < MAX_AUTOMATIC_RECOVERY_ATTEMPTS
 
       (now + RETRY_DELAY).iso8601
     end

@@ -136,7 +136,11 @@ then invokes the existing idempotent PR activity. It never invokes the coding
 or push activities. Cancellation wins over recovery; duplicate/replayed claims
 are no-ops. A branch or source-policy mismatch stays fail-closed and returns to
 visible recovery state; PR creation remains impossible without a successful
-current assessment.
+current assessment. Each recovery workflow has a finite total execution
+deadline, and its assessment activity has a shorter schedule-to-close deadline
+that includes queue delay and activity retries. An expired assessment deadline
+parks the original recovery record through the ordinary activity failure path,
+re-arms only remaining automatic capacity, and then runs detached cleanup.
 
 Automatic source-closure recovery has a lineage-wide budget of three recovery
 claims in addition to each workflow's bounded activity retry policy. The
@@ -158,7 +162,10 @@ not imply assessment requests. At every locked claim boundary, the current
 automatic phase policy, source-issue trust, project or issue pause, and project
 cost budget are rechecked through their existing contracts. A denied claim
 retains the same run and evidence with an actionable stop reason and starts no
-environment or assessment request.
+environment or assessment request. If an operator recovery parks after a
+recoverable assessment failure, its separately-budgeted operator claim does not
+suppress the already-authorized automatic chain: the retry timestamp and queued
+automatic retry remain paired while automatic capacity is available.
 
 The confirmed `retry_source_closure` chat/MCP tool queues the same recovery job
 as run detail, under the same run policy and tenant scope. It requires an
