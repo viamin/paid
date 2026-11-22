@@ -9,7 +9,12 @@ module Containers
   module DockerStatsParser
     module_function
 
+    InvalidStatsError = Class.new(StandardError)
+
+    # @spec CONTAINER-RUNTIME-005
     def parse_stats(raw)
+      raise InvalidStatsError, "docker stats payload must be a hash" unless raw.is_a?(Hash)
+
       {
         cpu_percent: parse_cpu(raw),
         memory_bytes: parse_memory_usage(raw),
@@ -20,8 +25,8 @@ module Containers
     end
 
     def parse_cpu(raw)
-      cpu_stats = raw["cpu_stats"] || {}
-      precpu_stats = raw["precpu_stats"] || {}
+      cpu_stats = stats_section(raw, "cpu_stats")
+      precpu_stats = stats_section(raw, "precpu_stats")
 
       cpu_delta = cpu_stats.dig("cpu_usage", "total_usage").to_f -
                   precpu_stats.dig("cpu_usage", "total_usage").to_f
@@ -37,11 +42,11 @@ module Containers
     end
 
     def parse_memory_usage(raw)
-      (raw["memory_stats"] || {})["usage"].to_i
+      stats_section(raw, "memory_stats")["usage"].to_i
     end
 
     def parse_memory_limit(raw)
-      (raw["memory_stats"] || {})["limit"].to_i
+      stats_section(raw, "memory_stats")["limit"].to_i
     end
 
     def parse_memory_percent(raw)
@@ -51,8 +56,15 @@ module Containers
     end
 
     def parse_pids(raw)
-      pids = raw.dig("pids_stats", "current")
+      pids = stats_section(raw, "pids_stats")["current"]
       pids.nil? ? nil : pids.to_i
+    end
+
+    def stats_section(raw, key)
+      section = raw[key] || {}
+      return section if section.is_a?(Hash)
+
+      raise InvalidStatsError, "docker stats #{key} must be a hash"
     end
 
     # Updates peak/average summaries and increments container_metrics_count

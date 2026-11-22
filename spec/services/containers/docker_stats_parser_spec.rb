@@ -25,6 +25,7 @@ RSpec.describe Containers::DockerStatsParser do
   end
 
   describe ".parse_stats" do
+    # @spec CONTAINER-RUNTIME-005
     it "returns a hash with all expected keys" do
       result = described_class.parse_stats(raw_stats)
 
@@ -35,6 +36,14 @@ RSpec.describe Containers::DockerStatsParser do
         memory_percent: 50.0,
         pids_count: 42
       )
+    end
+
+    # @spec CONTAINER-RUNTIME-005
+    [ nil, [], "not Docker stats" ].each do |raw_stats|
+      it "rejects #{raw_stats.inspect} as an unavailable stats sample" do
+        expect { described_class.parse_stats(raw_stats) }
+          .to raise_error(described_class::InvalidStatsError, "docker stats payload must be a hash")
+      end
     end
   end
 

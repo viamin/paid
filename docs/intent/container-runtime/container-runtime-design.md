@@ -169,6 +169,15 @@ Snapshots are cached briefly and are allowed to degrade conservatively when
 Docker reads time out, sampling exceeds its shared budget, or cached data goes
 stale.
 
+Docker stats are external sampling input. A missing or non-map stats response
+is an explicit per-container sampling failure: capacity retains the
+container's classification and count, records bounded degraded provenance, and
+sets the available-memory budget to zero. It never substitutes zero measured
+memory for an unavailable sample. Docker API and Excon transport failures use
+only exception types supplied by the pinned client libraries; unexpected
+collection failures follow the same cached/degraded fallback without replacing
+the original failure with rescue-time constant resolution.
+
 For a local Unix-socket Docker daemon, Linux `MemAvailable` additionally caps
 the sampled free-memory budget when `/proc/meminfo` reports the same total
 memory as the daemon. This accounts for VM pressure outside Docker's container

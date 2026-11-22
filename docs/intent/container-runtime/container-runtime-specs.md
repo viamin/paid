@@ -72,7 +72,12 @@
   backend, the system SHALL classify visible usage into Paid control-plane,
   Paid agent, Paid service-container, and other-Docker buckets, cache the
   snapshot briefly, and degrade conservatively when daemon reads or container
-  sampling fail.
+  sampling fail. Missing or non-map Docker stats SHALL be explicit
+  per-container sampling failures that retain classification/counting and deny
+  an available-memory budget rather than representing unknown memory as zero.
+  Supported Docker/Excon transport failures and unexpected collection failures
+  SHALL return the existing cached/degraded observation without rescue-time
+  exception-constant failures masking the original error.
   *Tests:* `spec/services/capacity/docker_snapshot_spec.rb`
   *Code:* `Capacity::DockerSnapshot`
 
