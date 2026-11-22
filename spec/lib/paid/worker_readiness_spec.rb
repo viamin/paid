@@ -160,4 +160,23 @@ RSpec.describe Paid::WorkerReadiness do
       expect(described_class.ready?(env)).to be false
     end
   end
+
+  describe ".temporal_snapshot" do
+    it "reads only the fixed role file and exposes the allowlisted readiness fields" do
+      path = File.join(tmpdir, "paid-worker-ready-temporal_worker-poll")
+      File.write(path, { pid: 123, ready_at: "2026-11-22T07:00:57Z", revision: "revision-1", ignored: "secret" }.to_json)
+
+      snapshot = described_class.temporal_snapshot("poll", root: tmpdir)
+
+      expect(snapshot).to have_attributes(pid: 123, revision: "revision-1", error: nil)
+      expect(snapshot.ready_at).to eq(Time.iso8601("2026-11-22T07:00:57Z"))
+    end
+
+    it "does not accept another role or treat malformed readiness as ready" do
+      expect { described_class.temporal_snapshot("jobs", root: tmpdir) }.to raise_error(ArgumentError)
+
+      File.write(File.join(tmpdir, "paid-worker-ready-temporal_worker-agent"), "not-json")
+      expect(described_class.temporal_snapshot("agent", root: tmpdir).error).to eq("malformed")
+    end
+  end
 end

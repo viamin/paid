@@ -86,6 +86,14 @@ compatibility, retained results, bounded retry/budget policies, and
 control-queue routing; the updater never force-kills active owners to speed
 adoption.
 
+The same readiness contract has one read-only recorder consumer: the
+allowlisted worker-adoption measurement may read only the two fixed Temporal
+role paths and the typed PID, readiness timestamp, and boot revision fields.
+It does not accept a host path, run a host command, or inspect process
+arguments, environment, or credentials. Its persisted collection receipt is
+owned by the trusted-measurements boundary; the readiness files remain facts
+about worker adoption only and do not attest application-level behavior.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -96,6 +104,7 @@ adoption.
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
+| Recorder source boundary | Fixed role-specific readiness reader with typed public fields | Generic file reader or process inspection | Preserves the existing safe readiness contract without making host filesystem/process access operator-controlled. |
 
 ## References
 

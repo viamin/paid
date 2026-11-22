@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec TRUSTED-MEASUREMENTS-003 TRUSTED-MEASUREMENTS-004 TRUSTED-MEASUREMENTS-005
+# @spec TRUSTED-MEASUREMENTS-003 TRUSTED-MEASUREMENTS-004 TRUSTED-MEASUREMENTS-005 TRUSTED-MEASUREMENTS-008
 RSpec.describe TrustedMeasurements::RunCheck do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, :closed, project:, github_number: 4812) }
@@ -129,6 +129,51 @@ RSpec.describe TrustedMeasurements::RunCheck do
     expect(attempt.status).to eq("failed")
     expect(attempt.result).to eq({})
     expect(attempt.consecutive_failure_count).to eq(1)
+  end
+
+  it "persists an inspectable unknown worker-adoption result without fabricating a succeeded measurement" do
+    ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
+    worker_result = TrustedMeasurements::Checks::WorkerAdoption::Result.new(
+      environment: Rails.env.to_s, deployment_revision: "rev-1", project_scope: "project:#{project.id}:#{project.full_name}",
+      workers: { "poll" => { "status" => "missing" } }, failure_reason: "missing_poll_readiness"
+    )
+    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call).with(project:).and_return(worker_result)
+
+    attempt = call(key: "worker_adoption")
+
+    expect(attempt).to have_attributes(status: "unknown", failure_reason: "missing_poll_readiness")
+    expect(attempt.result).to include("workers" => { "poll" => { "status" => "missing" } })
+  end
+
+  it "keeps a current worker-adoption collection idempotent and creates distinct evidence after a revision change" do
+    ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
+    result = TrustedMeasurements::Checks::WorkerAdoption::Result.new(
+      environment: Rails.env.to_s, deployment_revision: "rev-1", project_scope: "project:#{project.id}:#{project.full_name}",
+      workers: {}, failure_reason: nil
+    )
+    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call).with(project:).and_return(result)
+
+    first = call(key: "worker_adoption")
+    expect(call(key: "worker_adoption").id).to eq(first.id)
+
+    ENV["PAID_DEPLOYED_REVISION"] = "rev-2"
+    revised_result = result.with(deployment_revision: "rev-2")
+    allow(TrustedMeasurements::Checks::WorkerAdoption).to receive(:call).with(project:).and_return(revised_result)
+    revised = call(key: "worker_adoption", expected_deployed_revision: "rev-2")
+
+    expect(revised.id).not_to eq(first.id)
+    expect(TrustedMeasurementAttempt.where(check_key: "worker_adoption").count).to eq(2)
+  end
+
+  it "does not use another project's source issue as worker-adoption authority" do
+    other_project = create(:project, account: project.account)
+    foreign_issue = create(:issue, :closed, project: other_project, github_number: 937_001)
+    ENV["PAID_DEPLOYED_REVISION"] = "rev-1"
+    expect(TrustedMeasurements::Checks::WorkerAdoption).not_to receive(:call)
+
+    attempt = call(key: "worker_adoption", number: foreign_issue.github_number)
+
+    expect(attempt).to have_attributes(status: "unknown", issue: nil, failure_reason: "source_issue_not_available")
   end
 
   it "does not persist an attempt row for a check key outside the allowlist" do

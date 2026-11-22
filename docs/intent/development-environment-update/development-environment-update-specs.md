@@ -46,3 +46,12 @@
   widen concurrency or shutdown timeouts, or reset failed runs.
   *Code:* `bin/dev-update`, `lib/paid/worker_readiness.rb`, `bin/temporal_worker`.
   *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.
+
+- [x] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — When a recorder-owned trusted
+  measurement consumes Temporal worker readiness, it SHALL expose only the
+  fixed `poll` and `agent` role files and their typed PID, readiness time, and
+  boot revision fields. It SHALL reject other roles and malformed payloads and
+  SHALL NOT provide a generic host-path reader or process argument,
+  environment, or credential inspection capability.
+  *Code:* `lib/paid/worker_readiness.rb`.
+  *Test:* `spec/lib/paid/worker_readiness_spec.rb`.

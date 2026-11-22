@@ -66,3 +66,23 @@
   checkout SHALL remain unknown rather than become a fabricated revision.
   *Code:* `app/services/trusted_measurements/deployment_signal.rb`.
   *Test:* `spec/services/trusted_measurements/deployment_signal_spec.rb`.
+
+- [x] **TRUSTED-MEASUREMENTS-008** — When a reviewed worker-adoption
+  measurement runs in Paid's authorized live environment, it SHALL bind the
+  project/account/criterion, environment class, deployment revision, check
+  implementation/version, and collection time through the normal allowlisted
+  measurement path; it SHALL read only the fixed `poll` and `agent` Temporal
+  readiness payloads' PID, readiness time, and booted revision. Both roles
+  SHALL be fresh, timestamp-coherent, associated with a live PID, and equal to
+  the current deployment identity before the result is successful. Missing,
+  malformed, stale, interrupted, restarted, unauthorized, cross-scope, or
+  revision-mismatched inputs SHALL remain unknown or failed evidence, never a
+  successful pull-only inference. The result SHALL cover effective worker
+  adoption only, not model/auth/text success or unrelated acceptance criteria,
+  and SHALL NOT accept an operator-controlled host command, path, SQL, process
+  arguments, environment, or credentials.
+  *Code:* `lib/paid/worker_readiness.rb`,
+  `app/services/trusted_measurements/checks/worker_adoption.rb`,
+  `app/services/trusted_measurements/run_check.rb`.
+  *Test:* `spec/services/trusted_measurements/checks/worker_adoption_spec.rb`,
+  `spec/services/trusted_measurements/run_check_spec.rb`.

@@ -33,6 +33,7 @@ module Paid
   # the bin/ scripts.
   module WorkerReadiness
     DEFAULT_FILE_PREFIX = "paid-worker-ready"
+    TEMPORAL_WORKER_MODES = %w[poll agent].freeze
     # Matches TrustedMeasurements::DeploymentSignal::ENV_KEY: the deploy
     # pipeline's revision identity when present, development HEAD otherwise.
     REVISION_ENV_KEY = "PAID_DEPLOYED_REVISION"
@@ -88,6 +89,34 @@ module Paid
       File.exist?(file_path(env))
     end
 
+    # Returns the narrow, public readiness metadata for a named Temporal role.
+    # This deliberately does not accept a caller-provided path: trusted
+    # measurements may inspect only the two fixed service readiness locations.
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    Snapshot = Data.define(:role, :pid, :ready_at, :revision, :modified_at, :error)
+
+    def temporal_snapshot(role, root: Dir.tmpdir)
+      role = role.to_s
+      raise ArgumentError, "unsupported Temporal worker role" unless TEMPORAL_WORKER_MODES.include?(role)
+
+      begin
+        path = File.join(root, "#{DEFAULT_FILE_PREFIX}-temporal_worker-#{role}")
+        payload = JSON.parse(File.read(path))
+        Snapshot.new(
+          role:,
+          pid: integer_pid(payload["pid"]),
+          ready_at: Time.iso8601(payload.fetch("ready_at")),
+          revision: payload["revision"].presence,
+          modified_at: File.mtime(path).utc,
+          error: nil
+        )
+      rescue Errno::ENOENT
+        Snapshot.new(role:, pid: nil, ready_at: nil, revision: nil, modified_at: nil, error: "missing")
+      rescue JSON::ParserError, KeyError, ArgumentError, TypeError
+        Snapshot.new(role:, pid: nil, ready_at: nil, revision: nil, modified_at: nil, error: "malformed")
+      end
+    end
+
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
     def ready_payload(env = ENV)
       { pid: Process.pid, ready_at: Time.now.utc.iso8601, revision: boot_revision(env) }.to_json
@@ -114,5 +143,13 @@ module Paid
     rescue Errno::ENOENT, Errno::EACCES
       nil
     end
+
+    def integer_pid(value)
+      pid = Integer(value)
+      raise ArgumentError unless pid.positive?
+
+      pid
+    end
+    private_class_method :integer_pid
   end
 end

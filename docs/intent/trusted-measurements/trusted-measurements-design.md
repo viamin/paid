@@ -43,6 +43,21 @@ for that source and project scope. The development baseline of 36 is recorded
 as context only; the live target is zero and can be established only by a
 post-deploy execution.
 
+The worker-adoption check is a separate, narrowly scoped live observation. It
+reads only the existing fixed `poll` and `agent` Temporal readiness payloads
+from Paid's own operating environment through `Paid::WorkerReadiness`; the
+reader accepts neither an operator-selected path nor a command. It retains
+only each role's PID, readiness/boot time, and booted revision. The check
+requires both role payloads to be parseable, fresh, timestamp-coherent, tied
+to a live PID, and equal to the current deployment identity. It returns
+unknown evidence for a missing, stale, malformed, interrupted, restarted, or
+revision-mismatched worker. The normal measurement runner persists that typed
+result under the reviewed project/account/criterion/revision mapping, so a
+readiness file is an input receipt rather than acceptance evidence by itself.
+This deployment-adoption fact has intentionally narrow coverage: it does not
+attest model behavior, credentials, request text, or any unrelated source
+criterion.
+
 `RunCheckJob` enters through the normal project-derived tenant context. The
 operator task locates a project and loads its account with system read access,
 then establishes that project's tenant context before invoking the same service.
@@ -72,3 +87,4 @@ specific recovery action and resolves on recovery.
 | Allowlisted application checks instead of supplied SQL | Keeps query shape reviewed, read-only, bounded, tenant-scoped, and compatible with normal database roles. |
 | Revision-bound evidence instead of merge-bound evidence | A merged revision is not proof that the live dataset has been observed after deployment. |
 | Reuse partial-closeout assessment | Only the existing criterion-level authority can release a prerequisite; a counter cannot make a whole-issue completion decision. |
+| Fixed readiness reader instead of host tooling | Reuses #5293's safe role-specific metadata while preventing operator-selected host files, commands, SQL, process arguments, environment inspection, or credential reads. |
