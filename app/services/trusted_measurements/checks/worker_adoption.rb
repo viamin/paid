@@ -12,7 +12,7 @@ module TrustedMeasurements
     # namespace, or inspecting process arguments, environment, or credentials.
     # @spec TRUSTED-MEASUREMENTS-008
     class WorkerAdoption
-      VERSION = 4
+      VERSION = 5
       ROLES = %w[poll agent].freeze
       MAX_AGE = 5.minutes
       FUTURE_SKEW = 30.seconds
@@ -33,9 +33,9 @@ module TrustedMeasurements
       end
 
       def call
-        records = ROLES.to_h { |role| [ role, observations.for_role(role).to_a ] }
         deployment_revision = DeploymentSignal.current
         observed_at = clock.call
+        records = ROLES.to_h { |role| [ role, records_for(role, observed_at) ] }
         Result.new(
           environment: environment.to_s,
           deployment_revision:,
@@ -50,6 +50,14 @@ module TrustedMeasurements
       private
 
       attr_reader :clock, :environment, :observations, :project
+
+      def records_for(role, observed_at)
+        role_records = observations.for_role(role)
+        live_window = role_records.where(heartbeat_at: (observed_at - MAX_AGE)..).to_a
+        return live_window if live_window.any?
+
+        role_records.reorder(heartbeat_at: :desc, id: :desc).limit(1).to_a
+      end
 
       def invalid_reason(role, records, deployment_revision, observed_at)
         return "missing_#{role}_readiness" if records.empty?

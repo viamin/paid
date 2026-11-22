@@ -75,8 +75,11 @@
   readiness observations the owning Temporal worker roles publish about
   themselves into the shared application database — each instance's PID,
   readiness time, raw boot revision, boot-time deployment identity, and latest
-  heartbeat. Concurrent process boots for a role SHALL remain independently
-  observable; every fresh instance of both roles
+  heartbeat. The evidence projection SHALL include every observation that can
+  fall within the freshness window and, when none exist for a role, at most its
+  newest stale observation; older restart history SHALL NOT be serialized.
+  Concurrent process boots for a role SHALL remain independently observable;
+  every fresh instance of both roles
   SHALL be complete, timestamp-coherent, refreshed by the live worker's own
   heartbeat within the freshness window, and equal to the current deployment
   revision before the result is successful, while stale superseded instances

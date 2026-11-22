@@ -53,9 +53,12 @@ fixed system-wide `poll`/`agent`
 observation table through the shared application database. A process boot is
 identified by role, PID, and readiness time, so old and new containers remain
 independently visible while a rolling deploy overlaps them. The check reads
-only those durable, role-authored observations. It retains only each instance's
-PID, boot time, raw boot revision, boot-time deployment identity, and latest
-beat. The check requires both
+only those durable, role-authored observations. Its evidence projection keeps
+every observation whose heartbeat could fall in the live overlap window; when
+a role has none, it keeps only that role's newest stale observation so stale
+remains distinguishable from missing without copying unbounded restart history.
+For each projected instance it retains only the PID, boot time, raw boot
+revision, boot-time deployment identity, and latest beat. The check requires both
 roles' observations to exist, carry a complete typed identity, be internally
 coherent, carry a heartbeat the live worker itself refreshed within the
 freshness window, and requires every fresh instance to equal the current

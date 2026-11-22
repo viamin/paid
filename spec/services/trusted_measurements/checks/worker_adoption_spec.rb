@@ -153,6 +153,31 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     expect(collect).to be_passing
   end
 
+  it "projects only the fresh overlap window instead of serializing restart history" do
+    12.times do |index|
+      record_role("poll", pid: 1_000 + index, ready_at: now - (index + 2).hours,
+        heartbeat_at: now - (index + 2).hours, revision: "old-revision")
+    end
+    record_role("poll", pid: 201, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
+
+    result = collect
+
+    expect(result).to be_passing
+    expect(result.workers.fetch("poll").pluck("pid")).to eq([ 201 ])
+  end
+
+  it "retains only the newest stale observation when a role has no fresh instance" do
+    record_role("poll", pid: 101, ready_at: now - 2.hours, heartbeat_at: now - 2.hours)
+    record_role("poll", pid: 201, ready_at: now - 1.hour, heartbeat_at: now - 1.hour)
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
+
+    result = collect
+
+    expect(result).to have_attributes(failure_reason: "stale_poll_readiness")
+    expect(result.workers.fetch("poll").pluck("pid")).to eq([ 201 ])
+  end
+
   it "ignores malformed identity fields on a superseded stale instance" do
     record_role("poll", pid: 101, ready_at: now - 10.minutes, heartbeat_at: now - 6.minutes,
       revision: nil, deployment_revision: nil)
