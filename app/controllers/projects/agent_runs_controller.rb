@@ -322,7 +322,7 @@ module Projects
       redirect_to inbox_path, alert: error.message
     end
 
-    # @spec AGENT-RUNS-INDEX-002
+    # @spec QUEUE-TIER-008
     def bump_priority
       authorize @project, :run_agent?
 
@@ -332,22 +332,20 @@ module Projects
         return
       end
 
-      runs = @project.agent_runs
+      run = @project.agent_runs
         .where(source_pull_request_number: pr.github_number, trigger_type: "automatic")
         .where(status: "queued", temporal_workflow_id: nil)
+        .order(:created_at, :id)
+        .first
 
-      affected = runs.update_all(trigger_type: "manual", updated_at: Time.current)
-
-      if affected.zero?
+      unless run && AgentRuns::PrioritizeCodingRetry.call(agent_run: run, actor: current_user)
         redirect_to project_path(@project), alert: "No queued auto-continue runs for this pull request."
         return
       end
 
-      AgentRun.invalidate_filter_options_cache(account_id: @project.account_id, project_id: @project.id)
       @project.broadcast_pull_requests_update
-      ProcessRunQueueJob.perform_later
 
-      redirect_to project_path(@project), notice: "Priority bumped for PR ##{pr.github_number}."
+      redirect_to project_path(@project), notice: "Priority requested for PR ##{pr.github_number}."
     end
 
     # Deliberate continuation of an issue stalled behind terminal closeout

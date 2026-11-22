@@ -214,6 +214,18 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "prioritize_coding_retry",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id, agent_run_id: 1, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "request_acceptance_audit",
         denied_user: -> {
           project

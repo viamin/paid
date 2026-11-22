@@ -1281,16 +1281,18 @@ class AgentRun < ApplicationRecord
     pr_p2: { label: "PR · P2", indicator: 3 },
     pr_p3: { label: "PR · P3", indicator: 4 },
     pr_continue: { label: "Auto-continue", indicator: 5 },
-    issue_p1: { label: "P1", indicator: 6 },
-    issue_p2: { label: "P2", indicator: 7 },
-    issue_p3: { label: "P3", indicator: 8 },
-    auto_pick: { label: "Auto-pick", indicator: 9 }
+    operator_coding: { label: "Operator-requested coding retry", indicator: 6 },
+    issue_p1: { label: "P1", indicator: 7 },
+    issue_p2: { label: "P2", indicator: 8 },
+    issue_p3: { label: "P3", indicator: 9 },
+    auto_pick: { label: "Auto-pick", indicator: 10 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
   QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning create_feature].freeze
 
-  def queue_priority_tier # @spec QUEUE-TIER-002 QUEUE-TIER-007
+  def queue_priority_tier # @spec QUEUE-TIER-002 QUEUE-TIER-007 QUEUE-TIER-009
     return :manual if manual? || operator_audit_priority?
+    return :operator_coding if operator_coding_priority?
 
     category = existing_pr? ? "pr" : "issue"
     case label_priority_tier
@@ -1304,6 +1306,11 @@ class AgentRun < ApplicationRecord
   # @spec QUEUE-TIER-007
   def operator_audit_priority?
     operator_priority_requested_at.present? && goal == "analyze_issue" && continuation_request_id.present?
+  end
+
+  # @spec QUEUE-TIER-008 QUEUE-TIER-009
+  def operator_coding_priority?
+    operator_coding_priority_requested_at.present? && trigger_type == "automatic" && goal == "create_pr"
   end
 
   # Returns "P1"/"P2"/"P3" if the run's issue or source PR carries one of
@@ -1504,14 +1511,16 @@ class AgentRun < ApplicationRecord
   # trigger_type = 'automatic' is not re-checked below the first WHEN:
   # TRIGGER_TYPES only has 'manual'/'automatic', so anything that reaches
   # the second WHEN is already known to be automatic.
-  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001
+  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001 QUEUE-TIER-009
     CASE
       WHEN trigger_type = 'manual' OR (
         agent_runs.operator_priority_requested_at IS NOT NULL
         AND agent_runs.goal = 'analyze_issue' AND agent_runs.continuation_request_id IS NOT NULL
       ) THEN 0
       WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL})
-      ELSE (#{LABEL_RANK_CASE_SQL}) + 4
+      WHEN agent_runs.operator_coding_priority_requested_at IS NOT NULL
+        AND agent_runs.trigger_type = 'automatic' AND agent_runs.goal = 'create_pr' THEN 5
+      ELSE (#{LABEL_RANK_CASE_SQL}) + 5
     END
   SQL
   QUEUE_PRIORITY_SQL = Arel.sql(QUEUE_PRIORITY_CASE_SQL).freeze

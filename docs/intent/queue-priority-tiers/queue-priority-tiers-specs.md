@@ -7,8 +7,9 @@
 
 ## Category-first tier structure
 
-- [x] **QUEUE-TIER-001** — The system SHALL rank queued runs by a 9-tier
-  category-first scheme in which manual runs pre-empt unconditionally, then
+- [x] **QUEUE-TIER-001** — The system SHALL rank queued runs by a 10-tier
+  category-first scheme in which manual runs and authorized acceptance-audit
+  requests pre-empt unconditionally, then
   PR-continuation runs (`source_pull_request_number` present) are ranked by
   label (P1 > P2 > P3 > none) ahead of all fresh-issue runs ranked by the
   same label order, so category is the primary discriminator and label the
@@ -88,3 +89,30 @@
   *Test:* `spec/services/agent_runs/prioritize_audit_spec.rb`,
   `spec/services/issues/request_continuation_spec.rb`,
   `spec/models/agent_run_spec.rb`.
+
+- [x] **QUEUE-TIER-008** — When an authorized operator explicitly prioritizes
+  one existing unclaimed automatic `create_pr` retry that is a PR continuation
+  or implementation continuation, Paid SHALL lock and recheck that same run,
+  preserve its trigger, execution origin, policy snapshots, admission evidence,
+  retry lineage, source identity, backoff, and remaining allowance, and record
+  exactly one durable priority timestamp and actor audit event. The action
+  SHALL neither create, claim, restart, cancel, nor convert the run to manual;
+  denied, untrusted, claimed, running, terminal, audit-only, rate-limited, or
+  otherwise ineligible work SHALL remain unchanged.
+  *Code:* `AgentRuns::PrioritizeCodingRetry`,
+  `Projects::AgentRunsController#bump_priority`,
+  `Tools::PrioritizeCodingRetry`.
+  *Test:* `spec/services/agent_runs/prioritize_coding_retry_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`,
+  `spec/mcp/tools/prioritize_coding_retry_spec.rb`.
+
+- [x] **QUEUE-TIER-009** — An operator-prioritized coding retry SHALL rank
+  after every automatic PR-continuation tier and before fresh-issue tiers in
+  both dequeue SQL and the Ruby badge mirror. Fair-share project/user keys,
+  automatic scheduler eligibility, trust, dependency, phase, pause, cost,
+  capacity, and finite-retry guards SHALL retain precedence over this ordering
+  marker; a priority marker SHALL not make an ineligible run dispatchable.
+  *Code:* `AgentRun::QUEUE_PRIORITY_CASE_SQL`,
+  `AgentRun#queue_priority_tier`, `ProcessRunQueueJob#schedulable_queue_scope`.
+  *Test:* `spec/models/agent_run_spec.rb`,
+  `spec/jobs/process_run_queue_job_spec.rb`.

@@ -1602,6 +1602,19 @@ RSpec.describe ProcessRunQueueJob do
         expect(run.reload.status).to eq("running")
       end
 
+      it "does not dispatch an operator-prioritized coding retry while its project is paused" do # @spec QUEUE-TIER-009
+        project = create(:project, auto_pick_enabled: true, paused: true)
+        issue = create(:issue, project:, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+          operator_coding_priority_requested_at: Time.current)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload).to have_attributes(status: "queued", temporal_workflow_id: nil)
+      end
+
       # Delegated-work boundary recheck at dequeue: a bounded authorization
       # that was revoked after the run was queued must not begin a new
       # action, no matter which path queued the run (retries included).

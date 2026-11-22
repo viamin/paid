@@ -4155,6 +4155,22 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(auto_continue)
     end
 
+    it "keeps PR continuations ahead of an operator-prioritized coding retry and that retry ahead of P1 issues" do # @spec QUEUE-TIER-009
+      project = create(:project)
+      continuation = create(:agent_run, :queued, :automatic, :existing_pr, project: project,
+        created_at: 1.minute.ago)
+      coding_retry = create(:agent_run, :queued, :automatic, project: project, goal: "create_pr",
+        operator_coding_priority_requested_at: Time.current, created_at: 2.minutes.ago)
+      p1_issue = create(:issue, project:, labels: [ "P1" ])
+      p1_run = create(:agent_run, :queued, :automatic, project:, issue: p1_issue, created_at: 3.minutes.ago)
+
+      expect(described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)).to eq(
+        [ continuation.id, coding_retry.id, p1_run.id ]
+      )
+      expect(coding_retry.queue_priority_tier).to eq(:operator_coding)
+      expect(coding_retry.queue_priority_label).to eq("6 - Operator-requested coding retry")
+    end
+
     it "prioritizes PR-continuation work within the same priority tier" do
       project = create(:project)
       _fresh = create(:agent_run, :queued, trigger_type: "manual", project: project, created_at: 2.minutes.ago)

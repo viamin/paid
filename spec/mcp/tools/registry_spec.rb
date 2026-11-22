@@ -23,6 +23,7 @@ RSpec.describe Tools::Registry do
       cancel_agent_run
       retry_source_closure
       request_issue_continuation
+      prioritize_coding_retry
       request_acceptance_audit
       request_layered_verification_audit
       approve_layered_verification_review_package

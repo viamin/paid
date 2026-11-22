@@ -33,7 +33,7 @@ class ProcessRunQueueJob < ApplicationJob
   MAX_ITERATIONS_PER_PERFORM = 100
 
   # Temporal priority keys default to the server-configured range 1..5.
-  # Keep Paid's richer 9-tier dequeue ordering internal, then compress it
+  # Keep Paid's richer 10-tier dequeue ordering internal, then compress it
   # onto 5 wire priorities when starting workflows.
   TEMPORAL_PRIORITY_KEYS = {
     manual: 1,
