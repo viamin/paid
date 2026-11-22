@@ -15,7 +15,6 @@ module ConflictRepairs
     MAX_EVIDENCE_CHARS = 30_000
     MAX_PATCH_CHARS = 4_000
     MIN_PATCH_CHARS = 200
-    ENTRY_OVERHEAD_CHARS = 150
     UNTRUSTWORTHY_PATH_PATTERN = /[\u0000-\u001F\u007F]/
     NO_PATCH_NOTE = "no textual patch available (binary file or omitted by the compare API)"
     VERIFIED_MARKER = "verified-base-import"
@@ -87,15 +86,19 @@ module ConflictRepairs
     def candidate_evidence_section
       return "None: every result path is a mechanically verified base import." if candidate_paths.empty?
 
-      candidate_paths.map { |path| candidate_entry(path) }.join("\n\n")
+      candidate_evidence_for(candidate_patch_share)
     end
 
-    def candidate_entry(path)
+    def candidate_evidence_for(patch_share)
+      candidate_paths.map { |path| candidate_entry(path, patch_share) }.join("\n\n")
+    end
+
+    def candidate_entry(path, patch_share)
       file = result_files_by_path[path]
-      result_segment, used = patch_segment("result-range patch", file, candidate_patch_share)
+      result_segment, used = patch_segment("result-range patch", file, patch_share)
       base_file = base_files_by_path[path]
       base_segment, = base_file ?
-        patch_segment("base-import patch", base_file, candidate_patch_share - used) :
+        patch_segment("base-import patch", base_file, patch_share - used) :
         [ "base-import patch: path not present in the base-import comparison", 0 ]
       <<~ENTRY
         #{path} [#{marker_for(path)}]
@@ -121,9 +124,33 @@ module ConflictRepairs
     def candidate_patch_share
       return @candidate_patch_share if defined?(@candidate_patch_share)
 
-      usable = MAX_EVIDENCE_CHARS - candidate_paths.size * ENTRY_OVERHEAD_CHARS
-      share = usable.positive? ? [ usable / candidate_paths.size, MAX_PATCH_CHARS ].min : nil
-      @candidate_patch_share = share && share >= MIN_PATCH_CHARS ? share : nil
+      @candidate_patch_share = if evidence_fits?(MAX_PATCH_CHARS)
+        MAX_PATCH_CHARS
+      elsif patch_evidence_required? && evidence_fits?(MIN_PATCH_CHARS)
+        first_unfitting_patch_share - 1
+      elsif !patch_evidence_required? && evidence_fits?(0)
+        0
+      end
+    end
+
+    def evidence_fits?(patch_share)
+      candidate_evidence_for(patch_share).length <= MAX_EVIDENCE_CHARS
+    end
+
+    def first_unfitting_patch_share
+      (MIN_PATCH_CHARS..MAX_PATCH_CHARS).bsearch do |patch_share|
+        !evidence_fits?(patch_share)
+      end
+    end
+
+    def patch_evidence_required?
+      candidate_paths.any? do |path|
+        files_for_path(path).any? { |file| file_value(file, :patch).present? }
+      end
+    end
+
+    def files_for_path(path)
+      [ result_files_by_path[path], base_files_by_path[path] ].compact
     end
 
     def untrustworthy_path_failure

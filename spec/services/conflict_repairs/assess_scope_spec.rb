@@ -153,6 +153,19 @@ RSpec.describe ConflictRepairs::AssessScope do
     expect(prompts.first.length).to be < 70_000
   end
 
+  it "keeps rendered multi-path evidence within its configured bound" do
+    paths = Array.new(10) { |index| "app/#{"component-#{index}-" + ("x" * 160)}/repair.rb" }
+    result_comparison = comparison(*paths.map { |path| file(path, patch: "+#{"y" * 3_999}") })
+    allow_assessment(approved: true, base_imported_paths: [], repair_authored_paths: paths)
+
+    result = described_class.call(agent_run:, base_comparison: comparison, result_comparison:)
+    evidence = ConflictRepairs::ScopeEvidence.new(base_comparison: comparison, result_comparison:)
+
+    expect(result).to have_attributes(status: "approved")
+    expect(evidence.coverage_failure).to be_nil
+    expect(evidence.prompt_variables[:candidate_evidence].length).to be <= ConflictRepairs::ScopeEvidence::MAX_EVIDENCE_CHARS
+  end
+
   it "assesses many ordinary unverified files with complete small patches" do
     paths = Array.new(70) { |index| "app/chapters/page_#{index}.rb" }
     base_comparison = comparison
@@ -176,6 +189,18 @@ RSpec.describe ConflictRepairs::AssessScope do
 
     expect(result).to have_attributes(status: "unavailable")
     expect(result.explanation).to include("input evidence was incomplete").and include("200").and include("bounded")
+  end
+
+  it "fails closed when rendered unverified-path evidence exceeds its configured bound" do
+    component = "evidence-component-" + ("x" * 180)
+    paths = Array.new(73) { |index| "app/#{component}-#{index}/repair.rb" }
+    result_comparison = comparison(*paths.map { |path| file(path, patch: "+#{"y" * 3_999}") })
+    expect(AgentHarness.conductor).not_to receive(:execute_direct)
+
+    result = described_class.call(agent_run:, base_comparison: comparison, result_comparison:)
+
+    expect(result).to have_attributes(status: "unavailable")
+    expect(result.explanation).to include("input evidence was incomplete").and include("73").and include("bounded")
   end
 
   it "fails closed with an input-coverage reason when the complete path inventory cannot fit bounds" do
