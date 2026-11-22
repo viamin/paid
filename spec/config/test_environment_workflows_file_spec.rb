@@ -240,4 +240,20 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
 
     expect(postgres.fetch("options")).to include("--shm-size=512m")
   end
+
+  # @spec TEST-SUITE-023
+  it "bounds and staggers JavaScript setup in test shards" do
+    jobs = workflow_config(".github/workflows/ci.yml").fetch("jobs")
+    shard_setup = jobs.fetch("test-shards").fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
+    recovery_setup = jobs.fetch("shard-recovery").fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
+
+    expect(shard_setup.fetch("run")).to include('sleep "$((RSPEC_SHARD_INDEX * 3))"')
+    [ shard_setup, recovery_setup ].each do |step|
+      expect(step.fetch("run")).to include(
+        "yarn install --frozen-lockfile --network-concurrency 4 --network-timeout 60000"
+      )
+      expect(step.fetch("run")).to include('retry_with_backoff \\')
+      expect(step.fetch("run")).to include("20m")
+    end
+  end
 end
