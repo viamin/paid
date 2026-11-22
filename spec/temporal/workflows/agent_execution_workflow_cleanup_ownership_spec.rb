@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe Workflows::AgentExecutionWorkflow do
   let(:workflow) { described_class.new }
+  let(:sdk_calls) { [] }
 
   before do
     allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
@@ -51,18 +52,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
   # how a genuinely already-cancelled ambient workflow token behaves against the real
   # Temporal SDK — the regression an ordinary `run_activity` call would hit here.
   describe "at the real SDK boundary, with the ambient workflow token already cancelled" do
-    def stub_cancelled_ambient_token(ownership_result:)
+    def stub_cancelled_ambient_token(ownership_result:, saturate_agent_queue: false)
       allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _input, **options|
+        sdk_calls << { activity_class:, options: }
         raise Temporalio::Error::CanceledError, "workflow canceled" unless options.key?(:cancellation)
+        if saturate_agent_queue && activity_class == Activities::ResolveCleanupOwnershipActivity &&
+            options[:task_queue] != Paid.poll_task_queue
+          raise Temporalio::Error::TimeoutError, "agent queue saturated"
+        end
 
         activity_class == Activities::ResolveCleanupOwnershipActivity ? ownership_result : {}
       end
     end
 
     # @spec TEMPORAL-ORCHESTRATION-016
-    it "still schedules owned-resource cleanup when ownership is persisted" do
+    it "resolves persisted ownership on control capacity while the agent queue is saturated" do
       stub_cancelled_ambient_token(ownership_result: { container: true, mcp_servers: false,
-        services: false, worktree: false, janitor: false })
+        services: false, worktree: false, janitor: false }, saturate_agent_queue: true)
 
       ownership = workflow.resolve_cleanup_ownership(42)
       workflow.send(:run_cleanup_activity, Activities::CleanupContainerActivity,
@@ -72,6 +78,10 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::ResolveCleanupOwnershipActivity, anything, any_args).once
       expect(Temporalio::Workflow).to have_received(:execute_activity)
         .with(Activities::CleanupContainerActivity, anything, any_args).once
+      resolver_call = sdk_calls.find { |call| call[:activity_class] == Activities::ResolveCleanupOwnershipActivity }
+      cleanup_call = sdk_calls.find { |call| call[:activity_class] == Activities::CleanupContainerActivity }
+      expect(resolver_call[:options]).to include(task_queue: Paid.poll_task_queue)
+      expect(cleanup_call[:options]).not_to have_key(:task_queue)
     end
 
     # @spec TEMPORAL-ORCHESTRATION-016

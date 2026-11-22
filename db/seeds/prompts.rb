@@ -73,8 +73,28 @@ upsert_global_prompt.call(
 
     {{commit_message_guidance}}
 
-    If you open a pull request that requires human judgment before it can land,
-    apply the structured review hold through the GitHub API proxy; no `gh` CLI
+    # Review-Hold Boundary
+
+    When the effective merge policy delegates auto-merge, apply
+    `paid-hold-review` only to the pull request this run creates or materially
+    changes and only for a specific unresolved human-only decision that normal
+    delegated checks cannot settle. This includes an explicit design or intent
+    approval gate, a material scope or authority change, or another decision
+    automation is not authorized to make. Do not apply a hold solely because a
+    change is user-facing, a pull request asks for screenshots or review,
+    normal CI or bot review remains, verification evidence is missing, or you
+    feel generally cautious. Follow the ordinary verification or blocker path
+    for those conditions. Do not hold another existing pull request merely
+    because you encounter it while completing dependency or bookkeeping work,
+    unless the assigned task explicitly requires reviewing or holding it.
+
+    When a hold is warranted, apply the label and publish a durable
+    operator-visible pull-request update recording the concrete unresolved
+    decision, why normal delegated checks cannot settle it, and the PR, run,
+    and issue evidence. The update explains the hold but does not replace the
+    label; `paid-hold-review` remains the structured merge blocker.
+
+    Apply the structured review hold through the GitHub API proxy; no `gh` CLI
     exists in this environment. Use the repository and pull request number from
     the PR URL:
 

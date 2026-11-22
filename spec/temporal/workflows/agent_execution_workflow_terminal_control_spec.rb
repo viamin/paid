@@ -55,6 +55,13 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     ]
   end
 
+  def resolve_owned_cleanup_resources
+    allow(workflow).to receive(:run_cleanup_activity) do |activity, data, **options|
+      calls << { activity:, data:, options: }
+      activity == Activities::ResolveCleanupOwnershipActivity ? workflow.legacy_cleanup_ownership : {}
+    end
+  end
+
   # @spec TEMPORAL-ORCHESTRATION-015
   it "publishes an actual audit failure through bounded control capacity while keeping analysis on its original queue" do
     expect { workflow.execute(input) }.to raise_error(primary_error)
@@ -101,6 +108,36 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     cleanup_activities.each do |activity|
       expect(workflow).not_to have_received(:run_cleanup_activity).with(activity, anything, any_args)
     end
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-017
+  it "enqueues the janitor through bounded control capacity without moving cleanup work" do
+    resolve_owned_cleanup_resources
+
+    expect { workflow.execute(input) }.to raise_error(primary_error)
+
+    expect(workflow).to have_received(:run_cleanup_activity).with(
+      Activities::EnqueueJanitorActivity, { agent_run_id: 42 },
+      start_to_close_timeout: 10, retry_policy: an_instance_of(Temporalio::RetryPolicy),
+      task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
+    )
+    expect(workflow).to have_received(:run_cleanup_activity).with(
+      Activities::CleanupContainerActivity, anything,
+      hash_including(start_to_close_timeout: 120, schedule_to_close_timeout: 300)
+    )
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-017
+  it "preserves the original janitor command for an unpatched history" do
+    resolve_owned_cleanup_resources
+    allow(Temporalio::Workflow).to receive(:patched).with("enqueue-janitor-control-routing-v1").and_return(false)
+
+    expect { workflow.execute(input) }.to raise_error(primary_error)
+
+    expect(workflow).to have_received(:run_cleanup_activity).with(
+      Activities::EnqueueJanitorActivity, { agent_run_id: 42 },
+      start_to_close_timeout: 10, retry_policy: an_instance_of(Temporalio::RetryPolicy)
+    )
   end
 
   # @spec TEMPORAL-ORCHESTRATION-015

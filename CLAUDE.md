@@ -43,8 +43,11 @@ another copy here.
   `Prompts::BuildForPr.select_trusted_comments` for PRs. Never bypass the
   project's GitHub-user allowlist or `issue.trusted?` gate.
 - Keep auto-pick dependencies explicit (`Depends on #123` or `Blocked by
-  owner/repo#123`); cross-project dependencies are text-driven, and unresolved
-  external dependencies remain blocked.
+  owner/repo#123`) for the current issue or PR; cross-project dependencies are
+  text-driven, and unresolved external dependencies remain blocked. Put related
+  work in a separate sentence: `#4707, blocked by owner/repo#557` describes
+  #4707's prerequisite, while `Blocked by owner/repo#557` declares the current
+  item's prerequisite.
 
 ### Git and verification
 

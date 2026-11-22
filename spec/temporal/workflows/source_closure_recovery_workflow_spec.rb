@@ -20,7 +20,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
   end
 
   before do
-    allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-post-pr-v1").and_return(true)
     allow(Temporalio::Workflow).to receive(:patched).with("source-closure-recovery-pinned-revision-v1").and_return(true)
   end
@@ -81,7 +81,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
       { agent_run_id: 42, category: "branch_mismatch", attempts: 3, auto_retry: false },
-      timeout: 30
+      timeout: 30, task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
     )
     expect(workflow).not_to have_received(:run_activity).with(Activities::ReconcilePartialCloseoutActivity, any_args)
   end
@@ -117,7 +117,52 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow.execute(input)).to include(waiting: true)
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
-      { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+      { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30,
+      task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
+    )
+  end
+
+  # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
+  it "preserves original park routing when replaying an unpatched recovery history" do
+    allow(Temporalio::Workflow).to receive(:patched)
+      .with("source-closure-recovery-control-routing-v1").and_return(false)
+    allow(workflow).to receive(:run_activity) do |activity, _input, **_options|
+      case activity.name
+      when "Activities::CreatePullRequestActivity" then { revision_mismatch: true }
+      else {}
+      end
+    end
+    allow(workflow).to receive(:run_cleanup_activity)
+
+    expect(workflow.execute(input)).to include(waiting: true)
+    expect(workflow).to have_received(:run_activity).with(
+      Activities::ParkSourceClosureRecoveryActivity,
+      { agent_run_id: 42, category: "branch_mismatch", attempts: 3, auto_retry: false }, timeout: 30
+    )
+  end
+
+  # SDK boundary: this exercises BaseWorkflow's actual execute_activity call,
+  # rather than only mocking the workflow wrapper. It compares the two live
+  # parking producers while long assessment capacity is deliberately absent.
+  # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
+  it "uses the same bounded control command for both saturation-safe parking producers" do
+    agent_workflow = Workflows::AgentExecutionWorkflow.new
+    allow(Temporalio::Workflow).to receive(:patched)
+      .with("source-closure-recovery-control-routing-v1").and_return(true)
+    allow(Temporalio::Workflow).to receive(:execute_activity).and_return({})
+
+    agent_workflow.send(:park_source_closure_recovery,
+      agent_run_id: 42, category: "timeout", attempts: 3)
+    workflow.send(:park_source_closure_recovery,
+      agent_run_id: 42, category: "timeout", attempts: 3)
+
+    expect(Temporalio::Workflow).to have_received(:execute_activity).twice.with(
+      Activities::ParkSourceClosureRecoveryActivity,
+      { agent_run_id: 42, category: "timeout", attempts: 3 },
+      start_to_close_timeout: 30,
+      retry_policy: Workflows::BaseWorkflow::DEFAULT_RETRY_POLICY,
+      task_queue: Paid::POLL_TASK_QUEUE,
+      schedule_to_close_timeout: 120
     )
   end
 
@@ -138,7 +183,8 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow.execute(input)).to include(waiting: true)
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
-      { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30
+      { agent_run_id: 42, category: "timeout", attempts: 3 }, timeout: 30,
+      task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
     )
     expect(workflow).not_to have_received(:run_cleanup_activity).with(Activities::MarkAgentRunFailedActivity, anything, timeout: 30)
   end
@@ -179,7 +225,8 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     expect(workflow.execute(input)).to include(waiting: true)
     expect(workflow).to have_received(:run_activity).with(
       Activities::ParkSourceClosureRecoveryActivity,
-      { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30
+      { agent_run_id: 42, category: "unsuccessful_response", attempts: 3 }, timeout: 30,
+      task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120
     )
     expect(workflow).not_to have_received(:run_activity).with(Activities::CreatePullRequestActivity, any_args)
   end

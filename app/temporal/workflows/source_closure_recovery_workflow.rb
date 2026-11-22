@@ -39,9 +39,9 @@ module Workflows
     private
 
     def park_branch_mismatch(agent_run_id)
-      run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id:, category: "branch_mismatch", attempts: ASSESSMENT_RETRY_POLICY.max_attempts,
-          auto_retry: false }, timeout: 30)
+      park_source_closure_recovery(
+        agent_run_id:, category: "branch_mismatch", attempts: ASSESSMENT_RETRY_POLICY.max_attempts, auto_retry: false
+      )
       { agent_run_id:, waiting: true }
     end
 
@@ -61,9 +61,17 @@ module Workflows
         raise unless Temporalio::Workflow.patched("source-closure-retry-unsuccessful-response-v1")
       end
 
-      run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts }, timeout: 30)
+      park_source_closure_recovery(agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts)
       false
+    end
+
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
+    def park_source_closure_recovery(input)
+      # TODO(#5268): remove after the patch-guard sweep confirms no
+      # pre-control-routing SourceClosureRecoveryWorkflow history remains.
+      control_route = Temporalio::Workflow.patched("source-closure-recovery-control-routing-v1")
+      routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
+      run_activity(Activities::ParkSourceClosureRecoveryActivity, input, timeout: 30, **routing)
     end
 
     def finish_closeout(agent_run_id, project_id, pr_result, goal)

@@ -91,6 +91,28 @@ the legacy cleanup set. Unpatched histories retain their recorded cleanup
 commands. Only this metadata read moves to control capacity; expensive
 cleanup commands and long-running AI work remain on the agent queue (#5266).
 
+Post-push source-closure parking is also short control-plane state publication
+(#5268). New `AgentExecutionWorkflow` and `SourceClosureRecoveryWorkflow`
+histories route only `ParkSourceClosureRecovery` to the existing poll queue,
+with its existing 30-second execution timeout, retry policy, run identity,
+pushed commit, tenant context and 120-second total scheduling/recovery bound.
+The `source-closure-recovery-control-routing-v1` patch is evaluated in each
+workflow so recorded histories retain their original agent-queue command.
+The long assessment and agent activities remain on their original queues. A
+bounded publication failure remains an actionable workflow failure rather than
+evidence that the state publication ran: it cannot synthesize a PR, completion,
+assessment, authority or a new retry allowance, and existing locked terminal
+guards preserve any pushed result.
+
+The final `EnqueueJanitor` operation is similarly a short detached scheduling
+operation, not resource cleanup. New `AgentExecutionWorkflow` histories route
+only that activity to the existing poll queue with its unchanged 10-second
+execution timeout, three attempts, and a 120-second total scheduling/recovery
+bound through `enqueue-janitor-control-routing-v1`. A bounded enqueue failure
+is logged while normal cleanup ownership and the expensive container, service,
+MCP and worktree activities remain on their existing agent route; it does not
+claim cleanup completed or abandon the live owner.
+
 Worker shutdown signals request cancellation and remove the readiness marker
 from a normal Ruby thread. A watchdog starts before cancellation so a blocked
 callback cannot prevent the forced exit. A repeated signal removes readiness
