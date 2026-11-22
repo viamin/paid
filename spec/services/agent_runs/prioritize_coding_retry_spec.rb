@@ -86,6 +86,32 @@ RSpec.describe AgentRuns::PrioritizeCodingRetry do # @spec QUEUE-TIER-008
     expect(agent_run.operator_coding_priority_requested_at).to be_present
   end
 
+  it "prioritizes an already-queued automatic root after a manual timeout" do # @spec QUEUE-TIER-008
+    create(:agent_run, :timeout, :manual, project:, issue:, goal: "create_pr", auto_pick: false,
+      completed_at: 2.minutes.ago)
+    agent_run.update!(continuation_request: nil, source_pull_request_number: nil, external_metadata: {})
+    request.destroy!
+    original = agent_run.attributes.slice("trigger_type", "auto_pick", "execution_origin", "external_metadata",
+      "continuation_request_id", "source_pull_request_number", "runner_id")
+
+    expect(issue.consecutive_auto_pick_failure_count).to eq(0)
+    expect(prioritize).to be(true)
+
+    expect(agent_run.reload.attributes.slice(*original.keys)).to eq(original)
+    expect(agent_run.operator_coding_priority_requested_at).to be_present
+  end
+
+  it "does not use a preceding manual timeout to bypass the automatic failure cap" do # @spec QUEUE-TIER-008
+    project.update!(max_issue_runner_failures: 1)
+    create(:agent_run, :timeout, :manual, project:, issue:, goal: "create_pr", auto_pick: false)
+    create(:agent_run, :failed, :automatic, project:, issue:, goal: "create_pr", auto_pick: true)
+    agent_run.update!(continuation_request: nil, source_pull_request_number: nil, external_metadata: {})
+
+    expect(issue.consecutive_auto_pick_failure_count).to eq(1)
+    expect(prioritize).to be(false)
+    expect(agent_run.reload.operator_coding_priority_requested_at).to be_nil
+  end
+
   it "keeps an expired backoff timestamp while allowing the same retry to be prioritized" do
     agent_run.update!(rate_limited_until: 1.minute.ago)
 

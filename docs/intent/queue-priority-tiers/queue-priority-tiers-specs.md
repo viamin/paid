@@ -93,7 +93,8 @@
 - [x] **QUEUE-TIER-008** — When an authorized operator explicitly prioritizes
   one existing unclaimed automatic `create_pr` retry that is a PR continuation,
   an implementation continuation, or a bounded automatic root retry evidenced
-  by its issue's retained failure history, Paid SHALL lock and recheck that same run,
+  by its issue's retained attempt history (including a preceding same-issue
+  manual timeout), Paid SHALL lock and recheck that same run,
   preserve its trigger, execution origin, policy snapshots, admission evidence,
   retry lineage, source identity, backoff, and remaining allowance, and record
   exactly one durable priority timestamp and actor audit event. The action

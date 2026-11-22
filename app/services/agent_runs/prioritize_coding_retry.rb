@@ -56,7 +56,18 @@ module AgentRuns
 
       failures = agent_run.issue.consecutive_auto_pick_failure_count
       cap = agent_run.project.effective_max_issue_runner_failures
-      failures.positive? && (!cap&.positive? || failures < cap)
+      return false if cap&.positive? && failures >= cap
+
+      failures.positive? || preceding_manual_timeout?
+    end
+
+    def preceding_manual_timeout?
+      agent_run.issue.agent_runs
+        .where(trigger_type: "manual", status: "timeout", goal: agent_run.goal, auto_pick: false,
+          source_pull_request_number: nil, continuation_request_id: nil)
+        .where("created_at < :created_at OR (created_at = :created_at AND id < :id)",
+          created_at: agent_run.created_at, id: agent_run.id)
+        .exists?
     end
   end
 end

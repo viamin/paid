@@ -63,7 +63,10 @@ text, comments, and automatic retry code cannot set it.
 
 Only automatic coding work that is a PR continuation, an implementation
 continuation request, or a bounded root retry evidenced by retained issue
-failure history is eligible. Manual, audit-only,
+attempt history is eligible. Root evidence includes either a positive automatic
+failure streak or a preceding same-issue manual timeout; the latter recognizes
+an already-queued automatic root without fabricating automatic failure,
+continuation, or source-PR lineage. Manual, audit-only,
 untrusted-originated, claimed, running, terminal, and rate-limited work is
 refused. Repeated and concurrent requests converge on the first timestamp and
 audit event. The marker ranks after manual and operator-prioritized audit work
