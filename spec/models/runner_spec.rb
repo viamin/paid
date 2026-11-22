@@ -849,7 +849,11 @@ RSpec.describe Runner do
 
         runtime = runner.agent_harness_runner_runtime(project: Struct.new(:data_classification).new("internal"))
 
-        expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "deny", zdr: true)
+        expect(runtime).to have_attributes(
+          api_provider: "openrouter",
+          privacy_routing: { data_collection: "deny", zdr: true }
+        )
+        expect(runtime.metadata.fetch(:config)).not_to have_key("provider")
       end
 
       # @spec MODEL-POLICY-022
@@ -866,7 +870,11 @@ RSpec.describe Runner do
 
         runtime = runner.agent_harness_runner_runtime(project: project)
 
-        expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "deny", zdr: true)
+        expect(runtime).to have_attributes(
+          api_provider: "openrouter",
+          privacy_routing: { data_collection: "deny", zdr: true }
+        )
+        expect(runtime.metadata.fetch(:config)).not_to have_key("provider")
       end
 
       # @spec MODEL-POLICY-016
@@ -1992,7 +2000,7 @@ RSpec.describe Runner do
       runtime = runner.agent_harness_runner_runtime
 
       expect(runtime.model).to eq("openrouter/moonshotai/kimi-k2-0905")
-      expect(runtime.api_provider).to be_nil
+      expect(runtime.api_provider).to eq("openrouter")
       expect(runtime.base_url).to be_nil
       expect(runtime.env).to include(
         "OPENROUTER_API_KEY" => "sk-openrouter-secret",
