@@ -1402,15 +1402,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::DraftDecisionRecordActivity, any_args)
     end
 
-    it "passes prompt-captured review thread ids when resolving after pushing commits" do
+    # @spec FOCUSED-RUN-010
+    it "keeps prompt-captured review threads open after pushing commits" do
       stub_existing_pr_followup(pr_review_phase: "ready")
 
       workflow.execute(input)
 
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::ResolveReviewThreadsActivity,
-          { agent_run_id: 42, thread_ids: [ "thread_1" ] },
-          timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
     end
 
     it "does not resolve review threads after pushing commits when the prompt captured none" do
@@ -1439,7 +1438,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::ProvisionContainerActivity" then {}
         when "Activities::CloneRepoActivity" then {}
         when "Activities::RebaseBranchActivity" then { rebase_succeeded: true }
-        when "Activities::PreparePrPromptActivity" then { includes_review_threads: false, review_thread_ids: [] }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: true, review_thread_ids: [ "thread_1" ] }
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         when "Activities::RequestReviewActivity" then {}
@@ -1573,15 +1572,14 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::RequestReviewActivity, any_args)
     end
 
-    it "resolves review threads when a no-change PR follow-up reports they were already addressed" do
+    # @spec FOCUSED-RUN-010
+    it "keeps review threads open when a no-change PR follow-up reports they were already addressed" do
       stub_no_changes_followup_with_marker
 
       workflow.execute(input)
 
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::ResolveReviewThreadsActivity,
-          { agent_run_id: 42, thread_ids: [ "thread_1" ] },
-          timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
     end
 
     it "does not resolve review threads on a no-change PR follow-up unless the prompt included review threads" do
@@ -1620,6 +1618,16 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::MarkAgentRunCompleteActivity,
           { agent_run_id: 42, reason: "no_changes" },
           timeout: 30)
+    end
+
+    # @spec FOCUSED-RUN-010
+    it "keeps captured review threads open after a rebase-only head update" do
+      stub_rebase_only_followup
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
     end
 
     it "queues a refactor follow-up after a successful test_fixing run" do

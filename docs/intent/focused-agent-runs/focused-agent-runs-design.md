@@ -61,6 +61,18 @@ resolved focus flows through the workflow into the created agent run.
   classes, with an explicit instruction to ignore the fix-forward directive
   for them so the agent neither regresses nor silently fixes them.
 
+## Review-thread closure evidence
+
+The review-feedback prompt captures trusted unresolved thread identities so a
+follow-up can address the feedback, but capture, successful execution, a push,
+or a rebase are not proof that any particular finding is repaired. The workflow
+therefore leaves captured threads open. A future automatic disposition must be
+bound to that thread and the current PR head, with explicit rationale supported
+by a fresh assessment; it must fail closed when that assessment is unavailable,
+invalid, stale, or inconclusive. This preserves valid no-code dispositions
+(for example invalid, outdated, or already-fixed feedback) without equating
+unrelated changed lines or generic agent success with repair evidence.
+
 ## Focus-scoped quality scoring
 
 Quality weights are selected per focus (`QualityMetric::FOCUS_WEIGHTS`,

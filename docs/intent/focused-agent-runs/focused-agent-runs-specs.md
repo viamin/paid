@@ -127,14 +127,24 @@
   system SHALL add `paid-code-reviewer[bot]` to that project's trusted GitHub
   username allowlist; when that enabled reviewer leaves unresolved PR review
   threads, the PR follow-up prompt SHALL include those review comments and
-  SHALL return their thread IDs so the successful create-pr follow-up can
-  resolve them after pushing changes. The PR review-thread path SHALL also
+  SHALL return their thread IDs for the current follow-up's evidence. The PR review-thread path SHALL also
   accept GitHub's bare `paid-code-reviewer` app-author form only for configured
   review-thread feedback, without adding that bare login to the global comment
   allowlist.
   *Code:* `Project#ensure_paid_reviewer_bot_allowlisted`,
   `Prompts::BuildForPr#trusted_review_threads`,
   `Prompts::BuildForPr#unresolved_review_thread_ids`,
-  `AgentExecutionWorkflow#resolve_followup_review_threads_after_push`.
+  `AgentExecutionWorkflow`.
   *Test:* `spec/models/project_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
+
+- [x] **FOCUSED-RUN-010** — When an existing pull-request follow-up pushes a
+  changed or rebase-only head, or reports no changes, Paid SHALL NOT resolve a
+  captured review thread merely because the run completed, pushed, or reports
+  that the feedback was already addressed. A thread remains actionable until a
+  current-head, thread-bound assessment supplies explicit supported rationale;
+  failed, unavailable, malformed, stale, or no-op assessment cannot resolve
+  it. This does not prohibit a supported no-code disposition such as invalid,
+  outdated, or already-fixed feedback.
+  *Code:* `AgentExecutionWorkflow#execute`.
+  *Test:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`.

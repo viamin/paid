@@ -302,14 +302,13 @@ module Workflows
         # Skip for review goals — they use their own review-specific prompt and
         # don't need the PR-editing prompt that instructs the agent to commit fixes.
         pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank? && goal != "review"
-        pr_prompt_result = {}
         branch_changed_before_agent = false
         if pr_run_without_prompt
           rebase_result = run_activity(Activities::RebaseBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 120)
           branch_changed_before_agent = rebase_result[:branch_changed] == true
 
-          pr_prompt_result = run_activity(Activities::PreparePrPromptActivity,
+          run_activity(Activities::PreparePrPromptActivity,
             { agent_run_id: agent_run_id,
               focus: focus,
               rebase_succeeded: rebase_result[:rebase_succeeded] }, timeout: 60)
@@ -481,9 +480,6 @@ module Workflows
             { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
           if source_pull_request_number
-            # Resolve review threads (best-effort, non-fatal)
-            resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
-
             # Existing PR: mark complete with existing PR details
             complete_result = run_activity(Activities::CompleteExistingPrRunActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
@@ -598,12 +594,6 @@ module Workflows
           end
         else
           # No changes produced by agent
-          resolve_no_change_followup_review_threads(agent_run_id,
-            source_pull_request_number,
-            pr_run_without_prompt,
-            pr_prompt_result,
-            agent_result)
-
           if goal == "analyze_issue" && issue_id.present?
             # Analyze-issue runs assess readiness without producing code changes.
             # Mark complete and persist the "analyzed" state so the issue is
@@ -979,37 +969,6 @@ module Workflows
         message: "agent_execution.review_bot_request_failed",
         project_id: project_id,
         pr_number: pr_number,
-        error: e.message
-      )
-    end
-
-    def resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
-      return unless pr_run_without_prompt && pr_prompt_result[:review_thread_ids].present?
-
-      resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
-    end
-
-    def resolve_no_change_followup_review_threads(agent_run_id, source_pull_request_number, pr_run_without_prompt, pr_prompt_result, agent_result)
-      return unless source_pull_request_number && pr_run_without_prompt &&
-        pr_prompt_result[:includes_review_threads] &&
-        pr_prompt_result[:review_thread_ids].present? &&
-        agent_result[:review_threads_already_addressed]
-
-      resolve_review_threads(agent_run_id, thread_ids: pr_prompt_result[:review_thread_ids])
-    end
-
-    def resolve_review_threads(agent_run_id, thread_ids: nil)
-      input = { agent_run_id: agent_run_id }
-      input[:thread_ids] = thread_ids if thread_ids.present?
-
-      run_activity(Activities::ResolveReviewThreadsActivity, input, timeout: 60)
-    rescue Temporalio::Error::CanceledError
-      raise
-    rescue => e
-      Temporalio::Workflow.logger.warn(
-        message: "agent_execution.resolve_threads_failed",
-        agent_run_id: agent_run_id,
-        error_class: e.class.name,
         error: e.message
       )
     end
