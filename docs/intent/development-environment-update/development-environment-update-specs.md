@@ -51,4 +51,5 @@
   quiescence is deferred to `TEMPORAL-ORCHESTRATION-018`. Activity-body counts
   remain observability only and SHALL NOT be used to authorize a worker stop,
   and missing readiness metadata SHALL NOT be treated as a verified
-  no-Temporal-worker state.
+  no-Temporal-worker state. A failed supervisor inspection SHALL be treated as
+  unknown rather than proof that no worker is running.

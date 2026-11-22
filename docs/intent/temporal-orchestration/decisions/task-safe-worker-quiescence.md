@@ -87,8 +87,11 @@ released SDK quiescence lifecycle before enabling admission closure. Missing
 readiness metadata is treated the same way: a worker that failed before
 `mark_ready!` (or whose flag was removed) can still own or have reserved work,
 so the updater defers unless the supervisor state itself verifies that no
-Temporal worker will be stopped — no Overmind process is running, or a running
-Overmind reports no `worker_poll`/`worker_agent` processes. This protects
+Temporal worker will be stopped — the configured Unix control socket is absent,
+or a successful running-Overmind inspection reports no
+`worker_poll`/`worker_agent` processes. When inspection fails, only a present
+socket that positively refuses a local connection is stale; every other failed
+inspection is unknown rather than proof of worker absence. This protects
 finite-attempt tasks over updater availability: a deferred update is
 actionable and recoverable, while an assign-then-block race can irreversibly
 consume work. The consuming change must pin the first containing SDK release

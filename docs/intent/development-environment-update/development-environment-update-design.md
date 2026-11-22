@@ -102,8 +102,11 @@ worker can fail before it marks ready, or its flag can be removed, while the
 supervisor keeps the process. The deferral therefore also applies when metadata
 is missing and a running Overmind still reports Temporal worker processes; the
 update proceeds without quiescence only when the supervisor state verifies no
-Temporal worker will be stopped (no Overmind process, or a running Overmind
-reporting no `worker_poll`/`worker_agent` processes).
+Temporal worker will be stopped (the configured Overmind Unix control socket is
+absent, or a successful status inspection reports no
+`worker_poll`/`worker_agent` processes). When status fails, a present socket
+must also positively reject a local connection as stale; any other failure is
+unknown, not proof that no worker is running.
 
 `TEMPORAL-ORCHESTRATION-018` owns the required SDK contract and rollout. Once a
 released SDK implements that contract, the updater may use its acknowledged

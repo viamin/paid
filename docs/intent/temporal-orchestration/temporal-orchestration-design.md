@@ -201,10 +201,12 @@ work and its existing finite attempt/deadline rather than presenting an idle
 body count as safe. Missing readiness metadata receives the same deferral: a
 worker that failed before `mark_ready!` (or whose flag was removed) can still
 own or have reserved work, so the update proceeds without quiescence only when
-the supervisor state itself verifies no Temporal worker will be stopped — no
-Overmind process is running, or a running Overmind reports no
-`worker_poll`/`worker_agent` processes. A future implementation must consume a
-released public SDK contract described by
+the supervisor state itself verifies no Temporal worker will be stopped — the
+configured Overmind Unix control socket is absent, a present socket positively
+refuses a local connection as stale, or a successful running-Overmind
+inspection reports no `worker_poll`/`worker_agent` processes. Any other failed
+inspection is unknown rather than proof of absence. A future implementation
+must consume a released public SDK contract described by
 [the quiescence decision](decisions/task-safe-worker-quiescence.md),
 then verify it through real SDK/server tests before it permits a stop.
 
@@ -214,7 +216,7 @@ then verify it through real SDK/server tests before it permits a stop.
 | --- | --- | --- | --- |
 | Existing poll worker for the bounded health activity | Selected | New worker process or larger agent slot count | Its activity registration and capacity already exist independently of long agent work. |
 | Longer health deadline on the agent queue | Rejected | Existing poll worker | A queued check still supplies no endpoint observation and can discard completed work. |
-| Task-safe worker quiescence | Await a released public SDK lifecycle operation; defer legacy workers and unverifiable worker state | Activity-body locks; blocking custom-slot callbacks; graceful shutdown; trusting missing readiness metadata | Only a worker-level operation can include unused reservations and eager admission without consuming an attempt or cancelling an owner, and only a verified supervisor state proves absence of a worker. |
+| Task-safe worker quiescence | Await a released public SDK lifecycle operation; defer legacy workers and unverifiable worker state | Activity-body locks; blocking custom-slot callbacks; graceful shutdown; trusting missing readiness metadata | Only a worker-level operation can include unused reservations and eager admission without consuming an attempt or cancelling an owner, and only a successful status inspection or positive absence check proves a worker is absent. |
 
 ## Deferred Work
 

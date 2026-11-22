@@ -602,17 +602,35 @@ worker_reports_revision() {
 }
 
 # Whether the supervisor state verifies that stopping it cannot interrupt a
-# Temporal worker: `overmind status` failing means no Overmind process is
-# running (the same predicate `overmind_running` uses everywhere else), and a
-# running Overmind must report no Temporal worker processes. Readiness
-# metadata missing against any other state is not evidence of safety — a
-# worker that failed before mark_ready! (or whose flag was removed) still
+# Temporal worker. An absent configured Unix control socket positively proves
+# this updater has no Overmind session to stop. If the socket exists, only a
+# successful `overmind status` with no Temporal worker process is safe:
+# command failure is an unknown supervisor state, not proof of absence.
+# Readiness metadata missing against any other state is not evidence of safety
+# — a worker that failed before mark_ready! (or whose flag was removed) still
 # owns or has reserved work under a running supervisor.
+# @spec TEMPORAL-ORCHESTRATION-018
+overmind_control_socket_has_no_listener() {
+  ruby -rsocket -e '
+    begin
+      UNIXSocket.new(ARGV.fetch(0)).close
+    rescue Errno::ECONNREFUSED, Errno::ENOENT
+      exit 0
+    rescue SystemCallError
+      exit 1
+    end
+    exit 1
+  ' "$OVERMIND_SOCKET"
+}
+
 # @spec TEMPORAL-ORCHESTRATION-018
 verified_no_temporal_worker() {
   local status_output
+  [ ! -S "$OVERMIND_SOCKET" ] && return 0
+
   if ! status_output="$(dev_supervisor_overmind_status_output)"; then
-    return 0
+    overmind_control_socket_has_no_listener
+    return
   fi
 
   # awk is the terminal pipeline stage and consumes all input, so its exit
@@ -640,8 +658,8 @@ wait_for_workers_to_drain() {
       return 0
     fi
 
-    log "ERROR: Temporal worker readiness metadata is missing while Overmind reports a Temporal worker; deferring worker adoption before stopping Overmind."
-    log "A worker that failed before marking ready can still own or have reserved work. Resolve the dev environment state or install an SDK release implementing TEMPORAL-ORCHESTRATION-018 before rerunning bin/dev-update --full."
+    log "ERROR: Temporal worker readiness metadata is missing and no safe no-worker supervisor state was verified; deferring worker adoption before stopping Overmind."
+    log "A worker that failed before marking ready can still own or have reserved work. Resolve the dev environment state, including any failed Overmind status inspection, or install an SDK release implementing TEMPORAL-ORCHESTRATION-018 before rerunning bin/dev-update --full."
     return 1
   fi
 

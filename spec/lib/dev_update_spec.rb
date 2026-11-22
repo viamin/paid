@@ -629,8 +629,34 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
 
       updater_log = read_updater_log(dir)
-      expect(updater_log).to include("readiness metadata is missing while Overmind reports a Temporal worker; deferring worker adoption before stopping Overmind.")
+      expect(updater_log).to include("readiness metadata is missing and no safe no-worker supervisor state was verified; deferring worker adoption before stopping Overmind.")
       expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
+  # @spec TEMPORAL-ORCHESTRATION-018
+  it "defers a full update when Overmind status cannot inspect a present control socket" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(
+        dir,
+        start_overmind_running: true,
+        overmind_status_exit_status: 1,
+        pull_diff_files: %w[app/services/llm/request.rb]
+      )
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb"
+      )
+
+      with_active_overmind_socket(dir) do
+        _stdout, _stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+        expect(status.success?).to be(false)
+        expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
+        expect(File.exist?(File.join(dir, "overmind-quit-ran"))).to be(false)
+        expect(read_updater_log(dir)).to include("no safe no-worker supervisor state was verified")
+      end
     end
   end
 
@@ -1359,6 +1385,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     worker_readiness_revision: nil,
     worker_ready: false,
     overmind_worker_processes: false,
+    overmind_status_exit_status: 0,
     unknown_checkout_head: false,
     worker_active_activities: 0
   )
@@ -1573,6 +1600,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         } >> "#{dir}/stubbin/overmind-env.log"
         case "$1" in
           status)
+            if [ #{overmind_status_exit_status} -ne 0 ]; then
+              echo "overmind status unavailable" >&2
+              exit #{overmind_status_exit_status}
+            fi
             [ -e "#{dir}/overmind-running" ]
             running=$?
             if [ "$running" -ne 0 ]; then
@@ -1703,5 +1734,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     UNIXServer.open(socket_path) { |server| server.close }
     expect(File.socket?(socket_path)).to be(true)
     socket_path
+  end
+
+  def with_active_overmind_socket(dir)
+    socket_path = File.join(dir, ".overmind.sock")
+    server = UNIXServer.new(socket_path)
+    yield
+  ensure
+    server&.close
+    FileUtils.rm_f(socket_path)
   end
 end
