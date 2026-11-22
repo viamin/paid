@@ -80,17 +80,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
   end
 
   describe "conversation feedback consumption after no-change follow-ups" do
-    %w[review_feedback ci_fix merge_conflict].each do |focus|
-      it "keeps comments actionable after a completed #{focus} run excluded them" do
-        create(:agent_run, :completed,
-          project: project, source_pull_request_number: 42,
-          goal: "create_pr", focus: focus,
-          completed_at: 10.minutes.ago)
+    it "keeps comments actionable after a completed review-feedback run excluded them" do
+      expect_conversation_feedback_after_completed_focus("review_feedback")
+    end
 
-        result = activity.execute(project_id: project.id)
+    it "keeps comments actionable after a completed CI-fix run excluded them" do
+      expect_conversation_feedback_after_completed_focus("ci_fix")
+    end
 
-        expect(trigger_types(result)).to include("conversation_comments")
-      end
+    it "keeps comments actionable after a completed merge-conflict run excluded them" do
+      expect_conversation_feedback_after_completed_focus("merge_conflict")
     end
 
     it "consumes comments older than a completed conversation-scope run" do
@@ -104,8 +103,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
       expect(trigger_types(result)).not_to include("conversation_comments")
     end
 
-    %w[review_feedback ci_fix merge_conflict].each do |focus|
-      it "keeps an eligible completed run's cutoff after a later #{focus} completion" do
+    it "keeps an eligible completed run's cutoff after later focused completions" do
+      %w[review_feedback ci_fix merge_conflict].each do |focus|
         create(:agent_run, :completed,
           project: project, source_pull_request_number: 42,
           goal: "create_pr", focus: "conversation",
@@ -232,6 +231,17 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
 
       expect(trigger_types(result)).to include("ci_failure")
     end
+  end
+
+  def expect_conversation_feedback_after_completed_focus(focus)
+    create(:agent_run, :completed,
+      project: project, source_pull_request_number: 42,
+      goal: "create_pr", focus: focus,
+      completed_at: 10.minutes.ago)
+
+    result = activity.execute(project_id: project.id)
+
+    expect(trigger_types(result)).to include("conversation_comments")
   end
 
   describe "draft-phase conversation feedback consumption" do

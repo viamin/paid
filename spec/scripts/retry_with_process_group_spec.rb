@@ -3,7 +3,10 @@
 require "rails_helper"
 require "open3"
 
-RSpec.describe "bin/retry-with-process-group", :no_db do
+class RetryWithProcessGroup < Pathname
+end
+
+RSpec.describe RetryWithProcessGroup, :no_db do
   let(:script_path) { Rails.root.join("bin/retry-with-process-group").to_s }
   let(:fast_supervision) do
     {
