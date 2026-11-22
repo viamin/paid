@@ -103,6 +103,28 @@
   `app/services/dashboard/held_work_details.rb`,
   `app/views/dashboard/_eligibility_breakdown.html.erb`.
 
+- [x] **NO-OUTPUT-ISSUE-010** — When an issue-scoped `create_pr` run produces
+  no pull request or result commit but its observable main-agent output proposes
+  remaining implementation, design work, or an approval/decision required to
+  continue, the system SHALL obtain a schema-validated semantic disposition
+  through `agent_harness`. It SHALL park the issue as `needs_input`, retain the
+  disposition and exact next action on the run, and show that action in the
+  GitHub explanation; it SHALL NOT recommend closing the issue or create a
+  continuation authorization from agent output. A disposition that is absent,
+  malformed, or unavailable SHALL fail closed to the same actionable park.
+  *Tests:* `spec/services/llm/assess_no_output_disposition_spec.rb`,
+  `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/services/llm/assess_no_output_disposition.rb`,
+  `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
+- [x] **NO-OUTPUT-ISSUE-011** — When a schema-validated no-output disposition
+  states `recommend_close`, the system SHALL preserve the existing
+  recommend-close state, label, explanation, replay deduplication, and
+  no-progress accounting. Explicit no-code-required declarations and typed
+  provider or infrastructure failures SHALL retain their existing precedence.
+  *Tests:* `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.
+  *Code:* `app/temporal/activities/handle_no_output_issue_run_activity.rb`.
+
 ## PR-producing partial closeouts
 
 - [x] **NO-OUTPUT-ISSUE-007** — When a PR-producing run leaves an approved

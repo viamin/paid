@@ -96,8 +96,34 @@ land.
 This declaration channel is deliberately narrow: it only recognizes an
 explicit, well-formed marker from the agent's own output. It does not attempt
 to infer issue type from title, labels, or body content (that would be
-exactly the guess-from-absence pattern this design avoids). Runs whose output
-contains no declaration retain today's classification behavior unchanged.
+exactly the guess-from-absence pattern this design avoids).
+
+## Semantic disposition for observable no-PR work
+
+Observable main-agent work is evidence that an agent ran; it is not evidence
+that the source issue is resolved. After typed provider and infrastructure
+failure handling and an explicit no-code-required declaration have been
+considered, `HandleNoOutputIssueRunActivity` requests a bounded,
+schema-validated disposition through the existing `Llm::Request` /
+`agent_harness` route. The assessment receives the issue scope and bounded run
+output and returns one of `recommend_close` or `needs_input`, with a rationale
+and an exact next action. This is semantic judgment, so it must not be inferred
+from output wording, labels, or a regex classifier.
+
+An actionable proposal, a remaining implementation plan, or a necessary
+approval/decision is `needs_input`. The handler retains that typed result on
+the run and presents its next action in the standard GitHub explanation and
+existing Inbox/run surfaces. It does not create a continuation request,
+implementation authority, merge authority, or budget authority from the
+agent's assessment; already-authorized continuations remain owned by their
+existing request path.
+
+Malformed, missing, or unavailable semantic dispositions fail closed to
+`needs_input` with an operator-visible request to review the run and provide
+the required disposition. Only an explicit, validated `recommend_close`
+assessment reaches the existing recommend-close path. The typed assessment is
+persisted and reused on activity replay, preserving comment idempotency and
+preventing an activity callback from creating duplicate semantic requests.
 
 ## Main-agent work evidence
 
