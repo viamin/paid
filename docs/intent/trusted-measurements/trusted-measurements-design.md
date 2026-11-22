@@ -61,6 +61,11 @@ workers stay current and missing adoption fails closed. It returns unknown
 evidence for a missing, stale, malformed, incoherent, or revision-mismatched
 worker observation, and never accepts a host path, host command, process
 argument, environment, credential, or foreign-namespace PID probe. The normal
+development deployment identity retains its HEAD and workspace-content digest;
+the worker comparison uses only the strictly parsed HEAD component because the
+worker's immutable boot contract publishes the raw boot SHA. A malformed
+development identity remains unknown rather than discarding source drift.
+The normal
 measurement runner persists that typed result under the reviewed
 project/account/criterion/revision mapping, so a heartbeat observation is an
 input receipt rather than acceptance evidence by itself.
@@ -87,8 +92,9 @@ closes an issue or attests unrelated criteria.
 
 Routine attempts are represented by the evidence/progress path. Action Required
 is reserved for an unallowlisted request, missing deployment/source authority,
-contradictory result, or repeated execution failure. Each escalation names the
-specific recovery action and resolves on recovery.
+a check-reported unknown outcome, contradictory result, or repeated execution
+failure. Each escalation names the exact failure reason and recovery context
+and resolves on recovery.
 
 ## Decisions & Alternatives
 

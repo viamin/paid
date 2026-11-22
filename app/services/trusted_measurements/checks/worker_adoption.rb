@@ -25,33 +25,37 @@ module TrustedMeasurements
       def self.version = VERSION
       def self.call(project:) = new(project:).call
 
-      def initialize(project:, observations: WorkerReadinessObservation, clock: -> { Time.current })
+      def initialize(project:, observations: WorkerReadinessObservation, clock: -> { Time.current }, environment: Rails.env)
         @project = project
         @observations = observations
         @clock = clock
+        @environment = environment
       end
 
       def call
         records = ROLES.to_h { |role| [ role, observations.for_role(role) ] }
+        deployment_revision = DeploymentSignal.current
         Result.new(
-          environment: Rails.env.to_s,
-          deployment_revision: DeploymentSignal.current,
+          environment: environment.to_s,
+          deployment_revision:,
           project_scope: "project:#{project.id}:#{project.full_name}",
           workers: records.transform_values { |record| worker_result(record) },
-          failure_reason: ROLES.lazy.map { |role| invalid_reason(role, records[role]) }.find(&:present?)
+          failure_reason: ROLES.lazy.map do |role|
+            invalid_reason(role, records[role], deployment_revision)
+          end.find(&:present?)
         )
       end
 
       private
 
-      attr_reader :clock, :observations, :project
+      attr_reader :clock, :environment, :observations, :project
 
-      def invalid_reason(role, record)
+      def invalid_reason(role, record, deployment_revision)
         return "missing_#{role}_readiness" unless record
         return "malformed_#{role}_readiness" unless usable?(record)
         return "#{role}_readiness_identity_mismatch" unless coherent?(record)
         return "stale_#{role}_readiness" unless fresh?(record.heartbeat_at)
-        "#{role}_revision_mismatch" unless adopted_revision?(record)
+        "#{role}_revision_mismatch" unless adopted_revision?(record, deployment_revision)
       end
 
       def usable?(record)
@@ -72,9 +76,9 @@ module TrustedMeasurements
         heartbeat_at <= clock.call + FUTURE_SKEW && heartbeat_at >= clock.call - MAX_AGE
       end
 
-      def adopted_revision?(record)
-        revision = DeploymentSignal.current
-        revision.present? && record.revision == revision
+      def adopted_revision?(record, deployment_revision)
+        worker_revision = DeploymentSignal.worker_revision(deployment_revision, environment:)
+        worker_revision.present? && record.revision == worker_revision
       end
 
       def worker_result(record)

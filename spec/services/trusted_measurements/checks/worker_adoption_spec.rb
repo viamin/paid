@@ -29,6 +29,7 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
   # exactly as it does in production — no readiness file or in-process
   # readiness double bridges the boundary.
   it "collects adoption evidence the owning worker roles recorded through the shared database" do
+    expect(TrustedMeasurements::DeploymentSignal).to receive(:current).once.and_return("revision-1")
     expect(Process).not_to receive(:kill)
     record_role("poll", pid: 101, ready_at: now - 3.hours, heartbeat_at: now - 20.seconds)
     record_role("agent", pid: 102, ready_at: now - 2.hours, heartbeat_at: now - 45.seconds)
@@ -43,6 +44,30 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     )
     expect(result.project_scope).to eq("project:#{project.id}:#{project.full_name}")
     expect(result.environment).to eq(Rails.env.to_s)
+  end
+
+  it "compares a development worker boot SHA with the source revision in the fingerprinted deployment identity" do
+    head = "a73812f3c44ce6984fe00854059a17485d8c0617"
+    deployment_revision = "development:#{head}:#{'b' * 64}"
+    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return(deployment_revision)
+    record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
+    record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
+
+    result = described_class.new(project:, clock: -> { now }, environment: "development").call
+
+    expect(result).to be_passing
+    expect(result.deployment_revision).to eq(deployment_revision)
+  end
+
+  it "does not discard development workspace identity when deriving a worker revision" do
+    head = "a73812f3c44ce6984fe00854059a17485d8c0617"
+    allow(TrustedMeasurements::DeploymentSignal).to receive(:current).and_return("development:#{head}:invalid")
+    record_role("poll", pid: 101, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
+    record_role("agent", pid: 102, ready_at: now - 1.hour, heartbeat_at: now - 30.seconds, revision: head)
+
+    result = described_class.new(project:, clock: -> { now }, environment: "development").call
+
+    expect(result).to have_attributes(failure_reason: "poll_revision_mismatch")
   end
 
   it "keeps a healthy long-running worker current while its heartbeat stays fresh" do
@@ -88,6 +113,18 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
 
     record_role("poll", pid: 900, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
     expect(collect).to be_passing
+  end
+
+  it "binds adoption to a restarted worker's boot identity even when its PID is reused" do
+    record_role("poll", pid: 101, ready_at: now - 2.hours, heartbeat_at: now - 2.hours,
+      revision: "old-revision")
+    record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
+    expect(collect).to have_attributes(failure_reason: "stale_poll_readiness")
+
+    record_role("poll", pid: 101, ready_at: now - 10.seconds, heartbeat_at: now - 5.seconds)
+
+    expect(collect).to be_passing
+    expect(collect.workers.fetch("poll")).to include("pid" => 101, "ready_at" => (now - 10.seconds).iso8601)
   end
 
   it "keeps corrupted or incoherent observations unknown" do

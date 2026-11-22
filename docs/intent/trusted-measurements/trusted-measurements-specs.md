@@ -77,7 +77,11 @@
   readiness time, booted revision, and latest heartbeat. Both roles' observations
   SHALL be complete, timestamp-coherent, refreshed by the live worker's own
   heartbeat within the freshness window, and equal to the current deployment
-  identity before the result is successful. Missing, malformed, stale,
+  revision before the result is successful. In development, the persisted
+  deployment identity SHALL retain its checkout-content fingerprint while the
+  worker comparison SHALL use its strictly parsed HEAD component to match the
+  worker's raw boot SHA; malformed development identities SHALL remain unknown.
+  Missing, malformed, stale,
   incoherent, interrupted, restarted, unauthorized, cross-scope, or
   revision-mismatched observations SHALL remain unknown or failed evidence,
   never a successful pull-only inference. The result SHALL cover effective

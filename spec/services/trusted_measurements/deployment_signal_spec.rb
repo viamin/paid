@@ -39,6 +39,15 @@ RSpec.describe TrustedMeasurements::DeploymentSignal do # @spec TRUSTED-MEASUREM
     expect(described_class.current(environment: "production")).to eq("release-123")
   end
 
+  it "projects only a well-formed development identity to its worker boot revision" do
+    head = "a73812f3c44ce6984fe00854059a17485d8c0617"
+    fingerprint = "b" * 64
+
+    expect(described_class.worker_revision("development:#{head}:#{fingerprint}", environment: "development")).to eq(head)
+    expect(described_class.worker_revision("development:#{head}:truncated", environment: "development")).to be_nil
+    expect(described_class.worker_revision("release-123", environment: "production")).to eq("release-123")
+  end
+
   it "returns unknown when a development checkout cannot be read" do
     Dir.mktmpdir do |repository|
       system("git", "init", "-q", repository, exception: true)

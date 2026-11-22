@@ -143,6 +143,11 @@ RSpec.describe TrustedMeasurements::RunCheck do
 
     expect(attempt).to have_attributes(status: "unknown", failure_reason: "missing_poll_readiness")
     expect(attempt.result).to include("workers" => { "poll" => { "status" => "missing" } })
+
+    notification = escalation_notifications.active.first
+    expect(notification.title).to eq("Trusted measurement check outcome is unknown")
+    expect(notification.description).to include("missing_poll_readiness")
+    expect(notification.description).not_to include("Synchronize the issue")
   end
 
   it "keeps a current worker-adoption collection idempotent and creates distinct evidence after a revision change" do
