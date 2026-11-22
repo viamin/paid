@@ -550,6 +550,25 @@ RSpec.describe Containers::StandaloneTextExecutor do
       credential.update!(token: valid_codex_auth)
     end
 
+    # @spec LLM-ROUTING-013
+    it "does not wait past the candidate deadline for a contended credential lease" do
+      stub_execs
+      now = 100.0
+      lease_timeouts = []
+      executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+        clock: ->(_) { now })
+      allow(Runners::ManagedCredentialLifecycle).to receive(:acquire_lock_with_timeout) do |_file, timeout|
+        lease_timeouts << timeout
+        now += timeout
+        false
+      end
+
+      expect { executor.execute([ "codex", "exec", "hello" ]) }.to raise_error(AgentHarness::TimeoutError)
+
+      expect(backend).not_to have_received(:exec_in_container_with_stdin)
+      expect(lease_timeouts.first).to eq(1.0)
+    end
+
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
     it "harvests a rotated auth file once when the container closes" do
       stub_execs(rotation_stdout: Base64.strict_encode64(rotated_codex_auth))

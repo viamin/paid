@@ -118,7 +118,7 @@ module Containers
       timeout = bounded_timeout(timeout)
       raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
 
-      with_managed_credential_lease do
+      with_managed_credential_lease(timeout: execution_credential_lease_timeout(timeout)) do
         execution_env = materialized_env(env)
         timeout = bounded_timeout(timeout)
         raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
@@ -213,12 +213,22 @@ module Containers
       (provider.api_key_env_var_names + env.select { |_, value| value == runner.effective_api_secret }.keys).uniq
     end
 
-    def with_managed_credential_lease
+    def with_managed_credential_lease(timeout: nil)
       credential = rotating_subscription_credential
       return yield unless credential
 
       Runners::ManagedCredentialLifecycle.with_managed_auth_lease(runner_key: runner.runner_key,
-        credential: credential) { yield }
+        credential: credential, timeout: timeout || managed_credential_lease_timeout) { yield }
+    end
+
+    def managed_credential_lease_timeout
+      return Runners::ManagedCredentialLifecycle::DEFAULT_LOCK_TIMEOUT_SECONDS unless @deadline
+
+      [ @deadline - monotonic_now, 0 ].max
+    end
+
+    def execution_credential_lease_timeout(timeout)
+      bounded_timeout(timeout) if @deadline
     end
 
     def harvest_managed_credential # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
