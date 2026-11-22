@@ -39,15 +39,18 @@ module Containers
         return { reason: "backing_storage_probe_unconfigured" } unless probe_path
         return { reason: "backing_storage_probe_invalid" } unless File.directory?(probe_path)
 
+        provenance_reason = backing_store_provenance_reason
+        return { reason: provenance_reason } if provenance_reason
+
         available_bytes = backing_store_available_bytes(probe_path)
         return { reason: "backing_storage_probe_unavailable" } unless available_bytes
 
         {
-          scope: "configured_docker_backing_store_probe",
+          scope: "verified_docker_backing_store_probe",
           available_bytes: available_bytes,
           observed_at: now
         }
-      rescue SystemCallError, IOError
+      rescue SystemCallError, IOError, ArgumentError, TypeError, Docker::Error::DockerError, Excon::Error
         { reason: "backing_storage_probe_unavailable" }
       end
 
@@ -145,6 +148,17 @@ module Containers
         File.read("/proc/meminfo")
       rescue SystemCallError, IOError
         nil
+      end
+
+      def backing_store_provenance_reason
+        return "backing_storage_probe_remote_mismatch" unless Docker.url.to_s.start_with?("unix://")
+
+        configured_root = ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"].presence
+        return "backing_storage_probe_unverified" unless configured_root
+
+        actual_root = Docker.info["DockerRootDir"].presence
+        return "backing_storage_probe_unverified" unless actual_root
+        "backing_storage_probe_wrong_filesystem" unless File.expand_path(configured_root) == File.expand_path(actual_root)
       end
 
       def backing_store_available_bytes(probe_path)

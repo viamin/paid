@@ -85,10 +85,12 @@ RSpec.describe DevcontainerFile, :no_db do
   end
 
   # @spec CONTAINER-RUNTIME-054
-  it "mounts the configured Docker backing store read-only for capacity admission" do
+  it "mounts only an empty Docker-root measurement directory after explicit daemon-root configuration" do
     rails_app = compose.fetch("services").fetch("rails-app")
 
-    expect(rails_app.fetch("volumes")).to include("${PAID_DOCKER_BACKING_STORE_HOST_PATH:-/var/lib/docker}:/mnt/paid-docker-backing-store:ro")
+    expect(rails_app.fetch("volumes")).to include("${PAID_DOCKER_BACKING_STORE_DAEMON_ROOT:?Set this to Docker info DockerRootDir}/.paid-capacity-probe:/mnt/paid-docker-backing-store:ro")
+    expect(rails_app.fetch("volumes")).not_to include("${PAID_DOCKER_BACKING_STORE_HOST_PATH:-/var/lib/docker}:/mnt/paid-docker-backing-store:ro")
     expect(rails_app.fetch("environment").fetch("PAID_DOCKER_BACKING_STORE_PROBE_PATH")).to eq("/mnt/paid-docker-backing-store")
+    expect(rails_app.fetch("environment").fetch("PAID_DOCKER_BACKING_STORE_DAEMON_ROOT")).to eq("${PAID_DOCKER_BACKING_STORE_DAEMON_ROOT:?Set this to Docker info DockerRootDir}")
   end
 end

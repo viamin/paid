@@ -53,9 +53,10 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
   end
 
   describe "backing-storage evidence" do
-    def with_backing_store_probe(script)
+    def with_backing_store_probe(script, daemon_root: "/var/lib/docker")
       original_path = ENV.fetch("PATH")
       original_probe_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
+      original_daemon_root = ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"]
 
       Dir.mktmpdir do |directory|
         probe_path = File.join(directory, "probe")
@@ -65,28 +66,68 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
         File.chmod(0o755, command_path)
         ENV["PATH"] = directory
         ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
+        ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = daemon_root
+        allow(Docker).to receive_messages(url: "unix:///var/run/docker.sock", info: { "DockerRootDir" => daemon_root })
 
         yield
       end
     ensure
       ENV["PATH"] = original_path
       ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_probe_path
+      ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = original_daemon_root
     end
 
     # @spec CONTAINER-RUNTIME-054
-    it "measures only an explicitly configured backing-store probe" do
+    it "measures a configured probe only after it verifies the selected daemon root" do
       Dir.mktmpdir do |probe_path|
         now = Time.zone.parse("2026-11-21 18:28:00 UTC")
         original_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
+        original_daemon_root = ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"]
         ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
+        ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = "/var/lib/docker"
+        allow(Docker).to receive_messages(url: "unix:///var/run/docker.sock", info: { "DockerRootDir" => "/var/lib/docker" })
 
         expect(backend.backing_storage_observation(now:)).to include(
-          scope: "configured_docker_backing_store_probe",
+          scope: "verified_docker_backing_store_probe",
           available_bytes: be_a(Integer),
           observed_at: now
         )
       ensure
         ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_path
+        ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = original_daemon_root
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "rejects an existing configured probe without verified daemon provenance" do
+      Dir.mktmpdir do |probe_path|
+        original_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
+        original_daemon_root = ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"]
+        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
+        ENV.delete("PAID_DOCKER_BACKING_STORE_DAEMON_ROOT")
+
+        expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unverified")
+      ensure
+        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_path
+        ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = original_daemon_root
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "rejects a configured probe when it names a filesystem other than the selected daemon root" do
+      with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n", daemon_root: "/srv/docker") do
+        allow(Docker).to receive_messages(url: "unix:///var/run/docker.sock", info: { "DockerRootDir" => "/var/lib/docker" })
+
+        expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_wrong_filesystem")
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "rejects a configured probe for a remote Docker endpoint" do
+      with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'") do
+        allow(Docker).to receive(:url).and_return("tcp://another-host:2376")
+
+        expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_remote_mismatch")
       end
     end
 
