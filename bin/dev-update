@@ -42,6 +42,7 @@ OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 OVERMIND_HEALTHY_CONFIRM_COUNT="${DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT:-2}"
+WORKER_ADOPTION_POLL_COUNT="${DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT:-120}"
 STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
 STASHED_CHANGES=0
 FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
@@ -52,11 +53,18 @@ newline_list_to_csv() {
   printf '%s' "${1:-}" | tr '\n' ',' | sed 's/,$//'
 }
 
+# Worker-loaded application code requires the full restart path: the
+# long-lived Temporal workers (worker_poll, worker_agent) and the GoodJob
+# jobs process boot Rails once and keep the constants they loaded, so a git
+# pull alone cannot make them run new code. Web-autoloaded code
+# (controllers, views) and docs/specs stay lightweight. This list must stay
+# in sync with Activities::TriggerDevEnvironmentUpdateActivity::FULL_RESTART_PATTERNS.
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-002
 restart_required_for_file() {
   local file="$1"
 
   case "$file" in
-    app/temporal/*|config/*|db/migrate/*|bin/*|lib/*|Procfile*)
+    app/temporal/*|app/services/*|app/models/*|app/jobs/*|config/*|db/migrate/*|bin/*|lib/*|Procfile*)
       return 0
       ;;
     Gemfile|Gemfile.lock|package.json|package-lock.json|yarn.lock)
@@ -571,6 +579,70 @@ wait_for_overmind_health() {
   return 1
 }
 
+worker_readiness_file() {
+  local mode="$1"
+  printf '%s/paid-worker-ready-temporal_worker-%s' "${TMPDIR:-/tmp}" "$mode"
+}
+
+# Extract the revision identity from a worker readiness JSON payload. The
+# payload carries commit identity only (pid, ready_at, revision) — never
+# secrets or credential data — so parsing it here is safe to log.
+worker_readiness_revision() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+  sed -n 's/.*"revision"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | tail -n 1
+}
+
+worker_reports_revision() {
+  local mode="$1"
+  local expected_revision="$2"
+  local revision
+  revision="$(worker_readiness_revision "$(worker_readiness_file "$mode")")" || return 1
+  [ -n "$revision" ] && [ "$revision" = "$expected_revision" ]
+}
+
+# Effective worker adoption verification: Overmind health alone cannot
+# distinguish an on-disk checkout from the code the running workers actually
+# loaded. Each Temporal worker publishes its booted checkout revision in its
+# readiness flag payload (see lib/paid/worker_readiness.rb); a completed
+# restart requires both the poll and agent workers to report the post-update
+# HEAD revision within a bounded poll budget. This rides the existing
+# graceful Overmind stop/start path — it never force-restarts active
+# workflow/activity owners or resets failed runs.
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+verify_worker_adoption() {
+  local expected_revision
+  expected_revision="$(git rev-parse HEAD 2>/dev/null || true)"
+  if [ -z "$expected_revision" ]; then
+    log "Warning: cannot determine checkout revision; skipping worker adoption verification."
+    return 0
+  fi
+
+  local mode
+  for mode in poll agent; do
+    local adopted=0
+    local i
+    for ((i = 0; i < WORKER_ADOPTION_POLL_COUNT; i += 1)); do
+      if worker_reports_revision "$mode" "$expected_revision"; then
+        log "Worker (${mode}) adopted revision ${expected_revision}."
+        adopted=1
+        break
+      fi
+      sleep "$OVERMIND_POLL_INTERVAL"
+    done
+
+    if [ "$adopted" -ne 1 ]; then
+      local file
+      file="$(worker_readiness_file "$mode")"
+      log "Warning: ${mode} worker readiness at ${file} did not report revision ${expected_revision} within ${WORKER_ADOPTION_POLL_COUNT} polls."
+      log "ERROR: Workers did not adopt the updated checkout; update cannot be considered complete."
+      return 1
+    fi
+  done
+
+  log "Worker adoption verified: poll and agent workers report revision ${expected_revision}."
+}
+
 start_dev() {
   mkdir -p "$(dirname "$START_DEV_LOG")"
   remove_stale_overmind_socket
@@ -582,8 +654,10 @@ start_dev() {
     restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"
     log_command_output "overmind restart" "$restart_output"
     log "Overmind process restart requested."
-    wait_for_overmind_health
-    return $?
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+    wait_for_overmind_health || return 1
+    verify_worker_adoption
+    return
   fi
 
   log "Starting dev environment..."
@@ -601,7 +675,9 @@ start_dev() {
   disown || true
   log "Dev environment start command launched (PID $!)."
 
-  wait_for_overmind_health
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+  wait_for_overmind_health || return 1
+  verify_worker_adoption
 }
 
 recover_dev_if_needed() {
