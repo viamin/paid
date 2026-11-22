@@ -3,16 +3,19 @@
 module Workflows
   # Rehydrates only the isolated LLM environment, then continues at the PR gate.
   class SourceClosureRecoveryWorkflow < BaseWorkflow
+    # Includes the bounded assessment, post-publication work, and cleanup.
+    EXECUTION_TIMEOUT = 40.minutes.to_i
+    ASSESSMENT_SCHEDULE_TO_CLOSE_TIMEOUT = 10.minutes.to_i
     ASSESSMENT_RETRY_POLICY = Temporalio::RetryPolicy.new(
       initial_interval: 15, max_interval: 2.minutes, backoff_coefficient: 2, max_attempts: 3
     )
 
-    def execute(input) # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045
+    def execute(input) # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-061 PARTIAL-CLOSEOUT-060
       agent_run_id = input.fetch(:agent_run_id)
       project_id = input.fetch(:project_id)
       goal = input.fetch(:goal, "create_pr")
       run_activity(Activities::ProvisionContainerActivity, { agent_run_id: }, timeout: 60)
-      return { agent_run_id:, waiting: true } unless assess_source_closure_or_park(agent_run_id)
+      return { agent_run_id:, waiting: true } unless assess_source_closure_or_park(agent_run_id, input[:operator_authorized])
 
       pr_input = { agent_run_id: }
       if Temporalio::Workflow.patched("source-closure-recovery-pinned-revision-v1")
@@ -45,8 +48,9 @@ module Workflows
       { agent_run_id:, waiting: true }
     end
 
-    def assess_source_closure_or_park(agent_run_id)
+    def assess_source_closure_or_park(agent_run_id, operator_authorized)
       run_activity(Activities::AssessSourceClosureActivity, { agent_run_id: }, timeout: 120,
+        **assessment_schedule_options,
         retry_policy: ASSESSMENT_RETRY_POLICY)
       true
     rescue => e
@@ -61,16 +65,33 @@ module Workflows
         raise unless Temporalio::Workflow.patched("source-closure-retry-unsuccessful-response-v1")
       end
 
-      park_source_closure_recovery(agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts)
+      park_source_closure_recovery(
+        agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts,
+        auto_retry: automatic_retry?(operator_authorized)
+      )
       false
     end
 
+    def assessment_schedule_options
+      return {} unless Temporalio::Workflow.patched("source-closure-recovery-deadline-v1")
+
+      { schedule_to_close_timeout: ASSESSMENT_SCHEDULE_TO_CLOSE_TIMEOUT }
+    end
+
+    def automatic_retry?(operator_authorized)
+      return true if Temporalio::Workflow.patched("source-closure-recovery-operator-auto-retry-v1")
+
+      !operator_authorized
+    end
+
     # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
-    def park_source_closure_recovery(input)
+    def park_source_closure_recovery(agent_run_id:, category:, attempts:, auto_retry:)
       # TODO(#5268): remove after the patch-guard sweep confirms no
       # pre-control-routing SourceClosureRecoveryWorkflow history remains.
       control_route = Temporalio::Workflow.patched("source-closure-recovery-control-routing-v1")
       routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
+      input = { agent_run_id:, category:, attempts: }
+      input[:auto_retry] = auto_retry if Temporalio::Workflow.patched("source-closure-recovery-auto-retry-v1")
       run_activity(Activities::ParkSourceClosureRecoveryActivity, input, timeout: 30, **routing)
     end
 

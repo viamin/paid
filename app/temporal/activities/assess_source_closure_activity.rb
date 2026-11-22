@@ -6,12 +6,13 @@ module Activities
     activity_name "AssessSourceClosure"
     MAX_ASSESSMENT_TIMEOUT_WITH_FALLBACK = 100
 
-    def execute(input) # @spec PARTIAL-CLOSEOUT-029
+    def execute(input) # @spec PARTIAL-CLOSEOUT-029 PARTIAL-CLOSEOUT-061
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       return { agent_run_id: agent_run.id, disposition: "track" } unless agent_run.issue
 
       track_phase(agent_run_id: agent_run.id, phase_key: "assess_source_closure", phase_group: "post", agent_run: agent_run) do
         assessment = agent_run.reconciliation["assessment"] || begin
+          PartialCloseouts::SourceClosureRecovery.record_assessment_request!(agent_run: agent_run)
           fallbacks = Llm::AnalyzePartialCloseout.fallback_runner_identifiers_for(agent_run)
           timeout = fallbacks.any? ? MAX_ASSESSMENT_TIMEOUT_WITH_FALLBACK : Llm::AnalyzePartialCloseout::TIMEOUT
           result = Llm::AnalyzePartialCloseout.call(agent_run: agent_run,

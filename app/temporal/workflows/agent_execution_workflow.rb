@@ -621,9 +621,9 @@ module Workflows
           elsif issue_id.present? && !source_pull_request_number
             # Issue-based run with no code changes / no PR: classify as
             # needs_input or recommend_close and post an actionable GitHub comment.
-            run_activity(Activities::HandleNoOutputIssueRunActivity,
+            run_activity(Activities::HandleNoOutputIssueRunActivity, # @spec NO-OUTPUT-ISSUE-010
               { agent_run_id: agent_run_id,
-                output_present: agent_result.fetch(:output_present, false) }, timeout: 30)
+                output_present: agent_result.fetch(:output_present, false) }, timeout: 120)
           else
             # Non-issue run or existing-PR run: mark completed
             complete_result = run_activity(Activities::MarkAgentRunCompleteActivity,

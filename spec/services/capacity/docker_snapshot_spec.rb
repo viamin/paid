@@ -276,6 +276,40 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
     end
 
+    # @spec CONTAINER-RUNTIME-005
+    it "treats a missing per-container stats sample as degraded without losing its classification" do
+      agent_container = containers.first
+      allow(backend).to receive(:container_stats).with(agent_container, stream: false).and_return(nil)
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("container_sample_failed")
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 2, memory_bytes: 500)
+    end
+
+    # @spec CONTAINER-RUNTIME-005, CONTAINER-RUNTIME-006
+    it "retains valid samples and degraded admission when one nested stats payload is malformed" do
+      agent_container = containers.first
+      project.created_by.settings.update!(run_concurrency_mode: "auto")
+      allow(backend).to receive(:container_stats).with(agent_container, stream: false).and_return(
+        { "cpu_stats" => { "cpu_usage" => "invalid" } }
+      )
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+      admission = Capacity::RunAdmission.call(
+        user: project.created_by,
+        project: project,
+        docker_snapshot: described_class.fetch(backend: backend, now: now, cache: cache)
+      )
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("container_sample_failed")
+      expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 2, memory_bytes: 500)
+      expect(admission).to include(degraded: true, docker_reason: "container_sample_failed", snapshot_available: false)
+    end
+
     it "cuts off remaining containers once the shared sampling budget is exhausted" do
       stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
       stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)
@@ -441,6 +475,39 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.degraded_reasons).to eq([ "docker_unavailable" ])
     end
 
+    # @spec CONTAINER-RUNTIME-005
+    it "uses a degraded cached snapshot for supported Excon transport failures" do
+      described_class.call(backend: backend, now: now, cache: cache)
+      allow(backend).to receive(:system_info).and_raise(Excon::Error::Socket.new(SocketError.new("down")))
+
+      snapshot = described_class.call(
+        backend: backend,
+        now: now + described_class::CACHE_TTL + 1.second,
+        cache: cache
+      )
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("stale_cache", "docker_unavailable")
+      expect(snapshot.available_memory_bytes).to eq(0)
+    end
+
+    # @spec CONTAINER-RUNTIME-005
+    it "uses a degraded cached snapshot when collection raises unexpectedly" do
+      described_class.call(backend: backend, now: now, cache: cache)
+      original_error = NoMethodError.new("missing stats")
+      allow(backend).to receive(:system_info).and_raise(original_error)
+
+      snapshot = described_class.call(
+        backend: backend,
+        now: now + described_class::CACHE_TTL + 1.second,
+        cache: cache
+      )
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("stale_cache", "snapshot_failed")
+      expect(snapshot.available_memory_bytes).to eq(0)
+    end
+
     it "uses backend host identifiers for DB-backed swarm classification when labels are absent" do
       agent_run.update!(container_host: "worker-1")
       allow(backend).to receive_messages(
@@ -546,6 +613,19 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot[:available]).to be(false)
       expect(snapshot[:reason]).to eq("docker_timeout")
       expect(snapshot[:effective_agent_budget_bytes]).to eq(0)
+    end
+
+    # @spec CONTAINER-RUNTIME-005
+    it "returns an explicit capacity denial when a container stats sample is unavailable" do
+      allow(backend).to receive(:container_stats).with(containers.first, stream: false).and_return(nil)
+
+      snapshot = described_class.fetch(backend: backend, now: now, cache: cache)
+
+      expect(snapshot).to include(
+        available: false,
+        reason: "container_sample_failed",
+        effective_agent_budget_bytes: 0
+      )
     end
   end
 

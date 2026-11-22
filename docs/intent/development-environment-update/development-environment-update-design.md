@@ -86,6 +86,26 @@ compatibility, retained results, bounded retry/budget policies, and
 control-queue routing; the updater never force-kills active owners to speed
 adoption.
 
+## Active-Work Drain Before Restart
+
+Before a full update asks Overmind to stop, each Temporal activity holds shared
+ownership of a per-worker admission barrier for its full execution. The updater
+acquires the corresponding barriers exclusively and retains both through the
+stop request. Acquiring a role's barrier waits for its existing activities and
+then closes admission for that role, so work cannot arrive on the first role
+while the updater waits for the second. Workers continue to publish safe active
+counts alongside immutable boot identity for observability; neither the barrier
+nor metadata contains activity input, process arguments, environment, or
+credentials.
+
+The wait has a bounded poll budget. If either ready worker remains active or
+its count cannot be read within that budget, the update fails before stopping
+Overmind and records that adoption was deferred. It does not turn the failed
+update into a restart, cancel an owner, reset an audit, enlarge any activity or
+shutdown timeout, or alter the existing control queues. A later authorized
+normal full update can retry after the owners have reached their normal
+terminal or handoff state.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -96,6 +116,7 @@ adoption.
 | Worker-loaded code classification | Treat `app/services/`, `app/models/`, `app/jobs/` (with `app/temporal/` and runtime dependencies) as restart-worthy on both the bash and activity pattern lists | Keep claiming Rails autoloads them; classify only `app/temporal/` | Worker processes boot Rails once and retain resolved constants; the operating evidence (#5293) shows service merges completing as "lightweight" while the pre-update workers kept serving. Controllers/views/JS/docs remain lightweight because no long-lived worker retains them. |
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
+| Active work during update | Acquire and retain exclusive per-worker activity-admission barriers through the stop request, then use the existing graceful restart; fail before stop on a bounded acquisition timeout | Sequential idle snapshots; stop immediately; force a handoff; increase shutdown/activity deadlines | A retained barrier closes the arrival race between roles while existing shared owners drain. An immediate stop can end a live activity's heartbeat and consume its finite retry budget. |
 
 ## References
 

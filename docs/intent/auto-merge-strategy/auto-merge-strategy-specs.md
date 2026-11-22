@@ -21,6 +21,16 @@
   *Code:* `app/services/automation/strategies/auto_merge.rb`.
   *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`.
 
+- [x] **AUTO-MERGE-010** — When a human-authored or dependency-update pull
+  request declares a qualified cross-project prerequisite, the shared
+  dependency gate used by scanning and approval revalidation SHALL accept it
+  only after the tracked source provider currently verifies a closed issue or
+  merged pull request; its ordinary unresolved-dependency blocker SHALL direct
+  an operator to the declared dependency source rather than asserting
+  completion from Paid-local state.
+  *Code:* `app/services/pull_requests/dependencies_resolved.rb`.
+  *Test:* `spec/services/pull_requests/dependencies_resolved_spec.rb`.
+
 - [x] **AUTO-MERGE-003** — When `DependabotAutoMergeJob` runs for a project in
   dependency auto-merge mode, the system SHALL merge only eligible Dependabot
   PRs, SHALL stop after the first successful merge in a batch, and SHALL add

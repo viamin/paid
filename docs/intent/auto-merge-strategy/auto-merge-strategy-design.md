@@ -79,6 +79,16 @@ cannot fully return (the walk is bounded at the same 250-commit cap GitHub
 imposes on its compare response; an over-cap walk is unclassifiable), and
 the classification decision is logged so a stall is diagnosable.
 
+The dependency gate evaluates qualified cross-project declarations through an
+exact case-normalized project tracked in the same account and that project's
+configured provider identity. A closed issue or merged pull request satisfies
+the declaration only after that current provider read. An untracked,
+inaccessible, open, closed-unmerged, or transiently unverifiable source remains
+blocked; Paid-local completion state, sibling relationships, and agent
+inference do not create dependency evidence. The existing unresolved-dependency
+blocker directs operators to the declared dependency source without introducing
+a separate dependency UI.
+
 When an automatic rebase finds conflicts, the resulting existing-PR run is a
 repair, not a continuation of general implementation work. Its trusted prompt
 limits it to integrating the base branch and resolving the necessary conflicts

@@ -187,6 +187,7 @@ module Capacity
     # of worker batches rather than scaling with total container count.
     DOCKER_CONTAINER_TIMEOUT = 4.seconds
     DOCKER_SAMPLING_BUDGET = 10.seconds
+    ERROR_MESSAGE_LIMIT = 256
     PAID_COMPOSE_PROJECT = "paid"
 
     PAID_COMPOSE_SERVICES = %w[
@@ -373,13 +374,7 @@ module Capacity
         end
 
         if result.error
-          Rails.logger.warn(
-            message: "container_manager.docker_stats_sample_failed",
-            backend_identifier: backend.identifier,
-            error_class: result.error.class.name,
-            error_message: result.error.message
-          )
-          degraded_reasons << "container_sample_failed"
+          record_container_sample_failure(result.error, degraded_reasons)
           accumulate_bucket(buckets.fetch(classification), memory_bytes: 0, cpu_percent: 0.0)
           next
         end
@@ -390,6 +385,9 @@ module Capacity
           memory_bytes: parsed.fetch(:memory_bytes, 0).to_i,
           cpu_percent: parsed.fetch(:cpu_percent, 0.0).to_f.round(2)
         )
+      rescue Containers::DockerStatsParser::InvalidStatsError => error
+        record_container_sample_failure(error, degraded_reasons)
+        accumulate_bucket(buckets.fetch(classification), memory_bytes: 0, cpu_percent: 0.0)
       end
 
       # A fully successful sample only reflects the container list as it
@@ -486,6 +484,16 @@ module Capacity
       bucket.container_count += 1
       bucket.memory_bytes += memory_bytes
       bucket.cpu_percent = (bucket.cpu_percent + cpu_percent).round(2)
+    end
+
+    def record_container_sample_failure(error, degraded_reasons)
+      Rails.logger.warn(
+        message: "container_manager.docker_stats_sample_failed",
+        backend_identifier: backend.identifier,
+        error_class: error.class.name,
+        error_message: error.message.to_s.truncate(ERROR_MESSAGE_LIMIT)
+      )
+      degraded_reasons << "container_sample_failed"
     end
 
     # @spec CONTAINER-RUNTIME-049

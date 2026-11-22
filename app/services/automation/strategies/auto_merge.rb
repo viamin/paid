@@ -231,7 +231,7 @@ module Automation
         when :reviews_fresh
           "Ask #{reviewer_handle} to re-approve this pull request for the current HEAD commit, then wait for the next automatic merge evaluation."
         when :dependencies_resolved
-          "Merge or remove the blocking dependencies, then let Paid evaluate this pull request again."
+          "Verify, merge, or remove each declared dependency source (for example, owner/repo#N), then let Paid evaluate this pull request again."
         when :dependabot_eligible
           "Enable dependency auto-merge for this project or merge this pull request manually."
         when :merge_executor_supported
