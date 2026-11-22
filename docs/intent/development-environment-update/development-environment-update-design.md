@@ -98,7 +98,12 @@ and it never reads another role's filesystem or PID namespace. Its persisted
 collection receipt is owned by the trusted-measurements boundary. The raw boot
 revision remains the updater's commit-adoption contract; the recorder uses the
 separate complete boot-time deployment identity so later same-HEAD source drift
-cannot be accepted. The readiness facts remain evidence about worker adoption
+cannot be accepted. The Temporal worker captures that complete identity before
+Rails loads application code and compares it with a second snapshot after its
+routes, activities, workflows, and worker registrations are constructed. It
+refuses startup before readiness publication or polling when the snapshots
+differ, so a source edit during boot cannot be represented as loaded worker
+code. The readiness facts remain evidence about worker adoption
 only and do not attest
 application-level behavior.
 
@@ -113,6 +118,7 @@ application-level behavior.
 | Adoption proof | Compare the worker readiness payload revision to post-pull HEAD, fail-closed on mismatch/timeout/unresolvable HEAD | Trust Overmind health alone; skip verification when HEAD cannot be resolved; parse `ps` arguments or environment | Process health does not distinguish on-disk checkout from running worker code, and an unknown expected revision proves nothing about adoption; process arguments/env risk exposing secrets and are not a stable contract. |
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
 | Recorder source boundary | Fixed role-specific readiness observations with typed public fields | Cross-container file reads, generic file readers, or process inspection | Preserves the existing safe readiness contract without making host filesystem/process access operator-controlled, and works across the independent role containers. |
+| Startup identity boundary | Snapshot before application loading and verify after worker construction | Capture only when readiness starts; reload application code after drift | A final-only snapshot can describe source newer than constants already loaded during boot; refusing the raced startup is deterministic and avoids unsafe generic reload behavior. |
 
 ## References
 

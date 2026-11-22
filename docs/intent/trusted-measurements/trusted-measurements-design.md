@@ -67,7 +67,12 @@ boot revision remains available for the development updater's commit-adoption
 contract. The recorder separately compares the worker's immutable boot-time
 deployment identity with the complete current identity, including development's
 HEAD and workspace-content digest, so same-HEAD source drift remains unknown
-until the workers restart from that source. The normal
+until the workers restart from that source. A worker snapshots that complete
+identity before Rails loads application code and verifies the snapshot again
+after routes, activities, workflows, and worker registrations are constructed.
+If source changes across that startup boundary, the worker refuses to publish
+readiness or begin polling; a post-load snapshot must not attest source newer
+than the code already loaded into the process. The normal
 measurement runner persists that typed result under the reviewed
 project/account/criterion/revision mapping, so a heartbeat observation is an
 input receipt rather than acceptance evidence by itself.

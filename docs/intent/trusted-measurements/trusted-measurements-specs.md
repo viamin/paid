@@ -81,6 +81,10 @@
   revision before the result is successful. In development, both the persisted
   deployment identity and worker comparison SHALL retain the checkout-content
   fingerprint; a same-HEAD source change after worker boot SHALL remain unknown.
+  The Temporal worker SHALL snapshot that complete identity before Rails loads
+  application code and verify it after routes, activities, workflows, and
+  worker registrations are constructed; when those snapshots differ, it SHALL
+  refuse startup before publishing readiness or polling.
   The updater-facing raw boot SHA contract SHALL remain unchanged.
   Missing, malformed, stale,
   incoherent, interrupted, restarted, unauthorized, cross-scope, or
@@ -92,11 +96,13 @@
   role's namespace.
   *Code:* `app/models/worker_readiness_observation.rb`,
   `lib/paid/worker_readiness/heartbeat.rb`,
+  `lib/paid/worker_readiness/startup_identity.rb`,
   `lib/paid/worker_readiness.rb`,
   `app/services/trusted_measurements/checks/worker_adoption.rb`,
   `app/services/trusted_measurements/run_check.rb`,
   `bin/temporal_worker`.
   *Test:* `spec/models/worker_readiness_observation_spec.rb`,
   `spec/lib/paid/worker_readiness/heartbeat_spec.rb`,
+  `spec/lib/paid/worker_readiness/startup_identity_spec.rb`,
   `spec/services/trusted_measurements/checks/worker_adoption_spec.rb`,
   `spec/services/trusted_measurements/run_check_spec.rb`.
