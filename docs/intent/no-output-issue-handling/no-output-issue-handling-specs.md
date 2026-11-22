@@ -107,10 +107,14 @@
   no pull request or result commit but its observable main-agent output proposes
   remaining implementation, design work, or an approval/decision required to
   continue, the system SHALL obtain a schema-validated semantic disposition
-  through `agent_harness`. It SHALL park the issue as `needs_input`, retain the
-  disposition and exact next action on the run, and show that action in the
-  GitHub explanation; it SHALL NOT recommend closing the issue or create a
-  continuation authorization from agent output. A disposition that is absent,
+  through `agent_harness`. When a human decision is required, it SHALL park the
+  issue as `needs_input`, retain the disposition and exact next action on the
+  run, and show that action in the GitHub explanation and Inbox queue/detail.
+  When the canonical effective policy independently proves that coding is
+  already authorized and no human decision is missing, it SHALL preserve the
+  issue's eligibility for that existing continuation. It SHALL NOT recommend
+  closing the issue or create or enlarge continuation authorization from agent
+  output. A disposition that is absent,
   malformed, or unavailable SHALL fail closed to the same actionable park.
   *Tests:* `spec/services/llm/assess_no_output_disposition_spec.rb`,
   `spec/temporal/activities/handle_no_output_issue_run_activity_spec.rb`.

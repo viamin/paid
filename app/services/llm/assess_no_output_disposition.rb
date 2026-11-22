@@ -4,7 +4,7 @@ module Llm
   # Semantic boundary for a completed issue run that has no delivery artifact.
   class AssessNoOutputDisposition
     TIMEOUT = 60
-    VALID_DISPOSITIONS = %w[recommend_close needs_input].freeze
+    VALID_DISPOSITIONS = %w[recommend_close needs_input continue].freeze
     RESPONSE_SCHEMA = {
       type: "object",
       properties: {
@@ -27,15 +27,17 @@ module Llm
 
     def self.call(...) = new(...).call
 
-    def self.valid_disposition?(result)
+    def self.valid_disposition?(result, continuation_authorized: false)
       result.is_a?(Hash) && result.keys.sort == %w[disposition next_action rationale] &&
         VALID_DISPOSITIONS.include?(result["disposition"]) &&
+        (result["disposition"] != "continue" || continuation_authorized) &&
         %w[rationale next_action].all? { |key| result[key].is_a?(String) && result[key].strip.present? }
     end
 
-    def initialize(agent_run:, diagnostic_output:, timeout: TIMEOUT)
+    def initialize(agent_run:, diagnostic_output:, continuation_authorized: false, timeout: TIMEOUT)
       @agent_run = agent_run
       @diagnostic_output = diagnostic_output.to_s.truncate(20_000)
+      @continuation_authorized = continuation_authorized == true
       @timeout = timeout
     end
 
@@ -45,7 +47,7 @@ module Llm
       raise failure("invalid_disposition") unless assessment_response.respond_to?(:output)
 
       result = parse(assessment_response.output)
-      raise failure("invalid_disposition") unless self.class.valid_disposition?(result)
+      raise failure("invalid_disposition") unless valid_disposition?(result)
 
       result
     rescue DispositionFailure
@@ -64,7 +66,7 @@ module Llm
 
     private
 
-    attr_reader :agent_run, :diagnostic_output, :timeout
+    attr_reader :agent_run, :continuation_authorized, :diagnostic_output, :timeout
 
     def response
       Request.call(
@@ -84,7 +86,7 @@ module Llm
 
     def valid_response?(candidate)
       candidate.respond_to?(:output) && successful?(candidate) &&
-        self.class.valid_disposition?(parse(candidate.output))
+        valid_disposition?(parse(candidate.output))
     rescue DispositionFailure, JSON::ParserError
       false
     end
@@ -93,6 +95,10 @@ module Llm
     # intentionally treats those as transport-successful for compatibility.
     def successful?(candidate)
       !candidate.respond_to?(:success?) || candidate.success?
+    end
+
+    def valid_disposition?(result)
+      self.class.valid_disposition?(result, continuation_authorized:)
     end
 
     def failure(category)
@@ -104,7 +110,8 @@ module Llm
         Assess the disposition of an issue-scoped coding run that produced no pull request or result commit.
         Decide semantic meaning from the issue scope and run output; do not infer resolution merely from a successful conversation.
 
-        Return `needs_input` when the output identifies remaining implementation, planning, a proposal, or a necessary approval/decision. Return `recommend_close` only when the available evidence justifies recommending that a human close the source issue. Never grant implementation, continuation, merge, or budget authority.
+        Existing coding continuation authority: #{continuation_authorized}.
+        Return `continue` only when that value is true, the output identifies remaining in-scope work, and no human decision is missing. Return `needs_input` when a necessary approval or decision is missing. Return `recommend_close` only when the available evidence justifies recommending that a human close the source issue. Never grant implementation, continuation, merge, or budget authority.
 
         Issue title: #{agent_run.issue&.title}
         Issue body: #{agent_run.issue&.body.to_s.truncate(10_000)}

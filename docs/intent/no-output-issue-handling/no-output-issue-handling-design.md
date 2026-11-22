@@ -106,17 +106,21 @@ failure handling and an explicit no-code-required declaration have been
 considered, `HandleNoOutputIssueRunActivity` requests a bounded,
 schema-validated disposition through the existing `Llm::Request` /
 `agent_harness` route. The assessment receives the issue scope and bounded run
-output and returns one of `recommend_close` or `needs_input`, with a rationale
-and an exact next action. This is semantic judgment, so it must not be inferred
-from output wording, labels, or a regex classifier.
+output and returns one of `recommend_close`, `needs_input`, or `continue`, with
+a rationale and an exact next action. This is semantic judgment, so it must not
+be inferred from output wording, labels, or a regex classifier.
 
-An actionable proposal, a remaining implementation plan, or a necessary
-approval/decision is `needs_input`. The handler retains that typed result on
-the run and presents its next action in the standard GitHub explanation and
-existing Inbox/run surfaces. It does not create a continuation request,
-implementation authority, merge authority, or budget authority from the
-agent's assessment; already-authorized continuations remain owned by their
-existing request path.
+An actionable proposal or remaining implementation plan is `continue` only
+when the canonical effective policy independently proves that coding is already
+authorized and the output identifies no missing human decision. The handler
+keeps the issue eligible for the existing continuation path; the semantic
+assessment cannot create or enlarge that authority. A necessary approval or
+decision is `needs_input`. The handler retains that typed result on the run,
+persists its next action in the standard clarifying-question projection, and
+presents it in the GitHub explanation and existing Inbox/run surfaces. It does
+not create a continuation request, implementation authority, merge authority,
+or budget authority from the agent's assessment; already-authorized
+continuations remain owned by their existing policy and request paths.
 
 Malformed, missing, or unavailable semantic dispositions fail closed to
 `needs_input` with an operator-visible request to review the run and provide

@@ -131,6 +131,9 @@ module Activities
           handle_needs_input(client, agent_run, agent_summary, no_output_next_action(agent_run))
           agent_run.complete!
           agent_run.log!("system", "Completed without PR: #{outcome}")
+        when "continue"
+          agent_run.complete!
+          agent_run.log!("system", "Completed without PR: #{outcome}")
         else
           handle_recommend_close(client, agent_run, agent_summary)
           record_no_progress_outcome(agent_run, issue)
@@ -200,17 +203,36 @@ module Activities
     # or turn an unchanged run into a different decision.
     def no_output_disposition_for(agent_run, diagnostic_output) # @spec NO-OUTPUT-ISSUE-010 NO-OUTPUT-ISSUE-011
       persisted = agent_run.reconciliation.to_h["no_output_disposition"]
-      return persisted if valid_no_output_disposition?(persisted)
+      continuation_authorized = continuation_authorized?(agent_run)
+      return persisted if valid_no_output_disposition?(persisted, continuation_authorized:)
 
-      assessment = Llm::AssessNoOutputDisposition.call(agent_run: agent_run, diagnostic_output: diagnostic_output)
+      assessment = Llm::AssessNoOutputDisposition.call(
+        agent_run:, diagnostic_output:, continuation_authorized:
+      )
       agent_run.update!(reconciliation: agent_run.reconciliation.merge("no_output_disposition" => assessment))
       assessment
     rescue Llm::AssessNoOutputDisposition::DispositionFailure, AgentHarness::ConfigurationError
       fallback_no_output_disposition(agent_run)
     end
 
-    def valid_no_output_disposition?(assessment)
-      Llm::AssessNoOutputDisposition.valid_disposition?(assessment)
+    def valid_no_output_disposition?(assessment, continuation_authorized:)
+      Llm::AssessNoOutputDisposition.valid_disposition?(assessment, continuation_authorized:)
+    end
+
+    def continuation_authorized?(agent_run)
+      decision = Automation::EffectivePolicy.call(
+        project: agent_run.project,
+        phase: Automation::Phases::CODING,
+        work_item: agent_run.issue,
+        trigger: :automatic
+      )
+      return false unless decision.permitted?
+      return true if decision.source == :continuation_grant
+
+      Issues::AutoPickProjectGate.call(agent_run.project) &&
+        Automation::FeatureActivation.issue_auto_pick_trigger(
+          project: agent_run.project, issue: agent_run.issue
+        ).present?
     end
 
     def fallback_no_output_disposition(agent_run)
@@ -351,11 +373,12 @@ module Activities
     def handle_needs_input(client, agent_run, agent_summary, next_action = nil)
       project = agent_run.project
       issue = agent_run.issue
-      issue.update!(paid_state: "needs_input")
+      guidance = next_action.presence || "A trusted collaborator should reply with the details required to continue."
+      issue.update!(paid_state: "needs_input", needs_input_questions: [ guidance ])
       add_needs_input_label(client, project, issue)
       remove_recommend_close_label(client, project, issue, agent_run.id)
       remove_trigger_labels(client, project, issue, agent_run.id)
-      post_needs_input_comment(client, agent_run, agent_summary, next_action)
+      post_needs_input_comment(client, agent_run, agent_summary, guidance)
     end
 
     # The agent explicitly declared this issue's work complete without a code

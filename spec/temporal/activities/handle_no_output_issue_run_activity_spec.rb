@@ -315,6 +315,8 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
     end
 
     context "when observable output proposes remaining work" do
+      let(:next_action) { "Approve the remaining Full LID implementation scope, then request continuation." }
+
       # @spec NO-OUTPUT-ISSUE-010
       it "parks the issue for the proposal's exact next action rather than recommending closure" do
         issue = create(:issue, :in_progress, project: project)
@@ -323,21 +325,44 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         agent_run.log!("stdout", "Phase 1 is approved; add the remaining LLD, EARS, tests, and implementation after approval.")
         allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
           { "disposition" => "needs_input", "rationale" => "Implementation remains planned but was not performed.",
-            "next_action" => "Approve the remaining Full LID implementation scope, then request continuation." }
+            "next_action" => next_action }
         )
 
         result = activity.execute(agent_run_id: agent_run.id, output_present: true)
 
         expect(result[:outcome]).to eq("needs_input")
-        expect(issue.reload.paid_state).to eq("needs_input")
+        expect(issue.reload).to have_attributes(paid_state: "needs_input", needs_input_questions: [ next_action ])
         expect(agent_run.reload.reconciliation.fetch("no_output_disposition")).to include(
           "disposition" => "needs_input",
-          "next_action" => "Approve the remaining Full LID implementation scope, then request continuation."
+          "next_action" => next_action
         )
         expect(client).to have_received(:add_comment).with(project.full_name, issue.github_number,
-          a_string_including("Approve the remaining Full LID implementation scope, then request continuation."))
+          a_string_including(next_action))
         expect(client).not_to have_received(:add_comment).with(project.full_name, issue.github_number,
           a_string_including("Recommend Close"))
+      end
+
+      # @spec NO-OUTPUT-ISSUE-010
+      it "preserves an already-authorized continuation without requesting human approval" do
+        FeatureFlags.enable!(:automation_phases, project:)
+        issue = create(:issue, :in_progress, project: project, labels: [ "paid-build" ])
+        create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+        agent_run = create(:agent_run, :running, project:, issue:, iterations: 3, cost_cents: 100)
+        agent_run.log!("stdout", "The implementation plan is ready; continue with the authorized coding work.")
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "continue", "rationale" => "The remaining work is within the existing grant.",
+            "next_action" => "Continue with the planned implementation." }
+        )
+
+        result = activity.execute(agent_run_id: agent_run.id, output_present: true)
+
+        expect(result[:outcome]).to eq("continue")
+        expect(issue.reload).to have_attributes(paid_state: "in_progress", needs_input_questions: nil)
+        expect(client).not_to have_received(:remove_labels_from_issue)
+        expect(client).not_to have_received(:add_comment)
+        expect(Llm::AssessNoOutputDisposition).to have_received(:call).with(
+          agent_run:, diagnostic_output: kind_of(String), continuation_authorized: true
+        )
       end
 
       # @spec NO-OUTPUT-ISSUE-010

@@ -91,6 +91,19 @@ RSpec.describe Llm::AssessNoOutputDisposition do
   end
 
   # @spec NO-OUTPUT-ISSUE-010
+  it "accepts continuation only when existing policy authority was supplied" do
+    allow(response).to receive(:output).and_return({
+      disposition: "continue", rationale: "The owner already authorized coding through the current endpoint.",
+      next_action: "Continue the planned implementation."
+    }.to_json)
+
+    expect(described_class.call(agent_run:, diagnostic_output: "proposal", continuation_authorized: true))
+      .to include("disposition" => "continue")
+    expect { described_class.call(agent_run:, diagnostic_output: "proposal", continuation_authorized: false) }
+      .to raise_error(described_class::DispositionFailure) { |error| expect(error.diagnostic).to include(category: "invalid_disposition") }
+  end
+
+  # @spec NO-OUTPUT-ISSUE-010
   it "reports a typed transport failure without provider output" do
     allow(Llm::Request).to receive(:call).and_raise(AgentHarness::TimeoutError, "provider payload must not persist")
 
