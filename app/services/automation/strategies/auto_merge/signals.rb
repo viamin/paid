@@ -44,6 +44,9 @@ module Automation
       #   intent-conformance verdict, or a matching human-approved bounded
       #   exception (RDR-067). Defaults to +true+ so projects that have not
       #   opted into conformance enforcement are unaffected.
+      # * +conflict_repair_scope_ok+ — a current-head automatic conflict repair
+      #   has a complete, approved semantic scope assessment. Defaults to +true+
+      #   when no current-head automatic conflict repair exists.
       class Signals < ::Data.define(
         :issue_id,
         :pr_number,
@@ -59,7 +62,8 @@ module Automation
         :merge_executor_supported,
         :skip_auto_merge,
         :hold_for_review,
-        :intent_conformance_ok
+        :intent_conformance_ok,
+        :conflict_repair_scope_ok
       )
         class << self
           # Builds a Signals from keyword arguments, defaulting boolean
@@ -80,7 +84,8 @@ module Automation
               merge_executor_supported: kwargs.fetch(:merge_executor_supported, false),
               skip_auto_merge: kwargs.fetch(:skip_auto_merge, false),
               hold_for_review: kwargs.fetch(:hold_for_review, false),
-              intent_conformance_ok: kwargs.fetch(:intent_conformance_ok, true)
+              intent_conformance_ok: kwargs.fetch(:intent_conformance_ok, true),
+              conflict_repair_scope_ok: kwargs.fetch(:conflict_repair_scope_ok, true)
             )
           end
         end
@@ -98,6 +103,7 @@ module Automation
         def skip_auto_merge? = skip_auto_merge == true
         def hold_for_review? = hold_for_review == true
         def intent_conformance_ok? = intent_conformance_ok == true
+        def conflict_repair_scope_ok? = conflict_repair_scope_ok == true
       end
     end
   end

@@ -72,6 +72,7 @@ module Automation
       # not feature PRs bound to an approved design.
       HUMAN_SIGNAL_DEFINITIONS = [
         [ :intent_conformance_ok, "intent_conformance_blocked" ],
+        [ :conflict_repair_scope_ok, "conflict_repair_scope_unresolved" ],
         [ :owner_approved, "owner_approval_missing" ],
         [ :checks_green, "checks_not_green" ],
         [ :mergeable, "not_mergeable" ],
@@ -84,6 +85,7 @@ module Automation
       BOT_SIGNAL_DEFINITIONS = [
         [ :dependabot_eligible, "dependabot_auto_merge_disabled" ],
         [ :merge_executor_supported, "unsupported_dependency_update_bot" ],
+        [ :conflict_repair_scope_ok, "conflict_repair_scope_unresolved" ],
         [ :checks_green, "checks_not_green" ],
         [ :mergeable, "not_mergeable" ],
         [ :dependencies_resolved, "dependencies_unresolved" ]
@@ -183,6 +185,8 @@ module Automation
         case signal_name
         when :intent_conformance_ok
           "This pull request's conformance with the approved design has not been confirmed."
+        when :conflict_repair_scope_ok
+          "Automatic conflict-repair scope evidence for the current HEAD is unresolved."
         when :owner_approved
           "The required owner approval is missing."
         when :checks_green
@@ -218,6 +222,8 @@ module Automation
         case signal_name
         when :intent_conformance_ok
           "Review the intent-conformance decision in the Inbox and choose fix PR, a bounded exception, or a design amendment."
+        when :conflict_repair_scope_ok
+          "Review the automatic conflict-repair scope blocker in the Inbox; retry or complete the bounded repair assessment for this HEAD without broadening the pull request."
         when :owner_approved
           "Ask #{reviewer_handle} to approve this pull request, then wait for the next automatic merge evaluation."
         when :checks_green

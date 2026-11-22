@@ -196,10 +196,19 @@
   the exact pre-run-to-result comparison, and explain that the existing
   fail-closed freshness classifier — not the repair or a re-approval alone —
   decides whether current-head review is required or automatic merging is
-  possible.
+  possible. A matching automatic repair result SHALL make complete approved
+  scope evidence mandatory for that HEAD: unavailable, malformed, rejected, or
+  missing evidence SHALL remain a blocker in scan-time eligibility and the
+  final merge executor recheck, irrespective of review-freshness classification,
+  self-authored approval exceptions, or other auto-merge policy exceptions. An
+  assessment for another HEAD SHALL not block a newer independent HEAD; a later
+  complete approved assessment for the same HEAD is the bounded recovery route.
   *Code:* `app/services/prompts/build_for_pr.rb`,
   `app/services/conflict_repairs/assess_scope.rb`,
-  `app/temporal/activities/complete_existing_pr_run_activity.rb`.
+  `app/services/pull_requests/conflict_repair_scope_gate.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/temporal/activities/merge_pull_request_activity.rb`.
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
