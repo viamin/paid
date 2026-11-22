@@ -66,6 +66,12 @@ workflows:
       introduced_on: "2026-11-07"
     source-closure-retry-unsuccessful-response-v1:
       introduced_on: "2026-11-12"
+    source-closure-recovery-auto-retry-v1:
+      introduced_on: "2026-11-22"
+    source-closure-recovery-deadline-v1:
+      introduced_on: "2026-11-22"
+    source-closure-recovery-operator-auto-retry-v1:
+      introduced_on: "2026-11-22"
   Workflows::ParallelAgentExecutionWorkflow:
     parallel-agent-execution-remove-pr-aggregation-v1:
       introduced_on: "2026-09-03"

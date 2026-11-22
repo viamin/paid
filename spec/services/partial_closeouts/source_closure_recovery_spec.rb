@@ -3,7 +3,10 @@
 require "rails_helper"
 
 RSpec.describe PartialCloseouts::SourceClosureRecovery do
-  let(:run) { create(:agent_run, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
+  let(:account) { create(:account) }
+  let(:operator) { create(:user, :member, account:) }
+  let(:project) { create(:project, account:, created_by: operator, auto_pick_enabled: true) }
+  let(:run) { create(:agent_run, project:, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
 
   # @spec PARTIAL-CLOSEOUT-044
   it "parks exhausted transient assessment work with the immutable pushed revision" do
@@ -59,5 +62,162 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
     expect(described_class.release_claim!(agent_run: run, attempts: 2)).to be(false)
     expect(described_class.release_claim!(agent_run: run, attempts: 1)).to be(true)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "stops automatic recovery across repeated workflow epochs without resetting its lineage" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    3.times do
+      expect(described_class.claim!(agent_run: run.reload)).to be(true)
+      described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    end
+
+    expect(described_class.claim!(agent_run: run.reload)).to be(false)
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("recovery_attempt" => 3, "automatic_recovery_attempt" => 3,
+      "stop_reason" => "automatic_recovery_budget_exhausted", "commit_sha" => "a" * 40)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "records actual assessment requests separately from recovery claims" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+    described_class.claim!(agent_run: run)
+
+    described_class.record_assessment_request!(agent_run: run)
+
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "assessment_request_count")).to eq(1)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "stops a legacy exhausted lineage without minting a claim or assessment request" do
+    run.update!(reconciliation: { "source_closure_recovery" => { "recovery_attempt" => 40 } })
+
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run)).to be(false)
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("recovery_attempt" => 40, "automatic_recovery_attempt" => 40,
+      "stop_reason" => "automatic_recovery_budget_exhausted", "next_retry_at" => nil)
+    expect(recovery).not_to have_key("assessment_request_count")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "keeps a legacy exhausted lineage exhausted after its one operator claim" do
+    run.update!(reconciliation: { "source_closure_recovery" => { "recovery_attempt" => 40 } })
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run, operator:)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run.reload)).to be(false)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(40)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "stops automatic recovery when its current authorization, trust, pause, or budget is denied" do
+    cases = {
+      authorization: [ -> { run.project.update!(auto_pick_enabled: false) }, "automatic_recovery_authorization_withdrawn" ],
+      trust: [ -> { run.project.update!(allowed_github_usernames: [ "another-user" ]) }, "automatic_recovery_source_untrusted" ],
+      pause: [ -> { run.project.update!(scheduler_paused_at: Time.current) }, "automatic_recovery_paused" ],
+      budget: [ -> { create(:cost_budget, :hard_stop, project: run.project, current_usage_cents: 100_000) }, "automatic_recovery_budget_exhausted" ]
+    }
+
+    cases.each do |kind, (deny, expected_reason)|
+      run.update!(reconciliation: {})
+      run.project.update!(auto_pick_enabled: true, allowed_github_usernames: [ "viamin" ], scheduler_paused_at: nil)
+      run.project.cost_budgets.destroy_all
+      deny.call
+      described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+      expect(described_class.claim!(agent_run: run.reload)).to be(false), kind.to_s
+      expect(run.reload.reconciliation.dig("source_closure_recovery", "stop_reason"))
+        .to eq(expected_reason)
+    end
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
+  it "allows one explicit operator recovery without renewing automatic spending authority" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+    3.times do
+      described_class.claim!(agent_run: run.reload)
+      described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    end
+
+    expect(described_class.claim!(agent_run: run.reload, operator:)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    expect(described_class.claim!(agent_run: run.reload, operator:)).to be(false)
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("automatic_recovery_attempt" => 3, "operator_recovery_attempt" => 1,
+      "recovery_attempt" => 4, "stop_reason" => "operator_recovery_budget_exhausted")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "keeps operator-first and automatic claims in separate budgets" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run, operator:)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    expect(described_class.claim!(agent_run: run.reload)).to be(true)
+
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("operator_recovery_attempt" => 1, "automatic_recovery_attempt" => 1,
+      "recovery_attempt" => 2)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "does not charge an operator claim against the automatic recovery budget" do
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    expect(described_class.claim!(agent_run: run.reload, operator:)).to be(true)
+    described_class.park!(agent_run: run.reload, category: "timeout", attempts: 3)
+    expect(described_class.claim!(agent_run: run.reload)).to be(true)
+
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("automatic_recovery_attempt" => 2, "operator_recovery_attempt" => 1,
+      "recovery_attempt" => 3)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
+  it "admits a permitted operator while automatic picking is disabled" do
+    project.update!(auto_pick_enabled: false)
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run, operator:)).to be(true)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "operator_recovery_attempt")).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "denies automatic recovery when automatic picking is disabled" do
+    project.update!(auto_pick_enabled: false)
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run)).to be(false)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(0)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060
+  it "denies an operator whose current permission or hard budget was withdrawn" do
+    viewer = create(:user, :viewer, account: project.account)
+    cases = {
+      permission: [ viewer, nil, "operator_recovery_authorization_withdrawn" ],
+      budget: [ operator, -> { create(:cost_budget, :hard_stop, project:, current_usage_cents: 100_000) },
+        "operator_recovery_cost_budget_exhausted" ]
+    }
+
+    cases.each do |kind, (actor, deny, reason)|
+      run.update!(status: "running", reconciliation: {})
+      project.cost_budgets.destroy_all
+      deny&.call
+      described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+      expect(described_class.claim!(agent_run: run.reload, operator: actor)).to be(false), kind.to_s
+      recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+      expect(recovery["stop_reason"]).to eq(reason)
+      expect(recovery).not_to have_key("operator_recovery_attempt")
+    end
   end
 end

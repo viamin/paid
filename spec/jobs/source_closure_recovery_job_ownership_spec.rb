@@ -9,7 +9,9 @@ RSpec.describe SourceClosureRecoveryJob do
   let(:handle) { instance_double(Temporalio::Client::WorkflowHandle) }
   let(:status) { Temporalio::Client::WorkflowExecutionStatus::RUNNING }
   let(:description) { instance_double(Temporalio::Client::WorkflowExecution::Description, status:) }
-  let(:run) { create(:agent_run, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
+  let(:project) { create(:project, auto_pick_enabled: true) }
+  let(:operator) { create(:user, :member, account: project.account) }
+  let(:run) { create(:agent_run, project:, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
 
   before do
     PartialCloseouts::SourceClosureRecovery.park!(agent_run: run, category: "timeout", attempts: 3)
@@ -37,7 +39,8 @@ RSpec.describe SourceClosureRecoveryJob do
     described_class.perform_now(run.id)
 
     expect(client).to have_received(:start_workflow).with(anything, anything,
-      id: "source-closure-recovery-#{run.id}-2", task_queue: Paid.agent_task_queue)
+      id: "source-closure-recovery-#{run.id}-2", task_queue: Paid.agent_task_queue,
+      execution_timeout: Workflows::SourceClosureRecoveryWorkflow::EXECUTION_TIMEOUT)
   end
 
   it "permits recovery after a crash before the previous workflow started" do
@@ -58,6 +61,32 @@ RSpec.describe SourceClosureRecoveryJob do
 
     expect(client).not_to have_received(:start_workflow)
     expect(run.reload.reconciliation).to eq(before_state)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "preserves operator context when unavailable status defers an explicit retry" do
+    project.update!(auto_pick_enabled: false)
+    allow(handle).to receive(:describe).and_raise(rpc_error(Temporalio::Error::RPCError::Code::UNAVAILABLE))
+
+    expect {
+      described_class.perform_now(run.id, operator_id: operator.id)
+    }.to have_enqueued_job(described_class).with(run.id, operator_id: operator.id)
+
+    expect(client).not_to have_received(:start_workflow)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-060 PARTIAL-CLOSEOUT-061
+  it "preserves operator context when unknown status defers an explicit retry" do
+    project.update!(auto_pick_enabled: false)
+    allow(description).to receive(:status).and_return(0)
+
+    expect {
+      described_class.perform_now(run.id, operator_id: operator.id)
+    }.to have_enqueued_job(described_class).with(run.id, operator_id: operator.id)
+
+    expect(client).not_to have_received(:start_workflow)
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "automatic_recovery_attempt")).to eq(1)
   end
 
   it "fails closed for an unknown execution status" do
