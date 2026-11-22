@@ -83,4 +83,57 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
       expect(result.replay_failure).to be_nil
     end
   end
+
+  # Pre-#5288 ("legacy") follow-up review-resolution histories. These record the
+  # ResolveReviewThreadsActivity command in its ORIGINAL position — before
+  # MarkAgentRunComplete on the no-change path, and right after PushBranch on
+  # the changed-head path — with no evidence-backed patch marker. Replaying them
+  # against current code (real `patched` returns false for the markerless guard)
+  # must reproduce that exact sequence, proving the compatibility branch keeps
+  # #5288 replay-safe. Regenerate with
+  # script/temporal/export_review_followup_histories.rb.
+  # @spec FOCUSED-RUN-010, TEMPORAL-ORCHESTRATION-010
+  describe "legacy follow-up review-resolution replay" do
+    let(:legacy_fixture_dir) { Rails.root.join("spec/fixtures/temporal/review_followup_replay_histories") }
+
+    def legacy_history(name)
+      Temporalio::WorkflowHistory.from_history_json(legacy_fixture_dir.join("#{name}.json").read)
+    end
+
+    def scheduled_activity_names(history)
+      history.events.filter_map(&:activity_task_scheduled_event_attributes)
+        .map { |activity| activity.activity_type.name }
+    end
+
+    def replay_failure_for(history)
+      Temporalio::Worker::WorkflowReplayer.new(
+        workflows: [ Workflows::AgentExecutionWorkflow ],
+        data_converter: Paid::TemporalDataConverter.new,
+        logger: Logger.new(nil),
+        workflow_failure_exception_types: [ Exception ]
+      ).replay_workflow(history, raise_on_replay_failure: false).replay_failure
+    end
+
+    it "records resolution before completion in the no-change history" do
+      names = scheduled_activity_names(legacy_history("agent_execution_legacy_no_change_review_followup"))
+
+      expect(names).to include("ResolveReviewThreads", "MarkAgentRunComplete")
+      expect(names.index("ResolveReviewThreads")).to be < names.index("MarkAgentRunComplete")
+    end
+
+    it "replays the legacy no-change resolution without non-determinism" do
+      expect(replay_failure_for(legacy_history("agent_execution_legacy_no_change_review_followup"))).to be_nil
+    end
+
+    it "records resolution after push in the changed-head history" do
+      names = scheduled_activity_names(legacy_history("agent_execution_legacy_changed_head_review_followup"))
+
+      expect(names).to include("PushBranch", "ResolveReviewThreads")
+      expect(names.index("PushBranch")).to be < names.index("ResolveReviewThreads")
+    end
+
+    it "replays the legacy changed-head resolution without non-determinism" do
+      expect(replay_failure_for(legacy_history("agent_execution_legacy_changed_head_review_followup"))).to be_nil
+    end
+  end
 end

@@ -597,6 +597,22 @@ module Workflows
           end
         else
           # No changes produced by agent
+
+          # Pre-#5288 no-change histories recorded the ResolveReviewThreads
+          # command HERE — before MarkAgentRunCompleteActivity — whenever the
+          # agent reported the feedback already addressed. Evaluate the patch
+          # once, at the point where old and new code diverge, so the marker
+          # anchors deterministically. Old histories (no marker) replay the
+          # recorded command in its recorded position; new executions never
+          # trust a bare agent assertion and instead run the evidence-backed
+          # assessment after completion (below). A single execution does
+          # exactly one of the two. # @spec FOCUSED-RUN-010
+          evidence_backed_followup = Temporalio::Workflow.patched("evidence-backed-followup-review-resolution-v1")
+          unless evidence_backed_followup
+            replay_legacy_no_change_review_resolution(agent_run_id, source_pull_request_number,
+              pr_run_without_prompt, pr_prompt_result, agent_result)
+          end
+
           if goal == "analyze_issue" && issue_id.present?
             # Analyze-issue runs assess readiness without producing code changes.
             # Mark complete and persist the "analyzed" state so the issue is
@@ -626,7 +642,9 @@ module Workflows
           # Still request a review-bot review for existing PR runs: the
           # previous run may have pushed a fix the bot has not reviewed yet.
           if source_pull_request_number && !complete_result[:skipped]
-            resolve_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, pr_prompt_result, agent_result)
+            if evidence_backed_followup
+              assess_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, pr_prompt_result)
+            end
             request_review_bot_review(project_id, source_pull_request_number)
             queue_refactor_followup_if_needed(
               goal: goal,
@@ -984,15 +1002,27 @@ module Workflows
       resolve_followup_review_threads_with_evidence(agent_run_id, prompt_result[:review_thread_ids])
     end
 
-    # @spec FOCUSED-RUN-010
-    def resolve_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, prompt_result, agent_result)
+    # New-position evidence-backed resolution for no-change existing-PR
+    # follow-ups. The caller runs this only under the patch; old histories took
+    # the legacy compatibility branch instead. # @spec FOCUSED-RUN-010
+    def assess_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, prompt_result)
       return unless pr_run_without_prompt && prompt_result[:review_thread_ids].present?
 
-      if Temporalio::Workflow.patched("evidence-backed-followup-review-resolution-v1")
-        resolve_followup_review_threads_with_evidence(agent_run_id, prompt_result[:review_thread_ids])
-      elsif prompt_result[:includes_review_threads] && agent_result[:review_threads_already_addressed]
-        resolve_review_threads(agent_run_id, thread_ids: prompt_result[:review_thread_ids])
-      end
+      resolve_followup_review_threads_with_evidence(agent_run_id, prompt_result[:review_thread_ids])
+    end
+
+    # Pre-#5288 compatibility branch. Reproduces the exact ResolveReviewThreads
+    # command the old no-change path recorded before MarkAgentRunCompleteActivity
+    # so an old history replays deterministically. The caller gates this on the
+    # absence of the evidence-backed patch, so new executions never reach it.
+    # @spec FOCUSED-RUN-010
+    def replay_legacy_no_change_review_resolution(agent_run_id, source_pull_request_number, pr_run_without_prompt, prompt_result, agent_result)
+      return unless source_pull_request_number && pr_run_without_prompt &&
+        prompt_result[:includes_review_threads] &&
+        prompt_result[:review_thread_ids].present? &&
+        agent_result[:review_threads_already_addressed]
+
+      resolve_review_threads(agent_run_id, thread_ids: prompt_result[:review_thread_ids])
     end
 
     def resolve_followup_review_threads_with_evidence(agent_run_id, thread_ids)

@@ -21,10 +21,14 @@ module Activities
       client = project.client
       pull_request = client.pull_request(project.full_name, agent_run.source_pull_request_number)
       head_sha = pull_request.head.sha.to_s
+      base_sha = pull_request.base.sha.to_s
       threads = unresolved_captured_threads(client, project, agent_run, captured_ids)
-      return unavailable if head_sha.blank? || threads.empty?
+      return unavailable if head_sha.blank? || base_sha.blank? || threads.empty?
 
-      evidence = client.detailed_pull_request_files(project.full_name, agent_run.source_pull_request_number)
+      # Bind the evidence to the immutable commit range so a concurrent push
+      # between reading the head and fetching the diff cannot assess a
+      # different head's changes while labeling them as this one.
+      evidence = client.detailed_compare_files(project.full_name, base_sha, head_sha)
       response = Llm::Request.call(prompt: prompt(head_sha, threads, evidence), agent_run: agent_run, timeout: TIMEOUT)
       return unavailable unless response.success?
 
@@ -37,9 +41,24 @@ module Activities
 
     private
 
+    # Re-applies the prompt-assembly trust boundary on the freshly fetched
+    # thread comments. A captured thread ID does not make every current reply
+    # trusted: comments appended by non-allowlisted users after prompt
+    # preparation must never reach the LLM. Threads left with no trusted
+    # evidence are excluded entirely, so they stay actionable.
     def unresolved_captured_threads(client, project, agent_run, captured_ids)
       client.review_threads(project.full_name, agent_run.source_pull_request_number)
         .select { |thread| !thread[:is_resolved] && captured_ids.include?(thread[:id].to_s) }
+        .filter_map { |thread| thread_with_trusted_comments(project, thread) }
+    end
+
+    def thread_with_trusted_comments(project, thread)
+      trusted = Array(thread[:comments]).select do |comment|
+        PromptAssembly::Trust.review_thread_author_trusted?(project, comment[:author])
+      end
+      return if trusted.empty?
+
+      thread.merge(comments: trusted)
     end
 
     def prompt(head_sha, threads, evidence)

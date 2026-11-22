@@ -1985,6 +1985,47 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#detailed_compare_files" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(
+          status: 200,
+          body: {
+            files: [
+              { filename: "app/models/provider.rb", status: "modified", additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+            ]
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "returns detailed file metadata bound to the immutable commit range" do
+      expect(client.detailed_compare_files(repo, "base123", "head456")).to eq([
+        { filename: "app/models/provider.rb", status: "modified", additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1\n-old\n+new" }
+      ])
+    end
+
+    it "caps the returned entries at max_files" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(
+          status: 200,
+          body: {
+            files: [
+              { filename: "a.rb", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "+a" },
+              { filename: "b.rb", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "+b" }
+            ]
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      result = client.detailed_compare_files(repo, "base123", "head456", max_files: 1)
+
+      expect(result.map { |file| file[:filename] }).to eq([ "a.rb" ])
+    end
+  end
+
   describe "#file_modes" do # @spec PROJECT-READINESS-008
     let(:repo) { "owner/repo" }
 

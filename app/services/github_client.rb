@@ -460,6 +460,24 @@ class GithubClient
     end
   end
 
+  # Lists files changed between two immutable commits with full metadata,
+  # capped at +max_files+. Unlike +detailed_pull_request_files+ (which reflects
+  # a pull request's *mutable* current head), this binds the diff to the exact
+  # SHAs the caller captured, so a concurrent head change cannot swap the
+  # evidence out from under a SHA-pinned assessment.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @param max_files [Integer] Cap on returned entries
+  # @return [Array<Hash>] :filename, :status, :additions, :deletions, :changes, :patch
+  def detailed_compare_files(repo, base, head, max_files: 100)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      compare_files_payload(comparison.files || []).first(max_files)
+    end
+  end
+
   # Compares two commits and returns the list of changed file paths.
   #
   # NOTE: GitHub's compare API returns a maximum of 300 files per response.

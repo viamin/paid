@@ -1642,6 +1642,31 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
     end
 
+    # @spec FOCUSED-RUN-010
+    it "replays the pre-#5288 no-change resolution command when the compatibility guard is absent" do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(false)
+      stub_no_changes_followup_with_marker
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42, thread_ids: [ "thread_1" ] }, timeout: 60)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
+    end
+
+    # @spec FOCUSED-RUN-010
+    it "does not replay the legacy resolution when the agent did not report the feedback addressed" do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(false)
+      stub_no_changes_followup
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
+
     it "pushes an automatic rebase even when the agent makes no additional changes" do
       stub_rebase_only_followup
 
