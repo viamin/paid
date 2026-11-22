@@ -365,6 +365,28 @@ RSpec.describe Activities::HandleNoOutputIssueRunActivity do
         )
       end
 
+      # @spec NO-OUTPUT-ISSUE-009 NO-OUTPUT-ISSUE-010
+      it "holds after two authorized automatic continuations make no delivery progress" do
+        FeatureFlags.enable!(:automation_phases, project:)
+        issue = create(:issue, :in_progress, project:, labels: [ "paid-build" ])
+        create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+        allow(Llm::AssessNoOutputDisposition).to receive(:call).and_return(
+          { "disposition" => "continue", "rationale" => "The remaining work is within the existing grant.",
+            "next_action" => "Continue with the planned implementation." }
+        )
+
+        2.times do
+          agent_run = create(:agent_run, :running, :automatic, project:, issue:, goal: "create_pr",
+            auto_pick: true, iterations: 3, cost_cents: 100)
+          agent_run.log!("stdout", "Continue with the authorized coding work.")
+          expect(activity.execute(agent_run_id: agent_run.id, output_present: true)[:outcome]).to eq("continue")
+        end
+
+        expect(Issues::NoProgressCreatePrHold.diagnostic_for(issue)).to include(
+          reason: "repeated_no_progress_create_pr"
+        )
+      end
+
       # @spec NO-OUTPUT-ISSUE-010
       it "fails closed to needs-input when the semantic disposition is malformed" do
         issue = create(:issue, :in_progress, project: project)

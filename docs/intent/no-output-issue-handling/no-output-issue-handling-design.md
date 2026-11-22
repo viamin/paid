@@ -176,13 +176,17 @@ comment failure to self-heal once the human-visible rationale exists.
 ## Repeated no-progress implementation runs
 
 A `recommend_close` result is not proof that an issue is complete and never
-authorizes Paid to close the source issue. It is, however, durable evidence
-that a `create_pr` run made no delivery progress when the run records no pull
-request and no result commit. The handler snapshots the current closeout-evidence
-and issue-intent revisions with that outcome. Auto-pick derives a hold from
-those run facts only after two automatic no-progress runs for the same revision
-pair. The hold applies both while admitting work and while dequeuing it, so
-overlapping poll, sweep, and worker claims cannot start another identical run.
+authorizes Paid to close the source issue. A `continue` result preserves valid
+existing coding authority but is likewise not evidence of delivery progress.
+Either result is durable no-progress evidence when a `create_pr` run records no
+pull request and no result commit. The handler snapshots the current
+closeout-evidence and issue-intent revisions with that outcome. Auto-pick
+derives a hold from those run facts only after two automatic no-progress runs
+for the same revision pair. The hold applies both while admitting work and
+while dequeuing it, so overlapping poll, sweep, and worker claims cannot start
+another identical run. The first authorized continuation remains eligible;
+the finite hold prevents repeated unchanged continuations from becoming an
+unbounded automatic loop.
 
 The hold is released automatically when either revision changes. An authorized
 explicit retry remains outside automatic admission and records a release fact
