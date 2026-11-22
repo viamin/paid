@@ -595,6 +595,27 @@ RSpec.describe Containers::StandaloneTextExecutor do
       release_harvest << true if release_harvest
     end
 
+    # @spec LLM-ROUTING-013
+    it "finishes persisting a rotation read before the candidate deadline" do
+      now = 100.0
+      executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+        clock: ->(_) { now })
+      executor.execute([ "codex", "exec", "hello" ])
+      now = 105.9
+      stub_text_exec do |_c, command, _options = {}|
+        if command.include?("base64 -w0 /home/agent/.codex/auth.json")
+          now = 106.0
+          next [ [ Base64.strict_encode64(rotated_codex_auth) ], [], 0 ]
+        end
+
+        [ [], [], 0 ]
+      end
+
+      executor.close
+
+      expect(JSON.parse(credential.reload.token).dig("tokens", "access_token")).to eq("eyJrotated-access-token")
+    end
+
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
     it "harvests a rotated auth file once when the container closes" do
       stub_execs(rotation_stdout: Base64.strict_encode64(rotated_codex_auth))

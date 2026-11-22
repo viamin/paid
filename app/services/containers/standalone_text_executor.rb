@@ -235,15 +235,35 @@ module Containers
       credential = rotating_subscription_credential
       return unless credential
 
-      within_deadline do
-        with_managed_credential_lease(timeout: managed_credential_lease_timeout) do
-          result = Runners::ManagedCredentialLifecycle.harvest(credential: credential,
-            runner_key: runner.runner_key, backend: Containers.backend, container: @container)
-          log_harvest(result, credential)
+      with_managed_credential_lease(timeout: managed_credential_lease_timeout) do
+        raw = within_deadline do
+          read_managed_credential_rotation
         end
+        unless raw
+          log_harvest(Runners::ManagedCredentialLifecycle::Result.new(supported: true,
+            performed: false, reason: "harvest_failed"), credential)
+          next
+        end
+
+        # The Docker read is deadline-bound, but once it returns the canonical
+        # credential update must complete while the lease remains held.
+        result = Runners::ManagedCredentialLifecycle.persist_rotation!(credential,
+          runner_key: runner.runner_key, raw: raw)
+        log_harvest(result, credential)
       end
     rescue DeadlineExceeded
       defer_credential_harvest!(credential)
+    rescue Docker::Error::DockerError, SystemCallError
+      log_harvest(Runners::ManagedCredentialLifecycle::Result.new(supported: true,
+        performed: false, reason: "harvest_failed"), credential)
+    end
+
+    def read_managed_credential_rotation
+      stdout, _stderr, status = Containers.backend.exec_in_container(@container,
+        Runners::ManagedCredentialLifecycle.rotation_read_command(runner.runner_key), user: "agent")
+      return nil unless status.to_i.zero?
+
+      Array(stdout).join
     end
 
     def rotating_subscription_credential

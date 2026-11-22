@@ -95,8 +95,10 @@
   before beginning command execution; setup that consumes the executable budget
   SHALL not receive a new command allocation, and an exhausted shared deadline
   SHALL not start a fallback. Physical cleanup remains best-effort. Managed
-  credential lease acquisition and harvesting SHALL be bounded by the remaining
-  candidate deadline; an incomplete harvest SHALL be deferred and logged
-  without extending the candidate lifetime.
+  credential lease acquisition and the container rotation read SHALL be bounded
+  by the remaining candidate deadline; an incomplete read SHALL be deferred and
+  logged without extending the candidate lifetime. Once a native rotation has
+  been read, its canonical persistence SHALL complete while retaining the lease
+  even if the candidate deadline expires during that persistence.
   *Tests:* `spec/services/llm/request_spec.rb`,
   `spec/services/containers/standalone_text_executor_spec.rb`.

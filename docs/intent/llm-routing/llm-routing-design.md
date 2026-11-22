@@ -115,8 +115,10 @@ request deadline cannot start another fallback. Cleanup is bounded and
 best-effort: the executor attempts removal during the remaining candidate
 deadline, and its immutable orphan-sweep label recovers a container when a
 Docker cleanup call cannot finish. Managed credential lease acquisition and
-harvesting share that deadline; a harvest that cannot finish is deferred and
-logged without extending the candidate lifetime.
+the container read share that deadline; a read that cannot finish is deferred
+and logged without extending the candidate lifetime. Once a native rotation
+has been read, its canonical persistence completes while retaining the lease,
+even if the candidate deadline expires during that persistence.
 The closeout assessment allows 60 seconds for CLI startup and reasoning,
 within its 120-second activity budget including authentication and cleanup.
 Background session summaries and error diagnosis use project-owner text routing because run cleanup can precede
