@@ -793,6 +793,22 @@ RSpec.describe ProcessRunQueueJob do
       job.perform
     end
 
+    it "dispatches an operator-prioritized coding retry with its Temporal priority" do # @spec QUEUE-TIER-009
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open")
+      queued_run = create(:agent_run, :queued, :automatic, project:, issue:, goal: "create_pr", auto_pick: true,
+        operator_coding_priority_requested_at: Time.current)
+      priority = Temporalio::Priority.new(priority_key: 4, fairness_key: queued_run.project.account_id.to_s)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: queued_run.id),
+        hash_including(priority:)
+      ).and_return(workflow_handle)
+
+      job.perform
+    end
+
     it "keeps the account id as the Temporal fairness key for strict-priority accounts" do
       queued_run = create(:agent_run, :queued)
       queued_run.project.account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")

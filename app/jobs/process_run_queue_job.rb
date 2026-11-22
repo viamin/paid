@@ -41,6 +41,7 @@ class ProcessRunQueueJob < ApplicationJob
     pr_p2: 2,
     pr_p3: 3,
     pr_continue: 3,
+    operator_coding: 4,
     issue_p1: 4,
     issue_p2: 4,
     issue_p3: 5,

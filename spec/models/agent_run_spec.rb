@@ -4262,7 +4262,7 @@ RSpec.describe AgentRun do
       expect(pr_run.queue_priority_tier).to eq(:pr_p1)
     end
 
-    context "with all 9 priority tiers" do
+    context "with all 10 priority tiers" do
       let(:project) { create(:project) }
 
       def issue_run(project, minutes_ago, label: nil)
@@ -4282,6 +4282,8 @@ RSpec.describe AgentRun do
         issue_p3_run = issue_run(project, 8, label: "P3")
         issue_p2_run = issue_run(project, 7, label: "P2")
         issue_p1_run = issue_run(project, 6, label: "P1")
+        operator_coding = create(:agent_run, :queued, :automatic, project:, goal: "create_pr",
+          operator_coding_priority_requested_at: Time.current, created_at: 6.minutes.ago)
         auto_continue = pr_run(project, 5, github_number: 100)
         pr_p3_run = pr_run(project, 4, github_number: 103, label: "P3")
         pr_p2_run = pr_run(project, 3, github_number: 102, label: "P2")
@@ -4292,7 +4294,7 @@ RSpec.describe AgentRun do
         ordered_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
         expect(ordered_ids).to eq(
           [ manual_run, pr_p1_run, pr_p2_run, pr_p3_run, auto_continue,
-            issue_p1_run, issue_p2_run, issue_p3_run, auto_pick ].map(&:id)
+            operator_coding, issue_p1_run, issue_p2_run, issue_p3_run, auto_pick ].map(&:id)
         )
       end
     end
