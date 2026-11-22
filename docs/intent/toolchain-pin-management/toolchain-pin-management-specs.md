@@ -186,9 +186,12 @@
   managed credential recovery, it SHALL verify the installed public provider
   capabilities and Codex credential metadata contract using synthetic native
   credentials, while preserving Claude and unsupported-provider capability
-  behavior. Paid SHALL consume that public contract without adding provider
-  HTTP or response-parsing wrappers.
-  *Tests:* `spec/lib/agent_harness/authentication_release_contract_spec.rb`.
+  behavior. Paid SHALL consume that public contract through an explicitly
+  selected native store and its returned credential envelope, without adding
+  provider HTTP or response-parsing wrappers.
+  *Tests:* `spec/lib/agent_harness/authentication_release_contract_spec.rb`,
+  `spec/services/runners/managed_credential_lifecycle_spec.rb`,
+  `spec/requests/api/standalone_text_credentials_spec.rb`.
   *Code:* `Gemfile`, `Runners::ManagedCredentialLifecycle`.
 
 ## Report-Only Toolchain

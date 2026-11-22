@@ -89,9 +89,9 @@ gem "aws-sdk-s3", require: false
 # 0.44.40 preserves OpenCode provider configuration maps (#5205,
 # viamin/agent-harness#548). 0.46.1 adds managed Codex refresh exchange
 # metadata (viamin/agent-harness#559) and the OpenRouter privacy routing
-# correction (#560). 0.46.2 contains the typed managed-recovery deadline
+# correction (#560). 0.46.3 contains the bare-caller-watchdog commit/deadline
 # correction (viamin/agent-harness#563).
-gem "agent-harness", "0.46.2"
+gem "agent-harness", "0.46.3"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.

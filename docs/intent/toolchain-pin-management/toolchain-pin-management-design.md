@@ -48,7 +48,10 @@ not: a Paid-side override would silently diverge from the version
 `agent-harness` release it depends on, so that gem pin is what `bin/update`
 moves. Release adoption verifies the installed public contract required by
 Paid before relying on it, including managed-credential recovery metadata and
-exchange capabilities. A verified unreleased upstream correction may temporarily add an
+exchange capabilities. Codex recovery is invoked only against an explicitly
+selected disposable native store, with its generation and account identity,
+and Paid persists the returned credentials envelope through its existing
+canonical-credential validation path. A verified unreleased upstream correction may temporarily add an
 immutable git ref to that release pin; remove the ref once a containing release
 is available. Where a contract lags real upstream, `bin/update` reports the gap
 so it can be filed against `agent-harness` rather than patched locally.
