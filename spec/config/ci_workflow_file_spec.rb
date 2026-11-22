@@ -309,7 +309,6 @@ RSpec.describe CiWorkflowFile, :no_db do
 
       expect(run).to include("for attempt in 1 2 3 4 5")
       expect(run).to include("20m")
-      expect(run).to include("--kill-after=1m")
       expect(run).to include('bash -lc \'yarn install --frozen-lockfile && bin/yarn-postinstall\'')
     end
   end

@@ -350,7 +350,7 @@ jobs:
             shift 2
             local attempt
             for attempt in 1 2 3 4 5; do
-              if timeout --kill-after=1m "$timeout_limit" "$@"; then
+              if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
               echo "::warning::${warning_message} (attempt $attempt/5); retrying"
@@ -373,7 +373,7 @@ jobs:
             shift 2
             local attempt
             for attempt in 1 2 3 4 5; do
-              if timeout --kill-after=1m "$timeout_limit" "$@"; then
+              if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
               echo "::warning::${warning_message} (attempt $attempt/5); retrying"
@@ -754,7 +754,7 @@ jobs:
             shift 2
             local attempt
             for attempt in 1 2 3 4 5; do
-              if timeout --kill-after=1m "$timeout_limit" "$@"; then
+              if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
               echo "::warning::${warning_message} (attempt $attempt/5); retrying"
@@ -777,7 +777,7 @@ jobs:
             shift 2
             local attempt
             for attempt in 1 2 3 4 5; do
-              if timeout --kill-after=1m "$timeout_limit" "$@"; then
+              if timeout "$timeout_limit" "$@"; then
                 return 0
               fi
               echo "::warning::${warning_message} (attempt $attempt/5); retrying"

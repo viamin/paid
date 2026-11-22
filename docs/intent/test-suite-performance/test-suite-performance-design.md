@@ -38,10 +38,8 @@ the stable final check.
 
 The shard matrix and dropped-shard recovery retry JavaScript dependency setup
 at most five times, bounding each attempt to twenty minutes with increasing
-delays. An expired attempt has a bounded one-minute forced termination window
-so its installer and postinstall processes cannot outlive the retry boundary.
-This absorbs transient registry and hosted-runner stalls without skipping setup
-or relaxing the shard's 360-minute job boundary.
+delays. This absorbs transient registry and hosted-runner stalls without
+skipping setup or relaxing the shard's 360-minute job boundary.
 
 ## Platform-dropped shard recovery
 
