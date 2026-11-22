@@ -21,7 +21,7 @@ terminate_group() {
 
 cleanup_active_attempt() {
   if [[ -n "$active_watchdog" ]]; then
-    kill "$active_watchdog" 2>/dev/null || true
+    kill -TERM -- "-$active_watchdog" 2>/dev/null || true
     wait "$active_watchdog" || true
   fi
   if [[ -n "$active_group_leader" ]] && kill -0 -- "-$active_group_leader" 2>/dev/null; then
@@ -47,15 +47,21 @@ trap 'on_exit' EXIT
 run_attempt() {
   local timeout_marker group_leader watchdog status
   timeout_marker="$(mktemp)"
+  rm -f "$timeout_marker"
   active_timeout_marker="$timeout_marker"
   setsid "$@" &
   group_leader=$!
   active_group_leader="$group_leader"
-  (
-    sleep "$attempt_timeout"
-    : > "$timeout_marker"
-    terminate_group "$group_leader"
-  ) &
+  # @spec TEST-SUITE-023
+  # Keep the watchdog's timer and grace delay in its own session so stopping
+  # the watchdog also closes inherited output descriptors before we return.
+  setsid bash -c '
+    sleep "$1"
+    : > "$2"
+    kill -TERM -- "-$3" 2>/dev/null || true
+    sleep "$4"
+    kill -KILL -- "-$3" 2>/dev/null || true
+  ' -- "$attempt_timeout" "$timeout_marker" "$group_leader" "$termination_grace" &
   watchdog=$!
   active_watchdog="$watchdog"
 
@@ -64,7 +70,7 @@ run_attempt() {
   status=$?
   set -e
 
-  if [[ -s "$timeout_marker" ]]; then
+  if [[ -e "$timeout_marker" ]]; then
     wait "$watchdog" || true
     rm -f "$timeout_marker"
     active_group_leader=""
@@ -73,7 +79,7 @@ run_attempt() {
     return 124
   fi
 
-  kill "$watchdog" 2>/dev/null || true
+  kill -TERM -- "-$watchdog" 2>/dev/null || true
   wait "$watchdog" || true
   if kill -0 -- "-$group_leader" 2>/dev/null; then
     terminate_group "$group_leader"

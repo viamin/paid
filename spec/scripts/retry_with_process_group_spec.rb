@@ -34,6 +34,19 @@ RSpec.describe RetryWithProcessGroup, :no_db do
   end
 
   # @spec TEST-SUITE-023
+  it "closes its output after a successful command with a long watchdog timer" do
+    long_watchdog = fast_supervision.merge("DEPENDENCY_SETUP_TIMEOUT" => "10s")
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    stdout, stderr, status = Open3.capture3(long_watchdog, script_path, "bash", "-c", "true")
+
+    expect(status).to be_success
+    expect(stdout).to eq("")
+    expect(stderr).to eq("")
+    expect(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at).to be < 3
+  end
+
+  # @spec TEST-SUITE-023
   it "terminates and reaps TERM-resistant descendants when an attempt times out" do
     child_pid_file = Rails.root.join("tmp/retry-with-process-group-resistant-child.pid")
     FileUtils.rm_f(child_pid_file)
