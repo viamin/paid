@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "json"
+require "yaml"
 
 class DevcontainerFile < Pathname
 end
@@ -10,6 +11,10 @@ RSpec.describe DevcontainerFile, :no_db do
   subject(:devcontainer) do
     source = Rails.root.join(".devcontainer/devcontainer.json").read
     JSON.parse(source.lines.reject { |line| line.lstrip.start_with?("//") }.join)
+  end
+
+  let(:compose) do
+    YAML.safe_load_file(Rails.root.join(".devcontainer/compose.yaml"), aliases: true)
   end
 
   let(:oh_my_pi_installer) { Rails.root.join(".devcontainer/install-oh-my-pi.sh").read }
@@ -77,5 +82,13 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(command).to include("git config --local remote.origin.url https://github.com/viamin/paid.git")
     expect(command).to include("git config --local credential.helper '!/usr/bin/gh auth git-credential'")
     expect(command).to include("bash .devcontainer/ensure-networks-and-qdrant.sh && bin/setup")
+  end
+
+  # @spec CONTAINER-RUNTIME-050
+  it "mounts the configured Docker backing store read-only for capacity admission" do
+    rails_app = compose.fetch("services").fetch("rails-app")
+
+    expect(rails_app.fetch("volumes")).to include("${PAID_DOCKER_BACKING_STORE_HOST_PATH:-/var/lib/docker}:/mnt/paid-docker-backing-store:ro")
+    expect(rails_app.fetch("environment").fetch("PAID_DOCKER_BACKING_STORE_PROBE_PATH")).to eq("/mnt/paid-docker-backing-store")
   end
 end

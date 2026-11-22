@@ -99,9 +99,11 @@
   `backing_storage_reserve_exhausted` reason, a one-minute recheck, safe scope,
   available-byte and timestamp evidence, and an operator action. The local
   backend SHALL measure only an explicitly configured probe mounted from the
-  Docker backing filesystem; remote, unavailable, and stale observations SHALL
-  remain explicitly distinguishable and SHALL NOT be mistaken for local
-  control-plane disk capacity. The guard SHALL not change requested-resource
+  Docker backing filesystem; supported local deployment configuration SHALL
+  mount that backing store read-only and configure the probe to use it. Remote,
+  unavailable, and stale observations SHALL remain explicitly distinguishable
+  and SHALL NOT be mistaken for local control-plane disk capacity. The guard
+  SHALL not change requested-resource
   ceilings or cleanup authority, and SHALL leave cancellation and cleanup
   admission paths available. A local probe SHALL terminate and reap its
   process group within its deadline. Only a nonnegative integer byte

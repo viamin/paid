@@ -203,10 +203,14 @@ It never exposes daemon paths, mounts, credentials, or workload names.
 
 The local Docker backend supports the capability only when an operator has
 mounted a probe from the Docker backing filesystem and configured
-`PAID_DOCKER_BACKING_STORE_PROBE_PATH`. It measures that explicit probe's
-filesystem; it MUST NOT treat the control-plane container's root filesystem as
-the Docker daemon's backing store. Remote and unsupported backends report an
-explicit unavailable/unsupported reason rather than inspecting local disk.
+`PAID_DOCKER_BACKING_STORE_PROBE_PATH`. The supported devcontainer mounts the
+host daemon data root read-only at `/mnt/paid-docker-backing-store` and points
+the probe to that mount; operators whose daemon uses another path set
+`PAID_DOCKER_BACKING_STORE_HOST_PATH` to that actual backing-store path. It
+measures that explicit probe's filesystem; it MUST NOT treat the control-plane
+container's root filesystem as the Docker daemon's backing store. Remote and
+unsupported backends report an explicit unavailable/unsupported reason rather
+than inspecting local disk.
 The probe executes in a bounded process group that is terminated and reaped at
 its deadline. Only a nonnegative integer byte count is known headroom;
 missing, malformed, negative, or stale observations remain distinguishable

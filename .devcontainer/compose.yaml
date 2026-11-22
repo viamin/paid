@@ -9,6 +9,10 @@ services:
 
     volumes:
     - ../../paid:/workspaces/paid:cached
+    # This is the backing filesystem for the host Docker daemon used through
+    # docker-outside-of-docker. Keep it read-only: admission only measures
+    # headroom and never receives authority to reclaim Docker data.
+    - "${PAID_DOCKER_BACKING_STORE_HOST_PATH:-/var/lib/docker}:/mnt/paid-docker-backing-store:ro"
     # Agent CLI tool state lives in named volumes: container-local (never shared
     # with the host) but persisted across container rebuilds. Auth is no longer
     # bind-mounted from the host — the upstream browser-based login flows now
@@ -44,6 +48,7 @@ services:
       PAID_WEB_BIND_ADDRESS: "0.0.0.0"
       PAID_ENABLE_DEV_QUERY_STATS: "1"
       PAID_PG_TRACK_PLANNING: "${PAID_PG_TRACK_PLANNING:-on}"
+      PAID_DOCKER_BACKING_STORE_PROBE_PATH: "/mnt/paid-docker-backing-store"
 
     depends_on:
       postgres:
