@@ -4,11 +4,16 @@ module Llm
   # Routes application text through owned, configured runners and credentials.
   class Request
     MAX_ATTEMPTS = 5
+    FROZEN_ATTEMPT_TRACES = ObjectSpace::WeakMap.new
+    FROZEN_ATTEMPT_TRACES_LOCK = Mutex.new
 
     def self.call(...) = new(...).call
 
     def self.attempt_trace_for(subject)
-      subject.instance_variable_get(:@llm_request_attempt_trace) if subject
+      return unless subject
+
+      subject.instance_variable_get(:@llm_request_attempt_trace) ||
+        FROZEN_ATTEMPT_TRACES_LOCK.synchronize { FROZEN_ATTEMPT_TRACES[subject] }
     end
 
     def initialize(prompt:, timeout:, agent_run: nil, project: nil, account: nil, user: nil, model: nil, runner: nil,
@@ -274,6 +279,7 @@ module Llm
       subject.instance_variable_set(:@llm_request_attempt_trace, trace) if subject
       subject
     rescue FrozenError
+      FROZEN_ATTEMPT_TRACES_LOCK.synchronize { FROZEN_ATTEMPT_TRACES[subject] = trace } if subject
       subject
     end
 

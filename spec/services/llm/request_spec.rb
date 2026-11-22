@@ -290,6 +290,50 @@ RSpec.describe Llm::Request do
   end
 
   # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "retains the selected fallback trace for a frozen invalid response" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    malformed = Struct.new(:output) do
+      def success? = true
+    end.new("not json").freeze
+    failures = [ AgentHarness::TimeoutError.new("primary timeout"), malformed ]
+    allow(provider).to receive(:send_message) do
+      result = failures.shift
+      raise result if result.is_a?(Exception)
+
+      result
+    end
+
+    result = described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ],
+      response_validator: ->(candidate) { candidate.output == "ok" })
+
+    expect(result).to eq(malformed)
+    expect(described_class.attempt_trace_for(result)).to include(selected_attempt_ordinal: 2)
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "retains the selected fallback trace for a frozen timeout" do
+    fallback = create(:runner, user: owner, runner_key: "gemini",
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    create(:runner_credential, runner: fallback, account: project.account)
+    allow(AgentHarness).to receive(:provider_class).with(:gemini).and_return(provider_class)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+    failures = [ AgentHarness::TimeoutError.new("primary timeout"), AgentHarness::TimeoutError.new("fallback timeout").freeze ]
+    allow(provider).to receive(:send_message) { raise failures.shift }
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120,
+      per_runner_timeout: 60, fallback_runner_identifiers: [ fallback.routing_key ]) }
+      .to raise_error(AgentHarness::TimeoutError, "fallback timeout") do |error|
+        expect(error).to be_frozen
+        expect(described_class.attempt_trace_for(error)).to include(selected_attempt_ordinal: 2)
+      end
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
   it "retains the earlier permanent failure as selected when a fallback times out" do
     fallback = create(:runner, user: owner, runner_key: "gemini",
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })

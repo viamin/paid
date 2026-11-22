@@ -79,15 +79,17 @@ module PartialCloseouts
       def safe_attempt_trace(trace)
         source = trace.stringify_keys
         attempts = source["attempts"].is_a?(Array) ? source["attempts"].first(5) : []
-        {
-          "selected_attempt_ordinal" => bounded_diagnostic_value(source["selected_attempt_ordinal"]),
+        result = {
           "attempts" => attempts.filter_map do |attempt|
             next unless attempt.is_a?(Hash)
 
             attempt.stringify_keys.slice(*ATTEMPT_TRACE_KEYS).compact
               .transform_values { |value| bounded_diagnostic_value(value) }
           end
-        }.compact
+        }
+        selected_attempt_ordinal = source["selected_attempt_ordinal"]
+        result["selected_attempt_ordinal"] = bounded_diagnostic_value(selected_attempt_ordinal) unless selected_attempt_ordinal.nil?
+        result
       end
 
       # A "retried" run keeps the failure signature that justified its retry,

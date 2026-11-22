@@ -60,6 +60,22 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
     )
   end
 
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "does not invent a selected attempt for a skipped-only trace" do
+    run.update!(reconciliation: {
+      "acceptance_audit_failure" => {
+        "category" => "configuration_error", "attempt_trace" => {
+          "attempts" => [ { "ordinal" => 1, "outcome" => "skipped", "skip_reason" => "privacy_policy" } ]
+        }
+      }
+    })
+
+    trace = described_class.diagnostic_for(run).fetch("attempt_trace")
+
+    expect(trace).not_to have_key("selected_attempt_ordinal")
+    expect(trace.fetch("attempts")).to include("ordinal" => "1", "outcome" => "skipped", "skip_reason" => "privacy_policy")
+  end
+
   it "classifies cancellation, budget exhaustion, and rate-limit recovery as non-transient" do
     expect(described_class.classify(failing_run(status: "cancelled"))).to eq(:cancelled)
     expect(described_class.classify(failing_run(status: "token_budget_exceeded"))).to eq(:budget_exhausted)
