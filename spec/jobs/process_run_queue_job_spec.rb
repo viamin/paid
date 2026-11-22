@@ -735,15 +735,13 @@ RSpec.describe ProcessRunQueueJob do
     it "accounts for manual-mode run memory within an auto-mode queue pass" do
       # Scenario: auto-mode user A has two queued runs; manual-mode user B has one.
       # Docker budget is exactly 2 × DEFAULT_ESTIMATED_MEMORY_BYTES (4 GB each = 8 GB).
-      # After A's first run starts (4 GB reserved) and B's manual run starts
-      # (4 GB — now also reserved with fix), A's second run must be blocked.
+      # Once both runs reserve 4 GB each, A's second run must be blocked.
       auto_project = create(:project)
       auto_user = auto_project.created_by
       auto_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
 
       manual_project = create(:project)
-      manual_user = manual_project.created_by
-      manual_user.settings.update!(max_concurrent_runs: 10)
+      manual_project.created_by.settings.update!(max_concurrent_runs: 10)
 
       auto_run1 = create(:agent_run, :queued, project: auto_project, created_at: 5.minutes.ago)
       manual_run  = create(:agent_run, :queued, project: manual_project, created_at: 3.minutes.ago)
