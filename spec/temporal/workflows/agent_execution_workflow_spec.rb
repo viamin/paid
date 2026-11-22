@@ -1109,6 +1109,25 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
       workflow.execute(input)
     end
+
+    # @spec NO-OUTPUT-ISSUE-010
+    it "allows no-output semantic assessment and cleanup to use their full activity budget" do
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::RunAgentActivity"
+          { success: true, has_changes: false, output_present: true }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::HandleNoOutputIssueRunActivity,
+        { agent_run_id: 42, output_present: true }, timeout: 120
+      )
+    end
   end
 
   describe "verification browser patch guard" do
