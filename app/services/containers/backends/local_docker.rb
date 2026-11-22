@@ -33,7 +33,7 @@ module Containers
         info.merge("PaidHostMemAvailable" => available_kb * 1024)
       end
 
-      # @spec CONTAINER-RUNTIME-050
+      # @spec CONTAINER-RUNTIME-054
       def backing_storage_observation(now: Time.current)
         probe_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"].presence
         return { reason: "backing_storage_probe_unconfigured" } unless probe_path

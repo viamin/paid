@@ -119,7 +119,7 @@ RSpec.describe Capacity::RunAdmission do
   end
 
   describe ".call" do
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "defers a low-request run when fresh backing-store headroom reaches the reserve" do
       result = described_class.call(
         user: user,
@@ -140,7 +140,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:rate_limited_until]).to be_within(1.second).of(1.minute.from_now)
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "does not deny healthy recovery or unavailable backing-store evidence" do
       healthy = docker_snapshot.merge(
         backing_storage_available: true,
@@ -156,7 +156,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(described_class.call(user: user, project: project, docker_snapshot: unavailable, selected_host: "local", selected_host_limit: 8)[:allowed]).to be(true)
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "keeps a direct backing-store probe timeout unavailable" do
       backend = instance_double(
         Containers::Backends::LocalDocker,
@@ -181,7 +181,7 @@ RSpec.describe Capacity::RunAdmission do
       )
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     [ nil, "not-a-byte-count", -1 ].each do |available_bytes|
       it "keeps #{available_bytes.inspect} injected backing-store evidence unavailable" do
         malformed = docker_snapshot.merge(

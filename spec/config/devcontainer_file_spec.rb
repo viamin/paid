@@ -84,7 +84,7 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(command).to include("bash .devcontainer/ensure-networks-and-qdrant.sh && bin/setup")
   end
 
-  # @spec CONTAINER-RUNTIME-050
+  # @spec CONTAINER-RUNTIME-054
   it "mounts the configured Docker backing store read-only for capacity admission" do
     rails_app = compose.fetch("services").fetch("rails-app")
 

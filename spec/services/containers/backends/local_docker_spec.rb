@@ -73,7 +73,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_probe_path
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "measures only an explicitly configured backing-store probe" do
       Dir.mktmpdir do |probe_path|
         now = Time.zone.parse("2026-11-21 18:28:00 UTC")
@@ -90,7 +90,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "terminates and reaps a hanging df probe within its deadline" do
       with_backing_store_probe("#!/bin/sh\nwhile :; do :; done\n") do
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -102,7 +102,7 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "does not accept output from a probe that exits after its deadline" do
       with_backing_store_probe(<<~SH) do
           #!/bin/sh
@@ -120,14 +120,14 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "treats malformed successful probe output as unavailable" do
       with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'\n") do
         expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unavailable")
       end
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "does not substitute the application container filesystem when no probe is configured" do
       allow(ENV).to receive(:[]).with("PAID_DOCKER_BACKING_STORE_PROBE_PATH").and_return(nil)
 

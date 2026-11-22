@@ -135,7 +135,7 @@ RSpec.describe Capacity::DockerSnapshot do
       )
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "keeps fresh physical backing-store evidence separate from Docker memory" do
       allow(backend).to receive(:backing_storage_observation).with(now: now).and_return(
         scope: "configured_docker_backing_store_probe",
@@ -154,7 +154,7 @@ RSpec.describe Capacity::DockerSnapshot do
       )
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "marks an old backing-store reading stale without treating it as known headroom" do
       allow(backend).to receive(:backing_storage_observation).with(now: now).and_return(
         scope: "configured_docker_backing_store_probe",
@@ -170,7 +170,7 @@ RSpec.describe Capacity::DockerSnapshot do
       )
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     [ nil, "not-a-byte-count", -1 ].each do |available_bytes|
       it "keeps #{available_bytes.inspect} backing-store measurements unavailable" do
         allow(backend).to receive(:backing_storage_observation).with(now: now).and_return(
@@ -188,7 +188,7 @@ RSpec.describe Capacity::DockerSnapshot do
       end
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "keeps malformed cached backing-store measurements unavailable" do
       cached_snapshot = described_class.call(backend:, now:, cache:)
       cached_data = described_class.serialize(cached_snapshot).merge(
@@ -206,7 +206,7 @@ RSpec.describe Capacity::DockerSnapshot do
       )
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     it "handles an Excon failure from backing-store observation as unavailable" do
       allow(backend).to receive(:backing_storage_observation).with(now: now).and_raise(Excon::Error, "backend unavailable")
 

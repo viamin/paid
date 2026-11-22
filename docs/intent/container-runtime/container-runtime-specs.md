@@ -92,7 +92,7 @@
   `spec/jobs/process_run_queue_job_spec.rb`
   *Code:* `Capacity::RunAdmission`
 
-- [x] **CONTAINER-RUNTIME-050** — When a supported execution backend supplies
+- [x] **CONTAINER-RUNTIME-054** — When a supported execution backend supplies
   a fresh, bounded physical backing-storage observation at or below the
   documented 5 GiB reserve, normal execution admission (including provisioning
   and image-build consumers) SHALL defer new work with the named

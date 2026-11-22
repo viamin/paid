@@ -344,7 +344,7 @@ module Capacity
       @backing_storage_snapshot ||= normalize_backing_storage_snapshot(docker_snapshot || direct_backing_storage_snapshot)
     end
 
-    # @spec CONTAINER-RUNTIME-050
+    # @spec CONTAINER-RUNTIME-054
     def direct_backing_storage_snapshot
       observation = selected_backend.backing_storage_observation(now: now).symbolize_keys
       return { backing_storage_available: false, backing_storage_reason: observation[:reason].presence || "backing_storage_unavailable" } unless observation[:scope].present? && observation[:observed_at].present?
