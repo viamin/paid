@@ -6,7 +6,7 @@ module Activities
     activity_name "AssessSourceClosure"
     MAX_ASSESSMENT_TIMEOUT_WITH_FALLBACK = 100
 
-    def execute(input) # @spec PARTIAL-CLOSEOUT-029 PARTIAL-CLOSEOUT-059
+    def execute(input) # @spec PARTIAL-CLOSEOUT-029 PARTIAL-CLOSEOUT-061
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       return { agent_run_id: agent_run.id, disposition: "track" } unless agent_run.issue
 

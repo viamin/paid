@@ -301,17 +301,25 @@
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
   *Tool test:* `spec/mcp/tools/retry_source_closure_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-059** — When recoverable source-closure assessment
+- [x] **PARTIAL-CLOSEOUT-061** — When recoverable source-closure assessment
   failures re-park the same original run, pushed commit, failed step, and
   lineage across workflow epochs or process restarts, Paid SHALL admit no more
-  than three automatic recovery claims. It SHALL preserve prior claim history,
+  than three automatic recovery claims, including the legacy
+  `recovery_attempt` claim history recorded before the automatic counter was
+  introduced. It SHALL preserve prior claim history,
   failure category, branch, and commit, retain a visible
   `automatic_recovery_budget_exhausted` stop, and schedule no successor after
   exhaustion. Assessment request provenance and actual request count SHALL be
   retained separately from claim counts. Delayed duplicate jobs, stale leases,
   and unavailable ownership RPCs retain the existing ownership guard and SHALL
-  not mint a claim or an assessment environment.
+  not mint a claim or an assessment environment. At every locked claim
+  boundary, Paid SHALL recheck current automatic-phase authorization, source
+  issue trust, project and issue pause state, and project cost budget through
+  the existing policy and budget contracts. A denial SHALL retain the original
+  run, branch, commit and counters, make its actionable reason visible, and
+  start neither an environment nor an assessment request.
   *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/services/partial_closeouts/source_closure_recovery_admission.rb`,
   `app/jobs/source_closure_recovery_job.rb`,
   `app/temporal/activities/park_source_closure_recovery_activity.rb`,
   `app/temporal/activities/assess_source_closure_activity.rb`.

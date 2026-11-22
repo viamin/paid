@@ -5,7 +5,8 @@ require "temporalio/client"
 
 RSpec.describe SourceClosureRecoveryJob do
   let(:client) { instance_double(Temporalio::Client) }
-  let(:run) { create(:agent_run, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
+  let(:project) { create(:project, auto_pick_enabled: true) }
+  let(:run) { create(:agent_run, project:, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
 
   before do
     PartialCloseouts::SourceClosureRecovery.park!(agent_run: run, category: "timeout", attempts: 3)
@@ -72,7 +73,7 @@ RSpec.describe SourceClosureRecoveryJob do
     expect(run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")).to eq(1)
   end
 
-  # @spec PARTIAL-CLOSEOUT-059
+  # @spec PARTIAL-CLOSEOUT-061
   it "does not start a fourth automatic workflow after repeated recovery epochs" do
     allow(client).to receive(:start_workflow)
     handle = instance_double(Temporalio::Client::WorkflowHandle)
@@ -88,6 +89,27 @@ RSpec.describe SourceClosureRecoveryJob do
     described_class.perform_now(run.id)
 
     expect(client).to have_received(:start_workflow).exactly(3).times
+    expect(run.reload.reconciliation.dig("source_closure_recovery", "stop_reason"))
+      .to eq("automatic_recovery_budget_exhausted")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "stops delayed duplicate jobs for a legacy exhausted lineage before starting recovery" do
+    run.update!(reconciliation: { "source_closure_recovery" => { "recovery_attempt" => 40 } })
+    PartialCloseouts::SourceClosureRecovery.park!(agent_run: run, category: "timeout", attempts: 3)
+    allow(client).to receive(:start_workflow)
+    handle = instance_double(Temporalio::Client::WorkflowHandle)
+    allow(client).to receive(:workflow_handle).and_return(handle)
+    allow(handle).to receive(:describe).and_raise(
+      Temporalio::Error::RPCError.new("missing", code: Temporalio::Error::RPCError::Code::NOT_FOUND, raw_grpc_status: nil)
+    )
+
+    described_class.perform_now(run.id)
+    travel 11.minutes do
+      described_class.perform_now(run.id)
+    end
+
+    expect(client).not_to have_received(:start_workflow)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "stop_reason"))
       .to eq("automatic_recovery_budget_exhausted")
   end

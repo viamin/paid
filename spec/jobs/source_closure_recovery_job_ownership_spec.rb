@@ -9,7 +9,8 @@ RSpec.describe SourceClosureRecoveryJob do
   let(:handle) { instance_double(Temporalio::Client::WorkflowHandle) }
   let(:status) { Temporalio::Client::WorkflowExecutionStatus::RUNNING }
   let(:description) { instance_double(Temporalio::Client::WorkflowExecution::Description, status:) }
-  let(:run) { create(:agent_run, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
+  let(:project) { create(:project, auto_pick_enabled: true) }
+  let(:run) { create(:agent_run, project:, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
 
   before do
     PartialCloseouts::SourceClosureRecovery.park!(agent_run: run, category: "timeout", attempts: 3)

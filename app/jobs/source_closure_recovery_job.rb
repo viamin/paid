@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Starts only deferred post-processing; it never re-enters coding.
-# @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-059 PARTIAL-CLOSEOUT-060
+# @spec PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-061 PARTIAL-CLOSEOUT-060
 class SourceClosureRecoveryJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 

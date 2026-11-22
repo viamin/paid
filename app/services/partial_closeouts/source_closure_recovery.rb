@@ -2,7 +2,7 @@
 
 module PartialCloseouts
   # Durable, idempotent recovery state for the post-push source-closure gate.
-  # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-059 PARTIAL-CLOSEOUT-060
+  # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-061 PARTIAL-CLOSEOUT-060
   class SourceClosureRecovery
     KEY = "source_closure_recovery"
     RETRY_DELAY = 10.minutes
@@ -34,7 +34,8 @@ module PartialCloseouts
           "attempts" => attempts,
           "failure_category" => category,
           "claimed_at" => nil,
-          "next_retry_at" => next_retry_at
+          "next_retry_at" => next_retry_at,
+          "stop_reason" => stop_reason_for_parking
         )
         agent_run.update!(status: "waiting_recovery", reconciliation: agent_run.reconciliation.merge(KEY => recovery)) unless agent_run.finished?
       end
@@ -45,12 +46,15 @@ module PartialCloseouts
         agent_run.reload
         return false unless agent_run.waiting_recovery? && claim_available?
         return false if @expected_recovery_attempt && state.fetch("recovery_attempt", 0).to_i != @expected_recovery_attempt
-        return stop! unless budget_available?
+        return stop!("automatic_recovery_budget_exhausted") unless budget_available?
+
+        admission = SourceClosureRecoveryAdmission.call(agent_run:)
+        return stop!(admission.reason) unless admission.allowed
 
         agent_run.update!(reconciliation: agent_run.reconciliation.merge(KEY => state.merge(
           "claimed_at" => now.iso8601,
           "recovery_attempt" => state.fetch("recovery_attempt", 0).to_i + 1,
-          attempt_key => state.fetch(attempt_key, 0).to_i + 1,
+          attempt_key => attempts_for_claim + 1,
           "stop_reason" => nil,
           "next_retry_at" => nil
         )))
@@ -92,21 +96,39 @@ module PartialCloseouts
 
     def maximum_attempts = @operator_authorized ? MAX_OPERATOR_RECOVERY_ATTEMPTS : MAX_AUTOMATIC_RECOVERY_ATTEMPTS
 
-    def budget_available? = state.fetch(attempt_key, 0).to_i < maximum_attempts
+    def budget_available? = attempts_for_claim < maximum_attempts
+
+    def attempts_for_claim
+      return state.fetch(attempt_key, 0).to_i if @operator_authorized
+
+      automatic_attempts
+    end
+
+    def automatic_attempts
+      [ state.fetch("automatic_recovery_attempt", 0).to_i, state.fetch("recovery_attempt", 0).to_i ].max
+    end
 
     def next_retry_at
-      return nil if state.fetch("automatic_recovery_attempt", 0).to_i >= MAX_AUTOMATIC_RECOVERY_ATTEMPTS
+      return nil if automatic_attempts >= MAX_AUTOMATIC_RECOVERY_ATTEMPTS
 
       (now + RETRY_DELAY).iso8601
     end
 
-    def stop!
-      agent_run.update!(reconciliation: agent_run.reconciliation.merge(KEY => state.merge(
+    def stop!(reason)
+      recovery = state.merge(
         "claimed_at" => nil,
         "next_retry_at" => nil,
-        "stop_reason" => @operator_authorized ? "operator_recovery_budget_exhausted" : "automatic_recovery_budget_exhausted"
-      )))
+        "stop_reason" => reason
+      )
+      recovery["automatic_recovery_attempt"] = automatic_attempts unless @operator_authorized
+      agent_run.update!(reconciliation: agent_run.reconciliation.merge(KEY => recovery))
       false
+    end
+
+    def stop_reason_for_parking
+      return "automatic_recovery_budget_exhausted" if automatic_attempts >= MAX_AUTOMATIC_RECOVERY_ATTEMPTS
+
+      state["stop_reason"]
     end
 
     def claim_available?

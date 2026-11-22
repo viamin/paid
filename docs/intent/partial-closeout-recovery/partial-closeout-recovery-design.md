@@ -149,7 +149,13 @@ claims because a claim is ownership evidence, not proof that a model request
 started. An authorized operator may consume one separately recorded recovery
 claim through the existing confirmed retry boundary. This does not reset the
 automatic budget or mint a new run, and repeated clicks stop visibly after that
-finite operator allowance.
+finite operator allowance. Legacy `recovery_attempt` history is conservative
+automatic-claim consumption until a separate automatic counter exists; it does
+not imply assessment requests. At every locked claim boundary, the current
+automatic phase policy, source-issue trust, project or issue pause, and project
+cost budget are rechecked through their existing contracts. A denied claim
+retains the same run and evidence with an actionable stop reason and starts no
+environment or assessment request.
 
 The confirmed `retry_source_closure` chat/MCP tool queues the same recovery job
 as run detail, under the same run policy and tenant scope. It requires an

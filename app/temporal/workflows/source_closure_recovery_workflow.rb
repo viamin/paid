@@ -7,7 +7,7 @@ module Workflows
       initial_interval: 15, max_interval: 2.minutes, backoff_coefficient: 2, max_attempts: 3
     )
 
-    def execute(input) # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-059 PARTIAL-CLOSEOUT-060
+    def execute(input) # @spec PARTIAL-CLOSEOUT-044 PARTIAL-CLOSEOUT-045 PARTIAL-CLOSEOUT-061 PARTIAL-CLOSEOUT-060
       agent_run_id = input.fetch(:agent_run_id)
       project_id = input.fetch(:project_id)
       goal = input.fetch(:goal, "create_pr")

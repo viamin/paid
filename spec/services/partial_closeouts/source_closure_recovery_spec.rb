@@ -3,7 +3,8 @@
 require "rails_helper"
 
 RSpec.describe PartialCloseouts::SourceClosureRecovery do
-  let(:run) { create(:agent_run, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
+  let(:project) { create(:project, auto_pick_enabled: true) }
+  let(:run) { create(:agent_run, project:, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
 
   # @spec PARTIAL-CLOSEOUT-044
   it "parks exhausted transient assessment work with the immutable pushed revision" do
@@ -61,7 +62,7 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
     expect(run.reload.reconciliation.dig("source_closure_recovery", "claimed_at")).to be_nil
   end
 
-  # @spec PARTIAL-CLOSEOUT-059
+  # @spec PARTIAL-CLOSEOUT-061
   it "stops automatic recovery across repeated workflow epochs without resetting its lineage" do
     described_class.park!(agent_run: run, category: "timeout", attempts: 3)
 
@@ -76,7 +77,7 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
       "stop_reason" => "automatic_recovery_budget_exhausted", "commit_sha" => "a" * 40)
   end
 
-  # @spec PARTIAL-CLOSEOUT-059
+  # @spec PARTIAL-CLOSEOUT-061
   it "records actual assessment requests separately from recovery claims" do
     described_class.park!(agent_run: run, category: "timeout", attempts: 3)
     described_class.claim!(agent_run: run)
@@ -85,6 +86,41 @@ RSpec.describe PartialCloseouts::SourceClosureRecovery do
 
     expect(run.reload.reconciliation.dig("source_closure_recovery", "assessment_request_count")).to eq(1)
     expect(run.reload.reconciliation.dig("source_closure_recovery", "recovery_attempt")).to eq(1)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "stops a legacy exhausted lineage without minting a claim or assessment request" do
+    run.update!(reconciliation: { "source_closure_recovery" => { "recovery_attempt" => 40 } })
+
+    described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+    expect(described_class.claim!(agent_run: run)).to be(false)
+    recovery = run.reload.reconciliation.fetch("source_closure_recovery")
+    expect(recovery).to include("recovery_attempt" => 40, "automatic_recovery_attempt" => 40,
+      "stop_reason" => "automatic_recovery_budget_exhausted", "next_retry_at" => nil)
+    expect(recovery).not_to have_key("assessment_request_count")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-061
+  it "stops automatic recovery when its current authorization, trust, pause, or budget is denied" do
+    cases = {
+      authorization: [ -> { run.project.update!(auto_pick_enabled: false) }, "automatic_recovery_authorization_withdrawn" ],
+      trust: [ -> { run.project.update!(allowed_github_usernames: [ "another-user" ]) }, "automatic_recovery_source_untrusted" ],
+      pause: [ -> { run.project.update!(scheduler_paused_at: Time.current) }, "automatic_recovery_paused" ],
+      budget: [ -> { create(:cost_budget, :hard_stop, project: run.project, current_usage_cents: 100_000) }, "automatic_recovery_budget_exhausted" ]
+    }
+
+    cases.each do |kind, (deny, expected_reason)|
+      run.update!(reconciliation: {})
+      run.project.update!(auto_pick_enabled: true, allowed_github_usernames: [ "viamin" ], scheduler_paused_at: nil)
+      run.project.cost_budgets.destroy_all
+      deny.call
+      described_class.park!(agent_run: run, category: "timeout", attempts: 3)
+
+      expect(described_class.claim!(agent_run: run.reload)).to be(false), kind.to_s
+      expect(run.reload.reconciliation.dig("source_closure_recovery", "stop_reason"))
+        .to eq(expected_reason)
+    end
   end
 
   # @spec PARTIAL-CLOSEOUT-060
