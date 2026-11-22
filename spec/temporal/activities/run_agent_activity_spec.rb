@@ -1421,6 +1421,33 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  describe "#direct_outbound_execution_plan" do
+    # @spec MODEL-POLICY-022
+    it "does not reuse a cached plan when OpenRouter privacy routing changes" do
+      runner = instance_double(Runner, id: 123)
+      open_runtime = AgentHarness::ProviderRuntime.new(
+        model: "openrouter/example/model", api_provider: "openrouter",
+        privacy_routing: { data_collection: "allow" }
+      )
+      restricted_runtime = AgentHarness::ProviderRuntime.new(
+        model: "openrouter/example/model", api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
+      )
+      plans = [
+        Runners::HarnessExecutionPlan::Result.new(command: [ "open" ], env: {}, preparation: nil),
+        Runners::HarnessExecutionPlan::Result.new(command: [ "restricted" ], env: {}, preparation: nil)
+      ]
+      allow(activity).to receive(:selected_runner_runtime).and_return(open_runtime, restricted_runtime)
+      allow(Runners::HarnessExecutionPlan).to receive(:call).and_return(*plans)
+
+      first = activity.send(:direct_outbound_execution_plan, runner, "prompt")
+      second = activity.send(:direct_outbound_execution_plan, runner, "prompt")
+
+      expect(second).not_to equal(first)
+      expect(Runners::HarnessExecutionPlan).to have_received(:call).twice
+    end
+  end
+
   describe "#runner_entry_for" do
     it "memoizes routing-key lookups per user and identifier" do
       runner = create(:runner, user: user, runner_key: "opencode")

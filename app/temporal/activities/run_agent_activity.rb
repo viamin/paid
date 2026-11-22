@@ -1069,7 +1069,8 @@ module Activities
         runtime.base_url,
         runtime.env,
         runtime.unset_env,
-        runtime.metadata
+        runtime.metadata,
+        runtime.privacy_routing
       ]
     end
 

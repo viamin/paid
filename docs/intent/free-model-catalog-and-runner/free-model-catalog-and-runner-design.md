@@ -50,9 +50,16 @@ reuse the same routing mapping when they build their runtime. The plan or
 runtime includes:
 
 - the selected model id,
+- the explicit `openrouter` API-provider identity,
 - the OpenRouter base URL,
 - the `OPENROUTER_API_KEY` env binding,
-- and `provider_routing`, derived from the shared routing contract.
+- and, when ZDR is required, the SDK's `privacy_routing` payload derived from
+  the shared routing contract.
+
+Non-ZDR OpenRouter routing remains in the runner-specific provider options
+consumed by the CLI. Paid includes both API-provider identity and privacy
+routing in execution-plan cache identity so a plan built for one privacy
+classification cannot be reused for another.
 
 ### Guardrail / decision log
 
