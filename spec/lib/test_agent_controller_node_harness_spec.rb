@@ -63,6 +63,21 @@ class TestAgentControllerNodeHarness
       if (controller.resultTarget.innerHTML.includes("token")) {
         throw new Error(`Expected secret-free readiness copy, got: ${controller.resultTarget.innerHTML}`);
       }
+
+      controller.showError("authentication", "Managed credential expired", {
+        execution_source: "container_smoke_test",
+        authentication_source: "managed",
+        standalone_audit_readiness: "refreshable"
+      });
+      if (!controller.resultTarget.innerHTML.includes("Container smoke test")) {
+        throw new Error(`Expected failure state to disclose the test source, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (!controller.resultTarget.innerHTML.includes("Standalone acceptance audits can attempt managed credential refresh")) {
+        throw new Error(`Expected failure state to distinguish standalone readiness, got: ${controller.resultTarget.innerHTML}`);
+      }
+      if (controller.resultTarget.innerHTML.includes("token")) {
+        throw new Error(`Expected failure readiness copy to remain secret-free, got: ${controller.resultTarget.innerHTML}`);
+      }
     }
 
     try {
@@ -79,8 +94,8 @@ class TestAgentControllerNodeHarness
 end
 
 RSpec.describe TestAgentControllerNodeHarness, :no_db do
-  # @spec RUNNERS-INDEX-007
-  it "keeps Test Runner copy aligned with the remaining runner auth surfaces" do
+  # @spec RUNNERS-INDEX-007, SUBSCRIPTION-RUNNER-AUTH-008
+  it "keeps Test Runner auth copy and source context aligned with the runner auth contract" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE

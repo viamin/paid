@@ -4,6 +4,7 @@ export default class extends Controller {
   static targets = ["button", "result", "status"]
   static values = { url: String, csrfToken: String }
 
+  // @spec SUBSCRIPTION-RUNNER-AUTH-008
   async test() {
     this.showLoading()
     const csrfToken = this.csrfToken
@@ -74,7 +75,7 @@ export default class extends Controller {
       if (data.success) {
         this.showSuccess(data.message, data)
       } else {
-        this.showError(data.error_type, data.message)
+        this.showError(data.error_type, data.message, data)
       }
     } catch (error) {
       if (!this.element.isConnected) return
@@ -135,7 +136,7 @@ export default class extends Controller {
     return `<span class="block mt-1 font-normal text-green-700">${this.escapeHtml(`${source}; ${auth}. ${readiness}`)}</span>`
   }
 
-  showError(errorType, message) {
+  showError(errorType, message, context = {}) {
     this.resetButton()
     if (errorType === "rate_limited") {
       this.showRateLimitedStatus(message)
@@ -151,6 +152,7 @@ export default class extends Controller {
         </span>
         <p class="mt-0.5 text-xs text-red-600">${this.escapeHtml(message)}</p>
         <p class="mt-0.5 text-xs text-gray-500">${this.escapeHtml(troubleshooting)}</p>
+        ${this.authenticationContext(context)}
       </div>
     `
   }
