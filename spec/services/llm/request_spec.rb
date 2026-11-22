@@ -574,7 +574,12 @@ RSpec.describe Llm::Request do
     allow(provider).to receive_messages(api_key_env_var_names: [ "OPENROUTER_API_KEY" ], api_key_unset_vars: [])
 
     expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
-    expect(provider).to have_received(:send_message)
+    expect(provider).to have_received(:send_message).with(hash_including(
+      provider_runtime: an_object_having_attributes(
+        api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
+      )
+    ))
   end
 
   # @spec MODEL-POLICY-015
@@ -588,7 +593,12 @@ RSpec.describe Llm::Request do
     allow(provider).to receive_messages(api_key_env_var_names: [ "OPENROUTER_API_KEY" ], api_key_unset_vars: [])
 
     expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
-    expect(provider).to have_received(:send_message)
+    expect(provider).to have_received(:send_message).with(hash_including(
+      provider_runtime: an_object_having_attributes(
+        api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
+      )
+    ))
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005 PARTIAL-CLOSEOUT-031

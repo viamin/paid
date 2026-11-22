@@ -1105,7 +1105,7 @@ RSpec.describe Activities::RunAgentActivity do
       # OpenRouter ids are "<vendor>/<model>" slugs that opencode addresses
       # directly, so they pass through unchanged (matching the execute path and
       # free-policy runtime) rather than gaining a redundant prefix.
-      expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: nil)
+      expect(runtime).to have_attributes(model: "openrouter/moonshotai/kimi-k2-0905", api_provider: "openrouter")
     end
 
     # @spec RUNNER-FALLBACK-013
@@ -1151,8 +1151,9 @@ RSpec.describe Activities::RunAgentActivity do
         "OPENROUTER_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
-      expect(runtime.metadata[:config]["provider"]).to eq(
-        { "openrouter" => { data_collection: "deny", zdr: true } }
+      expect(runtime).to have_attributes(
+        api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
       )
     end
 
@@ -1177,8 +1178,8 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
 
-      expect(runtime.metadata[:config]["provider"]).to eq(
-        { "openrouter" => { data_collection: "deny" } }
+      expect(runtime.metadata[:config].dig("provider", "openrouter", "options", "extraBody", "provider")).to eq(
+        data_collection: "deny"
       )
     end
 
@@ -1191,8 +1192,9 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
 
-      expect(runtime.metadata[:config]["provider"]).to eq(
-        { "openrouter" => { data_collection: "deny", zdr: true } }
+      expect(runtime).to have_attributes(
+        api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
       )
     end
 
@@ -1209,8 +1211,9 @@ RSpec.describe Activities::RunAgentActivity do
         "OPENROUTER_API_KEY" => "sk-openrouter-secret",
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
-      expect(runtime.metadata[:config]["provider"]).to eq(
-        { "openrouter" => { data_collection: "deny", zdr: true } }
+      expect(runtime).to have_attributes(
+        api_provider: "openrouter",
+        privacy_routing: { data_collection: "deny", zdr: true }
       )
     end
 
@@ -2476,9 +2479,13 @@ RSpec.describe Activities::RunAgentActivity do
     fourth_config = JSON.parse(execute_calls.fourth.second[:preparation].file_writes.first.content)
 
     expect(third_config).to include("model" => "openrouter/moonshotai/kimi-k2-0905")
-    expect(third_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
+    expect(third_config.dig("provider", "openrouter", "options", "extraBody", "provider")).to eq(
+      "data_collection" => "allow"
+    )
     expect(fourth_config).to include("model" => "openrouter/moonshotai/kimi-k2-0905")
-    expect(fourth_config.fetch("provider")).to eq("openrouter" => { "data_collection" => "allow" })
+    expect(fourth_config.dig("provider", "openrouter", "options", "extraBody", "provider")).to eq(
+      "data_collection" => "allow"
+    )
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -2626,11 +2633,13 @@ RSpec.describe Activities::RunAgentActivity do
   def expect_openrouter_runtime(runtime, model_id:, api_key:, provider_routing:)
     aggregate_failures do
       expect(runtime.model).to eq("openrouter/#{model_id}")
+      expect(runtime.api_provider).to eq("openrouter")
       expect(runtime.env).to include(
         "OPENROUTER_API_KEY" => api_key,
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
-      expect(runtime.metadata[:config]["provider"]).to eq(provider_routing)
+      expect(runtime.privacy_routing).to eq(provider_routing.fetch("openrouter"))
+      expect(runtime.metadata[:config]).not_to have_key("provider")
     end
   end
 

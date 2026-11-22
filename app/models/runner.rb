@@ -1872,6 +1872,7 @@ class Runner < ApplicationRecord
     raise ArgumentError, "Missing OpenCode model id for runner #{id || runner_key}" if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
+    provider_routing = opencode_provider_routing(api_config, project, required_zdr: required_zdr)
 
     env_var = direct_outbound_api_key_env_var(opencode_api_provider)
     env = { env_var => effective_api_secret.to_s }
@@ -1914,13 +1915,14 @@ class Runner < ApplicationRecord
 
     AgentHarness::ProviderRuntime.new(
       model: model_id,
-      api_provider: (opencode_api_provider if opencode_api_provider == "minimax"),
+      api_provider: (opencode_api_provider if %w[minimax openrouter].include?(opencode_api_provider)),
       env: env,
       unset_env: opencode_direct_outbound_unset_env(env),
       chat_base_url: (api_config[:base_url] if opencode_api_provider == "minimax"),
       chat_model: (opencode_model_id if opencode_api_provider == "minimax"),
+      privacy_routing: (provider_routing if provider_routing&.fetch(:zdr, false)),
       metadata: {
-        config: opencode_runtime_metadata_config(api_config, provider_config, project, required_zdr: required_zdr)
+        config: opencode_runtime_metadata_config(api_config, provider_config, provider_routing)
       }
     )
   end
@@ -1972,7 +1974,13 @@ class Runner < ApplicationRecord
     qualified.delete_prefix("#{prefix}/")
   end
 
-  def opencode_runtime_metadata_config(api_config, provider_config, project, required_zdr: nil)
+  def opencode_provider_routing(api_config, project, required_zdr: nil)
+    return unless project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
+
+    build_provider_routing(project, zero_data_retention: required_zdr == true)
+  end
+
+  def opencode_runtime_metadata_config(api_config, provider_config, provider_routing)
     provider_metadata = {}
 
     unless provider_config.empty?
@@ -1985,10 +1993,10 @@ class Runner < ApplicationRecord
       provider_metadata[provider_key] = provider_config
     end
 
-    if project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
-      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(
-        build_provider_routing(project, zero_data_retention: required_zdr == true)
-      )
+    if provider_routing && !provider_routing.fetch(:zdr, false)
+      provider_metadata["openrouter"] = {
+        "options" => { "extraBody" => { "provider" => provider_routing } }
+      }
     end
 
     provider_metadata.any? ? { "provider" => provider_metadata } : {}
@@ -2019,23 +2027,30 @@ class Runner < ApplicationRecord
   # model via Runners::FreeModelExecutionPlan and translates it into the
   # AgentHarness runtime.
   def openrouter_provider_runtime(config)
+    provider_routing = config.fetch(:provider_routing)
+
     AgentHarness::ProviderRuntime.new(
       model: opencode_qualified_model(config.fetch(:model)),
+      api_provider: "openrouter",
       env: {
         config.fetch(:api_key_env) => effective_api_secret.to_s,
         "OPENAI_BASE_URL" => config.fetch(:base_url)
       },
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
+      privacy_routing: (provider_routing if provider_routing.fetch(:zdr, false)),
       metadata: {
-        config: {
-          "provider" => {
-            "openrouter" => config.fetch(:provider_routing)
-          }
-        }
+        config: openrouter_provider_metadata(provider_routing)
       }
     )
   end
   private :openrouter_provider_runtime
+
+  def openrouter_provider_metadata(provider_routing)
+    return {} if provider_routing.fetch(:zdr, false)
+
+    { "provider" => { "openrouter" => { "options" => { "extraBody" => { "provider" => provider_routing } } } } }
+  end
+  private :openrouter_provider_metadata
 
   def free_model_policy_runner_runtime(project:, model_id:, required_zdr: nil)
     free_policy_direct_outbound_runtime(project: project, model_id: model_id, required_zdr: required_zdr)

@@ -319,7 +319,7 @@ module Llm
     def subscription_runtime(provider, runtime)
       AgentHarness::ProviderRuntime.new(model: runtime.model, api_provider: runtime.api_provider,
         base_url: runtime.base_url, env: runtime.env, unset_env: runtime.unset_env | provider.subscription_unset_vars,
-        flags: runtime.flags, metadata: runtime.metadata)
+        flags: runtime.flags, metadata: runtime.metadata, privacy_routing: runtime.privacy_routing)
     end
 
     def runtime_for(runner)
@@ -353,7 +353,8 @@ module Llm
         model: runner.qualified_model_for(resolved.model_id),
         api_provider: configured&.api_provider, base_url: configured&.base_url,
         env: env, unset_env: configured&.unset_env || [],
-        flags: configured&.flags || [], metadata: configured&.metadata || {}
+        flags: configured&.flags || [], metadata: configured&.metadata || {},
+        privacy_routing: configured&.privacy_routing
       )
     end
   end
