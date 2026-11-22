@@ -302,13 +302,14 @@ module Workflows
         # Skip for review goals — they use their own review-specific prompt and
         # don't need the PR-editing prompt that instructs the agent to commit fixes.
         pr_run_without_prompt = source_pull_request_number.present? && custom_prompt.blank? && goal != "review"
+        pr_prompt_result = {}
         branch_changed_before_agent = false
         if pr_run_without_prompt
           rebase_result = run_activity(Activities::RebaseBranchActivity,
             { agent_run_id: agent_run_id }, timeout: 120)
           branch_changed_before_agent = rebase_result[:branch_changed] == true
 
-          run_activity(Activities::PreparePrPromptActivity,
+          pr_prompt_result = run_activity(Activities::PreparePrPromptActivity,
             { agent_run_id: agent_run_id,
               focus: focus,
               rebase_succeeded: rebase_result[:rebase_succeeded] }, timeout: 60)
@@ -480,6 +481,8 @@ module Workflows
             { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
           if source_pull_request_number
+            resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, pr_prompt_result)
+
             # Existing PR: mark complete with existing PR details
             complete_result = run_activity(Activities::CompleteExistingPrRunActivity,
               { agent_run_id: agent_run_id }, timeout: 60)
@@ -623,6 +626,7 @@ module Workflows
           # Still request a review-bot review for existing PR runs: the
           # previous run may have pushed a fix the bot has not reviewed yet.
           if source_pull_request_number && !complete_result[:skipped]
+            resolve_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, pr_prompt_result, agent_result)
             request_review_bot_review(project_id, source_pull_request_number)
             queue_refactor_followup_if_needed(
               goal: goal,
@@ -969,6 +973,81 @@ module Workflows
         message: "agent_execution.review_bot_request_failed",
         project_id: project_id,
         pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    # @spec FOCUSED-RUN-010
+    def resolve_followup_review_threads_after_push(agent_run_id, pr_run_without_prompt, prompt_result)
+      return unless pr_run_without_prompt && prompt_result[:review_thread_ids].present?
+
+      resolve_followup_review_threads_with_evidence(agent_run_id, prompt_result[:review_thread_ids])
+    end
+
+    # @spec FOCUSED-RUN-010
+    def resolve_no_change_followup_review_threads(agent_run_id, pr_run_without_prompt, prompt_result, agent_result)
+      return unless pr_run_without_prompt && prompt_result[:review_thread_ids].present?
+
+      if Temporalio::Workflow.patched("evidence-backed-followup-review-resolution-v1")
+        resolve_followup_review_threads_with_evidence(agent_run_id, prompt_result[:review_thread_ids])
+      elsif prompt_result[:includes_review_threads] && agent_result[:review_threads_already_addressed]
+        resolve_review_threads(agent_run_id, thread_ids: prompt_result[:review_thread_ids])
+      end
+    end
+
+    def resolve_followup_review_threads_with_evidence(agent_run_id, thread_ids)
+      if Temporalio::Workflow.patched("evidence-backed-followup-review-resolution-v1")
+        resolution = run_activity(Activities::AssessFollowupReviewThreadsActivity,
+          { agent_run_id: agent_run_id, thread_ids: thread_ids }, timeout: 180, retry_policy: NO_RETRY)
+        resolve_assessed_review_threads(agent_run_id, thread_ids, resolution)
+      else
+        # Retain the command recorded by pre-#5288 histories. The guard may be
+        # removed only after the registry's sunset sweep confirms no history can
+        # replay this branch. New histories always take the assessed path above.
+        resolve_review_threads(agent_run_id, thread_ids: thread_ids)
+      end
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.review_thread_assessment_unavailable",
+        agent_run_id: agent_run_id,
+        error_class: e.class.name,
+        error: e.message
+      )
+    end
+
+    def resolve_assessed_review_threads(agent_run_id, captured_thread_ids, resolution)
+      return unless valid_review_thread_resolution?(captured_thread_ids, resolution)
+
+      run_activity(Activities::ResolveReviewThreadsActivity,
+        { agent_run_id: agent_run_id,
+          thread_ids: resolution[:thread_ids],
+          expected_head_sha: resolution[:head_sha],
+          rationales: resolution[:rationales] }, timeout: 60)
+    end
+
+    def valid_review_thread_resolution?(captured_thread_ids, resolution)
+      return false unless resolution.is_a?(Hash) && resolution[:authorized] == true
+      return false unless resolution[:head_sha].is_a?(String) && resolution[:head_sha].present?
+
+      thread_ids = resolution[:thread_ids]
+      rationales = resolution[:rationales]
+      thread_ids.is_a?(Array) && thread_ids.present? && thread_ids.uniq == thread_ids &&
+        thread_ids.all? { |thread_id| captured_thread_ids.include?(thread_id) } &&
+        rationales.is_a?(Hash) && thread_ids.all? { |thread_id| rationales[thread_id].is_a?(String) && rationales[thread_id].strip.present? }
+    end
+
+    def resolve_review_threads(agent_run_id, thread_ids:)
+      run_activity(Activities::ResolveReviewThreadsActivity,
+        { agent_run_id: agent_run_id, thread_ids: thread_ids }, timeout: 60)
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
+      Temporalio::Workflow.logger.warn(
+        message: "agent_execution.resolve_threads_failed",
+        agent_run_id: agent_run_id,
+        error_class: e.class.name,
         error: e.message
       )
     end

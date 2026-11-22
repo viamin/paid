@@ -1403,13 +1403,18 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
 
     # @spec FOCUSED-RUN-010
-    it "keeps prompt-captured review threads open after pushing commits" do
+    it "resolves a repaired captured thread after an evidence-backed assessment" do
       stub_existing_pr_followup(pr_review_phase: "ready")
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
+        .and_return(authorized: true, head_sha: "current-head", thread_ids: [ "thread_1" ], rationales: { "thread_1" => "The current head repairs the validation path." })
 
       workflow.execute(input)
 
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42, thread_ids: [ "thread_1" ], expected_head_sha: "current-head",
+            rationales: { "thread_1" => "The current head repairs the validation path." } }, timeout: 60)
     end
 
     it "does not resolve review threads after pushing commits when the prompt captured none" do
@@ -1419,6 +1424,28 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
+
+    it "keeps findings actionable when verification activity fails" do
+      stub_existing_pr_followup(pr_review_phase: "ready")
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
+        .and_raise(Temporalio::Error::ApplicationError.new("verification unavailable"))
+
+      expect { workflow.execute(input) }.not_to raise_error
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
+
+    it "replays the pre-assessment resolution command when the compatibility guard is absent" do
+      allow(Temporalio::Workflow).to receive(:patched).and_return(false)
+      stub_existing_pr_followup(pr_review_phase: "ready")
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity,
+          { agent_run_id: 42, thread_ids: [ "thread_1" ] }, timeout: 60)
     end
   end
 
@@ -1500,7 +1527,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         when "Activities::CheckProxyHealthActivity" then {}
         when "Activities::CloneRepoActivity" then {}
         when "Activities::RebaseBranchActivity" then { rebase_succeeded: true, branch_changed: true }
-        when "Activities::PreparePrPromptActivity" then { includes_review_threads: false, review_thread_ids: [] }
+        when "Activities::PreparePrPromptActivity" then { includes_review_threads: true, review_thread_ids: [ "thread_1" ] }
         when "Activities::RunAgentActivity" then { success: true, has_changes: false }
         when "Activities::PushBranchActivity" then {}
         when "Activities::CompleteExistingPrRunActivity" then { pr_review_phase: "ready" }
@@ -1573,13 +1600,16 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
 
     # @spec FOCUSED-RUN-010
-    it "keeps review threads open when a no-change PR follow-up reports they were already addressed" do
+    it "resolves a supported no-code disposition after assessment" do
       stub_no_changes_followup_with_marker
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
+        .and_return(authorized: true, head_sha: "current-head", thread_ids: [ "thread_1" ], rationales: { "thread_1" => "The finding is already fixed at the current head." })
 
       workflow.execute(input)
 
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, hash_including(expected_head_sha: "current-head"), timeout: 60)
     end
 
     it "does not resolve review threads on a no-change PR follow-up unless the prompt included review threads" do
@@ -1593,6 +1623,18 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
     it "does not resolve review threads on a no-change PR follow-up when the prompt captured no thread ids" do
       stub_no_changes_followup_with_marker_without_review_thread_ids
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::ResolveReviewThreadsActivity, anything, timeout: anything)
+    end
+
+    it "keeps findings actionable when assessment lacks an explanation" do
+      stub_no_changes_followup_with_marker
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::AssessFollowupReviewThreadsActivity, any_args)
+        .and_return(authorized: true, head_sha: "current-head", thread_ids: [ "thread_1" ], rationales: { "thread_1" => "" })
 
       workflow.execute(input)
 

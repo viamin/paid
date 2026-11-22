@@ -65,13 +65,18 @@ resolved focus flows through the workflow into the created agent run.
 
 The review-feedback prompt captures trusted unresolved thread identities so a
 follow-up can address the feedback, but capture, successful execution, a push,
-or a rebase are not proof that any particular finding is repaired. The workflow
-therefore leaves captured threads open. A future automatic disposition must be
-bound to that thread and the current PR head, with explicit rationale supported
-by a fresh assessment; it must fail closed when that assessment is unavailable,
-invalid, stale, or inconclusive. This preserves valid no-code dispositions
-(for example invalid, outdated, or already-fixed feedback) without equating
-unrelated changed lines or generic agent success with repair evidence.
+or a rebase are not proof that any particular finding is repaired. Before the
+public GitHub mutation, `AssessFollowupReviewThreadsActivity` obtains a fresh
+agent-harness judgment over the captured threads at the current head. Its exact
+structured response is mechanically checked for captured trusted IDs, a
+supported disposition, explicit rationale, and the observed head SHA;
+`ResolveReviewThreadsActivity` reads that head again immediately before its
+mutation. The workflow leaves findings open when either boundary is unavailable,
+invalid, stale, or inconclusive. The Temporal patch guard retains old recorded
+resolution commands for replay until the patch-guard sunset sweep authorizes
+their removal. This preserves valid no-code dispositions (for example invalid,
+outdated, or already-fixed feedback) without equating unrelated changed lines
+or generic agent success with repair evidence.
 
 ## Focus-scoped quality scoring
 

@@ -12,10 +12,12 @@ module Activities
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
-      thread_ids = Array(input[:thread_ids]).compact
+      thread_ids = Array(input[:thread_ids]).filter_map { |id| id.to_s.presence }.uniq
       agent_run = AgentRun.find(agent_run_id)
       project = agent_run.project
       client = project.client
+
+      return stale_head_result(agent_run_id, thread_ids) unless expected_head_matches?(input, client, project, agent_run)
 
       threads = client.review_threads(project.full_name, agent_run.source_pull_request_number)
       unresolved = threads.reject { |t| t[:is_resolved] }
@@ -50,6 +52,21 @@ module Activities
         resolved_count: resolved_count,
         failed_count: failed_count
       }
+    end
+
+    private
+
+    def expected_head_matches?(input, client, project, agent_run)
+      expected_head_sha = input[:expected_head_sha]
+      return true if expected_head_sha.blank? # Recorded pre-#5288 activity command.
+
+      client.pull_request(project.full_name, agent_run.source_pull_request_number).head.sha.to_s == expected_head_sha
+    end
+
+    def stale_head_result(agent_run_id, thread_ids)
+      logger.warn(message: "agent_execution.review_thread_resolution_stale_head", agent_run_id: agent_run_id,
+        requested_thread_ids: thread_ids)
+      { agent_run_id: agent_run_id, requested_thread_ids: thread_ids, resolved_count: 0, failed_count: 0, stale_head: true }
     end
   end
 end

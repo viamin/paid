@@ -146,5 +146,9 @@
   failed, unavailable, malformed, stale, or no-op assessment cannot resolve
   it. This does not prohibit a supported no-code disposition such as invalid,
   outdated, or already-fixed feedback.
-  *Code:* `AgentExecutionWorkflow#execute`.
-  *Test:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
+  *Code:* `AgentExecutionWorkflow#execute`,
+  `AssessFollowupReviewThreadsActivity`, `ResolveReviewThreadsActivity`.
+  *Test:* `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
+  `spec/temporal/activities/assess_followup_review_threads_activity_spec.rb`,
+  `spec/temporal/activities/resolve_review_threads_activity_spec.rb`,
+  `spec/temporal/workflow_replay_fixtures_spec.rb`.

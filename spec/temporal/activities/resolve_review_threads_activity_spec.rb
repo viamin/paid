@@ -57,6 +57,16 @@ RSpec.describe Activities::ResolveReviewThreadsActivity do
         expect(result[:requested_thread_ids]).to eq([ "thread_3", "missing" ])
         expect(result[:resolved_count]).to eq(1)
       end
+
+      it "leaves findings open when the head advanced after assessment" do
+        allow(github_client).to receive(:pull_request).with(project.full_name, 42)
+          .and_return(double(head: double(sha: "new-head")))
+        expect(github_client).not_to receive(:resolve_review_threads_batch)
+
+        result = activity.execute(agent_run_id: agent_run.id, thread_ids: [ "thread_1" ], expected_head_sha: "assessed-head")
+
+        expect(result).to include(stale_head: true, resolved_count: 0)
+      end
     end
 
     context "when individual thread resolution fails" do
