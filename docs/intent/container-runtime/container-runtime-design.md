@@ -50,6 +50,17 @@ An explicit `worktree_path` is still accepted as a legacy compatibility input
 for bind-mount and maintenance flows, but host-created worktrees are no longer
 the default execution workspace for normal agent runs.
 
+Execution preparation may temporarily replace provider settings in an agent
+checkout. Its snapshots live in a private container-temporary directory rather
+than beside the target, and the runtime adds a run-local Git exclusion for the
+temporary target. If the target was tracked, the runtime also marks that index
+entry assume-unchanged for the preparation lifetime. This prevents ordinary
+agent `git add`/commit/push operations from publishing Paid's generated
+settings or their backups while retaining the original file bytes, mode, and
+symlink target for restoration. Cleanup restores the original target first,
+then removes the run-local Git protection; restoration failures remain explicit
+execution-preparation cleanup failures.
+
 ### Host selection and lifecycle routing
 
 `Containers::ResolveHostForRun` converts explicit or preferred host choices

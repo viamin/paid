@@ -26,6 +26,77 @@ RSpec.describe Containers::Provision do
     preparation_class.new([ preparation_write ])
   end
 
+  def initialize_preparation_repository(repository, remote)
+    git!(repository, "init", "-q")
+    git!(repository, "config", "user.email", "agent@example.test")
+    git!(repository, "config", "user.name", "Paid Agent")
+    File.write(File.join(repository, "README.md"), "fixture\n")
+    git!(repository, "add", "README.md")
+    git!(repository, "commit", "-m", "initial")
+    git!(remote, "init", "--bare", "-q")
+    git!(repository, "remote", "add", "origin", remote)
+    git!(repository, "push", "-u", "origin", "HEAD")
+  end
+
+  def with_preparation_repository
+    Dir.mktmpdir("preparation-repository") do |repository|
+      remote = Dir.mktmpdir("preparation-remote")
+      yield(repository, remote)
+    ensure
+      FileUtils.rm_rf(remote)
+    end
+  end
+
+  def git!(repository, *arguments)
+    stdout, stderr, status = Open3.capture3("git", "-C", repository, *arguments)
+    raise "git #{arguments.join(' ')} failed: #{stderr}" unless status.success?
+
+    stdout
+  end
+
+  def local_preparation_service(repository)
+    backend = instance_double(Containers::Backends::Base)
+    allow(backend).to receive(:exec_in_container) do |_container, command, **options|
+      environment = options.fetch(:Env).to_h { |entry| entry.split("=", 2) }
+      stdout, stderr, status = Open3.capture3(environment, *command)
+      [ stdout, stderr, status.exitstatus ]
+    end
+    local_service = described_class.new(agent_run: agent_run, worktree_path: repository, backend: backend)
+    local_service.instance_variable_set(:@container, mock_container)
+    allow(local_service).to receive(:container_running?).and_return(true)
+    local_service
+  end
+
+  def create_preexisting_preparation_targets(repository)
+    paths = %i[tracked untracked linked missing].to_h { |name| [ name, File.join(repository, ".claude", "#{name}-settings.json") ] }
+    originals = { tracked: "{\"tracked\":true}\n", untracked: "{\"untracked\":true}\n" }
+    FileUtils.mkdir_p(File.dirname(paths[:tracked]))
+    originals.each { |name, content| File.write(paths.fetch(name), content) }
+    File.chmod(0o640, paths[:tracked])
+    File.chmod(0o600, paths[:untracked])
+    File.symlink("tracked-settings.json", paths[:linked])
+    git!(repository, "add", ".claude/tracked-settings.json")
+    git!(repository, "commit", "-m", "tracked settings")
+    git!(repository, "push", "origin", "HEAD")
+    [ paths, originals ]
+  end
+
+  def materialize_preparation_targets(service, paths)
+    paths.values.map do |path|
+      write = Struct.new(:path, :content, :mode).new(path, "{\"paid\":true}\n", nil)
+      service.send(:materialize_preparation_file, write, env: {})
+    end
+  end
+
+  def expect_preexisting_targets_restored(paths, originals)
+    expect(File.exist?(paths[:missing])).to be(false)
+    originals.each { |name, content| expect(File.binread(paths.fetch(name))).to eq(content) }
+    expect(File.stat(paths[:tracked]).mode & 0o777).to eq(0o640)
+    expect(File.stat(paths[:untracked]).mode & 0o777).to eq(0o600)
+    expect(File).to be_symlink(paths[:linked])
+    expect(File.readlink(paths[:linked])).to eq("tracked-settings.json")
+  end
+
   def build_preview_tunnel_service(agent_run:, worktree_path:, app_port: 4000)
     described_class.new(
       agent_run: agent_run,
@@ -4253,6 +4324,28 @@ RSpec.describe Containers::Provision do
   describe "preparation scripts" do
     before do
       service.instance_variable_set(:@container, mock_container)
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "keeps prepared settings and snapshots out of an agent commit pushed during execution" do
+      with_preparation_repository do |repository, remote|
+        initialize_preparation_repository(repository, remote)
+        paths, originals = create_preexisting_preparation_targets(repository)
+        preparation_service = local_preparation_service(repository)
+        cleanup_steps = materialize_preparation_targets(preparation_service, paths)
+        File.write(File.join(repository, "product-change.txt"), "real product work\n")
+        git!(repository, "add", "-A")
+        git!(repository, "commit", "-m", "agent product change")
+        git!(repository, "push", "origin", "HEAD")
+
+        committed_paths = git!(remote, "show", "--format=", "--name-only", "HEAD").lines.map(&:strip)
+        expect(committed_paths).to contain_exactly("product-change.txt")
+        expect(cleanup_steps.map { |step| step.fetch("PAID_PREPARATION_STATE_DIR") }).not_to include(start_with(repository))
+
+        preparation_service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
+        expect_preexisting_targets_restored(paths, originals)
+        expect(cleanup_steps).to all(satisfy { |step| !Dir.exist?(step.fetch("PAID_PREPARATION_STATE_DIR")) })
+      end
     end
 
     it "snapshots symlinks via readlink and regular files via cp -p, rejecting directories" do

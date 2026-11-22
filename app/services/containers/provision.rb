@@ -1333,7 +1333,7 @@ module Containers
 
     def materialize_preparation_file(write, env:)
       target_path = expand_preparation_path(write.path)
-      state_dir = "#{target_path}.paid-state-#{SecureRandom.hex(8)}"
+      state_dir = "/tmp/paid-execution-preparation/#{SecureRandom.hex(8)}"
 
       run_preparation_script(
         materialize_script(write.mode),
@@ -1371,9 +1371,11 @@ module Containers
       path.to_s.sub(/\A~(?=\/|$)/, "/home/agent")
     end
 
+    # @spec CONTAINER-RUNTIME-054
     # Matches agent-harness lstat-based snapshot semantics: stores the state type
     # (symlink, file, or missing), preserves symlink targets via readlink, backs
-    # up regular files with cp -p, and rejects directories.
+    # up regular files with cp -p, and rejects directories. Snapshot state stays
+    # outside the checkout while a local Git exclusion hides the temporary write.
     def materialize_script(mode)
       chmod_line = mode ? "chmod #{format('%#o', mode)} \"$PAID_PREPARATION_TARGET\"" : ":"
 
@@ -1381,6 +1383,7 @@ module Containers
         set -e &&
         mkdir -p "$(dirname "$PAID_PREPARATION_TARGET")" &&
         mkdir -p "$PAID_PREPARATION_STATE_DIR" &&
+        chmod 700 "$PAID_PREPARATION_STATE_DIR" &&
         if [ -L "$PAID_PREPARATION_TARGET" ]; then
           readlink "$PAID_PREPARATION_TARGET" > "$PAID_PREPARATION_STATE_DIR/symlink_target" &&
           printf symlink > "$PAID_PREPARATION_STATE_DIR/state" &&
@@ -1393,6 +1396,30 @@ module Containers
           rm -f "$PAID_PREPARATION_TARGET";
         else
           printf missing > "$PAID_PREPARATION_STATE_DIR/state";
+        fi &&
+        if command -v git >/dev/null 2>&1; then
+          git_root=$(git -C "$(dirname "$PAID_PREPARATION_TARGET")" rev-parse --show-toplevel 2>/dev/null || true) &&
+          if [ -n "$git_root" ]; then
+            case "$PAID_PREPARATION_TARGET" in
+              "$git_root"/*)
+                git_relative=${PAID_PREPARATION_TARGET#${git_root}/} &&
+                git_exclude_path=$(git -C "$git_root" rev-parse --path-format=absolute --git-path info/exclude) &&
+                git_marker="# paid-execution-preparation-$PAID_PREPARATION_STATE_DIR" &&
+                mkdir -p "$(dirname "$git_exclude_path")" && touch "$git_exclude_path" &&
+                printf '%s\\n/%s\\n' "$git_marker" "$git_relative" >> "$git_exclude_path" &&
+                printf '%s' "$git_root" > "$PAID_PREPARATION_STATE_DIR/git_root" &&
+                printf '%s' "$git_relative" > "$PAID_PREPARATION_STATE_DIR/git_relative" &&
+                printf '%s' "$git_exclude_path" > "$PAID_PREPARATION_STATE_DIR/git_exclude_path" &&
+                printf '%s' "$git_marker" > "$PAID_PREPARATION_STATE_DIR/git_marker" &&
+                if git -C "$git_root" ls-files --error-unmatch -- "$git_relative" >/dev/null 2>&1; then
+                  git_index_state=$(git -C "$git_root" ls-files -v -- "$git_relative" | cut -c1) &&
+                  printf '%s' "$git_index_state" > "$PAID_PREPARATION_STATE_DIR/git_index_state" &&
+                  case "$git_index_state" in S|[a-z]) :;; *) git -C "$git_root" update-index --assume-unchanged -- "$git_relative";; esac;
+                else
+                  printf untracked > "$PAID_PREPARATION_STATE_DIR/git_index_state";
+                fi;;
+            esac;
+          fi;
         fi &&
         printf '%s' "$PAID_PREPARATION_B64" | base64 -d > "$PAID_PREPARATION_TARGET" &&
         #{chmod_line}
@@ -1420,7 +1447,26 @@ module Containers
           rm -f "$PAID_PREPARATION_TARGET" || cleanup_status=$?;
         else
           cleanup_status=1;
-        fi &&
+        fi;
+        if [ -f "$PAID_PREPARATION_STATE_DIR/git_root" ]; then
+          git_root=$(cat "$PAID_PREPARATION_STATE_DIR/git_root") &&
+          git_relative=$(cat "$PAID_PREPARATION_STATE_DIR/git_relative") &&
+          git_exclude_path=$(cat "$PAID_PREPARATION_STATE_DIR/git_exclude_path") &&
+          git_marker=$(cat "$PAID_PREPARATION_STATE_DIR/git_marker") &&
+          git_exclude_cleaned="$PAID_PREPARATION_STATE_DIR/git-exclude-cleaned" &&
+          git_exclude_skip=0 &&
+          while IFS= read -r git_exclude_line || [ -n "$git_exclude_line" ]; do
+            if [ "$git_exclude_line" = "$git_marker" ]; then git_exclude_skip=1; continue; fi;
+            if [ "$git_exclude_skip" -eq 1 ]; then git_exclude_skip=0; continue; fi;
+            printf '%s\\n' "$git_exclude_line";
+          done < "$git_exclude_path" > "$git_exclude_cleaned" &&
+          cat "$git_exclude_cleaned" > "$git_exclude_path" &&
+          rm -f "$git_exclude_cleaned" &&
+          case "$(cat "$PAID_PREPARATION_STATE_DIR/git_index_state")" in
+            untracked|S|[a-z]) :;;
+            *) git -C "$git_root" update-index --no-assume-unchanged -- "$git_relative" || cleanup_status=$?;;
+          esac;
+        fi;
         rm -rf "$PAID_PREPARATION_STATE_DIR" &&
         exit "$cleanup_status"
       SH

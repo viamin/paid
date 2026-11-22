@@ -915,3 +915,17 @@
   workflow/environment cleanup without a second lifecycle transition.
   *Tests:* `spec/services/agent_runs/cancel_spec.rb`.
   *Code:* `AgentRuns::Cancel`, `AgentRun#cleanup_execution_environment`.
+
+- [x] **CONTAINER-RUNTIME-054** — When execution preparation temporarily
+  materializes a provider settings file in a repository, Paid SHALL keep the
+  generated target and all preparation snapshot state out of ordinary agent
+  commits and pushed pull-request diffs throughout the preparation lifetime.
+  Snapshot state SHALL live outside the repository. The runtime SHALL preserve
+  and restore an original missing target, tracked file, untracked user file, or
+  symlink, including original regular-file bytes and mode, without disabling
+  heartbeat configuration. Successful execution, command failure, and
+  cancellation SHALL retain the existing restoration and explicit
+  cleanup-failure behavior.
+  *Tests:* `spec/services/containers/provision_spec.rb`.
+  *Code:* `Containers::Provision#materialize_preparation_file`,
+  `#materialize_script`, `#cleanup_script`.
