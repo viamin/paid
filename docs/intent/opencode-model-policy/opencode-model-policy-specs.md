@@ -37,9 +37,11 @@
 - [x] **MODEL-POLICY-011** — When a free-policy direct-outbound runner in
   `opencode`, `kilocode`, `pi`, or `omp` is enabled for agent runs or
   fallback, the system SHALL dispatch it through an OpenRouter-aware
-  runtime that carries the runner's OpenRouter credential plus
-  data-classification routing metadata. Pi/OMP/KiloCode SHALL preserve their
-  runner-specific runtime metadata/env shape while adding that routing data.
+  runtime that explicitly identifies OpenRouter and carries the runner's
+  OpenRouter credential plus data-classification routing. Required ZDR
+  routing SHALL use the SDK privacy payload. Pi/OMP/KiloCode SHALL preserve
+  their runner-specific runtime metadata/env shape while adding that routing
+  data.
 - [x] **MODEL-POLICY-012** — Free-policy `RunnerState` interactions
   (`Runner#clear_free_model_rotation_snapshot`, `FreeModels::Rotation`'s
   rotation-snapshot and per-model-rate-limit tracking) SHALL key `RunnerState`

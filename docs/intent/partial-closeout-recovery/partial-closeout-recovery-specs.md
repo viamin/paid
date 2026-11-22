@@ -88,6 +88,21 @@
   `spec/mcp/tools/get_agent_run_audit_diagnostics_spec.rb`,
   `spec/system/acceptance_audit_diagnostics_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-059** — When a report-only acceptance request exhausts
+  its routed candidates or raises, Paid SHALL persist the bounded actual route
+  trace from `Llm::Request` with its final diagnostic. The trace SHALL identify
+  the selected producing attempt rather than infer provider/model from the
+  configured primary runner, preserve the existing authentication/configuration
+  precedence and substantive-verdict behavior, and mark non-executed candidates
+  as `skipped`. Existing safe reconciliation and diagnostic projections SHALL
+  allowlist the trace and tolerate rows recorded before it existed.
+  *Code:* `app/services/llm/request.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/acceptance_audit_failure.rb`.
+  *Test:* `spec/services/llm/request_spec.rb`,
+  `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/partial_closeouts/acceptance_audit_failure_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-057** — When Paid builds the criterion-level
   acceptance-audit packet and source revision for an issue, it SHALL include
   each matching terminal `closeout_verification` record — keyed by issue,
@@ -259,12 +274,18 @@
   transport outage. A typed activity timeout SHALL remain recoverable when
   its retry state is either `TIMEOUT` or `MAXIMUM_ATTEMPTS_REACHED`; replay of
   executions predating the timeout-cause patch SHALL retain their recorded path.
+  New histories SHALL publish that parking state through the existing bounded
+  Temporal control capacity; a finite publication failure is not proof that it
+  executed and SHALL not create a PR, completion, assessment, authority, or
+  fresh recovery budget. Legacy histories retain their recorded activity
+  command and queue.
   *Code:* `app/services/partial_closeouts/source_closure_recovery.rb`,
   `app/temporal/activities/assess_source_closure_activity.rb`,
   `app/temporal/workflows/agent_execution_workflow.rb`,
   `app/temporal/workflows/source_closure_recovery_workflow.rb`.
   *Test:* `spec/services/partial_closeouts/source_closure_recovery_spec.rb`,
   `spec/temporal/activities/assess_source_closure_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`,
   `spec/temporal/workflows/source_closure_recovery_workflow_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-045** — When a waiting source-closure recovery is due

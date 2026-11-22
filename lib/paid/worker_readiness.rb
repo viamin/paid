@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "json"
+require "open3"
 require "time"
 
 module Paid
@@ -13,6 +14,12 @@ module Paid
   # A sidecar or exec-based health check reads the file existence:
   #
   #   test -f "$WORKER_READINESS_FILE"
+  #
+  # The payload also publishes the checkout revision the worker booted from,
+  # so a supervisor can distinguish an on-disk checkout from the code the
+  # running worker actually loaded (see bin/dev-update's worker adoption
+  # verification). The revision is commit identity only — never secrets,
+  # credential payloads, or secret-bearing process arguments/environment.
   #
   # The default flag path is scoped per worker process (program name plus
   # TEMPORAL_WORKER_MODE) so colocated workers on one host each keep an
@@ -26,6 +33,15 @@ module Paid
   # the bin/ scripts.
   module WorkerReadiness
     DEFAULT_FILE_PREFIX = "paid-worker-ready"
+    # Matches TrustedMeasurements::DeploymentSignal::ENV_KEY: the deploy
+    # pipeline's revision identity when present, development HEAD otherwise.
+    REVISION_ENV_KEY = "PAID_DEPLOYED_REVISION"
+    GIT_ENVIRONMENT = {
+      "GIT_DIR" => nil,
+      "GIT_WORK_TREE" => nil,
+      "GIT_COMMON_DIR" => nil,
+      "GIT_INDEX_FILE" => nil
+    }.freeze
 
     module_function
 
@@ -54,7 +70,7 @@ module Paid
     def mark_ready!(env = ENV)
       path = file_path(env)
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, ready_payload)
+      File.write(path, ready_payload(env))
     rescue StandardError => error
       warn "Failed to write worker readiness file: #{error.class}: #{error.message}"
     end
@@ -72,8 +88,31 @@ module Paid
       File.exist?(file_path(env))
     end
 
-    def ready_payload
-      { pid: Process.pid, ready_at: Time.now.utc.iso8601 }.to_json
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+    def ready_payload(env = ENV)
+      { pid: Process.pid, ready_at: Time.now.utc.iso8601, revision: boot_revision(env) }.to_json
+    end
+
+    # The revision identity of the code this worker process booted from:
+    # the deploy pipeline's revision when PAID_DEPLOYED_REVISION is set,
+    # otherwise the development checkout's HEAD SHA. Returns nil when the
+    # revision cannot be determined; callers treat that as unknown, never
+    # as a verified adoption.
+    def boot_revision(env = ENV, root: nil)
+      env[REVISION_ENV_KEY].presence || git_head_revision(root || default_revision_root)
+    end
+
+    # Rails.root when running under Rails; the process working directory for
+    # bare-Ruby boot paths (spec subprocesses, early binstubs).
+    def default_revision_root
+      defined?(Rails) ? Rails.root : Dir.pwd
+    end
+
+    def git_head_revision(root)
+      output, _error, status = Open3.capture3(GIT_ENVIRONMENT, "git", "-C", root.to_s, "rev-parse", "HEAD")
+      status.success? ? output.strip : nil
+    rescue Errno::ENOENT, Errno::EACCES
+      nil
     end
   end
 end

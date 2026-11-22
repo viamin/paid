@@ -69,6 +69,33 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["ready_at"]).to match(/\d{4}-\d{2}-\d{2}T/)
     end
 
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
+    it "writes JSON with the booted checkout revision" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+
+      payload = JSON.parse(File.read(file_path))
+      expect(payload["revision"]).to eq(`git -C #{Rails.root} rev-parse HEAD`.strip)
+    end
+
+    it "prefers PAID_DEPLOYED_REVISION for the payload revision when set" do
+      env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "deployed-sha" }
+      described_class.mark_ready!(env)
+
+      payload = JSON.parse(File.read(file_path))
+      expect(payload["revision"]).to eq("deployed-sha")
+    end
+
+    it "reports a null revision when the checkout revision cannot be determined" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      allow(Open3).to receive(:capture3).and_return([ "", "", double(success?: false) ])
+
+      described_class.mark_ready!(env)
+
+      payload = JSON.parse(File.read(file_path))
+      expect(payload["revision"]).to be_nil
+    end
+
     it "creates parent directories if needed" do
       nested = File.join(tmpdir, "deep", "nested", "ready")
       described_class.mark_ready!("WORKER_READINESS_FILE" => nested)

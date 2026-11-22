@@ -4,6 +4,10 @@ set -euo pipefail
 # Post-checkout hook: automatically rolls back orphaned migrations and runs
 # pending ones when switching branches. Prevents DB/code schema mismatches.
 #
+# Never runs for new-worktree/initial checkouts (Git's null previous ref) or
+# when a comparison ref cannot be resolved or read; those checkouts may be
+# candidate code under inspection and must not execute host database setup.
+#
 # Receives three args from git:
 #   $1 = previous HEAD ref
 #   $2 = new HEAD ref
@@ -12,6 +16,7 @@ set -euo pipefail
 # Override:
 #   SKIP_MIGRATION_GUARD=1 git checkout <branch>
 
+# @spec DEVELOPER-MIGRATION-GUARD-005
 [ "${SKIP_MIGRATION_GUARD:-0}" = "1" ] && exit 0
 
 prev_head=$1
@@ -20,17 +25,62 @@ branch_checkout=$3
 
 [ "$branch_checkout" -eq 1 ] || exit 0
 
+# Git passes its null ref (all zeros) as the previous HEAD for new-worktree
+# and initial checkouts. There is no previous migration tree to compare, and
+# these checkouts are frequently candidate code staged only for inspection,
+# so never run Rails or host database setup from here.
+# @spec DEVELOPER-MIGRATION-GUARD-002
+if [[ -z "$prev_head" || "$prev_head" =~ ^0+$ ]]; then
+  echo "  Migration guard: new-worktree/initial checkout — nothing to compare."
+  exit 0
+fi
+
+# A ref that does not resolve has no readable migration tree. Skipping is the
+# only safe comparison: diffing against an apparent empty tree would report
+# every migration as added and run host database setup (#5292).
+# @spec DEVELOPER-MIGRATION-GUARD-003
+for ref in "$prev_head" "$new_head"; do
+  if ! git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
+    echo "  Migration guard: ref ${ref} does not resolve — skipping."
+    exit 0
+  fi
+done
+
 if ! command -v bin/rails &>/dev/null; then
   exit 0
 fi
 
+migration_tree() {
+  local tree
+  tree=$(git ls-tree --name-only -r "$1" -- db/migrate/ 2>/dev/null) || return 1
+  [ -n "$tree" ] || return 0
+  printf '%s\n' "$tree"
+}
+
+if ! prev_tree=$(migration_tree "$prev_head"); then
+  # @spec DEVELOPER-MIGRATION-GUARD-004
+  echo "  Migration guard: migration tree for ${prev_head} unavailable — skipping."
+  exit 0
+fi
+
+if ! new_tree=$(migration_tree "$new_head"); then
+  # @spec DEVELOPER-MIGRATION-GUARD-004
+  echo "  Migration guard: migration tree for ${new_head} unavailable — skipping."
+  exit 0
+fi
+
+print_lines() {
+  [[ -n "$1" ]] && printf '%s\n' "$1"
+  true
+}
+
 removed=$(comm -23 \
-  <(git ls-tree --name-only -r "$prev_head" -- db/migrate/ 2>/dev/null | sort) \
-  <(git ls-tree --name-only -r "$new_head" -- db/migrate/ 2>/dev/null | sort) || true)
+  <(print_lines "$prev_tree" | sort) \
+  <(print_lines "$new_tree" | sort))
 
 added=$(comm -13 \
-  <(git ls-tree --name-only -r "$prev_head" -- db/migrate/ 2>/dev/null | sort) \
-  <(git ls-tree --name-only -r "$new_head" -- db/migrate/ 2>/dev/null | sort) || true)
+  <(print_lines "$prev_tree" | sort) \
+  <(print_lines "$new_tree" | sort))
 
 if [ -z "$removed" ] && [ -z "$added" ]; then
   exit 0
@@ -127,6 +177,7 @@ if [ -n "$added" ]; then
   echo "$added" | sed 's|db/migrate/||' | sed 's/^/    /'
   echo ""
   echo "  Running pending migrations..."
+  # @spec DEVELOPER-MIGRATION-GUARD-001
   if bin/rails db:migrate 2>&1; then
     echo "  Migrations complete."
   else

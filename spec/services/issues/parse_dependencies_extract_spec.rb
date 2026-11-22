@@ -86,6 +86,50 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       expect(cross_deps).to eq({})
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-009
+    it "excludes the exact comma-attributed related-work prerequisite from #5236" do
+      local_deps, cross_deps = described_class.extract(
+        body: "This setup/save correction does not prove request-level privacy enforcement: the separate verified configuration-loss gap remains #4707, blocked by viamin/agent-harness#557.",
+        current_issue_number: 5236
+      )
+
+      expect(local_deps).to eq({})
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-009
+    it "keeps a list item's declaration while excluding a folded comma-attributed related-work prerequisite" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n- #42\n  Related work remains #4707, blocked by owner/repo#557.\n",
+        current_issue_number: 5236
+      )
+
+      expect(local_deps).to eq(42 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
+    it "retains #4707's comma-attributed declaration when it is the current item" do
+      local_deps, cross_deps = described_class.extract(
+        body: "Issue #4707, is blocked by viamin/agent-harness#557.",
+        current_issue_number: 4707
+      )
+
+      expect(local_deps).to eq({})
+      expect(cross_deps).to eq([ "viamin", "agent-harness", 557 ] => false)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
+    it "does not suppress a declaration after an unrelated earlier issue reference" do
+      local_deps, cross_deps = described_class.extract(
+        body: "Related work #4707 is tracked separately. Blocked by owner/repo#557.",
+        current_issue_number: 5236
+      )
+
+      expect(local_deps).to eq({})
+      expect(cross_deps).to eq([ "owner", "repo", 557 ] => false)
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-003, DEPENDENCY-DECLARATIONS-009
     it "keeps direct and current-item declarations in a dependency section" do
       local_deps, cross_deps = described_class.extract(

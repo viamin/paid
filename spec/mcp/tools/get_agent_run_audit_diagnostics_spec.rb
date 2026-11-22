@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PARTIAL-CLOSEOUT-058
+# @spec PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059
 RSpec.describe Tools::GetAgentRun do
   let(:user) { create(:user, :member) }
   let(:session) { create(:chat_session, account: user.account, created_by: user) }
@@ -38,5 +38,19 @@ RSpec.describe Tools::GetAgentRun do
     expect(diagnostic.fetch("invalid_fields").size).to be <= 10
     expect(diagnostic.fetch("invalid_fields").first).to eq("path" => "x" * 120, "expected" => "object", "actual" => "string")
     expect(diagnostic.to_json).not_to include("private", "malformed", "raw_output")
+  end
+
+  it "exposes only bounded allowlisted route attempts" do
+    run = create(:agent_run, project:, reconciliation: { "acceptance_audit_failure" => {
+      "category" => "timeout", "attempt_trace" => { "selected_attempt_ordinal" => 2,
+        "attempts" => [ { "ordinal" => 2, "runner_id" => 7, "provider" => "gemini", "model" => "fallback",
+          "outcome" => "timeout", "prompt" => "private", "error" => "private" } ] }
+    } })
+
+    diagnostic = tool.call(agent_run_id: run.id).fetch(:assessment_diagnostics)
+
+    expect(diagnostic.dig("attempt_trace", "selected_attempt_ordinal")).to eq("2")
+    expect(diagnostic.dig("attempt_trace", "attempts", 0)).to include("provider" => "gemini", "outcome" => "timeout")
+    expect(diagnostic.to_json).not_to include("private", "prompt", "error")
   end
 end

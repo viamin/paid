@@ -42,8 +42,9 @@ module Workflows
     private
 
     def park_branch_mismatch(agent_run_id)
-      run_activity(Activities::ParkSourceClosureRecoveryActivity, park_input(agent_run_id, "branch_mismatch", false),
-        timeout: 30)
+      park_source_closure_recovery(
+        agent_run_id:, category: "branch_mismatch", attempts: ASSESSMENT_RETRY_POLICY.max_attempts, auto_retry: false
+      )
       { agent_run_id:, waiting: true }
     end
 
@@ -64,8 +65,10 @@ module Workflows
         raise unless Temporalio::Workflow.patched("source-closure-retry-unsuccessful-response-v1")
       end
 
-      run_activity(Activities::ParkSourceClosureRecoveryActivity, park_input(agent_run_id, category, automatic_retry?(operator_authorized)),
-        timeout: 30)
+      park_source_closure_recovery(
+        agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts,
+        auto_retry: automatic_retry?(operator_authorized)
+      )
       false
     end
 
@@ -81,10 +84,15 @@ module Workflows
       !operator_authorized
     end
 
-    def park_input(agent_run_id, category, auto_retry)
-      input = { agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts }
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
+    def park_source_closure_recovery(agent_run_id:, category:, attempts:, auto_retry:)
+      # TODO(#5268): remove after the patch-guard sweep confirms no
+      # pre-control-routing SourceClosureRecoveryWorkflow history remains.
+      control_route = Temporalio::Workflow.patched("source-closure-recovery-control-routing-v1")
+      routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
+      input = { agent_run_id:, category:, attempts: }
       input[:auto_retry] = auto_retry if Temporalio::Workflow.patched("source-closure-recovery-auto-retry-v1")
-      input
+      run_activity(Activities::ParkSourceClosureRecoveryActivity, input, timeout: 30, **routing)
     end
 
     def finish_closeout(agent_run_id, project_id, pr_result, goal)

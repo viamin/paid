@@ -87,6 +87,17 @@ Structured callers include their response contract in the prompt and validate
 JSON locally. They do not require a vendor's schema-only API. Provenance records
 the actual response model rather than an assumed vendor model.
 
+Acceptance requests retain a bounded route-attempt trace at the shared request
+boundary. Each entry names the owned candidate runner, its resolved provider and
+model once execution begins, ordinal, allocated and elapsed budget, phase,
+normalized outcome, and correlation identifiers. A policy-, availability-,
+credential-, or deadline-skipped candidate is explicitly `skipped`, never
+represented as an execution failure. The selected terminal error is bound to
+the attempt that produced it; configured-primary values are retained separately
+as configuration context and never presented as observed failure provenance.
+The trace is allowlisted and bounded before persistence, so it contains no
+prompt, output, credentials, secret-bearing URL, HTTP body, or error message.
+
 Isolated text commands use a process-group deadline before the container
 watchdog, with a short cleanup margin. Their immutable orphan-sweep label uses
 a fixed ten-minute lifetime from creation, so it remains a worker-death safety
