@@ -46,12 +46,12 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   # @spec TEST-SUITE-023
-  it "allows dependency installation thirty minutes per attempt in shard jobs" do
+  it "allows dependency installation forty-five minutes per attempt in shard jobs" do
     %w[test-shards shard-recovery].each do |job_name|
       install_step = workflow.fetch("jobs").fetch(job_name).fetch("steps")
         .find { |step| step["name"] == "Install JavaScript dependencies" }
 
-      expect(install_step.fetch("run")).to include("  30m \\")
+      expect(install_step.fetch("run")).to include("  45m \\")
     end
   end
 
@@ -308,7 +308,7 @@ RSpec.describe CiWorkflowFile, :no_db do
       run = install_step.fetch("run")
 
       expect(run).to include("for attempt in 1 2 3 4 5")
-      expect(run).to include("30m")
+      expect(run).to include("45m")
       expect(run).to include('bash -lc \'yarn install --frozen-lockfile && bin/yarn-postinstall\'')
     end
   end

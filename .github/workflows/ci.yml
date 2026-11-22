@@ -359,7 +359,7 @@ jobs:
             return 1
           }
           retry_with_backoff \
-            30m \
+            45m \
             "JavaScript dependency install timed out or failed" \
             bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
 
@@ -763,7 +763,7 @@ jobs:
             return 1
           }
           retry_with_backoff \
-            30m \
+            45m \
             "JavaScript dependency install timed out or failed" \
             bash -lc 'yarn install --frozen-lockfile && bin/yarn-postinstall'
 
