@@ -506,6 +506,33 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     # @spec PROMPT-ASSEMBLY-026
+    it "limits standalone review findings to the configured prompt comment count" do
+      limited_settings = instance_double(UserSetting, max_prompt_comments: 2, max_comment_length: 2000)
+      project.update!(allowed_github_usernames: (1..3).map { |id| "trusteduser#{id}" })
+      allow(AgentRuns::UserSettingsResolver).to receive(:call)
+        .with(project: project, strict: false)
+        .and_return(limited_settings)
+      allow(github_client).to receive(:pull_request_reviews)
+        .with(project.full_name, 42)
+        .and_return((1..3).map do |id|
+          standalone_review(id: id, author: "trusteduser#{id}", state: "COMMENTED",
+            body: "Finding #{id}", submitted_at: Time.utc(2026, 11, 22, id, 0, 0))
+        end)
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(prompt).not_to include("Finding 1")
+      expect(prompt).to include("Finding 2")
+      expect(prompt).to include("Finding 3")
+    end
+
+    # @spec PROMPT-ASSEMBLY-026
     it "excludes a paid-agent clean verdict from review feedback context" do
       enable_paid_agent_reviews(project)
       clean_review = "#{Github::ReviewMarker.body_prefix}No repair is needed. #{Github::ReviewMarker::CLEAN_REVIEW_MARKER}"

@@ -1081,9 +1081,10 @@ class GithubClient
   # @param number [Integer] Pull request number
   # @return [Array<Hash>] Reviews with :id, :user_login, :state, :body, :submitted_at, :commit_id keys (:body is always a String)
   # @raise [NotFoundError] if the pull request does not exist
+  # @spec PROMPT-ASSEMBLY-026
   def pull_request_reviews(repo, number)
     handle_errors do
-      pages = 1
+      pages = 0
       truncated = false
       reviews = with_auto_paginate do
         client.pull_request_reviews(repo, number, per_page: 100) do |collected, response|

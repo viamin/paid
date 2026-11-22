@@ -1133,11 +1133,14 @@ module Prompts
     # the GitHub states that can carry normal repair feedback.
     # @spec PROMPT-ASSEMBLY-026
     def trusted_top_level_reviews
-      latest_reviews_by_trusted_author.values.select do |review|
-        review[:state].in?([ "COMMENTED", "CHANGES_REQUESTED" ]) &&
-          review[:body].to_s.strip.present? &&
-          !paid_agent_clean_review?(review)
-      end
+      latest_reviews_by_trusted_author.values
+        .select do |review|
+          review[:state].in?([ "COMMENTED", "CHANGES_REQUESTED" ]) &&
+            review[:body].to_s.strip.present? &&
+            !paid_agent_clean_review?(review)
+        end
+        .sort_by { |review| [ review[:submitted_at] || Time.at(0), review[:id].to_i ] }
+        .last(max_prompt_comments)
     end
 
     # The paid-agent verifier's clean marker records an agent_harness semantic

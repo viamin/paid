@@ -1850,6 +1850,33 @@ RSpec.describe GithubClient do
 
         expect(client.client.auto_paginate).to be false
       end
+
+      # @spec PROMPT-ASSEMBLY-026
+      it "retains the configured tenth page of reviews" do
+        (1..GithubClient::PULL_REQUEST_REVIEWS_MAX_PAGES).each do |page|
+          headers = { "Content-Type" => "application/json" }
+          if page < GithubClient::PULL_REQUEST_REVIEWS_MAX_PAGES
+            headers["Link"] = "<#{api_base}/repos/#{repo}/pulls/43/reviews?page=#{page + 1}>; rel=\"next\""
+          end
+
+          request = stub_request(:get, "#{api_base}/repos/#{repo}/pulls/43/reviews")
+          request = if page == 1
+            request.with(query: hash_including("per_page" => "100"))
+          else
+            request.with(query: hash_including("page" => page.to_s))
+          end
+          request
+            .to_return(
+              status: 200,
+              body: [ { id: page, user: { login: "reviewer#{page}" }, state: "COMMENTED" } ].to_json,
+              headers: headers
+            )
+        end
+
+        result = client.pull_request_reviews(repo, 43)
+
+        expect(result.map { |review| review[:id] }).to eq((1..GithubClient::PULL_REQUEST_REVIEWS_MAX_PAGES).to_a)
+      end
     end
 
     context "when pull request does not exist" do
