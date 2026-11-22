@@ -49,7 +49,9 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).to have_received(:pull_requests).with(project.full_name, state: "open")
       expect(client).to have_received(:pull_request).with(project.full_name, 42)
       expect(client).to have_received(:merge_pull_request).with(
-        project.full_name, 42, merge_method: project.merge_method
+        project.full_name, 42,
+        merge_method: project.merge_method,
+        expected_head_sha: "def456"
       )
       expect(client).to have_received(:add_labels_to_issue).with(
         project.full_name, 42, [ "paid-auto-merged-dependabot" ]
@@ -81,6 +83,29 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).not_to have_received(:merge_pull_request)
       expect(project.auto_merge_attempts.recent.first).to have_attributes(
         status: "blocked", reason_code: AutoMergeAttempt::REASON_CONFLICT_REPAIR_SCOPE_UNRESOLVED
+      )
+    end
+
+    # @spec AUTO-MERGE-010
+    it "binds the merge to the HEAD accepted by the final scope gate" do
+      issue
+      allow(client).to receive(:merge_pull_request).with(
+        project.full_name, 42,
+        merge_method: project.merge_method,
+        expected_head_sha: "def456"
+      ).and_raise(GithubClient::ApiError.new("Head SHA was modified", status: 409))
+
+      described_class.perform_now(project.id, pr_number: 42)
+
+      expect(client).to have_received(:merge_pull_request).with(
+        project.full_name, 42,
+        merge_method: project.merge_method,
+        expected_head_sha: "def456"
+      )
+      expect(client).not_to have_received(:add_labels_to_issue)
+      expect(project.auto_merge_attempts.recent.first).to have_attributes(
+        status: "failed",
+        reason_code: AutoMergeAttempts::Record::REASON_EXPECTED_MERGE_FAILURE
       )
     end
 
@@ -135,7 +160,9 @@ RSpec.describe DependabotAutoMergeJob do
         described_class.perform_now(project.id)
 
         expect(client).to have_received(:merge_pull_request).with(
-          project.full_name, 42, merge_method: project.merge_method
+          project.full_name, 42,
+          merge_method: project.merge_method,
+          expected_head_sha: "def456"
         )
       end
 
@@ -296,7 +323,9 @@ RSpec.describe DependabotAutoMergeJob do
       described_class.perform_now(project.id)
 
       expect(client).to have_received(:merge_pull_request).with(
-        project.full_name, 42, merge_method: project.merge_method
+        project.full_name, 42,
+        merge_method: project.merge_method,
+        expected_head_sha: "def456"
       )
     end
 
@@ -316,7 +345,9 @@ RSpec.describe DependabotAutoMergeJob do
 
       expect(client).to have_received(:merge_pull_request).once
       expect(client).to have_received(:merge_pull_request).with(
-        project.full_name, 42, merge_method: project.merge_method
+        project.full_name, 42,
+        merge_method: project.merge_method,
+        expected_head_sha: "def456"
       )
     end
 
@@ -505,7 +536,9 @@ RSpec.describe DependabotAutoMergeJob do
         described_class.perform_now(project.id)
 
         expect(fallback_client).to have_received(:merge_pull_request).with(
-          project.full_name, 42, merge_method: project.merge_method
+          project.full_name, 42,
+          merge_method: project.merge_method,
+          expected_head_sha: "def456"
         )
         expect(fallback_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, [ "paid-auto-merged-dependabot" ]

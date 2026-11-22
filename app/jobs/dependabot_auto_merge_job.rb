@@ -345,11 +345,13 @@ class DependabotAutoMergeJob < ApplicationJob
   # @spec AUTO-MERGE-010
   def merge_dependabot_pr_with(client, project, pr_data, credential_mode:)
     pr_number = pr_number_from(pr_data)
-    return false unless conflict_repair_scope_allowed?(project, pr_number, pr_head_sha(pr_data), credential_mode)
+    head_sha = pr_head_sha(pr_data)
+    return false unless conflict_repair_scope_allowed?(project, pr_number, head_sha, credential_mode)
 
     primary_merge_client(client).merge_pull_request(
       project.full_name, pr_number,
-      merge_method: project.merge_method
+      merge_method: project.merge_method,
+      expected_head_sha: head_sha
     )
     clear_merge_permission_rejection(project, pr_number)
     add_label(client, project, pr_number)
