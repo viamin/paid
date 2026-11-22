@@ -81,7 +81,7 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
       deployment_revision: nil)
     record_role("agent", pid: 102, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds)
 
-    expect(collect).to have_attributes(failure_reason: "poll_revision_mismatch")
+    expect(collect).to have_attributes(failure_reason: "malformed_poll_readiness")
   end
 
   it "keeps a healthy long-running worker current while its heartbeat stays fresh" do
@@ -116,8 +116,9 @@ RSpec.describe TrustedMeasurements::Checks::WorkerAdoption do
     record_role("poll", pid: 101, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds, revision: "old-revision")
     expect(collect).to have_attributes(failure_reason: "poll_revision_mismatch")
 
-    record_role("poll", pid: 101, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds, revision: nil)
-    expect(collect).to have_attributes(failure_reason: "poll_revision_mismatch")
+    record_role("poll", pid: 101, ready_at: now - 1.minute, heartbeat_at: now - 30.seconds,
+      revision: nil, deployment_revision: "revision-1")
+    expect(collect).to have_attributes(failure_reason: "malformed_poll_readiness")
   end
 
   it "recovers once a restarted role adopts the current revision" do

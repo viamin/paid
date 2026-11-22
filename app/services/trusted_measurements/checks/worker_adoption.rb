@@ -59,7 +59,8 @@ module TrustedMeasurements
       end
 
       def usable?(record)
-        record.pid.to_i.positive? && record.ready_at.present? && record.heartbeat_at.present?
+        record.pid.to_i.positive? && record.ready_at.present? && record.heartbeat_at.present? &&
+          record.revision.present? && record.deployment_revision.present?
       end
 
       # A beat older than the boot it reports cannot be this process's own
