@@ -186,13 +186,29 @@ the selected worker mode and activity-slot counts. Regular activities can
 consume an additional database connection through heartbeat helper threads, so
 pool sizing must account for both activity slots and heartbeat threads.
 
+## Task-Safe Worker Quiescence
+
+The Ruby 1.9.0 public worker lifecycle has shutdown, but shutdown eventually
+cancels activities. Its public custom-slot contract reserves before polling and
+requires `mark_slot_used` and `release_slot` to return immediately. It does not
+acknowledge cancellation of outstanding polls, atomically fence long-poll or
+eager admission, or account for a reservation that becomes a task while a
+worker is draining. Consequently neither activity-body readiness metadata nor a
+custom-slot supplier is a supported quiescence primitive.
+
+The updater defers before stopping a ready legacy worker. This preserves owned
+work and its existing finite attempt/deadline rather than presenting an idle
+body count as safe. A future implementation must consume a released public SDK
+contract described by [the quiescence decision](decisions/task-safe-worker-quiescence.md),
+then verify it through real SDK/server tests before it permits a stop.
+
 ## Health control routing alternatives
 
-| Choice | Decision | Rationale |
-| --- | --- | --- |
-| Existing poll worker for the bounded health activity | Selected | Its activity registration and capacity already exist independently of long agent work. |
-| New worker process or larger agent slot count | Rejected | Adds capacity and deployment complexity without isolating the observed control dependency. |
-| Longer health deadline on the agent queue | Rejected | A queued check still supplies no endpoint observation and can discard completed work. |
+| Choice | Decision | Alternatives | Rationale |
+| --- | --- | --- | --- |
+| Existing poll worker for the bounded health activity | Selected | New worker process or larger agent slot count | Its activity registration and capacity already exist independently of long agent work. |
+| Longer health deadline on the agent queue | Rejected | Existing poll worker | A queued check still supplies no endpoint observation and can discard completed work. |
+| Task-safe worker quiescence | Await a released public SDK lifecycle operation and defer legacy workers | Activity-body locks; blocking custom-slot callbacks; graceful shutdown | Only a worker-level operation can include unused reservations and eager admission without consuming an attempt or cancelling an owner. |
 
 ## Deferred Work
 

@@ -39,6 +39,23 @@
   *Tests:* `spec/lib/paid/temporal_worker_config_spec.rb`.
   *Code:* `Paid::TemporalWorkerConfig`.
 
+- [ ] **TEMPORAL-ORCHESTRATION-017** — Before an updater stops a ready Temporal
+  worker, it SHALL obtain a public-SDK quiescence acknowledgement that closes
+  new poll and eager task admission, includes every outstanding unused poll or
+  eager reservation, and identifies each admitted task as either safely queued
+  with its original attempt/deadline unspent or a tracked owner that finishes
+  before the stop boundary. The acknowledgement and resume operations SHALL be
+  non-blocking with respect to SDK notification callbacks. On timeout, unknown
+  state, abort, replacement, or a worker that lacks the capability, the updater
+  SHALL defer adoption before stop and leave admission recoverable; it SHALL
+  NOT infer safety from an activity-body count, force-cancel an owner, change
+  queues, retries, deadlines, concurrency, or budgets. The released capability
+  SHALL cover both poll and agent roles and every enabled eager path.
+  *Current code:* `bin/dev-update` defers safely for ready legacy workers.
+  *Required dependency and rollout:*
+  `decisions/task-safe-worker-quiescence.md`.
+  *Focused test:* `spec/lib/dev_update_spec.rb`.
+
 ## Durable Workflow Boundary
 
 - [x] **TEMPORAL-ORCHESTRATION-003** — Durable multi-step automation SHALL run

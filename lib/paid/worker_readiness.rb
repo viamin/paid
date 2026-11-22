@@ -93,35 +93,25 @@ module Paid
       File.exist?(file_path(env))
     end
 
-    # The updater takes this lock exclusively before stopping workers. Each
-    # activity holds shared ownership for its entire execution, making idle
-    # observation and admission closure one atomic boundary.
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    def admission_lock_path(env = ENV)
-      "#{file_path(env)}.admission.lock"
-    end
-
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    def with_activity(env = ENV)
-      FileUtils.mkdir_p(File.dirname(admission_lock_path(env)))
-      File.open(admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        lock.flock(File::LOCK_SH)
-        activity_started!(env)
-        yield
-      ensure
-        activity_finished!(env)
-      end
+    # This is observability, not admission control. An activity body starts
+    # only after the SDK has accepted a task, so a file lock here cannot close
+    # an already-reserved long poll safely.
+    def with_activity_observation(env = ENV)
+      activity_started!(env)
+      yield
+    ensure
+      activity_finished!(env)
     end
 
     # Activity counts are deliberately coarse, process-local readiness metadata:
     # the updater needs only to know whether stopping this worker would interrupt
     # an owner. It never contains activity inputs or customer data.
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TEMPORAL-ORCHESTRATION-017
     def activity_started!(env = ENV)
       update_activity_count!(env, 1)
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TEMPORAL-ORCHESTRATION-017
     def activity_finished!(env = ENV)
       update_activity_count!(env, -1)
     end

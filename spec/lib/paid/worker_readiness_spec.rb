@@ -69,7 +69,7 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["ready_at"]).to match(/\d{4}-\d{2}-\d{2}T/)
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TEMPORAL-ORCHESTRATION-017
     it "publishes a coarse active activity count without exposing activity data" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
@@ -83,19 +83,15 @@ RSpec.describe Paid::WorkerReadiness do
       expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-    it "holds activity admission ownership until the activity finishes" do
+    # @spec TEMPORAL-ORCHESTRATION-017
+    it "observes activity ownership without claiming to control SDK admission" do
       env = { "WORKER_READINESS_FILE" => file_path }
       described_class.mark_ready!(env)
       activity, release = start_owned_activity(env)
-      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(false)
-      end
+      expect(JSON.parse(File.read(file_path))).to include("active_activities" => 1)
       release << true
       activity.join
-      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
-        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(0)
-      end
+      expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
     ensure
       release << true if activity&.alive?
       activity&.join
@@ -118,7 +114,7 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["revision"]).to eq("deployed-sha")
     end
 
-    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TEMPORAL-ORCHESTRATION-017
     it "retains the boot revision while activity ownership changes" do
       env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "booted-sha" }
       described_class.mark_ready!(env)
@@ -214,7 +210,7 @@ RSpec.describe Paid::WorkerReadiness do
     entered = Queue.new
     release = Queue.new
     activity = Thread.new do
-      described_class.with_activity(env) do
+      described_class.with_activity_observation(env) do
         entered << true
         release.pop
       end

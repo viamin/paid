@@ -61,6 +61,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     [ false, true ].each do |migration_trigger|
       Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
         script_path = prepare_script_fixture(dir)
+        %w[poll agent].each { |mode| FileUtils.rm_f(worker_readiness_path(mode)) }
         env = migration_trigger_env(dir)
         env.delete("DEV_UPDATE_CHANGED_FILES") unless migration_trigger
         env.delete("DEV_UPDATE_RESTART_TRIGGER_FILES") unless migration_trigger
@@ -562,7 +563,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(calls.count("overmind quit")).to eq(1)
       expect(calls.count("dev")).to eq(1)
       expect(calls.count("setup --skip-server")).to eq(1)
-      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
+      expect(File).not_to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
 
       updater_log = read_updater_log(dir)
       expect(updater_log).to include("Worker adoption verified: poll and agent workers report revision post-pull-sha.")
@@ -573,34 +574,40 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-  it "defers a full update before stopping the supervisor while a worker owns an activity" do
+  # @spec TEMPORAL-ORCHESTRATION-017
+  it "defers a full update before stopping the supervisor when a legacy worker is ready" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       stdout, stderr, status = run_lightweight_with_pull(dir,
         pull_diff_files: %w[app/services/llm/request.rb],
         changed_files: "app/services/llm/request.rb",
         start_overmind_running: true,
         with_stale_socket: true,
+        worker_ready: true,
         worker_active_activities: 1)
 
       expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
       expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
 
       updater_log = read_updater_log(dir)
-      expect(updater_log).to include("Worker drain did not complete; deferring worker adoption without stopping Overmind.")
+      expect(updater_log).to include("does not support task-safe worker quiescence; deferring worker adoption before stopping Overmind.")
+      expect(updater_log).to include("TEMPORAL-ORCHESTRATION-017")
       expect(updater_log).not_to include("Full restart update complete.")
     end
   end
 
-  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
-  it "closes admission on an idle role while the other role drains" do
+  # @spec TEMPORAL-ORCHESTRATION-017
+  it "defers an idle ready worker rather than treating activity count as admission safety" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
-      status, poll_admitted, stderr = run_cross_role_arrival(dir)
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true,
+        worker_ready: true)
 
-      expect(status.success?).to be(true), stderr
-      expect(poll_admitted).to be(false)
-      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
-      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to include("overmind quit")
+      expect(status.success?).to be(false), "stdout: #{stdout}\nstderr: #{stderr}"
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
+      expect(read_updater_log(dir)).to include("does not support task-safe worker quiescence")
     end
   end
 
@@ -1308,6 +1315,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     status_successes_after_start: nil,
     tmux: nil,
     worker_readiness_revision: nil,
+    worker_ready: false,
     unknown_checkout_head: false,
     worker_active_activities: 0
   )
@@ -1317,7 +1325,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
-    if start_overmind_running
+    if start_overmind_running && worker_ready
       %w[poll agent].each do |mode|
         File.write(
           worker_readiness_path(mode),
