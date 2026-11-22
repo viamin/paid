@@ -270,10 +270,15 @@ module Containers
       return persist_rotation(credential, raw) unless @deadline
 
       lease.transfer!
-      thread = Thread.new do
-        persist_rotation(credential, raw, timeout: ROTATION_PERSISTENCE_TIMEOUT)
-      ensure
+      thread = begin
+        Thread.new do
+          persist_rotation(credential, raw, timeout: ROTATION_PERSISTENCE_TIMEOUT)
+        ensure
+          lease.release!
+        end
+      rescue ThreadError
         lease.release!
+        raise
       end
       thread.join(remaining_deadline)
       defer_credential_harvest!(credential) if thread.alive?

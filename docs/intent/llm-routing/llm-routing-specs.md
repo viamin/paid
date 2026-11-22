@@ -102,6 +102,8 @@
   transfer the captured rotation and its lease to a bounded recovery write. The
   request SHALL return at its deadline; recovery SHALL either persist the
   captured rotation atomically or report a deferred harvest without dropping,
-  overwriting, or exposing the credential.
+  overwriting, or exposing the credential. If recovery-thread admission fails,
+  the executor SHALL release the transferred lease before surfacing that
+  failure.
   *Tests:* `spec/services/llm/request_spec.rb`,
   `spec/services/containers/standalone_text_executor_spec.rb`.

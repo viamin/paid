@@ -70,7 +70,9 @@ the candidate deadline, the executor transfers the captured rotation and its
 lockfile lease to a recovery write. The request returns at its deadline; the
 recovery keeps the lease until the atomic write completes or its fixed database
 statement budget expires, and records a deferred harvest rather than dropping
-or overwriting the captured credential.
+or overwriting the captured credential. If recovery-thread admission fails,
+the executor releases the transferred lease deterministically before surfacing
+the admission failure, so no unowned lease can block later materialization.
 The command, preparation, and prompt travel through an upgraded Docker exec
 stdin connection, not as exec environment entries, because a single `execve`
 environment string is capped near 128 KiB. The materializer checks that every

@@ -637,6 +637,32 @@ RSpec.describe Containers::StandaloneTextExecutor do
       release << true if release && release.empty?
     end
 
+    # @spec LLM-ROUTING-013
+    it "releases a transferred credential lease when recovery admission fails" do
+      executor = described_class.new(account: account, runner: runner, timeout: 60,
+        deadline: Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1)
+      captured_lease = nil
+
+      Dir.mktmpdir do |directory|
+        recovery_lockfile = File.join(directory, "rotation.lock")
+        allow(Runners::ManagedCredentialLifecycle).to receive(:managed_auth_lockfile_path).and_return(recovery_lockfile)
+        allow(Thread).to receive(:new).and_raise(ThreadError)
+
+        expect do
+          Runners::ManagedCredentialLifecycle.with_managed_auth_lease(runner_key: "codex", credential: nil, timeout: 0.1) do |lease|
+            captured_lease = lease
+            executor.send(:persist_captured_rotation, nil, "synthetic-captured-rotation", lease)
+          end
+        end.to raise_error(ThreadError)
+
+        File.open(recovery_lockfile, File::WRONLY | File::CREAT, 0o600) do |file|
+          expect(file.flock(File::LOCK_EX | File::LOCK_NB)).to eq(0)
+        end
+      end
+    ensure
+      captured_lease&.release! unless captured_lease&.instance_variable_get(:@file)&.closed?
+    end
+
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
     it "harvests a rotated auth file once when the container closes" do
       stub_execs(rotation_stdout: Base64.strict_encode64(rotated_codex_auth))
