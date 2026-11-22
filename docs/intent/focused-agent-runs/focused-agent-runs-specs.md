@@ -138,3 +138,13 @@
   `AgentExecutionWorkflow#resolve_followup_review_threads_after_push`.
   *Test:* `spec/models/project_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`.
+
+- [x] **FOCUSED-RUN-011** — When the latest review from an allowlisted human
+  or configured review bot is a nonblank `COMMENTED` standalone review body
+  submitted after the completed-run cutoff, the PR scanner SHALL emit the
+  existing `review_feedback` follow-up route even with no unresolved inline
+  threads. An excluded author, an empty/clean state, a superseded finding, or
+  a review at or before that cutoff SHALL NOT route a follow-up. Existing
+  review, merge, retry, and allowance decisions remain unchanged.
+  *Code:* `ScanPaidPrsActivity#standalone_review_feedback_from_reviews`.
+  *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

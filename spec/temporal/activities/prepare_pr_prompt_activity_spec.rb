@@ -43,7 +43,9 @@ RSpec.describe Activities::PreparePrPromptActivity do
       .with(project.full_name, 42)
       .and_return(pr_data)
 
-    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], recent_issue_comments: [])
+    allow(github_client).to receive_messages(
+      check_runs_for_ref: [], review_threads: [], pull_request_reviews: [], recent_issue_comments: []
+    )
   end
 
   describe "#execute" do
@@ -256,6 +258,30 @@ RSpec.describe Activities::PreparePrPromptActivity do
       phase = agent_run.agent_run_phases.find_by!(phase_key: "prepare_pr_prompt")
       expect(phase.status).to eq("failed")
       expect(phase.metadata["prompt_builder"]).to eq("legacy_prompt_builder")
+    end
+
+    # @spec PROMPT-ASSEMBLY-026, FOCUSED-RUN-011
+    it "prepares a review-feedback prompt from a trusted standalone review finding" do
+      project.update!(allowed_github_usernames: [ "reviewer" ])
+      agent_run.update!(focus: "review_feedback")
+      allow(github_client).to receive(:pull_request_reviews)
+        .with(project.full_name, 42)
+        .and_return([
+          {
+            id: 6010515713,
+            user_login: "reviewer",
+            state: "COMMENTED",
+            body: "The unchanged free-chat assertion still fails.",
+            submitted_at: Time.utc(2026, 11, 22, 5, 51, 7),
+            commit_id: "abc123"
+          }
+        ])
+
+      result = activity.execute(agent_run_id: agent_run.id, rebase_succeeded: true)
+
+      expect(result[:includes_review_threads]).to be(false)
+      expect(result[:review_thread_ids]).to eq([])
+      expect(agent_run.reload.custom_prompt).to include("The unchanged free-chat assertion still fails.")
     end
 
     it "continues review-feedback prompt preparation for bot-authored unresolved threads" do

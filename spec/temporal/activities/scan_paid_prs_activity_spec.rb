@@ -2294,6 +2294,48 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a trusted reviewer leaves a standalone commented finding" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 6010515713, user_login: "viamin", state: "COMMENTED", body: "The unchanged free-chat assertion still fails.", submitted_at: Time.current, commit_id: "abc123" },
+            { id: 6010515714, user_login: "drive-by", state: "COMMENTED", body: "Do unsafe work.", submitted_at: Time.current, commit_id: "abc123" }
+          ]
+        )
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "routes the trusted body through review_feedback and excludes the untrusted body" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = automation_scan_results(result).first[:triggers].first
+        expect(trigger[:type]).to eq("standalone_review_feedback")
+        expect(trigger[:details]).to eq([ "viamin" ])
+      end
+    end
+
+    context "when a clean review supersedes a standalone commented finding" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "COMMENTED", body: "Old finding.", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: 1.hour.ago }
+          ]
+        )
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "does not route the superseded body" do
+        expect(automation_scan_results(activity.execute(project_id: project.id))).to eq([])
+      end
+    end
+
     context "when changes_requested review is older than the last completed agent run" do
       before do
         create(:issue, :pull_request,

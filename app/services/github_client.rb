@@ -23,6 +23,7 @@ require "uri"
 class GithubClient
   DEFAULT_CHECK_RUNS_PER_PAGE = 100
   DEFAULT_CHECK_RUNS_MAX_PAGES = 10
+  PULL_REQUEST_REVIEWS_MAX_PAGES = 10
   WORKFLOW_RUNS_PER_PAGE = 100
   RETRY_MAX = 3
   RETRY_INTERVAL = 0.5
@@ -127,6 +128,7 @@ class GithubClient
     def add_labels_to_issue(...) = write_or_suppressed { __getobj__.add_labels_to_issue(...) }
     def remove_label_from_issue(...) = write_or_suppressed { __getobj__.remove_label_from_issue(...) }
     def remove_labels_from_issue(...) = write_or_empty_removal { __getobj__.remove_labels_from_issue(...) }
+    def pull_request_reviews(...) = __getobj__.pull_request_reviews(...)
 
     # Issue creation is not itself a label write, so it must survive
     # suppression — but the create request's `labels:` argument adds labels
@@ -1081,7 +1083,27 @@ class GithubClient
   # @raise [NotFoundError] if the pull request does not exist
   def pull_request_reviews(repo, number)
     handle_errors do
-      reviews = with_auto_paginate { client.pull_request_reviews(repo, number, per_page: 100) }
+      pages = 1
+      truncated = false
+      reviews = with_auto_paginate do
+        client.pull_request_reviews(repo, number, per_page: 100) do |collected, response|
+          pages += 1
+          if pages >= PULL_REQUEST_REVIEWS_MAX_PAGES
+            truncated = true
+            break collected.concat(Array(response.data))
+          end
+
+          collected.concat(Array(response.data))
+        end
+      end
+      if truncated
+        Rails.logger.warn(
+          message: "github_client.pull_request_reviews_pagination_truncated",
+          repo: repo,
+          pr_number: number,
+          max_pages: PULL_REQUEST_REVIEWS_MAX_PAGES
+        )
+      end
       reviews.map do |r|
         {
           id: r.id,

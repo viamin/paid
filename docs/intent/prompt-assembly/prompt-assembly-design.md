@@ -81,6 +81,24 @@ be proven trusted is `:excluded`, never `:trusted`.
 A comment is prompt-eligible when its author is an allowlisted human (and it is
 not a Paid status comment) or it is a Paid-authored marker comment.
 
+## Standalone PR Review Findings
+
+GitHub can reject an inline comment for a finding on an unchanged line. A
+reviewer can still record that finding in the body of a submitted PR review,
+so PR follow-up assembly treats eligible standalone review bodies as code
+review context alongside unresolved inline threads. The same review-author
+predicate used for threads admits only allowlisted humans and configured review
+bots. Bodies from every other author are excluded with provenance only.
+
+The builder retains the latest submitted review for each eligible author. Only
+nonblank `COMMENTED` and `CHANGES_REQUESTED` bodies from that effective review
+are actionable; an `APPROVED`, `DISMISSED`, or later clean review supersedes an
+older body. The rendered context identifies the review ID, author, submission
+time, and reviewed commit so the evidence remains bound to GitHub provenance.
+Review bodies are bounded by the existing prompt-comment limits. They are
+context only: unlike inline threads, they carry no resolvable thread ID and do
+not authorize resolution or alter review, merge, retry, or allowance policy.
+
 ## Quarantine
 
 Repository-derived code/docs and knowledge-base content are `:quarantined`.

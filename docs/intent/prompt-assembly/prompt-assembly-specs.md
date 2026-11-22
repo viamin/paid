@@ -138,6 +138,21 @@
   prompt-eligible.
   *Code:* `Prompts::BuildForPr`, `Activities::PreparePrPromptActivity`.
 
+- [x] **PROMPT-ASSEMBLY-026** — When a current PR has a nonblank standalone
+  `COMMENTED` or `CHANGES_REQUESTED` review body from an allowlisted human or
+  configured review bot, `Prompts::BuildForPr` SHALL include that body in the
+  general and `review_feedback` code-review context even when no inline thread
+  exists or the finding concerns an unchanged file. It SHALL bound the body by
+  the prompt-comment limit and render review ID, author, submitted time, and
+  reviewed commit provenance. Reviews from excluded authors SHALL never enter
+  the prompt; only their body-free exclusion provenance may be recorded. The
+  latest review state from an eligible author SHALL supersede that author's
+  earlier body, and standalone review bodies SHALL not produce resolvable
+  inline-thread IDs or authority.
+  *Code:* `Prompts::BuildForPr`.
+  *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
+  `spec/temporal/activities/prepare_pr_prompt_activity_spec.rb`.
+
 - [x] **PROMPT-ASSEMBLY-019** — When `AgentRun#effective_prompt` resolves a
   non-empty `custom_prompt` (whether supplied manually, materialized from a
   queue-time PromptVersion, or generated for a code-scanning remediation

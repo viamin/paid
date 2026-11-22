@@ -125,13 +125,17 @@ module Prompts
       include_section?(:code_review) && review_threads_present?
     end
 
+    def includes_code_review_feedback?
+      include_section?(:code_review) && review_feedback_present?
+    end
+
     # @spec LID-RUNS-004
     # Returns true when this PR was opened by a lid_planning run and has
     # unresolved review threads. The review-goal follow-up on a Planning PR
     # carries the [inferred]-correction feedback and needs a distinct prompt
     # path rather than generic code-review framing.
     def planning_pr_revision?
-      return false unless includes_review_threads?
+      return false unless include_section?(:code_review) && review_threads_present?
 
       @planning_pr_revision ||= AgentRun.planning_run_for_pr(
         project_id: project.id,
@@ -369,7 +373,7 @@ module Prompts
       priorities << "Resolve merge conflicts" if merge_conflicts_present?
       priorities << "Fix CI failures" if ci_failures_present?
       priorities << "Close implementation gaps against the linked issue" if issue_requirements_present?
-      priorities << "Address code review comments" if review_threads_present?
+      priorities << "Address code review comments" if review_feedback_present?
       priorities << "Address conversation comments" if conversation_comments_present?
       priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
     end
@@ -627,11 +631,11 @@ module Prompts
     # untrusted, the included section is omitted but the excluded inputs
     # are still recorded so the audit trail captures who tried to inject.
     def review_section_with_excluded
-      excluded = excluded_review_thread_inputs
-      return [] if excluded.empty? && !includes_review_threads?
+      excluded = excluded_review_thread_inputs + excluded_top_level_review_inputs
+      return [] if excluded.empty? && !includes_code_review_feedback?
 
       sections = []
-      sections << code_review_section if includes_review_threads?
+      sections << code_review_section if includes_code_review_feedback?
       sections.concat(excluded.map(&:to_section))
       sections
     end
@@ -652,12 +656,18 @@ module Prompts
         "**Thread** (#{thread[:comments].first&.dig(:path) || "general"}):\n#{comments}"
       end.join("\n\n")
 
+      review_text = trusted_top_level_reviews.map do |review|
+        provenance = [ "review ##{review[:id]}", review[:user_login], review[:submitted_at], review[:commit_id] ]
+          .compact.join(" · ")
+        "- **#{provenance}**: #{truncate_comment_body(review[:body])}"
+      end.join("\n")
+
       content = <<~SECTION
         # Code Review Comments
 
-        The following review threads are unresolved:
+        #{"The following review threads are unresolved:\n\n#{thread_text}" if thread_text.present?}
 
-        #{thread_text}
+        #{"The following standalone review findings are actionable:\n\n#{review_text}" if review_text.present?}
 
         Address each thread: fix the code if the reviewer is correct, or explain
         your reasoning in a code comment if you disagree. Do not ignore review feedback.
@@ -669,7 +679,7 @@ module Prompts
         content: content,
         trust_level: :trusted,
         required: true,
-        inclusion_reason: "unresolved review threads present"
+        inclusion_reason: "trusted unresolved review threads or standalone review findings present"
       )
     end
 
@@ -917,6 +927,10 @@ module Prompts
       trusted_review_threads.any?
     end
 
+    def review_feedback_present?
+      review_threads_present? || trusted_top_level_reviews.any?
+    end
+
     def conversation_comments_present?
       trusted_conversation_comments.any?
     end
@@ -929,7 +943,7 @@ module Prompts
       {
         "tdd_test_revision" => tdd_test_revision?,
         "ci_fix" => include_ci_failures_section?,
-        "review_feedback" => includes_review_threads?,
+        "review_feedback" => includes_code_review_feedback?,
         "merge_conflict" => include_merge_conflicts_section?,
         "conversation" => include_conversation_section?,
         "performance_regression" => include_page_load_regression_section?,
@@ -1003,7 +1017,7 @@ module Prompts
       descriptions << "merge conflicts with the base branch" if defer_issue?(:merge_conflicts) && merge_conflicts_present?
       descriptions << "failing CI checks" if defer_issue?(:ci_failures) && ci_failures_present?
       descriptions << "implementation gaps against the linked issue" if defer_issue?(:issue_requirements) && issue_requirements_present?
-      descriptions << "unresolved code review comments" if defer_issue?(:code_review) && review_threads_present?
+      descriptions << "unresolved code review comments" if defer_issue?(:code_review) && review_feedback_present?
       descriptions << "actionable conversation comments" if defer_issue?(:conversation) && conversation_comments_present?
       descriptions
     end
@@ -1095,6 +1109,46 @@ module Prompts
           )
         end
       end
+    end
+
+    # Standalone reviews have no resolvable thread identity. Keep excluded
+    # authors' provenance body-free, exactly like excluded inline comments.
+    def excluded_top_level_review_inputs
+      top_level_reviews.filter_map do |review|
+        next if trusted_review_thread_author?(review[:user_login])
+
+        PromptAssembly::TrustedInput.new(
+          kind: :review,
+          source: :pull_request_review,
+          login: review[:user_login],
+          body: nil,
+          trust: :excluded,
+          exclusion_reason: review[:user_login].present? ? "author_not_in_allowlist" : "missing_author_identity"
+        )
+      end
+    end
+
+    # A reviewer's latest state is authoritative for that reviewer: a clean
+    # review supersedes an older finding. COMMENTED and CHANGES_REQUESTED are
+    # the GitHub states that can carry normal repair feedback.
+    # @spec PROMPT-ASSEMBLY-026
+    def trusted_top_level_reviews
+      latest_reviews_by_trusted_author.values.select do |review|
+        review[:state].in?([ "COMMENTED", "CHANGES_REQUESTED" ]) && review[:body].to_s.strip.present?
+      end
+    end
+
+    def latest_reviews_by_trusted_author
+      top_level_reviews
+        .select { |review| trusted_review_thread_author?(review[:user_login]) }
+        .group_by { |review| review[:user_login].to_s.downcase }
+        .transform_values { |reviews| reviews.max_by { |review| [ review[:submitted_at] || Time.at(0), review[:id].to_i ] } }
+    end
+
+    def top_level_reviews
+      @top_level_reviews ||= github_client.pull_request_reviews(project.full_name, pr_number)
+    rescue GithubClient::Error
+      []
     end
 
     def trusted_review_thread_author?(login)

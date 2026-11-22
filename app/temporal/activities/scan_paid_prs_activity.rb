@@ -72,6 +72,7 @@ module Activities
       "review_bot_review_pending" => "review_feedback",
       "review_bot_threads" => "review_feedback",
       "review_goal_retry" => "review_feedback",
+"standalone_review_feedback" => "review_feedback",
       "review_threads" => "review_feedback"
     }.freeze
     FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES = %w[
@@ -813,6 +814,14 @@ module Activities
         all_triggers.concat(check_conversation_comments(client, project, issue, last_run))
 
         # Only check changes_requested if still no triggers.
+        if all_triggers.empty?
+          reviews ||= fetch_reviews(client, project, issue)
+          all_triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run))
+        end
+
+        # A COMMENTED review body can carry a finding where GitHub could not
+        # create an inline thread (for example, an unchanged line). It routes
+        # through the same review_feedback focus as ordinary review signals.
         if all_triggers.empty?
           reviews ||= fetch_reviews(client, project, issue)
           all_triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
@@ -1689,6 +1698,7 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(human_review_thread_triggers(project, unresolved_threads))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
+      triggers.concat(standalone_review_feedback_from_reviews(project, reviews, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
       triggers.concat(check_merge_conflicts(project, issue, pr_data))
@@ -2414,6 +2424,7 @@ module Activities
         project: project, last_run: focused_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: focused_run, client: client, issue: issue))
+      triggers.concat(standalone_review_feedback_from_reviews(project, reviews, focused_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, focused_run))
       triggers.concat(check_conversation_comments(client, project, issue, focused_run))
       triggers.concat(non_bot_review_gate_triggers(project, issue, pr_data, reviews, checks))
@@ -2449,6 +2460,7 @@ module Activities
       ci_passed = all_checks_green?(checks) ? 1.0 : 0.0
       resolved = ci_passed == 1.0 &&
         human_review_thread_triggers(project, unresolved_threads).empty? &&
+        standalone_review_feedback_from_reviews(project, reviews, focused_run).empty? &&
         changes_requested_from_reviews(project, reviews, focused_run).empty? &&
         check_conversation_comments(client, project, issue, focused_run).empty? &&
         check_actionable_labels(project, issue).empty? &&
@@ -3332,6 +3344,28 @@ module Activities
       [ { type: "changes_requested", details: changes_requested.map { |r| r[:user_login] } } ]
     end
 
+    # @spec FOCUSED-RUN-011
+    def standalone_review_feedback_from_reviews(project, reviews, last_run)
+      return [] if reviews.nil?
+
+      cutoff = last_run&.completed_at
+      findings = latest_trusted_reviews(reviews, project).select do |review|
+        review[:state] == "COMMENTED" && review[:body].to_s.strip.present? &&
+          (!cutoff || review[:submitted_at].nil? || review[:submitted_at] > cutoff)
+      end
+      return [] if findings.empty?
+
+      [ { type: "standalone_review_feedback", details: findings.map { |review| review[:user_login] } } ]
+    end
+
+    def latest_trusted_reviews(reviews, project)
+      reviews
+        .select { |review| PromptAssembly::Trust.review_thread_author_trusted?(project, review[:user_login]) }
+        .group_by { |review| review[:user_login].to_s.downcase }
+        .transform_values { |author_reviews| author_reviews.max_by { |review| [ review[:submitted_at] || Time.at(0), review[:id].to_i ] } }
+        .values
+    end
+
     def check_actionable_labels(project, issue)
       action_labels = project.pr_action_labels
       return [] if action_labels.blank?
@@ -3374,6 +3408,7 @@ module Activities
       return false if human_review_thread_triggers(project, unresolved_threads).any?
       return false if check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue).any?
+      return false if standalone_review_feedback_from_reviews(project, reviews, last_run).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
       return false if check_conversation_comments(client, project, issue, last_run).any?
       effective_checks = checks || []

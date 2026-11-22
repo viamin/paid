@@ -90,6 +90,17 @@ focuses never saw the comments, so they consume nothing. All other cutoff
 consumers (review threads, changes requested, review-bot status, CI, policy
 and budget gates) keep using completed runs only.
 
+## Standalone review-feedback routing
+
+Standalone GitHub review bodies use the same latest-review-per-author and
+completed-run cutoff mechanics as `CHANGES_REQUESTED` reviews. A nonblank
+trusted `COMMENTED` review body may therefore route one normal
+`review_feedback` follow-up even when GitHub cannot create an inline thread.
+A later clean review supersedes the earlier body, and reviews observed before
+the completed-run cutoff are not requeued. This is prompt context only: it
+does not manufacture a review-thread identifier, resolve review state, or
+renew retry and allowance budgets.
+
 ## `focus_resolved` attribution
 
 A new `focus_resolved` metric (0.0 / 1.0) measures whether the focused
