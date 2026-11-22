@@ -201,6 +201,27 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 2, memory_bytes: 500)
     end
 
+    # @spec CONTAINER-RUNTIME-005, CONTAINER-RUNTIME-006
+    it "retains valid samples and degraded admission when one nested stats payload is malformed" do
+      agent_container = containers.first
+      project.created_by.settings.update!(run_concurrency_mode: "auto")
+      allow(backend).to receive(:container_stats).with(agent_container, stream: false).and_return(
+        { "cpu_stats" => { "cpu_usage" => "invalid" } }
+      )
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+      admission = Capacity::RunAdmission.call(
+        user: project.created_by,
+        project: project,
+        docker_snapshot: described_class.fetch(backend: backend, now: now, cache: cache)
+      )
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("container_sample_failed")
+      expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 2, memory_bytes: 500)
+      expect(admission).to include(degraded: true, docker_reason: "container_sample_failed", snapshot_available: false)
+    end
+
     it "cuts off remaining containers once the shared sampling budget is exhausted" do
       stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
       stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)

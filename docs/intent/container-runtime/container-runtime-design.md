@@ -169,11 +169,13 @@ Snapshots are cached briefly and are allowed to degrade conservatively when
 Docker reads time out, sampling exceeds its shared budget, or cached data goes
 stale.
 
-Docker stats are external sampling input. A missing or non-map stats response
-is an explicit per-container sampling failure: capacity retains the
+Docker stats are external sampling input. A missing stats response, required
+metric, or map, and a malformed required numeric metric, is an explicit
+per-container sampling failure: capacity retains the
 container's classification and count, records bounded degraded provenance, and
 sets the available-memory budget to zero. It never substitutes zero measured
-memory for an unavailable sample. Docker API and Excon transport failures use
+memory for an unavailable sample; measured zeros and optional unsupported
+metrics remain valid observations. Docker API and Excon transport failures use
 only exception types supplied by the pinned client libraries; unexpected
 collection failures follow the same cached/degraded fallback without replacing
 the original failure with rescue-time constant resolution.

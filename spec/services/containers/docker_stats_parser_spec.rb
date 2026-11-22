@@ -45,6 +45,39 @@ RSpec.describe Containers::DockerStatsParser do
           .to raise_error(described_class::InvalidStatsError, "docker stats payload must be a hash")
       end
     end
+
+    # @spec CONTAINER-RUNTIME-005
+    it "normalizes malformed nested stats into unavailable samples" do
+      invalid_stats = [
+        {},
+        raw_stats.merge("cpu_stats" => raw_stats.fetch("cpu_stats").merge("cpu_usage" => "invalid")),
+        raw_stats.merge("memory_stats" => { "usage" => "invalid", "limit" => 1 }),
+        raw_stats.merge("pids_stats" => { "current" => "invalid" })
+      ]
+
+      invalid_stats.each do |stats|
+        expect { described_class.parse_stats(stats) }
+          .to raise_error(described_class::InvalidStatsError)
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-005
+    it "preserves measured zero values and optional PID metrics" do
+      raw_stats["cpu_stats"]["cpu_usage"]["total_usage"] = 0
+      raw_stats["precpu_stats"]["cpu_usage"]["total_usage"] = 0
+      raw_stats["cpu_stats"]["system_cpu_usage"] = 0
+      raw_stats["precpu_stats"]["system_cpu_usage"] = 0
+      raw_stats["memory_stats"] = { "usage" => 0, "limit" => 0 }
+      raw_stats.delete("pids_stats")
+
+      expect(described_class.parse_stats(raw_stats)).to include(
+        cpu_percent: 0.0,
+        memory_bytes: 0,
+        memory_limit_bytes: 0,
+        memory_percent: 0.0,
+        pids_count: nil
+      )
+    end
   end
 
   describe ".parse_cpu" do
