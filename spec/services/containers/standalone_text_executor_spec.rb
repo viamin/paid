@@ -548,6 +548,12 @@ RSpec.describe Containers::StandaloneTextExecutor do
       end
     end
 
+    def expect_credential_lease_released
+      File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |file|
+        expect { Timeout.timeout(0.5) { file.flock(File::LOCK_EX) } }.not_to raise_error
+      end
+    end
+
     around do |example|
       File.delete(lockfile) if File.exist?(lockfile)
       example.run
@@ -626,6 +632,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
 
       release << true
       expect { Timeout.timeout(0.5) { completed.pop } }.not_to raise_error
+      expect_credential_lease_released
     ensure
       release << true if release && release.empty?
     end
