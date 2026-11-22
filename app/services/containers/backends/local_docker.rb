@@ -39,7 +39,7 @@ module Containers
         return { reason: "backing_storage_probe_unconfigured" } unless probe_path
         return { reason: "backing_storage_probe_invalid" } unless File.directory?(probe_path)
 
-        provenance_reason = backing_store_provenance_reason
+        provenance_reason = backing_store_provenance_reason(probe_path)
         return { reason: provenance_reason } if provenance_reason
 
         available_bytes = backing_store_available_bytes(probe_path)
@@ -150,7 +150,7 @@ module Containers
         nil
       end
 
-      def backing_store_provenance_reason
+      def backing_store_provenance_reason(probe_path)
         return "backing_storage_probe_remote_mismatch" unless Docker.url.to_s.start_with?("unix://")
 
         configured_root = ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"].presence
@@ -158,7 +158,32 @@ module Containers
 
         actual_root = Docker.info["DockerRootDir"].presence
         return "backing_storage_probe_unverified" unless actual_root
-        "backing_storage_probe_wrong_filesystem" unless File.expand_path(configured_root) == File.expand_path(actual_root)
+        return "backing_storage_probe_wrong_filesystem" unless File.expand_path(configured_root) == File.expand_path(actual_root)
+        "backing_storage_probe_unverified" unless probe_mounts_daemon_root?(probe_path, actual_root)
+      end
+
+      def probe_mounts_daemon_root?(probe_path, daemon_root)
+        expected_root = File.join(File.expand_path(daemon_root), ".paid-capacity-probe")
+        expected_target = File.expand_path(probe_path)
+
+        backing_store_mounts.any? do |root, target, options|
+          root == expected_root && target == expected_target && options.include?("ro")
+        end
+      end
+
+      def backing_store_mounts
+        File.read("/proc/self/mountinfo").each_line.filter_map { |line| parse_mountinfo(line) }
+      end
+
+      def parse_mountinfo(line)
+        fields = line.split(" - ", 2).first.to_s.split
+        return unless fields.length >= 6
+
+        [ decode_mountinfo_path(fields[3]), decode_mountinfo_path(fields[4]), fields[5].split(",") ]
+      end
+
+      def decode_mountinfo_path(path)
+        path.gsub(/\\\\([0-7]{3})/) { Regexp.last_match(1).to_i(8).chr }
       end
 
       def backing_store_available_bytes(probe_path)

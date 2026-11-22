@@ -68,8 +68,10 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
         ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
         ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = daemon_root
         allow(Docker).to receive_messages(url: "unix:///var/run/docker.sock", info: { "DockerRootDir" => daemon_root })
+        allow(File).to receive(:read).and_call_original
+        allow(File).to receive(:read).with("/proc/self/mountinfo").and_return(mountinfo_for(root: File.join(daemon_root, ".paid-capacity-probe"), target: probe_path))
 
-        yield
+        yield probe_path
       end
     ensure
       ENV["PATH"] = original_path
@@ -78,23 +80,25 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     end
 
     # @spec CONTAINER-RUNTIME-054
-    it "measures a configured probe only after it verifies the selected daemon root" do
-      Dir.mktmpdir do |probe_path|
+    it "measures a probe whose mount metadata names the selected daemon root child" do
+      with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n") do |probe_path|
         now = Time.zone.parse("2026-11-21 18:28:00 UTC")
-        original_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
-        original_daemon_root = ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"]
-        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
-        ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = "/var/lib/docker"
-        allow(Docker).to receive_messages(url: "unix:///var/run/docker.sock", info: { "DockerRootDir" => "/var/lib/docker" })
+        allow(File).to receive(:read).with("/proc/self/mountinfo").and_return(mountinfo_for(root: "/var/lib/docker/.paid-capacity-probe", target: probe_path))
 
         expect(backend.backing_storage_observation(now:)).to include(
           scope: "verified_docker_backing_store_probe",
           available_bytes: be_a(Integer),
           observed_at: now
         )
-      ensure
-        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_path
-        ENV["PAID_DOCKER_BACKING_STORE_DAEMON_ROOT"] = original_daemon_root
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "rejects an existing unrelated probe even when its configured root matches the selected daemon" do
+      with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'\n") do |probe_path|
+        allow(File).to receive(:read).with("/proc/self/mountinfo").and_return(mountinfo_for(root: "/unrelated/.paid-capacity-probe", target: probe_path))
+
+        expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unverified")
       end
     end
 
@@ -173,6 +177,10 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       allow(ENV).to receive(:[]).with("PAID_DOCKER_BACKING_STORE_PROBE_PATH").and_return(nil)
 
       expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unconfigured")
+    end
+
+    def mountinfo_for(root:, target:)
+      "42 35 0:42 #{root} #{target} ro - ext4 /dev/test ro\n"
     end
   end
 

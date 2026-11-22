@@ -98,11 +98,12 @@
   and image-build consumers) SHALL defer new work with the named
   `backing_storage_reserve_exhausted` reason, a one-minute recheck, safe scope,
   available-byte and timestamp evidence, and an operator action. The local
-  backend SHALL measure only an explicitly configured probe mounted from the
-  selected daemon's backing filesystem after matching its configured daemon root
+  backend SHALL measure only an explicitly configured probe whose supported
+  mount metadata identifies the selected daemon root's empty measurement child
+  as the source for that probe path, after matching its configured daemon root
   to that daemon's `DockerRootDir`; supported local deployment configuration
-  SHALL mount only an empty measurement child directory read-only, not the
-  Docker data-root tree, and configure the probe to use it. Absent, unverified,
+  SHALL mount only that child directory read-only, not the Docker data-root
+  tree, and configure the probe to use it. Absent, unverified,
   wrong-filesystem, remote-mismatched, unavailable, and stale observations SHALL
   remain explicitly distinguishable and SHALL NOT be mistaken for local
   control-plane disk capacity. The guard

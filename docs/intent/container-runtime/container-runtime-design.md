@@ -207,10 +207,13 @@ created an empty `.paid-capacity-probe` directory inside the selected daemon's
 `PAID_DOCKER_BACKING_STORE_PROBE_PATH` plus
 `PAID_DOCKER_BACKING_STORE_DAEMON_ROOT`. Before measuring, the backend compares
 the configured root with `Docker.info["DockerRootDir"]` from its selected Unix
-socket daemon. The supported devcontainer uses that verified root to mount only
+socket daemon and verifies the probe mount metadata identifies that root's
+`.paid-capacity-probe` child as the source for the configured probe path. The
+supported devcontainer uses that verified root to mount only
 `.paid-capacity-probe` at `/mnt/paid-docker-backing-store`; it never mounts the
 daemon data-root tree. Missing daemon root evidence, a root mismatch, a remote
-endpoint, or an invalid source is an explicit unavailable observation. It MUST
+endpoint, an invalid source, or unverifiable mount provenance is an explicit
+unavailable observation. It MUST
 NOT treat the control-plane container's root filesystem as the Docker daemon's
 backing store or guess a Docker root. Remote and unsupported backends report an
 explicit unavailable/unsupported reason rather than inspecting local disk.
