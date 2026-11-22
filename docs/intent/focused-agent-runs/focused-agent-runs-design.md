@@ -72,16 +72,17 @@ keep the composite weights, so their scores are unchanged.
 ## Conversation feedback consumption
 
 The scanner's conversation-comment cutoff decides which trusted comments are
-still "new" enough to admit a follow-up run. A `completed` run's
-`completed_at` is the cutoff: comments older than it were shown to that run
-and are consumed. A terminal `no_output`/`no_changes` `create_pr` run is a
+still "new" enough to admit a follow-up run. Only a `completed` `create_pr`
+run whose focus includes the conversation section may contribute its
+`completed_at`: a focused run that excluded conversation feedback cannot
+acknowledge it. A terminal `no_output`/`no_changes` `create_pr` run is a
 valid no-change outcome for the feedback it was shown, but its status hides
 it from the completed-run lookup — so the same trusted comment kept
 re-admitting follow-ups (#5180).
 
 `check_conversation_comments` therefore takes its cutoff from the latest of
-the caller-supplied run (a `completed` run, or the focused run during
-`focus_resolved` attribution) and the newest
+the caller-supplied run only when it includes conversation scope (a
+`completed` run, or the focused run during `focus_resolved` attribution) and the newest
 `create_pr`/`no_output`/`no_changes` run whose focus actually includes the
 conversation section — `conversation` itself, plus the unscoped `general`
 and `label_action` focuses that include every applicable section (the same

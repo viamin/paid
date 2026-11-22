@@ -3294,7 +3294,17 @@ module Activities
     # trusted comment keeps re-admitting follow-ups (#5180).
     def conversation_feedback_cutoff(project, issue, last_run)
       no_change_run = conversation_scope_no_change_run(project, issue)
-      [ last_run&.completed_at, no_change_run&.completed_at ].compact.max
+      [ conversation_scope_completed_at(last_run), no_change_run&.completed_at ].compact.max
+    end
+
+    # A successful focused repair must not acknowledge feedback excluded from
+    # its prompt. The focus is the durable prompt-scope provenance for legacy
+    # runs, while PromptAssembly retains richer section provenance when enabled.
+    def conversation_scope_completed_at(run) # @spec FOCUSED-RUN-010
+      return unless run&.goal == "create_pr"
+      return unless run.focus.in?(CONVERSATION_SCOPE_FOCUSES)
+
+      run.completed_at
     end
 
     def conversation_scope_no_change_run(project, issue)

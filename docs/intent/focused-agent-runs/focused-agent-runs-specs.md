@@ -71,18 +71,16 @@
 ## Conversation feedback consumption
 
 - [x] **FOCUSED-RUN-010** — When a `create_pr` run on an existing PR
-  terminates `no_output` with the `no_changes` reason and a focus whose PR
-  prompt actually includes the conversation section (the `conversation`
-  focus, plus the unscoped `general` and `label_action` focuses that include
-  every applicable section), the PR scanner SHALL treat that run's
-  `completed_at` as the conversation-comment cutoff for the same project and
-  PR, consuming older trusted conversation comments exactly as a `completed`
-  run's timestamp does. Comments newer than that cutoff SHALL remain
-  actionable; no-change runs with any other focus, failed or unfinished
-  runs, and runs from other PRs or other projects SHALL NOT consume
-  comments; and review-thread, changes-requested, review-bot, CI, policy,
-  and budget gating SHALL keep deriving their cutoffs from `completed` runs
-  only.
+  completes or terminates `no_output` with the `no_changes` reason, the PR
+  scanner SHALL treat its `completed_at` as the conversation-comment cutoff
+  only when that run's focus actually includes the conversation section (the
+  `conversation` focus, plus the unscoped `general` and `label_action`
+  focuses that include every applicable section). A completed or no-change
+  run with any other focus, failed or unfinished runs, and runs from other PRs
+  or other projects SHALL NOT consume comments. Comments newer than an
+  applicable cutoff SHALL remain actionable; review-thread,
+  changes-requested, review-bot, CI, policy, and budget gating SHALL keep
+  deriving their cutoffs from completed runs only.
   *Code:* `ScanPaidPrsActivity#check_conversation_comments`,
   `ScanPaidPrsActivity#conversation_feedback_cutoff`,
   `ScanPaidPrsActivity#conversation_scope_no_change_run`,
