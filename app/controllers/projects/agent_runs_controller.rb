@@ -768,6 +768,23 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run), notice: "Source-closure recovery was queued without rerunning coding."
     end
 
+    # @spec AUTO-MERGE-011
+    def reassess_conflict_repair_scope
+      authorize @agent_run, :retry?
+      unless @agent_run.status == "failed" && @agent_run.focus == "merge_conflict" && @agent_run.result_commit_sha.present?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "This run is not an immutable failed conflict-repair artifact."
+        return
+      end
+
+      job = ReassessConflictRepairScopeJob.perform_later(@agent_run.id, requested_by_id: current_user.id)
+      unless job && job.successfully_enqueued?
+        redirect_to project_agent_run_path(@project, @agent_run), alert: "Scope reassessment could not be queued. Please try again."
+        return
+      end
+      audit_event("agent_run.conflict_repair_scope_reassessment_requested", metadata: { agent_run_id: @agent_run.id, project_name: @project.name })
+      redirect_to project_agent_run_path(@project, @agent_run), notice: "Conflict-repair scope reassessment was queued without rerunning coding."
+    end
+
     def terminate
       authorize @agent_run
 

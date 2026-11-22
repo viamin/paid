@@ -23,7 +23,7 @@ module PullRequests
       run = applicable_run
       return Result.new(allowed: true, reason_code: nil, agent_run_id: nil) unless run
 
-      assessment = run.external_metadata[ASSESSMENT_KEY]
+      assessment = reassessment_or_original(run)
       return blocked(run, "conflict_repair_scope_assessment_incomplete") unless valid_assessment?(assessment)
       return Result.new(allowed: true, reason_code: nil, agent_run_id: run.id) if assessment["status"] == "approved"
 
@@ -56,6 +56,26 @@ module PullRequests
         assessment["explanation"].present? &&
         assessment["base_imported_paths"].is_a?(Array) &&
         assessment["repair_authored_paths"].is_a?(Array)
+    end
+
+    # @spec AUTO-MERGE-011
+    def reassessment_or_original(run)
+      evidence = ConflictRepairScopeEvidence.current_for(agent_run: run, head_sha: head_sha)
+      return evidence_to_assessment(evidence) if evidence
+
+      run.external_metadata[ASSESSMENT_KEY]
+    end
+
+    def evidence_to_assessment(evidence)
+      {
+        "status" => evidence.status,
+        "explanation" => evidence.explanation,
+        "base_sha" => evidence.pre_run_sha,
+        "integration_base_sha" => evidence.integration_base_sha,
+        "head_sha" => evidence.result_sha,
+        "base_imported_paths" => evidence.base_imported_paths,
+        "repair_authored_paths" => evidence.repair_authored_paths
+      }
     end
 
     def blocked(run, reason_code)

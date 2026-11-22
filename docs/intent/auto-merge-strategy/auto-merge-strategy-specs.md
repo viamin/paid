@@ -214,3 +214,19 @@
   `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`,
   `spec/jobs/dependabot_auto_merge_job_spec.rb`.
+
+- [x] **AUTO-MERGE-011** — When an authorized operator or agent requests a
+  reassessment of an immutable failed automatic conflict-repair artifact, Paid
+  SHALL run only a finite artifact-only scope assessment through `agent_harness`
+  and SHALL neither rerun coding nor alter the producer run's terminal status,
+  origin, or attempts. The decision SHALL be a separate record bound to the
+  producer, exact pre-run SHA, integration base SHA, result SHA, and a freshly
+  read current provider HEAD; a changed provider HEAD, invalid artifact,
+  rejected result, unavailable provider evidence, cancellation, pause, trust,
+  tenant authorization, cost admission, or concurrent duplicate request SHALL
+  fail closed. The normal conflict-repair scope gate SHALL consume only a
+  complete current-head decision record and preserve original evidence when no
+  reassessment exists.
+  *Code:* `app/services/conflict_repairs/reassess_scope.rb`,
+  `app/models/conflict_repair_scope_evidence.rb`,
+  `app/services/pull_requests/conflict_repair_scope_gate.rb`.
