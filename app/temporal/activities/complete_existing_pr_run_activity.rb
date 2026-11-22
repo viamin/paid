@@ -394,20 +394,19 @@ module Activities
     def publish_conflict_repair_rejection(client, agent_run, pr)
       started = monotonic_now
       budget = publication_budget_seconds
-      if budget < MINIMUM_REQUEST_SECONDS
+      skipped = budget < MINIMUM_REQUEST_SECONDS
+      if skipped
         logger.warn(
           message: "agent_execution.conflict_repair_rejection_publication_skipped",
           agent_run_id: agent_run.id,
           pr_number: pr.number,
           publication_budget_seconds: budget.round(2)
         )
-        record_publication_diagnostics(elapsed_seconds: 0, skipped: true)
-        return
-      end
-
-      Timeout.timeout(budget, RejectionPublicationDeadlineExceeded) do
-        refresh_pull_request_body(client, agent_run.project, pr, agent_run)
-        post_conflict_repair_rejection_comment(client, agent_run, pr)
+      else
+        Timeout.timeout(budget, RejectionPublicationDeadlineExceeded) do
+          refresh_pull_request_body(client, agent_run.project, pr, agent_run)
+          post_conflict_repair_rejection_comment(client, agent_run, pr)
+        end
       end
     rescue RejectionPublicationDeadlineExceeded
       logger.warn(
@@ -417,18 +416,22 @@ module Activities
         publication_budget_seconds: budget.round(2)
       )
     ensure
-      record_publication_diagnostics(elapsed_seconds: monotonic_now - started)
+      record_publication_diagnostics(elapsed_seconds: monotonic_now - started, skipped:)
     end
 
     # At most one rejection comment per repair range: a retried attempt that
     # already posted for this exact pre-run..head range must not duplicate it.
     # @spec AUTO-MERGE-011
     def post_conflict_repair_rejection_comment(client, agent_run, pr)
-      body = build_comment_body(client, agent_run.project, pr.number, agent_run)
-      return if body.blank?
-      return if rejection_comment_already_posted?(client, agent_run.project, pr.number, agent_run)
+      project = agent_run.project
+      return unless project.upstream_feature_enabled?(:upstream_issue_comments)
+      return if quiet_mode?(project)
+      return if rejection_comment_already_posted?(client, project, pr.number, agent_run)
 
-      client.add_comment(agent_run.project.full_name, pr.number, body)
+      body = build_comment_body(client, project, pr.number, agent_run)
+      return if body.blank?
+
+      client.add_comment(project.full_name, pr.number, body)
     rescue RejectionPublicationDeadlineExceeded
       raise
     rescue Temporalio::Error::CanceledError

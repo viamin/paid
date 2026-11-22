@@ -318,6 +318,50 @@ allow(GithubClient).to receive(:new).and_return(github_client)
         expect(github_client).not_to have_received(:update_pull_request)
         expect(github_client).not_to have_received(:add_comment)
         expect(agent_run.reload).to be_running
+
+        phase = agent_run.agent_run_phases.find_by(phase_key: "complete_existing_pr_run")
+        expect(phase.metadata).to include("rejection_publication_skipped" => true)
+      end
+
+      context "when upstream comments are disabled" do
+        let(:project) { create(:project, :upstream_pr_target) }
+
+        it "skips rejection comments in upstream mode" do # @spec AUTO-MERGE-011
+          allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+
+          expect(github_client).not_to receive(:issue_comments)
+          expect(github_client).not_to receive(:add_comment)
+
+          expect { activity.execute(agent_run_id: agent_run.id) }
+            .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+        end
+      end
+
+      it "skips rejection comment work in quiet mode" do # @spec QUIET-MODE-007
+        project.update!(quiet_mode: true)
+        project.effective_owner.settings.update!(agent_update_comment_mode: "summary")
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+
+        expect(github_client).not_to receive(:issue_comments)
+        expect(github_client).not_to receive(:add_comment)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+        expect(AgentHarness.conductor).to have_received(:execute_direct).once
+      end
+
+      it "checks for an existing rejection before generating a retry summary" do # @spec AUTO-MERGE-011
+        project.effective_owner.settings.update!(agent_update_comment_mode: "summary")
+        allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ])
+        range_url = "#{project.github_url}/compare/pre-run-sha...#{agent_run.result_commit_sha}"
+        allow(github_client).to receive(:issue_comments).with(project.full_name, 42)
+          .and_return([ OpenStruct.new(body: "#{described_class::COMMENT_MARKER}\n#{range_url}") ])
+
+        expect(github_client).not_to receive(:add_comment)
+
+        expect { activity.execute(agent_run_id: agent_run.id) }
+          .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+        expect(AgentHarness.conductor).to have_received(:execute_direct).once
       end
 
       it "reuses the persisted assessment on a retried attempt without re-assessing or duplicating the comment" do
