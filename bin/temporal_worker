@@ -220,10 +220,38 @@ end
 
 Paid::TemporalWorkerShutdown.install(request_shutdown:, forced_exit_timeout:)
 
+# Publish this process's readiness identity for cross-role worker-adoption
+# evidence: each role heartbeats {pid, boot time, boot revision} into the
+# shared application database, which — unlike the readiness file below —
+# crosses container boundaries (config/deploy.yml runs job and worker_* as
+# independent containers). The trusted worker-adoption measurement reads
+# these beats from the job container. Heartbeats refresh for the whole
+# process lifetime so a long-running worker stays fresh.
+readiness_roles = case worker_mode
+when "poll" then [ "poll" ]
+when "agent" then [ "agent" ]
+else WorkerReadinessObservation::ROLES
+end
+readiness_heartbeat = Paid::WorkerReadiness::Heartbeat.start(
+  roles: readiness_roles,
+  identity: { pid: Process.pid, revision: Paid::WorkerReadiness.boot_revision },
+  interval: ENV.fetch("WORKER_READINESS_HEARTBEAT_SECONDS", "30").to_f,
+  recorder: lambda { |beat|
+    WorkerReadinessObservation.record!(
+      role: beat.fetch(:role), pid: beat.fetch(:pid), ready_at: beat.fetch(:ready_at),
+      revision: beat.fetch(:revision), heartbeat_at: beat.fetch(:at)
+    )
+  }
+)
+
 # Run the selected worker set in the same process, sharing the cancellation token.
 # Mark readiness just before blocking: the workers are constructed and the client
 # connection is established, so polling will begin immediately inside run_all.
-at_exit { Paid::WorkerReadiness.mark_not_ready! }
+at_exit do
+  readiness_heartbeat.stop
+  Paid::WorkerReadiness.mark_not_ready!
+end
 Paid::WorkerReadiness.mark_ready!
-puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path}, revision: #{Paid::WorkerReadiness.boot_revision})"
+puts "Temporal worker ready (readiness file: #{Paid::WorkerReadiness.file_path}, " \
+     "heartbeat roles: #{readiness_roles.join(", ")}, revision: #{Paid::WorkerReadiness.boot_revision})"
 Temporalio::Worker.run_all(*workers, cancellation: shutdown_cancellation)

@@ -1,16 +1,18 @@
 # frozen_string_literal: true
 
-require "paid/worker_readiness"
-
 module TrustedMeasurements
   module Checks
-    # Collects the two fixed Temporal worker readiness facts that establish
-    # whether the live worker processes, rather than only the mounted checkout,
-    # adopted the deployment revision. It never opens a caller-selected host
-    # path or inspects process arguments, environment, or credentials.
+    # Collects the durable readiness observations the two Temporal worker roles
+    # publish about themselves while running, to establish whether the live
+    # worker processes, rather than only the mounted checkout, adopted the
+    # deployment revision. Each owning role heartbeats its identity (PID, boot
+    # time, booted revision, latest beat) into the shared application database,
+    # so this check observes the workers from any role's container — including
+    # the job container — without reading host files, probing a foreign PID
+    # namespace, or inspecting process arguments, environment, or credentials.
     # @spec TRUSTED-MEASUREMENTS-008
     class WorkerAdoption
-      VERSION = 1
+      VERSION = 2
       ROLES = %w[poll agent].freeze
       MAX_AGE = 5.minutes
       FUTURE_SKEW = 30.seconds
@@ -23,59 +25,67 @@ module TrustedMeasurements
       def self.version = VERSION
       def self.call(project:) = new(project:).call
 
-      def initialize(project:, readiness: Paid::WorkerReadiness, clock: -> { Time.current }, process_alive: nil)
+      def initialize(project:, observations: WorkerReadinessObservation, clock: -> { Time.current })
         @project = project
-        @readiness = readiness
+        @observations = observations
         @clock = clock
-        @process_alive = process_alive || ->(pid) { Process.kill(0, pid); true }
       end
 
       def call
-        snapshots = ROLES.to_h { |role| [ role, readiness.temporal_snapshot(role) ] }
-        reason = snapshots.values.lazy.map { |snapshot| invalid_reason(snapshot) }.find(&:present?)
+        records = ROLES.to_h { |role| [ role, observations.for_role(role) ] }
         Result.new(
           environment: Rails.env.to_s,
           deployment_revision: DeploymentSignal.current,
           project_scope: "project:#{project.id}:#{project.full_name}",
-          workers: snapshots.transform_values { |snapshot| worker_result(snapshot) },
-          failure_reason: reason
+          workers: records.transform_values { |record| worker_result(record) },
+          failure_reason: ROLES.lazy.map { |role| invalid_reason(role, records[role]) }.find(&:present?)
         )
       end
 
       private
 
-      attr_reader :clock, :process_alive, :project, :readiness
+      attr_reader :clock, :observations, :project
 
-      def invalid_reason(snapshot)
-        return "missing_#{snapshot.role}_readiness" if snapshot.error == "missing"
-        return "malformed_#{snapshot.role}_readiness" if snapshot.error
-        return "#{snapshot.role}_pid_not_alive" unless alive?(snapshot.pid)
-        return "#{snapshot.role}_readiness_identity_mismatch" unless coherent_timestamp?(snapshot)
-        return "stale_#{snapshot.role}_readiness" unless fresh?(snapshot.ready_at)
-        "#{snapshot.role}_revision_mismatch" unless snapshot.revision == DeploymentSignal.current
+      def invalid_reason(role, record)
+        return "missing_#{role}_readiness" unless record
+        return "malformed_#{role}_readiness" unless usable?(record)
+        return "#{role}_readiness_identity_mismatch" unless coherent?(record)
+        return "stale_#{role}_readiness" unless fresh?(record.heartbeat_at)
+        "#{role}_revision_mismatch" unless adopted_revision?(record)
       end
 
-      def alive?(pid)
-        process_alive.call(pid)
-      rescue Errno::ESRCH, Errno::EPERM
-        false
+      def usable?(record)
+        record.pid.to_i.positive? && record.ready_at.present? && record.heartbeat_at.present?
       end
 
-      def coherent_timestamp?(snapshot)
-        snapshot.modified_at >= snapshot.ready_at - 1.second
+      # A beat older than the boot it reports cannot be this process's own
+      # liveness observation.
+      def coherent?(record)
+        record.heartbeat_at >= record.ready_at - FUTURE_SKEW
       end
 
-      def fresh?(ready_at)
-        ready_at <= clock.call + FUTURE_SKEW && ready_at >= clock.call - MAX_AGE
+      # Freshness is the live process's heartbeat, not its static boot
+      # receipt: a healthy worker keeps beating for its whole lifetime, and a
+      # dead or stuck worker stops, so long-lived workers stay current while
+      # interrupted adoption fails closed.
+      def fresh?(heartbeat_at)
+        heartbeat_at <= clock.call + FUTURE_SKEW && heartbeat_at >= clock.call - MAX_AGE
       end
 
-      def worker_result(snapshot)
+      def adopted_revision?(record)
+        revision = DeploymentSignal.current
+        revision.present? && record.revision == revision
+      end
+
+      def worker_result(record)
+        return { "status" => "missing" } unless record
+
         {
-          "pid" => snapshot.pid,
-          "ready_at" => snapshot.ready_at&.utc&.iso8601,
-          "revision" => snapshot.revision,
-          "modified_at" => snapshot.modified_at&.utc&.iso8601,
-          "status" => snapshot.error || "observed"
+          "pid" => record.pid,
+          "ready_at" => record.ready_at&.utc&.iso8601,
+          "revision" => record.revision,
+          "heartbeat_at" => record.heartbeat_at&.utc&.iso8601,
+          "status" => "observed"
         }.compact
       end
     end

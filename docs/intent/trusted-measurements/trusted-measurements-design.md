@@ -43,17 +43,27 @@ for that source and project scope. The development baseline of 36 is recorded
 as context only; the live target is zero and can be established only by a
 post-deploy execution.
 
-The worker-adoption check is a separate, narrowly scoped live observation. It
-reads only the existing fixed `poll` and `agent` Temporal readiness payloads
-from Paid's own operating environment through `Paid::WorkerReadiness`; the
-reader accepts neither an operator-selected path nor a command. It retains
-only each role's PID, readiness/boot time, and booted revision. The check
-requires both role payloads to be parseable, fresh, timestamp-coherent, tied
-to a live PID, and equal to the current deployment identity. It returns
-unknown evidence for a missing, stale, malformed, interrupted, restarted, or
-revision-mismatched worker. The normal measurement runner persists that typed
-result under the reviewed project/account/criterion/revision mapping, so a
-readiness file is an input receipt rather than acceptance evidence by itself.
+The worker-adoption check is a separate, narrowly scoped live observation. In
+the production topology the collector (`RunCheckJob` in the `job` container)
+cannot read the worker roles' readiness flag files or probe their PIDs — each
+role is an independent container. Each Temporal worker role therefore
+publishes its own readiness identity — PID, boot time, booted revision, and a
+periodic heartbeat timestamp — into a fixed system-wide `poll`/`agent`
+observation table through the shared application database, and the check reads
+only those durable, role-authored observations. It retains only each role's
+PID, boot time, booted revision, and latest beat. The check requires both
+roles' observations to exist, carry a complete typed identity, be internally
+coherent, carry a heartbeat the live worker itself refreshed within the
+freshness window, and equal the current deployment identity. Freshness is the
+heartbeat, not the static boot receipt: a healthy worker keeps beating for its
+whole lifetime, while a dead or interrupted worker stops, so long-lived
+workers stay current and missing adoption fails closed. It returns unknown
+evidence for a missing, stale, malformed, incoherent, or revision-mismatched
+worker observation, and never accepts a host path, host command, process
+argument, environment, credential, or foreign-namespace PID probe. The normal
+measurement runner persists that typed result under the reviewed
+project/account/criterion/revision mapping, so a heartbeat observation is an
+input receipt rather than acceptance evidence by itself.
 This deployment-adoption fact has intentionally narrow coverage: it does not
 attest model behavior, credentials, request text, or any unrelated source
 criterion.
@@ -88,3 +98,4 @@ specific recovery action and resolves on recovery.
 | Revision-bound evidence instead of merge-bound evidence | A merged revision is not proof that the live dataset has been observed after deployment. |
 | Reuse partial-closeout assessment | Only the existing criterion-level authority can release a prerequisite; a counter cannot make a whole-issue completion decision. |
 | Fixed readiness reader instead of host tooling | Reuses #5293's safe role-specific metadata while preventing operator-selected host files, commands, SQL, process arguments, environment inspection, or credential reads. |
+| Role-published durable heartbeats instead of cross-container file reads or PID probes | The job container cannot read worker containers' `/tmp` or see their PID namespace; the shared application database is the only authenticated channel every role already reaches, and a self-refreshed heartbeat distinguishes a live worker from a static boot receipt. |

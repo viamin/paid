@@ -71,18 +71,27 @@
   measurement runs in Paid's authorized live environment, it SHALL bind the
   project/account/criterion, environment class, deployment revision, check
   implementation/version, and collection time through the normal allowlisted
-  measurement path; it SHALL read only the fixed `poll` and `agent` Temporal
-  readiness payloads' PID, readiness time, and booted revision. Both roles
-  SHALL be fresh, timestamp-coherent, associated with a live PID, and equal to
-  the current deployment identity before the result is successful. Missing,
-  malformed, stale, interrupted, restarted, unauthorized, cross-scope, or
-  revision-mismatched inputs SHALL remain unknown or failed evidence, never a
-  successful pull-only inference. The result SHALL cover effective worker
-  adoption only, not model/auth/text success or unrelated acceptance criteria,
-  and SHALL NOT accept an operator-controlled host command, path, SQL, process
-  arguments, environment, or credentials.
-  *Code:* `lib/paid/worker_readiness.rb`,
+  measurement path; it SHALL read only the durable `poll` and `agent`
+  readiness observations the owning Temporal worker roles publish about
+  themselves into the shared application database — each role's PID,
+  readiness time, booted revision, and latest heartbeat. Both roles' observations
+  SHALL be complete, timestamp-coherent, refreshed by the live worker's own
+  heartbeat within the freshness window, and equal to the current deployment
+  identity before the result is successful. Missing, malformed, stale,
+  incoherent, interrupted, restarted, unauthorized, cross-scope, or
+  revision-mismatched observations SHALL remain unknown or failed evidence,
+  never a successful pull-only inference. The result SHALL cover effective
+  worker adoption only, not model/auth/text success or unrelated acceptance
+  criteria, and SHALL NOT accept an operator-controlled host command, path,
+  SQL, process arguments, environment, credentials, or a PID probe in another
+  role's namespace.
+  *Code:* `app/models/worker_readiness_observation.rb`,
+  `lib/paid/worker_readiness/heartbeat.rb`,
+  `lib/paid/worker_readiness.rb`,
   `app/services/trusted_measurements/checks/worker_adoption.rb`,
-  `app/services/trusted_measurements/run_check.rb`.
-  *Test:* `spec/services/trusted_measurements/checks/worker_adoption_spec.rb`,
+  `app/services/trusted_measurements/run_check.rb`,
+  `bin/temporal_worker`.
+  *Test:* `spec/models/worker_readiness_observation_spec.rb`,
+  `spec/lib/paid/worker_readiness/heartbeat_spec.rb`,
+  `spec/services/trusted_measurements/checks/worker_adoption_spec.rb`,
   `spec/services/trusted_measurements/run_check_spec.rb`.
