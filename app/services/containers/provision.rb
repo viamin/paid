@@ -1334,21 +1334,49 @@ module Containers
     def materialize_preparation_file(write, env:)
       target_path = expand_preparation_path(write.path)
       state_dir = "/tmp/paid-execution-preparation/#{SecureRandom.hex(8)}"
-
-      run_preparation_script(
-        materialize_script(write.mode),
-        env: env,
-        script_env: {
-          "PAID_PREPARATION_TARGET" => target_path,
-          "PAID_PREPARATION_STATE_DIR" => state_dir,
-          "PAID_PREPARATION_B64" => Base64.strict_encode64(write.content)
-        }
-      )
-
-      {
+      step_env = {
         "PAID_PREPARATION_TARGET" => target_path,
         "PAID_PREPARATION_STATE_DIR" => state_dir
       }
+
+      begin
+        run_preparation_script(
+          materialize_script(write.mode),
+          env: env,
+          script_env: step_env.merge("PAID_PREPARATION_B64" => Base64.strict_encode64(write.content))
+        )
+      rescue StandardError => e
+        rollback_partial_preparation(step_env, env: env, cause: e)
+        raise
+      end
+
+      step_env
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    # The materialize script can fail after it already replaced the original
+    # target and applied part of the run-local Git protection (exclude entry,
+    # assume-unchanged flag) — for example a read-only info/exclude failing
+    # the exclusion append after the snapshot removed the original. The failed
+    # step never reached the caller's accumulated cleanup steps, so restore it
+    # here before re-raising. An unknown snapshot state means the script
+    # failed before mutating the target, so the rollback treats it as nothing
+    # to restore. A rollback that still fails invalidates the container — its
+    # preparation state cannot be trusted for reuse — without replacing the
+    # original error.
+    def rollback_partial_preparation(step_env, env:, cause:)
+      rollback_error = run_preparation_cleanup_step(
+        step_env.merge("PAID_PREPARATION_ROLLBACK" => "1"),
+        env: env
+      )
+      return unless rollback_error
+
+      log_system(
+        "container.execute.preparation_rollback_failed",
+        error: rollback_error.message,
+        cause: cause.message
+      )
+      invalidate_container_after_preparation_cleanup_failure!
     end
 
     def run_preparation_script(script, env:, script_env:)
@@ -1426,12 +1454,20 @@ module Containers
       SH
     end
 
+    # Restores the snapshotted target and removes the run-local Git
+    # protection. With PAID_PREPARATION_ROLLBACK=1 (the apply-time rollback of
+    # a partially applied materialize), an unknown snapshot state short-circuits
+    # the restore entirely — including the directory guard — because the
+    # materialize script records the state file before its first destructive
+    # mutation, so unknown means nothing was changed.
     def cleanup_script
       <<~SH.squish
         set -e && cleanup_status=0 &&
         state_value=$(cat "$PAID_PREPARATION_STATE_DIR/state" 2>/dev/null || echo unknown) &&
         dir=$(dirname "$PAID_PREPARATION_TARGET") &&
-        if [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
+        if [ "${PAID_PREPARATION_ROLLBACK:-0}" = "1" ] && [ "$state_value" = unknown ]; then
+          :;
+        elif [ -d "$PAID_PREPARATION_TARGET" ] && [ ! -L "$PAID_PREPARATION_TARGET" ]; then
           printf 'preparation target changed into a directory during execution: %s\n' "$PAID_PREPARATION_TARGET" >&2 && cleanup_status=1;
         elif [ "$state_value" = symlink ]; then
           mkdir -p "$dir" && rm -f "$PAID_PREPARATION_TARGET" &&

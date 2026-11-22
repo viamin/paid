@@ -61,6 +61,19 @@ symlink target for restoration. Cleanup restores the original target first,
 then removes the run-local Git protection; restoration failures remain explicit
 execution-preparation cleanup failures.
 
+Applying a preparation write is transactional. The materialize script can fail
+after it already replaced the target or applied part of the Git protection
+(for example, a read-only `info/exclude` failing the exclusion append after the
+snapshot removed the original). Because the failed write never reaches the
+caller's accumulated cleanup steps, the runtime rolls the partial write back
+itself before re-raising: the original target is restored from the snapshot,
+partially applied exclusion entries and index flags are removed, and the
+snapshot state directory is deleted. An unknown snapshot state means the script
+failed before mutating anything, so the rollback treats it as a no-op rather
+than a restore failure. A rollback that cannot restore invalidates the
+container — its preparation state cannot be trusted for reuse — without
+replacing the original preparation failure.
+
 ### Host selection and lifecycle routing
 
 `Containers::ResolveHostForRun` converts explicit or preferred host choices

@@ -26,6 +26,27 @@ RSpec.describe Containers::Provision do
     preparation_class.new([ preparation_write ])
   end
 
+  def build_multi_preparation(*writes)
+    preparation_class = Struct.new(:file_writes) do
+      def empty?
+        false
+      end
+    end
+    preparation_class.new(writes)
+  end
+
+  def preparation_write(path, content: "{\"paid\":true}\n")
+    Struct.new(:path, :content, :mode).new(path, content, nil)
+  end
+
+  def preparation_outside_target
+    File.join(Dir.mktmpdir("preparation-outside"), "settings.json")
+  end
+
+  def build_two_step_preparation(outside_path, inside_path)
+    build_multi_preparation(preparation_write(outside_path), preparation_write(inside_path))
+  end
+
   def initialize_preparation_repository(repository, remote)
     git!(repository, "init", "-q")
     git!(repository, "config", "user.email", "agent@example.test")
@@ -54,17 +75,63 @@ RSpec.describe Containers::Provision do
     stdout
   end
 
-  def local_preparation_service(repository)
+  def local_preparation_service(repository, env_recorder: nil, rollback_status: nil)
     backend = instance_double(Containers::Backends::Base)
     allow(backend).to receive(:exec_in_container) do |_container, command, **options|
       environment = options.fetch(:Env).to_h { |entry| entry.split("=", 2) }
-      stdout, stderr, status = Open3.capture3(environment, *command)
-      [ stdout, stderr, status.exitstatus ]
+      env_recorder&.push(environment)
+      if environment["PAID_PREPARATION_ROLLBACK"] == "1" && rollback_status
+        [ "", "injected rollback failure", rollback_status ]
+      else
+        stdout, stderr, status = Open3.capture3(environment, *command)
+        [ stdout, stderr, status.exitstatus ]
+      end
     end
     local_service = described_class.new(agent_run: agent_run, worktree_path: repository, backend: backend)
     local_service.instance_variable_set(:@container, mock_container)
     allow(local_service).to receive(:container_running?).and_return(true)
     local_service
+  end
+
+  # Prepends a shim for command that fails whenever it sees argument, so
+  # failure injection works even when the suite runs as root (where
+  # permission-based read-only injections would not fail).
+  def with_failing_command_shim(command, argument)
+    Dir.mktmpdir("paid-command-shim") do |shim_dir|
+      real_command, = Open3.capture2("sh", "-c", "command -v #{command}")
+      shim = File.join(shim_dir, command)
+      File.write(shim, <<~SH)
+        #!/bin/sh
+        for shim_argument in "$@"; do
+          if [ "$shim_argument" = "#{argument}" ]; then
+            printf 'injected #{command} #{argument} failure\\n' >&2
+            exit 1
+          fi
+        done
+        exec #{real_command.strip} "$@"
+      SH
+      File.chmod(0o755, shim)
+      yield({ "PATH" => "#{shim_dir}:#{ENV.fetch('PATH')}" })
+    end
+  end
+
+  # Breaks the Git exclusion update after the snapshot already removed the
+  # original target: appending to a directory fails with the same redirect
+  # error (exit 2) the read-only exclude probe reproduced. Restores the
+  # original exclude file afterward so Git commands keep working.
+  def with_broken_git_exclude_update(repository)
+    git_exclude = File.join(repository, ".git", "info", "exclude")
+    original_content = File.file?(git_exclude) ? File.read(git_exclude) : nil
+    FileUtils.rm_f(git_exclude)
+    Dir.mkdir(git_exclude)
+    yield
+  ensure
+    FileUtils.rm_rf(git_exclude)
+    File.write(git_exclude, original_content || "")
+  end
+
+  def preparation_state_dirs(env_recorder)
+    env_recorder.filter_map { |environment| environment["PAID_PREPARATION_STATE_DIR"] }.uniq
   end
 
   def create_preexisting_preparation_targets(repository)
@@ -83,8 +150,7 @@ RSpec.describe Containers::Provision do
 
   def materialize_preparation_targets(service, paths)
     paths.values.map do |path|
-      write = Struct.new(:path, :content, :mode).new(path, "{\"paid\":true}\n", nil)
-      service.send(:materialize_preparation_file, write, env: {})
+      service.send(:materialize_preparation_file, preparation_write(path), env: {})
     end
   end
 
@@ -4345,6 +4411,148 @@ RSpec.describe Containers::Provision do
         preparation_service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
         expect_preexisting_targets_restored(paths, originals)
         expect(cleanup_steps).to all(satisfy { |step| !Dir.exist?(step.fetch("PAID_PREPARATION_STATE_DIR")) })
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "restores the current target when the Git exclusion update fails after snapshot and removal" do
+      with_preparation_repository do |repository, remote|
+        initialize_preparation_repository(repository, remote)
+        paths, originals = create_preexisting_preparation_targets(repository)
+        status_before = git!(repository, "status", "--porcelain")
+        env_recorder = []
+        preparation_service = local_preparation_service(repository, env_recorder: env_recorder)
+
+        with_broken_git_exclude_update(repository) do
+          paths.each_value do |path|
+            expect {
+              preparation_service.send(:materialize_preparation_file, preparation_write(path), env: {})
+            }.to raise_error(described_class::ExecutionError, /Is a directory/)
+          end
+
+          expect_preexisting_targets_restored(paths, originals)
+        end
+
+        expect(git!(repository, "status", "--porcelain")).to eq(status_before)
+        expect(preparation_state_dirs(env_recorder)).to all(satisfy { |dir| !Dir.exist?(dir) })
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "removes the appended exclusion entry when the index update fails after it" do
+      with_preparation_repository do |repository, remote|
+        initialize_preparation_repository(repository, remote)
+        paths, originals = create_preexisting_preparation_targets(repository)
+        git_dir = git!(repository, "rev-parse", "--absolute-git-dir").strip
+        exclude_path = File.join(git_dir, "info", "exclude")
+        env_recorder = []
+        preparation_service = local_preparation_service(repository, env_recorder: env_recorder)
+
+        exclude_before = File.read(exclude_path)
+
+        with_failing_command_shim("git", "--assume-unchanged") do |shim_env|
+          expect {
+            preparation_service.send(:materialize_preparation_file, preparation_write(paths[:tracked]), env: shim_env)
+          }.to raise_error(described_class::ExecutionError, /injected git --assume-unchanged failure/)
+        end
+
+        expect(File.binread(paths[:tracked])).to eq(originals[:tracked])
+        expect(File.stat(paths[:tracked]).mode & 0o777).to eq(0o640)
+        expect(File.read(exclude_path)).to eq(exclude_before)
+        expect(git!(repository, "ls-files", "-v", "--", ".claude/tracked-settings.json")).to start_with("H")
+        expect(preparation_state_dirs(env_recorder)).to all(satisfy { |dir| !Dir.exist?(dir) })
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "restores an applied exclusion entry and index flag when writing the prepared content fails" do
+      with_preparation_repository do |repository, remote|
+        initialize_preparation_repository(repository, remote)
+        paths, originals = create_preexisting_preparation_targets(repository)
+        git_dir = git!(repository, "rev-parse", "--absolute-git-dir").strip
+        exclude_path = File.join(git_dir, "info", "exclude")
+        env_recorder = []
+        preparation_service = local_preparation_service(repository, env_recorder: env_recorder)
+
+        exclude_before = File.read(exclude_path)
+
+        with_failing_command_shim("base64", "-d") do |shim_env|
+          expect {
+            preparation_service.send(:materialize_preparation_file, preparation_write(paths[:tracked]), env: shim_env)
+          }.to raise_error(described_class::ExecutionError, /injected base64 -d failure/)
+        end
+
+        expect(File.binread(paths[:tracked])).to eq(originals[:tracked])
+        expect(File.stat(paths[:tracked]).mode & 0o777).to eq(0o640)
+        expect(File.read(exclude_path)).to eq(exclude_before)
+        expect(git!(repository, "ls-files", "-v", "--", ".claude/tracked-settings.json")).to start_with("H")
+        expect(preparation_state_dirs(env_recorder)).to all(satisfy { |dir| !Dir.exist?(dir) })
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "restores earlier writes when a later preparation write fails partway" do
+      with_preparation_repository do |repository, remote|
+        initialize_preparation_repository(repository, remote)
+        paths, originals = create_preexisting_preparation_targets(repository)
+        status_before = git!(repository, "status", "--porcelain")
+        outside_target = preparation_outside_target
+        env_recorder = []
+        preparation_service = local_preparation_service(repository, env_recorder: env_recorder)
+        preparation = build_two_step_preparation(outside_target, paths[:tracked])
+
+        with_broken_git_exclude_update(repository) do
+          expect {
+            preparation_service.send(:apply_execution_preparation, preparation, env: {})
+          }.to raise_error(described_class::ExecutionError, /Is a directory/)
+          expect_preexisting_targets_restored(paths, originals)
+        end
+
+        expect(File.exist?(outside_target)).to be(false)
+        expect(git!(repository, "status", "--porcelain")).to eq(status_before)
+        expect(preparation_state_dirs(env_recorder)).to all(satisfy { |dir| !Dir.exist?(dir) })
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "treats an unknown snapshot state as nothing to restore when the materialize script fails early" do
+      with_preparation_repository do |repository, remote|
+        initialize_preparation_repository(repository, remote)
+        directory_target = File.join(repository, ".git")
+        env_recorder = []
+        preparation_service = local_preparation_service(repository, env_recorder: env_recorder)
+        allow(preparation_service).to receive(:invalidate_container_after_preparation_cleanup_failure!)
+
+        expect {
+          preparation_service.send(:materialize_preparation_file, preparation_write(directory_target), env: {})
+        }.to raise_error(described_class::ExecutionError, /must be a regular file or symlink/)
+
+        expect(Dir).to exist(directory_target)
+        expect(preparation_state_dirs(env_recorder)).to all(satisfy { |dir| !Dir.exist?(dir) })
+        expect(preparation_service).not_to have_received(:invalidate_container_after_preparation_cleanup_failure!)
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-054
+    it "invalidates the container and keeps the original failure when the rollback itself fails" do
+      with_preparation_repository do |repository, remote|
+        initialize_preparation_repository(repository, remote)
+        paths, _originals = create_preexisting_preparation_targets(repository)
+        preparation_service = local_preparation_service(repository, rollback_status: 1)
+        allow(preparation_service).to receive(:log_system)
+        allow(preparation_service).to receive(:invalidate_container_after_preparation_cleanup_failure!)
+
+        with_broken_git_exclude_update(repository) do
+          expect {
+            preparation_service.send(:materialize_preparation_file, preparation_write(paths[:tracked]), env: {})
+          }.to raise_error(described_class::ExecutionError, /Is a directory/)
+        end
+
+        expect(preparation_service).to have_received(:log_system).with(
+          "container.execute.preparation_rollback_failed",
+          hash_including(error: /injected rollback failure/)
+        )
+        expect(preparation_service).to have_received(:invalidate_container_after_preparation_cleanup_failure!)
       end
     end
 

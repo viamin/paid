@@ -925,7 +925,13 @@
   symlink, including original regular-file bytes and mode, without disabling
   heartbeat configuration. Successful execution, command failure, and
   cancellation SHALL retain the existing restoration and explicit
-  cleanup-failure behavior.
+  cleanup-failure behavior. When applying a preparation write fails after the
+  target was replaced or part of the run-local Git protection was applied, the
+  runtime SHALL roll back the partially applied write — restoring the original
+  target bytes, mode, and symlink and removing partial exclusion and index
+  changes — before propagating the original failure; an unknown snapshot state
+  SHALL be treated as nothing to restore, and a rollback that cannot restore
+  SHALL invalidate the container without replacing the original failure.
   *Tests:* `spec/services/containers/provision_spec.rb`.
   *Code:* `Containers::Provision#materialize_preparation_file`,
-  `#materialize_script`, `#cleanup_script`.
+  `#materialize_script`, `#rollback_partial_preparation`, `#cleanup_script`.
