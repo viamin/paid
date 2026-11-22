@@ -146,9 +146,9 @@ module Script
         end
       end
 
-      def build_activity(class_name, &handler)
-        Temporalio::Activity::Definition::Info.new(name: activity_name_for(class_name)) do |*_args|
-          handler.call(*_args)
+      def build_activity(class_name)
+        Temporalio::Activity::Definition::Info.new(name: activity_name_for(class_name)) do |*args|
+          yield(*args)
         end
       end
 
