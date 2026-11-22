@@ -79,7 +79,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     expect(workflow).to have_received(:run_cleanup_activity).with(Activities::EnqueueJanitorActivity, anything, any_args)
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-016
+  # @spec TEMPORAL-ORCHESTRATION-017
   it "enqueues the janitor through bounded control capacity without moving cleanup work" do
     expect { workflow.execute(input) }.to raise_error(primary_error)
 
@@ -94,7 +94,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     )
   end
 
-  # @spec TEMPORAL-ORCHESTRATION-016
+  # @spec TEMPORAL-ORCHESTRATION-017
   it "preserves the original janitor command for an unpatched history" do
     allow(Temporalio::Workflow).to receive(:patched).with("enqueue-janitor-control-routing-v1").and_return(false)
 

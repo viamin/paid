@@ -65,8 +65,10 @@ module Workflows
       false
     end
 
-    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
     def park_source_closure_recovery(input)
+      # TODO(#5268): remove after the patch-guard sweep confirms no
+      # pre-control-routing SourceClosureRecoveryWorkflow history remains.
       control_route = Temporalio::Workflow.patched("source-closure-recovery-control-routing-v1")
       routing = control_route ? { task_queue: Paid::POLL_TASK_QUEUE, schedule_to_close_timeout: 120 } : {}
       run_activity(Activities::ParkSourceClosureRecoveryActivity, input, timeout: 30, **routing)

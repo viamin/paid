@@ -175,7 +175,7 @@
   `spec/temporal/workflow_replay_fixtures_spec.rb`.
   *Code:* `Workflows::AgentExecutionWorkflow#execute`.
 
-- [x] **TEMPORAL-ORCHESTRATION-016** — When a post-push source-closure
+- [x] **TEMPORAL-ORCHESTRATION-017** — When a post-push source-closure
   assessment needs to publish waiting recovery state, both the original agent
   workflow and the narrow recovery workflow SHALL schedule only the existing
   `ParkSourceClosureRecovery` activity through existing poll/control capacity,

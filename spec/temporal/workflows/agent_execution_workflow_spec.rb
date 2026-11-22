@@ -91,7 +91,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       )
     end
 
-    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
     it "keeps long assessment work on its queue while parking on bounded control capacity" do
       timeout = Temporalio::Error::TimeoutError.new(
         "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,
@@ -111,7 +111,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         { agent_run_id: 42 }, timeout: 120, retry_policy: described_class::SOURCE_CLOSURE_RETRY_POLICY)
     end
 
-    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+    # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
     it "preserves legacy park routing and bounds for an unpatched history" do
       timeout = Temporalio::Error::TimeoutError.new(
         "start to close timeout", type: Temporalio::Error::TimeoutError::TimeoutType::START_TO_CLOSE,

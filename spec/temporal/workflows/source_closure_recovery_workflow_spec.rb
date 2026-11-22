@@ -122,7 +122,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
     )
   end
 
-  # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+  # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
   it "preserves original park routing when replaying an unpatched recovery history" do
     allow(Temporalio::Workflow).to receive(:patched)
       .with("source-closure-recovery-control-routing-v1").and_return(false)
@@ -144,7 +144,7 @@ RSpec.describe Workflows::SourceClosureRecoveryWorkflow do
   # SDK boundary: this exercises BaseWorkflow's actual execute_activity call,
   # rather than only mocking the workflow wrapper. It compares the two live
   # parking producers while long assessment capacity is deliberately absent.
-  # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-016
+  # @spec PARTIAL-CLOSEOUT-044 TEMPORAL-ORCHESTRATION-017
   it "uses the same bounded control command for both saturation-safe parking producers" do
     agent_workflow = Workflows::AgentExecutionWorkflow.new
     allow(Temporalio::Workflow).to receive(:patched)
