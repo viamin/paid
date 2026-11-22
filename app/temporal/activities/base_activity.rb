@@ -49,10 +49,7 @@ module Activities
 
       # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
       def with_worker_activity_readiness
-        Paid::WorkerReadiness.activity_started!
-        yield
-      ensure
-        Paid::WorkerReadiness.activity_finished!
+        Paid::WorkerReadiness.with_activity { yield }
       end
 
       def tenant_account_from(input)

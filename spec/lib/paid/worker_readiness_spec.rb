@@ -83,6 +83,24 @@ RSpec.describe Paid::WorkerReadiness do
       expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
     end
 
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "holds activity admission ownership until the activity finishes" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+      activity, release = start_owned_activity(env)
+      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
+        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(false)
+      end
+      release << true
+      activity.join
+      File.open(described_class.admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
+        expect(lock.flock(File::LOCK_EX | File::LOCK_NB)).to be(0)
+      end
+    ensure
+      release << true if activity&.alive?
+      activity&.join
+    end
+
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
     it "writes JSON with the booted checkout revision" do
       env = { "WORKER_READINESS_FILE" => file_path }
@@ -190,5 +208,18 @@ RSpec.describe Paid::WorkerReadiness do
       env = { "WORKER_READINESS_FILE" => file_path }
       expect(described_class.ready?(env)).to be false
     end
+  end
+
+  def start_owned_activity(env)
+    entered = Queue.new
+    release = Queue.new
+    activity = Thread.new do
+      described_class.with_activity(env) do
+        entered << true
+        release.pop
+      end
+    end
+    entered.pop
+    [ activity, release ]
   end
 end

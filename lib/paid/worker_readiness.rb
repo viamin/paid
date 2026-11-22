@@ -93,6 +93,26 @@ module Paid
       File.exist?(file_path(env))
     end
 
+    # The updater takes this lock exclusively before stopping workers. Each
+    # activity holds shared ownership for its entire execution, making idle
+    # observation and admission closure one atomic boundary.
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    def admission_lock_path(env = ENV)
+      "#{file_path(env)}.admission.lock"
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    def with_activity(env = ENV)
+      FileUtils.mkdir_p(File.dirname(admission_lock_path(env)))
+      File.open(admission_lock_path(env), File::RDWR | File::CREAT, 0o644) do |lock|
+        lock.flock(File::LOCK_SH)
+        activity_started!(env)
+        yield
+      ensure
+        activity_finished!(env)
+      end
+    end
+
     # Activity counts are deliberately coarse, process-local readiness metadata:
     # the updater needs only to know whether stopping this worker would interrupt
     # an owner. It never contains activity inputs or customer data.

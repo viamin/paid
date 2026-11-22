@@ -562,6 +562,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       expect(calls.count("overmind quit")).to eq(1)
       expect(calls.count("dev")).to eq(1)
       expect(calls.count("setup --skip-server")).to eq(1)
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
 
       updater_log = read_updater_log(dir)
       expect(updater_log).to include("Worker adoption verified: poll and agent workers report revision post-pull-sha.")
@@ -588,6 +589,18 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       updater_log = read_updater_log(dir)
       expect(updater_log).to include("Worker drain did not complete; deferring worker adoption without stopping Overmind.")
       expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "closes admission on an idle role while the other role drains" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      status, poll_admitted, stderr = run_cross_role_arrival(dir)
+
+      expect(status.success?).to be(true), stderr
+      expect(poll_admitted).to be(false)
+      expect(File).to exist(File.join(dir, "worker-admission-barriers-held-at-stop"))
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to include("overmind quit")
     end
   end
 
@@ -1137,6 +1150,54 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     Open3.capture3(env, script_path, "--lightweight", chdir: dir)
   end
 
+  def run_cross_role_arrival(dir)
+    script_path = prepare_script_fixture(dir,
+      pull_diff_files: %w[app/services/llm/request.rb],
+      start_overmind_running: true)
+    create_stale_socket(dir)
+    agent_readiness = worker_readiness_path("agent")
+    agent_payload = JSON.parse(File.read(agent_readiness)).merge("active_activities" => 1)
+    File.write(agent_readiness, agent_payload.to_json)
+
+    File.open("#{agent_readiness}.admission.lock", File::RDWR | File::CREAT, 0o644) do |agent_lock|
+      agent_lock.flock(File::LOCK_SH)
+      run_update_during_agent_activity(dir, script_path, agent_readiness, agent_payload, agent_lock)
+    end
+  end
+
+  def run_update_during_agent_activity(dir, script_path, agent_readiness, agent_payload, agent_lock)
+    env = trigger_context_env(dir,
+      "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+      "DEV_UPDATE_CHANGED_FILES" => "app/services/llm/request.rb")
+    Open3.popen3(env, script_path, "--lightweight", chdir: dir) do |stdin, stdout, stderr, wait_thread|
+      stdin.close
+      stdout_reader = Thread.new { stdout.read }
+      stderr_reader = Thread.new { stderr.read }
+      wait_for_poll_admission_to_close(dir)
+      poll_admitted = poll_arrival_admitted?
+      File.write(agent_readiness, agent_payload.merge("active_activities" => 0).to_json)
+      agent_lock.flock(File::LOCK_UN)
+      [ wait_thread.value, poll_admitted, stderr_reader.value ]
+    ensure
+      Process.kill("TERM", wait_thread.pid) if wait_thread&.alive?
+      stdout_reader&.join
+      stderr_reader&.join
+    end
+  end
+
+  def wait_for_poll_admission_to_close(dir)
+    Timeout.timeout(5) do
+      Thread.pass until File.exist?(File.join(dir, "log", "dev-update", "dev-update.log")) &&
+        read_updater_log(dir).include?("Worker (poll) activity admission is closed")
+    end
+  end
+
+  def poll_arrival_admitted?
+    File.open("#{worker_readiness_path('poll')}.admission.lock", File::RDWR | File::CREAT, 0o644) do |lock|
+      lock.flock(File::LOCK_SH | File::LOCK_NB) != false
+    end
+  end
+
   def expect_calls(dir, expected)
     expect(File.read(File.join(dir, "calls.log")).lines.map(&:chomp)).to eq(expected)
   end
@@ -1484,6 +1545,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             exit 0
             ;;
           quit)
+            barriers_held=1
+            for mode in poll agent; do
+              lock="${TMPDIR:-/tmp}/paid-worker-ready-temporal_worker-${mode}.admission.lock"
+              exec 8<>"$lock"
+              flock -n 8 && barriers_held=0
+              exec 8>&-
+            done
+            if [ "$barriers_held" -eq 1 ]; then
+              touch "#{dir}/worker-admission-barriers-held-at-stop"
+            fi
             printf 'overmind quit\\n' >> "#{dir}/calls.log"
             touch "#{dir}/overmind-quit-ran"
             rm -f "#{dir}/overmind-running"

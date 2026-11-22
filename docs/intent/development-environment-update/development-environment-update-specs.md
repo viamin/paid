@@ -48,14 +48,17 @@
   *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.
 
 - [x] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — Before a full development
-  update stops Overmind, the updater SHALL wait within a bounded poll budget
-  for each ready Temporal worker's safe readiness metadata to report zero
-  active activities. Worker metadata SHALL expose only the active count and
-  existing trusted boot identity, never activity input, credential payloads,
-  secret-bearing process arguments, or environment. If a worker remains active
-  or its count is unknown within the budget, the updater SHALL fail before
-  requesting a stop and SHALL report deferred adoption; it SHALL NOT
-  force-restart the owner, reset its attempt, enlarge shutdown/activity
+  update stops Overmind, the updater SHALL acquire and retain an exclusive
+  activity-admission barrier for each ready Temporal worker within a bounded
+  poll budget, and SHALL hold both barriers through the stop request. Each
+  activity SHALL hold shared ownership of its worker's barrier for its full
+  execution, so a role that reaches idle while another role drains cannot
+  admit new work before the stop boundary. Worker metadata SHALL expose only
+  the active count and existing trusted boot identity, never activity input,
+  credential payloads, secret-bearing process arguments, or environment. If a
+  worker remains active or its count is unknown within the budget, the updater
+  SHALL fail before requesting a stop and SHALL report deferred adoption; it
+  SHALL NOT force-restart the owner, reset its attempt, enlarge shutdown/activity
   deadlines, or change control-queue routing. Once both workers are idle, the
   updater SHALL retain the existing one-time graceful stop, restart, and
   effective-adoption verification path.
