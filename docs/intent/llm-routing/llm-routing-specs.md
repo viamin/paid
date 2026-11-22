@@ -94,7 +94,9 @@
   shared request deadline. The executor SHALL reserve a bounded cleanup margin
   before beginning command execution; setup that consumes the executable budget
   SHALL not receive a new command allocation, and an exhausted shared deadline
-  SHALL not start a fallback. Physical cleanup remains best-effort and a
-  committed native credential harvest SHALL not be asynchronously interrupted.
+  SHALL not start a fallback. Physical cleanup remains best-effort. Managed
+  credential lease acquisition and harvesting SHALL be bounded by the remaining
+  candidate deadline; an incomplete harvest SHALL be deferred and logged
+  without extending the candidate lifetime.
   *Tests:* `spec/services/llm/request_spec.rb`,
   `spec/services/containers/standalone_text_executor_spec.rb`.

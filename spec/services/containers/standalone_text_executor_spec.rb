@@ -569,6 +569,32 @@ RSpec.describe Containers::StandaloneTextExecutor do
       expect(lease_timeouts.first).to eq(1.0)
     end
 
+    # @spec LLM-ROUTING-013
+    it "defers a blocked post-command credential harvest at the candidate deadline" do
+      stub_execs
+      now = 100.0
+      executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+        clock: ->(_) { now })
+      executor.execute([ "codex", "exec", "hello" ])
+      now = 105.9
+      release_harvest = Queue.new
+      allow(backend).to receive(:exec_in_container) do |_selected, command, options = {}, &_stream|
+        next [ [ agent_owner ], [], 0 ] if options[:user] == "root"
+
+        if command.include?("base64 -w0 /home/agent/.codex/auth.json")
+          now = 106.0
+          release_harvest.pop
+        end
+        [ [], [], 0 ]
+      end
+
+      expect { Timeout.timeout(0.5) { executor.close } }.not_to raise_error
+
+      expect(backend).not_to have_received(:delete_container)
+    ensure
+      release_harvest << true if release_harvest
+    end
+
     # @spec LLM-ROUTING-005 SUBSCRIPTION-RUNNER-AUTH-005
     it "harvests a rotated auth file once when the container closes" do
       stub_execs(rotation_stdout: Base64.strict_encode64(rotated_codex_auth))

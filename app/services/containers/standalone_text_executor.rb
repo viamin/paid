@@ -235,11 +235,15 @@ module Containers
       credential = rotating_subscription_credential
       return unless credential
 
-      with_managed_credential_lease do
-        result = Runners::ManagedCredentialLifecycle.harvest(credential: credential,
-          runner_key: runner.runner_key, backend: Containers.backend, container: @container)
-        log_harvest(result, credential)
+      within_deadline do
+        with_managed_credential_lease(timeout: managed_credential_lease_timeout) do
+          result = Runners::ManagedCredentialLifecycle.harvest(credential: credential,
+            runner_key: runner.runner_key, backend: Containers.backend, container: @container)
+          log_harvest(result, credential)
+        end
       end
+    rescue DeadlineExceeded
+      defer_credential_harvest!(credential)
     end
 
     def rotating_subscription_credential
@@ -401,6 +405,13 @@ module Containers
         container_id: @container.id,
         account_id: account.id,
         runner_id: runner.id
+      )
+    end
+
+    def defer_credential_harvest!(credential)
+      Rails.logger.warn(
+        message: "containers.standalone_text_executor.credential_harvest_deferred",
+        runner_key: runner.runner_key, credential_id: credential.id, account_id: account.id
       )
     end
 

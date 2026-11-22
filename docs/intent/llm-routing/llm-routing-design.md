@@ -114,9 +114,9 @@ a command. Thus slow setup cannot obtain a fresh command timeout and a spent
 request deadline cannot start another fallback. Cleanup is bounded and
 best-effort: the executor attempts removal during the remaining candidate
 deadline, and its immutable orphan-sweep label recovers a container when a
-Docker cleanup call cannot finish. A native credential harvest that has begun
-is allowed to complete its canonical leased persistence rather than being
-asynchronously interrupted.
+Docker cleanup call cannot finish. Managed credential lease acquisition and
+harvesting share that deadline; a harvest that cannot finish is deferred and
+logged without extending the candidate lifetime.
 The closeout assessment allows 60 seconds for CLI startup and reasoning,
 within its 120-second activity budget including authentication and cleanup.
 Background session summaries and error diagnosis use project-owner text routing because run cleanup can precede
