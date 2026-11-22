@@ -3293,8 +3293,9 @@ module Activities
     # no-change outcome for the feedback it was shown; without it the same
     # trusted comment keeps re-admitting follow-ups (#5180).
     def conversation_feedback_cutoff(project, issue, last_run)
+      completed_run = conversation_scope_completed_run(project, issue)
       no_change_run = conversation_scope_no_change_run(project, issue)
-      [ conversation_scope_completed_at(last_run), no_change_run&.completed_at ].compact.max
+      [ conversation_scope_completed_at(last_run), completed_run&.completed_at, no_change_run&.completed_at ].compact.max
     end
 
     # A successful focused repair must not acknowledge feedback excluded from
@@ -3305,6 +3306,14 @@ module Activities
       return unless run.focus.in?(CONVERSATION_SCOPE_FOCUSES)
 
       run.completed_at
+    end
+
+    def conversation_scope_completed_run(project, issue)
+      pr_run_history_scope(project, issue)
+        .where(goal: "create_pr", focus: CONVERSATION_SCOPE_FOCUSES)
+        .completed
+        .order(completed_at: :desc)
+        .first
     end
 
     def conversation_scope_no_change_run(project, issue)

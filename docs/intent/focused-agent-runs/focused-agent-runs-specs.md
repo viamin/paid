@@ -72,7 +72,8 @@
 
 - [x] **FOCUSED-RUN-010** — When a `create_pr` run on an existing PR
   completes or terminates `no_output` with the `no_changes` reason, the PR
-  scanner SHALL treat its `completed_at` as the conversation-comment cutoff
+  scanner SHALL treat the newest eligible completed or terminal no-change
+  run's `completed_at` as the conversation-comment cutoff
   only when that run's focus actually includes the conversation section (the
   `conversation` focus, plus the unscoped `general` and `label_action`
   focuses that include every applicable section). A completed or no-change
@@ -83,6 +84,7 @@
   deriving their cutoffs from completed runs only.
   *Code:* `ScanPaidPrsActivity#check_conversation_comments`,
   `ScanPaidPrsActivity#conversation_feedback_cutoff`,
+  `ScanPaidPrsActivity#conversation_scope_completed_run`,
   `ScanPaidPrsActivity#conversation_scope_no_change_run`,
   `ScanPaidPrsActivity::CONVERSATION_SCOPE_FOCUSES`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_conversation_feedback_spec.rb`.

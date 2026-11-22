@@ -104,6 +104,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-010
       expect(trigger_types(result)).not_to include("conversation_comments")
     end
 
+    %w[review_feedback ci_fix merge_conflict].each do |focus|
+      it "keeps an eligible completed run's cutoff after a later #{focus} completion" do
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: "conversation",
+          completed_at: 20.minutes.ago)
+        create(:agent_run, :completed,
+          project: project, source_pull_request_number: 42,
+          goal: "create_pr", focus: focus,
+          completed_at: 10.minutes.ago)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(trigger_types(result)).not_to include("conversation_comments")
+      end
+    end
+
     it "consumes comments older than a terminal conversation-scope no-change run" do
       create_no_change_run!
 

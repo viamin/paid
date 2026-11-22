@@ -82,8 +82,9 @@ re-admitting follow-ups (#5180).
 
 `check_conversation_comments` therefore takes its cutoff from the latest of
 the caller-supplied run only when it includes conversation scope (a
-`completed` run, or the focused run during `focus_resolved` attribution) and the newest
-`create_pr`/`no_output`/`no_changes` run whose focus actually includes the
+`completed` run, or the focused run during `focus_resolved` attribution), the
+newest completed `create_pr` run, and the newest `create_pr`/`no_output`/
+`no_changes` run whose focus actually includes the
 conversation section — `conversation` itself, plus the unscoped `general`
 and `label_action` focuses that include every applicable section (the same
 rule as `Prompts::BuildForPr#include_section?`). No-change runs with other
