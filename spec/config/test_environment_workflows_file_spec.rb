@@ -240,4 +240,21 @@ RSpec.describe TestEnvironmentWorkflowsFile, :no_db do
 
     expect(postgres.fetch("options")).to include("--shm-size=512m")
   end
+
+  # @spec TEST-SUITE-023
+  it "allows bounded retries enough time to install JavaScript dependencies" do
+    workflow = workflow_config(".github/workflows/ci.yml")
+
+    %w[test-shards shard-recovery].each do |job_name|
+      job = workflow.fetch("jobs").fetch(job_name)
+      install_step = job.fetch("steps").find { |step| step["name"] == "Install JavaScript dependencies" }
+
+      expect(job.fetch("timeout-minutes")).to eq(360)
+      expect(install_step.fetch("run")).to include(
+        "for attempt in 1 2 3 4 5",
+        "30m",
+        "yarn install --frozen-lockfile && bin/yarn-postinstall"
+      )
+    end
+  end
 end
