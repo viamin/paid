@@ -155,7 +155,7 @@ module Containers
         return if available_blocks.negative?
 
         available_blocks * 1024
-      rescue ArgumentError, IndexError
+      rescue ArgumentError, IndexError, TypeError
         nil
       end
 
@@ -164,11 +164,13 @@ module Containers
         pid = Process.spawn("df", "-Pk", "--", probe_path, out: writer, err: File::NULL, pgroup: true)
         writer.close
 
-        stdout = Timeout.timeout(BACKING_STORE_PROBE_TIMEOUT) { reader.read }
-        _pid, status = Process.wait2(pid)
+        stdout, status = Timeout.timeout(BACKING_STORE_PROBE_TIMEOUT) do
+          stdout = reader.read
+          _pid, status = Process.wait2(pid)
+          [ stdout, status ]
+        end
         [ stdout, status ]
       rescue Timeout::Error
-        terminate_backing_store_probe(pid) if pid
         [ "", nil ]
       rescue SystemCallError, IOError
         [ "", nil ]
@@ -179,10 +181,16 @@ module Containers
       end
 
       def terminate_backing_store_probe(pid)
-        Process.kill("TERM", -pid)
-        Process.kill("KILL", -pid)
+        signal_backing_store_probe("TERM", pid)
+        signal_backing_store_probe("KILL", pid)
         Process.waitpid(pid)
-      rescue Errno::ECHILD, Errno::ESRCH
+      rescue Errno::ECHILD
+        nil
+      end
+
+      def signal_backing_store_probe(signal, pid)
+        Process.kill(signal, -pid)
+      rescue Errno::ESRCH
         nil
       end
 

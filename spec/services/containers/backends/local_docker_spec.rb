@@ -53,6 +53,26 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
   end
 
   describe "backing-storage evidence" do
+    def with_backing_store_probe(script)
+      original_path = ENV.fetch("PATH")
+      original_probe_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
+
+      Dir.mktmpdir do |directory|
+        probe_path = File.join(directory, "probe")
+        command_path = File.join(directory, "df")
+        Dir.mkdir(probe_path)
+        File.write(command_path, script)
+        File.chmod(0o755, command_path)
+        ENV["PATH"] = directory
+        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
+
+        yield
+      end
+    ensure
+      ENV["PATH"] = original_path
+      ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_probe_path
+    end
+
     # @spec CONTAINER-RUNTIME-050
     it "measures only an explicitly configured backing-store probe" do
       Dir.mktmpdir do |probe_path|
@@ -72,16 +92,24 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
 
     # @spec CONTAINER-RUNTIME-050
     it "terminates and reaps a hanging df probe within its deadline" do
-      Dir.mktmpdir do |directory|
-        probe_path = File.join(directory, "probe")
-        command_path = File.join(directory, "df")
-        Dir.mkdir(probe_path)
-        File.write(command_path, "#!/bin/sh\nwhile :; do :; done\n")
-        File.chmod(0o755, command_path)
-        original_path = ENV.fetch("PATH")
-        original_probe_path = ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"]
-        ENV["PATH"] = directory
-        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = probe_path
+      with_backing_store_probe("#!/bin/sh\nwhile :; do :; done\n") do
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        observation = backend.backing_storage_observation
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+
+        expect(observation).to eq(reason: "backing_storage_probe_unavailable")
+        expect(elapsed).to be < described_class::BACKING_STORE_PROBE_TIMEOUT + 1.second
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "does not accept output from a probe that exits after its deadline" do
+      with_backing_store_probe(<<~SH) do
+          #!/bin/sh
+          printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/test 100 10 90 10%% /mnt\\n'
+          exec 1>&-
+          /bin/sleep 4
+        SH
 
         started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         observation = backend.backing_storage_observation
@@ -89,9 +117,13 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
 
         expect(observation).to eq(reason: "backing_storage_probe_unavailable")
         expect(elapsed).to be < described_class::BACKING_STORE_PROBE_TIMEOUT + 1.second
-      ensure
-        ENV["PATH"] = original_path
-        ENV["PAID_DOCKER_BACKING_STORE_PROBE_PATH"] = original_probe_path
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-050
+    it "treats malformed successful probe output as unavailable" do
+      with_backing_store_probe("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'\n") do
+        expect(backend.backing_storage_observation).to eq(reason: "backing_storage_probe_unavailable")
       end
     end
 
