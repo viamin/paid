@@ -37,7 +37,7 @@ module Activities
     SCAN_STALENESS_MULTIPLIER = 3
     DEPENDENCY_UPDATE_BOT_AUTHORS = Project::DEPENDENCY_UPDATE_BOT_AUTHORS
     DEPENDABOT_AUTO_MERGE_AUTHORS = DependabotAutoMergeJob::DEPENDABOT_AUTHORS
-    REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
+    REVIEW_BOT_CLEAN_PATTERN = RunnerSupport::REVIEW_BOT_CLEAN_PATTERN
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
     # "Codex Review: Didn't find any major issues. Hooray!" Match the
@@ -72,7 +72,7 @@ module Activities
       "review_bot_review_pending" => "review_feedback",
       "review_bot_threads" => "review_feedback",
       "review_goal_retry" => "review_feedback",
-"standalone_review_feedback" => "review_feedback",
+      "standalone_review_feedback" => "review_feedback",
       "review_threads" => "review_feedback"
     }.freeze
     FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES = %w[
@@ -3352,6 +3352,7 @@ module Activities
       findings = latest_trusted_reviews(reviews, project).select do |review|
         review[:state] == "COMMENTED" && review[:body].to_s.strip.present? &&
           !paid_agent_clean_review?(review) &&
+          !(review_bot?(review[:user_login]) && REVIEW_BOT_CLEAN_PATTERN.match?(review[:body].to_s)) &&
           (!cutoff || review[:submitted_at].nil? || review[:submitted_at] > cutoff)
       end
       return [] if findings.empty?

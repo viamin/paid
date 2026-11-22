@@ -94,6 +94,7 @@ The builder retains the latest submitted review for each eligible author. Only
 nonblank `COMMENTED` and `CHANGES_REQUESTED` bodies from that effective review
 are actionable; an `APPROVED`, `DISMISSED`, or later clean review supersedes an
 older body. A Paid Agent review that records its machine-readable clean verdict
+or a configured review-bot summary matching the shared clean-review classifier
 is likewise excluded from repair context rather than treated as actionable due
 to its nonblank `COMMENTED` body. The rendered context identifies the review
 ID, author, submission time, and reviewed commit so the evidence remains bound

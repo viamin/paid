@@ -147,6 +147,7 @@
   reviewed commit provenance. Reviews from excluded authors SHALL never enter
   the prompt; only their body-free exclusion provenance may be recorded. A
   configured Paid Agent review that records its machine-readable clean verdict
+  or configured review-bot summary matching the shared clean-review classifier
   SHALL not enter repair context despite its nonblank `COMMENTED` body. The
   latest review state from an eligible author SHALL supersede that author's
   earlier body, and standalone review bodies SHALL not produce resolvable

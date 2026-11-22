@@ -39,6 +39,13 @@ RSpec.describe Prompts::BuildForPr do
     })
   end
 
+  def enable_copilot_reviews(project)
+    project.update!(review_settings: {
+      "enabled" => true,
+      "methods" => { "copilot" => { "enabled" => true } }
+    })
+  end
+
   def paid_review_thread(body:)
     {
       id: "thread_1",
@@ -509,9 +516,7 @@ RSpec.describe Prompts::BuildForPr do
     it "limits standalone review findings to the configured prompt comment count" do
       limited_settings = instance_double(UserSetting, max_prompt_comments: 2, max_comment_length: 2000)
       project.update!(allowed_github_usernames: (1..3).map { |id| "trusteduser#{id}" })
-      allow(AgentRuns::UserSettingsResolver).to receive(:call)
-        .with(project: project, strict: false)
-        .and_return(limited_settings)
+      stub_prompt_comment_settings(project, limited_settings)
       allow(github_client).to receive(:pull_request_reviews)
         .with(project.full_name, 42)
         .and_return((1..3).map do |id|
@@ -540,6 +545,29 @@ RSpec.describe Prompts::BuildForPr do
         .with(project.full_name, 42)
         .and_return([
           standalone_review(id: 3, author: "paid-code-reviewer[bot]", state: "COMMENTED",
+            body: clean_review, submitted_at: Time.utc(2026, 11, 22, 7, 51, 7))
+        ])
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        focus: "review_feedback"
+      )
+
+      expect(builder.build).not_to include("standalone review findings are actionable")
+      expect(builder.build).not_to include(clean_review)
+    end
+
+    # @spec PROMPT-ASSEMBLY-026
+    it "excludes clean summaries from configured review bots" do
+      enable_copilot_reviews(project)
+      clean_review = "Copilot reviewed 5 out of 5 changed files and generated no comments."
+      allow(github_client).to receive(:pull_request_reviews)
+        .with(project.full_name, 42)
+        .and_return([
+          standalone_review(id: 4, author: "copilot-pull-request-reviewer[bot]", state: "COMMENTED",
             body: clean_review, submitted_at: Time.utc(2026, 11, 22, 7, 51, 7))
         ])
 

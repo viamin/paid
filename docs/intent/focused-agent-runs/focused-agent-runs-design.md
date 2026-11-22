@@ -97,8 +97,9 @@ completed-run cutoff mechanics as `CHANGES_REQUESTED` reviews. A nonblank
 trusted `COMMENTED` review body may therefore route one normal
 `review_feedback` follow-up even when GitHub cannot create an inline thread.
 A clean verdict produced by the configured Paid Agent reviewer carries its
-review marker and is excluded from standalone findings even though GitHub
-represents it as a nonblank `COMMENTED` review. A later clean review supersedes
+review marker, and a configured review-bot summary matching the shared
+clean-review classifier is excluded from standalone findings even though
+GitHub represents either as a nonblank `COMMENTED` review. A later clean review supersedes
 the earlier body, and reviews observed before the completed-run cutoff are not
 requeued. This is prompt context only: it does not manufacture a review-thread
 identifier, resolve review state, or renew retry and allowance budgets.

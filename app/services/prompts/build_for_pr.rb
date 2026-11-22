@@ -1137,7 +1137,8 @@ module Prompts
         .select do |review|
           review[:state].in?([ "COMMENTED", "CHANGES_REQUESTED" ]) &&
             review[:body].to_s.strip.present? &&
-            !paid_agent_clean_review?(review)
+            !paid_agent_clean_review?(review) &&
+            !review_bot_clean_review?(review)
         end
         .sort_by { |review| [ review[:submitted_at] || Time.at(0), review[:id].to_i ] }
         .last(max_prompt_comments)
@@ -1149,6 +1150,11 @@ module Prompts
     def paid_agent_clean_review?(review)
       RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login]) &&
         review[:body].to_s.include?(Github::ReviewMarker::CLEAN_REVIEW_MARKER)
+    end
+
+    def review_bot_clean_review?(review)
+      RunnerSupport.runner_bot_username?(review[:user_login]) &&
+        RunnerSupport::REVIEW_BOT_CLEAN_PATTERN.match?(review[:body].to_s)
     end
 
     def latest_reviews_by_trusted_author

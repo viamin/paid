@@ -144,8 +144,9 @@
   submitted after the completed-run cutoff, the PR scanner SHALL emit the
   existing `review_feedback` follow-up route even with no unresolved inline
   threads. A configured Paid Agent review whose body records its machine-readable
-  clean verdict SHALL NOT route a follow-up despite its nonblank `COMMENTED`
-  state. An excluded author, an empty state, a superseded finding, or a review
+  clean verdict or configured review-bot summary matching the shared
+  clean-review classifier SHALL NOT route a follow-up despite its nonblank
+  `COMMENTED` state. An excluded author, an empty state, a superseded finding, or a review
   at or before that cutoff SHALL NOT route a follow-up. Existing review, merge,
   retry, and allowance decisions remain unchanged.
   *Code:* `ScanPaidPrsActivity#standalone_review_feedback_from_reviews`.

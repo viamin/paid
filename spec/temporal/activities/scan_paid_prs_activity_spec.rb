@@ -2346,6 +2346,24 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a configured review bot submits a clean summary with no inline threads" do
+      before do
+        enable_copilot_review!
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(reviews: default_clean_copilot_review)
+      end
+
+      # @spec FOCUSED-RUN-011
+      it "does not route the clean summary as standalone review feedback" do
+        result = activity.execute(project_id: project.id)
+
+        trigger_types = automation_scan_results(result).flat_map { |entry| entry[:triggers].map { |trigger| trigger[:type] } }
+        expect(trigger_types).not_to include("standalone_review_feedback")
+      end
+    end
+
     context "when a clean review supersedes a standalone commented finding" do
       before do
         create(:issue, :pull_request,
