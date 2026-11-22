@@ -39,9 +39,8 @@ module Workflows
     private
 
     def park_branch_mismatch(agent_run_id)
-      run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id:, category: "branch_mismatch", attempts: ASSESSMENT_RETRY_POLICY.max_attempts,
-          auto_retry: false }, timeout: 30)
+      run_activity(Activities::ParkSourceClosureRecoveryActivity, park_input(agent_run_id, "branch_mismatch", false),
+        timeout: 30)
       { agent_run_id:, waiting: true }
     end
 
@@ -61,10 +60,15 @@ module Workflows
         raise unless Temporalio::Workflow.patched("source-closure-retry-unsuccessful-response-v1")
       end
 
-      run_activity(Activities::ParkSourceClosureRecoveryActivity,
-        { agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts,
-          auto_retry: !operator_authorized }, timeout: 30)
+      run_activity(Activities::ParkSourceClosureRecoveryActivity, park_input(agent_run_id, category, !operator_authorized),
+        timeout: 30)
       false
+    end
+
+    def park_input(agent_run_id, category, auto_retry)
+      input = { agent_run_id:, category:, attempts: ASSESSMENT_RETRY_POLICY.max_attempts }
+      input[:auto_retry] = auto_retry if Temporalio::Workflow.patched("source-closure-recovery-auto-retry-v1")
+      input
     end
 
     def finish_closeout(agent_run_id, project_id, pr_result, goal)

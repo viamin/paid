@@ -331,12 +331,18 @@
   requests source-closure recovery through the existing run-detail or confirmed
   MCP boundary, Paid SHALL consume at most one separately recorded operator
   recovery claim without resetting automatic claims or creating a replacement
-  run. The recovery SHALL remain assessment-only and retain the original
-  commit, branch, failure evidence, and publication checks.
+  run. The locked claim SHALL recheck the requesting operator's current run
+  permission without requiring automatic picking, and SHALL retain current
+  source-trust, pause, and hard-cost-budget guards. A denied request SHALL not
+  consume either claim counter. Operator allowance exhaustion SHALL remain
+  visible as `operator_recovery_budget_exhausted`. The recovery SHALL remain
+  assessment-only and retain the original commit, branch, failure evidence,
+  and publication checks.
   *Code:* `app/mcp/tools/retry_source_closure.rb`,
   `app/controllers/projects/agent_runs_controller.rb`,
   `app/jobs/source_closure_recovery_job.rb`,
-  `app/services/partial_closeouts/source_closure_recovery.rb`.
+  `app/services/partial_closeouts/source_closure_recovery.rb`,
+  `app/services/partial_closeouts/source_closure_recovery_admission.rb`.
   *Test:* `spec/mcp/tools/retry_source_closure_spec.rb`,
   `spec/requests/projects/source_closure_recovery_spec.rb`,
   `spec/services/partial_closeouts/source_closure_recovery_spec.rb`.

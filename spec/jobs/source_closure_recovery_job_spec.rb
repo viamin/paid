@@ -5,7 +5,9 @@ require "temporalio/client"
 
 RSpec.describe SourceClosureRecoveryJob do
   let(:client) { instance_double(Temporalio::Client) }
-  let(:project) { create(:project, auto_pick_enabled: true) }
+  let(:account) { create(:account) }
+  let(:operator) { create(:user, :member, account:) }
+  let(:project) { create(:project, account:, created_by: operator, auto_pick_enabled: true) }
   let(:run) { create(:agent_run, project:, status: "running", branch_name: "paid/4886", result_commit_sha: "a" * 40) }
 
   before do
@@ -118,7 +120,7 @@ RSpec.describe SourceClosureRecoveryJob do
   it "records an operator-requested workflow separately from automatic recovery" do
     allow(client).to receive(:start_workflow)
 
-    described_class.perform_now(run.id, operator_authorized: true)
+    described_class.perform_now(run.id, operator_id: operator.id)
 
     expect(client).to have_received(:start_workflow).with(
       Workflows::SourceClosureRecoveryWorkflow,

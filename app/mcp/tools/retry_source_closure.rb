@@ -31,7 +31,7 @@ module Tools
       run = run_for(agent_run_id).reload
       raise ArgumentError, "This run is not waiting for source-closure recovery" unless run.waiting_recovery?
 
-      job = SourceClosureRecoveryJob.perform_later(run.id, operator_authorized: true)
+      job = SourceClosureRecoveryJob.perform_later(run.id, operator_id: user.id)
       unless job && job.successfully_enqueued?
         raise ArgumentError, "Source-closure recovery could not be queued. Please try again."
       end

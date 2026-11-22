@@ -147,9 +147,12 @@ history, and a visible stop reason; it neither reruns coding nor changes
 publication authority. The record separately counts assessment requests from
 claims because a claim is ownership evidence, not proof that a model request
 started. An authorized operator may consume one separately recorded recovery
-claim through the existing confirmed retry boundary. This does not reset the
-automatic budget or mint a new run, and repeated clicks stop visibly after that
-finite operator allowance. Legacy `recovery_attempt` history is conservative
+claim through the existing confirmed retry boundary. The claim rechecks the
+requesting operator's current run permission without requiring automatic picking
+to be enabled, while retaining the current source trust, pause, and hard-budget
+guards. This does not reset the automatic budget or mint a new run, and repeated
+clicks stop visibly with an operator-specific reason after that finite operator
+allowance. Legacy `recovery_attempt` history is conservative
 automatic-claim consumption until a separate automatic counter exists; it does
 not imply assessment requests. At every locked claim boundary, the current
 automatic phase policy, source-issue trust, project or issue pause, and project
