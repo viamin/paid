@@ -334,6 +334,9 @@ module Llm
     rescue JSON::ParserError
       # Parser messages can quote untrusted response content, including secrets.
       raise assessment_failure("invalid_json"), cause: nil
+    rescue AgentHarness::ConfigurationError => error
+      @request_trace = Request.attempt_trace_for(error)
+      raise assessment_failure("configuration_error"), cause: nil
     rescue AgentHarness::Error => error
       @request_trace = Request.attempt_trace_for(error)
       raise
@@ -354,6 +357,8 @@ module Llm
       message = case category
       when "authentication_unavailable"
         "Partial closeout assessment could not authenticate with the configured runner. Reconnect its credential and retry."
+      when "configuration_error"
+        "Partial closeout assessment could not use an eligible configured runner. Update runner configuration and retry."
       when "unsuccessful_response"
         "partial closeout assessment failed: transport returned an unsuccessful response. Retry after runner recovery."
       when "timeout"

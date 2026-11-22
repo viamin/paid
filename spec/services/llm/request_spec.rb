@@ -328,6 +328,48 @@ RSpec.describe Llm::Request do
     expect(Containers::StandaloneTextExecutor).to have_received(:new).once
   end
 
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches a skipped missing-managed-credential route to its configuration failure" do
+    allow(Runners::ManagedCredentialLifecycle).to receive(:credential_for).and_return(nil)
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120) }
+      .to raise_error(AgentHarness::ConfigurationError, /No managed subscription credential/) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace[:selected_attempt_ordinal]).to be_nil
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(runner_id: runner.id, outcome: "skipped", skip_reason: "missing_managed_credential")
+        )
+      end
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches a skipped policy-denied route to its configuration failure" do
+    run.update!(external_metadata: run.external_metadata.merge("zdr_required" => true))
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 120) }
+      .to raise_error(AgentHarness::ConfigurationError, /zero data retention policy/) do |error|
+        trace = described_class.attempt_trace_for(error)
+        expect(trace[:selected_attempt_ordinal]).to be_nil
+        expect(trace.fetch(:attempts)).to include(
+          a_hash_including(runner_id: runner.id, outcome: "skipped", skip_reason: "privacy_policy")
+        )
+      end
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+  end
+
+  # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+  it "attaches an empty trace when no owned configured route remains" do
+    owner.settings.update!(kb_chat_runner: runner.routing_key)
+    runner.update!(discarded_at: Time.current)
+
+    expect { described_class.call(project: project, prompt: "Assess", timeout: 120) }
+      .to raise_error(AgentHarness::ConfigurationError, /No eligible configured runner/) do |error|
+        expect(described_class.attempt_trace_for(error)).to eq(attempts: [])
+      end
+    expect(Containers::StandaloneTextExecutor).not_to have_received(:new)
+  end
+
   # @spec PARTIAL-CLOSEOUT-049
   it "fails with a timeout when the overall budget leaves no time for a candidate" do
     expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 0) }

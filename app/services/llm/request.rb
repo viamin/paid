@@ -37,10 +37,10 @@ module Llm
 
     def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 LLM-ROUTING-006 LLM-ROUTING-008 LLM-ROUTING-009 LLM-ROUTING-012 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-048 PARTIAL-CLOSEOUT-049 PARTIAL-CLOSEOUT-058 PARTIAL-CLOSEOUT-059
       unless @user && (!@account || @user.account_id == @account.id)
-        raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
+        raise configuration_error("No owning user for this LLM request")
       end
       runners = candidate_runners
-      raise AgentHarness::ConfigurationError, "No eligible configured runner for this LLM request" if runners.empty?
+      raise configuration_error("No eligible configured runner for this LLM request") if runners.empty?
 
       @required_zdr = @project&.restricted? || agent_run&.external_metadata.to_h["zdr_required"] == true ||
         runners.first.zero_data_retention?
@@ -161,11 +161,11 @@ module Llm
       raise attach_trace(@transient_failure, attempt_trace(selected_attempt: @transient_attempt)) if @transient_failure
       return attach_trace(@unsuccessful_response, attempt_trace(selected_attempt: @unsuccessful_attempt)) if @unsuccessful_response
       if @missing_managed_credential
-        raise AgentHarness::ConfigurationError, "No managed subscription credential is available for isolated text requests"
+        raise configuration_error("No managed subscription credential is available for isolated text requests")
       end
-      raise AgentHarness::ConfigurationError, "No eligible configured runner for this LLM request" if @eligible_route
-      raise AgentHarness::ConfigurationError,
-        "No eligible configured runner can satisfy the required zero data retention policy"
+      raise configuration_error("No eligible configured runner for this LLM request") if @eligible_route
+
+      raise configuration_error("No eligible configured runner can satisfy the required zero data retention policy")
     end
 
     def retryable_failure?(failure)
@@ -275,6 +275,10 @@ module Llm
       subject
     rescue FrozenError
       subject
+    end
+
+    def configuration_error(message)
+      attach_trace(AgentHarness::ConfigurationError.new(message), attempt_trace)
     end
 
     def validate_model_policy!(runner, model_id)

@@ -328,6 +328,20 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         end
     end
 
+    # @spec LLM-ROUTING-012 PARTIAL-CLOSEOUT-059
+    it "converts skipped-only configuration exhaustion into a safe assessment failure" do
+      allow(Runners::ManagedCredentialLifecycle).to receive(:credential_for).and_return(nil)
+
+      expect { described_class.call(agent_run:) }
+        .to raise_error(described_class::AssessmentFailure, /eligible configured runner/) do |error|
+          expect(error.diagnostic).to include(category: "configuration_error")
+          expect(error.diagnostic.dig(:attempt_trace, :selected_attempt_ordinal)).to be_nil
+          expect(error.diagnostic.dig(:attempt_trace, :attempts)).to include(
+            a_hash_including(outcome: "skipped", skip_reason: "missing_managed_credential")
+          )
+        end
+    end
+
     # @spec LLM-ROUTING-003 PARTIAL-CLOSEOUT-031
     it "uses the effective Codex runner and its configured model in the container" do
       stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "unrelated-key"))
@@ -373,12 +387,17 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       ))
     end
 
-    # @spec PARTIAL-CLOSEOUT-031
+    # @spec PARTIAL-CLOSEOUT-031 PARTIAL-CLOSEOUT-059
     it "refuses a runner disabled for agent work" do
       runner.update_column(:enabled_for_agent_runs, false)
 
       expect { described_class.call(agent_run: agent_run) }
-        .to raise_error(AgentHarness::ConfigurationError, /No eligible configured runner/)
+        .to raise_error(described_class::AssessmentFailure, /eligible configured runner/) do |error|
+          expect(error.diagnostic).to include(category: "configuration_error")
+          expect(error.diagnostic.dig(:attempt_trace, :attempts)).to include(
+            a_hash_including(outcome: "skipped", skip_reason: "unavailable")
+          )
+        end
       expect(provider).not_to have_received(:send_message)
     end
 

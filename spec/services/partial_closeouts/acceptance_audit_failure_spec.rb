@@ -69,10 +69,13 @@ RSpec.describe PartialCloseouts::AcceptanceAuditFailure do
   it "classifies authentication and configuration failures separately from transport" do
     auth_status = failing_run(status: "auth_expired")
     auth_category = failing_run(status: "failed", category: "authentication_unavailable")
+    configuration_category = failing_run(status: "failed", category: "configuration_error")
 
     expect(described_class.classify(auth_status)).to eq(:authentication_or_configuration)
     expect(described_class.classify(auth_category)).to eq(:authentication_or_configuration)
+    expect(described_class.classify(configuration_category)).to eq(:authentication_or_configuration)
     expect(described_class).not_to be_transient(auth_category)
+    expect(described_class).not_to be_transient(configuration_category)
   end
 
   it "classifies typed transport categories as transient" do

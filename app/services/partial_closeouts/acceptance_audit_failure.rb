@@ -16,6 +16,7 @@ module PartialCloseouts
     ATTEMPT_TRACE_KEYS = %w[ordinal runner_id runner provider model outcome elapsed_ms allocated_ms phase skip_reason].freeze
     TRANSIENT_CATEGORIES = %w[transport_error timeout unsuccessful_response invalid_json invalid_assessment].freeze
     AUTHENTICATION_CATEGORIES = %w[authentication_unavailable].freeze
+    CONFIGURATION_CATEGORIES = %w[configuration_error].freeze
     TRANSIENT_MESSAGES = [
       "Partial closeout assessment transport failed.",
       "Partial closeout assessment timed out.",
@@ -96,6 +97,7 @@ module PartialCloseouts
         category = agent_run.reconciliation.to_h.dig("acceptance_audit_failure", "category")
         return :transient_transport if category.in?(TRANSIENT_CATEGORIES)
         return :authentication_or_configuration if category.in?(AUTHENTICATION_CATEGORIES)
+        return :authentication_or_configuration if category.in?(CONFIGURATION_CATEGORIES)
         return :transient_transport if transport_interruption?(agent_run)
 
         TRANSIENT_MESSAGES.any? { |message| agent_run.error_message.to_s.start_with?(message) } ? :transient_transport : :non_transient_failure
