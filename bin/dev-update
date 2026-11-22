@@ -43,6 +43,7 @@ OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
 OVERMIND_HEALTHY_CONFIRM_COUNT="${DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT:-2}"
 WORKER_ADOPTION_POLL_COUNT="${DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT:-120}"
+WORKER_DRAIN_POLL_COUNT="${DEV_UPDATE_WORKER_DRAIN_POLL_COUNT:-120}"
 STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
 STASHED_CHANGES=0
 FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
@@ -601,6 +602,54 @@ worker_reports_revision() {
   [ -n "$revision" ] && [ "$revision" = "$expected_revision" ]
 }
 
+worker_readiness_active_activities() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+  sed -n 's/.*"active_activities"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$file" | tail -n 1
+}
+
+worker_is_idle() {
+  local mode="$1"
+  local active_activities
+  active_activities="$(worker_readiness_active_activities "$(worker_readiness_file "$mode")")" || return 1
+  [ "$active_activities" = "0" ]
+}
+
+# Preserve current activity ownership before a worker-loaded code restart.
+# The readiness payload's active count is intentionally coarse and secret-free;
+# it tells us only whether a worker can be stopped safely. A bounded failure
+# defers adoption rather than interrupting an owner and spending its retry
+# budget on a shutdown-induced heartbeat loss.
+# @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+wait_for_workers_to_drain() {
+  local poll_readiness
+  local agent_readiness
+  poll_readiness="$(worker_readiness_file poll)"
+  agent_readiness="$(worker_readiness_file agent)"
+  if [ ! -f "$poll_readiness" ] && [ ! -f "$agent_readiness" ]; then
+    log "No existing Temporal worker readiness metadata found; no worker activity ownership needs draining."
+    return 0
+  fi
+
+  local mode
+  local i
+  for mode in poll agent; do
+    for ((i = 0; i < WORKER_DRAIN_POLL_COUNT; i += 1)); do
+      if worker_is_idle "$mode"; then
+        log "Worker (${mode}) has no active activities; safe to restart."
+        break
+      fi
+      sleep "$OVERMIND_POLL_INTERVAL"
+    done
+
+    if ! worker_is_idle "$mode"; then
+      log "Warning: ${mode} worker did not report zero active activities within ${WORKER_DRAIN_POLL_COUNT} polls."
+      log "ERROR: Worker drain did not complete; deferring worker adoption without stopping Overmind."
+      return 1
+    fi
+  done
+}
+
 # Effective worker adoption verification: Overmind health alone cannot
 # distinguish an on-disk checkout from the code the running workers actually
 # loaded. Each Temporal worker publishes its booted checkout revision in its
@@ -698,6 +747,7 @@ run_full_restart() {
   log "Starting full restart update..."
   if migrations_changed_in_trigger_context; then
     log "Migration files are in the trigger context; stopping Overmind before pulling to avoid Rails pending-migration errors."
+    wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
     stop_overmind
   fi
 
@@ -709,6 +759,7 @@ run_full_restart() {
     recover_dev_if_needed
     fail "git pull --ff-only failed. Check for diverged history or upstream issues."
   fi
+  wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
   stop_overmind
 
   if ! run_setup; then
@@ -746,6 +797,7 @@ case "$MODE" in
     fi
     if restart_required_from_pull; then
       log "Pull included restart-worthy files outside the trigger context; upgrading to full restart."
+      wait_for_workers_to_drain || fail "Active worker ownership did not drain. Wait for active work to finish and rerun bin/dev-update --full."
       stop_overmind
       if ! run_setup; then
         recover_dev_if_needed

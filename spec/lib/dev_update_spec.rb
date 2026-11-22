@@ -31,7 +31,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       # Worker adoption verification polls the readiness flag files; the stub
       # workers write them immediately, and stale-revision tests rely on the
       # bounded budget expiring quickly (~0.5s).
-      "DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT" => "25"
+      "DEV_UPDATE_WORKER_ADOPTION_POLL_COUNT" => "25",
+      "DEV_UPDATE_WORKER_DRAIN_POLL_COUNT" => "25"
     }
   end
 
@@ -571,6 +572,25 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+  it "defers a full update before stopping the supervisor while a worker owns an activity" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      stdout, stderr, status = run_lightweight_with_pull(dir,
+        pull_diff_files: %w[app/services/llm/request.rb],
+        changed_files: "app/services/llm/request.rb",
+        start_overmind_running: true,
+        with_stale_socket: true,
+        worker_active_activities: 1)
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.readlines(File.join(dir, "calls.log")).map(&:chomp)).to eq([ "git pull" ])
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("Worker drain did not complete; deferring worker adoption without stopping Overmind.")
+      expect(updater_log).not_to include("Full restart update complete.")
+    end
+  end
+
   # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
   it "fails the update when a restarted worker reports a stale revision" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
@@ -1100,7 +1120,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     %w[poll agent].each do |mode|
       payload = worker_readiness_payload(mode)
       expect(payload["revision"]).to eq(revision)
-      expect(payload.keys).to match_array(%w[pid ready_at revision])
+      expect(payload.keys).to match_array(%w[pid ready_at revision active_activities])
     end
   end
 
@@ -1227,7 +1247,8 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     status_successes_after_start: nil,
     tmux: nil,
     worker_readiness_revision: nil,
-    unknown_checkout_head: false
+    unknown_checkout_head: false,
+    worker_active_activities: 0
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -1235,6 +1256,14 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
 
     FileUtils.touch(File.join(dir, "overmind-running")) if start_overmind_running
+    if start_overmind_running
+      %w[poll agent].each do |mode|
+        File.write(
+          worker_readiness_path(mode),
+          { pid: 12_345, ready_at: Time.now.utc.iso8601, revision: "pre-pull-sha", active_activities: worker_active_activities }.to_json
+        )
+      end
+    end
     FileUtils.touch(File.join(dir, "pre-existing-stash")) if pre_existing_stash
     # Model refs/stash: a pre-existing stash occupies the ref until a push
     # creates a new entry or a successful pop consumes it.
@@ -1261,7 +1290,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         for mode in poll agent; do
           file="${TMPDIR:-/tmp}/paid-worker-ready-temporal_worker-${mode}"
           mkdir -p "$(dirname "$file")"
-          printf '{"pid":%s,"ready_at":"%s","revision":"%s"}\\n' "$$" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${revision}" > "$file"
+          printf '{"pid":%s,"ready_at":"%s","revision":"%s","active_activities":%s}\\n' "$$" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${revision}" "#{worker_active_activities}" > "$file"
         done
       BASH
     )

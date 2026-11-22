@@ -41,6 +41,17 @@ RSpec.describe Activities::BaseActivity do
       expect(connection_pool).to have_received(:release_connection)
     end
 
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "publishes activity ownership for the worker drain boundary" do
+      allow(Paid::WorkerReadiness).to receive(:activity_started!)
+      allow(Paid::WorkerReadiness).to receive(:activity_finished!)
+
+      activity.execute("project_id" => 123)
+
+      expect(Paid::WorkerReadiness).to have_received(:activity_started!).ordered
+      expect(Paid::WorkerReadiness).to have_received(:activity_finished!).ordered
+    end
+
     it "skips release when no active connection is checked out" do
       allow(connection_pool).to receive(:active_connection?).and_return(false)
 

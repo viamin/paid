@@ -46,3 +46,19 @@
   widen concurrency or shutdown timeouts, or reset failed runs.
   *Code:* `bin/dev-update`, `lib/paid/worker_readiness.rb`, `bin/temporal_worker`.
   *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.
+
+- [x] **DEVELOPMENT-ENVIRONMENT-UPDATE-004** — Before a full development
+  update stops Overmind, the updater SHALL wait within a bounded poll budget
+  for each ready Temporal worker's safe readiness metadata to report zero
+  active activities. Worker metadata SHALL expose only the active count and
+  existing trusted boot identity, never activity input, credential payloads,
+  secret-bearing process arguments, or environment. If a worker remains active
+  or its count is unknown within the budget, the updater SHALL fail before
+  requesting a stop and SHALL report deferred adoption; it SHALL NOT
+  force-restart the owner, reset its attempt, enlarge shutdown/activity
+  deadlines, or change control-queue routing. Once both workers are idle, the
+  updater SHALL retain the existing one-time graceful stop, restart, and
+  effective-adoption verification path.
+  *Code:* `bin/dev-update`, `lib/paid/worker_readiness.rb`,
+  `app/temporal/activities/base_activity.rb`.
+  *Test:* `spec/lib/dev_update_spec.rb`, `spec/lib/paid/worker_readiness_spec.rb`.

@@ -69,6 +69,20 @@ RSpec.describe Paid::WorkerReadiness do
       expect(payload["ready_at"]).to match(/\d{4}-\d{2}-\d{2}T/)
     end
 
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "publishes a coarse active activity count without exposing activity data" do
+      env = { "WORKER_READINESS_FILE" => file_path }
+      described_class.mark_ready!(env)
+
+      described_class.activity_started!(env)
+      active_payload = JSON.parse(File.read(file_path))
+      expect(active_payload).to include("active_activities" => 1)
+      expect(active_payload.keys).to match_array(%w[pid ready_at revision active_activities])
+
+      described_class.activity_finished!(env)
+      expect(JSON.parse(File.read(file_path))).to include("active_activities" => 0)
+    end
+
     # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-003
     it "writes JSON with the booted checkout revision" do
       env = { "WORKER_READINESS_FILE" => file_path }
@@ -84,6 +98,22 @@ RSpec.describe Paid::WorkerReadiness do
 
       payload = JSON.parse(File.read(file_path))
       expect(payload["revision"]).to eq("deployed-sha")
+    end
+
+    # @spec DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    it "retains the boot revision while activity ownership changes" do
+      env = { "WORKER_READINESS_FILE" => file_path, "PAID_DEPLOYED_REVISION" => "booted-sha" }
+      described_class.mark_ready!(env)
+      env["PAID_DEPLOYED_REVISION"] = "checkout-changed-after-boot"
+
+      described_class.activity_started!(env)
+
+      expect(JSON.parse(File.read(file_path))).to include(
+        "revision" => "booted-sha",
+        "active_activities" => 1
+      )
+    ensure
+      described_class.activity_finished!(env)
     end
 
     it "reports a null revision when the checkout revision cannot be determined" do
@@ -105,8 +135,9 @@ RSpec.describe Paid::WorkerReadiness do
 
     it "does not raise when the file cannot be written" do
       env = { "WORKER_READINESS_FILE" => file_path }
-      allow(File).to receive(:write).and_call_original
-      allow(File).to receive(:write).with(file_path, anything).and_raise(Errno::EACCES, file_path)
+      allow(File).to receive(:rename).and_call_original
+      allow(File).to receive(:rename).with(/#{Regexp.escape(file_path)}\.#{Process.pid}\.tmp/, file_path)
+        .and_raise(Errno::EACCES, file_path)
 
       expect { described_class.mark_ready!(env) }
         .to output(/Failed to write worker readiness file: Errno::EACCES/).to_stderr
