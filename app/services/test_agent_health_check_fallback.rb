@@ -6,6 +6,8 @@
 # Including classes must implement:
 #   - #harness_health_check_key  — the harness provider/runner key Symbol to
 #       pass to AgentHarness.check_provider
+#   - #container_authentication_runner_key — the configured runner key whose
+#       credential materialization is being tested
 #   - #harness_fallback_log_prefix — log message prefix (e.g. "runners.test_agent")
 #   - #harness_fallback_log_context — Hash of extra log attributes (e.g. { runner_key: "codex" })
 #
@@ -45,7 +47,9 @@ module TestAgentHealthCheckFallback
         executor = Containers::HarnessExecutor.new(run)
         prepare_kilocode_config!(run) if kilocode_direct_outbound?
         container_health_check(run, executor).tap do
-          @container_authentication_source = container_authentication_source(run)
+          @container_authentication_source = container_authentication_source(
+            run, runner_key: container_authentication_runner_key
+          )
         end
       end
     ensure
@@ -74,9 +78,10 @@ module TestAgentHealthCheckFallback
       authentication_source: @container_authentication_source)
   end
 
-  def container_authentication_source(run)
+  # @spec SUBSCRIPTION-RUNNER-AUTH-008 LLM-ROUTING-011
+  def container_authentication_source(run, runner_key:)
     RunnerAuthAttempt.where(agent_run: run, attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION)
-      .recent.pick(:auth_source)&.to_sym || :unconfirmed
+      .for_runner_key(runner_key).recent.pick(:auth_source)&.to_sym || :unconfirmed
   end
 
   def fallback_to_container_smoke_test?(*messages)

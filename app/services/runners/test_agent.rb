@@ -165,17 +165,20 @@ module Runners
       update_runner_state!(result) unless @diagnostic_prompt
       result
     rescue NotContainerExecutableError
-      Result.new(success: false, error_type: :installation,
-        message: "Runner #{runner.runner_key} CLI is not installed in the agent container")
+      annotate_authentication_context(Result.new(success: false, error_type: :installation,
+        message: "Runner #{runner.runner_key} CLI is not installed in the agent container"))
     rescue UnsupportedRunnerError
-      Result.new(success: false, error_type: :unexpected,
-        message: "Runner #{runner.runner_key} is not recognized by the agent harness")
+      annotate_authentication_context(Result.new(success: false, error_type: :unexpected,
+        message: "Runner #{runner.runner_key} is not recognized by the agent harness"))
     rescue MissingProjectContextError, InvalidModelError => e
-      Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :unexpected,
+        message: normalize_output_text(e.message)))
     rescue Containers::Provision::TimeoutError => e
-      Result.new(success: false, error_type: :timeout, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :timeout,
+        message: normalize_output_text(e.message)))
     rescue Containers::Provision::Error => e
-      Result.new(success: false, error_type: :connection, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :connection,
+        message: normalize_output_text(e.message)))
     rescue StandardError => e
       Rails.logger.error(
         message: "runners.test_agent.unexpected_error",
@@ -183,7 +186,8 @@ module Runners
         error_class: e.class.name,
         error_message: normalize_output_text(e.message)
       )
-      Result.new(success: false, error_type: :unexpected, message: normalize_output_text(e.message))
+      annotate_authentication_context(Result.new(success: false, error_type: :unexpected,
+        message: normalize_output_text(e.message)))
     end
 
     private
@@ -261,6 +265,10 @@ module Runners
 
     def harness_health_check_key
       harness_runner_key
+    end
+
+    def container_authentication_runner_key
+      runner.runner_key
     end
 
     def harness_fallback_log_prefix

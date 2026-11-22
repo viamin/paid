@@ -261,6 +261,10 @@ module Providers
       harness_provider_name
     end
 
+    def container_authentication_runner_key
+      effective_provider.provider_key
+    end
+
     def harness_fallback_log_prefix
       "providers.test_agent"
     end
