@@ -5,7 +5,7 @@ module Paid
     # Binds readiness to the source identity that existed before Rails loaded
     # application code. A second read after worker construction detects a boot
     # race instead of attesting source newer than the constants in memory.
-    # @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-005
     class StartupIdentity
       class SourceChangedError < StandardError; end
 

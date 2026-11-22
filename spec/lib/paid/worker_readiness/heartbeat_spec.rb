@@ -3,7 +3,7 @@
 require "rails_helper"
 require "paid/worker_readiness"
 
-# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-004
+# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-005
 RSpec.describe Paid::WorkerReadiness::Heartbeat do
   let(:booted_at) { Time.utc(2026, 11, 22, 6, 0, 0) }
   let(:clock) { -> { booted_at } }

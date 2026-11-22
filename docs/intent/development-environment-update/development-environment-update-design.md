@@ -110,6 +110,26 @@ code. The readiness facts remain evidence about worker adoption
 only and do not attest
 application-level behavior.
 
+## Active-Work Drain Before Restart
+
+Before a full update asks Overmind to stop, each Temporal activity holds shared
+ownership of a per-worker admission barrier for its full execution. The updater
+acquires the corresponding barriers exclusively and retains both through the
+stop request. Acquiring a role's barrier waits for its existing activities and
+then closes admission for that role, so work cannot arrive on the first role
+while the updater waits for the second. Workers continue to publish safe active
+counts alongside immutable boot identity for observability; neither the barrier
+nor metadata contains activity input, process arguments, environment, or
+credentials.
+
+The wait has a bounded poll budget. If either ready worker remains active or
+its count cannot be read within that budget, the update fails before stopping
+Overmind and records that adoption was deferred. It does not turn the failed
+update into a restart, cancel an owner, reset an audit, enlarge any activity or
+shutdown timeout, or alter the existing control queues. A later authorized
+normal full update can retry after the owners have reached their normal
+terminal or handoff state.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -122,6 +142,7 @@ application-level behavior.
 | Restart mechanism | Existing graceful Overmind stop/start path unchanged | Force-kill active workers, widen shutdown timeouts, reset failed runs | Preserves workflow/activity ownership, replay compatibility, retained results, and bounded retry/budget policies. |
 | Recorder source boundary | Fixed role-specific readiness observations with typed public fields | Cross-container file reads, generic file readers, or process inspection | Preserves the existing safe readiness contract without making host filesystem/process access operator-controlled, and works across the independent role containers. |
 | Startup identity boundary | Snapshot before application loading and verify after worker construction | Capture only when readiness starts; reload application code after drift | A final-only snapshot can describe source newer than constants already loaded during boot; refusing the raced startup is deterministic and avoids unsafe generic reload behavior. |
+| Active work during update | Acquire and retain exclusive per-worker activity-admission barriers through the stop request, then use the existing graceful restart; fail before stop on a bounded acquisition timeout | Sequential idle snapshots; stop immediately; force a handoff; increase shutdown/activity deadlines | A retained barrier closes the arrival race between roles while existing shared owners drain. An immediate stop can end a live activity's heartbeat and consume its finite retry budget. |
 
 ## References
 

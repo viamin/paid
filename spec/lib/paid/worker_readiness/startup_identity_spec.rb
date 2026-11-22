@@ -6,7 +6,7 @@ require "open3"
 require "rbconfig"
 require "tmpdir"
 
-# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-004
+# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-005
 RSpec.describe Paid::WorkerReadiness::StartupIdentity do
   it "retains the identity captured before application loading" do
     identity = described_class.capture { "development:head:fingerprint" }

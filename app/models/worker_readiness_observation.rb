@@ -8,7 +8,7 @@
 # and not tenant-owned, so the table carries no tenant columns or
 # RLS policy (same boundary as the PgHero history tables); it never holds
 # secrets, process arguments, or environment contents.
-# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-004
+# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-005
 class WorkerReadinessObservation < ApplicationRecord
   ROLES = %w[poll agent].freeze
 

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-004
+# @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-005
 RSpec.describe WorkerReadinessObservation, type: :model do
   let(:booted_at) { Time.utc(2026, 11, 22, 6, 0, 0) }
 

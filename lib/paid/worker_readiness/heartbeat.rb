@@ -13,7 +13,7 @@ module Paid
     #
     # The recorder is injected so this file stays free of persistence concerns;
     # bin/temporal_worker wires it to WorkerReadinessObservation.record!.
-    # @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-004
+    # @spec TRUSTED-MEASUREMENTS-008 DEVELOPMENT-ENVIRONMENT-UPDATE-005
     class Heartbeat
       DEFAULT_INTERVAL_SECONDS = 30.0
       # Bounded so a beat stuck on external I/O cannot block the worker's
