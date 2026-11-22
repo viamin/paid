@@ -5,7 +5,7 @@ require "json"
 module Activities
   # Assesses prompt-captured findings against the exact current PR head before
   # allowing the public GitHub thread-resolution mutation.
-  # @spec FOCUSED-RUN-011
+  # @spec FOCUSED-RUN-011 LLM-ROUTING-001
   class AssessFollowupReviewThreadsActivity < BaseActivity
     include Llm::OutputNormalizer
 

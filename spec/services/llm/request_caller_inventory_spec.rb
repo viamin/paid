@@ -33,6 +33,7 @@ RSpec.describe Llm::Request do
     app/services/style_guides/extract.rb
     app/temporal/activities/analyze_issue_activity.rb
     app/temporal/activities/analyze_knowledge_gaps_activity.rb
+    app/temporal/activities/assess_followup_review_threads_activity.rb
     app/temporal/activities/decompose_feature_activity.rb
     ].freeze
   end
