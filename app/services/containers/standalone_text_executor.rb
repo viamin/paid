@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 require "stringio"
 
 module Containers
@@ -7,6 +9,8 @@ module Containers
   # mounts a checkout or the Rails workspace; credentials arrive only as exec
   # environment for the selected command and disappear with the container.
   class StandaloneTextExecutor
+    class DeadlineExceeded < StandardError; end
+
     MAX_OUTPUT_BYTES = 2 * 1024 * 1024
     MAX_INPUT_BYTES = 1024 * 1024
     # Linux caps a single execve argument or environment string at MAX_ARG_STRLEN
@@ -115,9 +119,16 @@ module Containers
       raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
 
       with_managed_credential_lease do
-        run(materialized_command, timeout: timeout, env: materialized_env(env),
+        execution_env = materialized_env(env)
+        timeout = bounded_timeout(timeout)
+        raise AgentHarness::TimeoutError, "Isolated text request timed out" unless timeout.positive?
+
+        run(materialized_command, timeout: timeout, env: execution_env,
           input: input_payload(command, preparation, stdin_data), output_observer: output_observer)
       end
+    rescue DeadlineExceeded
+      close
+      raise AgentHarness::TimeoutError, "Isolated text request timed out"
     rescue StandardError
       close
       raise
@@ -237,11 +248,13 @@ module Containers
     end
 
     def provision!
-      NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend)
-      @container = Containers.backend.create_container(container_config)
-      Containers.backend.start_container(@container)
-      result = Containers.backend.exec_in_container(@container,
-        [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      within_deadline { NetworkPolicy.ensure_network!(network: NetworkPolicy::INFRA_NETWORK_NAME, backend: Containers.backend) }
+      @container = within_deadline { Containers.backend.create_container(container_config) }
+      within_deadline { Containers.backend.start_container(@container) }
+      result = within_deadline do
+        Containers.backend.exec_in_container(@container,
+          [ "sh", "-c", "chown agent:agent /home/agent && stat -c '%u:%g' /home/agent" ], user: "root")
+      end
       status = Array(result).last
       raise AgentHarness::Error, "Isolated text home preparation exit status unavailable" if status.nil?
       raise AgentHarness::ConfigurationError, "Unable to prepare isolated text home" unless status == 0
@@ -273,21 +286,23 @@ module Containers
       stdout = +""
       stderr = +""
       output_exceeded = false
-      result = Containers.backend.exec_in_container_with_stdin(@container, command,
-        wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
-        output_observer&.call(stream, chunk)
-        next if output_exceeded
+      result = within_command_timeout(timeout) do
+        Containers.backend.exec_in_container_with_stdin(@container, command,
+          wait: timeout, stdin: input, Env: env.map { |key, value| "#{key}=#{value}" }) do |stream, chunk|
+          output_observer&.call(stream, chunk)
+          next if output_exceeded
 
-        target = stream == :stderr ? stderr : stdout
-        remaining = MAX_OUTPUT_BYTES - stdout.bytesize - stderr.bytesize
-        target << chunk.to_s.byteslice(0, [ remaining, 0 ].max) if remaining.positive?
-        next unless chunk.to_s.bytesize > remaining
+          target = stream == :stderr ? stderr : stdout
+          remaining = MAX_OUTPUT_BYTES - stdout.bytesize - stderr.bytesize
+          target << chunk.to_s.byteslice(0, [ remaining, 0 ].max) if remaining.positive?
+          next unless chunk.to_s.bytesize > remaining
 
-        output_exceeded = true
-        begin
-          Containers.backend.stop_container(@container, timeout: 0)
-        rescue Docker::Error::DockerError
-          nil
+          output_exceeded = true
+          begin
+            Containers.backend.stop_container(@container, timeout: 0)
+          rescue Docker::Error::DockerError
+            nil
+          end
         end
       end
       exit_code = Array(result).last
@@ -319,16 +334,21 @@ module Containers
     def cleanup!
       return unless @container
 
-      Containers.backend.stop_container(@container, timeout: 0)
+      within_deadline { Containers.backend.stop_container(@container, timeout: 0) }
     rescue Docker::Error::DockerError
       nil
+    rescue DeadlineExceeded
+      defer_cleanup!
     ensure
       begin
-        Containers.backend.delete_container(@container, force: true) if @container
+        within_deadline { Containers.backend.delete_container(@container, force: true) } if @container
       rescue Docker::Error::DockerError
         nil
+      rescue DeadlineExceeded
+        defer_cleanup!
+      else
+        @container = nil
       end
-      @container = nil
     end
 
     def bounded_timeout(value)
@@ -339,11 +359,39 @@ module Containers
     def credential_expires_in
       return @timeout + CLEANUP_MARGIN unless @deadline
 
-      [ @deadline - monotonic_now, CLEANUP_MARGIN ].max
+      [ @deadline - monotonic_now, 0 ].max
     end
 
     def deadline_expired?
       @deadline && @deadline <= monotonic_now
+    end
+
+    def within_deadline
+      return yield unless @deadline
+
+      Timeout.timeout(remaining_deadline, DeadlineExceeded) { yield }
+    end
+
+    def within_command_timeout(timeout)
+      return yield unless @deadline
+
+      Timeout.timeout(timeout, DeadlineExceeded) { yield }
+    end
+
+    def remaining_deadline
+      remaining = @deadline - monotonic_now
+      raise DeadlineExceeded unless remaining.positive?
+
+      remaining
+    end
+
+    def defer_cleanup!
+      Rails.logger.warn(
+        message: "containers.standalone_text_executor.cleanup_deferred",
+        container_id: @container.id,
+        account_id: account.id,
+        runner_id: runner.id
+      )
     end
 
     def monotonic_now

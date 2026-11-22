@@ -3,6 +3,7 @@
 require "open3"
 require "rails_helper"
 require "tmpdir"
+require "timeout"
 
 RSpec.describe Containers::StandaloneTextExecutor do
   let(:account) { create(:account) }
@@ -16,6 +17,7 @@ RSpec.describe Containers::StandaloneTextExecutor do
   before do
     allow(Containers).to receive(:backend).and_return(backend)
     allow(backend).to receive(:remote?).and_return(false)
+    allow(container).to receive(:id).and_return("standalone-text-container")
     allow(NetworkPolicy).to receive(:ensure_network!)
     allow(backend).to receive_messages(create_container: container, start_container: true,
       stop_container: true, delete_container: true)
@@ -109,6 +111,64 @@ RSpec.describe Containers::StandaloneTextExecutor do
     expect(backend).to have_received(:exec_in_container_with_stdin).with(container, anything,
       hash_including(wait: 1.0))
     expect(issued.fetch(:expires_in)).to eq(6.0)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not extend a credential identity past the candidate deadline" do
+    now = 100.0
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+      clock: ->(_) { now })
+    issued = nil
+    allow(Containers::StandaloneTextCredential).to receive(:issue) do |**options|
+      issued = options
+      now = 105.5
+      "scoped-identity"
+    end
+
+    expect { executor.execute([ "codex", "exec", "hello" ]) }.to raise_error(AgentHarness::TimeoutError)
+
+    expect(issued.fetch(:expires_in)).to eq(6.0)
+    expect(backend).not_to have_received(:exec_in_container_with_stdin)
+  end
+
+  # @spec LLM-ROUTING-013
+  it "interrupts blocked container startup at the candidate deadline" do
+    now = 100.0
+    release_startup = Queue.new
+    allow(backend).to receive(:start_container) do
+      now = 101.0
+      release_startup.pop
+    end
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 100.1,
+      clock: ->(_) { now })
+
+    expect do
+      Timeout.timeout(0.5) { executor.execute([ "codex", "exec", "hello" ]) }
+    end.to raise_error(AgentHarness::TimeoutError)
+
+    expect(backend).not_to have_received(:exec_in_container_with_stdin)
+  ensure
+    release_startup << true if release_startup
+  end
+
+  # @spec LLM-ROUTING-013
+  it "does not block close past the remaining candidate deadline" do
+    now = 100.0
+    executor = described_class.new(account: account, runner: runner, timeout: 60, deadline: 106.0,
+      clock: ->(_) { now })
+    executor.execute([ "codex", "exec", "hello" ])
+    now = 105.9
+    release_cleanup = Queue.new
+    allow(backend).to receive(:stop_container) do
+      now = 107.0
+      release_cleanup.pop
+    end
+
+    expect { Timeout.timeout(0.5) { executor.close } }.not_to raise_error
+
+    expect(backend).not_to have_received(:delete_container)
+  ensure
+    release_cleanup << true if release_cleanup
   end
 
   # @spec LLM-ROUTING-003 LLM-ROUTING-005
